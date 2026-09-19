@@ -37,7 +37,7 @@ Rust에서 Compose API를 직접 호출하지 않습니다. GraalVM `@CEntryPoin
 
 | 플랫폼 | 방식 |
 |---|---|
-| 데스크톱 | GraalVM native-image `--shared` (Compose Desktop 컴파일 성공 확인) |
+| 데스크톱 | native-image `--shared`. **macOS에서는 Liberica NIK Full이 필요합니다** — upstream GraalVM은 Darwin에서 AWT 지원을 건너뜁니다(oracle/graal#13272, 2026-09 기준 open). NIK는 AWT를 정적 링크합니다 |
 | iOS | Kotlin/Native `-produce static` + `@CName` C 심볼 |
 | Android | 대상 플랫폼. ART라서 native-image가 불가능합니다. Kotlin/Android 앱이 Rust cdylib을 로드하고, 생성된 JNI 심을 씁니다(D9) |
 | Web | 대상 플랫폼. Compose wasmJs + Dioxus wasm. 브라우저에서 실행하는 것이라 앱이 웹뷰를 내장하는 것과는 다르고 C1에 해당하지 않습니다. JS 브리지 경유는 성능상 금지하고, wasm 모듈끼리 직결합니다(SPEC PR-5) |
@@ -76,6 +76,17 @@ native-image는 CI와 릴리스에서만 돌립니다.
 - 무거운 도메인 작업은 Host 워커 스레드에서 돌리고, UI 스레드에는 wake 신호만 보냅니다.
 - Web에서도 JS 브리지를 거치지 않습니다.
 - 근거는 SPEC PR-1~PR-6에 있습니다.
+
+### D9-macOS. macOS 실행 모델과 우회책
+
+2026-09-20에 macOS arm64에서 검증한 내용입니다(SPEC PR-7-macOS).
+
+- Liberica NIK 25 Full로 Compose Desktop을 native-image로 빌드하면 창이 뜨고 렌더링됩니다. JDK 설치가 필요 없습니다.
+- 정적 링크된 macOS AWT는 런타임에 세 가지를 파일 경로로 찾습니다. 각각 얇은 우회책으로 메웁니다.
+  - `libawt_lwawt.dylib`: libawt 초기화가 경로로 로드합니다. JNI 함수는 실행 이미지 안에서 해석되므로 자리만 채우는 dylib을 둡니다.
+  - `libjawt.dylib`: Skiko가 `<java.home>/lib`에서 dlopen합니다. 이미지 안의 `JAWT_GetAWT`로 넘기는 포워더를 둡니다.
+  - `JNI_OnLoad_osxui`: 정적 JNI 라이브러리에 필수인 심볼인데 아카이브에 없어서 직접 정의합니다.
+- **AppKit은 메인 스레드를 요구합니다.** 렌더러는 보조 스레드에서 돌고, 메인 스레드는 NSApplication을 직접 만들어 실행합니다. 이렇게 하면 AWT가 임베디드 모드(SWT/JavaFX 호스트와 같은 방식)로 동작합니다. AWT가 자기 루프를 갖게 두면 `[NSApp run]`을 무한히 다시 들어가서 창을 닫아도 Host로 제어가 돌아오지 않습니다.
 
 ### D9. Android는 Kotlin이 호스트, 경계 정의는 방향 중립
 
