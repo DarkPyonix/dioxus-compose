@@ -1,0 +1,13 @@
+product: android/app
+
+dependencies:
+  - //shared
+  - $libs.androidx.activity.compose
+  - $compose.preview
+  - $compose.uiTooling
+
+settings:
+  compose: enabled
+  android:
+    namespace: org.thisisthepy.dioxus.compose
+    applicationId: org.thisisthepy.dioxus.compose
