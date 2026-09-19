@@ -1,0 +1,497 @@
+use crate::protocol::{HostEvent, ProtocolError, decode_event};
+use crate::renderer::ComposeRenderer;
+use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH};
+use crate::{Element, Selection, VirtualDom};
+use dioxus_core::{ElementId, Event};
+use std::cell::RefCell;
+use std::ffi::c_int;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::rc::Rc;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+pub const STATUS_OK: i32 = 0;
+pub const STATUS_PROTOCOL_ERROR: i32 = -1;
+pub const STATUS_NOT_INITIALIZED: i32 = -2;
+pub const STATUS_ALREADY_INITIALIZED: i32 = -3;
+pub const STATUS_PANIC: i32 = -4;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct MutationBatch {
+    pub ptr: *const u8,
+    pub len: u32,
+    pub result: i64,
+}
+
+impl Default for MutationBatch {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null(),
+            len: 0,
+            result: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct RendererApi {
+    pub run: extern "C" fn() -> c_int,
+    pub request_frame: extern "C" fn(),
+}
+
+static RENDERER_API: OnceLock<RendererApi> = OnceLock::new();
+static FRAME_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+pub fn install_renderer_api(api: RendererApi) -> Result<(), RendererApi> {
+    RENDERER_API.set(api)
+}
+
+#[cfg(not(any(test, feature = "mock-renderer")))]
+unsafe extern "C" {
+    fn dioxus_compose_renderer_run() -> c_int;
+    fn dioxus_compose_renderer_request_frame();
+}
+
+#[cfg(not(any(test, feature = "mock-renderer")))]
+extern "C" fn native_run() -> c_int {
+    // SAFETY: The application links the Renderer implementation of this declared C ABI.
+    unsafe { dioxus_compose_renderer_run() }
+}
+
+#[cfg(not(any(test, feature = "mock-renderer")))]
+extern "C" fn native_request_frame() {
+    // SAFETY: The Renderer contract makes request_frame thread-safe.
+    unsafe { dioxus_compose_renderer_request_frame() }
+}
+
+#[cfg(any(test, feature = "mock-renderer"))]
+extern "C" fn native_run() -> c_int {
+    STATUS_OK
+}
+
+#[cfg(any(test, feature = "mock-renderer"))]
+extern "C" fn native_request_frame() {}
+
+fn renderer_api() -> RendererApi {
+    RENDERER_API.get().copied().unwrap_or(RendererApi {
+        run: native_run,
+        request_frame: native_request_frame,
+    })
+}
+
+/// Coalesced wake used by Host worker integrations.
+// SPEC-GAP: dioxus-core 0.7 does not expose its scheduler wake callback, so a
+// worker integration must call this after updating a signal. User UI code does
+// not call the C boundary directly.
+pub fn request_frame_from_worker() {
+    if !FRAME_REQUESTED.swap(true, Ordering::AcqRel) {
+        (renderer_api().request_frame)();
+    }
+}
+
+pub struct Host {
+    dom: VirtualDom,
+    renderer: ComposeRenderer,
+}
+
+impl Host {
+    pub fn new(app: fn() -> Element) -> Self {
+        Self {
+            dom: VirtualDom::new(app),
+            renderer: ComposeRenderer::new(),
+        }
+    }
+
+    pub fn rebuild(&mut self) -> Result<&[u8], ProtocolError> {
+        self.renderer.begin_frame();
+        self.dom.rebuild(&mut self.renderer);
+        self.renderer.finish_frame()
+    }
+
+    pub fn dispatch_event(&mut self, bytes: &[u8]) -> Result<(&[u8], i64), ProtocolError> {
+        let event = decode_event(bytes)?;
+        self.dispatch(event)
+    }
+
+    pub fn dispatch(&mut self, event: HostEvent<'_>) -> Result<(&[u8], i64), ProtocolError> {
+        let Some((element, node_id, name)) = self.renderer.handler(event.handler_id) else {
+            return Err(ProtocolError::InvalidValueKind(0));
+        };
+        if event.node_id != node_id {
+            return Err(ProtocolError::InvalidValueKind(0));
+        }
+        let event_data = match event.payload {
+            EventPayload::Click | EventPayload::FocusLost => {
+                Event::new(Rc::new(()), true).into_any()
+            }
+            EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
+                Event::new(Rc::new(text.to_owned()), true).into_any()
+            }
+            EventPayload::ProtocolError { .. } => {
+                return Err(ProtocolError::InvalidValueKind(0));
+            }
+        };
+        self.dom.runtime().handle_event(name, event_data, element);
+        self.renderer.begin_frame();
+        self.dom.render_immediate(&mut self.renderer);
+        // SPEC-GAP: dioxus-core EventHandler callbacks return (), so the M0
+        // adapter reserves result=0 until a typed synchronous handler API exists.
+        Ok((self.renderer.finish_frame()?, 0))
+    }
+
+    pub fn render_frame(&mut self, _frame_time_nanos: u64) -> Result<&[u8], ProtocolError> {
+        FRAME_REQUESTED.store(false, Ordering::Release);
+        self.renderer.begin_frame();
+        self.dom.render_immediate(&mut self.renderer);
+        self.renderer.finish_frame()
+    }
+
+    pub fn set_text(
+        &mut self,
+        node_id: u32,
+        text: &str,
+        selection: Option<Selection>,
+    ) -> Result<&[u8], ProtocolError> {
+        self.renderer.begin_frame();
+        self.renderer.set_text_node(node_id, text, selection);
+        self.renderer.finish_frame()
+    }
+
+    pub fn handler_target(&self, handler_id: u64) -> Option<ElementId> {
+        self.renderer.handler(handler_id).map(|value| value.0)
+    }
+}
+
+thread_local! {
+    static APP: RefCell<Option<fn() -> Element>> = const { RefCell::new(None) };
+    static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LaunchBuilder {
+    mode: LoopMode,
+}
+
+impl Default for LaunchBuilder {
+    fn default() -> Self {
+        Self {
+            mode: LoopMode::Renderer,
+        }
+    }
+}
+
+impl LaunchBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_mode(mut self, mode: LoopMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    pub fn launch(self, app: fn() -> Element) {
+        APP.with(|slot| *slot.borrow_mut() = Some(app));
+        if self.mode == LoopMode::Renderer {
+            let _ = (renderer_api().run)();
+        }
+    }
+}
+
+pub fn launch(app: fn() -> Element) {
+    LaunchBuilder::new().launch(app);
+}
+
+fn parse_handshake(bytes: &[u8]) -> Result<LoopMode, ProtocolError> {
+    if bytes.len() < 12 {
+        return Err(ProtocolError::Truncated);
+    }
+    let hash = u64::from_le_bytes(
+        bytes[0..8]
+            .try_into()
+            .map_err(|_| ProtocolError::Truncated)?,
+    );
+    let version = u16::from_le_bytes(
+        bytes[8..10]
+            .try_into()
+            .map_err(|_| ProtocolError::Truncated)?,
+    );
+    if hash != SCHEMA_HASH || version != PROTOCOL_VERSION {
+        return Err(ProtocolError::InvalidEnvelope);
+    }
+    match bytes[10] {
+        0 => Ok(LoopMode::Renderer),
+        1 => Ok(LoopMode::Platform),
+        other => Err(ProtocolError::InvalidValueKind(u16::from(other))),
+    }
+}
+
+unsafe fn input_slice<'a>(ptr: *const u8, len: u32) -> Result<&'a [u8], ProtocolError> {
+    if len == 0 {
+        return Ok(&[]);
+    }
+    if ptr.is_null() {
+        return Err(ProtocolError::Truncated);
+    }
+    // SAFETY: The C caller promises a readable buffer of `len` bytes for this call.
+    Ok(unsafe { std::slice::from_raw_parts(ptr, len as usize) })
+}
+
+unsafe fn write_batch(
+    out: *mut MutationBatch,
+    bytes: &[u8],
+    result: i64,
+) -> Result<(), ProtocolError> {
+    if out.is_null() {
+        return Err(ProtocolError::Truncated);
+    }
+    let len = u32::try_from(bytes.len()).map_err(|_| ProtocolError::LengthOverflow)?;
+    // SAFETY: Null was rejected and the C caller promises writable storage.
+    unsafe {
+        out.write(MutationBatch {
+            ptr: bytes.as_ptr(),
+            len,
+            result,
+        });
+    }
+    Ok(())
+}
+
+fn ffi_status(operation: impl FnOnce() -> Result<(), ProtocolError>) -> i32 {
+    match catch_unwind(AssertUnwindSafe(operation)) {
+        Ok(Ok(())) => STATUS_OK,
+        Ok(Err(_)) => STATUS_PROTOCOL_ERROR,
+        Err(_) => STATUS_PANIC,
+    }
+}
+
+#[unsafe(no_mangle)]
+/// Initializes the UI-thread Host from the handshake and returns the initial batch.
+///
+/// # Safety
+/// `handshake` must address `len` readable bytes and `out` must be writable.
+pub unsafe extern "C" fn dioxus_compose_host_init(
+    handshake: *const u8,
+    len: u32,
+    out: *mut MutationBatch,
+) -> i32 {
+    ffi_status(|| {
+        // SAFETY: Validated according to the function's C ABI contract.
+        let bytes = unsafe { input_slice(handshake, len)? };
+        let _mode = parse_handshake(bytes)?;
+        let app = APP
+            .with(|slot| *slot.borrow())
+            .ok_or(ProtocolError::InvalidEnvelope)?;
+        HOST.with(|slot| {
+            let mut host_slot = slot.borrow_mut();
+            if host_slot.is_some() {
+                return Err(ProtocolError::InvalidEnvelope);
+            }
+            let mut host = Host::new(app);
+            let batch = host.rebuild()?;
+            // SAFETY: `out` is checked before writing.
+            unsafe { write_batch(out, batch, 0)? };
+            *host_slot = Some(host);
+            Ok(())
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Dispatches one encoded event synchronously and returns its diff batch.
+///
+/// # Safety
+/// `event` must address `len` readable bytes and `out` must be writable.
+pub unsafe extern "C" fn dioxus_compose_host_dispatch_event(
+    event: *const u8,
+    len: u32,
+    out: *mut MutationBatch,
+) -> i32 {
+    ffi_status(|| {
+        // SAFETY: Validated according to the function's C ABI contract.
+        let bytes = unsafe { input_slice(event, len)? };
+        HOST.with(|slot| {
+            let mut host_slot = slot.borrow_mut();
+            let host = host_slot.as_mut().ok_or(ProtocolError::InvalidEnvelope)?;
+            let (batch, result) = host.dispatch_event(bytes)?;
+            // SAFETY: `out` is checked before writing.
+            unsafe { write_batch(out, batch, result) }
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Renders work scheduled before the current platform frame.
+///
+/// # Safety
+/// `out` must point to writable storage for one [`MutationBatch`].
+pub unsafe extern "C" fn dioxus_compose_host_render_frame(
+    frame_time_nanos: u64,
+    out: *mut MutationBatch,
+) -> i32 {
+    ffi_status(|| {
+        HOST.with(|slot| {
+            let mut host_slot = slot.borrow_mut();
+            let host = host_slot.as_mut().ok_or(ProtocolError::InvalidEnvelope)?;
+            let batch = host.render_frame(frame_time_nanos)?;
+            // SAFETY: `out` is checked before writing.
+            unsafe { write_batch(out, batch, 0) }
+        })
+    })
+}
+
+#[unsafe(no_mangle)]
+/// Releases a batch after the Renderer has applied it on the same call stack.
+///
+/// # Safety
+/// `batch` must be null or point to writable storage for one [`MutationBatch`].
+pub unsafe extern "C" fn dioxus_compose_host_release_batch(batch: *mut MutationBatch) {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if !batch.is_null() {
+            // SAFETY: The caller supplied its own writable MutationBatch.
+            unsafe { batch.write(MutationBatch::default()) };
+        }
+    }));
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn dioxus_compose_host_shutdown() {
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        HOST.with(|slot| *slot.borrow_mut() = None);
+        APP.with(|slot| *slot.borrow_mut() = None);
+        FRAME_REQUESTED.store(false, Ordering::Release);
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+    use crate::protocol::{Mutation, PropertyValue, decode_batch};
+    use crate::schema::PropertyKind;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CLICKS: AtomicUsize = AtomicUsize::new(0);
+
+    fn app() -> Element {
+        let mut count = use_signal(|| 0_i64);
+        rsx! {
+            Column {
+                Text { text: count().to_string() }
+                TextField { placeholder: "Message" }
+                Button {
+                    text: "Increment",
+                    on_click: move |_| {
+                        CLICKS.fetch_add(1, Ordering::SeqCst);
+                        *count.write() += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    #[derive(Default)]
+    struct MockRenderer {
+        widgets: HashMap<u32, crate::WidgetKind>,
+        parents: HashMap<u32, u32>,
+    }
+
+    impl MockRenderer {
+        fn apply(&mut self, batch: &[Mutation<'_>]) {
+            for mutation in batch {
+                match mutation {
+                    Mutation::Create { node_id, widget } => {
+                        self.widgets.insert(*node_id, *widget);
+                    }
+                    Mutation::Insert {
+                        parent_id, node_id, ..
+                    }
+                    | Mutation::Move {
+                        parent_id, node_id, ..
+                    } => {
+                        self.parents.insert(*node_id, *parent_id);
+                    }
+                    Mutation::Remove { node_id } => {
+                        self.widgets.remove(node_id);
+                        self.parents.remove(node_id);
+                    }
+                    Mutation::SetProp { .. }
+                    | Mutation::SetModifier { .. }
+                    | Mutation::SetText { .. } => {}
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn click_runs_once_and_emits_only_text_set_prop() {
+        CLICKS.store(0, Ordering::SeqCst);
+        let mut host = Host::new(app);
+        let initial = decode_batch(host.rebuild().unwrap()).unwrap();
+        let mut mock = MockRenderer::default();
+        mock.apply(&initial);
+        assert_eq!(mock.widgets.len(), 4);
+        assert_eq!(mock.parents.len(), 3);
+
+        let (button_node, handler_id) = initial
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::OnClick,
+                    value: PropertyValue::Integer(handler),
+                } => Some((*node_id, *handler as u64)),
+                _ => None,
+            })
+            .unwrap();
+        drop(initial);
+
+        let event = HostEvent {
+            node_id: button_node,
+            handler_id,
+            payload: EventPayload::Click,
+        };
+        let (batch, result) = host.dispatch(event).unwrap();
+        let mutations = decode_batch(batch).unwrap();
+        assert_eq!(CLICKS.load(Ordering::SeqCst), 1);
+        assert_eq!(result, 0);
+        assert_eq!(mutations.len(), 1);
+        assert!(matches!(
+            &mutations[0],
+            Mutation::SetProp {
+                property: PropertyKind::Text,
+                value: PropertyValue::String(value),
+                ..
+            } if *value == "1"
+        ));
+    }
+
+    #[test]
+    fn malformed_ffi_input_returns_protocol_error() {
+        let mut output = MutationBatch::default();
+        // SAFETY: The test passes a valid output pointer and intentionally null input.
+        let status =
+            unsafe { dioxus_compose_host_dispatch_event(std::ptr::null(), 4, &mut output) };
+        assert_eq!(status, STATUS_PROTOCOL_ERROR);
+    }
+
+    #[test]
+    fn all_exports_isolate_invalid_calls() {
+        let mut output = MutationBatch::default();
+        // SAFETY: Each call uses null or valid test-owned pointers as documented.
+        unsafe {
+            assert_eq!(
+                dioxus_compose_host_init(std::ptr::null(), 1, &mut output),
+                STATUS_PROTOCOL_ERROR
+            );
+            assert_eq!(
+                dioxus_compose_host_render_frame(0, &mut output),
+                STATUS_PROTOCOL_ERROR
+            );
+            dioxus_compose_host_release_batch(std::ptr::null_mut());
+        }
+        dioxus_compose_host_shutdown();
+    }
+}

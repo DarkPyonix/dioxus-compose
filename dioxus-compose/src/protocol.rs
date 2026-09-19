@@ -79,6 +79,87 @@ pub enum ProtocolError {
     LengthOverflow,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostEvent<'a> {
+    pub node_id: u32,
+    pub handler_id: u64,
+    pub payload: crate::schema::EventPayload<'a>,
+}
+
+const EVENT_CLICK: u16 = 1;
+const EVENT_TEXT_CHANGED: u16 = 2;
+const EVENT_TEXT_SUBMITTED: u16 = 3;
+const EVENT_FOCUS_LOST: u16 = 4;
+const EVENT_PROTOCOL_ERROR: u16 = 5;
+
+/// Decode one Renderer-to-Host event record.
+pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
+    if bytes.len() < 16 {
+        return Err(ProtocolError::Truncated);
+    }
+    let tag = read_u16(bytes, 0)?;
+    let record_len = usize::from(read_u16(bytes, 2)?);
+    if record_len < 16 || record_len % 4 != 0 || record_len > bytes.len() {
+        return Err(ProtocolError::InvalidRecordLength);
+    }
+    let node_id = read_u32(bytes, 4)?;
+    let handler_id = read_u64(bytes, 8)?;
+    let payload = match tag {
+        EVENT_CLICK if record_len == 16 => crate::schema::EventPayload::Click,
+        EVENT_TEXT_CHANGED if record_len == 24 => {
+            crate::schema::EventPayload::TextChanged(read_string(bytes, 16)?)
+        }
+        EVENT_TEXT_SUBMITTED if record_len == 24 => {
+            crate::schema::EventPayload::TextSubmitted(read_string(bytes, 16)?)
+        }
+        EVENT_FOCUS_LOST if record_len == 16 => crate::schema::EventPayload::FocusLost,
+        EVENT_PROTOCOL_ERROR if record_len == 28 => crate::schema::EventPayload::ProtocolError {
+            code: read_u32(bytes, 16)?,
+            message: read_string(bytes, 20)?,
+        },
+        EVENT_CLICK..=EVENT_PROTOCOL_ERROR => return Err(ProtocolError::InvalidRecordLength),
+        other => return Err(ProtocolError::InvalidTag(other)),
+    };
+    Ok(HostEvent {
+        node_id,
+        handler_id,
+        payload,
+    })
+}
+
+/// Test/mock helper for constructing a Renderer-to-Host event.
+pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
+    output.clear();
+    let (tag, record_len, text, error_code) = match &event.payload {
+        crate::schema::EventPayload::Click => (EVENT_CLICK, 16_u16, None, None),
+        crate::schema::EventPayload::TextChanged(value) => {
+            (EVENT_TEXT_CHANGED, 24, Some(*value), None)
+        }
+        crate::schema::EventPayload::TextSubmitted(value) => {
+            (EVENT_TEXT_SUBMITTED, 24, Some(*value), None)
+        }
+        crate::schema::EventPayload::FocusLost => (EVENT_FOCUS_LOST, 16, None, None),
+        crate::schema::EventPayload::ProtocolError { code, message } => {
+            (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
+        }
+    };
+    output.extend_from_slice(&tag.to_le_bytes());
+    output.extend_from_slice(&record_len.to_le_bytes());
+    output.extend_from_slice(&event.node_id.to_le_bytes());
+    output.extend_from_slice(&event.handler_id.to_le_bytes());
+    if let Some(code) = error_code {
+        output.extend_from_slice(&code.to_le_bytes());
+    }
+    if let Some(text) = text {
+        let offset = u32::from(record_len);
+        let len = u32::try_from(text.len()).map_err(|_| ProtocolError::LengthOverflow)?;
+        output.extend_from_slice(&offset.to_le_bytes());
+        output.extend_from_slice(&len.to_le_bytes());
+        output.extend_from_slice(text.as_bytes());
+    }
+    Ok(())
+}
+
 impl fmt::Display for ProtocolError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "protocol error: {self:?}")
@@ -509,5 +590,36 @@ mod tests {
         bytes.extend_from_slice(&8_u16.to_le_bytes());
         bytes.extend_from_slice(&0_u32.to_le_bytes());
         assert_eq!(decode_batch(&bytes), Err(ProtocolError::InvalidTag(999)));
+    }
+
+    #[test]
+    fn round_trips_renderer_events() {
+        let events = [
+            HostEvent {
+                node_id: 7,
+                handler_id: 11,
+                payload: crate::EventPayload::Click,
+            },
+            HostEvent {
+                node_id: 8,
+                handler_id: 12,
+                payload: crate::EventPayload::TextChanged("한글"),
+            },
+            HostEvent {
+                node_id: 8,
+                handler_id: 13,
+                payload: crate::EventPayload::TextSubmitted("done"),
+            },
+            HostEvent {
+                node_id: 8,
+                handler_id: 14,
+                payload: crate::EventPayload::FocusLost,
+            },
+        ];
+        let mut bytes = Vec::new();
+        for event in events {
+            encode_event(&event, &mut bytes).unwrap();
+            assert_eq!(decode_event(&bytes).unwrap(), event);
+        }
     }
 }
