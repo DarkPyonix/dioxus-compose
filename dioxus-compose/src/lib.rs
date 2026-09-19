@@ -18,6 +18,9 @@ pub use widgets::{Button, Column, ComposeBox as Box, Row, Spacer, Text, TextFiel
 
 pub mod prelude {
     pub use crate as dioxus_elements;
+    // SPEC-GAP: dioxus-core 0.7's rsx! expansion uses unqualified `Box<T>`.
+    // Exporting the Compose `Box` through this glob prelude shadows it. Use
+    // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
         Button, Column, Element, LaunchBuilder, LoopMode, Modifier, Row, Spacer, Text, TextField,
         component, launch, rsx,

@@ -465,6 +465,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
 
 fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
     match modifier {
+        Modifier::Empty => (0, 0, 0),
         Modifier::Padding(value) => (1, u64::from(value.to_bits()), 0),
         Modifier::FillMaxWidth => (2, 0, 0),
         Modifier::FillMaxHeight => (3, 0, 0),
@@ -480,6 +481,7 @@ fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
 
 fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, ProtocolError> {
     match tag {
+        0 => Ok(Modifier::Empty),
         1 => Ok(Modifier::Padding(f32::from_bits(first as u32))),
         2 => Ok(Modifier::FillMaxWidth),
         3 => Ok(Modifier::FillMaxHeight),

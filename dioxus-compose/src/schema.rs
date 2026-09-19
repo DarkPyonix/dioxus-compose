@@ -5,7 +5,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer;",
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost;",
-    "modifiers=Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
+    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
     "events=Click,TextChanged,TextSubmitted,FocusLost,ProtocolError;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText"
 );
@@ -70,6 +70,7 @@ pub struct Selection {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Modifier {
+    Empty,
     Padding(f32),
     FillMaxWidth,
     FillMaxHeight,

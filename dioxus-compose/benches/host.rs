@@ -123,6 +123,8 @@ fn benchmarks(criterion: &mut Criterion) {
     TRACKING.store(true, Ordering::SeqCst);
     let _ = allocation_host.dispatch(allocation_click).unwrap();
     TRACKING.store(false, Ordering::SeqCst);
+    // SPEC-GAP: dioxus-core's event dispatch/diff path allocates internally;
+    // this measurement separates that cost from the zero-allocation arena.
     eprintln!(
         "measured_host_steady_state_allocations={}",
         ALLOCATIONS.load(Ordering::SeqCst)

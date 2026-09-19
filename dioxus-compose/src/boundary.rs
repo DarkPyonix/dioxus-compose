@@ -285,6 +285,8 @@ unsafe fn write_batch(
 }
 
 fn ffi_status(operation: impl FnOnce() -> Result<(), ProtocolError>) -> i32 {
+    // SPEC-GAP: PR-2 provides no Host-to-Renderer event return channel for a
+    // ProtocolError event. Malformed calls therefore return STATUS_PROTOCOL_ERROR.
     match catch_unwind(AssertUnwindSafe(operation)) {
         Ok(Ok(())) => STATUS_OK,
         Ok(Err(_)) => STATUS_PROTOCOL_ERROR,

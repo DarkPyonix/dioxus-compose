@@ -348,7 +348,7 @@ impl WriteMutations for ComposeRenderer {
         id: ElementId,
     ) {
         if let Some(node_id) = self.node(id) {
-            if let (Some(index), AttributeValue::Bool(true)) = (
+            if let (Some(index), AttributeValue::Bool(enabled)) = (
                 match name {
                     "fill_max_width" => Some(0),
                     "fill_max_height" => Some(1),
@@ -359,15 +359,14 @@ impl WriteMutations for ComposeRenderer {
                 self.write(Mutation::SetModifier {
                     node_id,
                     index,
-                    modifier: if name == "fill_max_width" {
+                    modifier: if !enabled {
+                        crate::Modifier::Empty
+                    } else if name == "fill_max_width" {
                         crate::Modifier::FillMaxWidth
                     } else {
                         crate::Modifier::FillMaxHeight
                     },
                 });
-                return;
-            }
-            if matches!(name, "fill_max_width" | "fill_max_height") {
                 return;
             }
             self.set_property(node_id, name, value);
