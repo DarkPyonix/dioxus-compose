@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Builds the renderer as a native shared library and stages a self-contained lib/ directory:
+#
+#   build/native-image/dist/lib/
+#     libdioxus_compose_renderer.dylib   the renderer (AWT, Skiko JNI, Compose, our code)
+#     libskiko-macos-<arch>.dylib        Skia, loaded by Skiko by path
+#     libjawt.dylib                      forwards JAWT_GetAWT into the renderer
+#     libawt_lwawt.dylib                 placeholder libawt loads by path
+set -euo pipefail
+source "$(dirname "$0")/env.sh"
+
+[[ "$(uname -s)" == "Darwin" ]] || { echo "error: only macOS is scripted so far" >&2; exit 1; }
+arch="$(uname -m)"
+skiko_arch="$([[ "$arch" == "arm64" ]] && echo arm64 || echo x64)"
+
+# The classpath comes from a short JVM run so that it matches what the metadata describes.
+DIOXUS_COMPOSE_AUTOEXIT_MS=1 run_on_jvm ""
+classpath="$(cat "$CLASSPATH_FILE")"
+obj="$BUILD_DIR/obj"
+lib="$DIST_DIR/lib"
+rm -rf "$DIST_DIR" "$obj"
+mkdir -p "$obj" "$lib"
+
+cc -c -O2 -arch "$arch" -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
+cc -c -O2 -arch "$arch" -o "$obj/macos_awt_compat.o" "$NATIVE_DIR/c/macos_awt_compat.c"
+cc -c -O2 -arch "$arch" -o "$obj/macos_main_thread.o" "$NATIVE_DIR/c/macos_main_thread.m"
+
+exported=(dioxus_compose_renderer_run dioxus_compose_renderer_request_frame
+          dioxus_compose_jawt_get_awt JNI_OnLoad_osxui)
+linker_args=("-H:NativeLinkerOption=$obj/renderer_entry.o" "-H:NativeLinkerOption=$obj/macos_awt_compat.o"
+             "-H:NativeLinkerOption=$obj/macos_main_thread.o"
+             "-H:NativeLinkerOption=-Wl,-install_name,@rpath/$LIBRARY_NAME.dylib")
+for symbol in "${exported[@]}"; do
+    linker_args+=("-H:NativeLinkerOption=-Wl,-exported_symbol,_$symbol")
+done
+
+(cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
+    --shared \
+    -cp "$classpath" \
+    -o "$LIBRARY_NAME" \
+    --no-fallback \
+    -Djava.awt.headless=false \
+    -H:IncludeLocales=en,ko \
+    -Os \
+    -H:+UnlockExperimentalVMOptions \
+    "${linker_args[@]}")
+
+skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-macos-$skiko_arch" | head -1)"
+unzip -q -o -j "$skiko_jar" "libskiko-macos-$skiko_arch.dylib" -d "$lib"
+cc -dynamiclib -O2 -arch "$arch" -install_name @rpath/libjawt.dylib \
+    -o "$lib/libjawt.dylib" "$NATIVE_DIR/c/jawt_forwarder.c"
+cc -dynamiclib -O2 -arch "$arch" -install_name @rpath/libawt_lwawt.dylib \
+    -o "$lib/libawt_lwawt.dylib" "$NATIVE_DIR/c/lwawt_placeholder.c"
+
+# native-image leaves headers and build reports next to the library; keep lib/ runtime-only.
+mkdir -p "$DIST_DIR/include"
+mv "$lib"/*.h "$DIST_DIR/include/" 2>/dev/null || true
+rm -f "$lib"/*.md
+
+ls -la "$lib"
