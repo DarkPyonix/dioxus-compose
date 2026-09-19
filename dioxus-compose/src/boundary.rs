@@ -5,10 +5,13 @@ use crate::{Element, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
 use std::ffi::c_int;
+use std::future::Future;
 use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::pin::pin;
 use std::rc::Rc;
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::task::{Context, Poll, Wake, Waker};
 
 pub const STATUS_OK: i32 = 0;
 pub const STATUS_PROTOCOL_ERROR: i32 = -1;
@@ -47,30 +50,30 @@ pub fn install_renderer_api(api: RendererApi) -> Result<(), RendererApi> {
     RENDERER_API.set(api)
 }
 
-#[cfg(not(any(test, feature = "mock-renderer")))]
+#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
 unsafe extern "C" {
     fn dioxus_compose_renderer_run() -> c_int;
     fn dioxus_compose_renderer_request_frame();
 }
 
-#[cfg(not(any(test, feature = "mock-renderer")))]
+#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
 extern "C" fn native_run() -> c_int {
     // SAFETY: The application links the Renderer implementation of this declared C ABI.
     unsafe { dioxus_compose_renderer_run() }
 }
 
-#[cfg(not(any(test, feature = "mock-renderer")))]
+#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
 extern "C" fn native_request_frame() {
     // SAFETY: The Renderer contract makes request_frame thread-safe.
     unsafe { dioxus_compose_renderer_request_frame() }
 }
 
-#[cfg(any(test, feature = "mock-renderer"))]
+#[cfg(any(test, feature = "mock-renderer", not(feature = "native-renderer")))]
 extern "C" fn native_run() -> c_int {
     STATUS_OK
 }
 
-#[cfg(any(test, feature = "mock-renderer"))]
+#[cfg(any(test, feature = "mock-renderer", not(feature = "native-renderer")))]
 extern "C" fn native_request_frame() {}
 
 fn renderer_api() -> RendererApi {
@@ -80,19 +83,29 @@ fn renderer_api() -> RendererApi {
     })
 }
 
-/// Coalesced wake used by Host worker integrations.
-// SPEC-GAP: dioxus-core 0.7 does not expose its scheduler wake callback, so a
-// worker integration must call this after updating a signal. User UI code does
-// not call the C boundary directly.
+/// Coalesced wake used internally by the Dioxus scheduler waker.
 pub fn request_frame_from_worker() {
     if !FRAME_REQUESTED.swap(true, Ordering::AcqRel) {
         (renderer_api().request_frame)();
     }
 }
 
+struct FrameWake;
+
+impl Wake for FrameWake {
+    fn wake(self: Arc<Self>) {
+        request_frame_from_worker();
+    }
+
+    fn wake_by_ref(self: &Arc<Self>) {
+        request_frame_from_worker();
+    }
+}
+
 pub struct Host {
     dom: VirtualDom,
     renderer: ComposeRenderer,
+    frame_waker: Waker,
 }
 
 impl Host {
@@ -100,12 +113,14 @@ impl Host {
         Self {
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
+            frame_waker: Waker::from(Arc::new(FrameWake)),
         }
     }
 
     pub fn rebuild(&mut self) -> Result<&[u8], ProtocolError> {
         self.renderer.begin_frame();
         self.dom.rebuild(&mut self.renderer);
+        self.arm_scheduler_wake();
         self.renderer.finish_frame()
     }
 
@@ -135,6 +150,7 @@ impl Host {
         self.dom.runtime().handle_event(name, event_data, element);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
+        self.arm_scheduler_wake();
         // SPEC-GAP: dioxus-core EventHandler callbacks return (), so the M0
         // adapter reserves result=0 until a typed synchronous handler API exists.
         Ok((self.renderer.finish_frame()?, 0))
@@ -144,6 +160,7 @@ impl Host {
         FRAME_REQUESTED.store(false, Ordering::Release);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
+        self.arm_scheduler_wake();
         self.renderer.finish_frame()
     }
 
@@ -160,6 +177,15 @@ impl Host {
 
     pub fn handler_target(&self, handler_id: u64) -> Option<ElementId> {
         self.renderer.handler(handler_id).map(|value| value.0)
+    }
+
+    fn arm_scheduler_wake(&mut self) {
+        let mut context = Context::from_waker(&self.frame_waker);
+        let future = self.dom.wait_for_work();
+        let mut future = pin!(future);
+        if future.as_mut().poll(&mut context) == Poll::Ready(()) {
+            request_frame_from_worker();
+        }
     }
 }
 

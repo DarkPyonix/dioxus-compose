@@ -11,6 +11,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 [features]
 default = []
 mock-renderer = []
+native-renderer = []
 
 [dependencies]
 dioxus-core.workspace = true
