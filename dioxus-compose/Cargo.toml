@@ -4,6 +4,11 @@ version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
+description = "Write declarative UI in Rust with Dioxus and render it with an AOT-compiled Compose Multiplatform renderer - no webview, no bundled JVM"
+repository = "https://github.com/DarkPyonix/dioxus-compose"
+homepage = "http://darkpyonix.dev/dioxus-compose/"
+keywords = ["ui", "gui", "dioxus", "compose", "desktop"]
+categories = ["gui"]
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]
