@@ -42,6 +42,8 @@ class Node internal constructor(val id: Int, val widget: WidgetKind) {
 
     /** Handler ids arrive as integer property values (SPEC FR-3). */
     fun handler(kind: PropertyKind): Long? = (props[kind] as? PropertyValue.Integer)?.value
+
+    fun number(kind: PropertyKind): Float? = (props[kind] as? PropertyValue.Float)?.value
 }
 
 /** A protocol violation that must become a `ProtocolError` event, never a crash (NFR-7). */
@@ -296,6 +298,10 @@ class NodeTable {
                     widget == WidgetKind.ScrollColumn
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
+
+                // FR-11: a property declared by an extension package belongs to the widget
+                // that package declared it for.
+                PropertyKind.Progress -> widget == WidgetKind.LinearProgressIndicator
             }
     }
 }

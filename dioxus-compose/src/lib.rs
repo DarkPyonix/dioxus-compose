@@ -3,6 +3,7 @@
 pub mod boundary;
 #[doc(hidden)]
 pub mod codegen;
+mod extensions;
 pub mod protocol;
 pub mod renderer;
 pub mod schema;
@@ -16,6 +17,7 @@ pub use boundary::{
 pub use dioxus_core::{Element, VirtualDom};
 pub use dioxus_core_macro::{component, rsx};
 pub use elements::*;
+pub use extensions::LinearProgressIndicator;
 pub use schema::{
     Alignment, Arrangement, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
     EventPayload, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection, ShapeRole,
@@ -33,9 +35,9 @@ pub mod prelude {
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
         Alignment, Arrangement, Button, ButtonVariant, Color, ColorRole, ColorScheme, Column,
-        DesignSystem, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LoopMode, Modifier, Paint,
-        RangeRequest, Row, ScrollColumn, ShapeRole, SpaceRole, Spacer, Text, TextAlign, TextField,
-        TextOverflow, Theme, TypeRole, component, launch, rsx,
+        DesignSystem, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LinearProgressIndicator,
+        LoopMode, Modifier, Paint, RangeRequest, Row, ScrollColumn, ShapeRole, SpaceRole, Spacer,
+        Text, TextAlign, TextField, TextOverflow, Theme, TypeRole, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -46,6 +48,8 @@ pub mod elements {
     #![allow(non_upper_case_globals)]
 
     pub type AttributeDescription = (&'static str, Option<&'static str>, bool);
+
+    pub use crate::extensions::elements::*;
 
     macro_rules! element {
         ($module:ident, $tag:literal, [$($attribute:ident),* $(,)?]) => {
