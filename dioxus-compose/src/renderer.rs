@@ -112,6 +112,20 @@ impl ComposeRenderer {
         });
     }
 
+    /// Copies one asset into the batch. The bytes ride behind the records, and the
+    /// Renderer takes its own copy inside the call that carries them.
+    pub fn register_asset(&mut self, asset_id: u32, kind: crate::schema::AssetKind, bytes: &[u8]) {
+        self.write(Mutation::RegisterAsset {
+            asset_id,
+            kind,
+            bytes,
+        });
+    }
+
+    pub fn release_asset(&mut self, asset_id: u32) {
+        self.write(Mutation::ReleaseAsset { asset_id });
+    }
+
     /// Append the streamed tail to a Text node without resending its whole value.
     pub fn append_text_node(&mut self, node_id: u32, text: &str) {
         self.write(Mutation::AppendText { node_id, text });
@@ -510,6 +524,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
+        "change" | "onchange" => Some(PropertyKind::OnValueChange),
         _ => None,
     }
 }

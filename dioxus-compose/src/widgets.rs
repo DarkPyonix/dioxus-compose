@@ -419,3 +419,102 @@ pub fn Tooltip(#[props(into)] text: String, children: Element) -> Element {
         tooltip { text, {children} }
     }
 }
+
+/// A registered asset drawn as a picture. The bytes reached the Renderer once, through
+/// `Host::register_asset`, and what crosses per frame is the id.
+#[component]
+pub fn Image(asset_id: u32) -> Element {
+    rsx! {
+        image { asset: i64::from(asset_id) }
+    }
+}
+
+/// A registered icon, tinted by a role. `Host::register_icon` registers the meaning rather
+/// than a picture, so the same declaration comes out as the icon each design system draws.
+#[component]
+pub fn Icon(asset_id: u32, #[props(default)] color: Option<Paint>) -> Element {
+    rsx! {
+        icon {
+            asset: i64::from(asset_id),
+            color: color.map_or(0, |paint| paint.to_bits() as i64),
+        }
+    }
+}
+
+/// A date, as whole days since 1970-01-01.
+///
+/// The widget says what the value is and what range is allowed. How it is picked, a
+/// calendar grid, a wheel or a flyout, belongs to the design system, and there is no
+/// property that lets the Host ask for one of them.
+///
+/// Time zone, locale, the first day of the week and the display format stay in the
+/// Renderer, which is the only side that can read the platform's settings. A format string
+/// crossing here would turn "follows the platform" into a claim the Renderer cannot keep.
+#[component]
+pub fn DatePicker(
+    /// Days since 1970-01-01.
+    value: i64,
+    #[props(default)] min: Option<i64>,
+    #[props(default)] max: Option<i64>,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<i64>,
+) -> Element {
+    rsx! {
+        datepicker {
+            value,
+            min: min.unwrap_or(i64::MIN),
+            max: max.unwrap_or(i64::MAX),
+            enabled,
+            onchange: move |event: dioxus_core::Event<i64>| on_change.call(*event.data()),
+        }
+    }
+}
+
+/// A time of day, as minutes since midnight.
+///
+/// Whether it is picked on a dial, a wheel or a list is the design system's decision, and
+/// whether it reads as 12 or 24 hour is the platform's.
+#[component]
+pub fn TimePicker(
+    /// Minutes since midnight.
+    value: u32,
+    #[props(default)] min: Option<u32>,
+    #[props(default)] max: Option<u32>,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<u32>,
+) -> Element {
+    rsx! {
+        timepicker {
+            value: i64::from(value),
+            min: i64::from(min.unwrap_or(0)),
+            max: i64::from(max.unwrap_or(MINUTES_IN_A_DAY - 1)),
+            enabled,
+            onchange: move |event: dioxus_core::Event<i64>| {
+                on_change.call((*event.data()).clamp(0, i64::from(MINUTES_IN_A_DAY - 1)) as u32)
+            },
+        }
+    }
+}
+
+const MINUTES_IN_A_DAY: u32 = 24 * 60;
+
+/// One choice out of a list. Each child is one option, and the Renderer reports the
+/// position the user landed on.
+#[component]
+pub fn Dropdown(
+    #[props(default)] selected_index: usize,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<usize>,
+    children: Element,
+) -> Element {
+    rsx! {
+        dropdown {
+            selected_index: selected_index as i64,
+            enabled,
+            onchange: move |event: dioxus_core::Event<i64>| {
+                on_change.call((*event.data()).max(0) as usize)
+            },
+            {children}
+        }
+    }
+}

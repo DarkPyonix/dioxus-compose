@@ -19,13 +19,14 @@ pub use dioxus_core_macro::{component, rsx};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use schema::{
-    Alignment, Arrangement, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
-    EventPayload, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection, ShapeRole,
-    SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
+    Alignment, Arrangement, AssetKind, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
+    EventPayload, IconRole, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection,
+    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
 };
 pub use widgets::{
-    Button, Card, Column, ComposeBox as Box, Dialog, KeyEvent, LazyColumn, LazyRow, Menu,
-    RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs, Text, TextField, Tooltip, TopAppBar,
+    Button, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image, KeyEvent,
+    LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs, Text,
+    TextField, TimePicker, Tooltip, TopAppBar,
 };
 
 pub mod prelude {
@@ -34,11 +35,12 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, Button, ButtonVariant, Card, Color, ColorRole, ColorScheme, Column,
-        DesignSystem, Dialog, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
-        LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
-        ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
-        Theme, Tooltip, TopAppBar, TypeRole, component, launch, rsx,
+        Alignment, Arrangement, AssetKind, Button, ButtonVariant, Card, Color, ColorRole,
+        ColorScheme, Column, DatePicker, DesignSystem, Dialog, Dropdown, Element, Icon, IconRole,
+        Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow, LinearProgressIndicator,
+        LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn, ShapeRole, SpaceRole,
+        Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
+        Tooltip, TopAppBar, TypeRole, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -125,6 +127,11 @@ pub mod elements {
     element!(button, "Button", [text, enabled, variant]);
     element!(spacer, "Spacer", [width, height]);
     element!(lazycolumn, "LazyColumn", [item_count]);
+    // Widget tags 10 and 11. An asset id is the whole of what they carry: the bytes were
+    // copied into the Renderer's cache once, at registration.
+    element!(image, "Image", [asset]);
+    // An Icon takes a tint as well, through the same Paint attribute Text uses.
+    element!(icon, "Icon", [asset, color]);
     // Widget tags 18 to 25. Each one emits roles and children only: how a card, a bar or a
     // popup is drawn belongs to the design system, not to the Host that declared it.
     element!(card, "Card", []);
@@ -139,6 +146,12 @@ pub mod elements {
     element!(topappbar, "TopAppBar", []);
     element!(lazyrow, "LazyRow", [item_count]);
     element!(tooltip, "Tooltip", [text]);
+    // Widget tags 27 to 29. A picker carries a value, a range and a change event, and
+    // nothing that says how the user should pick: a calendar grid, a dial, a wheel or a
+    // flyout is the design system's decision.
+    element!(datepicker, "DatePicker", [value, min, max, enabled]);
+    element!(timepicker, "TimePicker", [value, min, max, enabled]);
+    element!(dropdown, "Dropdown", [selected_index, enabled]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
     element!(
         scrollcolumn,
@@ -167,6 +180,11 @@ pub mod elements {
             topappbar {},
             lazyrow {},
             tooltip {},
+            image {},
+            icon {},
+            datepicker {},
+            timepicker {},
+            dropdown {},
         }
     }
 }
@@ -210,4 +228,8 @@ pub mod events {
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
+    // A picker reports the value the user landed on, as the epoch integer the widget
+    // speaks. It shares the wire property with the text field's value change, because
+    // both are "this control's value is now this".
+    event!(onchange, i64);
 }
