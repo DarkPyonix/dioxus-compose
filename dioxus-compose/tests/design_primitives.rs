@@ -42,7 +42,8 @@ fn props_of(app: fn() -> Element) -> Vec<(PropertyKind, PropertyValue<'static>)>
             } => Some((
                 property,
                 match value {
-                    PropertyValue::String(_) => PropertyValue::None,
+                    // Neither strings nor byte blobs are compared by value here.
+                    PropertyValue::String(_) | PropertyValue::Bytes(_) => PropertyValue::None,
                     PropertyValue::None => PropertyValue::None,
                     PropertyValue::Bool(value) => PropertyValue::Bool(value),
                     PropertyValue::Integer(value) => PropertyValue::Integer(value),

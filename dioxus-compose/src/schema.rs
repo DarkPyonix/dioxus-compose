@@ -63,8 +63,8 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,open,on_dismiss,selected_index;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,open,on_dismiss,selected_index,commands;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested;",
@@ -136,6 +136,31 @@ const fn schema_hash() -> u64 {
                     FieldSlot::Second => 5,
                 }],
             );
+            field_index += 1;
+        }
+        index += 1;
+    }
+    index = 0;
+    while index < crate::drawing::DRAW_COMMAND_SCHEMA.len() {
+        let command = crate::drawing::DRAW_COMMAND_SCHEMA[index];
+        hash = hash_bytes(hash, command.name.as_bytes());
+        hash = hash_bytes(hash, &command.tag.to_le_bytes());
+        let mut field_index = 0;
+        while field_index < command.fields.len() {
+            let field = command.fields[field_index];
+            hash = hash_bytes(hash, field.name.as_bytes());
+            hash = hash_bytes(hash, &[field.word]);
+            hash = hash_bytes(
+                hash,
+                &[match field.ty {
+                    crate::drawing::DrawFieldType::Float => 1,
+                    crate::drawing::DrawFieldType::U32 => 2,
+                    crate::drawing::DrawFieldType::Role(_) => 3,
+                }],
+            );
+            if let crate::drawing::DrawFieldType::Role(role) = field.ty {
+                hash = hash_bytes(hash, role.as_bytes());
+            }
             field_index += 1;
         }
         index += 1;
@@ -233,6 +258,8 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     TopAppBar = 23,
     LazyRow = 24,
     Tooltip = 25,
+    // Drawing commands instead of child nodes. The command list is its only property.
+    Canvas = 26,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -814,6 +841,8 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     Open = 40,
     OnDismiss = 41,
     SelectedIndex = 42,
+    // The Canvas drawing command list, a byte blob in the batch arena.
+    Commands = 50,
 });
 
 #[derive(Clone, Debug, PartialEq)]

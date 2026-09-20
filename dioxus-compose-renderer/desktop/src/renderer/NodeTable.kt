@@ -51,6 +51,9 @@ class Node internal constructor(val id: Int, val widget: WidgetKind) {
     fun handler(kind: PropertyKind): Long? = (props[kind] as? PropertyValue.Integer)?.value
 
     fun number(kind: PropertyKind): Float? = (props[kind] as? PropertyValue.Float)?.value
+
+    /** The raw bytes of a byte-valued property, such as a Canvas command list. */
+    fun bytes(kind: PropertyKind): ByteArray? = (props[kind] as? PropertyValue.Bytes)?.value
 }
 
 /** A protocol violation that must become a `ProtocolError` event, never a crash. */
@@ -304,6 +307,10 @@ class NodeTable {
                     widget == WidgetKind.ScrollColumn
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
+
+                // Drawing commands belong to the Canvas alone: no other widget draws
+                // anything the Host described command by command.
+                PropertyKind.Commands -> widget == WidgetKind.Canvas
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.

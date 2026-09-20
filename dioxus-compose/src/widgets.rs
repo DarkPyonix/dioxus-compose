@@ -7,6 +7,7 @@ use dioxus_signals::WritableExt as _;
 
 use crate as dioxus_elements;
 use crate::Key;
+use crate::drawing::DrawList;
 use crate::schema::{
     Alignment, Arrangement, ButtonVariant, Paint, SpaceRole, TextAlign, TextOverflow, TypeRole,
 };
@@ -417,5 +418,21 @@ pub fn LazyRow(
 pub fn Tooltip(#[props(into)] text: String, children: Element) -> Element {
     rsx! {
         tooltip { text, {children} }
+    }
+}
+
+/// Pixels the widget vocabulary cannot produce: charts, sparklines, signature pads, rings.
+///
+/// The list is a value, not a callback, because drawing code cannot cross the boundary into
+/// an ahead-of-time compiled Renderer. Two equal lists are one attribute comparison, so a
+/// frame that redraws the same chart sends nothing. Size comes from the Modifier chain, and
+/// coordinates are dp from the widget's top-left corner.
+///
+/// Colour goes through `Paint`, so `Paint::Role(ColorRole::Primary)` draws in whatever the
+/// active design system calls primary.
+#[component]
+pub fn Canvas(commands: DrawList) -> Element {
+    rsx! {
+        canvas { commands }
     }
 }

@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod boundary;
+pub mod drawing;
 #[doc(hidden)]
 pub mod codegen;
 mod extensions;
@@ -14,6 +15,7 @@ pub use boundary::{
     Host, LaunchBuilder, MutationBatch, RendererApi, install_renderer_api, launch,
     request_frame_from_worker,
 };
+pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
 pub use dioxus_core::{Element, VirtualDom};
 pub use dioxus_core_macro::{component, rsx};
 pub use elements::*;
@@ -24,7 +26,7 @@ pub use schema::{
     SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
 };
 pub use widgets::{
-    Button, Card, Column, ComposeBox as Box, Dialog, KeyEvent, LazyColumn, LazyRow, Menu,
+    Button, Canvas, Card, Column, ComposeBox as Box, Dialog, KeyEvent, LazyColumn, LazyRow, Menu,
     RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs, Text, TextField, Tooltip, TopAppBar,
 };
 
@@ -34,8 +36,9 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, Button, ButtonVariant, Card, Color, ColorRole, ColorScheme, Column,
-        DesignSystem, Dialog, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
+        Alignment, Arrangement, Button, ButtonVariant, Canvas, Card, Color, ColorRole, ColorScheme,
+        Column, DesignSystem, Dialog, DrawCommand, DrawList, Element, Key, KeyEvent, LaunchBuilder,
+        LazyColumn, LazyRow,
         LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
         ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
         Theme, Tooltip, TopAppBar, TypeRole, component, launch, rsx,
@@ -139,6 +142,9 @@ pub mod elements {
     element!(topappbar, "TopAppBar", []);
     element!(lazyrow, "LazyRow", [item_count]);
     element!(tooltip, "Tooltip", [text]);
+    // The command list is a byte blob, so it is one attribute and one SetProp. An
+    // unchanged list compares equal and produces no mutation at all.
+    element!(canvas, "Canvas", [commands]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
     element!(
         scrollcolumn,
@@ -167,6 +173,7 @@ pub mod elements {
             topappbar {},
             lazyrow {},
             tooltip {},
+            canvas {},
         }
     }
 }

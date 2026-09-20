@@ -22,6 +22,7 @@ import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostCanvas
 import dioxus.compose.foundation.HostLazyColumn
 import dioxus.compose.foundation.HostTextField
 import dioxus.compose.foundation.hostKeyEvents
@@ -109,6 +110,9 @@ fun RenderNode(
         WidgetKind.Button -> HostButton(node, modifier, dispatcher, theme)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
         WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
+        // Drawing commands rather than children: the size comes from the modifier chain
+        // and the commands are read from the node's one property.
+        WidgetKind.Canvas -> HostCanvas(node, modifier, theme)
         // ScrollColumn is a column that scrolls without the Host windowing it, so every
         // child is materialised. Use LazyColumn when the list is long.
         //

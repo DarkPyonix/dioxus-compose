@@ -31,7 +31,8 @@ fn records(batch: &[u8]) -> Vec<Record> {
                 match value {
                     // The assertions here never look at string contents except through
                     // `text_of`, which reads the batch directly.
-                    PropertyValue::String(_) => PropertyValue::None,
+                    // Neither strings nor byte blobs are compared by value here.
+                    PropertyValue::String(_) | PropertyValue::Bytes(_) => PropertyValue::None,
                     PropertyValue::None => PropertyValue::None,
                     PropertyValue::Bool(value) => PropertyValue::Bool(value),
                     PropertyValue::Integer(value) => PropertyValue::Integer(value),
