@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/split-branches.sh.
+# Tests for scripts/publish-main.sh.
 #
 # Every case runs against a throwaway repository built in a temporary
 # directory -- never against this repository, and never against any remote.
@@ -7,7 +7,7 @@
 set -uo pipefail
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-split="$script_dir/../split-branches.sh"
+split="$script_dir/../publish-main.sh"
 
 failures=0
 pass() { echo "ok   - $1"; }
@@ -174,4 +174,4 @@ if (( failures )); then
     echo "$failures test(s) failed" >&2
     exit 1
 fi
-echo "all split-branches.sh tests passed"
+echo "all publish-main.sh tests passed"

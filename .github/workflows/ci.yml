@@ -84,7 +84,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run scripts/tests
-        # scripts/split-branches.sh and scripts/install-nik.sh carry their own
+        # scripts/publish-main.sh and scripts/install-nik.sh carry their own
         # tests; they run against throwaway temporary directories only.
         run: |
           set -euo pipefail
