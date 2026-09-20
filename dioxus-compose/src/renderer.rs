@@ -227,7 +227,9 @@ impl ComposeRenderer {
             "padding" => Some(Some((PADDING, Modifier::Padding(float(value)?)))),
             "padding_role" => Some(Some((
                 PADDING,
-                Modifier::PaddingRole(crate::SpaceRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?),
+                Modifier::PaddingRole(
+                    crate::SpaceRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                ),
             ))),
             "elevation" => Some(Some((ELEVATION, Modifier::Elevation(float(value)?)))),
             "corner_radius" => {
@@ -244,7 +246,9 @@ impl ComposeRenderer {
             }
             "shape_role" => Some(Some((
                 SHAPE,
-                Modifier::ShapeRole(crate::ShapeRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?),
+                Modifier::ShapeRole(
+                    crate::ShapeRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                ),
             ))),
             // Colour crosses as the bits of a Paint, so a role and a literal colour take
             // the same path and there is one wire representation of colour.
