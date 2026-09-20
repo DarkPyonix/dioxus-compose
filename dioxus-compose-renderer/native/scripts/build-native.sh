@@ -50,6 +50,52 @@ for symbol in "${exported[@]}"; do
     linker_args+=("-H:NativeLinkerOption=-Wl,-exported_symbol,_$symbol")
 done
 
+# Heap and GC settings for NFR-3 (SPEC 5.2 levers 1 and 2). `-R:` options are baked in as
+# the image's runtime defaults. Measure with native/scripts/measure-memory.sh.
+#
+# Measured 2026-09-20 (M1, smoke test window): pinning the maximum does not move the
+# footprint. At the default (80% of RAM), at 64MB and at 24MB the MALLOC_SMALL region is
+# 14MB in all three runs, because the Serial GC's adaptive policy already sizes the heap to
+# the live set rather than to the maximum. The Java heap is the 2.5MB untagged VM_ALLOCATE
+# region, not the 14MB of MALLOC_SMALL, which is Skia's native allocation.
+#
+# The cap stays because it bounds the worst case rather than the steady state: without it a
+# runaway allocation may grow to gigabytes before the collector reacts. 64MB is many times
+# the live set, so collections stay in the young generation and do not lengthen frames
+# (5.1's budget is 8.33ms). Do not lower it to buy footprint; it does not buy any.
+memory_args=("-R:MaxHeapSize=64m"
+             "-R:MaxHeapFree=4m"
+             "-R:MaximumYoungGenerationSizePercent=25")
+
+# Graphics (SPEC 5.2 lever 3) is deliberately not configured here, and this records why so
+# that the next person does not spend another build finding out.
+#
+# The graphics surfaces are the largest block of the footprint (about 22MB of the measured
+# total), and Skiko does expose the two knobs 5.2 asks for: `skiko.buffering=DOUBLE` drops
+# the Metal drawable count from three to two, and `skiko.gpu.resourceCacheLimit` caps Skia's
+# GPU resource cache. Measured on the JVM (2026-09-20, M1), DOUBLE is worth about 1.9MB:
+# IOSurface falls from 9584KB in 9 regions to 7696KB in 7.
+#
+# They cannot be set from this script. Skiko reads them through System.getProperty at run
+# time, and passing `-D` to native-image only sets the property for the build JVM: a shared
+# library has no command line, so nothing carries the value into the image. A rebuild with
+# `-Dskiko.buffering=DOUBLE` measured byte for byte identical to one without it. This
+# GraalVM has no option that bakes a runtime system property either, and
+# `--initialize-at-build-time` for SkikoProperties is not a substitute: its static
+# initialiser snapshots the whole System.getProperties() table, which would freeze the build
+# machine's java.home and user.home into the shipped artifact.
+#
+# The fix belongs in native/src/RuntimeLayout.kt, whose configureRuntimeLayout already sets
+# skiko.library.path and skiko.data.path at run time before Skiko initialises. Adding the
+# two properties there (guarded on getProperty being null, so an operator can override) is
+# the supported way to get this 1.9MB. That file is owned by another engineer.
+
+# Locale and reachability (SPEC 5.2 levers 4 and 5) are already as small as they can safely
+# go. `-H:IncludeLocales=en,ko` is the minimum the product supports and ko is not removable:
+# Korean IME is a SPEC 6 requirement. Neither shows up in the footprint anyway. Locale data,
+# image code and read-only image heap land in __TEXT and clean __DATA, which the physical
+# footprint does not count; only the 7.6MB of dirty __DATA does. Shrinking reachable code
+# mostly shrinks the 65MB on disk, not the resident cost.
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
     --shared \
     -cp "$classpath" \
@@ -60,6 +106,7 @@ done
     -H:IncludeLocales=en,ko \
     -Os \
     -H:+UnlockExperimentalVMOptions \
+    "${memory_args[@]}" \
     "${linker_args[@]}")
 
 skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-macos-$skiko_arch" | head -1)"

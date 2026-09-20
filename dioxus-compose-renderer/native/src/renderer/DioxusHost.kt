@@ -6,8 +6,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import org.thisisthepy.dioxus.compose.protocol.ColorRole
 import org.thisisthepy.dioxus.compose.nativeimage.FrameRequests
 import org.thisisthepy.dioxus.compose.protocol.HostEvent
 import org.thisisthepy.dioxus.compose.protocol.Mutation
@@ -133,9 +137,24 @@ fun DioxusContent(host: DioxusHost, modifier: Modifier = Modifier) {
             withFrameNanos { frameTimeNanos -> host.renderFrame(frameTimeNanos) }
         }
     }
-    Box(modifier) {
-        host.roots.forEach { rootId ->
-            androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
+    // FR-14.4: the theme is resolved once here, and every node reads it from the
+    // CompositionLocal. A `SetTheme` is therefore one record on the wire and one
+    // invalidation in Compose, not a SetProp per node.
+    val platform = remember { detectHostPlatform() }
+    val systemDark = systemDarkOverride ?: isSystemInDarkTheme()
+    val theme = resolveTheme(host.table.theme, platform, systemDark)
+    CompositionLocalProvider(LocalDesignTheme provides theme) {
+        Box(modifier.background(theme.color(ColorRole.Background))) {
+            host.roots.forEach { rootId ->
+                androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
+            }
         }
     }
 }
+
+/**
+ * Overrides the platform's dark mode reading, for tests and for the dev harness.
+ *
+ * `ColorScheme.FollowSystem` reads the platform (FR-14.3); nothing else consults this.
+ */
+var systemDarkOverride: Boolean? = null
