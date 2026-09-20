@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isShiftPressed
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import org.thisisthepy.dioxus.compose.protocol.ColorRole
 import org.thisisthepy.dioxus.compose.protocol.HostEvent
 import org.thisisthepy.dioxus.compose.protocol.PropertyKind
 
@@ -63,6 +65,10 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
     val placeholder = node.text(PropertyKind.Placeholder)
     val hostText = node.hostText
     val composing = value.composition != null
+    // FR-14.4: the field takes its type role and its colours from the design system, the
+    // same way a Text does.
+    val theme = LocalDesignTheme.current
+    val textStyle = node.textStyle(theme)
 
     // A Host SetText is applied only once the composition has finished (SPEC FR-5).
     LaunchedEffect(hostText, composing) {
@@ -126,9 +132,16 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
         modifier = inputModifier,
         enabled = enabled,
         singleLine = !multiline,
+        textStyle = textStyle,
+        cursorBrush = SolidColor(theme.color(ColorRole.Primary)),
         decorationBox = { inner ->
             Box {
-                if (value.text.isEmpty() && placeholder.isNotEmpty()) BasicText(placeholder)
+                if (value.text.isEmpty() && placeholder.isNotEmpty()) {
+                    BasicText(
+                        placeholder,
+                        style = textStyle.copy(color = theme.color(ColorRole.OnSurfaceVariant)),
+                    )
+                }
                 inner()
             }
         },
