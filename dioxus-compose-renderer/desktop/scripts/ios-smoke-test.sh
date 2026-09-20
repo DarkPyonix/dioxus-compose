@@ -5,7 +5,7 @@
 # The host source is shared with the desktop test on purpose: `desktop/c/smoke_host.c` is the
 # stand-in for the Rust Host, it implements the five `dioxus_compose_host_*` functions and
 # calls `dioxus_compose_renderer_run` from `main`, and none of that changes on iOS. If the
-# same file draws the same tree on both platforms, the C ABI really is the same (SPEC PR-2).
+# same file draws the same tree on both platforms, the C ABI really is the same.
 #
 # Usage: ios-smoke-test.sh [--device-name "iPhone 16"] [--screenshot <path>]
 #                          [--await-click [seconds]]

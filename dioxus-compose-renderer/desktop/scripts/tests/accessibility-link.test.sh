@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks that the built renderer still carries the Objective-C accessibility classes
-# (SPEC NFR-8, section 7). Run it after build-native.sh.
+# Run it after build-native.sh.
 #
 # AppKit reaches those classes only through NSClassFromString, so no symbol in the image
 # refers to them and the link is free to drop them as dead code. When it does, the lookup

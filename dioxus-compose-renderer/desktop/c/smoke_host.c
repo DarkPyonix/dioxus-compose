@@ -1,11 +1,11 @@
 /*
  * Stand-in for the Rust Host: links the renderer library and runs it, the way
- * `dioxus_compose::launch` does with LoopMode::Renderer (SPEC PR-2).
+ * `dioxus_compose::launch` does with LoopMode::Renderer.
  *
  * It also implements the `dioxus_compose_host_*` half of the boundary, because the renderer
  * resolves those symbols from the executable it is loaded into and calls `host_init` as soon
  * as the window composes. The batch it returns is hand-encoded with the same fixed-layout
- * records the Rust Host emits (SPEC PR-4), so the smoke test exercises the real decode path.
+ * records the Rust Host emits, so the smoke test exercises the real decode path.
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -72,7 +72,8 @@ static uint32_t begin_record(uint16_t tag, uint16_t length) {
     return offset;
 }
 
-/* Strings live after the records, addressed by (offset, length) pairs (SPEC PR-4). */
+/* Strings live after the records in the same buffer, addressed by (offset, length) pairs.
+   Keeping them in the batch is what lets the renderer read them in place. */
 static void put_string(uint32_t reference_offset, const char *text) {
     uint32_t length = (uint32_t)strlen(text);
     memcpy(batch_bytes + batch_length, text, length);
@@ -147,9 +148,9 @@ static void build_tree(const char *label) {
     set_text_prop(3, "click me");
     set_handler(3, PROP_ON_CLICK, CLICK_HANDLER);
     insert(1, 3, 1);
-    /* An editable control, for the SPEC 6 IME checklist. It is off by default so the
-       byte counts the PR-2 evidence quotes stay stable, and because CI has nobody to
-       type. Linux turns it on unconditionally: a real desktop run there is the only
+    /* An editable control, for the manual IME checklist (typing Korean and watching the
+       composition). It is off by default so the byte counts recorded for this batch stay
+       stable, and because CI has nobody to type. Linux turns it on unconditionally: a real desktop run there is the only
        way to exercise XIM through ibus or fcitx. */
     uint32_t field_prop = 0;
     if (want_text_field()) {

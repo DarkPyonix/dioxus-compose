@@ -1,5 +1,5 @@
 /*
- * macOS main-thread handling for the renderer (SPEC PR-3).
+ * macOS main-thread handling for the renderer.
  *
  * AppKit must run on the main thread, and AWT waits for it there. If Java code occupies the
  * main thread the process hangs, so the renderer runs on a second thread (as the JDK

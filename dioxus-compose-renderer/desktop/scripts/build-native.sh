@@ -34,12 +34,13 @@ exported=(dioxus_compose_renderer_run dioxus_compose_renderer_request_frame
           dioxus_compose_jawt_get_awt JNI_OnLoad_osxui)
 # The renderer calls the Host's dioxus_compose_host_* functions, which live in the Rust
 # executable that loads this library. They are resolved at load time, so the link must
-# tolerate them being undefined here (SPEC PR-2).
+# tolerate them being undefined here.
 # The IME entry points (Java_sun_lwawt_macosx_CInputMethod_*) live in objects of the AWT
 # toolkit archive that nothing else references, so the linker drops them and the image
-# aborts the first time an input method touches a text field (SPEC §6). Forcing the whole
-# archive in also brings the accessibility entry points (Java_sun_lwawt_macosx_CAccessib*)
-# and the Objective-C side that AppKit drives, which NFR-8 needs.
+# aborts the first time an input method touches a text field. Forcing the whole archive in
+# also brings the accessibility entry points (Java_sun_lwawt_macosx_CAccessib*) and the
+# Objective-C side that AppKit drives, without which the native build publishes an empty
+# accessibility tree and aborts when one is queried.
 awt_archive="$GRAALVM_HOME/lib/static/darwin-$([[ "$arch" == "arm64" ]] && echo aarch64 || echo amd64)/libawt_lwawt.a"
 [[ -f "$awt_archive" ]] || { echo "error: missing $awt_archive" >&2; exit 1; }
 
@@ -52,7 +53,7 @@ for symbol in "${exported[@]}"; do
     linker_args+=("-H:NativeLinkerOption=-Wl,-exported_symbol,_$symbol")
 done
 
-# Forcing the archive in is not enough for the accessibility classes (SPEC NFR-8, section 7).
+# Forcing the archive in is not enough for the accessibility classes.
 # AppKit never names them: the Objective-C side maps a Java role to a class name and looks the
 # class up with NSClassFromString, so nothing in the image refers to GroupAccessibility,
 # ButtonAccessibility or the rest by symbol, and the link drops them as dead code. The lookup
@@ -74,8 +75,8 @@ done < <(nm -g "$awt_archive" 2>/dev/null |
     "and the process aborts the moment an assistive technology attaches."
 linker_args+=("${a11y_classes[@]}")
 
-# Heap and GC settings for NFR-3 (SPEC 5.2 levers 1 and 2). `-R:` options are baked in as
-# the image's runtime defaults. Measure with desktop/scripts/measure-memory.sh.
+# Heap and GC settings, in service of the desktop memory target (an empty window under
+# 56MB of physical footprint). `-R:` options are baked in as the image's runtime defaults. Measure with desktop/scripts/measure-memory.sh.
 #
 # Measured 2026-09-20 (M1, smoke test window): pinning the maximum does not move the
 # footprint. At the default (80% of RAM), at 64MB and at 24MB the MALLOC_SMALL region is
@@ -86,16 +87,16 @@ linker_args+=("${a11y_classes[@]}")
 # The cap stays because it bounds the worst case rather than the steady state: without it a
 # runaway allocation may grow to gigabytes before the collector reacts. 64MB is many times
 # the live set, so collections stay in the young generation and do not lengthen frames
-# (5.1's budget is 8.33ms). Do not lower it to buy footprint; it does not buy any.
+# (the budget is one 120Hz frame, 8.33ms). Do not lower it to buy footprint; it does not buy any.
 memory_args=("-R:MaxHeapSize=64m"
              "-R:MaxHeapFree=4m"
              "-R:MaximumYoungGenerationSizePercent=25")
 
-# Graphics (SPEC 5.2 lever 3) is deliberately not configured here, and this records why so
-# that the next person does not spend another build finding out.
+# Graphics memory is deliberately not configured here, and this records why so that the
+# next person does not spend another build finding out.
 #
 # The graphics surfaces are the largest block of the footprint (about 22MB of the measured
-# total), and Skiko does expose the two knobs 5.2 asks for: `skiko.buffering=DOUBLE` drops
+# total), and Skiko does expose two knobs: `skiko.buffering=DOUBLE` drops
 # the Metal drawable count from three to two, and `skiko.gpu.resourceCacheLimit` caps Skia's
 # GPU resource cache. Measured on the JVM (2026-09-20, M1), DOUBLE is worth about 1.9MB:
 # IOSurface falls from 9584KB in 9 regions to 7696KB in 7.
@@ -114,9 +115,10 @@ memory_args=("-R:MaxHeapSize=64m"
 # two properties there (guarded on getProperty being null, so an operator can override) is
 # the supported way to get this 1.9MB. That file is owned by another engineer.
 
-# Locale and reachability (SPEC 5.2 levers 4 and 5) are already as small as they can safely
-# go. `-H:IncludeLocales=en,ko` is the minimum the product supports and ko is not removable:
-# Korean IME is a SPEC 6 requirement. Neither shows up in the footprint anyway. Locale data,
+# Locale data and reachable code are already as small as they can safely go.
+# `-H:IncludeLocales=en,ko` is the minimum the product supports and ko is not removable:
+# Korean input is a headline requirement of this project. Neither shows up in the footprint
+# anyway. Locale data,
 # image code and read-only image heap land in __TEXT and clean __DATA, which the physical
 # footprint does not count; only the 7.6MB of dirty __DATA does. Shrinking reachable code
 # mostly shrinks the 65MB on disk, not the resident cost.

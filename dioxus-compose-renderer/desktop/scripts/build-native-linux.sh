@@ -22,7 +22,7 @@ mkdir -p "$obj" "$lib"
 cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
 
 # The Host's dioxus_compose_host_* functions remain unresolved until the application loads
-# the renderer (SPEC PR-2). $ORIGIN lets GraalVM's generated shims and AWT libraries find the
+# the renderer. $ORIGIN lets GraalVM's generated shims and AWT libraries find the
 # renderer and one another in the staged lib directory.
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
     --shared \

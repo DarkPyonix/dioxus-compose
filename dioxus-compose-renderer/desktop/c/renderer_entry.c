@@ -3,7 +3,9 @@
 #endif
 
 /*
- * Public C entry points of the renderer library (SPEC PR-2).
+ * Public C entry points of the renderer library.
+ *
+ * The Host/Renderer boundary is plain C: only primitives, pointers and lengths cross it.
  *
  * GraalVM @CEntryPoint functions need an isolate thread argument. The Host must not have
  * to know about isolates, so this shim owns the single isolate per process and exposes
@@ -80,7 +82,8 @@ struct renderer_run {
 /*
  * PE/COFF cannot leave the Host symbols unresolved and bind them from the executable at
  * DLL load time, as the macOS linker does with dynamic_lookup. These definitions satisfy
- * the renderer link and forward the unchanged PR-2 C ABI to exports on the host executable.
+ * the renderer link and forward the same C ABI, unchanged, to exports on the host
+ * executable.
  * The host must export the five dioxus_compose_host_* functions.
  *
  * UNTESTED: this forwarding path has not been compiled or run in this repository. Verify it
@@ -271,7 +274,8 @@ int32_t dioxus_compose_renderer_run(void) {
 
 /*
  * Thread-safe. A Host worker thread is attached on its first call and stays attached,
- * so repeated requests do not pay the attach cost (SPEC PR-3).
+ * so repeated requests do not pay the attach cost. Attaching per call would put that cost
+ * on every frame request, which the frame budget does not have room for.
  */
 void dioxus_compose_renderer_request_frame(void) {
 #ifdef _WIN32

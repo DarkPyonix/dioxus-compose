@@ -66,7 +66,7 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
 New-Item -ItemType Directory -Force -Path $ObjDir | Out-Null
 
 # __declspec(dllexport) in smoke_host.c is required: the renderer DLL forwards its existing
-# PR-2 imports through GetProcAddress(GetModuleHandle(NULL), ...).
+# host imports through GetProcAddress(GetModuleHandle(NULL), ...).
 & cl.exe /nologo /O2 "/Fe$SmokeHost" $SmokeSource "/link" "/LIBPATH:$BinDir" "$LibraryName.lib"
 if ($LASTEXITCODE -ne 0) {
     Fail "MSVC could not link the smoke host"

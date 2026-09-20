@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the renderer as a Kotlin/Native static library for iOS (SPEC M5, NFR-4, PR-2):
+# Builds the renderer as a Kotlin/Native static library for iOS:
 #
 #   build/ios/<target>/
 #     libdioxus_compose_renderer.a        the renderer (Compose, Skia, the interpreter, our code)
@@ -135,7 +135,7 @@ library_args=("-library=$klib")
 while IFS= read -r line; do library_args+=("-library=$line"); done < "$libraries_file"
 
 # The entry points are compiled here as the main module, with the renderer as a library, so
-# that the generated C header holds the two PR-2 functions and nothing else. Compiling the
+# that the generated C header holds the two boundary functions and nothing else. Compiling the
 # renderer itself as the main module (with -Xinclude) asks Kotlin/Native to build a C adapter
 # for every public Compose declaration, which fails: NullPointerException in CAdapterCodegen
 # (Kotlin 2.4.10). The archive still contains the whole renderer, because -produce static
@@ -159,7 +159,7 @@ for generated in "$OUT_DIR"/*.h; do
 done
 
 # A static library that is missing an entry point links fine and fails at run time, so the
-# two PR-2 symbols are checked here rather than in the app that links it.
+# two boundary symbols are checked here rather than in the app that links it.
 # nm reports a non-zero status for archive members that hold no symbols, which under
 # pipefail would look like a failed check, so its output is read from a file.
 symbols_file="$LOG_DIR/$amper_platform-symbols.txt"
