@@ -1,3 +1,4 @@
+use crate::drawing::DrawList;
 use crate::protocol::{BatchEncoder, Mutation, PropertyValue, ProtocolError};
 use crate::schema::{PropertyKind, WidgetKind};
 use dioxus_core::{
@@ -119,6 +120,20 @@ impl ComposeRenderer {
             text,
             selection,
         });
+    }
+
+    /// Copies one asset into the batch. The bytes ride behind the records, and the
+    /// Renderer takes its own copy inside the call that carries them.
+    pub fn register_asset(&mut self, asset_id: u32, kind: crate::schema::AssetKind, bytes: &[u8]) {
+        self.write(Mutation::RegisterAsset {
+            asset_id,
+            kind,
+            bytes,
+        });
+    }
+
+    pub fn release_asset(&mut self, asset_id: u32) {
+        self.write(Mutation::ReleaseAsset { asset_id });
     }
 
     /// Append the streamed tail to a Text node without resending its whole value.
@@ -420,7 +435,14 @@ impl ComposeRenderer {
             AttributeValue::Int(value) => PropertyValue::Integer(*value),
             AttributeValue::Bool(value) => PropertyValue::Bool(*value),
             AttributeValue::None => PropertyValue::None,
-            AttributeValue::Listener(_) | AttributeValue::Any(_) => return,
+            // A drawing command list is the one value that is neither a number nor text.
+            // dioxus-core compares it before calling here, so an unchanged list never
+            // reaches this point and costs no record.
+            AttributeValue::Any(value) => match value.as_any().downcast_ref::<DrawList>() {
+                Some(list) => PropertyValue::Bytes(list.as_bytes()),
+                None => return,
+            },
+            AttributeValue::Listener(_) => return,
         };
         let neutral = matches!(
             value,
@@ -671,6 +693,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
+        "change" | "onchange" => Some(PropertyKind::OnValueChange),
         _ => None,
     }
 }

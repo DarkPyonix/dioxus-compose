@@ -112,6 +112,21 @@ class ByteBuffer private constructor(
 
     fun get(index: Int): Byte = byteAt(index)
 
+    /**
+     * Bulk read from the current position, which is how the codec lifts an asset's bytes
+     * off the arena in one go.
+     */
+    fun get(destination: ByteArray): ByteBuffer {
+        require(destination.size <= limit - position) {
+            "reading ${destination.size} bytes from $position would pass the limit $limit"
+        }
+        for (index in destination.indices) {
+            destination[index] = byteAt(position + index)
+        }
+        position += destination.size
+        return this
+    }
+
     private fun readBits(index: Int, width: Int): Long {
         var value = 0L
         for (step in 0 until width) {

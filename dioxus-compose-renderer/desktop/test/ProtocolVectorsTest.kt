@@ -50,21 +50,33 @@ class ProtocolVectorsTest {
         onNodeWithTag(nodeTestTag(1)).assertIsDisplayed()
 
         val errors = connection.events.filterIsInstance<HostEvent.ProtocolError>()
+        // A record is unhonourable when it names a node the vector never created, and the
+        // asset records because the vector's asset is a four byte stand-in rather than a
+        // real picture: it cannot be read, so it is never registered and cannot be
+        // released either.
+        val created = mutations.filterIsInstance<Mutation.Create>().map { it.nodeId }.toSet()
         val badRecords = mutations.count { mutation ->
             when (mutation) {
-                is Mutation.SetProp -> mutation.nodeId != 1
-                is Mutation.SetModifier -> mutation.nodeId != 1
-                is Mutation.Insert -> mutation.nodeId != 1
-                is Mutation.Move -> mutation.nodeId != 1
-                is Mutation.Remove -> mutation.nodeId != 1
-                is Mutation.SetText -> mutation.nodeId != 1
+                is Mutation.SetProp -> mutation.nodeId !in created
+                is Mutation.SetModifier -> mutation.nodeId !in created
+                is Mutation.Insert -> mutation.nodeId !in created
+                is Mutation.Move -> mutation.nodeId !in created
+                is Mutation.Remove -> mutation.nodeId !in created
+                is Mutation.SetText -> mutation.nodeId !in created
+                is Mutation.AppendText -> mutation.nodeId !in created
                 // The theme applies to the tree, not to a node, so it is never a bad record.
                 is Mutation.SetTheme -> false
-                is Mutation.AppendText -> mutation.nodeId != 1
                 is Mutation.Create -> false
+                is Mutation.RegisterAsset -> true
+                is Mutation.ReleaseAsset -> true
             }
         }
-        assertEquals(badRecords, errors.size, "every unknown-node record must be reported")
+        assertEquals(
+            badRecords,
+            errors.size,
+            "every unknown-node record must be reported, and nothing else: " +
+                errors.map { it.message },
+        )
     }
 
     @Test
