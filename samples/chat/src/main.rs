@@ -76,7 +76,10 @@ fn app() -> Element {
     };
 
     let count = messages.read().len();
-    let busy = messages.read().last().is_some_and(|message| message.streaming);
+    let busy = messages
+        .read()
+        .last()
+        .is_some_and(|message| message.streaming);
     let keys: Vec<String> = messages
         .read()
         .iter()
@@ -198,7 +201,9 @@ mod tests {
     /// path out of `rsx!`.
     #[test]
     fn pr3_a_reply_arrives_from_the_worker_thread() {
-        use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
+        use dioxus_compose::protocol::{
+            HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
+        };
         use dioxus_compose::{EventPayload, PropertyKind, WidgetKind};
 
         let mut host = Host::new(app);

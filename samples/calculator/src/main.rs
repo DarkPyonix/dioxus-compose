@@ -165,7 +165,9 @@ mod tests {
         let mut renderer = dioxus_compose::renderer::ComposeRenderer::new();
         renderer.begin_frame();
         dom.rebuild(&mut renderer);
-        renderer.finish_frame().expect("the calculator tree encodes");
+        renderer
+            .finish_frame()
+            .expect("the calculator tree encodes");
     }
 
     #[test]

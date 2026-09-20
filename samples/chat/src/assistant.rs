@@ -76,7 +76,12 @@ that was ever in doubt."
 
 /// Start a reply. Returns immediately; the text arrives on `messages` over the next second
 /// or so.
-pub fn stream_reply(prompt: String, token: u64, turns: Turns, mut messages: SyncSignal<Vec<Message>>) {
+pub fn stream_reply(
+    prompt: String,
+    token: u64,
+    turns: Turns,
+    mut messages: SyncSignal<Vec<Message>>,
+) {
     std::thread::Builder::new()
         .name("sample-chat-assistant".to_owned())
         .spawn(move || {

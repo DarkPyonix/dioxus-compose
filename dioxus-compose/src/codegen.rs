@@ -839,10 +839,33 @@ fn upper_snake(name: &str) -> String {
 pub fn canvas_vector() -> crate::drawing::DrawList {
     crate::drawing::DrawList::builder()
         .line(Paint::Role(ColorRole::Primary), 1.0, 2.0, 3.0, 4.0, 1.5)
-        .rect(Paint::Literal(Color::argb(0xff11_2233)), 0.0, 0.0, 8.0, 9.0, 0.0)
-        .round_rect(Paint::Role(ColorRole::Surface), 1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        .rect(
+            Paint::Literal(Color::argb(0xff11_2233)),
+            0.0,
+            0.0,
+            8.0,
+            9.0,
+            0.0,
+        )
+        .round_rect(
+            Paint::Role(ColorRole::Surface),
+            1.0,
+            2.0,
+            3.0,
+            4.0,
+            5.0,
+            6.0,
+        )
         .circle(Paint::Role(ColorRole::Error), 4.0, 5.0, 6.0, 0.5)
-        .arc(Paint::Role(ColorRole::Outline), 1.0, 2.0, 3.0, 0.0, 90.0, 2.0)
+        .arc(
+            Paint::Role(ColorRole::Outline),
+            1.0,
+            2.0,
+            3.0,
+            0.0,
+            90.0,
+            2.0,
+        )
         .polyline_ref(Paint::Role(ColorRole::Secondary), 42, 3.0)
         .text_at(
             Paint::Role(ColorRole::OnSurface),
@@ -1204,7 +1227,12 @@ fn write_draw_commands(output: &mut String) {
     output.push_str("sealed interface DrawCommand {\n");
     output.push_str("    val paint: Paint\n\n");
     for command in DRAW_COMMAND_SCHEMA {
-        write!(output, "    data class {}(override val paint: Paint", command.name).unwrap();
+        write!(
+            output,
+            "    data class {}(override val paint: Paint",
+            command.name
+        )
+        .unwrap();
         for field in command.fields {
             let ty = match field.ty {
                 DrawFieldType::Float => "kotlin.Float",
@@ -1248,8 +1276,12 @@ object DrawCommands {
 "#,
     );
     for command in DRAW_COMMAND_SCHEMA {
-        write!(output, "                {} -> DrawCommand.{}(paint", command.tag, command.name)
-            .unwrap();
+        write!(
+            output,
+            "                {} -> DrawCommand.{}(paint",
+            command.tag, command.name
+        )
+        .unwrap();
         for field in command.fields {
             match field.ty {
                 DrawFieldType::Float => write!(output, ", real({})", field.word).unwrap(),
@@ -1310,12 +1342,7 @@ object DrawCommands {
         )
         .unwrap();
         for variant in variants {
-            writeln!(
-                output,
-                "        {} -> {role}.{}",
-                variant.tag, variant.name
-            )
-            .unwrap();
+            writeln!(output, "        {} -> {role}.{}", variant.tag, variant.name).unwrap();
         }
         output.push_str("        else -> null\n    }\n\n");
     }

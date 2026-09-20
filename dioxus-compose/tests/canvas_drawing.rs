@@ -50,7 +50,14 @@ static GLOBAL: CountingAllocator = CountingAllocator;
 /// Renderer only ever sees the closed command vocabulary.
 fn line_chart(samples: &[f32]) -> DrawList {
     let mut list = DrawList::builder()
-        .rect(Paint::Role(ColorRole::SurfaceVariant), 0.0, 0.0, 120.0, 60.0, 0.0)
+        .rect(
+            Paint::Role(ColorRole::SurfaceVariant),
+            0.0,
+            0.0,
+            120.0,
+            60.0,
+            0.0,
+        )
         .line(Paint::Role(ColorRole::Outline), 0.0, 60.0, 120.0, 60.0, 1.0);
     for window in samples.windows(2) {
         let index = samples

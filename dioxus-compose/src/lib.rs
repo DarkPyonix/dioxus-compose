@@ -1,9 +1,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod boundary;
-pub mod drawing;
 #[doc(hidden)]
 pub mod codegen;
+pub mod drawing;
 mod extensions;
 pub mod protocol;
 pub mod renderer;
@@ -15,9 +15,9 @@ pub use boundary::{
     Host, LaunchBuilder, MutationBatch, RendererApi, install_renderer_api, launch,
     request_frame_from_worker,
 };
-pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
 pub use dioxus_core::{Element, VirtualDom};
 pub use dioxus_core_macro::{component, rsx};
+pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use schema::{
@@ -26,7 +26,7 @@ pub use schema::{
     ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
 };
 pub use widgets::{
-   Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
+    Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
     KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs,
     Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
@@ -37,12 +37,12 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-   Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Color, ColorRole,
-    ColorScheme, Column, component, DatePicker, DesignSystem, Dialog, DrawCommand, DrawList,
-    Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, launch, LaunchBuilder, LazyColumn,
-    LazyRow, LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, rsx,
-    ScrollColumn, ShapeRole, Spacer, SpaceRole, Surface, Tabs, Text, TextAlign, TextField,
-    TextOverflow, Theme, TimePicker, Tooltip, TopAppBar, TypeRole,
+        Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Color, ColorRole,
+        ColorScheme, Column, DatePicker, DesignSystem, Dialog, DrawCommand, DrawList, Dropdown,
+        Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
+        LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
+        ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
+        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;

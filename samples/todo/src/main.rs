@@ -19,7 +19,14 @@ const BULK_COUNT: usize = 5_000;
 
 fn app() -> Element {
     let mut tasks = use_signal(|| store::load());
-    let mut next_id = use_signal(|| tasks.read().iter().map(|task| task.id + 1).max().unwrap_or(1));
+    let mut next_id = use_signal(|| {
+        tasks
+            .read()
+            .iter()
+            .map(|task| task.id + 1)
+            .max()
+            .unwrap_or(1)
+    });
     let mut filter = use_signal(|| Filter::All);
 
     // What the top field currently holds. The field is uncontrolled, so this is a copy the
@@ -258,9 +265,9 @@ mod tests {
     use super::*;
     use dioxus_compose::Host;
 
+    use dioxus_compose::protocol::HostEvent;
     use dioxus_compose::protocol::{Mutation, decode_batch, encode_event};
     use dioxus_compose::{EventPayload, PropertyKind, WidgetKind};
-    use dioxus_compose::protocol::HostEvent;
 
     /// Every property this screen sets has to be one the wire can name. A property the
     /// schema does not have fails the whole batch rather than just itself, so a screen that
@@ -327,7 +334,9 @@ mod tests {
             &mut event,
         )
         .expect("the range request did not encode");
-        let (batch, _) = host.dispatch_event(&event).expect("the range request failed");
+        let (batch, _) = host
+            .dispatch_event(&event)
+            .expect("the range request failed");
         let created = decode_batch(batch)
             .expect("the window batch did not decode")
             .iter()

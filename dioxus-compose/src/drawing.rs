@@ -688,8 +688,23 @@ mod tests {
     fn fr17_every_command_round_trips_in_a_fixed_length_record() {
         let list = DrawList::builder()
             .line(Paint::Role(ColorRole::Primary), 1.0, 2.0, 3.0, 4.0, 1.5)
-            .rect(Paint::Literal(Color::rgb(0x1b1b1f)), 0.0, 0.0, 8.0, 9.0, 0.0)
-            .round_rect(Paint::Role(ColorRole::Surface), 1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+            .rect(
+                Paint::Literal(Color::rgb(0x1b1b1f)),
+                0.0,
+                0.0,
+                8.0,
+                9.0,
+                0.0,
+            )
+            .round_rect(
+                Paint::Role(ColorRole::Surface),
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0,
+            )
             .circle(Paint::Role(ColorRole::Error), 4.0, 5.0, 6.0, 0.5)
             .arc(
                 Paint::Role(ColorRole::Outline),
@@ -726,8 +741,20 @@ mod tests {
     fn fr17_text_offsets_are_relative_to_the_list_itself() {
         let list = DrawList::builder()
             .circle(Paint::Role(ColorRole::Primary), 0.0, 0.0, 1.0, 0.0)
-            .text_at(Paint::Role(ColorRole::OnSurface), "hi", 1.0, 2.0, TypeRole::Body)
-            .text_at(Paint::Role(ColorRole::OnSurface), "there", 3.0, 4.0, TypeRole::Body)
+            .text_at(
+                Paint::Role(ColorRole::OnSurface),
+                "hi",
+                1.0,
+                2.0,
+                TypeRole::Body,
+            )
+            .text_at(
+                Paint::Role(ColorRole::OnSurface),
+                "there",
+                3.0,
+                4.0,
+                TypeRole::Body,
+            )
             .build();
 
         let texts: Vec<_> = list
