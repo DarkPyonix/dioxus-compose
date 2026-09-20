@@ -22,11 +22,11 @@ import dioxus.compose.runtime.rememberDioxusHost
 import java.lang.System
 
 /**
- * A scripted Host that exercises the FR-13 primitives under one design system, so the
- * result of FR-14 can be looked at rather than only asserted on.
+ * A scripted Host that exercises the design primitives under one design system, so the
+ * result can be looked at rather than only asserted on.
  *
  * Nothing here is design system aware: the same records produce Material 3, Cupertino or
- * Fluent pixels depending only on the `SetTheme` at the front (SPEC FR-14.1).
+ * Fluent pixels depending only on the `SetTheme` at the front.
  */
 fun designShowcaseHost(theme: Theme): FakeHostConnection {
     val records = mutableListOf<Mutation>(Mutation.SetTheme(theme))
@@ -69,7 +69,7 @@ fun designShowcaseHost(theme: Theme): FakeHostConnection {
         TypeRole.Mono to "mono 0O1lI",
     ).forEach { (role, sample) -> text(root, slot++, sample, role) }
 
-    // The four button variants, side by side (FR-14.2).
+    // The four button variants, side by side.
     val buttons = id()
     records += Mutation.Create(buttons, WidgetKind.Row)
     records += Mutation.SetProp(buttons, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
@@ -94,7 +94,7 @@ fun designShowcaseHost(theme: Theme): FakeHostConnection {
     records += Mutation.Insert(root, card, slot++)
     text(card, 0, "Elevation 6 dp, ShapeRole.Large", TypeRole.BodyStrong, ColorRole.OnSurfaceVariant)
 
-    // Weight: 1 to 3 across the row, which only the parent scope can express (FR-13.4).
+    // Weight: 1 to 3 across the row, which only the parent scope can express.
     val weights = id()
     records += Mutation.Create(weights, WidgetKind.Row)
     records += Mutation.SetModifier(weights, 0, ProtocolModifier.FillMaxWidth)
@@ -139,7 +139,7 @@ private fun systemName(theme: Theme): String = when (theme.designSystem) {
  *
  * `DXC_DESIGN_SYSTEM` is `material3`, `hig` or `fluent`, `DXC_COLOR_SCHEME` is `light`,
  * `dark` or `system`, and `DXC_ADAPTIVE=1` makes the Host send an adaptive theme with the
- * chosen system as the mandatory fallback (FR-14.3).
+ * chosen system as the mandatory fallback.
  */
 fun main() = application {
     val system = when (System.getenv("DXC_DESIGN_SYSTEM")?.lowercase()) {

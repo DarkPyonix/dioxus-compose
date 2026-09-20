@@ -19,7 +19,7 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.TypeRole
 
 /**
- * Material 3 rules (FR-14.6 items 5 to 7).
+ * Material 3 rules: elevation, button variants and motion.
  *
  * Reference: m3.material.io, "Elevation", "Buttons" and "Motion easing and duration",
  * 2024 baseline, the same revision the generated token table cites.
@@ -111,12 +111,12 @@ internal object Material3Rules : ComponentRules {
 }
 
 /**
- * Cupertino rules (FR-14.6 items 5 to 7).
+ * Cupertino rules: elevation, button variants and motion.
  *
  * Reference: Apple Human Interface Guidelines, "Materials", "Buttons" and "Motion", 2024.
  *
  * Shadows are wide and faint rather than layered, the emphasised button is flat with no
- * shadow at all (FR-14.2), and the press feedback is a dim, not a ripple.
+ * shadow at all, and the press feedback is a dim, not a ripple.
  */
 internal object CupertinoRules : ComponentRules {
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
@@ -149,7 +149,7 @@ internal object CupertinoRules : ComponentRules {
             verticalPadding = theme.space(SpaceRole.Sm),
             minHeight = 34.dp,
             typeRole = TypeRole.BodyStrong,
-            // HIG buttons never cast a shadow, pressed or not (FR-14.2).
+            // Apple's buttons never cast a shadow, pressed or not.
             restElevation = 0.dp,
             pressedElevation = 0.dp,
         )
@@ -191,7 +191,7 @@ internal object CupertinoRules : ComponentRules {
 }
 
 /**
- * WinUI / Fluent 2 rules (FR-14.6 items 5 to 7).
+ * WinUI / Fluent 2 rules: elevation, button variants and motion.
  *
  * Reference: fluent2.microsoft.design, "Elevation", "Button" and "Motion duration", 2024.
  *

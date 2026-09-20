@@ -12,7 +12,14 @@ import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 
-/** Text the Host pushed into a TextField with `SetText` (SPEC FR-5). */
+/**
+ * Text the Host pushed into a TextField with `SetText`.
+ *
+ * The field is uncontrolled: the Renderer owns the edit value and the composition state, and
+ * this is the only way the Host changes it. If an IME composition is in progress the change
+ * waits until the composition commits, because replacing text mid-composition destroys the
+ * syllable being assembled.
+ */
 data class HostText(
     val text: String,
     val selectionStart: Int,
@@ -23,7 +30,7 @@ data class HostText(
 
 /**
  * One interpreted node. Each field is its own snapshot state, so a `SetProp` on one node
- * invalidates only the composables that read that node (SPEC FR-4).
+ * invalidates only the composables that read that node.
  */
 class Node internal constructor(val id: Int, val widget: WidgetKind) {
     internal val props = mutableStateMapOf<PropertyKind, PropertyValue>()
@@ -40,13 +47,13 @@ class Node internal constructor(val id: Int, val widget: WidgetKind) {
     fun flag(kind: PropertyKind, default: Boolean): Boolean =
         (props[kind] as? PropertyValue.Bool)?.value ?: default
 
-    /** Handler ids arrive as integer property values (SPEC FR-3). */
+    /** Handler ids arrive as integer property values. */
     fun handler(kind: PropertyKind): Long? = (props[kind] as? PropertyValue.Integer)?.value
 
     fun number(kind: PropertyKind): Float? = (props[kind] as? PropertyValue.Float)?.value
 }
 
-/** A protocol violation that must become a `ProtocolError` event, never a crash (NFR-7). */
+/** A protocol violation that must become a `ProtocolError` event, never a crash. */
 data class TableError(val code: Int, val message: String) {
     companion object {
         const val UNKNOWN_NODE = 1
@@ -57,10 +64,10 @@ data class TableError(val code: Int, val message: String) {
 }
 
 /**
- * The interpreted node tree (SPEC FR-1).
+ * The interpreted node tree.
  *
  * A whole batch is applied inside one `Snapshot.withMutableSnapshot` transaction by
- * [DioxusHost], so no intermediate tree state is ever drawn (SPEC PR-2).
+ * [DioxusHost], so no intermediate tree state is ever drawn.
  */
 class NodeTable {
     private val nodes = mutableStateMapOf<Int, Node>()
@@ -68,7 +75,7 @@ class NodeTable {
     private val errors = mutableListOf<TableError>()
     private var revision = 0L
 
-    /** Null until the Host sends its first `SetTheme` record (FR-14.3). */
+    /** Null until the Host sends its first `SetTheme` record. */
     var theme: Theme? by mutableStateOf(null)
         private set
 
@@ -95,7 +102,7 @@ class NodeTable {
             is Mutation.Remove -> remove(mutation.nodeId)
             is Mutation.SetText -> setText(mutation)
             is Mutation.AppendText -> appendText(mutation)
-            // FR-14.4: one record changes the whole tree's appearance. `DioxusContent`
+            // One record changes the whole tree's appearance. `DioxusContent`
             // resolves it into tokens and rules, and Compose invalidates the readers.
             is Mutation.SetTheme -> theme = mutation.theme
         }
@@ -109,7 +116,7 @@ class NodeTable {
         nodes[mutation.nodeId] = Node(mutation.nodeId, mutation.widget)
         // A node the Host never inserts stays a root. The Host has no mutation that attaches
         // the application root, so the first created node is what the Renderer draws.
-        // SPEC-GAP: FR-1 defines no explicit root attachment; roots are inferred here.
+        // There is no mutation that attaches a root, so roots are inferred here.
         rootChildren.add(mutation.nodeId)
     }
 
@@ -119,7 +126,7 @@ class NodeTable {
             "SetProp for unknown node ${mutation.nodeId}",
         )
         if (!supportsProperty(node.widget, mutation.property)) {
-            // FR-2: an out-of-schema property is reported and skipped, never applied.
+            // An out-of-schema property is reported and skipped, never applied.
             fail(
                 TableError.UNSUPPORTED_PROPERTY,
                 "${node.widget} does not support ${mutation.property}",
@@ -149,7 +156,7 @@ class NodeTable {
     }
 
     private fun insert(parentId: Int, nodeId: Int, index: Int) {
-        // Node id 0 is the "no node" sentinel (FR-1). The Host uses it for a Dioxus
+        // Node id 0 is the "no node" sentinel. The Host uses it for a Dioxus
         // placeholder: an empty `for` body still has a position in the parent, but nothing
         // to draw. It occupies no slot here, and the Host's later Insert for the real
         // children carries the position the placeholder stood at, so indices still line up.
@@ -191,7 +198,7 @@ class NodeTable {
     }
 
     /**
-     * Appends to a Text node's content (FR-9). Streaming sends only the new tail, so the
+     * Appends to a Text node's content. Streaming sends only the new tail, so the
      * batch does not grow with the text already on screen.
      */
     private fun appendText(mutation: Mutation.AppendText) {
@@ -260,20 +267,19 @@ class NodeTable {
                         widget == WidgetKind.Button ||
                         widget == WidgetKind.TextField
 
-                // SPEC-GAP: SpacerProps has width and height in the Rust schema, but there
-                // are no matching PropertyKind variants, so a Spacer can only be sized with
-                // modifiers. Either the schema gains the properties or SPEC FR-2 should say
-                // that Spacer is modifier-sized.
+                // Note: SpacerProps has width and height in the Rust schema, but there are
+                // no matching PropertyKind variants, so a Spacer can only be sized with
+                // modifiers.
                 PropertyKind.Placeholder -> widget == WidgetKind.TextField
                 PropertyKind.Multiline -> widget == WidgetKind.TextField
                 PropertyKind.Enabled -> widget != WidgetKind.Spacer
 
-                // Windowing properties belong to the lazy container alone (FR-8).
+                // Windowing properties belong to the lazy container alone.
                 PropertyKind.ItemCount -> widget == WidgetKind.LazyColumn
                 PropertyKind.ItemKey -> true
 
-                // FR-13 design primitives, resolved against the design system's token
-                // table when the node is drawn (FR-14.4).
+                // Design primitives, resolved against the design system's token table when
+                // the node is drawn.
                 PropertyKind.TypeRole,
                 PropertyKind.FontSize,
                 PropertyKind.FontWeight,
@@ -299,7 +305,7 @@ class NodeTable {
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
 
-                // FR-11: a property declared by an extension package belongs to the widget
+                // A property declared by an extension package belongs to the widget
                 // that package declared it for.
                 PropertyKind.Progress -> widget == WidgetKind.LinearProgressIndicator
             }
