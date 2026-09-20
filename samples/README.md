@@ -12,7 +12,8 @@ vocabulary, and belongs in an issue rather than in a workaround.
 |---|---|
 | `calculator` | Dense button grids, `Row` and `Column` nesting, keyboard input, numeric formatting |
 | `notepad` | Multiline text editing, IME, scrolling, file I/O from a worker thread |
-| `todo` | Lists with stable keys, checkboxes, filtering, per-item state |
+| `todo` | Lists with stable keys, checkboxes, filtering, per-item state, `LazyColumn` windowing over thousands of rows, file persistence from a worker thread |
+| `chat` | An LLM chat interface: scrollback, a multiline composer where Enter sends and Shift+Enter starts a new line, and a reply streamed in from a worker thread |
 
 Run one with the renderer present:
 

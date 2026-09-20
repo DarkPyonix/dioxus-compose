@@ -1,6 +1,7 @@
 package dioxus.compose.ui.platform
 
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -22,9 +23,22 @@ import dioxus.compose.runtime.rememberDioxusHost
  */
 internal fun runRenderer(
     autoExitMillis: Long? = null,
+    chrome: WindowChrome = WindowChrome.Modern,
     connection: () -> HostConnection,
 ) = application(exitProcessOnExit = false) {
-    Window(onCloseRequest = ::exitApplication, title = "DioxusCompose") {
+    // Undecorated everywhere the platform will not hand us a transparent title bar, which
+    // is everywhere except macOS. There we keep the real one and make it see through, so
+    // the close, minimise and zoom buttons stay the system's own.
+    val undecorated = chrome == WindowChrome.Modern && !platformDrawsWindowButtons
+    Window(
+        onCloseRequest = ::exitApplication,
+        title = "DioxusCompose",
+        undecorated = undecorated,
+    ) {
+        // AWT reads the macOS client properties when the peer is realised, so this runs
+        // once the window exists rather than as a constructor argument.
+        LaunchedEffect(chrome) { applyWindowChrome(window, chrome) }
+
         // The tracing agent writes its output only on a clean shutdown, so unattended
         // metadata collection needs the window to close by itself.
         autoExitMillis?.let { timeout ->
@@ -33,6 +47,13 @@ internal fun runRenderer(
                 exitApplication()
             }
         }
-        DioxusContent(rememberDioxusHost(remember { connection() }), Modifier.fillMaxSize())
+        DioxusContent(
+            rememberDioxusHost(remember { connection() }),
+            Modifier
+                .fillMaxSize()
+                // Content runs under the caption on purpose, but a widget sitting where
+                // the window buttons are would leave both unusable.
+                .padding(windowContentInsets(chrome, hasTopAppBar = false)),
+        )
     }
 }
