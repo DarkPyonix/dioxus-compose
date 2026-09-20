@@ -1,3 +1,7 @@
+#ifndef __APPLE__
+#define _GNU_SOURCE
+#endif
+
 /*
  * Public C entry points of the renderer library (SPEC PR-2).
  *
@@ -10,6 +14,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -39,6 +44,13 @@ enum {
 };
 
 static _Atomic(graal_isolate_t *) renderer_isolate;
+
+/* strlcpy is available on macOS but not glibc. Keep path copying local and portable. */
+static void copy_path(char *destination, size_t capacity, const char *source) {
+    if (capacity > 0) {
+        snprintf(destination, capacity, "%s", source);
+    }
+}
 
 struct renderer_run {
     char library_dir[PATH_MAX];
@@ -83,8 +95,8 @@ int32_t dioxus_compose_renderer_run(void) {
     if (!dladdr((const void *)&dioxus_compose_renderer_run, &info) || info.dli_fname == NULL) {
         return RUN_LIBRARY_PATH_UNKNOWN;
     }
-    strlcpy(library_path, info.dli_fname, sizeof library_path);
-    strlcpy(run.library_dir, dirname(library_path), sizeof run.library_dir);
+    copy_path(library_path, sizeof library_path, info.dli_fname);
+    copy_path(run.library_dir, sizeof run.library_dir, dirname(library_path));
 
 #ifdef __APPLE__
     dioxus_compose_prepare_main_thread();
