@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
  *
  * The codec decodes strings strictly: malformed UTF-8 is an error, never a replacement
  * character, because a bad string means the two sides disagree about the arena and the
- * Renderer has to report `ProtocolError` rather than draw nonsense (SPEC NFR-7).
+ * Renderer has to report `ProtocolError` rather than draw nonsense.
  */
 class CharacterCodingException : Exception("input is not valid UTF-8")
 

@@ -15,6 +15,9 @@ dependencies:
   - $compose.foundation
   - $compose.ui
 
+test-dependencies:
+  - $kotlin.test
+
 settings:
   compose:
     enabled: true

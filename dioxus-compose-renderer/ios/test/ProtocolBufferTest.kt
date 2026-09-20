@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The generated codec, running on Kotlin/Native over the `java.nio` shim (SPEC PR-4).
+ * The generated codec, running on Kotlin/Native over the `java.nio` shim.
  *
  * The interpreter and the codec are the desktop sources compiled unchanged; the buffer under
  * them is not, so this is what needs a test of its own on this target.

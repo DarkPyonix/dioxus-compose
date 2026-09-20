@@ -7,7 +7,10 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.Text
 
 /**
- * Placeholder for the Android host (SPEC PR-5, M6).
+ * Placeholder for the Android host.
+ *
+ * On Android the host relationship is inverted: a Kotlin Activity owns the process and the
+ * loop, and Rust is a cdylib it loads.
  *
  * The real one drives the renderer through the generated JNI shim, the way `desktop`
  * drives it through the C boundary. This module exists now only to keep the Android

@@ -16,6 +16,13 @@ dependencies:
   - $compose.foundation
   - $compose.ui
 
+test-dependencies:
+  - $kotlin.test
+  # Test only, and never a production dependency in either direction. The claim that
+  # these are two design systems and not one with two palettes can only be checked by
+  # asking both the same question in the same test.
+  - //fluent
+
 settings:
   compose:
     enabled: true

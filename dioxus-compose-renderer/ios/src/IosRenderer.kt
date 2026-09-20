@@ -20,7 +20,8 @@ import platform.UIKit.UIScreen
 import platform.UIKit.UIWindow
 
 /**
- * Runs the renderer's Compose application (SPEC PR-2 `dioxus_compose_renderer_run`).
+ * Runs the renderer's Compose application. This is what `dioxus_compose_renderer_run`
+ * calls.
  *
  * The desktop renderer opens a window and returns when the window closes. iOS has no such
  * moment: `UIApplicationMain` installs the run loop and never returns, and the system, not
@@ -28,7 +29,7 @@ import platform.UIKit.UIWindow
  * the process. A Rust `main` that calls `dioxus_compose::launch(app)` gets the behaviour it
  * already expects on desktop, which is that nothing after the call runs while the UI is up.
  *
- * The screen is drawn entirely from the mutation batches the Host streams (FR-1, FR-2).
+ * The screen is drawn entirely from the mutation batches the Host streams.
  */
 internal fun runRenderer(connection: () -> HostConnection): Int {
     hostConnectionFactory = connection
