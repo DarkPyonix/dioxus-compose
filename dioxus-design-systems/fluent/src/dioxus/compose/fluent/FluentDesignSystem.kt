@@ -211,9 +211,6 @@ class FluentDesignSystem private constructor(
         easing = androidx.compose.animation.core.CubicBezierEasing(0.1f, 0.9f, 0.2f, 1f),
     )
 
-    /** The lit top edge and shadow colour, for callers drawing a raised Fluent surface. */
-    internal val surfaceStrokeTop: Color get() = palette.strokeTop
-
     companion object {
         val Light: FluentDesignSystem = FluentDesignSystem(FluentPalette.Light, isDark = false)
         val Dark: FluentDesignSystem = FluentDesignSystem(FluentPalette.Dark, isDark = true)
