@@ -1,30 +1,49 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/check.sh [--full]
+# Usage: ./scripts/check.sh [--full] [--no-kotlin]
 #
-# Runs the repository's Rust quality gates. The default uses Criterion's quick
-# mode for local and CI presubmit checks; --full runs the full benchmark sample.
+# Runs the repository's quality gates: the Rust workspace, then the Kotlin renderer
+# project. The default uses Criterion's quick mode for local and CI presubmit checks;
+# --full runs the full benchmark sample.
+#
+# The Kotlin gate runs by default. Skip it with --no-kotlin or DXC_SKIP_KOTLIN=1 when
+# the Kotlin Toolchain has not been downloaded yet (the wrapper fetches it on first use).
 
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-case "${1:-}" in
-    "")
-        bench_args=(--quick --noplot)
-        export DXC_BENCH_QUICK=1
-        ;;
-    --full)
-        bench_args=(--noplot)
-        unset DXC_BENCH_QUICK
-        ;;
-    *)
-        echo "usage: $0 [--full]" >&2
-        exit 2
-        ;;
-esac
+full=0
+skip_kotlin="${DXC_SKIP_KOTLIN:-0}"
+
+for arg in "$@"; do
+    case "$arg" in
+        --full) full=1 ;;
+        --no-kotlin) skip_kotlin=1 ;;
+        *) echo "usage: $0 [--full] [--no-kotlin]" >&2; exit 2 ;;
+    esac
+done
+
+if [[ $full -eq 1 ]]; then
+    bench_args=(--noplot)
+    unset DXC_BENCH_QUICK
+else
+    bench_args=(--quick --noplot)
+    export DXC_BENCH_QUICK=1
+fi
 
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
-cargo bench --workspace -- "${bench_args[@]}"
+# --benches restricts the run to Criterion bench targets. Without it cargo also runs the
+# lib's default test harness in bench mode, and that harness rejects Criterion's flags.
+cargo bench --workspace --benches -- "${bench_args[@]}"
+
+if [[ "$skip_kotlin" != "0" ]]; then
+    echo "skipping the Kotlin gate (--no-kotlin or DXC_SKIP_KOTLIN)"
+    exit 0
+fi
+
+cd "$repo_root/dioxus-compose-renderer"
+./kotlin build
+./kotlin test

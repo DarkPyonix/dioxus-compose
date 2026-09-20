@@ -7,16 +7,76 @@ DIST_DIR="$BUILD_DIR/dist"
 LIBRARY_NAME="libdioxus_compose_renderer"
 METADATA_DIR="$NATIVE_DIR/resources/META-INF/native-image/org.thisisthepy/dioxus-compose-renderer"
 
+die() {
+    echo "error: $1" >&2
+    shift
+    local line
+    for line in "$@"; do echo "       $line" >&2; done
+    exit 1
+}
+
+# Every script here builds or links a macOS shared library (.dylib, AppKit, Skiko JNI).
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    die "only macOS is scripted so far (this is $(uname -s))" \
+        "Linux and Windows native-image builds are not scripted yet." \
+        "The Rust workspace and the JVM dev shell (./kotlin run -m native) work everywhere."
+fi
+
+HOST_ARCH="$(uname -m)"
+case "$HOST_ARCH" in
+    arm64)  SKIKO_ARCH=arm64 ;;
+    x86_64) SKIKO_ARCH=x64 ;;
+    *) die "unsupported macOS architecture '$HOST_ARCH'" \
+           "Only arm64 and x86_64 are supported; Skiko publishes no other macOS build." ;;
+esac
+
+# The C shims and the native-image link step need cc, ld and the AppKit headers.
+if ! xcode-select -p >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
+    die "Xcode command line tools not found" \
+        "They provide cc, ld and the AppKit headers used by native/c/*." \
+        "fix: xcode-select --install"
+fi
+
 # macOS needs Liberica NIK Full: upstream GraalVM skips AWT on Darwin (oracle/graal#13272).
+NIK_INSTALL_HINT=(
+    "Install Liberica NIK 25 Full (the 'Full' variant, not the standard one):"
+    "  https://bell-sw.com/pages/downloads/native-image-kit/"
+    "  or: brew install --cask liberica-nik-full"
+    "Scripts use \$GRAALVM_HOME when set, otherwise the newest match of"
+    "  ~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home"
+    "Run ../../scripts/setup-check.sh from the repository root to verify the toolchain."
+)
+
 if [[ -z "${GRAALVM_HOME:-}" ]]; then
     for candidate in "$HOME"/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home; do
         [[ -x "$candidate/bin/native-image" ]] && GRAALVM_HOME="$candidate"
     done
+    [[ -n "${GRAALVM_HOME:-}" ]] || die \
+        "no Liberica NIK 25 Full found, and GRAALVM_HOME is not set" "${NIK_INSTALL_HINT[@]}"
+elif [[ ! -d "$GRAALVM_HOME" ]]; then
+    die "GRAALVM_HOME=$GRAALVM_HOME does not exist" "${NIK_INSTALL_HINT[@]}"
 fi
-if [[ -z "${GRAALVM_HOME:-}" || ! -x "$GRAALVM_HOME/bin/native-image" ]]; then
-    echo "error: set GRAALVM_HOME to a Liberica NIK 25 Full installation" >&2
-    exit 1
-fi
+
+[[ -x "$GRAALVM_HOME/bin/native-image" ]] || die \
+    "GRAALVM_HOME=$GRAALVM_HOME has no executable bin/native-image" "${NIK_INSTALL_HINT[@]}"
+
+# The static AWT archive is the thing upstream GraalVM is missing on Darwin. Checking it
+# here turns an unreadable link failure minutes into the build into an immediate message.
+AWT_STATIC_ARCHIVE=""
+for candidate in "$GRAALVM_HOME"/lib/static/darwin-*/libawt_lwawt.a; do
+    [[ -f "$candidate" ]] && AWT_STATIC_ARCHIVE="$candidate"
+done
+[[ -n "$AWT_STATIC_ARCHIVE" ]] || die \
+    "$GRAALVM_HOME has no lib/static/darwin-*/libawt_lwawt.a" \
+    "This is upstream GraalVM or a non-Full NIK. On macOS it skips AWT entirely" \
+    "(oracle/graal#13272), so Compose Desktop cannot be linked into a native image." \
+    "${NIK_INSTALL_HINT[@]}"
+
+KOTLIN_WRAPPER="$PROJECT_DIR/kotlin"
+[[ -x "$KOTLIN_WRAPPER" ]] || die \
+    "$KOTLIN_WRAPPER is missing or not executable" \
+    "It is the self-bootstrapping Kotlin Toolchain wrapper; no separate install is needed." \
+    "fix: chmod +x $KOTLIN_WRAPPER"
 
 CLASSPATH_FILE="$BUILD_DIR/classpath.txt"
 

@@ -31,6 +31,110 @@ dioxus-compose/
 | [docs/INTENT.md](docs/INTENT.md) | 동기, 협상 불가 조건, 아키텍처 결정 기록 |
 | [docs/SPEC.md](docs/SPEC.md) | 기능/비기능 요구사항, 경계 프로토콜, 검증 기준 |
 
+## Development setup
+
+Run `./scripts/setup-check.sh` first. It verifies everything below and prints the exact
+command to install whatever is missing.
+
+### Rust
+
+Install the toolchain with [rustup](https://rustup.rs). `scripts/check.sh` runs
+`cargo fmt` and `cargo clippy`, so both components are required:
+
+```bash
+rustup component add rustfmt clippy
+```
+
+### Liberica NIK 25 Full (renderer native image)
+
+The desktop renderer is built with GraalVM native-image. **On macOS, upstream GraalVM
+does not work**: it skips AWT on Darwin ([oracle/graal#13272](https://github.com/oracle/graal/issues/13272)),
+so Compose Desktop cannot be linked into an image. Use BellSoft Liberica NIK 25 **Full**
+(the Full variant; the standard one is not enough).
+
+```bash
+brew install --cask liberica-nik-full
+# or download "NIK 25 Full" from https://bell-sw.com/pages/downloads/native-image-kit/
+```
+
+`dioxus-compose-renderer/native/scripts/env.sh` finds it in this order:
+
+1. `$GRAALVM_HOME`, if set.
+2. Otherwise the newest match of
+   `~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home`.
+
+The installation used for development is
+`~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25-25.0.4.1`.
+The scripts reject an installation without `lib/static/darwin-*/libawt_lwawt.a`, which is
+how a plain GraalVM is caught before a long build fails at the link step.
+
+macOS also needs the Xcode command line tools (`xcode-select --install`) for `cc`, `ld`
+and the AppKit headers used by `dioxus-compose-renderer/native/c/`.
+
+Only macOS is scripted so far. Linux and Windows native-image builds are not yet.
+
+### Kotlin
+
+Nothing to install. `dioxus-compose-renderer/kotlin` (and `kotlin.bat` on Windows) is a
+self-bootstrapping Kotlin Toolchain wrapper: it downloads the pinned toolchain on first
+use.
+
+## Building and running
+
+### JVM development shell
+
+The fastest loop for renderer work, with hot reload and `@Preview` (NFR-5). No
+native-image build required:
+
+```bash
+cd dioxus-compose-renderer
+./kotlin run -m desktop   # Compose dev shell
+./kotlin run -m native    # the renderer module itself, on the JVM
+```
+
+### Renderer native shared library
+
+Produces `dioxus-compose-renderer/build/native-image/dist/lib/` with the renderer,
+Skia, and the `libjawt` / `libawt_lwawt` shims (SPEC PR-8). Takes a few minutes:
+
+```bash
+cd dioxus-compose-renderer
+./native/scripts/build-native.sh
+```
+
+### C smoke host
+
+Links a minimal C host against the built library and calls
+`dioxus_compose_renderer_run`. A window opens; closing it must return 0 (PR-8
+acceptance criterion):
+
+```bash
+cd dioxus-compose-renderer
+./native/scripts/smoke-test.sh
+```
+
+Set `DIOXUS_COMPOSE_AUTOEXIT_MS=6000` to have the window close itself, for unattended runs.
+
+### Rust demo
+
+After the native library is built:
+
+```bash
+cargo run -p dioxus-compose --example desktop_demo --features native-renderer
+```
+
+The build script looks for the renderer in this workspace's
+`dioxus-compose-renderer/build/native-image/dist/lib`. Set
+`DIOXUS_COMPOSE_RENDERER_DIR` to use a renderer staged somewhere else.
+
+## Quality gate
+
+```bash
+./scripts/check.sh              # fmt, clippy, tests, quick benchmarks, Kotlin build + test
+./scripts/check.sh --full       # same, with the full benchmark sample
+./scripts/check.sh --no-kotlin  # Rust only (also: DXC_SKIP_KOTLIN=1)
+```
+
 ## 라이선스
 
 Apache License 2.0. [LICENSE](LICENSE)를 참고하세요.

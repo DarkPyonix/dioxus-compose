@@ -9,9 +9,14 @@
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 
-[[ "$(uname -s)" == "Darwin" ]] || { echo "error: only macOS is scripted so far" >&2; exit 1; }
-arch="$(uname -m)"
-skiko_arch="$([[ "$arch" == "arm64" ]] && echo arm64 || echo x64)"
+# env.sh validates the platform, the architecture, the Xcode tools and the NIK install.
+arch="$HOST_ARCH"
+skiko_arch="$SKIKO_ARCH"
+
+for source_file in renderer_entry.c macos_awt_compat.c macos_main_thread.m \
+                   jawt_forwarder.c lwawt_placeholder.c; do
+    [[ -f "$NATIVE_DIR/c/$source_file" ]] || die "missing $NATIVE_DIR/c/$source_file"
+done
 
 # The classpath comes from a short JVM run so that it matches what the metadata describes.
 DIOXUS_COMPOSE_AUTOEXIT_MS=1 run_on_jvm ""
@@ -58,6 +63,10 @@ done
     "${linker_args[@]}")
 
 skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-macos-$skiko_arch" | head -1)"
+[[ -n "$skiko_jar" ]] || die \
+    "no skiko-awt-runtime-macos-$skiko_arch jar on the runtime classpath" \
+    "Skia ships inside that jar and is staged next to the library." \
+    "Check $CLASSPATH_FILE and the compose dependency in native/module.yaml."
 unzip -q -o -j "$skiko_jar" "libskiko-macos-$skiko_arch.dylib" -d "$lib"
 cc -dynamiclib -O2 -arch "$arch" -install_name @rpath/libjawt.dylib \
     -o "$lib/libjawt.dylib" "$NATIVE_DIR/c/jawt_forwarder.c"
