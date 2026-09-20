@@ -58,7 +58,7 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - TextField의 편집 값과 조합 상태는 Renderer가 소유합니다.
 - Renderer는 변경을 알림 이벤트(`TextChanged`, 디바운스 적용)와 확정 이벤트(`TextSubmitted`, `FocusLost`)로 보냅니다.
 - Host가 값을 바꿀 때는 명시적 명령 `SetText(node_id, text, selection)`을 씁니다. Renderer는 IME 조합이 진행 중이면 조합이 끝날 때까지 적용을 미룹니다.
-- 수용 기준: §6 IME 체크리스트를 통과합니다.
+- 수용 기준: §6 IME 체크리스트를 통과합니다. **핵심 5개 항목은 2026-09-21 native-image 빌드에서 확인했습니다.** 나머지 4개(멀티라인 Enter 처리, 한글 혼합 붙여넣기, 일본어/중국어 후보창 위치, TextChanged 중 조합 유지)는 미확인이므로 `Done`이 아닙니다.
 
 ### FR-6 Dioxus 렌더러 (`Agreed`)
 `dioxus-core` VirtualDom의 `Mutations`를 프로토콜 Mutation으로 변환하는 렌더러를 제공합니다.
@@ -743,19 +743,23 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 
 native-image 빌드에서 macOS와 Windows 각각 수동으로 확인합니다.
 
-**macOS arm64 결과 (2026-09-20, Liberica NIK 25)**: 한국어 입력기로 전환하고 입력창에 한글을 입력하는 기본 경로가 동작합니다. 나머지 항목은 아직 확인 전입니다.
+**macOS arm64 결과 (2026-09-21, Liberica NIK 25, native-image 빌드)**: 5개 항목을 사람이 직접 확인했습니다. 조합 과정 표시, 조합 중 자모 단위 백스페이스, 조합 중 화살표 이동 시 확정 후 이동, 문장 중간 삽입, 한글 폰트 폴백입니다. **M1의 관문이 이 항목이었고, 통과했습니다.**
+
+확인 절차: `DIOXUS_COMPOSE_SMOKE_IME=1 desktop/scripts/smoke-test.sh`로 텍스트 필드가 있는 스모크 창을 띄우고 한국어 입력기로 입력합니다. 이 플래그가 없으면 창에 라벨과 버튼만 있어서 타이핑할 곳이 없습니다.
+
+남은 4개는 미확인이며, 자동화할 수 없으므로 사람이 실행해야 합니다.
 
 여기서 발견한 실패 양상을 남겨 둡니다. 등록되지 않은 입력 경로는 빌드도 렌더링도 멀쩡히 통과한 뒤, 입력기가 텍스트 필드를 건드리는 순간 Objective-C 예외로 프로세스를 abort시킵니다. Java 스택 트레이스 없이 창이 그냥 사라지므로, 이 증상이 보이면 실행 로그에서 `JNI Lookup Exception`과 그 앞의 `NoSuchMethodError`를 먼저 찾으십시오. 근본 대응은 `ImeReachabilityFeature`가 패키지 단위로 등록하는 것입니다(INTENT D9-macOS).
 
-- [ ] "안녕하세요" 입력 시 조합 과정이 정상 표시됨
-- [ ] 조합 중 백스페이스로 자모 단위 삭제
-- [ ] 조합 중 화살표로 커서 이동 시 조합 확정 후 이동
-- [ ] 문장 중간에 커서를 두고 한글 삽입
+- [x] "안녕하세요" 입력 시 조합 과정이 정상 표시됨
+- [x] 조합 중 백스페이스로 자모 단위 삭제
+- [x] 조합 중 화살표로 커서 이동 시 조합 확정 후 이동
+- [x] 문장 중간에 커서를 두고 한글 삽입
 - [ ] 멀티라인 필드에서 조합 중 Enter 처리 (조합 확정과 줄바꿈/제출 구분)
 - [ ] 한글이 섞인 긴 텍스트 붙여넣기
 - [ ] 일본어/중국어 IME 후보창이 커서 위치에 뜸
 - [ ] Host가 `TextChanged`를 받는 동안 조합이 리셋되지 않음
-- [ ] 한글 폰트 폴백 (두부 문자 없음)
+- [x] 한글 폰트 폴백 (두부 문자 없음)
 
 실패하면 INTENT D4에 따라 native-image 설정(ServiceLoader, JNI/리플렉션 config, 로케일/문자셋)부터 점검합니다.
 
