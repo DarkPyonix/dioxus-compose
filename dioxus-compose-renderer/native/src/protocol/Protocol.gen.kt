@@ -7,11 +7,47 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant }
 
 enum class Key { Enter }
+
+enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError }
+
+enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
+
+enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
+
+enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
+
+enum class TextAlign { Start, Center, End, Justify }
+
+enum class TextOverflow { Clip, Ellipsis, Visible }
+
+enum class Arrangement { Start, Center, End, SpaceBetween, SpaceAround, SpaceEvenly }
+
+enum class Alignment { TopStart, TopCenter, TopEnd, CenterStart, Center, CenterEnd, BottomStart, BottomCenter, BottomEnd }
+
+enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+
+enum class DesignSystem { Material3, AppleHig, Fluent }
+
+enum class ColorScheme { Light, Dark, FollowSystem }
+
+sealed interface Paint {
+    data class Role(val role: ColorRole) : Paint
+
+    /** A literal 0xAARRGGBB colour. */
+    data class Literal(val argb: Int) : Paint
+}
+
+data class Theme(
+    val designSystem: DesignSystem,
+    val fallback: DesignSystem,
+    val colorScheme: ColorScheme,
+    val adaptive: Boolean,
+)
 
 sealed interface PropertyValue {
     data object None : PropertyValue
@@ -29,8 +65,15 @@ sealed interface Modifier {
     data class Width(val value: kotlin.Float) : Modifier
     data class Height(val value: kotlin.Float) : Modifier
     data class Size(val width: kotlin.Float, val height: kotlin.Float) : Modifier
-    data class Background(val argb: Int) : Modifier
+    data class Background(val paint: Paint) : Modifier
     data class Clickable(val handlerId: Long) : Modifier
+    data class PaddingRole(val role: org.thisisthepy.dioxus.compose.protocol.SpaceRole) : Modifier
+    data class PaddingEach(val start: kotlin.Float, val top: kotlin.Float, val end: kotlin.Float, val bottom: kotlin.Float) : Modifier
+    data class Weight(val value: kotlin.Float) : Modifier
+    data class Shape(val topStart: kotlin.Float, val topEnd: kotlin.Float, val bottomEnd: kotlin.Float, val bottomStart: kotlin.Float) : Modifier
+    data class ShapeRole(val role: org.thisisthepy.dioxus.compose.protocol.ShapeRole) : Modifier
+    data class Border(val width: kotlin.Float, val paint: Paint) : Modifier
+    data class Elevation(val value: kotlin.Float) : Modifier
 }
 
 sealed interface Mutation {
@@ -42,6 +85,7 @@ sealed interface Mutation {
     data class Remove(val nodeId: Int) : Mutation
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
+    data class SetTheme(val theme: Theme) : Mutation
 }
 
 sealed interface HostEvent {
@@ -61,7 +105,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 2023235891227298086L
+    const val SCHEMA_HASH: Long = -7526777000988176584L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -73,6 +117,7 @@ object Protocol {
     private const val TAG_REMOVE = 6
     private const val TAG_SET_TEXT = 7
     private const val TAG_APPEND_TEXT = 8
+    private const val TAG_SET_THEME = 9
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -189,6 +234,21 @@ object Protocol {
                         Mutation.AppendText(
                             readU32(batch, base, available, offset + 4).toInt(),
                             readString(batch, base, available, offset + 8),
+                        )
+                    }
+                    TAG_SET_THEME -> {
+                        requireRecordLength(length, 12, offset)
+                        val adaptive = readU16(batch, base, available, offset + 10)
+                        if (adaptive > 1) {
+                            throw ProtocolException("invalid adaptive flag $adaptive", offset + 10)
+                        }
+                        Mutation.SetTheme(
+                            Theme(
+                                designSystem(readU16(batch, base, available, offset + 4), offset + 4),
+                                designSystem(readU16(batch, base, available, offset + 6), offset + 6),
+                                colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
+                                adaptive == 1,
+                            ),
                         )
                     }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
@@ -310,6 +370,7 @@ object Protocol {
         6 -> WidgetKind.Button
         7 -> WidgetKind.Spacer
         8 -> WidgetKind.LazyColumn
+        9 -> WidgetKind.ScrollColumn
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
 
@@ -326,11 +387,146 @@ object Protocol {
         10 -> PropertyKind.ItemCount
         11 -> PropertyKind.ItemKey
         12 -> PropertyKind.OnRangeRequested
+        13 -> PropertyKind.TypeRole
+        14 -> PropertyKind.FontSize
+        15 -> PropertyKind.FontWeight
+        16 -> PropertyKind.LineHeight
+        17 -> PropertyKind.LetterSpacing
+        18 -> PropertyKind.Color
+        19 -> PropertyKind.TextAlign
+        20 -> PropertyKind.MaxLines
+        21 -> PropertyKind.Overflow
+        22 -> PropertyKind.Arrangement
+        23 -> PropertyKind.Spacing
+        24 -> PropertyKind.SpaceRole
+        25 -> PropertyKind.Alignment
+        26 -> PropertyKind.Variant
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
 
     private fun keyTag(key: Key): Int = when (key) {
         Key.Enter -> 1
+    }
+
+    private fun colorRole(tag: Int, offset: Int): ColorRole = when (tag) {
+        1 -> ColorRole.Primary
+        2 -> ColorRole.OnPrimary
+        3 -> ColorRole.Secondary
+        4 -> ColorRole.OnSecondary
+        5 -> ColorRole.Surface
+        6 -> ColorRole.OnSurface
+        7 -> ColorRole.SurfaceVariant
+        8 -> ColorRole.OnSurfaceVariant
+        9 -> ColorRole.Background
+        10 -> ColorRole.OnBackground
+        11 -> ColorRole.Outline
+        12 -> ColorRole.OutlineVariant
+        13 -> ColorRole.Error
+        14 -> ColorRole.OnError
+        else -> throw ProtocolException("unknown ColorRole tag $tag", offset)
+    }
+
+    private fun typeRole(tag: Int, offset: Int): TypeRole = when (tag) {
+        1 -> TypeRole.Display
+        2 -> TypeRole.Headline
+        3 -> TypeRole.Title
+        4 -> TypeRole.Subtitle
+        5 -> TypeRole.Body
+        6 -> TypeRole.BodyStrong
+        7 -> TypeRole.Label
+        8 -> TypeRole.Caption
+        9 -> TypeRole.Mono
+        else -> throw ProtocolException("unknown TypeRole tag $tag", offset)
+    }
+
+    private fun shapeRole(tag: Int, offset: Int): ShapeRole = when (tag) {
+        1 -> ShapeRole.None
+        2 -> ShapeRole.ExtraSmall
+        3 -> ShapeRole.Small
+        4 -> ShapeRole.Medium
+        5 -> ShapeRole.Large
+        6 -> ShapeRole.Full
+        else -> throw ProtocolException("unknown ShapeRole tag $tag", offset)
+    }
+
+    private fun spaceRole(tag: Int, offset: Int): SpaceRole = when (tag) {
+        1 -> SpaceRole.None
+        2 -> SpaceRole.Xs
+        3 -> SpaceRole.Sm
+        4 -> SpaceRole.Md
+        5 -> SpaceRole.Lg
+        6 -> SpaceRole.Xl
+        7 -> SpaceRole.Xxl
+        else -> throw ProtocolException("unknown SpaceRole tag $tag", offset)
+    }
+
+    private fun textAlign(tag: Int, offset: Int): TextAlign = when (tag) {
+        1 -> TextAlign.Start
+        2 -> TextAlign.Center
+        3 -> TextAlign.End
+        4 -> TextAlign.Justify
+        else -> throw ProtocolException("unknown TextAlign tag $tag", offset)
+    }
+
+    private fun textOverflow(tag: Int, offset: Int): TextOverflow = when (tag) {
+        1 -> TextOverflow.Clip
+        2 -> TextOverflow.Ellipsis
+        3 -> TextOverflow.Visible
+        else -> throw ProtocolException("unknown TextOverflow tag $tag", offset)
+    }
+
+    private fun arrangement(tag: Int, offset: Int): Arrangement = when (tag) {
+        1 -> Arrangement.Start
+        2 -> Arrangement.Center
+        3 -> Arrangement.End
+        4 -> Arrangement.SpaceBetween
+        5 -> Arrangement.SpaceAround
+        6 -> Arrangement.SpaceEvenly
+        else -> throw ProtocolException("unknown Arrangement tag $tag", offset)
+    }
+
+    private fun alignment(tag: Int, offset: Int): Alignment = when (tag) {
+        1 -> Alignment.TopStart
+        2 -> Alignment.TopCenter
+        3 -> Alignment.TopEnd
+        4 -> Alignment.CenterStart
+        5 -> Alignment.Center
+        6 -> Alignment.CenterEnd
+        7 -> Alignment.BottomStart
+        8 -> Alignment.BottomCenter
+        9 -> Alignment.BottomEnd
+        else -> throw ProtocolException("unknown Alignment tag $tag", offset)
+    }
+
+    private fun buttonVariant(tag: Int, offset: Int): ButtonVariant = when (tag) {
+        1 -> ButtonVariant.Filled
+        2 -> ButtonVariant.Tonal
+        3 -> ButtonVariant.Outlined
+        4 -> ButtonVariant.Text
+        else -> throw ProtocolException("unknown ButtonVariant tag $tag", offset)
+    }
+
+    private fun designSystem(tag: Int, offset: Int): DesignSystem = when (tag) {
+        1 -> DesignSystem.Material3
+        2 -> DesignSystem.AppleHig
+        3 -> DesignSystem.Fluent
+        else -> throw ProtocolException("unknown DesignSystem tag $tag", offset)
+    }
+
+    private fun colorScheme(tag: Int, offset: Int): ColorScheme = when (tag) {
+        1 -> ColorScheme.Light
+        2 -> ColorScheme.Dark
+        3 -> ColorScheme.FollowSystem
+        else -> throw ProtocolException("unknown ColorScheme tag $tag", offset)
+    }
+
+    private fun paint(bits: Long, offset: Int): Paint {
+        val value = bits.toInt()
+        return when (val kind = (bits ushr 32).toInt()) {
+            1 -> Paint.Role(colorRole(value, offset))
+            2 -> Paint.Literal(value)
+            else -> throw ProtocolException("unknown paint kind $kind", offset)
+        }
     }
 
     private fun modifier(tag: Int, first: Long, second: Long, offset: Int): Modifier = when (tag) {
@@ -341,8 +537,15 @@ object Protocol {
         4 -> Modifier.Width(kotlin.Float.fromBits(first.toInt()))
         5 -> Modifier.Height(kotlin.Float.fromBits(first.toInt()))
         6 -> Modifier.Size(kotlin.Float.fromBits(first.toInt()), kotlin.Float.fromBits(second.toInt()))
-        7 -> Modifier.Background(first.toInt())
+        7 -> Modifier.Background(paint(first, offset))
         8 -> Modifier.Clickable(first)
+        9 -> Modifier.PaddingRole(spaceRole(first.toInt(), offset))
+        10 -> Modifier.PaddingEach(kotlin.Float.fromBits(first.toInt()), kotlin.Float.fromBits((first ushr 32).toInt()), kotlin.Float.fromBits(second.toInt()), kotlin.Float.fromBits((second ushr 32).toInt()))
+        11 -> Modifier.Weight(kotlin.Float.fromBits(first.toInt()))
+        12 -> Modifier.Shape(kotlin.Float.fromBits(first.toInt()), kotlin.Float.fromBits((first ushr 32).toInt()), kotlin.Float.fromBits(second.toInt()), kotlin.Float.fromBits((second ushr 32).toInt()))
+        13 -> Modifier.ShapeRole(shapeRole(first.toInt(), offset))
+        14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
+        15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 
@@ -394,5 +597,209 @@ object Protocol {
         if (offset < 0 || length < 0 || offset.toLong() + length > available.toLong()) {
             throw ProtocolException("truncated or out-of-range data", errorOffset)
         }
+    }
+}
+
+/** FR-13.2: one rung of the type ladder. Sizes are sp, spacing may be negative. */
+data class TypeToken(
+    val size: Float,
+    val weight: Int,
+    val lineHeight: Float,
+    val letterSpacing: Float,
+    val monospace: Boolean,
+)
+
+/**
+ * Items 1 to 4 of the FR-14.6 table for one design system.
+ *
+ * Arrays are indexed by the role's ordinal, which matches its wire tag minus one.
+ * Items 5 to 7 (elevation rendering, ButtonVariant styling, motion) are the Renderer's.
+ */
+class DesignTokenTable(
+    val system: DesignSystem,
+    /** The published guideline these values come from. */
+    val reference: String,
+    val defaultFamily: String,
+    val monospaceFamily: String,
+    private val lightColors: IntArray,
+    private val darkColors: IntArray,
+    private val typeScale: Array<TypeToken>,
+    private val shapeRadii: FloatArray,
+    private val spaces: FloatArray,
+) {
+    /** The 0xAARRGGBB value for a role. `dark` is the scheme the Renderer resolved. */
+    fun color(role: ColorRole, dark: Boolean): Int =
+        if (dark) darkColors[role.ordinal] else lightColors[role.ordinal]
+
+    fun type(role: TypeRole): TypeToken = typeScale[role.ordinal]
+
+    /** Corner radius in dp. */
+    fun radius(role: ShapeRole): Float = shapeRadii[role.ordinal]
+
+    /** Spacing in dp. */
+    fun space(role: SpaceRole): Float = spaces[role.ordinal]
+}
+
+object DesignTokens {
+    val MATERIAL3: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Material3,
+        "Material 3 baseline scheme and type scale, m3.material.io, 2024 baseline",
+        "Roboto",
+        "Roboto Mono",
+        intArrayOf(
+            0xff6750a4.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff625b71.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xfffef7ff.toInt(), // Surface
+            0xff1d1b20.toInt(), // OnSurface
+            0xffe7e0ec.toInt(), // SurfaceVariant
+            0xff49454f.toInt(), // OnSurfaceVariant
+            0xfffef7ff.toInt(), // Background
+            0xff1d1b20.toInt(), // OnBackground
+            0xff79747e.toInt(), // Outline
+            0xffcac4d0.toInt(), // OutlineVariant
+            0xffb3261e.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        intArrayOf(
+            0xffd0bcff.toInt(), // Primary
+            0xff381e72.toInt(), // OnPrimary
+            0xffccc2dc.toInt(), // Secondary
+            0xff332d41.toInt(), // OnSecondary
+            0xff141218.toInt(), // Surface
+            0xffe6e0e9.toInt(), // OnSurface
+            0xff49454f.toInt(), // SurfaceVariant
+            0xffcac4d0.toInt(), // OnSurfaceVariant
+            0xff141218.toInt(), // Background
+            0xffe6e0e9.toInt(), // OnBackground
+            0xff938f99.toInt(), // Outline
+            0xff49454f.toInt(), // OutlineVariant
+            0xfff2b8b5.toInt(), // Error
+            0xff601410.toInt(), // OnError
+        ),
+        arrayOf(
+            TypeToken(57.0f, 400, 64.0f, 0.0f, false), // Display
+            TypeToken(32.0f, 400, 40.0f, 0.0f, false), // Headline
+            TypeToken(22.0f, 400, 28.0f, 0.0f, false), // Title
+            TypeToken(16.0f, 500, 24.0f, 0.15f, false), // Subtitle
+            TypeToken(16.0f, 400, 24.0f, 0.5f, false), // Body
+            TypeToken(16.0f, 500, 24.0f, 0.15f, false), // BodyStrong
+            TypeToken(14.0f, 500, 20.0f, 0.1f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.4f, false), // Caption
+            TypeToken(14.0f, 400, 20.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 12.0f, 16.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 24.0f, 32.0f, 48.0f),
+    )
+
+    val APPLE_HIG: DesignTokenTable = DesignTokenTable(
+        DesignSystem.AppleHig,
+        "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
+        "SF Pro",
+        "SF Mono",
+        intArrayOf(
+            0xff007aff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff5856d6.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff000000.toInt(), // OnSurface
+            0xfff2f2f7.toInt(), // SurfaceVariant
+            0xff3c3c43.toInt(), // OnSurfaceVariant
+            0xfff2f2f7.toInt(), // Background
+            0xff000000.toInt(), // OnBackground
+            0xffc6c6c8.toInt(), // Outline
+            0xffe5e5ea.toInt(), // OutlineVariant
+            0xffff3b30.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        intArrayOf(
+            0xff0a84ff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff5e5ce6.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xff1c1c1e.toInt(), // Surface
+            0xffffffff.toInt(), // OnSurface
+            0xff2c2c2e.toInt(), // SurfaceVariant
+            0xffebebf5.toInt(), // OnSurfaceVariant
+            0xff000000.toInt(), // Background
+            0xffffffff.toInt(), // OnBackground
+            0xff38383a.toInt(), // Outline
+            0xff48484a.toInt(), // OutlineVariant
+            0xffff453a.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        arrayOf(
+            TypeToken(34.0f, 400, 41.0f, 0.37f, false), // Display
+            TypeToken(28.0f, 400, 34.0f, 0.36f, false), // Headline
+            TypeToken(22.0f, 400, 28.0f, 0.35f, false), // Title
+            TypeToken(17.0f, 600, 22.0f, -0.41f, false), // Subtitle
+            TypeToken(17.0f, 400, 22.0f, -0.41f, false), // Body
+            TypeToken(17.0f, 600, 22.0f, -0.41f, false), // BodyStrong
+            TypeToken(15.0f, 400, 20.0f, -0.24f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
+            TypeToken(15.0f, 400, 20.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 10.0f, 14.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 20.0f, 32.0f, 44.0f),
+    )
+
+    val FLUENT: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Fluent,
+        "WinUI / Fluent 2 web and Windows tokens, fluent2.microsoft.design, 2024",
+        "Segoe UI Variable",
+        "Cascadia Mono",
+        intArrayOf(
+            0xff0f6cbd.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xffebf3fc.toInt(), // Secondary
+            0xff0f548c.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff242424.toInt(), // OnSurface
+            0xfff5f5f5.toInt(), // SurfaceVariant
+            0xff424242.toInt(), // OnSurfaceVariant
+            0xfffafafa.toInt(), // Background
+            0xff242424.toInt(), // OnBackground
+            0xffd1d1d1.toInt(), // Outline
+            0xffe0e0e0.toInt(), // OutlineVariant
+            0xffc50f1f.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        intArrayOf(
+            0xff479ef5.toInt(), // Primary
+            0xff000000.toInt(), // OnPrimary
+            0xff0c3b5e.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xff292929.toInt(), // Surface
+            0xffffffff.toInt(), // OnSurface
+            0xff333333.toInt(), // SurfaceVariant
+            0xffd6d6d6.toInt(), // OnSurfaceVariant
+            0xff1f1f1f.toInt(), // Background
+            0xffffffff.toInt(), // OnBackground
+            0xff666666.toInt(), // Outline
+            0xff3d3d3d.toInt(), // OutlineVariant
+            0xffdc626d.toInt(), // Error
+            0xff000000.toInt(), // OnError
+        ),
+        arrayOf(
+            TypeToken(40.0f, 600, 52.0f, 0.0f, false), // Display
+            TypeToken(28.0f, 600, 36.0f, 0.0f, false), // Headline
+            TypeToken(20.0f, 600, 28.0f, 0.0f, false), // Title
+            TypeToken(16.0f, 600, 22.0f, 0.0f, false), // Subtitle
+            TypeToken(14.0f, 400, 20.0f, 0.0f, false), // Body
+            TypeToken(14.0f, 600, 20.0f, 0.0f, false), // BodyStrong
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
+            TypeToken(13.0f, 400, 18.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 2.0f, 3.0f, 4.0f, 8.0f, 1000.0f),
+        floatArrayOf(0.0f, 2.0f, 4.0f, 8.0f, 12.0f, 20.0f, 32.0f),
+    )
+
+    fun of(system: DesignSystem): DesignTokenTable = when (system) {
+        DesignSystem.Material3 -> MATERIAL3
+        DesignSystem.AppleHig -> APPLE_HIG
+        DesignSystem.Fluent -> FLUENT
     }
 }
