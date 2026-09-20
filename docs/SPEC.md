@@ -73,8 +73,10 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 
 ### FR-8 LazyColumn 윈도잉 (`Agreed`)
 - Host는 아이템 총 개수와 안정적인 key를 알립니다.
-- Renderer는 보이는 범위를 `RangeRequested`로 요청하고, Host는 그 구간의 서브트리만 생성합니다.
+- Renderer는 보이는 범위를 `RangeRequested`로 요청하고, Host는 **요청받은 구간만 정확히** 생성합니다. Host가 구간을 넓히지 않습니다.
+- **선읽기 버퍼는 Renderer가 소유합니다.** Renderer가 가시 범위에 버퍼를 더한 값을 `start`, `count`로 보냅니다. 스크롤 위치가 Renderer에 있으므로(D5) 얼마나 미리 읽을지 아는 쪽도 Renderer입니다. Host가 따로 버퍼를 더하면 Renderer는 받은 서브트리가 전체 목록의 몇 번째 자리에 놓이는지 알 수 없습니다. `start`가 곧 첫 아이템의 전역 인덱스라는 것이 이 규칙의 핵심입니다.
 - 아이템 식별: Host가 아이템마다 `Box` 래퍼 노드를 만들고 `item_key`(문자열)를 실어 보냅니다. Renderer는 그 값을 Compose `LazyColumn`의 key로 씁니다.
+- Renderer는 `item_count`개짜리 실제 Compose `LazyColumn`을 그립니다. 전역 인덱스 `i`는 `i - start`번째 자식으로 그리고, 구간 밖은 빈 자리로 둡니다. 그래서 스크롤 막대와 스크롤 거리가 전체 목록 기준으로 맞습니다.
 - 와이어: `RangeRequested`는 이벤트 태그 7(24바이트, `start: u32`, `count: u32`)입니다. Host는 `item_count`, `item_key`, `on_range_requested` 속성으로 선언합니다.
 - 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(Host 측 통과: 가시 20 + 버퍼 4 요청에 아이템 28개)**
 
