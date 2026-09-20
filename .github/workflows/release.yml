@@ -1,0 +1,176 @@
+# Release -- builds the renderer per platform and attaches it to a GitHub
+# Release when a version tag is pushed.
+#
+# Why artifacts instead of crates.io: the renderer distribution is the Compose
+# native-image shared library plus Skia, roughly 85MB. crates.io rejects
+# packages that large, and a binary blob has no business in a source crate
+# anyway. So the split is:
+#
+#   - `dioxus-compose` (the Rust Host) stays an ordinary crate. It builds with
+#     default features and no renderer present; only the optional
+#     `native-renderer` feature needs the shared library.
+#   - the renderer ships as a checksummed tarball on the GitHub Release for
+#     this tag, one per platform, fetched at build or install time.
+#
+# Nothing here publishes to crates.io. The publish job is written out below
+# but left commented: it needs a CARGO_REGISTRY_TOKEN secret and a human
+# decision about the first release, and a name on crates.io is unrecallable.
+#
+# The release is created as a *draft*: a human reviews the artifacts and
+# presses publish. Nothing becomes public from a tag push alone.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build a draft release for'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  renderer:
+    name: Build the renderer (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Only macOS arm64 is scripted today (SPEC PR-8, INTENT D9-macOS).
+          # Windows, Linux, and iOS (NFR-4) join this matrix when their build
+          # scripts exist; the packaging steps below are already generic.
+          - runner: macos-latest
+            target: macos-aarch64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Cache Liberica NIK
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/dioxus-compose/nik
+          key: nik-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-nik.sh') }}
+
+      - name: Install Liberica NIK 25 Full
+        run: ./scripts/install-nik.sh --github-env
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-${{ runner.os }}-
+
+      - name: Build the renderer shared library
+        run: ./dioxus-compose-renderer/native/scripts/build-native.sh
+
+      - name: Smoke test before shipping (SPEC PR-8)
+        env:
+          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
+        run: ./dioxus-compose-renderer/native/scripts/smoke-test.sh
+
+      - name: Package the distribution with a checksum
+        id: package
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="${{ inputs.tag || github.ref_name }}"
+          name="dioxus-compose-renderer-${version}-${TARGET}"
+          # dist/ holds lib/ (renderer, Skia, the AWT shims) and include/.
+          tar -czf "${name}.tar.gz" -C dioxus-compose-renderer/build/native-image/dist .
+          shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          cat "${name}.tar.gz.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload for the release job
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          retention-days: 7
+
+  release:
+    name: Draft the GitHub Release
+    needs: renderer
+    runs-on: ubuntu-latest
+    permissions:
+      # The only write permission anywhere in this repository's workflows, and
+      # it is scoped to this job: it creates a draft release and uploads files.
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Download the platform artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect the checksums into one file
+        run: |
+          set -euo pipefail
+          cat artifacts/*.sha256 > artifacts/SHA256SUMS
+          cat artifacts/SHA256SUMS
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS --clobber
+          else
+            gh release create "$TAG" \
+              --draft \
+              --title "$TAG" \
+              --notes "Renderer artifacts for \`$TAG\`. Verify with \`shasum -a 256 -c SHA256SUMS\`. Review, then publish by hand." \
+              artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS
+          fi
+
+  # ---------------------------------------------------------------------------
+  # crates.io publish -- intentionally disabled.
+  #
+  # Uncomment only after a human has: (1) decided the crate name and version
+  # are final, (2) added `description` and `repository` to
+  # dioxus-compose/Cargo.toml (crates.io rejects a package without a
+  # description, and `cargo package` already warns about it today),
+  # (3) reconciled the `license = "MIT"` field with the Apache-2.0 LICENSE file
+  # in the repository root, and (4) stored a CARGO_REGISTRY_TOKEN secret.
+  #
+  # Publishing is irreversible: a version can be yanked but never replaced,
+  # and the crate name is taken forever. It should not happen as a side
+  # effect of pushing a tag without someone deciding to.
+  #
+  # publish-crate:
+  #   name: Publish dioxus-compose to crates.io
+  #   needs: release
+  #   runs-on: ubuntu-latest
+  #   environment: crates-io   # require a manual approval gate
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ inputs.tag || github.ref }}
+  #     - run: rustup toolchain install stable --profile minimal && rustup default stable
+  #     - name: Publish
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  #       run: cargo publish -p dioxus-compose
+  # ---------------------------------------------------------------------------
