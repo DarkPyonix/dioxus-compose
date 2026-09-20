@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose
+package dioxus.compose
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity

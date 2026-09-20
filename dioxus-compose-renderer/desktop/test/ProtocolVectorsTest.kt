@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.test
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -10,15 +10,20 @@ import java.nio.ByteOrder
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.Paint
-import org.thisisthepy.dioxus.compose.protocol.ShapeRole
-import org.thisisthepy.dioxus.compose.protocol.SpaceRole
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.protocol.Protocol
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.Paint
+import dioxus.compose.protocol.ShapeRole
+import dioxus.compose.protocol.SpaceRole
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.Protocol
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.DioxusHost
+import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.tooling.FakeHostConnection
+import dioxus.compose.ui.node.nodeTestTag
 
 /**
  * Keeps the interpreter in lockstep with the Rust Host: the checked-in vectors are the bytes

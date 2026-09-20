@@ -1,7 +1,8 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.tooling
 
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.runtime.HostConnection
 
 /** What a scripted Host answers to one event: a diff batch plus the handler result (FR-12). */
 data class HostResponse(

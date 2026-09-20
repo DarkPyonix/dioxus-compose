@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose
+package dioxus.compose
 
 import androidx.compose.material3.Text
 import androidx.compose.ui.ExperimentalComposeUiApi

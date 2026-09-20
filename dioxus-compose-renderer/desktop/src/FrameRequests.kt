@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow

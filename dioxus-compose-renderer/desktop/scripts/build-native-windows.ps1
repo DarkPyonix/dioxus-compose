@@ -208,7 +208,7 @@ $NativeImageArgs = @(
     "-cp", $Classpath,
     "-o", $LibraryName,
     "--no-fallback",
-    "--features=org.thisisthepy.dioxus.compose.nativeimage.ImeReachabilityFeature",
+    "--features=dioxus.compose.ui.platform.ImeReachabilityFeature",
     "-Djava.awt.headless=false",
     "-H:IncludeLocales=en,ko",
     "-Os",

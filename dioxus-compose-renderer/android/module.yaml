@@ -9,5 +9,5 @@ dependencies:
 settings:
   compose: enabled
   android:
-    namespace: org.thisisthepy.dioxus.compose
-    applicationId: org.thisisthepy.dioxus.compose
+    namespace: dioxus.compose
+    applicationId: dioxus.compose

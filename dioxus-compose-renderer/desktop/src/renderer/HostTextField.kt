@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.foundation
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.text.BasicText
@@ -23,9 +23,14 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.design.LocalDesignTheme
+import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.ui.node.Node
+import dioxus.compose.ui.textStyle
+import dioxus.compose.ui.node.HostText
 
 /** Quiet period before a `TextChanged` notification is sent (SPEC FR-5, "debounced"). */
 const val TEXT_CHANGED_DEBOUNCE_MILLIS: Long = 120

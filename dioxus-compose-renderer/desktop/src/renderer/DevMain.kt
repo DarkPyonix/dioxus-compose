@@ -1,13 +1,15 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.tooling
 
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.PropertyValue
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.rememberDioxusHost
 
 // Node ids of the M0 slice, mirroring what the Rust renderer emits for
 // `Column { Text, TextField, Button }`.
@@ -50,7 +52,7 @@ fun m0DemoHost(): FakeHostConnection {
     var clicks = 0
     connection.respondWith { event ->
         when (event) {
-            is org.thisisthepy.dioxus.compose.protocol.HostEvent.Clicked -> {
+            is dioxus.compose.protocol.HostEvent.Clicked -> {
                 clicks += 1
                 HostResponse(
                     listOf(
@@ -64,7 +66,7 @@ fun m0DemoHost(): FakeHostConnection {
                 )
             }
 
-            is org.thisisthepy.dioxus.compose.protocol.HostEvent.TextSubmitted -> {
+            is dioxus.compose.protocol.HostEvent.TextSubmitted -> {
                 HostResponse(
                     listOf(
                         Mutation.SetProp(

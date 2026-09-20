@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
@@ -7,9 +7,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.delay
-import org.thisisthepy.dioxus.compose.renderer.DioxusContent
-import org.thisisthepy.dioxus.compose.renderer.HostConnection
-import org.thisisthepy.dioxus.compose.renderer.rememberDioxusHost
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.HostConnection
+import dioxus.compose.runtime.rememberDioxusHost
 
 /**
  * Runs the renderer's Compose application on the calling thread until its window closes.

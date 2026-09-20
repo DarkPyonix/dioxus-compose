@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.protocol
+package dioxus.compose.protocol
 
 import java.nio.charset.Charset
 

@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -17,8 +17,10 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.runtime.EventDispatcher
 
 /**
  * Rebuilds a Compose `Modifier` chain from the Host's modifier value list (SPEC FR-10).

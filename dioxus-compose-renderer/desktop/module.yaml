@@ -20,4 +20,4 @@ settings:
   jvm:
     # Used only for JVM runs that collect reachability metadata with the tracing agent.
     # The native image is built as a shared library and is entered through C entry points.
-    mainClass: org.thisisthepy.dioxus.compose.nativeimage.MetadataCollectionMainKt
+    mainClass: dioxus.compose.ui.platform.MetadataCollectionMainKt

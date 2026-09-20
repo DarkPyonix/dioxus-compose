@@ -1,7 +1,7 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.runtime
 
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Mutation
 
 /**
  * Synchronous, same-thread view of the Host (SPEC PR-1, PR-2).

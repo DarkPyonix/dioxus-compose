@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
 import java.io.File
 

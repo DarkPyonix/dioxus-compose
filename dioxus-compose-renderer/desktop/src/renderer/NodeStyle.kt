@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Alignment as ComposeAlignment
@@ -8,17 +8,24 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.thisisthepy.dioxus.compose.protocol.Alignment
-import org.thisisthepy.dioxus.compose.protocol.Arrangement as ProtocolArrangement
-import org.thisisthepy.dioxus.compose.protocol.ButtonVariant
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.protocol.Paint
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.PropertyValue
-import org.thisisthepy.dioxus.compose.protocol.SpaceRole
-import org.thisisthepy.dioxus.compose.protocol.TextAlign
-import org.thisisthepy.dioxus.compose.protocol.TextOverflow
-import org.thisisthepy.dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.Alignment
+import dioxus.compose.protocol.Arrangement as ProtocolArrangement
+import dioxus.compose.protocol.ButtonVariant
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.Paint
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.SpaceRole
+import dioxus.compose.protocol.TextAlign
+import dioxus.compose.protocol.TextOverflow
+import dioxus.compose.protocol.TypeRole
+import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.ui.node.Node
+import dioxus.compose.design.composeLetterSpacing
+import dioxus.compose.design.composeLineHeight
+import dioxus.compose.design.composeWeight
+import dioxus.compose.design.family
+import dioxus.compose.design.fontSize
 
 /**
  * Reads FR-13 design properties off a node and turns them into Compose values.

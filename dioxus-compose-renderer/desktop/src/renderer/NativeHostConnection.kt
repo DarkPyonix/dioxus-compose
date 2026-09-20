@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.ui.platform
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -8,9 +8,10 @@ import org.graalvm.nativeimage.c.function.CFunction
 import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
 import org.graalvm.word.Pointer
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.Protocol
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.Protocol
+import dioxus.compose.runtime.HostConnection
 
 // Word-typed parameters are declared nullable on purpose: Kotlin emits a null check for a
 // non-null reference parameter, and that check would hand the word value to a method that

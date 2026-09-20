@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.foundation
 
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
@@ -10,9 +10,10 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Key as ProtocolKey
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Key as ProtocolKey
 import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
+import dioxus.compose.runtime.EventDispatcher
 
 /**
  * Key routing to the Host (SPEC FR-12).

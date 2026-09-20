@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.foundation
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
@@ -22,8 +22,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.ui.node.Node
+import dioxus.compose.ui.textStyle
+import dioxus.compose.ui.variant
 
 /**
  * A Button drawn by the active design system's component rules (SPEC FR-14.2, FR-14.6).

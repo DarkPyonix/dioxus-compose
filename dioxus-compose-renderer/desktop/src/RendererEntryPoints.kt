@@ -1,12 +1,12 @@
 @file:JvmName("RendererEntryPoints")
 
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
 import org.graalvm.nativeimage.IsolateThread
 import org.graalvm.nativeimage.c.function.CEntryPoint
 import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
-import org.thisisthepy.dioxus.compose.renderer.NativeHostConnection
+import dioxus.compose.ui.platform.NativeHostConnection
 
 // C entry points of the renderer shared library (SPEC PR-2).
 //
