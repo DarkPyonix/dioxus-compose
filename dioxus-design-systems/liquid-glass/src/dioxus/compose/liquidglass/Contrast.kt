@@ -67,7 +67,11 @@ fun compositeOver(top: Color, bottom: Color): Color {
  * legible on it, and gets back something that is.
  */
 fun ensureContrast(color: Color, against: Color, minRatio: Float): Color {
-    if (contrastRatio(color, against) >= minRatio) return color
+    // Opaque on every path, including the one where nothing had to move. A caller stores
+    // this as the fill to use when the translucent one is unavailable, and a translucent
+    // fallback would let whatever is behind it decide the ratio that was just guaranteed.
+    // The ratio itself is unaffected: it is computed from the colour channels alone.
+    if (contrastRatio(color, against) >= minRatio) return color.copy(alpha = 1f)
 
     // Move away from the content colour: darken a colour that is already darker than the
     // content, lighten one that is lighter. Going the other way would have to cross the

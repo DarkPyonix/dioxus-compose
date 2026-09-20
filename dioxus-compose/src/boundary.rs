@@ -1,6 +1,8 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
-use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme};
+use crate::schema::{
+    AssetKind, EventPayload, IconRole, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme,
+};
 use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
@@ -206,6 +208,7 @@ impl Host {
             EventPayload::RangeRequested { start, count } => {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
+            EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
@@ -263,6 +266,40 @@ impl Host {
             pending.text.clear();
             pending.dirty = false;
         }
+    }
+
+    /// Registers one asset and returns the batch that carries it.
+    ///
+    /// The bytes are copied once here and once more by the Renderer into its cache. After
+    /// that the id is all that travels, so drawing the same image every frame costs a
+    /// fixed-layout property record and nothing else.
+    pub fn register_asset(
+        &mut self,
+        asset_id: u32,
+        kind: AssetKind,
+        bytes: &[u8],
+    ) -> Result<&[u8], ProtocolError> {
+        self.renderer.begin_frame();
+        self.renderer.register_asset(asset_id, kind, bytes);
+        self.renderer.finish_frame()
+    }
+
+    /// Registers an icon by the meaning it carries. The Renderer holds the artwork for
+    /// every design system, so what crosses is the role and not a picture or a name.
+    pub fn register_icon(&mut self, asset_id: u32, role: IconRole) -> Result<&[u8], ProtocolError> {
+        self.register_asset(
+            asset_id,
+            AssetKind::VectorIcon,
+            &(role as u16).to_le_bytes(),
+        )
+    }
+
+    /// Drops the asset from the Renderer's cache. Using the id afterwards is a reported
+    /// protocol error.
+    pub fn release_asset(&mut self, asset_id: u32) -> Result<&[u8], ProtocolError> {
+        self.renderer.begin_frame();
+        self.renderer.release_asset(asset_id);
+        self.renderer.finish_frame()
     }
 
     pub fn set_text(
@@ -658,6 +695,8 @@ mod tests {
                     | Mutation::SetModifier { .. }
                     | Mutation::SetText { .. }
                     | Mutation::AppendText { .. }
+                    | Mutation::RegisterAsset { .. }
+                    | Mutation::ReleaseAsset { .. }
                     | Mutation::SetTheme(_) => {}
                 }
             }

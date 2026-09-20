@@ -89,7 +89,12 @@ internal data class FluentPalette(
             // Fluent's dark accent is light enough that white text on it fails contrast,
             // so the foreground flips rather than staying white.
             onAccent = Color(0xFF000000),
-            accentSecondary = Color(0xFF2886DE),
+            // Brand 120. The dark scheme climbs the brand ramp the way every other role
+            // here does, because the light scheme's brand 90 goes muddy against a dark
+            // canvas. It cannot be brand 110 or brand 90: this scheme already spends
+            // those on the accent's hover and pressed states, and a second accent that
+            // matches a state of the first one is not a second accent.
+            accentSecondary = Color(0xFF77B7F7),
             onAccentSecondary = Color(0xFF000000),
             background1 = Color(0xFF292929),
             canvas = Color(0xFF1F1F1F),

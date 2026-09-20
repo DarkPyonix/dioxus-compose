@@ -523,11 +523,14 @@ fn nfr7_garbage_never_decodes_into_a_valid_looking_mutation() {
                 bytes[14..16].copy_from_slice(&len.to_le_bytes());
                 bytes[16..20].copy_from_slice(&payload.to_le_bytes());
                 if let Ok(decoded) = decode_batch(&bytes) {
-                    // Only `Remove` has an 8-byte record, so it is the sole shape that
-                    // can legitimately fit this 20-byte envelope.
+                    // `Remove` and `ReleaseAsset` are the only 8-byte records, so they
+                    // are the only shapes that can legitimately fit this 20-byte envelope.
                     assert_eq!(decoded.len(), 1);
                     assert!(
-                        matches!(decoded[0], Mutation::Remove { .. }),
+                        matches!(
+                            decoded[0],
+                            Mutation::Remove { .. } | Mutation::ReleaseAsset { .. }
+                        ),
                         "tag {tag} len {len} decoded as {:?}",
                         decoded[0]
                     );
@@ -536,5 +539,8 @@ fn nfr7_garbage_never_decodes_into_a_valid_looking_mutation() {
             }
         }
     }
-    assert_eq!(accepted, 3, "only Remove/len 8 may be accepted here");
+    assert_eq!(
+        accepted, 6,
+        "only the two 8-byte records, Remove and ReleaseAsset, may be accepted here"
+    );
 }

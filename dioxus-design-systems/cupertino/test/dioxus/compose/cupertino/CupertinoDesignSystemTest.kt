@@ -231,10 +231,21 @@ class CupertinoDesignSystemTest {
             (card.topStart.value - inset.value),
             1e-4f,
         )
+        // The inset is what decides the inner radius, which is the thing a fixed ladder
+        // step cannot express: move the element further in and its corner has to follow,
+        // while a step off the ladder would stay where it was. A step that happens to
+        // equal the answer for one particular inset is a coincidence, not a method, and
+        // this is what shows the coincidence breaking.
+        val deeper = light.space(SpaceRole.Md)
         assertNotEquals(
             concentricRadius(card.topStart, inset).value,
-            (light.shape(ShapeRole.Medium) as ContinuousCornerShape).topStart.value,
-            "a ladder step is concentric only by coincidence",
+            concentricRadius(card.topStart, deeper).value,
+            "a different inset has to give a different inner radius",
+        )
+        assertEquals(
+            card.topStart.value - deeper.value,
+            concentricRadius(card.topStart, deeper).value,
+            1e-4f,
         )
     }
 

@@ -51,6 +51,9 @@ class Node internal constructor(val id: Int, val widget: WidgetKind) {
     fun handler(kind: PropertyKind): Long? = (props[kind] as? PropertyValue.Integer)?.value
 
     fun number(kind: PropertyKind): Float? = (props[kind] as? PropertyValue.Float)?.value
+
+    /** The raw bytes of a byte-valued property, such as a Canvas command list. */
+    fun bytes(kind: PropertyKind): ByteArray? = (props[kind] as? PropertyValue.Bytes)?.value
 }
 
 /** A protocol violation that must become a `ProtocolError` event, never a crash. */
@@ -60,6 +63,9 @@ data class TableError(val code: Int, val message: String) {
         const val DUPLICATE_NODE = 2
         const val UNSUPPORTED_PROPERTY = 3
         const val INVALID_INDEX = 4
+        const val UNKNOWN_ASSET = 5
+        const val UNSUPPORTED_ASSET = 6
+        const val UNREADABLE_ASSET = 7
     }
 }
 
@@ -73,6 +79,13 @@ class NodeTable {
     private val nodes = mutableStateMapOf<Int, Node>()
     private val rootChildren = mutableStateListOf<Int>()
     private val errors = mutableListOf<TableError>()
+
+    /**
+     * The registered assets. Pictures outlive the batch that carried them, so they are not
+     * part of a node: a node names an id and the cache answers with what was registered.
+     */
+    val assets: AssetCache = AssetCache()
+
     private var revision = 0L
 
     /** Null until the Host sends its first `SetTheme` record. */
@@ -105,6 +118,13 @@ class NodeTable {
             // One record changes the whole tree's appearance. `DioxusContent`
             // resolves it into tokens and rules, and Compose invalidates the readers.
             is Mutation.SetTheme -> theme = mutation.theme
+            // The bytes are read here, once, and never again: what a frame carries is the
+            // id. A kind this Renderer cannot read, or a release of something that was
+            // never registered, is reported and the rest of the batch still applies.
+            is Mutation.RegisterAsset ->
+                assets.register(mutation.assetId, mutation.kind, mutation.bytes)?.let(errors::add)
+
+            is Mutation.ReleaseAsset -> assets.release(mutation.assetId)?.let(errors::add)
         }
     }
 
@@ -296,7 +316,9 @@ class NodeTable {
                 PropertyKind.Overflow,
                 -> widget == WidgetKind.Text ||
                     widget == WidgetKind.Button ||
-                    widget == WidgetKind.TextField
+                    widget == WidgetKind.TextField ||
+                    // An icon takes a tint through the same Paint attribute text does.
+                    (property == PropertyKind.Color && widget == WidgetKind.Icon)
 
                 PropertyKind.Arrangement,
                 PropertyKind.Spacing,
@@ -311,10 +333,28 @@ class NodeTable {
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
 
+                // An asset id is the whole of what a picture carries. The bytes were read
+                // at registration and the id is what crosses per frame.
+                PropertyKind.Asset ->
+                    widget == WidgetKind.Image || widget == WidgetKind.Icon
+
+                // The pickers carry a value and the ends of the range it may take, in the
+                // widget's own unit. Nothing here says how the value should be picked.
+                PropertyKind.Value,
+                PropertyKind.Min,
+                PropertyKind.Max,
+                -> widget == WidgetKind.DatePicker || widget == WidgetKind.TimePicker
+
                 // The overlays seed the Renderer's own open state; the tab strip seeds its
                 // own selection. Neither is read back every frame.
                 PropertyKind.Open -> widget == WidgetKind.Dialog || widget == WidgetKind.Menu
-                PropertyKind.SelectedIndex -> widget == WidgetKind.Tabs
+                // A Dropdown's selection is a position in its own children, the same thing
+                // a tab strip's selection is.
+                PropertyKind.SelectedIndex ->
+                    widget == WidgetKind.Tabs || widget == WidgetKind.Dropdown
+                // Drawing commands belong to the Canvas alone: no other widget draws
+                // anything the Host described command by command.
+                PropertyKind.Commands -> widget == WidgetKind.Canvas
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.
