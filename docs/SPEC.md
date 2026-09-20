@@ -110,7 +110,7 @@ Host 측 규칙:
 ### FR-10 Modifier 값 모델 — `Agreed`
 Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]`. Renderer는 이를 `Modifier` 체인으로 재구성합니다.
 
-### FR-13 디자인 프리미티브 — `Draft`
+### FR-13 디자인 프리미티브 — `Agreed`
 위젯만으로는 디자인을 할 수 없습니다. 스키마에 **값 모델**이 필요합니다. 값은 고정 레이아웃 레코드(PR-4)를 넘어야 하므로, Modifier 한 변형이 쓸 수 있는 공간은 `(tag: u16, first: u64, second: u64)`뿐입니다. 아래 프리미티브는 모두 이 한도 안에 들어갑니다.
 
 원칙: **역할(role)을 우선하고 리터럴은 탈출구로 둡니다.** 역할은 FR-14의 디자인 시스템이 해석하고, 리터럴은 그대로 그립니다.
@@ -163,7 +163,46 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 | 블러/머티리얼(HIG vibrancy), 리플 설정 | 플랫폼 전용 효과라 세 시스템 공통 축이 아닙니다 |
 | Host가 보내는 토큰 테이블 | FR-14에서 해석 위치를 Renderer로 정했습니다. 테이블을 보내면 그 결정이 뒤집힙니다 |
 
-### FR-14 디자인 시스템과 테마 모드 — `Draft`
+#### 13.8 와이어 태그 배정
+프리미티브를 구현하려면 고정 태그가 필요합니다. 태그는 한 번 배정하면 재사용하지 않고 뒤에만 덧붙입니다(PR-4).
+
+역할 enum은 모두 1부터 시작합니다. 0은 "보내지 않음"을 뜻하므로 역할 값으로 쓰지 않습니다.
+
+| enum | 값 |
+|---|---|
+| `ColorRole` | `Primary=1, OnPrimary=2, Secondary=3, OnSecondary=4, Surface=5, OnSurface=6, SurfaceVariant=7, OnSurfaceVariant=8, Background=9, OnBackground=10, Outline=11, OutlineVariant=12, Error=13, OnError=14` |
+| `TypeRole` | `Display=1, Headline=2, Title=3, Subtitle=4, Body=5, BodyStrong=6, Label=7, Caption=8, Mono=9` |
+| `ShapeRole` | `None=1, ExtraSmall=2, Small=3, Medium=4, Large=5, Full=6` |
+| `SpaceRole` | `None=1, Xs=2, Sm=3, Md=4, Lg=5, Xl=6, Xxl=7` |
+| `TextAlign` | `Start=1, Center=2, End=3, Justify=4` |
+| `TextOverflow` | `Clip=1, Ellipsis=2, Visible=3` |
+| `Arrangement` | `Start=1, Center=2, End=3, SpaceBetween=4, SpaceAround=5, SpaceEvenly=6` |
+| `Alignment` | `TopStart=1, TopCenter=2, TopEnd=3, CenterStart=4, Center=5, CenterEnd=6, BottomStart=7, BottomCenter=8, BottomEnd=9` |
+| `ButtonVariant` | `Filled=1, Tonal=2, Outlined=3, Text=4` |
+
+`Paint`는 `u64` 하나입니다. 상위 32비트가 종류(`Role=1`, `Literal=2`)이고 하위 32비트가 값(`ColorRole` 태그 또는 ARGB)입니다.
+
+위젯 태그: `ScrollColumn = 9`.
+
+Modifier 태그(기존 `Empty=0`~`Clickable=8` 뒤에 덧붙입니다):
+
+| 태그 | Modifier | `first` | `second` |
+|---|---|---|---|
+| 9 | `PaddingRole` | `SpaceRole`(u32) | — |
+| 10 | `PaddingEach` | `start`\|`top` (f32 2개) | `end`\|`bottom` (f32 2개) |
+| 11 | `Weight` | `value`(f32) | — |
+| 12 | `Shape` | `top_start`\|`top_end` | `bottom_end`\|`bottom_start` |
+| 13 | `ShapeRole` | `ShapeRole`(u32) | — |
+| 14 | `Border` | `width`(f32) | `Paint`(u64) |
+| 15 | `Elevation` | `dp`(f32) | — |
+
+`f32` 2개를 `u64` 하나에 담을 때는 하위 32비트가 첫 번째 값입니다.
+
+**기존 `Modifier::Background`(태그 7)의 필드를 `argb: u32`에서 `paint: u64`로 바꿉니다.** 13.1의 "색을 받는 자리는 전부 `Paint`"를 지키려면 예외를 둘 수 없습니다. 레코드 길이는 그대로이고 스키마 해시만 바뀝니다. M0가 아직 배포되지 않았으므로 태그를 새로 따지 않고 자리를 바꿉니다.
+
+Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=13, FontSize=14, FontWeight=15, LineHeight=16, LetterSpacing=17, Color=18, TextAlign=19, MaxLines=20, Overflow=21, Arrangement=22, Spacing=23, SpaceRole=24, Alignment=25, Variant=26`.
+
+### FR-14 디자인 시스템과 테마 모드 — `Agreed`
 디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다. 1급으로 지원하는 세 가지는 Material 3, Apple HIG, WinUI/Fluent입니다.
 
 #### 14.1 추상화
@@ -213,14 +252,22 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - **D5.** 테마는 UI 로컬 상태입니다. 스크롤 위치·포커스와 같은 부류입니다.
 - 비용: Host 쪽 단위 테스트는 "어떤 역할을 보냈는가"까지만 검증할 수 있고, 실제 색·치수는 Renderer 테스트에서 검증합니다. 이 분리를 받아들입니다.
 
+**토큰 테이블의 저작 위치는 Rust이고, 실행 위치는 Renderer입니다.** 14개 `ColorRole` × 2개 명암, 9단 `TypeRole`, `ShapeRole`/`SpaceRole` 치수 같은 값 표는 Rust 스키마에 데이터로 두고, FR-7 코드젠이 `Protocol.gen.kt`에 Kotlin `object`로 내보냅니다. 근거:
+- D6(단일 소스는 Rust)를 토큰에도 그대로 적용합니다. Kotlin에 손으로 적으면 세 시스템 × 7개 표가 검증되지 않은 채 남습니다.
+- 값 표는 Rust 테스트로 검증할 수 있습니다(대비비, 사다리 단조성, 표가 비어 있지 않은지). 14.4가 포기한 것은 "화면에 그려진 결과"이지 "표의 내용"이 아닙니다.
+- 경계는 그대로입니다. 표는 **빌드 시점에** Renderer 바이너리로 들어가고, 런타임에 경계를 넘지 않습니다. 13.7의 "Host가 보내는 토큰 테이블"은 여전히 금지입니다.
+- Renderer 구현자가 채우는 것은 값이 아니라 **적용 규칙**(14.6의 5·6·7번과 `CompositionLocal` 배선)입니다.
+
 #### 14.5 와이어 추가분
-- Mutation `SetTheme { design_system: u16, adaptive: bool, fallback: u16, color_scheme: u16 }` — 루트(`node_id` 없음)에 적용합니다. Host는 초기 배치의 첫 레코드로 1회 보내고, 앱이 테마를 바꿀 때만 다시 보냅니다.
+- Mutation `SetTheme { design_system: u16, fallback: u16, color_scheme: u16, adaptive: u16 }` — **명령 태그 9**, 레코드 길이 12바이트(`tag`, `len`, 뒤이어 u16 4개). 루트(`node_id` 없음)에 적용합니다. `adaptive`는 0 또는 1입니다. Host는 초기 배치의 첫 레코드로 1회 보내고, 앱이 테마를 바꿀 때만 다시 보냅니다.
 - `DesignSystem` 태그: `Material3 = 1`, `AppleHig = 2`, `Fluent = 3`.
 - `ColorScheme` 태그: `Light = 1`, `Dark = 2`, `FollowSystem = 3`.
 - 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
 
 #### 14.6 Renderer 구현자가 채워야 할 표
-디자인 시스템마다 아래 7개를 채웁니다. 채워지면 위젯 코드는 건드리지 않습니다.
+디자인 시스템마다 아래 7개가 필요합니다. 채워지면 위젯 코드는 건드리지 않습니다.
+
+1~4번은 14.4에 따라 Rust 스키마에서 코드젠으로 생성되어 `Protocol.gen.kt`의 `DesignTokens`에 이미 들어 있습니다. Renderer 구현자는 **5~7번과, 1~4번을 Compose에 배선하는 일**을 맡습니다.
 1. `ColorRole` 14개 × {Light, Dark} 색값
 2. `TypeRole` 9개 → 크기/굵기/행간/자간/폰트
 3. `ShapeRole` 6개 → 곡률(HIG는 연속 곡률)
