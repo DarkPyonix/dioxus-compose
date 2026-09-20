@@ -29,6 +29,11 @@ fake_install() {
     mkdir -p "$home/bin"
     printf '#!/bin/sh\n' > "$home/bin/native-image"
     chmod +x "$home/bin/native-image"
+    # A NIK Full home is only usable if it carries the AWT static libraries;
+    # build-native.sh links libawt_lwawt.a directly, and refuses to start an
+    # image build without it.
+    mkdir -p "$home/lib/static/darwin-$(host_arch)"
+    : > "$home/lib/static/darwin-$(host_arch)/libawt_lwawt.a"
     echo "$home"
 }
 
@@ -52,6 +57,26 @@ check "--github-env writes GRAALVM_HOME" "$(cat "$tmp/github_env")" "GRAALVM_HOM
 # --- --github-env without $GITHUB_ENV is an error, not a silent no-op ------
 env -u GITHUB_ENV NIK_INSTALL_DIR="$tmp/nik" "$install_nik" --github-env >/dev/null 2>&1
 check "--github-env fails without \$GITHUB_ENV" "$?" "1"
+
+# --- an install without the AWT static libraries is not reused -------------
+# Regression: the installer used to locate java.home by searching for
+# bin/native-image, and `find -type f` skips the symlink at Contents/Home/bin,
+# so it matched Contents/Home/lib/svm/bin/native-image and installed lib/svm as
+# GRAALVM_HOME. That directory runs native-image and has no AWT, and because
+# the reuse check only looked for bin/native-image, a CI cache holding it was
+# handed back on every run. build-native.sh failed the same way every time.
+broken="$tmp/broken"
+broken_home="$(fake_install "$broken")"
+rm -rf "$broken_home/lib"
+# The download that follows will fail in a sandbox, which is fine: the
+# "Reinstalling" notice is printed before it, so this asserts the reuse
+# decision alone rather than pulling a 1GB archive in a unit test.
+out="$(NIK_INSTALL_DIR="$broken" "$install_nik" 2>&1 || true)"
+case "$out" in
+    *"Reinstalling"*) result="rejected" ;;
+    *) result="reused: $out" ;;
+esac
+check "does not reuse an install with no libawt_lwawt.a" "$result" "rejected"
 
 # --- unknown flags are rejected with the usage exit code -------------------
 NIK_INSTALL_DIR="$tmp/nik" "$install_nik" --wat >/dev/null 2>&1

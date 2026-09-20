@@ -16,11 +16,11 @@ use std::fmt::Write as _;
 /// The Kotlin Toolchain compiles the module's `src` tree by convention and offers no way to
 /// add another source root, so generated Kotlin lives inside `src`.
 pub const GENERATED_RELATIVE_PATH: &str =
-    "../dioxus-compose-renderer/native/src/protocol/Protocol.gen.kt";
+    "../dioxus-compose-renderer/desktop/src/protocol/Protocol.gen.kt";
 pub const MUTATION_VECTOR_RELATIVE_PATH: &str = "tests/vectors/mutations.bin";
 pub const EVENT_VECTOR_RELATIVE_PATH: &str = "tests/vectors/events.bin";
 pub const VECTOR_DESCRIPTION_RELATIVE_PATH: &str = "tests/vectors/vectors.json";
-const KOTLIN_PACKAGE: &str = "org.thisisthepy.dioxus.compose.protocol";
+const KOTLIN_PACKAGE: &str = "dioxus.compose.protocol";
 
 pub fn generate_kotlin() -> String {
     let mut output = String::new();
@@ -39,7 +39,8 @@ pub fn generate_kotlin() -> String {
         write_enum(&mut output, role.name, role.variants);
     }
 
-    // FR-13.1: colour crosses the boundary only as a Paint.
+    // Colour crosses the boundary only as a Paint, so there is exactly one representation
+    // of colour in the schema.
     output.push_str(
         r#"sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
@@ -64,7 +65,13 @@ data class Theme(
     output.push_str("    data class Bool(val value: Boolean) : PropertyValue\n");
     output.push_str("    data class Integer(val value: Long) : PropertyValue\n");
     output.push_str("    data class Float(val value: kotlin.Float) : PropertyValue\n");
+    // Compared by identity, not content: a new Bytes value means the Host sent a new
+    // list, and copying a command list to compare it every recomposition is exactly the
+    // per-frame work the fixed layout exists to avoid.
+    output.push_str("    class Bytes(val value: ByteArray) : PropertyValue\n");
     output.push_str("}\n\n");
+
+    write_draw_commands(&mut output);
 
     output.push_str("sealed interface Modifier {\n");
     for variant in MODIFIER_SCHEMA {
@@ -94,6 +101,26 @@ data class Theme(
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
     data class SetTheme(val theme: Theme) : Mutation
+
+    /**
+     * The bytes of one asset. `kind` is the raw wire tag rather than an [AssetKind],
+     * because a kind this Renderer cannot read has to be reported as a protocol error by
+     * the asset cache instead of stopping the rest of the batch from being applied.
+     *
+     * `bytes` is already a copy: the batch buffer is only valid for the call that carried
+     * it, and an asset has to outlive the frame that draws it.
+     */
+    data class RegisterAsset(val assetId: Int, val kind: Int, val bytes: ByteArray) : Mutation {
+        override fun equals(other: Any?): Boolean =
+            this === other ||
+                (other is RegisterAsset && assetId == other.assetId && kind == other.kind &&
+                    bytes.contentEquals(other.bytes))
+
+        override fun hashCode(): Int =
+            (assetId * 31 + kind) * 31 + bytes.contentHashCode()
+    }
+
+    data class ReleaseAsset(val assetId: Int) : Mutation
 }
 
 "#,
@@ -119,6 +146,7 @@ data class Theme(
                 output.push_str(", val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean");
             }
             EventPayloadType::Range => output.push_str(", val start: Int, val count: Int"),
+            EventPayloadType::Integer => output.push_str(", val value: Long"),
         }
         output.push_str(") : HostEvent\n");
     }
@@ -154,6 +182,8 @@ object Protocol {
     private const val TAG_SET_TEXT = 7
     private const val TAG_APPEND_TEXT = 8
     private const val TAG_SET_THEME = 9
+    private const val TAG_REGISTER_ASSET = 10
+    private const val TAG_RELEASE_ASSET = 11
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -161,6 +191,7 @@ object Protocol {
     private const val VALUE_BOOL = 2
     private const val VALUE_INTEGER = 3
     private const val VALUE_FLOAT = 4
+    private const val VALUE_BYTES = 5
 
     /** Decodes a batch in place. Must not copy the buffer; only strings become Kotlin Strings. */
     fun decode(batch: ByteBuffer, onMutation: (Mutation) -> Unit) {
@@ -215,6 +246,7 @@ object Protocol {
                             VALUE_FLOAT -> PropertyValue.Float(
                                 kotlin.Float.fromBits(readU64(batch, base, available, offset + 12).toInt()),
                             )
+                            VALUE_BYTES -> PropertyValue.Bytes(readBytes(batch, base, available, offset + 12))
                             else -> throw ProtocolException("unknown property value tag $valueKind", offset + 10)
                         }
                         Mutation.SetProp(
@@ -287,6 +319,18 @@ object Protocol {
                             ),
                         )
                     }
+                    TAG_REGISTER_ASSET -> {
+                        requireRecordLength(length, 20, offset)
+                        Mutation.RegisterAsset(
+                            readU32(batch, base, available, offset + 4).toInt(),
+                            readU16(batch, base, available, offset + 8),
+                            readBytes(batch, base, available, offset + 12),
+                        )
+                    }
+                    TAG_RELEASE_ASSET -> {
+                        requireRecordLength(length, 8, offset)
+                        Mutation.ReleaseAsset(readU32(batch, base, available, offset + 4).toInt())
+                    }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
                 }
                 onMutation(mutation)
@@ -336,7 +380,7 @@ object Protocol {
                 )
                 .unwrap();
             }
-            EventPayloadType::KeyDown | EventPayloadType::Range => {
+            EventPayloadType::KeyDown | EventPayloadType::Range | EventPayloadType::Integer => {
                 writeln!(
                     output,
                     "                is HostEvent.{} -> null",
@@ -358,6 +402,7 @@ object Protocol {
             EventPayloadType::ProtocolError => 28,
             EventPayloadType::KeyDown => 20,
             EventPayloadType::Range => 24,
+            EventPayloadType::Integer => 24,
         };
         writeln!(
             output,
@@ -443,6 +488,14 @@ object Protocol {
                 output.push_str("                    out.putInt(event.start)\n");
                 output.push_str("                    out.putInt(event.count)\n");
                 output.push_str("                }\n");
+            }
+            EventPayloadType::Integer => {
+                writeln!(
+                    output,
+                    "                is HostEvent.{} -> out.putLong(event.value)",
+                    event.name
+                )
+                .unwrap();
             }
         }
     }
@@ -577,6 +630,27 @@ object Protocol {
         r#"        else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 
+    /**
+     * An arena range with no UTF-8 requirement, used by both a drawing command list and an
+     * asset's bytes. For an asset this is the one copy this side makes, and it happens at
+     * registration rather than per frame.
+     */
+    private fun readBytes(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): ByteArray {
+        val offsetLong = readU32(batch, base, available, referenceOffset)
+        val lengthLong = readU32(batch, base, available, referenceOffset + 4)
+        if (offsetLong > Int.MAX_VALUE || lengthLong > Int.MAX_VALUE) {
+            throw ProtocolException("byte range is too large", referenceOffset)
+        }
+        val offset = offsetLong.toInt()
+        val length = lengthLong.toInt()
+        requireRange(available, offset, length, referenceOffset)
+        val copy = ByteArray(length)
+        val view = batch.duplicate()
+        view.position(base + offset)
+        view.get(copy)
+        return copy
+    }
+
     private fun readString(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): String {
         val offsetLong = readU32(batch, base, available, referenceOffset)
         val lengthLong = readU32(batch, base, available, referenceOffset + 4)
@@ -633,12 +707,12 @@ object Protocol {
     output
 }
 
-/// FR-14.4: the token tables are authored in Rust and executed in the Renderer, so they
-/// are generated into the Renderer binary instead of crossing the boundary (13.7).
+/// The token tables are authored in Rust and executed in the Renderer, so they are
+/// generated into the Renderer binary at build time instead of crossing the boundary.
 fn write_design_tokens(output: &mut String) {
     output.push_str(
         r#"
-/** FR-13.2: one rung of the type ladder. Sizes are sp, spacing may be negative. */
+/** One rung of the type ladder. Sizes are sp, spacing may be negative. */
 data class TypeToken(
     val size: Float,
     val weight: Int,
@@ -648,10 +722,11 @@ data class TypeToken(
 )
 
 /**
- * Items 1 to 4 of the FR-14.6 table for one design system.
+ * The generated half of one design system's tables: colours, type, shapes and spacing.
  *
  * Arrays are indexed by the role's ordinal, which matches its wire tag minus one.
- * Items 5 to 7 (elevation rendering, ButtonVariant styling, motion) are the Renderer's.
+ * The rules that consume them (elevation rendering, ButtonVariant styling, motion) are
+ * written by hand in the Renderer.
  */
 class DesignTokenTable(
     val system: DesignSystem,
@@ -760,10 +835,53 @@ fn upper_snake(name: &str) -> String {
     output
 }
 
+/// One of each drawing command, in schema order, with a string region behind them.
+pub fn canvas_vector() -> crate::drawing::DrawList {
+    crate::drawing::DrawList::builder()
+        .line(Paint::Role(ColorRole::Primary), 1.0, 2.0, 3.0, 4.0, 1.5)
+        .rect(
+            Paint::Literal(Color::argb(0xff11_2233)),
+            0.0,
+            0.0,
+            8.0,
+            9.0,
+            0.0,
+        )
+        .round_rect(
+            Paint::Role(ColorRole::Surface),
+            1.0,
+            2.0,
+            3.0,
+            4.0,
+            5.0,
+            6.0,
+        )
+        .circle(Paint::Role(ColorRole::Error), 4.0, 5.0, 6.0, 0.5)
+        .arc(
+            Paint::Role(ColorRole::Outline),
+            1.0,
+            2.0,
+            3.0,
+            0.0,
+            90.0,
+            2.0,
+        )
+        .polyline_ref(Paint::Role(ColorRole::Secondary), 42, 3.0)
+        .text_at(
+            Paint::Role(ColorRole::OnSurface),
+            "한글",
+            7.0,
+            8.0,
+            crate::schema::TypeRole::Label,
+        )
+        .build()
+}
+
 pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
+    let canvas_vector_bytes = canvas_vector();
     let mutations = [
         Mutation::SetTheme(
-            Theme::adaptive(DesignSystem::AppleHig).with_color_scheme(ColorScheme::Dark),
+            Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark),
         ),
         Mutation::Create {
             node_id: 1,
@@ -915,6 +1033,23 @@ pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
             node_id: 4,
             text: " token",
         },
+        Mutation::Create {
+            node_id: 5,
+            widget: WidgetKind::Canvas,
+        },
+        // Every drawing command, so both sides decode the same fixed-length records and
+        // the same text region behind them.
+        Mutation::SetProp {
+            node_id: 5,
+            property: PropertyKind::Commands,
+            value: PropertyValue::Bytes(canvas_vector_bytes.as_bytes()),
+        },
+        Mutation::RegisterAsset {
+            asset_id: 5,
+            kind: crate::schema::AssetKind::Png,
+            bytes: &[0x89, b'P', b'N', b'G'],
+        },
+        Mutation::ReleaseAsset { asset_id: 5 },
     ];
     let mut encoder = BatchEncoder::default();
     for mutation in &mutations {
@@ -972,6 +1107,11 @@ pub fn generate_event_vector() -> Result<Vec<u8>, ProtocolError> {
                 count: 20,
             },
         },
+        HostEvent {
+            node_id: 11,
+            handler_id: 17,
+            payload: EventPayload::ValueChanged(-19_723),
+        },
     ];
     let mut output = Vec::new();
     let mut encoded = Vec::new();
@@ -990,13 +1130,17 @@ pub fn generate_vector_description() -> String {
   "byteOrder": "little-endian",
   "mutations": {{
     "file": "mutations.bin",
-    "description": "One batch covering every record, property value, and modifier layout",
-    "recordCount": 30,
+    "description": "One batch covering every record, property value, modifier layout, and drawing command",
+    "recordCount": 32,
     "strings": ["안녕", "compose", " token"]
+    "description": "One batch covering every record, property value, and modifier layout",
+    "recordCount": 32,
+    "strings": ["안녕", "compose", " token"],
+    "assets": [{{ "assetId": 5, "kind": "Png", "bytes": "89504e47" }}]
   }},
   "events": {{
     "file": "events.bin",
-    "description": "Seven independently decodable event records concatenated in schema order",
+    "description": "Eight independently decodable event records concatenated in schema order",
     "records": [
       {{ "type": "Clicked", "offset": 0, "length": 16, "nodeId": 7, "handlerId": 11 }},
       {{ "type": "TextChanged", "offset": 16, "length": 30, "nodeId": 8, "handlerId": 12, "text": "한글" }},
@@ -1004,7 +1148,8 @@ pub fn generate_vector_description() -> String {
       {{ "type": "FocusLost", "offset": 74, "length": 16, "nodeId": 8, "handlerId": 14 }},
       {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }},
       {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }},
-      {{ "type": "RangeRequested", "offset": 145, "length": 24, "nodeId": 10, "handlerId": 16, "start": 100, "count": 20 }}
+      {{ "type": "RangeRequested", "offset": 145, "length": 24, "nodeId": 10, "handlerId": 16, "start": 100, "count": 20 }},
+      {{ "type": "ValueChanged", "offset": 169, "length": 24, "nodeId": 11, "handlerId": 17, "value": -19723 }}
     ]
   }}
 }}
@@ -1035,7 +1180,7 @@ fn kotlin_type(ty: FieldType) -> String {
     }
 }
 
-/// The `u64` word a field lives in, and whether it occupies the high 32 bits (FR-13.8).
+/// The `u64` word a field lives in, and whether it occupies the high 32 bits.
 fn slot_word(slot: FieldSlot) -> (&'static str, bool) {
     match slot {
         FieldSlot::FirstLow | FieldSlot::First => ("first", false),
@@ -1062,6 +1207,149 @@ fn modifier_decode_expression(field: &FieldSchema) -> String {
 }
 
 fn lower_camel(name: &str) -> String {
+    let mut characters = name.chars();
+    match characters.next() {
+        Some(first) => first.to_lowercase().chain(characters).collect(),
+        None => String::new(),
+    }
+}
+
+/// The drawing command vocabulary, mirrored into Kotlin with a decoder for the byte blob a
+/// `Canvas` node carries.
+fn write_draw_commands(output: &mut String) {
+    use crate::drawing::{COMMAND_LEN, DRAW_COMMAND_SCHEMA, DrawFieldType};
+
+    output.push_str(
+        "/**\n * One drawing command. Coordinates are dp from the Canvas's top-left corner.\n *\n \
+         * Colour is a [Paint], so a command may name a ColorRole and the design system\n \
+         * decides what it looks like.\n */\n",
+    );
+    output.push_str("sealed interface DrawCommand {\n");
+    output.push_str("    val paint: Paint\n\n");
+    for command in DRAW_COMMAND_SCHEMA {
+        write!(
+            output,
+            "    data class {}(override val paint: Paint",
+            command.name
+        )
+        .unwrap();
+        for field in command.fields {
+            let ty = match field.ty {
+                DrawFieldType::Float => "kotlin.Float",
+                DrawFieldType::U32 => "Int",
+                DrawFieldType::Role(name) => name,
+            };
+            write!(output, ", val {}: {ty}", field.name).unwrap();
+        }
+        output.push_str(") : DrawCommand\n");
+    }
+    output.push_str("}\n\n");
+
+    output.push_str(
+        r#"/** Decodes a Canvas command list: fixed-size records, then the TextAt strings. */
+object DrawCommands {
+"#,
+    );
+    writeln!(output, "    const val COMMAND_LENGTH = {COMMAND_LEN}\n").unwrap();
+    output.push_str(
+        r#"    fun decode(bytes: ByteArray): List<DrawCommand> {
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val commands = ArrayList<DrawCommand>(bytes.size / COMMAND_LENGTH)
+        var offset = 0
+        while (offset + COMMAND_LENGTH <= bytes.size) {
+            val tag = buffer.getShort(offset).toInt() and 0xffff
+            val length = buffer.getShort(offset + 2).toInt() and 0xffff
+            // The text region starts where the records stop decoding, so an unreadable
+            // record ends the list rather than failing the whole batch.
+            if (length != COMMAND_LENGTH) break
+            val paintBits = buffer.getLong(offset + 4)
+            val kind = (paintBits ushr 32).toInt()
+            if (kind != 1 && kind != 2) break
+            val paint = if (kind == 1) {
+                Paint.Role(colorRoleOrNull(paintBits.toInt()) ?: break)
+            } else {
+                Paint.Literal(paintBits.toInt())
+            }
+            fun word(index: Int): Int = buffer.getInt(offset + 12 + index * 4)
+            fun real(index: Int): kotlin.Float = kotlin.Float.fromBits(word(index))
+            val command = when (tag) {
+"#,
+    );
+    for command in DRAW_COMMAND_SCHEMA {
+        write!(
+            output,
+            "                {} -> DrawCommand.{}(paint",
+            command.tag, command.name
+        )
+        .unwrap();
+        for field in command.fields {
+            match field.ty {
+                DrawFieldType::Float => write!(output, ", real({})", field.word).unwrap(),
+                DrawFieldType::U32 => write!(output, ", word({})", field.word).unwrap(),
+                DrawFieldType::Role(name) => write!(
+                    output,
+                    ", {}OrNull(word({})) ?: break",
+                    lower_first(name),
+                    field.word
+                )
+                .unwrap(),
+            }
+        }
+        output.push_str(")\n");
+    }
+    output.push_str(
+        r#"                else -> break
+            }
+            commands.add(command)
+            offset += COMMAND_LENGTH
+        }
+        return commands
+    }
+
+    /** The string a TextAt points at, measured from the start of the list. */
+    fun textOf(bytes: ByteArray, command: DrawCommand.TextAt): String {
+        val end = command.textOffset.toLong() + command.textLength.toLong()
+        if (command.textOffset < 0 || command.textLength < 0 || end > bytes.size.toLong()) {
+            return ""
+        }
+        return String(bytes, command.textOffset, command.textLength, StandardCharsets.UTF_8)
+    }
+
+"#,
+    );
+    // Role lookups that answer null rather than throwing: a command list is data inside a
+    // property value, and one bad word must end the list, not the batch.
+    let mut roles: Vec<&str> = DRAW_COMMAND_SCHEMA
+        .iter()
+        .flat_map(|command| command.fields.iter())
+        .filter_map(|field| match field.ty {
+            DrawFieldType::Role(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    roles.push("ColorRole");
+    roles.dedup();
+    for role in roles {
+        let variants = ROLE_ENUM_SCHEMA
+            .iter()
+            .find(|entry| entry.name == role)
+            .expect("a drawing command names a role the schema declares")
+            .variants;
+        writeln!(
+            output,
+            "    private fun {}OrNull(tag: Int): {role}? = when (tag) {{",
+            lower_first(role)
+        )
+        .unwrap();
+        for variant in variants {
+            writeln!(output, "        {} -> {role}.{}", variant.tag, variant.name).unwrap();
+        }
+        output.push_str("        else -> null\n    }\n\n");
+    }
+    output.push_str("}\n\n");
+}
+
+fn lower_first(name: &str) -> String {
     let mut characters = name.chars();
     match characters.next() {
         Some(first) => first.to_lowercase().chain(characters).collect(),

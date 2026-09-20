@@ -8,7 +8,7 @@
 <link rel="alternate" hreflang="en" href="troubleshooting.html">
 <link rel="alternate" hreflang="ko" href="../ko/troubleshooting.html">
 <link rel="alternate" hreflang="x-default" href="troubleshooting.html">
-<link rel="stylesheet" href="../assets/style.css?v=19">
+<link rel="stylesheet" href="../assets/style.css?v=20">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -79,7 +79,7 @@
 <span class="c"># expect: libdioxus_compose_renderer.dylib, libskiko-macos-*.dylib,</span>
 <span class="c">#         libjawt.dylib, libawt_lwawt.dylib</span>
 
-./dioxus-compose-renderer/native/scripts/build-native.sh</code></pre>
+./dioxus-compose-renderer/desktop/scripts/build-native.sh</code></pre>
     </figure>
     <p>
       Do not move the four files apart. The renderer finds itself with <code>dladdr</code> and
@@ -100,7 +100,7 @@
     </p>
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
       <figcaption>shell</figcaption>
-<pre><code>./dioxus-compose-renderer/native/scripts/smoke-test.sh</code></pre>
+<pre><code>./dioxus-compose-renderer/desktop/scripts/smoke-test.sh</code></pre>
     </figure>
     <p>
       A window there and none from Rust points at the linking of your binary. No window there
@@ -230,7 +230,7 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
-    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
     <span>Guide last reviewed against the repository on 2026-09-20</span>
   </div>
 </footer>

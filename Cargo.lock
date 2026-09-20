@@ -207,7 +207,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "dioxus-compose"
-version = "0.1.0"
+version = "0.0.0"
 dependencies = [
  "criterion",
  "dioxus-core",
@@ -691,6 +691,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "sample-calculator"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-chat"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-notepad"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "futures-channel",
+]
+
+[[package]]
+name = "sample-todo"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
 ]
 
 [[package]]

@@ -1,5 +1,4 @@
-// Resolving the Renderer distribution for the `native-renderer` feature (SPEC NFR-10,
-// NFR-11).
+// Resolving the Renderer distribution for the `native-renderer` feature.
 //
 // This file is `include!`d by `build.rs` and by `tests/renderer_resolution.rs`, so the
 // rules a consumer hits at build time are the rules the tests exercise. It touches the
@@ -9,7 +8,8 @@
 use std::path::{Path, PathBuf};
 
 /// Points at a directory laid out like the release artifact, or at its `lib`
-/// subdirectory. Takes precedence over the workspace build output (SPEC NFR-10).
+/// subdirectory. Takes precedence over the workspace build output, so an unpacked release
+/// artifact, a vendored copy or an offline build can all be pointed at with one variable.
 pub const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
 
 /// The shared library every distribution of the Renderer contains, whatever else
@@ -17,15 +17,29 @@ pub const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
 /// its loader will look for.
 pub fn renderer_lib_file(target_os: &str) -> &'static str {
     match target_os {
-        "windows" => "dioxus_compose_renderer.dll",
+        // The Windows build names the image `libdioxus_compose_renderer`, so the DLL keeps
+        // the `lib` prefix that Windows itself would not have added.
+        "windows" => "libdioxus_compose_renderer.dll",
         "macos" => "libdioxus_compose_renderer.dylib",
         _ => "libdioxus_compose_renderer.so",
     }
 }
 
+/// Where a platform's build script puts the renderer inside the distribution.
+///
+/// Windows keeps the DLL beside the AWT and Skia DLLs in `bin`, because the loader
+/// searches the directory of the module that needs them and they have to be found
+/// together. The other platforms put the shared library in `lib`.
+pub fn renderer_lib_subdir(target_os: &str) -> &'static str {
+    match target_os {
+        "windows" => "bin",
+        _ => "lib",
+    }
+}
+
 /// One line holding the crate version the artifact was built for. The release packaging
 /// script writes it into the artifact root; a renderer built straight from the workspace
-/// has no such file (SPEC NFR-11).
+/// has no such file.
 pub const RENDERER_VERSION_FILE: &str = "dioxus-compose-renderer.version";
 
 /// The release artifact for a crate version and platform target, as
@@ -53,7 +67,7 @@ pub struct Renderer {
 /// in-repository fallback, which does not exist for a consumer building a published
 /// crate. That case is the whole point of the error paths here: without this check the
 /// build would hand a nonexistent directory to the linker and the consumer's first signal
-/// would be an undefined-symbol dump (SPEC NFR-11).
+/// would be an undefined-symbol dump.
 pub fn resolve_renderer(
     env_dir: Option<&Path>,
     workspace_lib_dir: &Path,
@@ -92,12 +106,19 @@ pub fn resolve_renderer(
     })
 }
 
-/// Accept either the unpacked artifact root or its `lib` directory. Both are natural
-/// things for a human to point the variable at, and guessing wrong is a linker error.
+/// Accept either the unpacked artifact root or the directory holding the library. Both are
+/// natural things for a human to point the variable at, and guessing wrong is a linker
+/// error rather than a message.
+///
+/// The subdirectory differs by platform: Windows keeps the renderer in `bin` beside the
+/// AWT and Skia DLLs, which the loader needs to find together, and the others use `lib`.
+/// Both are tried, so pointing at the wrong one of the two still works.
 fn lib_dir_within(dir: &Path, lib_file: &str) -> PathBuf {
-    let nested = dir.join("lib");
-    if nested.join(lib_file).is_file() {
-        return nested;
+    for subdir in ["lib", "bin"] {
+        let nested = dir.join(subdir);
+        if nested.join(lib_file).is_file() {
+            return nested;
+        }
     }
     dir.to_path_buf()
 }
@@ -126,7 +147,7 @@ fn how_to_get_one(crate_version: &str, target: &str) -> String {
     format!(
         "\n\
          The renderer ships as a checksummed release artifact, not inside this crate: it is\n\
-         about 85MB of shared library and Skia (SPEC NFR-11).\n\
+         about 85MB of shared library and Skia, far over the crates.io package limit.\n\
          \n\
          Get it with one command, from a checkout of the repository:\n\
          \n\
@@ -141,7 +162,7 @@ fn how_to_get_one(crate_version: &str, target: &str) -> String {
          \x20   4. export {RENDERER_DIR_ENV}=<dir>\n\
          \n\
          Building the renderer from source instead: see\n\
-         dioxus-compose-renderer/native/scripts/build-native.sh and point\n\
+         dioxus-compose-renderer/desktop/scripts/build-native.sh and point\n\
          {RENDERER_DIR_ENV} at its dist directory.\n\
          \n\
          The `native-renderer` feature is what requires all this. The crate's default\n\
@@ -198,7 +219,7 @@ fn version_mismatch_message(
          The renderer in {lib_dir} declares version {artifact_version} ({file}), but this\n\
          crate is version {crate_version}. Linking them would pair a Host against a Renderer\n\
          it was never built for, and the mismatch would surface as a protocol error at\n\
-         runtime instead of here (SPEC NFR-11).\n\
+         runtime instead of here.\n\
          \n\
          Use the artifact for this crate version, {artifact}, or depend on\n\
          dioxus-compose {artifact_version} instead.",

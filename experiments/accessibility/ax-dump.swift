@@ -1,4 +1,7 @@
-// Walks the macOS accessibility tree of a running process and prints it (SPEC NFR-8, §7).
+// Walks the macOS accessibility tree of a running process and prints it.
+//
+// Used to compare what the native-image desktop build exposes against what the JVM
+// development shell exposes; the two trees have to have the same shape.
 //
 // VoiceOver itself needs a human, but the tree VoiceOver reads is the same one the
 // Accessibility API exposes, so an empty or role-less tree here is a real failure and a
@@ -70,6 +73,28 @@ func walk(_ element: AXUIElement, depth: Int) {
 }
 
 let app = AXUIElementCreateApplication(pid)
+
+// Ask for the focused element first. This is the attribute an assistive client reads as
+// soon as it attaches (the macOS Accessibility Keyboard does it on every focus change),
+// and it takes a different path through AppKit than walking AXWindows does:
+// -[NSWindow accessibilityFocusedUIElement] resolves java.awt.Window through JNI. Walking
+// the tree never touches it, so a dump can print a full, healthy tree while turning on an
+// assistive technology still aborts the process. Read it here so that gap cannot hide.
+let (focusErr, focusValue) = copyValue(app, kAXFocusedUIElementAttribute as String)
+switch focusErr {
+case .success:
+    let element = focusValue as! AXUIElement
+    let role = string(element, kAXRoleAttribute as String) ?? "?"
+    let label = string(element, kAXTitleAttribute as String)
+        ?? string(element, kAXDescriptionAttribute as String) ?? ""
+    print("AXFocusedUIElement: \(role) \(label)")
+case .noValue, .attributeUnsupported:
+    // Nothing focused is a legitimate answer, and the query survived, which is the point.
+    print("AXFocusedUIElement: none (query answered)")
+default:
+    print("AXFocusedUIElement failed: \(focusErr.rawValue)")
+}
+
 let (windowsErr, windowsValue) = copyValue(app, kAXWindowsAttribute as String)
 if windowsErr != .success {
     print("AXWindows failed: \(windowsErr.rawValue)")

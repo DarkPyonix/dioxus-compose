@@ -1,4 +1,4 @@
-//! NFR-7: `decode_event` must return a `ProtocolError` for any byte string the
+//! `decode_event` must return a `ProtocolError` for any byte string the
 //! Renderer could hand it, never panic, abort, or read out of bounds.
 #![no_main]
 
@@ -9,7 +9,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(event) = decode_event(data) else {
         return;
     };
-    // PR-4: a decoded event must re-encode to bytes that decode and re-encode to
+    // A decoded event must re-encode to bytes that decode and re-encode to
     // the same bytes again.
     let mut once = Vec::new();
     encode_event(&event, &mut once).expect("re-encoding a decoded event");

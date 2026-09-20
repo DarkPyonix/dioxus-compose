@@ -11,13 +11,13 @@ pub enum FieldType {
     Float,
     U32,
     U64,
-    /// FR-13.1: a `Paint`, either a `ColorRole` or a literal ARGB `Color`.
+    /// A `Paint`, either a `ColorRole` or a literal ARGB `Color`.
     Paint,
-    /// FR-13: a role enum, named so codegen can emit the matching Kotlin type.
+    /// A role enum, named so codegen can emit the matching Kotlin type.
     Role(&'static str),
 }
 
-/// Which half of which `(first, second)` word a modifier field occupies (FR-13.8).
+/// Which half of which `(first, second)` word a modifier field occupies.
 ///
 /// Two `f32` share one `u64`: the low 32 bits hold the first value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +51,7 @@ pub enum EventPayloadType {
     ProtocolError,
     KeyDown,
     Range,
+    Integer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,12 +64,12 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,open,on_dismiss,selected_index,commands,value,min,max;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested;",
-    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme"
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged;",
+    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset"
 );
 
 const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
@@ -141,6 +142,31 @@ const fn schema_hash() -> u64 {
         index += 1;
     }
     index = 0;
+    while index < crate::drawing::DRAW_COMMAND_SCHEMA.len() {
+        let command = crate::drawing::DRAW_COMMAND_SCHEMA[index];
+        hash = hash_bytes(hash, command.name.as_bytes());
+        hash = hash_bytes(hash, &command.tag.to_le_bytes());
+        let mut field_index = 0;
+        while field_index < command.fields.len() {
+            let field = command.fields[field_index];
+            hash = hash_bytes(hash, field.name.as_bytes());
+            hash = hash_bytes(hash, &[field.word]);
+            hash = hash_bytes(
+                hash,
+                &[match field.ty {
+                    crate::drawing::DrawFieldType::Float => 1,
+                    crate::drawing::DrawFieldType::U32 => 2,
+                    crate::drawing::DrawFieldType::Role(_) => 3,
+                }],
+            );
+            if let crate::drawing::DrawFieldType::Role(role) = field.ty {
+                hash = hash_bytes(hash, role.as_bytes());
+            }
+            field_index += 1;
+        }
+        index += 1;
+    }
+    index = 0;
     while index < EVENT_SCHEMA.len() {
         let event = EVENT_SCHEMA[index];
         hash = hash_bytes(hash, event.name.as_bytes());
@@ -153,6 +179,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::ProtocolError => 2,
                 EventPayloadType::KeyDown => 3,
                 EventPayloadType::Range => 4,
+                EventPayloadType::Integer => 5,
             }],
         );
         index += 1;
@@ -225,6 +252,21 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     Spacer = 7,
     LazyColumn = 8,
     ScrollColumn = 9,
+    Image = 10,
+    Icon = 11,
+    Card = 18,
+    Surface = 19,
+    Dialog = 20,
+    Menu = 21,
+    Tabs = 22,
+    TopAppBar = 23,
+    LazyRow = 24,
+    Tooltip = 25,
+    // Drawing commands instead of child nodes. The command list is its only property.
+    Canvas = 26,
+    DatePicker = 27,
+    TimePicker = 28,
+    Dropdown = 29,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -246,14 +288,16 @@ define_wire_enum!(KEY_SCHEMA, Key {
     Enter = 1,
 });
 
-/// A role enum that codegen mirrors into Kotlin (FR-13.8).
+/// A role enum that codegen mirrors into Kotlin.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RoleEnumSchema {
     pub name: &'static str,
     pub variants: &'static [EnumVariantSchema],
 }
 
-// FR-13.1: an opaque ARGB colour. Gradients and image brushes are out of scope (13.7).
+// An opaque ARGB colour. Gradients and image brushes are deliberately absent: they do not
+// fit the two words a modifier variant has, and they would need resources to cross the
+// boundary, which the fixed-layout records cannot carry.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Color(pub u32);
@@ -274,7 +318,7 @@ impl Color {
     }
 }
 
-// FR-13.1: semantic colour slots. The design system resolves them (FR-14.4).
+// Semantic colour slots. The design system resolves them, inside the Renderer.
 define_wire_enum!(COLOR_ROLE_SCHEMA, ColorRole {
     Primary = 1,
     OnPrimary = 2,
@@ -292,7 +336,7 @@ define_wire_enum!(COLOR_ROLE_SCHEMA, ColorRole {
     OnError = 14,
 });
 
-// FR-13.2: the nine-rung type ladder every supported design system maps onto.
+// The nine-rung type ladder every supported design system maps onto.
 define_wire_enum!(TYPE_ROLE_SCHEMA, TypeRole {
     Display = 1,
     Headline = 2,
@@ -305,7 +349,7 @@ define_wire_enum!(TYPE_ROLE_SCHEMA, TypeRole {
     Mono = 9,
 });
 
-// FR-13.3: corner roles. The radius is the design system's decision.
+// Corner roles. The radius is the design system's decision.
 define_wire_enum!(SHAPE_ROLE_SCHEMA, ShapeRole {
     None = 1,
     ExtraSmall = 2,
@@ -315,7 +359,7 @@ define_wire_enum!(SHAPE_ROLE_SCHEMA, ShapeRole {
     Full = 6,
 });
 
-// FR-13.4: density roles, because dp density differs per design system.
+// Density roles, because dp density differs per design system.
 define_wire_enum!(SPACE_ROLE_SCHEMA, SpaceRole {
     None = 1,
     Xs = 2,
@@ -360,7 +404,7 @@ define_wire_enum!(ALIGNMENT_SCHEMA, Alignment {
     BottomEnd = 9,
 });
 
-// FR-14.2: the neutral component variant names the design system styles.
+// The neutral component variant names the design system styles.
 define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
     Filled = 1,
     Tonal = 2,
@@ -368,14 +412,40 @@ define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
     Text = 4,
 });
 
-// FR-14.5: the design systems of phase one. Phase two appends variants here only.
+// What the bytes behind an asset id are. A kind the Renderer cannot read is a reported
+// protocol error, not a guess.
+define_wire_enum!(ASSET_KIND_SCHEMA, AssetKind {
+    Png = 1,
+    Jpeg = 2,
+    Svg = 3,
+    VectorIcon = 4,
+});
+
+// The closed set of icon meanings. An icon is addressed by what it is for, never by a
+// system icon name: a name would defer the check that the icon exists to run time, and it
+// would pin one platform's artwork into the protocol. The role is what lets the same
+// declaration come out as SF Symbols under Cupertino and Material Symbols under Material 3.
+define_wire_enum!(ICON_ROLE_SCHEMA, IconRole {
+    Back = 1,
+    Forward = 2,
+    Close = 3,
+    Search = 4,
+    Add = 5,
+    Check = 6,
+    Settings = 7,
+    More = 8,
+});
+
+// The design systems of phase one. Later ones append variants here and nowhere else: a new
+// design system is one variant plus one token table and rule implementation in the Renderer.
 define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Material3 = 1,
-    AppleHig = 2,
+    Cupertino = 2,
     Fluent = 3,
 });
 
-// FR-14.3: light and dark selection. `FollowSystem` leaves the choice to the Renderer.
+// Light and dark selection. `FollowSystem` leaves the choice to the Renderer, which learns
+// of a system change first and applies it without involving the Host.
 define_wire_enum!(COLOR_SCHEME_SCHEMA, ColorScheme {
     Light = 1,
     Dark = 2,
@@ -428,9 +498,17 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
         name: "ColorScheme",
         variants: COLOR_SCHEME_SCHEMA,
     },
+    RoleEnumSchema {
+        name: "AssetKind",
+        variants: ASSET_KIND_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "IconRole",
+        variants: ICON_ROLE_SCHEMA,
+    },
 ];
 
-/// FR-13.1: every place that takes a colour takes a `Paint`, so colour is expressed once.
+/// Every place that takes a colour takes a `Paint`, so colour is expressed once.
 ///
 /// Encoded as one `u64`: the high 32 bits are the kind, the low 32 bits are the value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -462,7 +540,7 @@ impl Paint {
     }
 }
 
-/// FR-14.3: a design system choice plus how it reacts to the host platform.
+/// A design system choice plus how it reacts to the host platform.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Theme {
     pub design_system: DesignSystem,
@@ -498,10 +576,17 @@ impl Theme {
     }
 }
 
-/// FR-14.3: adaptive is never implicit. Saying nothing means unified Material 3.
+/// Saying nothing follows the host platform, with Material 3 where the platform has no look
+/// of its own. The default used to be `unified(Material3)`, on the theory that a default
+/// looking the same everywhere is more predictable. In practice that meant macOS showed a
+/// Material screen with no configuration, which is the wrong first impression for a toolkit
+/// that claims native desktop UI, and it meant nothing on the default path ever exercised
+/// platform adaptation. A default that can be broken without anyone noticing is not
+/// predictability. An application that wants one design system everywhere says
+/// `Theme::unified(..)`, which is a clearer statement of that intent than silence was.
 impl Default for Theme {
     fn default() -> Self {
-        Self::unified(DesignSystem::Material3)
+        Self::adaptive(DesignSystem::Material3)
     }
 }
 
@@ -517,7 +602,7 @@ pub enum Modifier {
         width: f32,
         height: f32,
     },
-    /// FR-13.1: a `Paint`, not a raw ARGB. Colour has exactly one wire representation.
+    /// A `Paint`, not a raw ARGB. Colour has exactly one wire representation.
     Background(Paint),
     Clickable {
         handler_id: u64,
@@ -541,7 +626,8 @@ pub enum Modifier {
         width: f32,
         paint: Paint,
     },
-    /// FR-13.5: one dp value. How the shadow is drawn is the design system's rule.
+    /// One dp value. How the shadow is drawn is the design system's rule: tonal lift plus a
+    /// shadow, a wide soft shadow, or layered shadow plus a hairline stroke.
     Elevation(f32),
 }
 
@@ -789,6 +875,23 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     SpaceRole = 24,
     Alignment = 25,
     Variant = 26,
+    // The id of an asset the Host registered. Image and Icon carry nothing else: the
+    // bytes were copied into the Renderer's cache once, at registration.
+    Asset = 28,
+    // Whether an overlay is showing. The Renderer owns the state; this seeds it and
+    // carries changes that came from outside the Renderer.
+    Open = 40,
+    OnDismiss = 41,
+    SelectedIndex = 42,
+    // The Canvas drawing command list, a byte blob in the batch arena.
+    Commands = 50,
+    // The picker's current value, as an epoch integer in the widget's own unit: days
+    // since 1970-01-01 for a date, minutes since midnight for a time, the chosen position
+    // for a Dropdown.
+    Value = 51,
+    // The ends of the selectable range, in the same unit as `Value`.
+    Min = 52,
+    Max = 53,
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -808,11 +911,14 @@ pub enum EventPayload<'a> {
         alt_key: bool,
         meta_key: bool,
     },
-    /// FR-8: the Renderer asks the Host to materialise the visible item range.
+    /// The Renderer asks the Host to materialise the visible item range.
     RangeRequested {
         start: u32,
         count: u32,
     },
+    /// A picker's new value, in the widget's own epoch unit. The Renderer decided how the
+    /// user picked it, so nothing about calendars, wheels or clocks crosses here.
+    ValueChanged(i64),
 }
 
 pub const EVENT_SCHEMA: &[EventSchema] = &[
@@ -850,5 +956,10 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "RangeRequested",
         tag: 7,
         payload: EventPayloadType::Range,
+    },
+    EventSchema {
+        name: "ValueChanged",
+        tag: 8,
+        payload: EventPayloadType::Integer,
     },
 ];

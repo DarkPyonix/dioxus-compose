@@ -57,11 +57,11 @@ uname_s="$(uname -s)"
 if [[ "$uname_s" != "Darwin" ]]; then
     warn "platform $uname_s: the renderer native-image scripts are macOS only so far."
     warn "      Linux and Windows native builds are not scripted yet; the Rust workspace"
-    warn "      and the JVM dev shell (./kotlin run -m native) still work."
+    warn "      and the JVM dev shell (./kotlin run -m desktop) still work."
 fi
 
 # --- Liberica NIK -----------------------------------------------------------
-# Same discovery order as dioxus-compose-renderer/native/scripts/env.sh.
+# Same discovery order as dioxus-compose-renderer/desktop/scripts/env.sh.
 graalvm_home="${GRAALVM_HOME:-}"
 if [[ -z "$graalvm_home" ]]; then
     for candidate in "$HOME"/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home; do
@@ -74,7 +74,7 @@ nik_install_hint=(
     "       https://bell-sw.com/pages/downloads/native-image-kit/"
     "     or: brew install --cask liberica-nik-full"
     "expected location: ~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25-*"
-    "native/scripts/env.sh uses \$GRAALVM_HOME if set, otherwise globs that path."
+    "desktop/scripts/env.sh uses \$GRAALVM_HOME if set, otherwise globs that path."
 )
 
 if [[ -z "$graalvm_home" ]]; then

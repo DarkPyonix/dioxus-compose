@@ -1,4 +1,6 @@
-//! FR-11: compile-time schema extensions use the same typed RSX and fixed protocol as M0 widgets.
+//! Compile-time schema extensions use the same typed RSX and the same fixed-layout protocol
+//! as the built-in widgets. An extension is a pair of source files, one Rust and one Kotlin,
+//! compiled into both sides; it is not a runtime plugin.
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{Mutation, PropertyValue, ProtocolError, decode_batch};
@@ -61,7 +63,9 @@ fn fr11_typed_extension_uses_fixed_layout_mutations() {
 
 #[test]
 fn fr11_extension_is_in_the_closed_schema() {
-    assert_eq!(WidgetKind::LinearProgressIndicator as u16, 10);
+    // Extension widget tags start at 100. Tags 1 to 29 are the core vocabulary, and an
+    // extension inside that range collides with the next core widget that is added.
+    assert_eq!(WidgetKind::LinearProgressIndicator as u16, 100);
     assert_eq!(PropertyKind::Progress as u16, 27);
     assert_eq!(
         WIDGET_SCHEMA.last().unwrap().name,

@@ -8,7 +8,7 @@
 <link rel="alternate" hreflang="en" href="../en/troubleshooting.html">
 <link rel="alternate" hreflang="ko" href="troubleshooting.html">
 <link rel="alternate" hreflang="x-default" href="../en/troubleshooting.html">
-<link rel="stylesheet" href="../assets/style.css?v=19">
+<link rel="stylesheet" href="../assets/style.css?v=20">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -79,7 +79,7 @@
 <span class="c"># 기대: libdioxus_compose_renderer.dylib, libskiko-macos-*.dylib,</span>
 <span class="c">#       libjawt.dylib, libawt_lwawt.dylib</span>
 
-./dioxus-compose-renderer/native/scripts/build-native.sh</code></pre>
+./dioxus-compose-renderer/desktop/scripts/build-native.sh</code></pre>
     </figure>
     <p>
       네 파일을 따로 떼어 옮기지 마세요. 렌더러는 <code>dladdr</code>로 자기 위치를 알아낸 다음
@@ -100,7 +100,7 @@
     </p>
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
       <figcaption>shell</figcaption>
-<pre><code>./dioxus-compose-renderer/native/scripts/smoke-test.sh</code></pre>
+<pre><code>./dioxus-compose-renderer/desktop/scripts/smoke-test.sh</code></pre>
     </figure>
     <p>
       여기서는 창이 뜨는데 Rust에서는 안 뜬다면 바이너리 링크 문제입니다. 여기서도 안 뜨면
@@ -223,7 +223,7 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
-    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
     <span>이 가이드는 2026-09-20 기준 저장소 내용과 대조했습니다</span>
   </div>
 </footer>

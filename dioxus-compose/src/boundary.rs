@@ -1,6 +1,8 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
-use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme};
+use crate::schema::{
+    AssetKind, EventPayload, IconRole, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme,
+};
 use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
@@ -126,7 +128,7 @@ impl Wake for FrameWake {
     }
 }
 
-/// One streaming Text node's tail, accumulated between frames (FR-9).
+/// One streaming Text node's tail, accumulated between frames.
 struct PendingAppend {
     node_id: u32,
     text: String,
@@ -146,7 +148,8 @@ impl Host {
         Self::with_theme(app, launched_theme())
     }
 
-    /// FR-14.3: the theme the application chose, or unified Material 3 if it chose nothing.
+    /// The theme the application chose. Choosing nothing follows the host platform, with
+    /// Material 3 where the platform has no look of its own.
     pub fn with_theme(app: fn() -> Element, theme: Theme) -> Self {
         Self {
             theme,
@@ -159,8 +162,9 @@ impl Host {
 
     pub fn rebuild(&mut self) -> Result<&[u8], ProtocolError> {
         self.renderer.begin_frame();
-        // FR-14.5: one record at the root, before any node exists. The Renderer resolves
-        // roles to values, so a theme change never costs a SetProp per node (14.4).
+        // One record at the root, before any node exists. The Renderer resolves roles to
+        // values, so switching theme or colour scheme costs this one record rather than a
+        // SetProp for every node in the tree.
         self.renderer.set_theme(self.theme);
         self.dom.rebuild(&mut self.renderer);
         self.arm_scheduler_wake();
@@ -204,6 +208,7 @@ impl Host {
             EventPayload::RangeRequested { start, count } => {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
+            EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
@@ -225,7 +230,7 @@ impl Host {
         self.renderer.finish_frame()
     }
 
-    /// FR-9: queues a streamed tail for the next frame. Tokens arriving inside one frame are
+    /// Queues a streamed tail for the next frame. Tokens arriving inside one frame are
     /// merged into a single `AppendText` record, so a token never costs a batch of its own.
     pub fn append_text(&mut self, node_id: u32, tail: &str) {
         match self
@@ -255,11 +260,46 @@ impl Host {
                     .append_text_node(pending.node_id, &pending.text);
             }
         }
-        // Buffers are kept so steady-state streaming reuses their capacity (NFR-9).
+        // Buffers are kept so steady-state streaming reuses their capacity and a streamed
+        // token does not allocate.
         for pending in &mut self.pending_appends {
             pending.text.clear();
             pending.dirty = false;
         }
+    }
+
+    /// Registers one asset and returns the batch that carries it.
+    ///
+    /// The bytes are copied once here and once more by the Renderer into its cache. After
+    /// that the id is all that travels, so drawing the same image every frame costs a
+    /// fixed-layout property record and nothing else.
+    pub fn register_asset(
+        &mut self,
+        asset_id: u32,
+        kind: AssetKind,
+        bytes: &[u8],
+    ) -> Result<&[u8], ProtocolError> {
+        self.renderer.begin_frame();
+        self.renderer.register_asset(asset_id, kind, bytes);
+        self.renderer.finish_frame()
+    }
+
+    /// Registers an icon by the meaning it carries. The Renderer holds the artwork for
+    /// every design system, so what crosses is the role and not a picture or a name.
+    pub fn register_icon(&mut self, asset_id: u32, role: IconRole) -> Result<&[u8], ProtocolError> {
+        self.register_asset(
+            asset_id,
+            AssetKind::VectorIcon,
+            &(role as u16).to_le_bytes(),
+        )
+    }
+
+    /// Drops the asset from the Renderer's cache. Using the id afterwards is a reported
+    /// protocol error.
+    pub fn release_asset(&mut self, asset_id: u32) -> Result<&[u8], ProtocolError> {
+        self.renderer.begin_frame();
+        self.renderer.release_asset(asset_id);
+        self.renderer.finish_frame()
     }
 
     pub fn set_text(
@@ -289,12 +329,12 @@ impl Host {
 
 /// Holds the thread's `Host` and, crucially, keeps it out of thread-local teardown.
 ///
-/// NFR-7: dropping a `VirtualDom` reaches back into the Dioxus runtime's own
+/// Dropping a `VirtualDom` reaches back into the Dioxus runtime's own
 /// thread-locals. Thread-local destruction order is unspecified, so if the UI thread
 /// ends without `dioxus_compose_host_shutdown`, that drop can run after the Dioxus
 /// locals are already gone and panic with "cannot access a TLS value during or after
 /// destruction". A panic in a destructor is non-unwinding: it aborts the process, which
-/// is the abort NFR-7 forbids.
+/// is exactly what must not happen: a protocol or teardown fault has to stay recoverable.
 ///
 /// So the slot empties itself and leaks the `Host` when the thread is tearing down. An
 /// orderly `shutdown` still drops it properly; only the unorderly path leaks, and that
@@ -317,7 +357,7 @@ impl std::ops::Deref for HostSlot {
 
 /// The launched application.
 ///
-/// PR-3 puts the `VirtualDom` and every `dioxus_compose_host_*` call on the Renderer UI
+/// The `VirtualDom` and every `dioxus_compose_host_*` call run on the Renderer UI
 /// thread, and that thread is not the one that called `launch`: with `LoopMode::Renderer`
 /// the Rust main thread blocks inside `dioxus_compose_renderer_run` while Compose composes
 /// on the toolkit's own thread. So the app function, unlike the `Host` it builds, has to be
@@ -326,10 +366,11 @@ impl std::ops::Deref for HostSlot {
 ///
 /// `shutdown` deliberately leaves this set: it belongs to `launch`, not to one UI thread's
 /// `Host`. That is also what `LoopMode::Platform` needs, where the Renderer may tear the
-/// Host down and initialize it again (PR-5 surface recreation) without relaunching.
+/// Host down and initialize it again (Android recreates its surface on a configuration
+/// change) without relaunching.
 static APP: Mutex<Option<fn() -> Element>> = Mutex::new(None);
 
-/// FR-14.3: chosen by `LaunchBuilder::with_theme`, read once when the Host is built.
+/// Chosen by `LaunchBuilder::with_theme`, read once when the Host is built.
 static THEME: Mutex<Theme> = Mutex::new(Theme::unified(crate::schema::DesignSystem::Material3));
 
 thread_local! {
@@ -371,8 +412,9 @@ impl LaunchBuilder {
         self
     }
 
-    /// FR-14.3: `Theme::unified` for one design system everywhere, `Theme::adaptive`
-    /// to follow the host platform. Not calling this means unified Material 3.
+    /// `Theme::unified` for one design system everywhere, `Theme::adaptive` to follow the
+    /// host platform. Not calling this follows the host platform, falling back to
+    /// Material 3.
     pub fn with_theme(mut self, theme: Theme) -> Self {
         self.theme = theme;
         self
@@ -450,12 +492,13 @@ unsafe fn write_batch(
     Ok(())
 }
 
-/// A call-order failure is not a malformed message: PR-2 declares distinct statuses so
-/// the Renderer can tell "you called me too early" from "your bytes were wrong". The
+/// A call-order failure is not a malformed message: the boundary declares distinct statuses
+/// so the Renderer can tell "you called me too early" from "your bytes were wrong". The
 /// closures below therefore yield a status directly.
 fn ffi_status(operation: impl FnOnce() -> Result<(), i32>) -> i32 {
-    // SPEC-GAP: PR-2 provides no Host-to-Renderer event return channel for a
-    // ProtocolError event. Malformed calls therefore return STATUS_PROTOCOL_ERROR.
+    // There is no channel for the Host to raise a ProtocolError event back to the Renderer:
+    // the boundary is a synchronous call that returns a status, and events only travel
+    // Renderer to Host. Malformed calls therefore return STATUS_PROTOCOL_ERROR.
     match catch_unwind(AssertUnwindSafe(operation)) {
         Ok(Ok(())) => STATUS_OK,
         Ok(Err(status)) => status,
@@ -652,6 +695,8 @@ mod tests {
                     | Mutation::SetModifier { .. }
                     | Mutation::SetText { .. }
                     | Mutation::AppendText { .. }
+                    | Mutation::RegisterAsset { .. }
+                    | Mutation::ReleaseAsset { .. }
                     | Mutation::SetTheme(_) => {}
                 }
             }
@@ -778,7 +823,7 @@ mod tests {
         dioxus_compose_host_shutdown();
     }
 
-    /// PR-3: `launch` runs on the Rust main thread, but the Renderer UI thread that calls
+    /// `launch` runs on the Rust main thread, but the Renderer UI thread that calls
     /// `dioxus_compose_host_init` is a different thread (on macOS, AWT's event thread inside
     /// the isolate). The app the application launched must be reachable from there.
     #[test]
@@ -805,8 +850,8 @@ mod tests {
         .unwrap();
     }
 
-    /// FR-14.3: the first record of the initial batch carries the theme, and saying
-    /// nothing means unified Material 3. Adaptive is never implicit.
+    /// The first record of the initial batch carries the theme. Saying nothing follows the
+    /// host platform with a Material 3 fallback; `unified` is never implicit.
     #[test]
     fn fr14_initial_batch_opens_with_the_launched_theme() {
         let _launch = launch_guard();
@@ -837,9 +882,10 @@ mod tests {
             .unwrap()
         };
 
+        // Saying nothing follows the host platform, falling back to Material 3.
         assert_eq!(
             first_record(LaunchBuilder::new()),
-            Mutation::SetTheme(Theme::unified(DesignSystem::Material3))
+            Mutation::SetTheme(Theme::adaptive(DesignSystem::Material3))
         );
         assert_eq!(
             first_record(LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::Fluent))),
@@ -851,17 +897,18 @@ mod tests {
             })
         );
         assert_eq!(
-            first_record(LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::AppleHig))),
+            first_record(LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Cupertino))),
             Mutation::SetTheme(Theme {
-                design_system: DesignSystem::AppleHig,
-                fallback: DesignSystem::AppleHig,
+                design_system: DesignSystem::Cupertino,
+                fallback: DesignSystem::Cupertino,
                 color_scheme: ColorScheme::FollowSystem,
                 adaptive: true,
             })
         );
     }
 
-    /// FR-14.4 and 5.1: the theme is sent once, not once per frame.
+    /// The theme is sent once, not once per frame: resending it would put a record in every
+    /// batch for a value that almost never changes.
     #[test]
     fn fr14_set_theme_is_not_resent_every_frame() {
         let mut host = Host::new(app);

@@ -1,0 +1,409 @@
+//! A working desktop calculator.
+//!
+//! Written the way an application using this library would be written: `rsx!` and hooks,
+//! no Kotlin and no protocol types.
+
+use dioxus_compose::prelude::*;
+
+mod engine;
+
+use engine::Calculator;
+
+/// The key grid, top to bottom and left to right.
+const ROWS: [[&str; 4]; 5] = [
+    ["C", "\u{232b}", "%", "\u{00f7}"],
+    ["7", "8", "9", "\u{00d7}"],
+    ["4", "5", "6", "\u{2212}"],
+    ["1", "2", "3", "+"],
+    ["\u{00b1}", "0", ".", "="],
+];
+
+fn variant_for(label: &str) -> ButtonVariant {
+    match label {
+        "=" => ButtonVariant::Filled,
+        "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Tonal,
+        "C" | "\u{232b}" | "%" | "\u{00b1}" => ButtonVariant::Outlined,
+        _ => ButtonVariant::Text,
+    }
+}
+
+/// The longest shared prefix of two strings, rounded down to a character boundary so a
+/// multi-byte character is never split.
+fn shared_prefix(previous: &str, next: &str) -> usize {
+    let mut shared = previous
+        .as_bytes()
+        .iter()
+        .zip(next.as_bytes())
+        .take_while(|(left, right)| left == right)
+        .count();
+    while shared > 0 && (!previous.is_char_boundary(shared) || !next.is_char_boundary(shared)) {
+        shared -= 1;
+    }
+    shared
+}
+
+fn app() -> Element {
+    let mut calculator = use_signal(Calculator::new);
+    // The keyboard route. Key events only reach the Host for Enter, so every other key is
+    // read out of the capture field's value instead: the difference between what the field
+    // showed last and what it shows now is the keys that were pressed.
+    let mut typed = use_signal(String::new);
+
+    let display = calculator.read().display();
+    let status = calculator.read().status();
+
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            spacing: 6.0,
+            TopAppBar {
+                Text { text: "Calculator", type_role: TypeRole::Title }
+            }
+            // Text has no width of its own, so the right alignment of a calculator display
+            // comes from a full-width Box around it.
+            dioxus_compose::Box {
+                fill_max_width: true,
+                alignment: Alignment::CenterEnd,
+                Text {
+                    text: status,
+                    type_role: TypeRole::Caption,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    max_lines: 1,
+                    overflow: TextOverflow::Ellipsis,
+                }
+            }
+            dioxus_compose::Box {
+                fill_max_width: true,
+                alignment: Alignment::CenterEnd,
+                Text {
+                    text: display,
+                    type_role: TypeRole::Display,
+                    max_lines: 1,
+                    overflow: TextOverflow::Ellipsis,
+                }
+            }
+            for (index , row) in ROWS.iter().enumerate() {
+                Row {
+                    key: "row-{index}",
+                    fill_max_width: true,
+                    arrangement: Arrangement::SpaceEvenly,
+                    for label in row.iter().copied() {
+                        Button {
+                            key: "{label}",
+                            text: label,
+                            variant: variant_for(label),
+                            on_click: move |_| calculator.write().press(label),
+                        }
+                    }
+                }
+            }
+            Text {
+                text: "Keyboard: click the field below, then type 0-9 . + - * / % = and Enter",
+                type_role: TypeRole::Caption,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            TextField {
+                placeholder: "Keyboard input",
+                on_value_change: move |value: String| {
+                    let previous = typed();
+                    let shared = shared_prefix(&previous, &value);
+                    let removed = previous[shared..].chars().count();
+                    let mut state = calculator.write();
+                    for _ in 0..removed {
+                        state.press("\u{232b}");
+                    }
+                    for character in value[shared..].chars() {
+                        state.press_char(character);
+                    }
+                    drop(state);
+                    typed.set(value);
+                },
+                on_key_down: move |event: KeyEvent| {
+                    if event.key() == Key::Enter {
+                        calculator.write().press("=");
+                        event.consume();
+                    }
+                },
+            }
+        }
+    }
+}
+
+fn main() {
+    dioxus_compose::launch(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dioxus_compose::Host;
+    use dioxus_compose::protocol::{
+        HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
+    };
+    use dioxus_compose::schema::{EventPayload, Key, PropertyKind, TypeRole, WidgetKind};
+    use std::collections::HashMap;
+
+    #[test]
+    fn shared_prefix_never_splits_a_character() {
+        assert_eq!(shared_prefix("\u{d55c}", "\u{d55c}\u{ae00}"), 3);
+        assert_eq!(shared_prefix("\u{d55c}", "\u{ae00}"), 0);
+    }
+
+    #[test]
+    fn every_key_has_a_variant_and_an_action() {
+        let mut calculator = Calculator::new();
+        for row in ROWS {
+            for label in row {
+                let _ = variant_for(label);
+                calculator.press(label);
+            }
+        }
+        assert!(!calculator.display().is_empty());
+    }
+
+    /// The whole declared tree, checked against the encoder. A widget or an attribute the
+    /// schema cannot carry fails the frame rather than the one node, so this is the test
+    /// that would have caught it.
+    #[test]
+    fn the_declared_tree_encodes_without_a_protocol_error() {
+        let mut dom = VirtualDom::new(app);
+        let mut renderer = dioxus_compose::renderer::ComposeRenderer::new();
+        renderer.begin_frame();
+        dom.rebuild(&mut renderer);
+        renderer
+            .finish_frame()
+            .expect("the calculator tree encodes");
+    }
+
+    #[test]
+    fn display_is_formatted_not_raw() {
+        assert_eq!(engine::format_number(1.0 / 3.0), "0.333333333333");
+    }
+
+    /// The real keypad, driven the way the Renderer drives it: an encoded event naming the
+    /// button's own handler, and the display read back out of the frame that came of it.
+    /// Calling the engine directly would skip everything that can actually break between a
+    /// finger and a number on screen.
+    struct Keypad {
+        host: Host,
+        /// Button label to the handler its `on_click` was given.
+        keys: HashMap<String, (u32, u64)>,
+        field: u32,
+        change_handler: u64,
+        key_handler: u64,
+        display: u32,
+        texts: HashMap<u32, String>,
+        event: Vec<u8>,
+    }
+
+    impl Keypad {
+        fn new() -> Self {
+            let mut host = Host::new(app);
+            let first = decode_batch(host.rebuild().expect("the first frame failed to encode"))
+                .expect("the first frame did not decode");
+
+            let mut texts: HashMap<u32, String> = HashMap::new();
+            let mut clicks: HashMap<u32, u64> = HashMap::new();
+            let mut display_roles: Vec<u32> = Vec::new();
+            let mut field = None;
+            let mut change_handler = None;
+            let mut key_handler = None;
+            for mutation in &first {
+                match mutation {
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::TextField,
+                    } => field = Some(*node_id),
+                    Mutation::SetProp {
+                        node_id,
+                        property,
+                        value,
+                    } => match (property, value) {
+                        (PropertyKind::Text, PropertyValue::String(text)) => {
+                            texts.insert(*node_id, (*text).to_owned());
+                        }
+                        (PropertyKind::OnClick, PropertyValue::Integer(id)) => {
+                            clicks.insert(*node_id, *id as u64);
+                        }
+                        (PropertyKind::OnValueChange, PropertyValue::Integer(id)) => {
+                            change_handler = Some(*id as u64);
+                        }
+                        (PropertyKind::OnKeyDown, PropertyValue::Integer(id)) => {
+                            key_handler = Some(*id as u64);
+                        }
+                        (PropertyKind::TypeRole, PropertyValue::Integer(role))
+                            if *role == i64::from(TypeRole::Display as u8) =>
+                        {
+                            display_roles.push(*node_id);
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+            drop(first);
+
+            let keys = clicks
+                .iter()
+                .filter_map(|(node_id, handler)| {
+                    texts
+                        .get(node_id)
+                        .map(|label| (label.clone(), (*node_id, *handler)))
+                })
+                .collect();
+            assert_eq!(
+                display_roles.len(),
+                1,
+                "the screen should have exactly one display sized text"
+            );
+
+            Self {
+                host,
+                keys,
+                field: field.expect("the screen has no keyboard capture field"),
+                change_handler: change_handler.expect("the field declared no change handler"),
+                key_handler: key_handler.expect("the field declared no key handler"),
+                display: display_roles[0],
+                texts,
+                event: Vec::new(),
+            }
+        }
+
+        fn dispatch(&mut self, node_id: u32, handler_id: u64, payload: EventPayload<'_>) -> i64 {
+            encode_event(
+                &HostEvent {
+                    node_id,
+                    handler_id,
+                    payload,
+                },
+                &mut self.event,
+            )
+            .expect("the event did not encode");
+            let (batch, result) = self
+                .host
+                .dispatch_event(&self.event)
+                .expect("the event failed");
+            for mutation in decode_batch(batch).expect("the frame did not decode") {
+                if let Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(text),
+                } = mutation
+                {
+                    self.texts.insert(node_id, text.to_owned());
+                }
+            }
+            result
+        }
+
+        /// Press a key by the label a person would read on it.
+        fn press(&mut self, label: &str) {
+            let (node_id, handler) = *self
+                .keys
+                .get(label)
+                .unwrap_or_else(|| panic!("the keypad has no {label} key"));
+            self.dispatch(node_id, handler, EventPayload::Clicked);
+        }
+
+        /// The keyboard route: the field reports what it now holds, and the difference
+        /// against what it held before is the keys that were pressed.
+        fn type_text(&mut self, value: &str) {
+            let (node_id, handler) = (self.field, self.change_handler);
+            self.dispatch(node_id, handler, EventPayload::TextChanged(value));
+        }
+
+        fn press_enter(&mut self) -> i64 {
+            let (node_id, handler) = (self.field, self.key_handler);
+            self.dispatch(
+                node_id,
+                handler,
+                EventPayload::KeyDown {
+                    key: Key::Enter,
+                    shift_key: false,
+                    ctrl_key: false,
+                    alt_key: false,
+                    meta_key: false,
+                },
+            )
+        }
+
+        fn display(&self) -> &str {
+            self.texts
+                .get(&self.display)
+                .map(String::as_str)
+                .expect("the display carries no text")
+        }
+    }
+
+    /// A sequence of key presses, through the encoded event path rather than the engine, and
+    /// the answer read back off the display the way a person reads it.
+    #[test]
+    fn fr4_a_sequence_of_key_presses_produces_the_expected_display() {
+        let mut keypad = Keypad::new();
+        assert_eq!(keypad.display(), "0");
+
+        for label in ["1", "2", "+", "3", "0", "="] {
+            keypad.press(label);
+        }
+        assert_eq!(keypad.display(), "42");
+
+        for label in ["\u{00d7}", "2", "="] {
+            keypad.press(label);
+        }
+        assert_eq!(keypad.display(), "84");
+
+        keypad.press("C");
+        assert_eq!(keypad.display(), "0");
+    }
+
+    /// Division, the sign key and the backspace, which are the keys where an off by one in
+    /// the wiring would still look like a working calculator until someone checked.
+    #[test]
+    fn fr4_the_correcting_keys_reach_the_display() {
+        let mut keypad = Keypad::new();
+        for label in ["1", "2", "3", "\u{232b}"] {
+            keypad.press(label);
+        }
+        assert_eq!(keypad.display(), "12");
+
+        keypad.press("\u{00f7}");
+        keypad.press("4");
+        keypad.press("=");
+        assert_eq!(keypad.display(), "3");
+
+        keypad.press("\u{00b1}");
+        assert_eq!(keypad.display(), "-3");
+    }
+
+    /// Typing is a second route to the same engine. The field is uncontrolled, so what
+    /// arrives is the whole value each time and the app works out what changed.
+    #[test]
+    fn fr4_typing_reaches_the_display_and_enter_is_consumed() {
+        let mut keypad = Keypad::new();
+        keypad.type_text("7");
+        keypad.type_text("7*");
+        keypad.type_text("7*6");
+        assert_eq!(keypad.display(), "6");
+
+        let consumed = keypad.press_enter();
+        assert_eq!(keypad.display(), "42");
+        assert_eq!(
+            consumed, 1,
+            "Enter has to be reported as handled, or the field inserts a newline as well"
+        );
+    }
+
+    /// Deleting characters in the capture field undoes the presses they made, so the two
+    /// routes cannot drift apart.
+    #[test]
+    fn fr4_deleting_typed_characters_undoes_those_presses() {
+        let mut keypad = Keypad::new();
+        keypad.type_text("123");
+        assert_eq!(keypad.display(), "123");
+        keypad.type_text("12");
+        assert_eq!(keypad.display(), "12");
+        keypad.type_text("");
+        assert_eq!(keypad.display(), "0");
+    }
+}

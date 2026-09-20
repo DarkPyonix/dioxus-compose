@@ -1,8 +1,8 @@
 //! Fixed-layout little-endian boundary protocol.
 
 use crate::schema::{
-    ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole, SpaceRole,
-    Theme, WidgetKind,
+    AssetKind, ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole,
+    SpaceRole, Theme, WidgetKind,
 };
 use core::fmt;
 
@@ -16,6 +16,8 @@ const TAG_REMOVE: u16 = 6;
 const TAG_SET_TEXT: u16 = 7;
 const TAG_APPEND_TEXT: u16 = 8;
 const TAG_SET_THEME: u16 = 9;
+const TAG_REGISTER_ASSET: u16 = 10;
+const TAG_RELEASE_ASSET: u16 = 11;
 const ENVELOPE_LEN: usize = 12;
 /// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
 const MIN_RECORD_LEN: usize = 8;
@@ -25,6 +27,9 @@ const VALUE_STRING: u16 = 1;
 const VALUE_BOOL: u16 = 2;
 const VALUE_I64: u16 = 3;
 const VALUE_F32: u16 = 4;
+/// An opaque byte run in the arena. Same `(offset, length)` layout as a string, with no
+/// UTF-8 check, because a Canvas command list is not text.
+const VALUE_BYTES: u16 = 5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PropertyValue<'a> {
@@ -33,6 +38,7 @@ pub enum PropertyValue<'a> {
     Bool(bool),
     Integer(i64),
     Float(f32),
+    Bytes(&'a [u8]),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -69,13 +75,25 @@ pub enum Mutation<'a> {
         text: &'a str,
         selection: Option<Selection>,
     },
-    /// FR-9: appends the streamed tail to a Text node instead of resending the whole string.
+    /// Appends the streamed tail to a Text node instead of resending the whole string.
     AppendText {
         node_id: u32,
         text: &'a str,
     },
-    /// FR-14.5: the root theme. Sent once as the first record of the initial batch.
+    /// The root theme. Sent once as the first record of the initial batch.
     SetTheme(Theme),
+    /// Hands the Renderer the bytes of one asset. The Renderer copies them into its own
+    /// cache inside this call, because the batch buffer is only valid for the call that
+    /// carries it and an image has to outlive the frame that draws it.
+    RegisterAsset {
+        asset_id: u32,
+        kind: AssetKind,
+        bytes: &'a [u8],
+    },
+    /// Drops an asset from the Renderer's cache. The Host owns the lifetime.
+    ReleaseAsset {
+        asset_id: u32,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -89,6 +107,7 @@ pub enum ProtocolError {
     InvalidValueKind(u16),
     InvalidModifier(u16),
     InvalidTheme(u16),
+    InvalidAssetKind(u16),
     InvalidStringRange,
     InvalidUtf8,
     LengthOverflow,
@@ -108,6 +127,7 @@ const EVENT_FOCUS_LOST: u16 = 4;
 const EVENT_PROTOCOL_ERROR: u16 = 5;
 const EVENT_KEY_DOWN: u16 = 6;
 const EVENT_RANGE_REQUESTED: u16 = 7;
+const EVENT_VALUE_CHANGED: u16 = 8;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -155,7 +175,10 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
             start: read_u32(bytes, 16)?,
             count: read_u32(bytes, 20)?,
         },
-        EVENT_CLICK..=EVENT_RANGE_REQUESTED => return Err(ProtocolError::InvalidRecordLength),
+        EVENT_VALUE_CHANGED if record_len == 24 => {
+            crate::schema::EventPayload::ValueChanged(read_u64(bytes, 16)? as i64)
+        }
+        EVENT_CLICK..=EVENT_VALUE_CHANGED => return Err(ProtocolError::InvalidRecordLength),
         other => return Err(ProtocolError::InvalidTag(other)),
     };
     Ok(HostEvent {
@@ -189,6 +212,14 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.push(0);
         return Ok(());
     }
+    if let crate::schema::EventPayload::ValueChanged(value) = event.payload {
+        output.extend_from_slice(&EVENT_VALUE_CHANGED.to_le_bytes());
+        output.extend_from_slice(&24_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        output.extend_from_slice(&(value as u64).to_le_bytes());
+        return Ok(());
+    }
     if let crate::schema::EventPayload::RangeRequested { start, count } = event.payload {
         output.extend_from_slice(&EVENT_RANGE_REQUESTED.to_le_bytes());
         output.extend_from_slice(&24_u16.to_le_bytes());
@@ -211,7 +242,8 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
         crate::schema::EventPayload::KeyDown { .. }
-        | crate::schema::EventPayload::RangeRequested { .. } => unreachable!(),
+        | crate::schema::EventPayload::RangeRequested { .. }
+        | crate::schema::EventPayload::ValueChanged(_) => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());
@@ -319,6 +351,11 @@ impl BatchEncoder {
                         self.put_u64(u64::from(value.to_bits()));
                         self.put_u32(0);
                     }
+                    PropertyValue::Bytes(value) => {
+                        self.put_u16(VALUE_BYTES);
+                        self.put_bytes_ref(value)?;
+                        self.put_u32(0);
+                    }
                 }
             }
             Mutation::SetModifier {
@@ -376,6 +413,21 @@ impl BatchEncoder {
                 self.put_u32(*node_id);
                 self.put_string_ref(text)?;
             }
+            Mutation::RegisterAsset {
+                asset_id,
+                kind,
+                bytes,
+            } => {
+                self.begin_record(TAG_REGISTER_ASSET, 16);
+                self.put_u32(*asset_id);
+                self.put_u16(*kind as u16);
+                self.put_u16(0);
+                self.put_bytes_ref(bytes)?;
+            }
+            Mutation::ReleaseAsset { asset_id } => {
+                self.begin_record(TAG_RELEASE_ASSET, 4);
+                self.put_u32(*asset_id);
+            }
             Mutation::SetTheme(theme) => {
                 self.begin_record(TAG_SET_THEME, 8);
                 self.put_u16(theme.design_system as u16);
@@ -427,13 +479,19 @@ impl BatchEncoder {
     }
 
     fn put_string_ref(&mut self, value: &str) -> Result<(), ProtocolError> {
+        self.put_bytes_ref(value.as_bytes())
+    }
+
+    /// Asset bytes ride in the same trailing region as strings, with the same
+    /// `(offset, len)` reference and the same fixup, so the record stays fixed layout.
+    fn put_bytes_ref(&mut self, value: &[u8]) -> Result<(), ProtocolError> {
         let offset =
             u32::try_from(self.strings.len()).map_err(|_| ProtocolError::LengthOverflow)?;
         let len = u32::try_from(value.len()).map_err(|_| ProtocolError::LengthOverflow)?;
         self.string_fixups.push(self.records.len());
         self.put_u32(offset);
         self.put_u32(len);
-        self.strings.extend_from_slice(value.as_bytes());
+        self.strings.extend_from_slice(value);
         Ok(())
     }
 
@@ -463,7 +521,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
     if records_len < ENVELOPE_LEN || records_len > bytes.len() || records_len % 4 != 0 {
         return Err(ProtocolError::InvalidEnvelope);
     }
-    // NFR-7: `count` is attacker-controlled, so it only sizes the buffer up to what the
+    // `count` is attacker-controlled, so it only sizes the buffer up to what the
     // record region could actually hold. The shortest mutation record is `Remove` at 8
     // bytes, so that is the ceiling. Reserving `count` directly let a 12-byte message ask
     // for a >100 GB allocation.
@@ -496,6 +554,9 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     VALUE_I64 => PropertyValue::Integer(read_u64(bytes, payload + 8)? as i64),
                     VALUE_F32 => {
                         PropertyValue::Float(f32::from_bits(read_u64(bytes, payload + 8)? as u32))
+                    }
+                    VALUE_BYTES => {
+                        PropertyValue::Bytes(read_bytes(bytes, payload + 8, records_len)?)
                     }
                     other => return Err(ProtocolError::InvalidValueKind(other)),
                 };
@@ -560,7 +621,19 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     adaptive: adaptive == 1,
                 })
             }
-            TAG_CREATE..=TAG_SET_THEME => {
+            TAG_REGISTER_ASSET if len == 20 => {
+                let raw_kind = read_u16(bytes, payload + 4)?;
+                Mutation::RegisterAsset {
+                    asset_id: read_u32(bytes, payload)?,
+                    kind: AssetKind::try_from(raw_kind)
+                        .map_err(|()| ProtocolError::InvalidAssetKind(raw_kind))?,
+                    bytes: read_bytes(bytes, payload + 8, records_len)?,
+                }
+            }
+            TAG_RELEASE_ASSET if len == 8 => Mutation::ReleaseAsset {
+                asset_id: read_u32(bytes, payload)?,
+            },
+            TAG_CREATE..=TAG_RELEASE_ASSET => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),
@@ -574,7 +647,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
     Ok(output)
 }
 
-/// FR-13.8: two `f32` share one `u64`, with the first value in the low 32 bits.
+/// Two `f32` share one `u64`, with the first value in the low 32 bits.
 const fn pack_floats(low: f32, high: f32) -> u64 {
     (low.to_bits() as u64) | ((high.to_bits() as u64) << 32)
 }
@@ -673,11 +746,17 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
 
 /// Reads a `(offset: u32, len: u32)` string reference at `position`.
 ///
-/// PR-4 keeps strings in the arena that follows the records, so `arena_start` is the
+/// Strings live in the arena that follows the records, so `arena_start` is the
 /// first byte a string may legally point at. Without that floor a hostile Renderer can
 /// aim a string at the record region and have the decoder reinterpret record headers as
-/// text - garbage decoding into a valid-looking mutation (NFR-7).
+/// text, garbage decoding into a valid-looking mutation.
 fn read_string(bytes: &[u8], position: usize, arena_start: usize) -> Result<&str, ProtocolError> {
+    let value = read_bytes(bytes, position, arena_start)?;
+    std::str::from_utf8(value).map_err(|_| ProtocolError::InvalidUtf8)
+}
+
+/// The same arena range a string uses, without the UTF-8 requirement.
+fn read_bytes(bytes: &[u8], position: usize, arena_start: usize) -> Result<&[u8], ProtocolError> {
     let offset =
         usize::try_from(read_u32(bytes, position)?).map_err(|_| ProtocolError::LengthOverflow)?;
     let len = usize::try_from(read_u32(bytes, position + 4)?)
@@ -688,10 +767,9 @@ fn read_string(bytes: &[u8], position: usize, arena_start: usize) -> Result<&str
     if offset < arena_start {
         return Err(ProtocolError::InvalidStringRange);
     }
-    let value = bytes
+    bytes
         .get(offset..end)
-        .ok_or(ProtocolError::InvalidStringRange)?;
-    std::str::from_utf8(value).map_err(|_| ProtocolError::InvalidUtf8)
+        .ok_or(ProtocolError::InvalidStringRange)
 }
 
 fn read_u16(bytes: &[u8], position: usize) -> Result<u16, ProtocolError> {
@@ -772,7 +850,7 @@ mod tests {
         assert_eq!(decoded, mutations);
     }
 
-    /// FR-13.1: a role Paint and a literal Paint occupy the same record length and
+    /// A role Paint and a literal Paint occupy the same record length and
     /// decode back to the value that was encoded.
     #[test]
     fn fr13_paint_role_and_literal_share_one_record_length() {
@@ -812,7 +890,7 @@ mod tests {
         );
     }
 
-    /// FR-13.4: every design primitive fits in `(tag, u64, u64)` and survives a round trip.
+    /// Every design primitive fits in `(tag, u64, u64)` and survives a round trip.
     #[test]
     fn fr13_design_modifiers_round_trip_in_two_words() {
         let modifiers = [
@@ -851,15 +929,15 @@ mod tests {
             encoder.encode(mutation).unwrap();
         }
         let bytes = encoder.finish().unwrap();
-        // Every modifier record is the same fixed 28 bytes (PR-4).
+        // Every modifier record is the same fixed 28 bytes.
         assert_eq!(bytes.len(), ENVELOPE_LEN + expected.len() * 28);
         assert_eq!(decode_batch(bytes).unwrap(), expected);
     }
 
-    /// FR-14.5: `SetTheme` is a 12-byte record of four `u16` fields.
+    /// `SetTheme` is a 12-byte record of four `u16` fields.
     #[test]
     fn fr14_set_theme_round_trips_in_twelve_bytes() {
-        let theme = Theme::adaptive(DesignSystem::AppleHig).with_color_scheme(ColorScheme::Dark);
+        let theme = Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
         let mut encoder = BatchEncoder::default();
         encoder.encode(&Mutation::SetTheme(theme)).unwrap();
         let bytes = encoder.finish().unwrap();
@@ -869,7 +947,7 @@ mod tests {
         assert_eq!(decode_batch(bytes).unwrap(), [Mutation::SetTheme(theme)]);
     }
 
-    /// NFR-7: an out-of-range theme tag is an error, never a panic.
+    /// An out-of-range theme tag is an error, never a panic.
     #[test]
     fn fr14_rejects_unknown_theme_tags() {
         let mut encoder = BatchEncoder::default();

@@ -74,7 +74,7 @@ fn encode_one_hundred(encoder: &mut BatchEncoder) {
     std::hint::black_box(encoder.finish().unwrap());
 }
 
-/// FR-9 streaming shape: a long answer already on screen, then one frame worth of tokens
+/// Streaming shape: a long answer already on screen, then one frame worth of tokens
 /// appended as tails and flushed by a single `render_frame`.
 struct StreamingText {
     host: Host,
@@ -174,11 +174,15 @@ fn benchmarks(criterion: &mut Criterion) {
 
     assert!(
         click_p99 <= HOST_INTERACTION_BUDGET_NS,
-        "click Host path p99 {click_p99}ns exceeds SPEC budget {HOST_INTERACTION_BUDGET_NS}ns"
+        "a click took {click_p99}ns at p99, over the {HOST_INTERACTION_BUDGET_NS}ns budget. \
+         That budget is the share of a frame the Host may spend before the UI stops feeling \
+         native, so treat this as a bug rather than a threshold to raise."
     );
     assert!(
         streaming_p99 <= STREAMING_FRAME_BUDGET_NS,
-        "streaming Host frame p99 {streaming_p99}ns exceeds SPEC budget {STREAMING_FRAME_BUDGET_NS}ns"
+        "a streaming frame took {streaming_p99}ns at p99, over the {STREAMING_FRAME_BUDGET_NS}ns \
+         budget. Streaming text appends every frame, so an overrun here shows up as dropped \
+         frames while a response is being written out."
     );
 }
 

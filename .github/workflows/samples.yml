@@ -1,0 +1,168 @@
+# Sample apps -- builds every sample for every desktop platform when a `sample-v*` tag is
+# pushed, and attaches the binaries to a GitHub Release.
+#
+# Separate from release.yml on purpose. That workflow ships the library: the renderer
+# artifacts and the crate. This one ships programs a person downloads and runs, and the
+# two should be versioned apart so a sample can be rebuilt without implying a library
+# release, and a library release is not held up by a sample that does not build.
+#
+# Each sample links the renderer for its platform, so the binary is self contained apart
+# from the renderer library shipped beside it.
+
+name: Sample apps
+
+on:
+  push:
+    tags:
+      - 'sample-v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing sample-v* tag to build a draft release for'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: macos-aarch64
+            renderer: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
+            dist: dioxus-compose-renderer/build/native-image/dist/lib
+          - runner: ubuntu-24.04
+            target: linux-x86_64
+            renderer: ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+            dist: dioxus-compose-renderer/build/native-image-linux/dist/lib
+          - runner: windows-2022
+            target: windows-x86_64
+            renderer: powershell .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
+            dist: dioxus-compose-renderer/build/native-image/dist/lib
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Install Liberica NIK 25 Full
+        if: runner.os == 'macOS'
+        run: ./scripts/install-nik.sh --github-env
+
+      - name: Install upstream GraalVM 25
+        # Upstream GraalVM ships AWT on Windows and Linux. Only macOS needs Liberica.
+        if: runner.os != 'macOS'
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux AWT, Skia and font dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev pkg-config fontconfig \
+            libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
+            libfontconfig1-dev libfreetype6-dev libgl1 fonts-noto-cjk
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.cache/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-${{ matrix.target }}-${{ hashFiles('dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: kotlin-${{ matrix.target }}-
+
+      - name: Build the renderer
+        run: ${{ matrix.renderer }}
+
+      - name: Build every sample against it
+        shell: bash
+        env:
+          DIOXUS_COMPOSE_RENDERER_DIR: ${{ matrix.dist }}
+        run: |
+          set -euo pipefail
+          for manifest in samples/*/Cargo.toml; do
+            name="sample-$(basename "$(dirname "$manifest")")"
+            echo "== $name"
+            cargo build --release -p "$name" --features dioxus-compose/native-renderer
+          done
+
+      - name: Package each sample with the renderer beside it
+        # A sample is only runnable next to the renderer library it was linked against, so
+        # ship them together rather than leaving the download to fail at startup.
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          for manifest in samples/*/Cargo.toml; do
+            app="$(basename "$(dirname "$manifest")")"
+            stage="staging/$app"
+            mkdir -p "$stage"
+            if [[ "${{ runner.os }}" == "Windows" ]]; then
+              cp "target/release/sample-$app.exe" "$stage/"
+            else
+              cp "target/release/sample-$app" "$stage/"
+            fi
+            cp -R "${{ matrix.dist }}/." "$stage/"
+            tar -czf "artifacts/$app-${{ matrix.target }}.tar.gz" -C staging "$app"
+          done
+          cd artifacts
+          if command -v sha256sum >/dev/null; then sha256sum *.tar.gz > "SHA256SUMS-${{ matrix.target }}"
+          else shasum -a 256 *.tar.gz > "SHA256SUMS-${{ matrix.target }}"; fi
+          cat "SHA256SUMS-${{ matrix.target }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: samples-${{ matrix.target }}
+          path: artifacts/
+
+  release:
+    name: Attach the samples to a draft release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+
+      - name: Collect
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          find downloaded -type f -exec cp {} artifacts/ \;
+          ls -la artifacts
+
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" artifacts/* --clobber
+          else
+            gh release create "$TAG" \
+              --draft \
+              --title "Sample apps $TAG" \
+              --notes "Sample applications built for each desktop platform. Each archive contains the program and the renderer library it was linked against; run it from the extracted directory. Verify with \`shasum -a 256 -c SHA256SUMS-<platform>\`." \
+              artifacts/*
+          fi

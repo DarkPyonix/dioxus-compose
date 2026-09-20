@@ -1,4 +1,4 @@
-//! PR-4 / NFR-7: encoder output always decodes back identically, and truncating
+//! Encoder output always decodes back identically, and truncating
 //! that output at *any* byte offset yields a clean `ProtocolError` rather than a
 //! panic. Mutations are generated structurally with `arbitrary` so the encoder is
 //! driven over its whole input domain, not just the shapes a fuzzer stumbles onto.
@@ -186,12 +186,12 @@ fuzz_target!(|owned: Vec<OwnedMutation>| {
     };
     let bytes = bytes.to_vec();
 
-    // PR-4: encoder output always decodes back identically.
+    // Encoder output always decodes back identically.
     let decoded = decode_batch(&bytes).expect("encoder output must decode");
     assert_eq!(decoded, mutations, "encode/decode round trip diverged");
     drop(decoded);
 
-    // NFR-7: truncation at every byte offset is a clean ProtocolError, never a panic.
+    // Truncation at every byte offset is a clean ProtocolError, never a panic.
     for end in 0..bytes.len() {
         let _ = decode_batch(&bytes[..end]);
     }

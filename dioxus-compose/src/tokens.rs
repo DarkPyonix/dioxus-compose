@@ -1,12 +1,14 @@
-//! FR-14.4: design token tables.
+//! Design token tables.
 //!
-//! The tables are authored in Rust (D6, single source) and executed in the Renderer.
-//! Codegen writes them into `Protocol.gen.kt` as Kotlin objects, so they enter the
-//! Renderer binary at build time and never cross the boundary at runtime. 13.7's ban on
-//! a Host-sent token table still stands.
+//! The tables are authored here, in Rust, because Rust is the single source for everything
+//! that has two representations, and because values written in Kotlin by hand would go
+//! unverified. They are *executed* in the Renderer: codegen writes them into
+//! `Protocol.gen.kt` as Kotlin objects, so they enter the Renderer binary at build time and
+//! never cross the boundary at run time. The Host still sends roles and never a token
+//! table.
 //!
-//! What the Renderer implementer still owns is 14.6 items 5 to 7: the elevation
-//! rendering rule, the `ButtonVariant` styling rule, and motion.
+//! What the Renderer implementer still owns is the rules these values feed: how an
+//! elevation is drawn, how each `ButtonVariant` is styled, and motion.
 
 use crate::schema::{Color, ColorRole, ColorScheme, DesignSystem, ShapeRole, SpaceRole, TypeRole};
 
@@ -172,7 +174,7 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
 };
 
 const APPLE_HIG: DesignTokenTable = DesignTokenTable {
-    system: DesignSystem::AppleHig,
+    system: DesignSystem::Cupertino,
     reference: "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
     default_family: "SF Pro",
     monospace_family: "SF Mono",
@@ -304,7 +306,7 @@ mod tests {
         (high + 0.05) / (low + 0.05)
     }
 
-    /// FR-14.1: every `DesignSystem` variant has a table, so adding a variant without
+    /// Every `DesignSystem` variant has a table, so adding a variant without
     /// its values fails here rather than at run time.
     #[test]
     fn fr14_every_design_system_has_a_token_table() {
@@ -322,7 +324,7 @@ mod tests {
         }
     }
 
-    /// FR-14.4: the tables are ordered by role tag, so a Renderer can index them directly.
+    /// The tables are ordered by role tag, so a Renderer can index them directly.
     #[test]
     fn fr14_tokens_are_stored_in_role_tag_order() {
         for table in DESIGN_TOKENS {
@@ -341,7 +343,7 @@ mod tests {
         }
     }
 
-    /// FR-13.2: the ladder descends from Display to Caption in every system. `Mono` sits
+    /// The ladder descends from Display to Caption in every system. `Mono` sits
     /// outside the ladder, because it is a family choice and not a rung.
     #[test]
     fn fr13_type_ladder_is_monotonic() {
@@ -369,7 +371,7 @@ mod tests {
         }
     }
 
-    /// FR-13.3 and 13.4: radii and spacing grow with the role, starting at zero.
+    /// Radii and spacing grow with the role, starting at zero.
     #[test]
     fn fr13_shape_and_space_ladders_grow() {
         for table in DESIGN_TOKENS {
@@ -384,7 +386,7 @@ mod tests {
         }
     }
 
-    /// FR-14.4: `On*` is readable on its pair in both schemes.
+    /// `On*` is readable on its pair in both schemes.
     ///
     /// Reading surfaces hold WCAG AA body text (4.5:1). Accent fills are held to 3:1,
     /// which is the AA large-text and non-text bound: Apple's systemBlue with white
@@ -425,7 +427,7 @@ mod tests {
         }
     }
 
-    /// FR-14.3: `FollowSystem` is the Renderer's call, so the Host-side lookup can only
+    /// `FollowSystem` is the Renderer's call, so the Host-side lookup can only
     /// report the light value. This documents that, rather than leaving it a surprise.
     #[test]
     fn fr14_follow_system_reads_as_light_on_the_host() {

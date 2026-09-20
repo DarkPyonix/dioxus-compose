@@ -10,7 +10,7 @@ fn fr7_generated_kotlin_matches_schema() {
     let generated = generate_kotlin();
     assert!(generated.contains("LinearProgressIndicator"));
     assert!(generated.contains("Progress"));
-    assert!(generated.contains("10 -> WidgetKind.LinearProgressIndicator"));
+    assert!(generated.contains("100 -> WidgetKind.LinearProgressIndicator"));
     assert!(generated.contains("27 -> PropertyKind.Progress"));
     assert!(generated.contains("else -> throw ProtocolException(\"unknown widget tag $tag\""));
     assert!(generated.contains("else -> throw ProtocolException(\"unknown property tag $tag\""));
@@ -32,14 +32,14 @@ fn fr7_generated_kotlin_matches_schema() {
     assert_eq!(
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../dioxus-compose-renderer/native/src/protocol/Protocol.gen.kt"
+            "/../dioxus-compose-renderer/desktop/src/protocol/Protocol.gen.kt"
         )),
         generated,
         "generated Kotlin is stale; run `cargo run -p dioxus-compose --bin codegen`",
     );
 }
 
-/// FR-14.1 and 14.4: the role vocabulary and the token tables are generated, so a fourth
+/// The role vocabulary and the token tables are generated, so a fourth
 /// design system is one `DesignSystem` variant plus one Renderer rule implementation.
 #[test]
 fn fr14_generated_kotlin_carries_the_roles_and_token_tables() {
@@ -50,7 +50,7 @@ fn fr14_generated_kotlin_carries_the_roles_and_token_tables() {
         "enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }",
         "enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }",
         "enum class ButtonVariant { Filled, Tonal, Outlined, Text }",
-        "enum class DesignSystem { Material3, AppleHig, Fluent }",
+        "enum class DesignSystem { Material3, Cupertino, Fluent }",
         "enum class ColorScheme { Light, Dark, FollowSystem }",
     ] {
         assert!(generated.contains(role), "missing {role}");

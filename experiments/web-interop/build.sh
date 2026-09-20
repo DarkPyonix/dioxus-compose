@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Builds the PR-6 web-interop experiment artifacts into harness/.
+# Builds the web-interop experiment artifacts into harness/.
+# The experiment measures how a Rust (Host) wasm module and a Kotlin/Wasm
+# (Renderer) module can share one linear memory and call each other.
 # Not wired into scripts/check.sh: this directory is an experiment and nothing
 # else may depend on it.
 set -euo pipefail

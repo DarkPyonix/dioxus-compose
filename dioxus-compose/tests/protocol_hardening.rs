@@ -1,4 +1,4 @@
-//! NFR-7 / PR-4: the decoders take raw bytes produced by another language, so every
+//! The decoders take raw bytes produced by another language, so every
 //! malformed or hostile shape must surface as a `ProtocolError` and never as a panic,
 //! an abort, or an out-of-bounds read.
 //!
@@ -87,7 +87,7 @@ fn encode_all(mutations: &[Mutation<'_>]) -> Vec<u8> {
 /// Found by `fuzz/fuzz_targets/decode_batch.rs` after 3,816 executions: the envelope's
 /// `record_count` was used directly as `Vec::with_capacity`, so a 12-byte message could
 /// ask the Host to reserve over 100 GB and die in `handle_alloc_error`: an abort, which
-/// NFR-7 forbids.
+/// must never happen: a protocol error has to stay a reportable error.
 #[test]
 fn nfr7_huge_record_count_does_not_reserve_unbounded_memory() {
     let bytes = envelope(12, u32::MAX);
@@ -139,7 +139,7 @@ fn nfr7_empty_and_tiny_inputs_are_protocol_errors() {
 
 // --- Truncation at every byte offset --------------------------------------------------
 
-/// NFR-7: cutting a well-formed batch at any offset is a clean `ProtocolError`.
+/// Cutting a well-formed batch at any offset is a clean `ProtocolError`.
 #[test]
 fn nfr7_truncated_batch_reports_protocol_error() {
     let bytes = encode_all(&[
@@ -176,7 +176,7 @@ fn nfr7_truncated_batch_reports_protocol_error() {
     assert!(decode_batch(&bytes).is_ok(), "the whole batch must decode");
 }
 
-/// NFR-7: the same guarantee for the Renderer-to-Host event decoder.
+/// The same guarantee for the Renderer-to-Host event decoder.
 #[test]
 fn nfr7_truncated_event_reports_protocol_error() {
     let events = [
@@ -215,7 +215,7 @@ fn nfr7_truncated_event_reports_protocol_error() {
 
 // --- String references outside the arena ----------------------------------------------
 
-/// PR-4 puts strings in the arena *after* the records. A string reference that points
+/// Strings live in the arena *after* the records. A string reference that points
 /// back into the record region lets a hostile Renderer make a `SetText` whose text is
 /// really the batch header, garbage decoding into a valid-looking mutation.
 #[test]
@@ -475,7 +475,7 @@ fn nfr7_hostile_tree_shapes_decode_without_panicking() {
     assert_eq!(decode_batch(&bytes).unwrap(), hostile);
 }
 
-/// PR-4: the encoder's output always decodes back identically, including for strings
+/// The encoder's output always decodes back identically, including for strings
 /// whose bytes could be mistaken for record headers.
 #[test]
 fn pr4_encoder_output_round_trips_for_adversarial_strings() {
@@ -508,7 +508,7 @@ fn pr4_encoder_output_round_trips_for_adversarial_strings() {
     }
 }
 
-/// NFR-7: exhaustive sweep over short inputs. Nothing in this space may panic, and
+/// Exhaustive sweep over short inputs. Nothing in this space may panic, and
 /// nothing outside the handful of genuinely well-formed encodings may decode.
 #[test]
 fn nfr7_garbage_never_decodes_into_a_valid_looking_mutation() {
@@ -523,11 +523,14 @@ fn nfr7_garbage_never_decodes_into_a_valid_looking_mutation() {
                 bytes[14..16].copy_from_slice(&len.to_le_bytes());
                 bytes[16..20].copy_from_slice(&payload.to_le_bytes());
                 if let Ok(decoded) = decode_batch(&bytes) {
-                    // Only `Remove` has an 8-byte record, so it is the sole shape that
-                    // can legitimately fit this 20-byte envelope.
+                    // `Remove` and `ReleaseAsset` are the only 8-byte records, so they
+                    // are the only shapes that can legitimately fit this 20-byte envelope.
                     assert_eq!(decoded.len(), 1);
                     assert!(
-                        matches!(decoded[0], Mutation::Remove { .. }),
+                        matches!(
+                            decoded[0],
+                            Mutation::Remove { .. } | Mutation::ReleaseAsset { .. }
+                        ),
                         "tag {tag} len {len} decoded as {:?}",
                         decoded[0]
                     );
@@ -536,5 +539,8 @@ fn nfr7_garbage_never_decodes_into_a_valid_looking_mutation() {
             }
         }
     }
-    assert_eq!(accepted, 3, "only Remove/len 8 may be accepted here");
+    assert_eq!(
+        accepted, 6,
+        "only the two 8-byte records, Remove and ReleaseAsset, may be accepted here"
+    );
 }

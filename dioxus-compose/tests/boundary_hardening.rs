@@ -1,4 +1,4 @@
-//! NFR-7 / PR-2: every `dioxus_compose_host_*` export must return a status for any
+//! Every `dioxus_compose_host_*` export must return a status for any
 //! call a hostile or buggy Renderer can make - null pointers, zero lengths, and calls
 //! in the wrong order - and must never unwind across the C ABI or abort the process.
 //!
@@ -183,7 +183,7 @@ fn nfr7_render_frame_with_a_null_out_pointer_returns_a_status() {
 
 // --- Call order -----------------------------------------------------------------------
 
-/// PR-2 declares `STATUS_NOT_INITIALIZED`; a Renderer that dispatches before the
+/// The boundary declares `STATUS_NOT_INITIALIZED`; a Renderer that dispatches before the
 /// handshake must be able to tell that apart from a malformed event.
 #[test]
 fn nfr7_dispatch_before_init_reports_not_initialized() {
@@ -203,7 +203,7 @@ fn nfr7_render_frame_before_init_reports_not_initialized() {
     assert_eq!(status, STATUS_NOT_INITIALIZED);
 }
 
-/// PR-2 declares `STATUS_ALREADY_INITIALIZED`; a second handshake is a call-order
+/// The boundary declares `STATUS_ALREADY_INITIALIZED`; a second handshake is a call-order
 /// error, not a malformed message.
 #[test]
 fn nfr7_double_init_reports_already_initialized() {
@@ -263,7 +263,7 @@ fn nfr7_release_batch_tolerates_null_double_release_and_stale_batches() {
     assert!(batch.ptr.is_null());
 }
 
-/// NFR-7: a Renderer that tears its UI thread down without calling `shutdown` must not
+/// A Renderer that tears its UI thread down without calling `shutdown` must not
 /// take the process with it. Dropping the `VirtualDom` from a thread-local destructor
 /// used to panic with "cannot access a TLS value during or after destruction", and a
 /// panic in a destructor is non-unwinding - it aborts. The abort killed the whole test
@@ -293,7 +293,7 @@ fn reentrant_app() -> Element {
     }
 }
 
-/// NFR-7: the Host slot is a `RefCell`, so a Renderer that calls back into an export
+/// The Host slot is a `RefCell`, so a Renderer that calls back into an export
 /// while one is still running hits a double borrow, and `RefCell::borrow_mut` panics.
 /// Unwinding out of an `extern "C"` function aborts, so that panic has to be contained
 /// and reported. This is what proves the `catch_unwind` in `ffi_status` is real rather
@@ -321,7 +321,7 @@ fn nfr7_reentrant_export_call_is_contained_not_aborted() {
     dioxus_compose_host_shutdown();
 }
 
-/// The whole point of NFR-7: a long run of hostile calls in arbitrary order returns
+/// The whole point of crash isolation: a long run of hostile calls in arbitrary order returns
 /// statuses and leaves the process alive.
 #[test]
 fn nfr7_arbitrary_call_order_never_aborts() {
