@@ -11,13 +11,13 @@ pub enum FieldType {
     Float,
     U32,
     U64,
-    /// FR-13.1: a `Paint`, either a `ColorRole` or a literal ARGB `Color`.
+    /// A `Paint`, either a `ColorRole` or a literal ARGB `Color`.
     Paint,
-    /// FR-13: a role enum, named so codegen can emit the matching Kotlin type.
+    /// A role enum, named so codegen can emit the matching Kotlin type.
     Role(&'static str),
 }
 
-/// Which half of which `(first, second)` word a modifier field occupies (FR-13.8).
+/// Which half of which `(first, second)` word a modifier field occupies.
 ///
 /// Two `f32` share one `u64`: the low 32 bits hold the first value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -254,14 +254,16 @@ define_wire_enum!(KEY_SCHEMA, Key {
     Enter = 1,
 });
 
-/// A role enum that codegen mirrors into Kotlin (FR-13.8).
+/// A role enum that codegen mirrors into Kotlin.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RoleEnumSchema {
     pub name: &'static str,
     pub variants: &'static [EnumVariantSchema],
 }
 
-// FR-13.1: an opaque ARGB colour. Gradients and image brushes are out of scope (13.7).
+// An opaque ARGB colour. Gradients and image brushes are deliberately absent: they do not
+// fit the two words a modifier variant has, and they would need resources to cross the
+// boundary, which the fixed-layout records cannot carry.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct Color(pub u32);
@@ -282,7 +284,7 @@ impl Color {
     }
 }
 
-// FR-13.1: semantic colour slots. The design system resolves them (FR-14.4).
+// Semantic colour slots. The design system resolves them, inside the Renderer.
 define_wire_enum!(COLOR_ROLE_SCHEMA, ColorRole {
     Primary = 1,
     OnPrimary = 2,
@@ -300,7 +302,7 @@ define_wire_enum!(COLOR_ROLE_SCHEMA, ColorRole {
     OnError = 14,
 });
 
-// FR-13.2: the nine-rung type ladder every supported design system maps onto.
+// The nine-rung type ladder every supported design system maps onto.
 define_wire_enum!(TYPE_ROLE_SCHEMA, TypeRole {
     Display = 1,
     Headline = 2,
@@ -313,7 +315,7 @@ define_wire_enum!(TYPE_ROLE_SCHEMA, TypeRole {
     Mono = 9,
 });
 
-// FR-13.3: corner roles. The radius is the design system's decision.
+// Corner roles. The radius is the design system's decision.
 define_wire_enum!(SHAPE_ROLE_SCHEMA, ShapeRole {
     None = 1,
     ExtraSmall = 2,
@@ -323,7 +325,7 @@ define_wire_enum!(SHAPE_ROLE_SCHEMA, ShapeRole {
     Full = 6,
 });
 
-// FR-13.4: density roles, because dp density differs per design system.
+// Density roles, because dp density differs per design system.
 define_wire_enum!(SPACE_ROLE_SCHEMA, SpaceRole {
     None = 1,
     Xs = 2,
@@ -368,7 +370,7 @@ define_wire_enum!(ALIGNMENT_SCHEMA, Alignment {
     BottomEnd = 9,
 });
 
-// FR-14.2: the neutral component variant names the design system styles.
+// The neutral component variant names the design system styles.
 define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
     Filled = 1,
     Tonal = 2,
@@ -376,14 +378,16 @@ define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
     Text = 4,
 });
 
-// FR-14.5: the design systems of phase one. Phase two appends variants here only.
+// The design systems of phase one. Later ones append variants here and nowhere else: a new
+// design system is one variant plus one token table and rule implementation in the Renderer.
 define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Material3 = 1,
     Cupertino = 2,
     Fluent = 3,
 });
 
-// FR-14.3: light and dark selection. `FollowSystem` leaves the choice to the Renderer.
+// Light and dark selection. `FollowSystem` leaves the choice to the Renderer, which learns
+// of a system change first and applies it without involving the Host.
 define_wire_enum!(COLOR_SCHEME_SCHEMA, ColorScheme {
     Light = 1,
     Dark = 2,
@@ -438,7 +442,7 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     },
 ];
 
-/// FR-13.1: every place that takes a colour takes a `Paint`, so colour is expressed once.
+/// Every place that takes a colour takes a `Paint`, so colour is expressed once.
 ///
 /// Encoded as one `u64`: the high 32 bits are the kind, the low 32 bits are the value.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -470,7 +474,7 @@ impl Paint {
     }
 }
 
-/// FR-14.3: a design system choice plus how it reacts to the host platform.
+/// A design system choice plus how it reacts to the host platform.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Theme {
     pub design_system: DesignSystem,
@@ -506,8 +510,13 @@ impl Theme {
     }
 }
 
-/// FR-14.3: saying nothing follows the host platform, with Material 3 where it has no look
-/// of its own. An application that wants one design system everywhere says
+/// Saying nothing follows the host platform, with Material 3 where the platform has no look
+/// of its own. The default used to be `unified(Material3)`, on the theory that a default
+/// looking the same everywhere is more predictable. In practice that meant macOS showed a
+/// Material screen with no configuration, which is the wrong first impression for a toolkit
+/// that claims native desktop UI, and it meant nothing on the default path ever exercised
+/// platform adaptation. A default that can be broken without anyone noticing is not
+/// predictability. An application that wants one design system everywhere says
 /// `Theme::unified(..)`, which is a clearer statement of that intent than silence was.
 impl Default for Theme {
     fn default() -> Self {
@@ -527,7 +536,7 @@ pub enum Modifier {
         width: f32,
         height: f32,
     },
-    /// FR-13.1: a `Paint`, not a raw ARGB. Colour has exactly one wire representation.
+    /// A `Paint`, not a raw ARGB. Colour has exactly one wire representation.
     Background(Paint),
     Clickable {
         handler_id: u64,
@@ -551,7 +560,8 @@ pub enum Modifier {
         width: f32,
         paint: Paint,
     },
-    /// FR-13.5: one dp value. How the shadow is drawn is the design system's rule.
+    /// One dp value. How the shadow is drawn is the design system's rule: tonal lift plus a
+    /// shadow, a wide soft shadow, or layered shadow plus a hairline stroke.
     Elevation(f32),
 }
 
@@ -823,7 +833,7 @@ pub enum EventPayload<'a> {
         alt_key: bool,
         meta_key: bool,
     },
-    /// FR-8: the Renderer asks the Host to materialise the visible item range.
+    /// The Renderer asks the Host to materialise the visible item range.
     RangeRequested {
         start: u32,
         count: u32,

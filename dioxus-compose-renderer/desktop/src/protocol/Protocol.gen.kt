@@ -7,9 +7,9 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Open, OnDismiss, SelectedIndex, Progress }
 
 enum class Key { Enter }
 
@@ -105,7 +105,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -8738341323446087133L
+    const val SCHEMA_HASH: Long = -4135051450166659538L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -371,6 +371,14 @@ object Protocol {
         7 -> WidgetKind.Spacer
         8 -> WidgetKind.LazyColumn
         9 -> WidgetKind.ScrollColumn
+        18 -> WidgetKind.Card
+        19 -> WidgetKind.Surface
+        20 -> WidgetKind.Dialog
+        21 -> WidgetKind.Menu
+        22 -> WidgetKind.Tabs
+        23 -> WidgetKind.TopAppBar
+        24 -> WidgetKind.LazyRow
+        25 -> WidgetKind.Tooltip
         10 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -402,6 +410,9 @@ object Protocol {
         24 -> PropertyKind.SpaceRole
         25 -> PropertyKind.Alignment
         26 -> PropertyKind.Variant
+        40 -> PropertyKind.Open
+        41 -> PropertyKind.OnDismiss
+        42 -> PropertyKind.SelectedIndex
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -602,7 +613,7 @@ object Protocol {
     }
 }
 
-/** FR-13.2: one rung of the type ladder. Sizes are sp, spacing may be negative. */
+/** One rung of the type ladder. Sizes are sp, spacing may be negative. */
 data class TypeToken(
     val size: Float,
     val weight: Int,
@@ -612,10 +623,11 @@ data class TypeToken(
 )
 
 /**
- * Items 1 to 4 of the FR-14.6 table for one design system.
+ * The generated half of one design system's tables: colours, type, shapes and spacing.
  *
  * Arrays are indexed by the role's ordinal, which matches its wire tag minus one.
- * Items 5 to 7 (elevation rendering, ButtonVariant styling, motion) are the Renderer's.
+ * The rules that consume them (elevation rendering, ButtonVariant styling, motion) are
+ * written by hand in the Renderer.
  */
 class DesignTokenTable(
     val system: DesignSystem,

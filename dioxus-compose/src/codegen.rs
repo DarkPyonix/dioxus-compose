@@ -39,7 +39,8 @@ pub fn generate_kotlin() -> String {
         write_enum(&mut output, role.name, role.variants);
     }
 
-    // FR-13.1: colour crosses the boundary only as a Paint.
+    // Colour crosses the boundary only as a Paint, so there is exactly one representation
+    // of colour in the schema.
     output.push_str(
         r#"sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
@@ -633,12 +634,12 @@ object Protocol {
     output
 }
 
-/// FR-14.4: the token tables are authored in Rust and executed in the Renderer, so they
-/// are generated into the Renderer binary instead of crossing the boundary (13.7).
+/// The token tables are authored in Rust and executed in the Renderer, so they are
+/// generated into the Renderer binary at build time instead of crossing the boundary.
 fn write_design_tokens(output: &mut String) {
     output.push_str(
         r#"
-/** FR-13.2: one rung of the type ladder. Sizes are sp, spacing may be negative. */
+/** One rung of the type ladder. Sizes are sp, spacing may be negative. */
 data class TypeToken(
     val size: Float,
     val weight: Int,
@@ -648,10 +649,11 @@ data class TypeToken(
 )
 
 /**
- * Items 1 to 4 of the FR-14.6 table for one design system.
+ * The generated half of one design system's tables: colours, type, shapes and spacing.
  *
  * Arrays are indexed by the role's ordinal, which matches its wire tag minus one.
- * Items 5 to 7 (elevation rendering, ButtonVariant styling, motion) are the Renderer's.
+ * The rules that consume them (elevation rendering, ButtonVariant styling, motion) are
+ * written by hand in the Renderer.
  */
 class DesignTokenTable(
     val system: DesignSystem,
@@ -1035,7 +1037,7 @@ fn kotlin_type(ty: FieldType) -> String {
     }
 }
 
-/// The `u64` word a field lives in, and whether it occupies the high 32 bits (FR-13.8).
+/// The `u64` word a field lives in, and whether it occupies the high 32 bits.
 fn slot_word(slot: FieldSlot) -> (&'static str, bool) {
     match slot {
         FieldSlot::FirstLow | FieldSlot::First => ("first", false),

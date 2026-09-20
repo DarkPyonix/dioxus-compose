@@ -71,7 +71,7 @@ impl KeyEvent {
     }
 }
 
-/// FR-13.8: a role that was not set is tag 0, which means "not sent". The Renderer
+/// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
 fn role(value: Option<impl Into<u16>>) -> i64 {
     value.map_or(0, |value| i64::from(value.into()))
@@ -144,8 +144,8 @@ pub fn ComposeBox(
     }
 }
 
-/// FR-13.6: the whole content with a vertical scroll attached. The scroll position is
-/// the Renderer's (D5), so scrolling never reaches the Host.
+/// The whole content with a vertical scroll attached. The scroll position is the
+/// Renderer's, like focus and animation state, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollColumn(
     #[props(default)] fill_max_width: bool,
@@ -157,8 +157,9 @@ pub fn ScrollColumn(
     }
 }
 
-/// FR-13.2: `type_role` alone takes the design system's size, weight, line height and
-/// letter spacing. Each override replaces one axis and costs one `SetProp` (FR-4).
+/// `type_role` alone takes the design system's size, weight, line height and letter
+/// spacing. Each override replaces one axis and costs one `SetProp`, so changing the font
+/// size does not resend the rest of the text's styling.
 #[component]
 pub fn Text(
     #[props(into)] text: String,
@@ -211,7 +212,7 @@ pub fn TextField(
     }
 }
 
-/// FR-14.2: the variant is the seam the design system's component rule attaches to.
+/// The variant is the seam the design system's component rule attaches to.
 /// The same rsx draws differently per system, and that is correct behaviour.
 #[component]
 pub fn Button(
@@ -235,7 +236,7 @@ pub fn Spacer(#[props(default)] width: f32, #[props(default)] height: f32) -> El
     rsx! { spacer { width, height } }
 }
 
-/// FR-8: the visible item range the Renderer asks the Host to materialise.
+/// The visible item range the Renderer asks the Host to materialise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RangeRequest {
     start: u32,
@@ -256,10 +257,10 @@ impl RangeRequest {
     }
 }
 
-/// A windowed list (FR-8). The Host declares `item_count` and a stable key per item, and
+/// A windowed list. The Host declares `item_count` and a stable key per item, and
 /// materialises **exactly** the range the Renderer last requested.
 ///
-/// The read-ahead buffer belongs to the Renderer, which owns the scroll position (D5) and so
+/// The read-ahead buffer belongs to the Renderer, which owns the scroll position and so
 /// knows how far ahead to ask. Widening the range here would break the Renderer's placement:
 /// `start` is the global index of the first child it receives, and that is what lets it draw
 /// a real Compose `LazyColumn` of `item_count` items. The data stays in the Host, so
