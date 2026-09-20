@@ -40,3 +40,44 @@ fn modifiers_written_in_rsx_reach_the_wire() {
         "elevation missing"
     );
 }
+
+/// Every widget takes the Modifier attributes, and filling the available width is one of
+/// them. It used to be declared only on the layout containers, so a Card could not be made
+/// to span its parent and every grouped design collapsed to the width of its own text.
+fn filling_containers() -> Element {
+    rsx! {
+        Card {
+            fill_max_width: true,
+            padding_role: SpaceRole::Md,
+            Surface {
+                fill_max_width: true,
+                fill_max_height: true,
+                Text { text: "grouped" }
+            }
+        }
+    }
+}
+
+#[test]
+fn fr13_fill_max_is_available_on_every_widget() {
+    let mut host = Host::new(filling_containers);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let mods: Vec<_> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            Mutation::SetModifier { modifier, .. } => Some(format!("{modifier:?}")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        mods.iter()
+            .filter(|m| m.starts_with("FillMaxWidth"))
+            .count(),
+        2,
+        "both the Card and the Surface should fill their width: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|m| m.starts_with("FillMaxHeight")),
+        "the Surface should fill its height: {mods:?}"
+    );
+}
