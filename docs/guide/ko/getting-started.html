@@ -34,6 +34,7 @@
         <li><a href="getting-started.html" aria-current="page">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
+        <li><a href="design-systems.html">디자인 시스템</a></li>
         <li><a href="architecture.html">아키텍처</a></li>
         <li><a href="troubleshooting.html">문제 해결</a></li>
       </ul>
@@ -57,6 +58,11 @@
     </p>
 
     <h2 id="prerequisites">준비물</h2>
+    <p>
+      무엇보다 먼저 <code>./scripts/setup-check.sh</code>를 돌리세요. 빌드와 품질 게이트가 쓰는
+      도구를 전부 점검하고, 빠진 것이 있으면 그것을 설치하는 명령을 그대로 알려 줍니다. 아래 표의
+      항목은 모두 이 스크립트의 점검 목록에 들어 있습니다.
+    </p>
     <div class="tablewrap">
       <table>
         <thead><tr><th scope="col">무엇</th><th scope="col">왜</th></tr></thead>
@@ -94,6 +100,14 @@
     </figure>
 
     <p>
+      NIK 자체가 없다면 <code>./scripts/install-nik.sh</code>가 설치해 줍니다. 버전으로 주소를
+      잡기 때문에 캐시가 따뜻하면 두 번째 실행은 아무 일도 하지 않습니다. 내려받기는 호출할 때마다가
+      아니라 NIK 버전마다 한 번입니다. 빌드 스크립트는 <code>lib/static/darwin-*/libawt_lwawt.a</code>가
+      없는 설치를 거부합니다. 순정 GraalVM을 긴 빌드 끝의 링크 실패가 아니라 시작 전에 잡아내려는
+      장치입니다.
+    </p>
+
+    <p>
       Kotlin은 따로 설치할 필요가 없습니다. 렌더러 프로젝트에 들어 있는 <code>./kotlin</code>
       래퍼가 처음 실행될 때 고정된 버전의 Kotlin Toolchain을 내려받습니다.
     </p>
@@ -125,6 +139,12 @@ libawt_lwawt.dylib                 <span class="c"># libawt가 경로로 찾는 
       <a href="architecture.html#macos">아키텍처</a>에 있고, 요점은 배포 레이아웃이
       <code>lib/</code> 디렉터리 하나이며 그 부모가 렌더러가 보고하는 <code>java.home</code>이라는
       점입니다.
+    </p>
+
+    <p>
+      렌더러를 다른 곳에 두고 쓴다면(내려받은 아티팩트나 벤더링한 사본 등)
+      <code>DIOXUS_COMPOSE_RENDERER_DIR</code>을 그 <code>lib</code> 디렉터리로 지정하면
+      워크스페이스 빌드 대신 그쪽을 씁니다(NFR-10).
     </p>
 
     <p>
@@ -181,13 +201,14 @@ libawt_lwawt.dylib                 <span class="c"># libawt가 경로로 찾는 
     <h2 id="checks">검사 돌리기</h2>
     <p>
       저장소의 품질 게이트는 스크립트 하나입니다. 포맷 검사, 경고를 오류로 취급하는 Clippy,
-      테스트, 그리고 Criterion quick 모드 벤치마크를 돌립니다.
+      테스트, Criterion quick 모드 벤치마크, 그리고 Kotlin 빌드와 테스트까지 돌립니다.
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
       <figcaption>shell</figcaption>
-<pre><code>./scripts/check.sh          <span class="c"># 프리서브밋용 빠른 벤치마크 샘플링</span>
-./scripts/check.sh --full   <span class="c"># 전체 샘플링</span></code></pre>
+<pre><code>./scripts/check.sh              <span class="c"># 프리서브밋용 빠른 벤치마크 샘플링</span>
+./scripts/check.sh --full       <span class="c"># 전체 샘플링</span>
+./scripts/check.sh --no-kotlin  <span class="c"># Rust만. DXC_SKIP_KOTLIN=1도 같습니다</span></code></pre>
     </figure>
 
     <p>
@@ -206,6 +227,7 @@ libawt_lwawt.dylib                 <span class="c"># libawt가 경로로 찾는 
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
     <span>이 가이드는 2026-09-20 기준 저장소 내용과 대조했습니다</span>
   </div>
 </footer>

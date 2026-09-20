@@ -34,6 +34,7 @@
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
+        <li><a href="design-systems.html">디자인 시스템</a></li>
         <li><a href="architecture.html" aria-current="page">아키텍처</a></li>
         <li><a href="troubleshooting.html">문제 해결</a></li>
       </ul>
@@ -86,7 +87,7 @@
       <dt>Schema</dt>
       <dd>렌더러가 이해하는 위젯 타입, 속성, Modifier, 이벤트의 닫힌 집합입니다.</dd>
       <dt>Mutation</dt>
-      <dd>트리 변경 명령 한 단위: <code>Create</code>, <code>SetProp</code>, <code>SetModifier</code>, <code>Insert</code>, <code>Move</code>, <code>Remove</code>, <code>SetText</code>.</dd>
+      <dd>트리 변경 명령 한 단위: <code>Create</code>, <code>SetProp</code>, <code>SetModifier</code>, <code>Insert</code>, <code>Move</code>, <code>Remove</code>, <code>SetText</code>, <code>AppendText</code>.</dd>
       <dt>Event</dt>
       <dd>반대 방향으로 올라오는 알림. <code>(node_id, handler_id, payload)</code>로 주소를 지정합니다.</dd>
     </dl>
@@ -218,7 +219,7 @@
     </p>
 
     <nav class="pagenav" aria-label="페이지 이동">
-      <a class="prev" href="lists-and-streaming.html"><span>이전</span>&larr; 목록과 스트리밍</a>
+      <a class="prev" href="design-systems.html"><span>이전</span>&larr; 디자인 시스템</a>
       <a class="next" href="troubleshooting.html"><span>다음</span>문제 해결 &rarr;</a>
     </nav>
   </main>
@@ -227,6 +228,7 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
     <span>이 가이드는 2026-09-20 기준 저장소 내용과 대조했습니다</span>
   </div>
 </footer>

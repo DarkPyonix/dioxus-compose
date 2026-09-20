@@ -34,6 +34,7 @@
         <li><a href="getting-started.html" aria-current="page">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
+        <li><a href="design-systems.html">Design systems</a></li>
         <li><a href="architecture.html">Architecture</a></li>
         <li><a href="troubleshooting.html">Troubleshooting</a></li>
       </ul>
@@ -58,6 +59,11 @@
     </p>
 
     <h2 id="prerequisites">Prerequisites</h2>
+    <p>
+      Before anything else, run <code>./scripts/setup-check.sh</code>. It checks every tool the
+      build and the quality gate need, names what is missing, and prints the command that fixes
+      it. Everything in the table below is on its list.
+    </p>
     <div class="tablewrap">
       <table>
         <thead><tr><th scope="col">What</th><th scope="col">Why</th></tr></thead>
@@ -95,6 +101,14 @@
     </figure>
 
     <p>
+      If you have no NIK at all, <code>./scripts/install-nik.sh</code> installs it. The install is
+      addressed by version, so a warm cache makes a second run a no-op — the download happens once
+      per NIK version, not once per invocation. The build script itself refuses an installation
+      without <code>lib/static/darwin-*/libawt_lwawt.a</code>, which catches a stock GraalVM up
+      front instead of at the end of a long build.
+    </p>
+
+    <p>
       Kotlin itself needs no separate install. The renderer project ships a self-bootstrapping
       <code>./kotlin</code> wrapper that downloads the pinned Kotlin Toolchain on first use.
     </p>
@@ -128,6 +142,11 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
       reports as <code>java.home</code>.
     </p>
 
+    <p>
+      If you keep a renderer somewhere else — a downloaded artifact, a vendored copy — point
+      <code>DIOXUS_COMPOSE_RENDERER_DIR</code> at its <code>lib</code> directory and the Rust build
+      will use that instead of the workspace one (NFR-10).
+    </p>
     <p>
       The first build is slow — <code>native-image</code> compiles Compose, Skiko and AWT ahead of
       time. You only repeat it when the Kotlin side changes; normal Rust work reuses the library.
@@ -181,13 +200,14 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
     <h2 id="checks">Run the checks</h2>
     <p>
       The repository's quality gates are one script: formatting, Clippy with warnings denied, the
-      test suite, and the benchmarks in Criterion's quick mode.
+      test suite, the benchmarks in Criterion's quick mode, and the Kotlin build and tests.
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
       <figcaption>shell</figcaption>
-<pre><code>./scripts/check.sh          <span class="c"># quick benchmark sampling, for presubmit</span>
-./scripts/check.sh --full   <span class="c"># full benchmark sampling</span></code></pre>
+<pre><code>./scripts/check.sh              <span class="c"># quick benchmark sampling, for presubmit</span>
+./scripts/check.sh --full       <span class="c"># full benchmark sampling</span>
+./scripts/check.sh --no-kotlin  <span class="c"># Rust only; DXC_SKIP_KOTLIN=1 does the same</span></code></pre>
     </figure>
 
     <p>
@@ -206,6 +226,7 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
     <span>Guide last reviewed against the repository on 2026-09-20</span>
   </div>
 </footer>

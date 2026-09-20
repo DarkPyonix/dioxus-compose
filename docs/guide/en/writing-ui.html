@@ -34,6 +34,7 @@
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html" aria-current="page">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
+        <li><a href="design-systems.html">Design systems</a></li>
         <li><a href="architecture.html">Architecture</a></li>
         <li><a href="troubleshooting.html">Troubleshooting</a></li>
       </ul>
@@ -110,7 +111,7 @@
 
     <h2 id="widgets">The widget set</h2>
     <p>
-      The schema is closed on purpose. The renderer interprets exactly these seven widgets; a type
+      The schema is closed on purpose. The renderer interprets exactly these eight widgets; a type
       it does not recognise produces a <code>ProtocolError</code> event rather than a crash.
       Adding a widget means extending the Rust schema, the Kotlin interpreter and the codegen
       together.
@@ -127,6 +128,7 @@
           <tr><td><code>TextField</code></td><td><code>placeholder</code>, <code>enabled</code>, <code>multiline</code></td><td>Uncontrolled. Has no <code>value</code> property, by design.</td></tr>
           <tr><td><code>Button</code></td><td><code>text</code>, <code>enabled</code></td><td><code>enabled</code> defaults to <code>true</code>.</td></tr>
           <tr><td><code>Spacer</code></td><td><code>width</code>, <code>height</code></td><td>Both <code>f32</code>, both default to <code>0.0</code>.</td></tr>
+          <tr><td><code>LazyColumn</code></td><td><code>item_count</code>, <code>buffer</code>, <code>key_of</code>, <code>item</code></td><td>A windowed list. Host side works; the renderer still draws it as a <code>Column</code>. See <a href="lists-and-streaming.html#windowing">Lists &amp; streaming</a>.</td></tr>
         </tbody>
       </table>
     </div>
@@ -188,6 +190,7 @@
           <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code> — handled inside the component; you pass <code>item</code> and <code>key_of</code> instead</td></tr>
         </tbody>
       </table>
     </div>
@@ -299,6 +302,7 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
     <span>Guide last reviewed against the repository on 2026-09-20</span>
   </div>
 </footer>

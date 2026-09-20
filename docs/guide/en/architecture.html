@@ -34,6 +34,7 @@
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
+        <li><a href="design-systems.html">Design systems</a></li>
         <li><a href="architecture.html" aria-current="page">Architecture</a></li>
         <li><a href="troubleshooting.html">Troubleshooting</a></li>
       </ul>
@@ -85,7 +86,7 @@
       <dt>Schema</dt>
       <dd>The closed set of widget types, properties, modifiers and events the renderer understands.</dd>
       <dt>Mutation</dt>
-      <dd>One tree-change command: <code>Create</code>, <code>SetProp</code>, <code>SetModifier</code>, <code>Insert</code>, <code>Move</code>, <code>Remove</code>, <code>SetText</code>.</dd>
+      <dd>One tree-change command: <code>Create</code>, <code>SetProp</code>, <code>SetModifier</code>, <code>Insert</code>, <code>Move</code>, <code>Remove</code>, <code>SetText</code>, <code>AppendText</code>.</dd>
       <dt>Event</dt>
       <dd>A notification travelling the other way, addressed as <code>(node_id, handler_id, payload)</code>.</dd>
     </dl>
@@ -222,7 +223,7 @@
     </p>
 
     <nav class="pagenav" aria-label="Pagination">
-      <a class="prev" href="lists-and-streaming.html"><span>Previous</span>&larr; Lists &amp; streaming</a>
+      <a class="prev" href="design-systems.html"><span>Previous</span>&larr; Design systems</a>
       <a class="next" href="troubleshooting.html"><span>Next</span>Troubleshooting &rarr;</a>
     </nav>
   </main>
@@ -231,6 +232,7 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
     <span>Guide last reviewed against the repository on 2026-09-20</span>
   </div>
 </footer>
