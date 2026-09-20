@@ -11,6 +11,7 @@ const TAG_INSERT: u16 = 4;
 const TAG_MOVE: u16 = 5;
 const TAG_REMOVE: u16 = 6;
 const TAG_SET_TEXT: u16 = 7;
+const TAG_APPEND_TEXT: u16 = 8;
 const ENVELOPE_LEN: usize = 12;
 
 const VALUE_NONE: u16 = 0;
@@ -62,6 +63,11 @@ pub enum Mutation<'a> {
         text: &'a str,
         selection: Option<Selection>,
     },
+    /// FR-9: appends the streamed tail to a Text node instead of resending the whole string.
+    AppendText {
+        node_id: u32,
+        text: &'a str,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -92,6 +98,7 @@ const EVENT_TEXT_SUBMITTED: u16 = 3;
 const EVENT_FOCUS_LOST: u16 = 4;
 const EVENT_PROTOCOL_ERROR: u16 = 5;
 const EVENT_KEY_DOWN: u16 = 6;
+const EVENT_RANGE_REQUESTED: u16 = 7;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -135,7 +142,11 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 meta_key: modifiers & MODIFIER_META != 0,
             }
         }
-        EVENT_CLICK..=EVENT_KEY_DOWN => return Err(ProtocolError::InvalidRecordLength),
+        EVENT_RANGE_REQUESTED if record_len == 24 => crate::schema::EventPayload::RangeRequested {
+            start: read_u32(bytes, 16)?,
+            count: read_u32(bytes, 20)?,
+        },
+        EVENT_CLICK..=EVENT_RANGE_REQUESTED => return Err(ProtocolError::InvalidRecordLength),
         other => return Err(ProtocolError::InvalidTag(other)),
     };
     Ok(HostEvent {
@@ -169,6 +180,15 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.push(0);
         return Ok(());
     }
+    if let crate::schema::EventPayload::RangeRequested { start, count } = event.payload {
+        output.extend_from_slice(&EVENT_RANGE_REQUESTED.to_le_bytes());
+        output.extend_from_slice(&24_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        output.extend_from_slice(&start.to_le_bytes());
+        output.extend_from_slice(&count.to_le_bytes());
+        return Ok(());
+    }
     let (tag, record_len, text, error_code) = match &event.payload {
         crate::schema::EventPayload::Clicked => (EVENT_CLICK, 16_u16, None, None),
         crate::schema::EventPayload::TextChanged(value) => {
@@ -181,7 +201,8 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         crate::schema::EventPayload::ProtocolError { code, message } => {
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
-        crate::schema::EventPayload::KeyDown { .. } => unreachable!(),
+        crate::schema::EventPayload::KeyDown { .. }
+        | crate::schema::EventPayload::RangeRequested { .. } => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());
@@ -341,6 +362,11 @@ impl BatchEncoder {
                 self.put_u32(start);
                 self.put_u32(end);
             }
+            Mutation::AppendText { node_id, text } => {
+                self.begin_record(TAG_APPEND_TEXT, 12);
+                self.put_u32(*node_id);
+                self.put_string_ref(text)?;
+            }
         }
         self.record_count = self
             .record_count
@@ -489,7 +515,11 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                         .then_some(Selection { start, end }),
                 }
             }
-            TAG_CREATE..=TAG_SET_TEXT => {
+            TAG_APPEND_TEXT if len == 16 => Mutation::AppendText {
+                node_id: read_u32(bytes, payload)?,
+                text: read_string(bytes, payload + 4)?,
+            },
+            TAG_CREATE..=TAG_APPEND_TEXT => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),
@@ -616,6 +646,10 @@ mod tests {
                 text: "compose",
                 selection: Some(Selection { start: 1, end: 4 }),
             },
+            Mutation::AppendText {
+                node_id: 4,
+                text: " token",
+            },
         ];
         let mut encoder = BatchEncoder::default();
         for mutation in &mutations {
@@ -656,6 +690,14 @@ mod tests {
                 node_id: 8,
                 handler_id: 14,
                 payload: crate::EventPayload::FocusLost,
+            },
+            HostEvent {
+                node_id: 9,
+                handler_id: 16,
+                payload: crate::EventPayload::RangeRequested {
+                    start: 100,
+                    count: 20,
+                },
             },
             HostEvent {
                 node_id: 8,

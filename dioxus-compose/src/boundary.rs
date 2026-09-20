@@ -1,7 +1,7 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
 use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH};
-use crate::{Element, KeyEvent, Selection, VirtualDom};
+use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
 use std::ffi::c_int;
@@ -126,10 +126,18 @@ impl Wake for FrameWake {
     }
 }
 
+/// One streaming Text node's tail, accumulated between frames (FR-9).
+struct PendingAppend {
+    node_id: u32,
+    text: String,
+    dirty: bool,
+}
+
 pub struct Host {
     dom: VirtualDom,
     renderer: ComposeRenderer,
     frame_waker: Waker,
+    pending_appends: Vec<PendingAppend>,
 }
 
 impl Host {
@@ -138,6 +146,7 @@ impl Host {
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
             frame_waker: Waker::from(Arc::new(FrameWake)),
+            pending_appends: Vec::new(),
         }
     }
 
@@ -182,6 +191,9 @@ impl Host {
                 key_event = Some(value.clone());
                 Event::new(Rc::new(value), true).into_any()
             }
+            EventPayload::RangeRequested { start, count } => {
+                Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
+            }
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
@@ -198,8 +210,46 @@ impl Host {
         DEFERRED_FRAME_REQUEST.store(false, Ordering::Release);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
+        self.flush_pending_appends();
         self.arm_scheduler_wake();
         self.renderer.finish_frame()
+    }
+
+    /// FR-9: queues a streamed tail for the next frame. Tokens arriving inside one frame are
+    /// merged into a single `AppendText` record, so a token never costs a batch of its own.
+    pub fn append_text(&mut self, node_id: u32, tail: &str) {
+        match self
+            .pending_appends
+            .iter_mut()
+            .find(|pending| pending.node_id == node_id)
+        {
+            Some(pending) => {
+                pending.text.push_str(tail);
+                pending.dirty = true;
+            }
+            None => self.pending_appends.push(PendingAppend {
+                node_id,
+                text: tail.to_owned(),
+                dirty: true,
+            }),
+        }
+        // Repeated calls collapse into one frame request; see `request_frame_from_worker`.
+        request_frame_from_worker();
+    }
+
+    fn flush_pending_appends(&mut self) {
+        for index in 0..self.pending_appends.len() {
+            let pending = &self.pending_appends[index];
+            if pending.dirty {
+                self.renderer
+                    .append_text_node(pending.node_id, &pending.text);
+            }
+        }
+        // Buffers are kept so steady-state streaming reuses their capacity (NFR-9).
+        for pending in &mut self.pending_appends {
+            pending.text.clear();
+            pending.dirty = false;
+        }
     }
 
     pub fn set_text(
@@ -503,7 +553,8 @@ mod tests {
                     }
                     Mutation::SetProp { .. }
                     | Mutation::SetModifier { .. }
-                    | Mutation::SetText { .. } => {}
+                    | Mutation::SetText { .. }
+                    | Mutation::AppendText { .. } => {}
                 }
             }
         }
