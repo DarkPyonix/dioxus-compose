@@ -1,0 +1,80 @@
+{
+  "comment": [
+    "Hand-maintained: the macOS input method path (SPEC §6, INTENT D9-macOS).",
+    "The tracing agent only records what a run actually exercises, and collecting this",
+    "requires composing Korean text by hand. Without it the image builds and renders,",
+    "then aborts the moment an IME queries the focused text field: AWTView calls these",
+    "methods through JNI, the lookup fails, and the resulting Objective-C exception",
+    "terminates the process instead of surfacing a Java stack trace."
+  ],
+  "reflection": [
+    {
+      "type": "sun.lwawt.macosx.CInputMethod",
+      "jniAccessible": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "sun.lwawt.macosx.CInputMethodDescriptor",
+      "jniAccessible": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "sun.awt.im.InputMethodAdapter",
+      "jniAccessible": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "sun.awt.im.InputContext",
+      "jniAccessible": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "sun.awt.im.InputMethodContext",
+      "jniAccessible": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "java.awt.im.InputMethodRequests",
+      "jniAccessible": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "java.awt.im.InputMethodHighlight",
+      "jniAccessible": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "java.awt.event.InputMethodEvent",
+      "jniAccessible": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "java.awt.font.TextHitInfo",
+      "jniAccessible": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "java.text.AttributedString",
+      "jniAccessible": true,
+      "allDeclaredMethods": true,
+      "allDeclaredConstructors": true
+    },
+    {
+      "type": "java.text.AttributedCharacterIterator",
+      "jniAccessible": true,
+      "allDeclaredMethods": true
+    },
+    {
+      "type": "java.text.AttributedCharacterIterator$Attribute",
+      "jniAccessible": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    }
+  ]
+}
