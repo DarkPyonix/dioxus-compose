@@ -31,3 +31,18 @@ enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
 enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+
+/**
+ * Which design system an implementation is.
+ *
+ * Six, because that is how many the adaptive theme can pick: one per platform look it
+ * follows, plus the Linux fallback.
+ */
+enum class DesignSystemId {
+    Material3,
+    Cupertino,
+    Fluent,
+    Gnome,
+    Breeze,
+    Deepin,
+}

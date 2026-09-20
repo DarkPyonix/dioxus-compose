@@ -63,13 +63,13 @@ jobs:
 
       - name: Build the Windows renderer
         shell: powershell
-        run: .\dioxus-compose-renderer\native\scripts\build-native-windows.ps1
+        run: .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
 
       - name: Non-interactive Windows smoke test
         # This proves startup, rendering long enough to open, clean close, and return 0.
         # It does not prove mouse input because a hosted runner cannot perform the required click.
         shell: powershell
-        run: .\dioxus-compose-renderer\native\scripts\smoke-test-windows.ps1
+        run: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
 
       - name: Upload the renderer
         uses: actions/upload-artifact@v4

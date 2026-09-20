@@ -9,6 +9,7 @@
  * to know about isolates, so this shim owns the single isolate per process and exposes
  * argument-free symbols that forward to the Kotlin `_impl` entry points.
  */
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
