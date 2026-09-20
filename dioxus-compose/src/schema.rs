@@ -175,6 +175,12 @@ macro_rules! define_wire_enum {
             $(EnumVariantSchema { name: stringify!($variant), tag: $tag }),+
         ];
 
+        impl From<$name> for u16 {
+            fn from(value: $name) -> Self {
+                value as Self
+            }
+        }
+
         impl TryFrom<u16> for $name {
             type Error = ();
 

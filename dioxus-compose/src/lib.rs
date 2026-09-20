@@ -18,12 +18,12 @@ pub use dioxus_core_macro::{component, rsx};
 pub use elements::*;
 pub use schema::{
     Alignment, Arrangement, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
-    EventPayload, Key, LoopMode, Modifier, Paint, SCHEMA_HASH, Selection, ShapeRole, SpaceRole,
-    TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
+    EventPayload, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection, ShapeRole,
+    SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
 };
 pub use widgets::{
-    Button, Column, ComposeBox as Box, KeyEvent, LazyColumn, RangeRequest, Row, Spacer, Text,
-    TextField,
+    Button, Column, ComposeBox as Box, KeyEvent, LazyColumn, RangeRequest, Row, ScrollColumn,
+    Spacer, Text, TextField,
 };
 
 pub mod prelude {
@@ -34,8 +34,8 @@ pub mod prelude {
     pub use crate::{
         Alignment, Arrangement, Button, ButtonVariant, Color, ColorRole, ColorScheme, Column,
         DesignSystem, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LoopMode, Modifier, Paint,
-        RangeRequest, Row, ShapeRole, SpaceRole, Spacer, Text, TextAlign, TextField, TextOverflow,
-        Theme, TypeRole, component, launch, rsx,
+        RangeRequest, Row, ScrollColumn, ShapeRole, SpaceRole, Spacer, Text, TextAlign, TextField,
+        TextOverflow, Theme, TypeRole, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -59,18 +59,64 @@ pub mod elements {
         };
     }
 
-    element!(column, "Column", [fill_max_width, fill_max_height]);
-    element!(row, "Row", [fill_max_width, fill_max_height]);
+    // FR-13.4: layout containers carry arrangement, spacing and cross-axis alignment.
+    element!(
+        column,
+        "Column",
+        [
+            fill_max_width,
+            fill_max_height,
+            arrangement,
+            spacing,
+            space_role,
+            alignment
+        ]
+    );
+    element!(
+        row,
+        "Row",
+        [
+            fill_max_width,
+            fill_max_height,
+            arrangement,
+            spacing,
+            space_role,
+            alignment
+        ]
+    );
     element!(
         composebox,
         "Box",
-        [fill_max_width, fill_max_height, item_key]
+        [fill_max_width, fill_max_height, item_key, alignment]
     );
-    element!(text, "Text", [text]);
+    // FR-13.2: the type role plus one attribute per override axis, so changing one axis
+    // is one SetProp (FR-4).
+    element!(
+        text,
+        "Text",
+        [
+            text,
+            type_role,
+            font_size,
+            font_weight,
+            line_height,
+            letter_spacing,
+            color,
+            text_align,
+            max_lines,
+            overflow
+        ]
+    );
     element!(textfield, "TextField", [placeholder, enabled, multiline]);
-    element!(button, "Button", [text, enabled]);
+    element!(button, "Button", [text, enabled, variant]);
     element!(spacer, "Spacer", [width, height]);
     element!(lazycolumn, "LazyColumn", [item_count]);
+    // FR-13.6: whole content plus a vertical scroll. The position stays in the Renderer.
+    element!(
+        scrollcolumn,
+        "ScrollColumn",
+        [fill_max_width, fill_max_height]
+    );
 
     #[doc(hidden)]
     pub mod completions {
@@ -84,6 +130,7 @@ pub mod elements {
             button {},
             spacer {},
             lazycolumn {},
+            scrollcolumn {},
         }
     }
 }
