@@ -810,7 +810,7 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     Alignment = 25,
     Variant = 26,
     // Whether an overlay is showing. The Renderer owns the state; this seeds it and
-    // carries changes that came from outside the Renderer (D5).
+    // carries changes that came from outside the Renderer.
     Open = 40,
     OnDismiss = 41,
     SelectedIndex = 42,
