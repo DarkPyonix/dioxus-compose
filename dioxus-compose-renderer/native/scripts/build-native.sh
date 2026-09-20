@@ -37,7 +37,9 @@ exported=(dioxus_compose_renderer_run dioxus_compose_renderer_request_frame
 # tolerate them being undefined here (SPEC PR-2).
 # The IME entry points (Java_sun_lwawt_macosx_CInputMethod_*) live in objects of the AWT
 # toolkit archive that nothing else references, so the linker drops them and the image
-# aborts the first time an input method touches a text field (SPEC §6).
+# aborts the first time an input method touches a text field (SPEC §6). Forcing the whole
+# archive in also brings the accessibility entry points (Java_sun_lwawt_macosx_CAccessib*)
+# and the Objective-C side that AppKit drives, which NFR-8 needs.
 awt_archive="$GRAALVM_HOME/lib/static/darwin-$([[ "$arch" == "arm64" ]] && echo aarch64 || echo amd64)/libawt_lwawt.a"
 [[ -f "$awt_archive" ]] || { echo "error: missing $awt_archive" >&2; exit 1; }
 
@@ -102,6 +104,7 @@ memory_args=("-R:MaxHeapSize=64m"
     -o "$LIBRARY_NAME" \
     --no-fallback \
     --features=org.thisisthepy.dioxus.compose.nativeimage.ImeReachabilityFeature \
+    --features=org.thisisthepy.dioxus.compose.nativeimage.AccessibilityReachabilityFeature \
     -Djava.awt.headless=false \
     -H:IncludeLocales=en,ko \
     -Os \
