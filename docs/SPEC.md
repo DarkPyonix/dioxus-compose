@@ -365,7 +365,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 |---|---|---|---|
 | NFR-1 | JVM 불필요 | 배포물에 JRE가 없고, `java`가 없는 머신에서 실행됨 | Agreed |
 | NFR-2 | 웹뷰 불필요 | WKWebView, WebView2, WebKitGTK에 링크하지 않음 | Agreed |
-| NFR-3 | 데스크톱 무게 | 빈 창 RSS < 100MB, 배포 용량 < 100MB (목표치, M1에서 측정 후 확정) | Draft |
+| NFR-3 | 데스크톱 무게 | 빈 창 physical footprint < 45MB, 배포 용량 < 100MB. 측정 기준과 현재값은 §5.2 | Draft |
 | NFR-4 | 플랫폼 | macOS, Windows, Linux 데스크톱, iOS, Android, Web(wasm). Android와 Web의 경계는 PR-5, PR-6 참조 | Agreed |
 | NFR-5 | 개발 경험 | Renderer는 JVM 개발 셸에서 hot reload와 `@Preview`로 작업 가능. native-image 빌드는 개발 루프에 필요 없음. 새 머신의 준비 상태를 `scripts/setup-check.sh` 한 번으로 확인 가능 | Agreed |
 | NFR-6 | 안정 API만 사용 | `@InternalComposeUiApi`, `@ExperimentalComposeUiApi` 의존을 금지하거나, 쓰더라도 어댑터 한 파일에 격리하고 버전 핀을 둠 | Agreed |
@@ -394,6 +394,31 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 - 벤치마크 하네스는 M0에서 함께 만들고, CI에서 회귀를 감시합니다. 기준 초과는 빌드 실패로 처리합니다.
 - 개발 빌드에서는 Host 처리가 1ms를 넘는 프레임을 경고로 남깁니다.
 - native-image의 GC pause도 프레임 드랍 요인으로 측정합니다. 기준을 넘으면 GC 설정(Serial/Epsilon, 힙 크기) 조정을 SPEC에 기록합니다.
+
+### 5.2 메모리 (NFR-3)
+
+**측정 기준은 macOS의 physical footprint입니다.** RSS는 이미지에 매핑된 깨끗한 페이지까지 세기 때문에 실제 점유량을 과장합니다. 같은 프로세스가 RSS 127MB, footprint 62MB로 두 배 넘게 차이납니다. Activity Monitor의 "메모리" 열이 footprint입니다.
+
+**현재값 (2026-09-20, macOS 26.5.1, Apple M1, 빈 창 + TextField 2개)**
+
+| 항목 | 값 |
+|---|---|
+| physical footprint | 61.6MB (최대 67.0MB) |
+| MALLOC_SMALL (SubstrateVM 힙 + Skia) | 16MB |
+| 그래픽 (IOSurface, IOAccelerator, 소유 물리 페이지) | 약 25MB |
+| `__DATA` dirty | 약 7.7MB |
+
+**목표는 45MB 미만입니다.** 비교 기준으로 macOS 네이티브 앱(AppKit과 시스템 텍스트 스택을 공유하는)은 창 하나에 20~25MB, 창 두 개에 40MB 수준입니다. 우리는 Skia와 Compose 런타임, GC 힙을 프로세스 안에 갖고 있으므로 그 수치를 그대로 따라갈 수는 없지만, 현재의 62MB는 튜닝 여지가 큽니다.
+
+**줄일 수 있는 항목**
+
+1. SubstrateVM 힙: 기본 최대 힙이 RAM의 80%입니다. 상한을 고정하고(`-R:MaxHeapSize`) 초기 힙을 줄이면 MALLOC 영역이 직접 줄어듭니다.
+2. GC 선택: Serial GC의 영역 크기와 수집 정책을 UI 작업량에 맞춰 조정합니다(§5.1의 프레임 멈춤 기준과 함께 판단).
+3. 그래픽 서페이스: 창 크기에 비례합니다. Skia 래스터 캐시 상한과 Metal 서페이스 개수를 확인합니다.
+4. 폰트와 ICU 데이터: 사용하지 않는 로케일 데이터를 이미지에서 제외합니다.
+5. 이미지 자체: `-Os`는 적용 중입니다. 도달 가능 코드 축소가 dirty `__DATA`에도 영향을 줍니다.
+
+수용 기준: 위 항목을 적용한 뒤 빈 창 footprint를 재측정하고, 45MB를 넘으면 무엇이 막는지 항목별 수치와 함께 기록합니다.
 
 ## 6. IME 수용 체크리스트 (FR-5, M1)
 

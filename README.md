@@ -1,15 +1,15 @@
 # dioxus-compose
 
-**Declarative UI in Rust, rendered by an AOT-compiled Compose Multiplatform engine.**
-
-*Native desktop UI in Rust with no webview and no bundled JVM.*
-
 [![CI](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml)
 [![Native renderer](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 **English** · [한국어](docs/locales/README_ko.md)
+
+**Declarative UI in Rust, rendered by an AOT-compiled Compose Multiplatform engine.**
+
+*Native desktop UI in Rust with no webview and no bundled JVM.*
 
 ```rust
 rsx! {
