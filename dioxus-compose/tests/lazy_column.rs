@@ -1,7 +1,10 @@
-//! FR-8 LazyColumn windowing: exactly the requested range is materialised.
+//! LazyColumn windowing: exactly the requested range is materialised.
 //!
-//! The read-ahead buffer belongs to the Renderer (D5), so `start` is the global index of
-//! the first item the Host materialises.
+//! The read-ahead buffer belongs to the Renderer, because the Renderer is the side that
+//! owns the scroll position and so is the only one that knows how far ahead to read. The
+//! Host must not widen the range it was asked for: `start` is the global index of the first
+//! item the Host materialises, and if the Host added its own buffer the Renderer could no
+//! longer tell where the subtree it received belongs in the full list.
 
 use dioxus_compose::Host;
 use dioxus_compose::prelude::*;

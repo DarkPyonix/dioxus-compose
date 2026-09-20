@@ -1,4 +1,4 @@
-//! FR-9 streaming text: the Host sends only the appended tail, coalesced per frame.
+//! Streaming text: the Host sends only the appended tail, coalesced per frame.
 
 use dioxus_compose::Host;
 use dioxus_compose::prelude::*;

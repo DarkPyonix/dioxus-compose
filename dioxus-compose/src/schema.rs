@@ -63,8 +63,8 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,open,on_dismiss,selected_index;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested;",
@@ -225,6 +225,14 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     Spacer = 7,
     LazyColumn = 8,
     ScrollColumn = 9,
+    Card = 18,
+    Surface = 19,
+    Dialog = 20,
+    Menu = 21,
+    Tabs = 22,
+    TopAppBar = 23,
+    LazyRow = 24,
+    Tooltip = 25,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -791,6 +799,11 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     SpaceRole = 24,
     Alignment = 25,
     Variant = 26,
+    // Whether an overlay is showing. The Renderer owns the state; this seeds it and
+    // carries changes that came from outside the Renderer (D5).
+    Open = 40,
+    OnDismiss = 41,
+    SelectedIndex = 42,
 });
 
 #[derive(Clone, Debug, PartialEq)]

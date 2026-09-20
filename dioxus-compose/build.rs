@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 // The resolution rules and every error message live here, free of Cargo directives so
-// tests/renderer_resolution.rs can exercise them directly (SPEC NFR-10, NFR-11).
+// tests/renderer_resolution.rs can exercise them directly.
 #[allow(dead_code)]
 mod renderer_dir {
     include!("build/renderer_dir.rs");
@@ -29,7 +29,7 @@ fn main() {
     );
     // Only present in a checkout of this repository. A consumer of the published crate
     // has no workspace, which is exactly why resolution has to fail with instructions
-    // rather than pass a nonexistent path to the linker (SPEC NFR-11).
+    // rather than pass a nonexistent path to the linker.
     let workspace_lib_dir =
         manifest_dir.join("../dioxus-compose-renderer/build/native-image/dist/lib");
     let crate_version = std::env::var("CARGO_PKG_VERSION").expect("Cargo sets CARGO_PKG_VERSION");

@@ -293,3 +293,128 @@ pub fn LazyColumn(
         }
     }
 }
+
+/// A grouped container. What a card looks like, its background, corner and resting
+/// elevation, is the design system's decision, so the widget carries no appearance of its
+/// own. `Modifier::Elevation` overrides the resting height when the Host has a reason to.
+#[component]
+pub fn Card(children: Element) -> Element {
+    rsx! {
+        card { {children} }
+    }
+}
+
+/// A plain background-and-elevation container. Use it where a `Card`'s grouping meaning
+/// would be wrong and only the surface is wanted.
+#[component]
+pub fn Surface(children: Element) -> Element {
+    rsx! {
+        surface { {children} }
+    }
+}
+
+/// A modal. `open` seeds the Renderer's own open state and carries changes that came from
+/// somewhere other than the Renderer; the Renderer runs the enter and exit itself so the
+/// animation never round trips through the Host. `on_dismiss` fires when the user asks to
+/// close it, and the Host decides whether to honour that by setting `open` to false.
+#[component]
+pub fn Dialog(
+    #[props(default)] open: bool,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    children: Element,
+) -> Element {
+    rsx! {
+        dialog {
+            open,
+            ondismiss: move |_| on_dismiss.call(()),
+            {children}
+        }
+    }
+}
+
+/// A popup anchored to `anchor`, which is the widget the menu hangs off. The anchor is the
+/// first child on the wire and the entries follow it, so the Renderer can place the popup
+/// without the Host knowing any screen coordinates.
+///
+/// Each entry supplies its own `on_click`, which is what tells the Host which one was
+/// chosen. The Renderer closes the popup itself.
+#[component]
+pub fn Menu(
+    #[props(default)] expanded: bool,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    anchor: Element,
+    children: Element,
+) -> Element {
+    rsx! {
+        menu {
+            open: expanded,
+            ondismiss: move |_| on_dismiss.call(()),
+            {anchor}
+            {children}
+        }
+    }
+}
+
+/// A row of tabs. Each child is one tab.
+///
+/// `selected_index` seeds the Renderer's selection and moves it when the Host changes it.
+/// Tapping a tab changes the selection in the Renderer and reports it by firing that tab's
+/// own `on_click`, so switching tabs costs one event and no re-render of the tab strip.
+#[component]
+pub fn Tabs(#[props(default)] selected_index: usize, children: Element) -> Element {
+    rsx! {
+        tabs { selected_index: selected_index as i64, {children} }
+    }
+}
+
+/// The bar across the top of a screen. Its children are its content, left to right. How the
+/// bar is sized, spaced and separated from what is below it is the design system's rule.
+#[component]
+pub fn TopAppBar(children: Element) -> Element {
+    rsx! {
+        topappbar { {children} }
+    }
+}
+
+/// The horizontal axis of the same windowing protocol `LazyColumn` uses, with the same
+/// contract: the Host materialises exactly the range the Renderer last asked for, and the
+/// read-ahead buffer belongs to the Renderer because the scroll position does.
+#[component]
+pub fn LazyRow(
+    item_count: usize,
+    #[props(default)] key_of: Option<Callback<usize, String>>,
+    item: Callback<usize, Element>,
+) -> Element {
+    let mut range = use_signal(|| (0_usize, 0_usize));
+    let (start, count) = range();
+    let first = start.min(item_count);
+    let last = first.saturating_add(count).min(item_count);
+    rsx! {
+        lazyrow {
+            item_count: item_count as i64,
+            onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
+                let requested = event.data();
+                range.set((requested.start(), requested.count()));
+            },
+            for index in first..last {
+                {
+                    let item_key = key_of
+                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
+                    rsx! {
+                        composebox { key: "{item_key}", item_key, {item.call(index)} }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An explanation attached to its child. It is a description as much as a hover popup: the
+/// Renderer also exposes the text to the accessibility tree, so a pointer is not the only
+/// way to reach it.
+#[component]
+pub fn Tooltip(#[props(into)] text: String, children: Element) -> Element {
+    rsx! {
+        tooltip { text, {children} }
+    }
+}
