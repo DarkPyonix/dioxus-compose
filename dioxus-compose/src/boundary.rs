@@ -543,6 +543,11 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    /// PR-3 makes `APP` process-global while `HOST` is thread-local, so two tests that
+    /// launch different apps in parallel can build a Host from the other test's app.
+    /// Launching tests take this lock to stay independent of the test thread count.
+    static LAUNCH_LOCK: Mutex<()> = Mutex::new(());
+
     static CLICKS: AtomicUsize = AtomicUsize::new(0);
 
     fn app() -> Element {
@@ -668,6 +673,9 @@ mod tests {
 
     #[test]
     fn fr12_key_consumption_is_returned_and_does_not_leak() {
+        let _launch_guard = LAUNCH_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         LaunchBuilder::new()
             .with_mode(LoopMode::Platform)
             .launch(key_app);
@@ -738,6 +746,9 @@ mod tests {
     /// the isolate). The app the application launched must be reachable from there.
     #[test]
     fn pr3_init_runs_on_a_different_thread_than_launch() {
+        let _launch_guard = LAUNCH_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         LaunchBuilder::new()
             .with_mode(LoopMode::Platform)
             .launch(app);
