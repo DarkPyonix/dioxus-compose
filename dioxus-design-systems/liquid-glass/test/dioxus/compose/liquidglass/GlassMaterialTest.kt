@@ -104,7 +104,10 @@ class GlassMaterialTest {
         )
         val fill = glassFill(material, reduceTransparency = false, blurAvailable = true)
         assertTrue(fill.alpha < 1f, "glass that is opaque is not glass")
-        assertEquals(material.tintAlpha, fill.alpha)
+        // The alpha makes a round trip through a packed sRGB colour, which holds eight
+        // bits per channel, so it comes back on the nearest 1/255 step rather than on the
+        // float it went in as.
+        assertEquals(material.tintAlpha, fill.alpha, 1f / 255f)
     }
 
     @Test
