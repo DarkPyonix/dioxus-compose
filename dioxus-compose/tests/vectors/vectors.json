@@ -1,6 +1,6 @@
 {
   "format": "dioxus-compose protocol vectors v1",
-  "schemaHashUnsigned": "16354482665110852978",
+  "schemaHashUnsigned": "9708402750263464483",
   "byteOrder": "little-endian",
   "mutations": {
     "file": "mutations.bin",

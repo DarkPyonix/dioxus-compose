@@ -172,7 +172,7 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
 };
 
 const APPLE_HIG: DesignTokenTable = DesignTokenTable {
-    system: DesignSystem::AppleHig,
+    system: DesignSystem::Cupertino,
     reference: "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
     default_family: "SF Pro",
     monospace_family: "SF Mono",

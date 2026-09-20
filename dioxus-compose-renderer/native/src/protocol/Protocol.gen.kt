@@ -31,7 +31,7 @@ enum class Alignment { TopStart, TopCenter, TopEnd, CenterStart, Center, CenterE
 
 enum class ButtonVariant { Filled, Tonal, Outlined, Text }
 
-enum class DesignSystem { Material3, AppleHig, Fluent }
+enum class DesignSystem { Material3, Cupertino, Fluent }
 
 enum class ColorScheme { Light, Dark, FollowSystem }
 
@@ -105,7 +105,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -2092261408598698638L
+    const val SCHEMA_HASH: Long = -8738341323446087133L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -510,7 +510,7 @@ object Protocol {
 
     private fun designSystem(tag: Int, offset: Int): DesignSystem = when (tag) {
         1 -> DesignSystem.Material3
-        2 -> DesignSystem.AppleHig
+        2 -> DesignSystem.Cupertino
         3 -> DesignSystem.Fluent
         else -> throw ProtocolException("unknown DesignSystem tag $tag", offset)
     }
@@ -695,8 +695,8 @@ object DesignTokens {
         floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 24.0f, 32.0f, 48.0f),
     )
 
-    val APPLE_HIG: DesignTokenTable = DesignTokenTable(
-        DesignSystem.AppleHig,
+    val CUPERTINO: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Cupertino,
         "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
         "SF Pro",
         "SF Mono",
@@ -801,7 +801,7 @@ object DesignTokens {
 
     fun of(system: DesignSystem): DesignTokenTable = when (system) {
         DesignSystem.Material3 -> MATERIAL3
-        DesignSystem.AppleHig -> APPLE_HIG
+        DesignSystem.Cupertino -> CUPERTINO
         DesignSystem.Fluent -> FLUENT
     }
 }

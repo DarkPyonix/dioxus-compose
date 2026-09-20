@@ -61,8 +61,8 @@ class ThemeResolutionTest {
     @Test
     fun fr14_3_adaptive_follows_the_host_platform() {
         val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Material3)
-        assertEquals(DesignSystem.AppleHig, resolveTheme(adaptive, HostPlatform.MacOs, false).system)
-        assertEquals(DesignSystem.AppleHig, resolveTheme(adaptive, HostPlatform.Ios, false).system)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(adaptive, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(adaptive, HostPlatform.Ios, false).system)
         assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, HostPlatform.Windows, false).system)
         assertEquals(DesignSystem.Material3, resolveTheme(adaptive, HostPlatform.Android, false).system)
         assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, HostPlatform.Web, false).system)
@@ -146,7 +146,7 @@ class DesignTokenWiringTest {
     @Test
     fun fr14_2_button_variants_differ_in_shape_weight_and_feedback_between_systems() {
         val material = resolved(DesignSystem.Material3)
-        val hig = resolved(DesignSystem.AppleHig)
+        val hig = resolved(DesignSystem.Cupertino)
         val fluent = resolved(DesignSystem.Fluent)
         val variant = ButtonVariant.Filled
         val m = material.rules.button(variant, material)
@@ -288,7 +288,7 @@ class DesignRenderTest {
         }
         // Material's Display rung is 57 sp, Apple's is 34 sp, so the same Text is not the
         // same size once the design system resolves the role (FR-13.2, FR-14.4).
-        assertTrue(heightFor(DesignSystem.Material3) > heightFor(DesignSystem.AppleHig))
+        assertTrue(heightFor(DesignSystem.Material3) > heightFor(DesignSystem.Cupertino))
     }
 
     @Test

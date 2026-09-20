@@ -763,7 +763,7 @@ fn upper_snake(name: &str) -> String {
 pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
     let mutations = [
         Mutation::SetTheme(
-            Theme::adaptive(DesignSystem::AppleHig).with_color_scheme(ColorScheme::Dark),
+            Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark),
         ),
         Mutation::Create {
             node_id: 1,
