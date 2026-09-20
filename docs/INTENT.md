@@ -103,6 +103,39 @@ ART에서는 호스트 관계가 뒤집힙니다. 경계를 호출 방향과 무
 - 오프라인 빌드와 벤더링도 같은 변수로 해결됩니다.
 - 이 스택을 쓰는 애플리케이션의 배포는 이 프로젝트의 범위 밖입니다. 렌더러를 어떻게 번들에 넣을지는 해당 애플리케이션이 정합니다.
 
+### D11. Android는 Kotlin을 소스로 배포한다
+
+Android는 ART라 native-image로 굳힐 수 없습니다(D9). 그래서 Kotlin이 사용자 앱의 빌드에 참여해야 하는데, **그걸 Gradle에 어떻게 알리느냐**가 문제였습니다.
+
+dx의 Gradle 템플릿을 읽고 결정했습니다. 템플릿은 `Dioxus.toml`의 `gradle_dependencies` 항목을 이렇게 씁니다.
+
+```
+{{#each gradle_dependencies}}
+implementation("{{ this }}")
+{{/each}}
+```
+
+문자열이 `implementation("...")` 안에 그대로 들어갑니다. 따라서 **Maven 좌표만 받습니다.** `files(...)`, `fileTree(...)`, `project(...)`는 좌표 문자열로 해석되어 실패합니다. 크레이트 안에 AAR을 동봉해도 Gradle에 알려줄 방법이 없습니다.
+
+**그래서 컴파일된 아티팩트가 아니라 Kotlin 소스를 배포합니다.**
+
+같은 템플릿에 이 줄이 있습니다.
+
+```
+sourceSets { getByName("main") { java.srcDirs("src/main/kotlin", "src/main/java") } }
+```
+
+크레이트가 렌더러와 디자인 시스템의 `.kt` 소스를 품고, 빌드 스크립트가 그 디렉터리에 풀어놓습니다. Gradle이 사용자 앱과 함께 컴파일합니다. wry가 `WRY_ANDROID_KOTLIN_FILES_OUT_DIR`로 Kotlin을 생성해 넣는 것과 같은 경로이며, dx가 이미 지원하는 방식입니다.
+
+- **Maven에 아무것도 올리지 않습니다.** 레지스트리가 하나 늘지 않고, 네임스페이스 검증도 GPG 서명도 필요 없으며, 버전이 어긋날 지점이 생기지 않습니다.
+- **Compose와 androidx는 좌표로 선언합니다.** 남의 라이브러리이고 이미 mavenCentral에 있으므로 우리가 배포할 대상이 아닙니다.
+- **MainActivity는 생성합니다.** dx의 템플릿은 패키지를 `dev.dioxus.main`으로 고정하고 앱 id는 `BuildConfig` 별칭에만 씁니다. 정적 파일을 주면 그 치환을 못 받으므로, 빌드 스크립트가 앱 id를 받아 생성합니다.
+- 크기: 컴파일된 렌더러 jar가 400KB이므로 소스는 그보다 작습니다. crates.io 한도(10MiB) 안입니다.
+
+**결과적으로 Android가 다른 플랫폼보다 단순합니다.** 데스크톱과 iOS는 Skia까지 AOT로 굳혀 수십 MB짜리 별도 아티팩트가 필요하지만, Android는 소스가 크레이트에 들어갑니다.
+
+대가는 하나입니다. **사용자 앱 빌드에 Kotlin 컴파일이 포함됩니다.** Android 빌드는 어차피 Gradle을 거치므로 새로 생기는 요구사항은 아닙니다.
+
 ## 4. 폐기한 대안
 
 | 대안 | 폐기 이유 |

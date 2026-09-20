@@ -678,6 +678,18 @@ dioxus_compose_host_dispatch_event: click 1
   - `onStop`/`onStart`: `Lifecycle` 이벤트를 보냅니다. Host는 타이머와 애니메이션을 억제합니다.
   - 프로세스 kill: 메모리 상태는 복원하지 않습니다. 필요하면 `SaveState`로 작은 blob을 `onSaveInstanceState`에 저장합니다.
 - android-activity, NativeActivity, GameActivity 진입점은 쓰지 않습니다. ComposeView와 공존한 사례가 없고 IME 충돌 위험이 있습니다. JavaVM은 `JNI_OnLoad`에서 얻습니다.
+
+#### 5.1 Kotlin이 앱 빌드에 들어가는 방법 (INTENT D11)
+
+데스크톱과 iOS는 Kotlin을 AOT로 굳혀 바이너리 하나로 내보내지만, Android는 ART라 그럴 수 없습니다. Kotlin이 사용자 앱의 Gradle 빌드에 참여해야 하고, 그 경로를 dx가 정해 둡니다.
+
+**크레이트가 Kotlin 소스를 품고, 빌드 스크립트가 Gradle 프로젝트의 `src/main/kotlin`에 풀어놓습니다.**
+
+- dx의 Gradle 템플릿은 `gradle_dependencies` 항목을 `implementation("...")`로 감싸므로 **Maven 좌표만** 받습니다. 크레이트에 AAR을 넣어도 Gradle에 알릴 방법이 없어서, 컴파일된 아티팩트가 아니라 소스를 배포합니다.
+- 같은 템플릿이 `sourceSets { main { java.srcDirs("src/main/kotlin", ...) } }`를 선언하므로, 거기 놓인 `.kt`는 사용자 앱과 함께 컴파일됩니다. wry가 Kotlin을 생성해 넣는 것과 같은 경로입니다.
+- **Compose와 androidx는 좌표로 선언합니다.** 남의 라이브러리이고 mavenCentral에 이미 있으므로 우리가 배포하지 않습니다.
+- **MainActivity는 생성합니다.** dx 템플릿은 패키지를 `dev.dioxus.main`으로 고정하고 앱 id는 `BuildConfig` 별칭에만 씁니다. 정적 파일로 주면 그 치환을 못 받으므로, 빌드 스크립트가 앱 id를 받아 만들어냅니다. `WryActivity` 대신 `ComponentActivity`를 상속하고 `setContent`로 렌더러를 띄웁니다.
+- 수용 기준(M6)에 추가합니다: **4. 사용자가 `Dioxus.toml`에 우리 좌표를 적지 않고도 APK가 빌드됩니다.** Kotlin 소스가 자동으로 들어가고 Maven 의존성이 없어야 통과입니다.
 - 수용 기준(M6):
   1. 일반 JNI와 `@FastNative`의 호출당 비용을 실측합니다. 공개 수치(약 115ns, 약 35ns)와 비교해 기록합니다.
   2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100회 추가되는 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
