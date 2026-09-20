@@ -17,9 +17,23 @@ pub const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
 /// its loader will look for.
 pub fn renderer_lib_file(target_os: &str) -> &'static str {
     match target_os {
-        "windows" => "dioxus_compose_renderer.dll",
+        // The Windows build names the image `libdioxus_compose_renderer`, so the DLL keeps
+        // the `lib` prefix that Windows itself would not have added.
+        "windows" => "libdioxus_compose_renderer.dll",
         "macos" => "libdioxus_compose_renderer.dylib",
         _ => "libdioxus_compose_renderer.so",
+    }
+}
+
+/// Where a platform's build script puts the renderer inside the distribution.
+///
+/// Windows keeps the DLL beside the AWT and Skia DLLs in `bin`, because the loader
+/// searches the directory of the module that needs them and they have to be found
+/// together. The other platforms put the shared library in `lib`.
+pub fn renderer_lib_subdir(target_os: &str) -> &'static str {
+    match target_os {
+        "windows" => "bin",
+        _ => "lib",
     }
 }
 
@@ -92,12 +106,19 @@ pub fn resolve_renderer(
     })
 }
 
-/// Accept either the unpacked artifact root or its `lib` directory. Both are natural
-/// things for a human to point the variable at, and guessing wrong is a linker error.
+/// Accept either the unpacked artifact root or the directory holding the library. Both are
+/// natural things for a human to point the variable at, and guessing wrong is a linker
+/// error rather than a message.
+///
+/// The subdirectory differs by platform: Windows keeps the renderer in `bin` beside the
+/// AWT and Skia DLLs, which the loader needs to find together, and the others use `lib`.
+/// Both are tried, so pointing at the wrong one of the two still works.
 fn lib_dir_within(dir: &Path, lib_file: &str) -> PathBuf {
-    let nested = dir.join("lib");
-    if nested.join(lib_file).is_file() {
-        return nested;
+    for subdir in ["lib", "bin"] {
+        let nested = dir.join(subdir);
+        if nested.join(lib_file).is_file() {
+            return nested;
+        }
     }
     dir.to_path_buf()
 }

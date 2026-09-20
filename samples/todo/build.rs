@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=DIOXUS_COMPOSE_RENDERER_DIR");
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    if !matches!(target_os.as_str(), "macos" | "windows" | "linux") {
         return;
     }
     let manifest_dir = PathBuf::from(
@@ -32,7 +33,7 @@ fn main() {
 
     for candidate in candidates {
         for directory in [candidate.clone(), candidate.join("lib")] {
-            if directory.join("libdioxus_compose_renderer.dylib").exists() {
+            if directory.join(renderer_file()).exists() {
                 emit(&directory);
                 return;
             }
@@ -40,7 +41,22 @@ fn main() {
     }
 }
 
+/// The renderer's file name on this target.
+fn renderer_file() -> &'static str {
+    match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        Ok("windows") => "libdioxus_compose_renderer.dll",
+        Ok("macos") => "libdioxus_compose_renderer.dylib",
+        _ => "libdioxus_compose_renderer.so",
+    }
+}
+
 fn emit(directory: &Path) {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        // Windows has no rpath. The loader searches the executable's own directory and
+        // PATH, so the renderer's files have to sit beside the program or be on PATH,
+        // which is what the release packaging arranges.
+        return;
+    }
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", directory.display());
     // The renderer resolves the Host's exported entry points out of this binary.
     println!("cargo:rustc-link-arg=-Wl,-export_dynamic");
