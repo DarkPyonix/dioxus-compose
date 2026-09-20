@@ -1,4 +1,4 @@
-// PR-6 probe: the Kotlin/Wasm (Renderer) side of a two-module WebAssembly link.
+// Web-interop probe: the Kotlin/Wasm (Renderer) side of a two-module WebAssembly link.
 //
 // Everything here is deliberately raw: no Compose, no //shared dependency. The
 // question is what the Kotlin/Wasm target itself allows at the module boundary.
