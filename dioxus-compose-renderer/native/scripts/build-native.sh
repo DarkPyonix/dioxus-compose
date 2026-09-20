@@ -27,7 +27,11 @@ cc -c -O2 -arch "$arch" -o "$obj/macos_main_thread.o" "$NATIVE_DIR/c/macos_main_
 
 exported=(dioxus_compose_renderer_run dioxus_compose_renderer_request_frame
           dioxus_compose_jawt_get_awt JNI_OnLoad_osxui)
-linker_args=("-H:NativeLinkerOption=$obj/renderer_entry.o" "-H:NativeLinkerOption=$obj/macos_awt_compat.o"
+# The renderer calls the Host's dioxus_compose_host_* functions, which live in the Rust
+# executable that loads this library. They are resolved at load time, so the link must
+# tolerate them being undefined here (SPEC PR-2).
+linker_args=("-H:NativeLinkerOption=-Wl,-undefined,dynamic_lookup"
+             "-H:NativeLinkerOption=$obj/renderer_entry.o" "-H:NativeLinkerOption=$obj/macos_awt_compat.o"
              "-H:NativeLinkerOption=$obj/macos_main_thread.o"
              "-H:NativeLinkerOption=-Wl,-install_name,@rpath/$LIBRARY_NAME.dylib")
 for symbol in "${exported[@]}"; do
