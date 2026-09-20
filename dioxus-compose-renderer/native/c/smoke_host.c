@@ -9,6 +9,7 @@
  */
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -122,6 +123,18 @@ static void end_batch(void) {
  * Rebuilds the whole batch so that the text records point at string bytes placed after the
  * record area. Records are laid out first, then the strings are appended in order.
  */
+#define IME_FIELD_TEXT "type Korean here"
+
+/* DIOXUS_COMPOSE_SMOKE_IME=1 adds the text field on any platform. */
+static int want_text_field(void) {
+#ifdef __linux__
+    return 1;
+#else
+    const char *flag = getenv("DIOXUS_COMPOSE_SMOKE_IME");
+    return flag != NULL && flag[0] == '1' && flag[1] == '\0';
+#endif
+}
+
 static void build_tree(const char *label) {
     begin_batch();
     create(1, WIDGET_COLUMN);
@@ -134,21 +147,24 @@ static void build_tree(const char *label) {
     set_text_prop(3, "click me");
     set_handler(3, PROP_ON_CLICK, CLICK_HANDLER);
     insert(1, 3, 1);
-#ifdef __linux__
-    /* The Linux smoke window includes an editable control so a real desktop run can exercise
-       XIM through ibus or fcitx. Keep the established macOS smoke tree unchanged. */
-    create(4, WIDGET_TEXT_FIELD);
-    uint32_t field_prop = records_length;
-    set_text_prop(4, "type Korean here");
-    insert(1, 4, 2);
-#endif
+    /* An editable control, for the SPEC 6 IME checklist. It is off by default so the
+       byte counts the PR-2 evidence quotes stay stable, and because CI has nobody to
+       type. Linux turns it on unconditionally: a real desktop run there is the only
+       way to exercise XIM through ibus or fcitx. */
+    uint32_t field_prop = 0;
+    if (want_text_field()) {
+        create(4, WIDGET_TEXT_FIELD);
+        field_prop = records_length;
+        set_text_prop(4, IME_FIELD_TEXT);
+        insert(1, 4, 2);
+    }
     end_batch();
     batch_length = records_length;
     put_string(label_prop + 12, label);
     put_string(button_prop + 12, "click me");
-#ifdef __linux__
-    put_string(field_prop + 12, "type Korean here");
-#endif
+    if (field_prop != 0) {
+        put_string(field_prop + 12, IME_FIELD_TEXT);
+    }
 }
 
 static void build_label_update(const char *label) {
