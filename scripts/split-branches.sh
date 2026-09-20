@@ -116,7 +116,13 @@ filtered_tree="$(
         # --cached edits only the index. With GIT_INDEX_FILE pointed at a
         # scratch file, that is a file in $TMPDIR: no working tree, and not
         # even the index of this repository, is reachable from here.
-        git rm --cached --quiet --ignore-unmatch -- "${private_paths[@]}"
+        #
+        # --force is needed, and is safe precisely because of that: git
+        # otherwise refuses to drop an entry that differs from HEAD, to
+        # protect unsaved work. Here HEAD is whatever branch happens to be
+        # checked out, which has nothing to do with the temporary index being
+        # filtered, and there is no file on disk to lose.
+        git rm --cached --force --quiet --ignore-unmatch -- "${private_paths[@]}"
     fi
     git write-tree
 )"

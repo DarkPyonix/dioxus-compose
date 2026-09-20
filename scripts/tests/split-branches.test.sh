@@ -135,6 +135,29 @@ check "running while on main leaves the tree clean" "$(git -C "$repo" status --p
 check "running while on main keeps main's checkout intact" \
     "$([[ -f "$repo/README.md" ]] && echo yes)" "yes"
 
+# --- works from a branch whose HEAD differs from the source branch ---------
+#
+# Regression: `git rm --cached` compares index entries against HEAD, so
+# without --force it refuses when the checked-out branch has diverged from
+# --source, and the private files silently survive into the target.
+repo="$tmp/other-head"
+make_repo "$repo"
+git -C "$repo" checkout -q -b feature
+echo work > "$repo/dioxus-compose/src/feature.rs"
+# The private files must differ between HEAD and --source too: that is what
+# makes git compare them and refuse.
+echo "edited on the feature branch" >> "$repo/PROJECT.md"
+echo "edited on the feature branch" >> "$repo/docs/SPEC.md"
+git -C "$repo" add -A
+git -C "$repo" commit -q -m "Feat: Work in progress"
+out="$(cd "$repo" && "$split" --write 2>&1)"
+check "runs from a diverged branch" "$?" "0"
+main_files="$(files_on "$repo" main)"
+check_absent "a diverged HEAD still drops PROJECT.md" "$main_files" "PROJECT.md"
+check_absent "a diverged HEAD still drops docs/SPEC.md" "$main_files" "docs/SPEC.md"
+check_absent "the target takes content from --source, not HEAD" "$main_files" "feature.rs"
+check "the diverged branch is still clean" "$(git -C "$repo" status --porcelain)" ""
+
 # --- a missing develop branch is an error, not a silent success ------------
 repo="$tmp/no-develop"
 make_repo "$repo"
