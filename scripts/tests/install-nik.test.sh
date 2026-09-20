@@ -10,6 +10,16 @@ set -uo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install_nik="$script_dir/../install-nik.sh"
 
+# Liberica NIK is a macOS requirement: upstream GraalVM ships no AWT on Darwin, and
+# everywhere else the stock GraalVM is the right toolchain. install-nik.sh therefore
+# refuses to run anywhere else, which means these tests can only exercise it on macOS.
+# Skipping is the honest outcome; pretending otherwise made every reuse test fail on a
+# Linux runner against a script that had correctly declined to do anything.
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "skip  install-nik.sh is macOS only; these tests run on the macOS runner"
+    exit 0
+fi
+
 failures=0
 pass() { echo "ok   - $1"; }
 fail() { echo "FAIL - $1"; failures=$((failures + 1)); }
