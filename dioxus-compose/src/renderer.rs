@@ -472,6 +472,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "valuechange" | "onvaluechange" => Some(PropertyKind::OnValueChange),
         "submit" | "onsubmit" => Some(PropertyKind::OnSubmit),
         "focuslost" | "onfocuslost" => Some(PropertyKind::OnFocusLost),
+        "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         _ => None,
     }
 }

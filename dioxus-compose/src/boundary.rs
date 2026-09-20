@@ -1,7 +1,7 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
 use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH};
-use crate::{Element, Selection, VirtualDom};
+use crate::{Element, KeyEvent, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
 use std::ffi::c_int;
@@ -45,6 +45,8 @@ pub struct RendererApi {
 
 static RENDERER_API: OnceLock<RendererApi> = OnceLock::new();
 static FRAME_REQUESTED: AtomicBool = AtomicBool::new(false);
+static EVENT_DISPATCH_ACTIVE: AtomicBool = AtomicBool::new(false);
+static DEFERRED_FRAME_REQUEST: AtomicBool = AtomicBool::new(false);
 
 pub fn install_renderer_api(api: RendererApi) -> Result<(), RendererApi> {
     RENDERER_API.set(api)
@@ -86,7 +88,29 @@ fn renderer_api() -> RendererApi {
 /// Coalesced wake used internally by the Dioxus scheduler waker.
 pub fn request_frame_from_worker() {
     if !FRAME_REQUESTED.swap(true, Ordering::AcqRel) {
-        (renderer_api().request_frame)();
+        if EVENT_DISPATCH_ACTIVE.load(Ordering::Acquire) {
+            DEFERRED_FRAME_REQUEST.store(true, Ordering::Release);
+        } else {
+            (renderer_api().request_frame)();
+        }
+    }
+}
+
+struct EventDispatchGuard;
+
+impl EventDispatchGuard {
+    fn enter() -> Self {
+        EVENT_DISPATCH_ACTIVE.store(true, Ordering::Release);
+        Self
+    }
+}
+
+impl Drop for EventDispatchGuard {
+    fn drop(&mut self) {
+        EVENT_DISPATCH_ACTIVE.store(false, Ordering::Release);
+        if DEFERRED_FRAME_REQUEST.swap(false, Ordering::AcqRel) {
+            (renderer_api().request_frame)();
+        }
     }
 }
 
@@ -136,6 +160,7 @@ impl Host {
         if event.node_id != node_id {
             return Err(ProtocolError::InvalidValueKind(0));
         }
+        let mut key_event = None;
         let event_data = match event.payload {
             EventPayload::Click | EventPayload::FocusLost => {
                 Event::new(Rc::new(()), true).into_any()
@@ -146,18 +171,31 @@ impl Host {
             EventPayload::ProtocolError { .. } => {
                 return Err(ProtocolError::InvalidValueKind(0));
             }
+            EventPayload::KeyDown {
+                key,
+                shift_key,
+                ctrl_key,
+                alt_key,
+                meta_key,
+            } => {
+                let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
+                key_event = Some(value.clone());
+                Event::new(Rc::new(value), true).into_any()
+            }
         };
+        let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
         self.arm_scheduler_wake();
-        // SPEC-GAP: dioxus-core EventHandler callbacks return (), so the M0
-        // adapter reserves result=0 until a typed synchronous handler API exists.
-        Ok((self.renderer.finish_frame()?, 0))
+        let result = i64::from(key_event.is_some_and(|event| event.consumed()));
+        Ok((self.renderer.finish_frame()?, result))
     }
 
     pub fn render_frame(&mut self, _frame_time_nanos: u64) -> Result<&[u8], ProtocolError> {
         FRAME_REQUESTED.store(false, Ordering::Release);
+        EVENT_DISPATCH_ACTIVE.store(false, Ordering::Release);
+        DEFERRED_FRAME_REQUEST.store(false, Ordering::Release);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
         self.arm_scheduler_wake();
@@ -420,6 +458,24 @@ mod tests {
         }
     }
 
+    fn key_app() -> Element {
+        rsx! {
+            Column {
+                TextField {
+                    multiline: true,
+                    on_key_down: move |event: KeyEvent| {
+                        if event.key() == Key::Enter && !event.shift_key() {
+                            event.consume();
+                        }
+                    }
+                }
+                TextField {
+                    on_key_down: move |_event: KeyEvent| {}
+                }
+            }
+        }
+    }
+
     #[derive(Default)]
     struct MockRenderer {
         widgets: HashMap<u32, crate::WidgetKind>,
@@ -503,6 +559,73 @@ mod tests {
         let status =
             unsafe { dioxus_compose_host_dispatch_event(std::ptr::null(), 4, &mut output) };
         assert_eq!(status, STATUS_PROTOCOL_ERROR);
+    }
+
+    #[test]
+    fn key_consumption_is_returned_and_does_not_leak() {
+        LaunchBuilder::new()
+            .with_mode(LoopMode::Platform)
+            .launch(key_app);
+        let mut handshake = Vec::with_capacity(12);
+        handshake.extend_from_slice(&SCHEMA_HASH.to_le_bytes());
+        handshake.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+        handshake.extend_from_slice(&[LoopMode::Platform as u8, 0]);
+        let mut output = MutationBatch::default();
+        // SAFETY: All pointers refer to live test-owned buffers for the duration of each call.
+        unsafe {
+            assert_eq!(
+                dioxus_compose_host_init(handshake.as_ptr(), handshake.len() as u32, &mut output,),
+                STATUS_OK
+            );
+        }
+        // SAFETY: A successful init returned a readable batch owned by the Host.
+        let initial = unsafe { std::slice::from_raw_parts(output.ptr, output.len as usize) };
+        let handlers: Vec<_> = decode_batch(initial)
+            .unwrap()
+            .into_iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::OnKeyDown,
+                    value: PropertyValue::Integer(handler),
+                } => Some((node_id, handler as u64)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(handlers.len(), 2);
+
+        let dispatch = |node_id, handler_id, shift_key, output: &mut MutationBatch| {
+            let event = HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::KeyDown {
+                    key: Key::Enter,
+                    shift_key,
+                    ctrl_key: false,
+                    alt_key: false,
+                    meta_key: false,
+                },
+            };
+            let mut bytes = Vec::new();
+            crate::protocol::encode_event(&event, &mut bytes).unwrap();
+            // SAFETY: The encoded event and output storage remain live for the call.
+            unsafe {
+                assert_eq!(
+                    dioxus_compose_host_dispatch_event(bytes.as_ptr(), bytes.len() as u32, output,),
+                    STATUS_OK
+                );
+            }
+        };
+
+        dispatch(handlers[0].0, handlers[0].1, false, &mut output);
+        assert_ne!(output.result, 0);
+        dispatch(handlers[0].0, handlers[0].1, true, &mut output);
+        assert_eq!(output.result, 0);
+        dispatch(handlers[1].0, handlers[1].1, false, &mut output);
+        assert_eq!(output.result, 0);
+        dispatch(handlers[0].0, handlers[0].1, false, &mut output);
+        assert_ne!(output.result, 0);
+        dioxus_compose_host_shutdown();
     }
 
     #[test]

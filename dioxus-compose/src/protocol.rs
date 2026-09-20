@@ -1,6 +1,6 @@
 //! Fixed-layout little-endian boundary protocol.
 
-use crate::schema::{Modifier, PropertyKind, Selection, WidgetKind};
+use crate::schema::{Key, Modifier, PropertyKind, Selection, WidgetKind};
 use core::fmt;
 
 const TAG_ENVELOPE: u16 = 0;
@@ -91,6 +91,12 @@ const EVENT_TEXT_CHANGED: u16 = 2;
 const EVENT_TEXT_SUBMITTED: u16 = 3;
 const EVENT_FOCUS_LOST: u16 = 4;
 const EVENT_PROTOCOL_ERROR: u16 = 5;
+const EVENT_KEY_DOWN: u16 = 6;
+
+const MODIFIER_SHIFT: u8 = 1 << 0;
+const MODIFIER_CTRL: u8 = 1 << 1;
+const MODIFIER_ALT: u8 = 1 << 2;
+const MODIFIER_META: u8 = 1 << 3;
 
 /// Decode one Renderer-to-Host event record.
 pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
@@ -117,7 +123,19 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
             code: read_u32(bytes, 16)?,
             message: read_string(bytes, 20)?,
         },
-        EVENT_CLICK..=EVENT_PROTOCOL_ERROR => return Err(ProtocolError::InvalidRecordLength),
+        EVENT_KEY_DOWN if record_len == 20 => {
+            let raw_key = read_u16(bytes, 16)?;
+            let modifiers = *bytes.get(18).ok_or(ProtocolError::Truncated)?;
+            crate::schema::EventPayload::KeyDown {
+                key: Key::try_from(raw_key)
+                    .map_err(|()| ProtocolError::InvalidValueKind(raw_key))?,
+                shift_key: modifiers & MODIFIER_SHIFT != 0,
+                ctrl_key: modifiers & MODIFIER_CTRL != 0,
+                alt_key: modifiers & MODIFIER_ALT != 0,
+                meta_key: modifiers & MODIFIER_META != 0,
+            }
+        }
+        EVENT_CLICK..=EVENT_KEY_DOWN => return Err(ProtocolError::InvalidRecordLength),
         other => return Err(ProtocolError::InvalidTag(other)),
     };
     Ok(HostEvent {
@@ -130,6 +148,27 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
 /// Test/mock helper for constructing a Renderer-to-Host event.
 pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
     output.clear();
+    if let crate::schema::EventPayload::KeyDown {
+        key,
+        shift_key,
+        ctrl_key,
+        alt_key,
+        meta_key,
+    } = event.payload
+    {
+        output.extend_from_slice(&EVENT_KEY_DOWN.to_le_bytes());
+        output.extend_from_slice(&20_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        output.extend_from_slice(&(key as u16).to_le_bytes());
+        let modifiers = (u8::from(shift_key) * MODIFIER_SHIFT)
+            | (u8::from(ctrl_key) * MODIFIER_CTRL)
+            | (u8::from(alt_key) * MODIFIER_ALT)
+            | (u8::from(meta_key) * MODIFIER_META);
+        output.push(modifiers);
+        output.push(0);
+        return Ok(());
+    }
     let (tag, record_len, text, error_code) = match &event.payload {
         crate::schema::EventPayload::Click => (EVENT_CLICK, 16_u16, None, None),
         crate::schema::EventPayload::TextChanged(value) => {
@@ -142,6 +181,7 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         crate::schema::EventPayload::ProtocolError { code, message } => {
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
+        crate::schema::EventPayload::KeyDown { .. } => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());
@@ -616,6 +656,17 @@ mod tests {
                 node_id: 8,
                 handler_id: 14,
                 payload: crate::EventPayload::FocusLost,
+            },
+            HostEvent {
+                node_id: 8,
+                handler_id: 15,
+                payload: crate::EventPayload::KeyDown {
+                    key: Key::Enter,
+                    shift_key: true,
+                    ctrl_key: false,
+                    alt_key: true,
+                    meta_key: false,
+                },
             },
         ];
         let mut bytes = Vec::new();

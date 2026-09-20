@@ -4,9 +4,9 @@
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
-    "events=Click,TextChanged,TextSubmitted,FocusLost,ProtocolError;",
+    "events=Click,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText"
 );
 
@@ -66,6 +66,24 @@ pub enum LoopMode {
 pub struct Selection {
     pub start: u32,
     pub end: u32,
+}
+
+/// Compose key identities supported by the M0 schema.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u16)]
+pub enum Key {
+    Enter = 1,
+}
+
+impl TryFrom<u16> for Key {
+    type Error = ();
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(Self::Enter),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -131,6 +149,7 @@ pub enum PropertyKind {
     OnValueChange = 6,
     OnSubmit = 7,
     OnFocusLost = 8,
+    OnKeyDown = 9,
 }
 
 impl TryFrom<u16> for PropertyKind {
@@ -146,6 +165,7 @@ impl TryFrom<u16> for PropertyKind {
             6 => Ok(Self::OnValueChange),
             7 => Ok(Self::OnSubmit),
             8 => Ok(Self::OnFocusLost),
+            9 => Ok(Self::OnKeyDown),
             _ => Err(()),
         }
     }
@@ -157,5 +177,15 @@ pub enum EventPayload<'a> {
     TextChanged(&'a str),
     TextSubmitted(&'a str),
     FocusLost,
-    ProtocolError { code: u32, message: &'a str },
+    ProtocolError {
+        code: u32,
+        message: &'a str,
+    },
+    KeyDown {
+        key: Key,
+        shift_key: bool,
+        ctrl_key: bool,
+        alt_key: bool,
+        meta_key: bool,
+    },
 }

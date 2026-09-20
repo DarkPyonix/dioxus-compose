@@ -13,8 +13,8 @@ pub use boundary::{
 pub use dioxus_core::{Element, VirtualDom};
 pub use dioxus_core_macro::{component, rsx};
 pub use elements::*;
-pub use schema::{EventPayload, LoopMode, Modifier, SCHEMA_HASH, Selection, WidgetKind};
-pub use widgets::{Button, Column, ComposeBox as Box, Row, Spacer, Text, TextField};
+pub use schema::{EventPayload, Key, LoopMode, Modifier, SCHEMA_HASH, Selection, WidgetKind};
+pub use widgets::{Button, Column, ComposeBox as Box, KeyEvent, Row, Spacer, Text, TextField};
 
 pub mod prelude {
     pub use crate as dioxus_elements;
@@ -22,8 +22,8 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Button, Column, Element, LaunchBuilder, LoopMode, Modifier, Row, Spacer, Text, TextField,
-        component, launch, rsx,
+        Button, Column, Element, Key, KeyEvent, LaunchBuilder, LoopMode, Modifier, Row, Spacer,
+        Text, TextField, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -105,4 +105,5 @@ pub mod events {
     event!(onvaluechange, String);
     event!(onsubmit, String);
     event!(onfocuslost, ());
+    event!(onkeydown, crate::KeyEvent);
 }
