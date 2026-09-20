@@ -1,6 +1,6 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
-use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH};
+use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme};
 use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
@@ -134,6 +134,7 @@ struct PendingAppend {
 }
 
 pub struct Host {
+    theme: Theme,
     dom: VirtualDom,
     renderer: ComposeRenderer,
     frame_waker: Waker,
@@ -142,7 +143,13 @@ pub struct Host {
 
 impl Host {
     pub fn new(app: fn() -> Element) -> Self {
+        Self::with_theme(app, launched_theme())
+    }
+
+    /// FR-14.3: the theme the application chose, or unified Material 3 if it chose nothing.
+    pub fn with_theme(app: fn() -> Element, theme: Theme) -> Self {
         Self {
+            theme,
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
             frame_waker: Waker::from(Arc::new(FrameWake)),
@@ -152,6 +159,9 @@ impl Host {
 
     pub fn rebuild(&mut self) -> Result<&[u8], ProtocolError> {
         self.renderer.begin_frame();
+        // FR-14.5: one record at the root, before any node exists. The Renderer resolves
+        // roles to values, so a theme change never costs a SetProp per node (14.4).
+        self.renderer.set_theme(self.theme);
         self.dom.rebuild(&mut self.renderer);
         self.arm_scheduler_wake();
         self.renderer.finish_frame()
@@ -319,6 +329,9 @@ impl std::ops::Deref for HostSlot {
 /// Host down and initialize it again (PR-5 surface recreation) without relaunching.
 static APP: Mutex<Option<fn() -> Element>> = Mutex::new(None);
 
+/// FR-14.3: chosen by `LaunchBuilder::with_theme`, read once when the Host is built.
+static THEME: Mutex<Theme> = Mutex::new(Theme::unified(crate::schema::DesignSystem::Material3));
+
 thread_local! {
     static HOST: HostSlot = const { HostSlot(RefCell::new(None)) };
 }
@@ -327,15 +340,23 @@ fn launched_app() -> Option<fn() -> Element> {
     APP.lock().map_or(None, |app| *app)
 }
 
+fn launched_theme() -> Theme {
+    THEME
+        .lock()
+        .map_or_else(|error| *error.into_inner(), |theme| *theme)
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct LaunchBuilder {
     mode: LoopMode,
+    theme: Theme,
 }
 
 impl Default for LaunchBuilder {
     fn default() -> Self {
         Self {
             mode: LoopMode::Renderer,
+            theme: Theme::default(),
         }
     }
 }
@@ -350,9 +371,19 @@ impl LaunchBuilder {
         self
     }
 
+    /// FR-14.3: `Theme::unified` for one design system everywhere, `Theme::adaptive`
+    /// to follow the host platform. Not calling this means unified Material 3.
+    pub fn with_theme(mut self, theme: Theme) -> Self {
+        self.theme = theme;
+        self
+    }
+
     pub fn launch(self, app: fn() -> Element) {
         if let Ok(mut slot) = APP.lock() {
             *slot = Some(app);
+        }
+        if let Ok(mut slot) = THEME.lock() {
+            *slot = self.theme;
         }
         if self.mode == LoopMode::Renderer {
             let _ = (renderer_api().run)();
@@ -769,6 +800,78 @@ mod tests {
         })
         .join()
         .unwrap();
+    }
+
+    /// FR-14.3: the first record of the initial batch carries the theme, and saying
+    /// nothing means unified Material 3. Adaptive is never implicit.
+    #[test]
+    fn fr14_initial_batch_opens_with_the_launched_theme() {
+        let _launch_guard = LAUNCH_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let first_record = |builder: LaunchBuilder| {
+            builder.with_mode(LoopMode::Platform).launch(app);
+            let mut handshake = Vec::with_capacity(12);
+            handshake.extend_from_slice(&SCHEMA_HASH.to_le_bytes());
+            handshake.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+            handshake.extend_from_slice(&[LoopMode::Platform as u8, 0]);
+            std::thread::spawn(move || {
+                let mut output = MutationBatch::default();
+                // SAFETY: Both buffers are live test-owned storage for this call.
+                let status = unsafe {
+                    dioxus_compose_host_init(
+                        handshake.as_ptr(),
+                        handshake.len() as u32,
+                        &mut output,
+                    )
+                };
+                assert_eq!(status, STATUS_OK);
+                // SAFETY: A successful init returned a readable batch owned by the Host.
+                let batch = unsafe { std::slice::from_raw_parts(output.ptr, output.len as usize) };
+                let first = decode_batch(batch).unwrap().into_iter().next().unwrap();
+                dioxus_compose_host_shutdown();
+                first
+            })
+            .join()
+            .unwrap()
+        };
+
+        assert_eq!(
+            first_record(LaunchBuilder::new()),
+            Mutation::SetTheme(Theme::unified(DesignSystem::Material3))
+        );
+        assert_eq!(
+            first_record(LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::Fluent))),
+            Mutation::SetTheme(Theme {
+                design_system: DesignSystem::Fluent,
+                fallback: DesignSystem::Fluent,
+                color_scheme: ColorScheme::FollowSystem,
+                adaptive: false,
+            })
+        );
+        assert_eq!(
+            first_record(LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::AppleHig))),
+            Mutation::SetTheme(Theme {
+                design_system: DesignSystem::AppleHig,
+                fallback: DesignSystem::AppleHig,
+                color_scheme: ColorScheme::FollowSystem,
+                adaptive: true,
+            })
+        );
+    }
+
+    /// FR-14.4 and 5.1: the theme is sent once, not once per frame.
+    #[test]
+    fn fr14_set_theme_is_not_resent_every_frame() {
+        let mut host = Host::new(app);
+        let initial = decode_batch(host.rebuild().unwrap()).unwrap();
+        assert!(matches!(initial.first(), Some(Mutation::SetTheme(_))));
+        let frame = decode_batch(host.render_frame(0).unwrap()).unwrap();
+        assert!(
+            !frame
+                .iter()
+                .any(|mutation| matches!(mutation, Mutation::SetTheme(_)))
+        );
     }
 
     #[test]

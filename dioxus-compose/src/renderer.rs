@@ -92,6 +92,11 @@ impl ComposeRenderer {
         });
     }
 
+    /// FR-14.5: the root theme record. Written once per rebuild, never per frame.
+    pub fn set_theme(&mut self, theme: crate::schema::Theme) {
+        self.write(Mutation::SetTheme(theme));
+    }
+
     pub fn set_text_node(&mut self, node_id: u32, text: &str, selection: Option<crate::Selection>) {
         self.write(Mutation::SetText {
             node_id,
