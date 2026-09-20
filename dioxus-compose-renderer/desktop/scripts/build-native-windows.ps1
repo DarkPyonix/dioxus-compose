@@ -178,8 +178,16 @@ try {
     # Pointing at the wrapper by full path is not enough: it found no project and said so.
     Push-Location $ProjectDir
     try {
-        Invoke-Native { & $KotlinWrapper run -m desktop --no-compose-hot-reload `
-            "--jvm-args=-XshowSettings:properties" 2>&1 | Tee-Object -FilePath $JvmLog }
+        # The JVM prints its settings on stderr. `2>&1` turns each of those lines into an
+        # ErrorRecord, and Tee-Object writes objects through PowerShell's formatter, which
+        # is not the text the JVM emitted: the classpath lines came out unparseable. Force
+        # every record back to its own string and write the file directly.
+        $probe = Invoke-Native {
+            & $KotlinWrapper run -m desktop --no-compose-hot-reload `
+                "--jvm-args=-XshowSettings:properties" 2>&1
+        } | ForEach-Object { $_.ToString() }
+        Set-Content -LiteralPath $JvmLog -Value $probe -Encoding UTF8
+        $probe | Write-Host
     } finally {
         Pop-Location
     }
@@ -213,7 +221,16 @@ foreach ($line in Get-Content -LiteralPath $JvmLog) {
 }
 $Classpath = $ClasspathEntries -join [IO.Path]::PathSeparator
 if ([string]::IsNullOrWhiteSpace($Classpath)) {
-    Fail "could not read java.class.path from $JvmLog"
+    # Show what was actually captured. Reading this from a log the build then deletes, on
+    # a machine nobody has, is how the previous two failures here cost a round trip each.
+    [Console]::Error.WriteLine("--- first 40 lines of $JvmLog ---")
+    Get-Content -LiteralPath $JvmLog -TotalCount 40 |
+        ForEach-Object { [Console]::Error.WriteLine($_) }
+    [Console]::Error.WriteLine("--- end ---")
+    Fail "could not read java.class.path from $JvmLog" @(
+        "The JVM prints its settings on stderr, so the capture has to keep them as text.",
+        "A line should read '    java.class.path = <first entry>' with the rest indented."
+    )
 }
 Set-Content -LiteralPath $ClasspathFile -Value $Classpath -NoNewline
 

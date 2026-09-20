@@ -54,32 +54,56 @@ fi
 
 # --- Platform ---------------------------------------------------------------
 uname_s="$(uname -s)"
-if [[ "$uname_s" != "Darwin" ]]; then
-    warn "platform $uname_s: the renderer native-image scripts are macOS only so far."
-    warn "      Linux and Windows native builds are not scripted yet; the Rust workspace"
-    warn "      and the JVM dev shell (./kotlin run -m desktop) still work."
-fi
+case "$uname_s" in
+    Darwin) ok "platform macOS: the renderer is built and verified here" ;;
+    Linux)
+        warn "platform Linux: the renderer is scripted (desktop/scripts/build-native-linux.sh)"
+        warn "      but has not been run to a working window yet. CI builds it on each release."
+        ;;
+    *)
+        warn "platform $uname_s: no renderer build is scripted here."
+        warn "      The Rust workspace and the JVM dev shell (./kotlin run -m desktop) work."
+        ;;
+esac
 
-# --- Liberica NIK -----------------------------------------------------------
-# Same discovery order as dioxus-compose-renderer/desktop/scripts/env.sh.
+# --- The native-image toolchain ---------------------------------------------
+# Which toolchain is correct depends on the platform. macOS needs Liberica NIK Full,
+# because upstream GraalVM ships no AWT on Darwin (oracle/graal#13272) and the Compose
+# renderer cannot link without it. Everywhere else upstream GraalVM is the right one and
+# NIK is not required, so demanding it on Linux failed a setup that was in fact correct.
 graalvm_home="${GRAALVM_HOME:-}"
-if [[ -z "$graalvm_home" ]]; then
+if [[ -z "$graalvm_home" && "$uname_s" == "Darwin" ]]; then
+    # Same discovery order as dioxus-compose-renderer/desktop/scripts/env.sh.
     for candidate in "$HOME"/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home; do
         [[ -x "$candidate/bin/native-image" ]] && graalvm_home="$candidate"
     done
 fi
 
-nik_install_hint=(
-    "fix: install Liberica NIK 25 Full (Java 25, 'Full' variant, NOT the standard one):"
-    "       https://bell-sw.com/pages/downloads/native-image-kit/"
-    "     or: brew install --cask liberica-nik-full"
-    "expected location: ~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25-*"
-    "desktop/scripts/env.sh uses \$GRAALVM_HOME if set, otherwise globs that path."
-)
+if [[ "$uname_s" == "Darwin" ]]; then
+    nik_install_hint=(
+        "fix: install Liberica NIK 25 Full (Java 25, 'Full' variant, NOT the standard one):"
+        "       https://bell-sw.com/pages/downloads/native-image-kit/"
+        "     or: brew install --cask liberica-nik-full"
+        "expected location: ~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25-*"
+        "desktop/scripts/env.sh uses \$GRAALVM_HOME if set, otherwise globs that path."
+    )
+    missing_message="no Liberica NIK found (GRAALVM_HOME unset and nothing matched the default location)"
+else
+    nik_install_hint=(
+        "fix: install upstream GraalVM for JDK 25 with native-image and set GRAALVM_HOME:"
+        "       https://www.graalvm.org/downloads/"
+        "Liberica NIK is a macOS requirement only; upstream GraalVM supports AWT here."
+    )
+    missing_message="GRAALVM_HOME is not set"
+fi
 
 if [[ -z "$graalvm_home" ]]; then
-    fail "no Liberica NIK found (GRAALVM_HOME unset and nothing matched the default location)" \
-         "${nik_install_hint[@]}"
+    # Not having it is not a broken setup on a machine that only builds the Rust side,
+    # which is the whole development loop apart from the renderer itself.
+    warn "$missing_message"
+    for hint in "${nik_install_hint[@]}"; do
+        warn "      $hint"
+    done
 elif [[ ! -x "$graalvm_home/bin/native-image" ]]; then
     fail "GRAALVM_HOME=$graalvm_home has no bin/native-image" \
          "${nik_install_hint[@]}"
