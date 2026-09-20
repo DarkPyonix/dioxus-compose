@@ -93,6 +93,7 @@ const fn hash_enum_schema(mut hash: u64, schema: &[EnumVariantSchema]) -> u64 {
 
 const fn schema_hash() -> u64 {
     let mut hash = hash_bytes(0xcbf2_9ce4_8422_2325_u64, SCHEMA_DESCRIPTOR.as_bytes());
+    hash = hash_bytes(hash, crate::extensions::SCHEMA_DESCRIPTOR.as_bytes());
     hash = hash_enum_schema(hash, WIDGET_SCHEMA);
     hash = hash_enum_schema(hash, PROPERTY_SCHEMA);
     hash = hash_enum_schema(hash, KEY_SCHEMA);
@@ -163,6 +164,14 @@ const fn schema_hash() -> u64 {
 pub const SCHEMA_HASH: u64 = schema_hash();
 pub const PROTOCOL_VERSION: u16 = 1;
 
+fn wire_name_eq(input: &str, schema_name: &str) -> bool {
+    input
+        .bytes()
+        .filter(|byte| *byte != b'_')
+        .map(|byte| byte.to_ascii_lowercase())
+        .eq(schema_name.bytes().map(|byte| byte.to_ascii_lowercase()))
+}
+
 macro_rules! define_wire_enum {
     ($schema:ident, $name:ident { $($variant:ident = $tag:literal),+ $(,)? }) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -193,10 +202,20 @@ macro_rules! define_wire_enum {
                 }
             }
         }
+
+        impl $name {
+            #[allow(dead_code)]
+            pub(crate) fn from_name(value: &str) -> Result<Self, ()> {
+                $(if wire_name_eq(value, stringify!($variant)) {
+                    return Ok(Self::$variant);
+                })+
+                Err(())
+            }
+        }
     };
 }
 
-define_wire_enum!(WIDGET_SCHEMA, WidgetKind {
+crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGET_SCHEMA, WidgetKind {
     Column = 1,
     Row = 2,
     Box = 3,
@@ -743,7 +762,7 @@ pub struct SpacerProps {
     pub height: f32,
 }
 
-define_wire_enum!(PROPERTY_SCHEMA, PropertyKind {
+crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PROPERTY_SCHEMA, PropertyKind {
     Text = 1,
     Placeholder = 2,
     Enabled = 3,
