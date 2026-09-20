@@ -31,7 +31,10 @@ fn props_of(batch: &[u8], node: u32) -> Vec<(PropertyKind, PropertyValue<'static
             } if node_id == node => Some((
                 property,
                 match value {
+                    // The borrowed payloads cannot outlive the batch, and no picker
+                    // property carries one, so they compare as absent.
                     PropertyValue::String(_) => PropertyValue::None,
+                    PropertyValue::Bytes(_) => PropertyValue::None,
                     PropertyValue::None => PropertyValue::None,
                     PropertyValue::Bool(value) => PropertyValue::Bool(value),
                     PropertyValue::Integer(value) => PropertyValue::Integer(value),
