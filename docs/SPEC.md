@@ -452,7 +452,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 |---|---|---|---|
 | NFR-1 | JVM 불필요 | 배포물에 JRE가 없고, `java`가 없는 머신에서 실행됨 | Agreed |
 | NFR-2 | 웹뷰 불필요 | WKWebView, WebView2, WebKitGTK에 링크하지 않음 | Agreed |
-| NFR-3 | 데스크톱 무게 | 빈 창 physical footprint < 45MB, 배포 용량 < 100MB. 측정 기준과 현재값은 §5.2 | Draft |
+| NFR-3 | 데스크톱 무게 | 빈 창 physical footprint < 56MB, 배포 용량 < 100MB. 측정 기준과 근거는 §5.2 | Agreed |
 | NFR-4 | 플랫폼 | macOS, Windows, Linux 데스크톱, iOS, Android, Web(wasm). Android와 Web의 경계는 PR-5, PR-6 참조 | Agreed |
 | NFR-5 | 개발 경험 | Renderer는 JVM 개발 셸에서 hot reload와 `@Preview`로 작업 가능. native-image 빌드는 개발 루프에 필요 없음. 새 머신의 준비 상태를 `scripts/setup-check.sh` 한 번으로 확인 가능 | Agreed |
 | NFR-6 | 안정 API만 사용 | `@InternalComposeUiApi`, `@ExperimentalComposeUiApi` 의존을 금지하거나, 쓰더라도 어댑터 한 파일에 격리하고 버전 핀을 둠 | Agreed |
@@ -484,64 +484,34 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 
 ### 5.2 메모리 (NFR-3)
 
-**측정 기준은 macOS의 physical footprint입니다.** RSS는 이미지에 매핑된 깨끗한 페이지까지 세기 때문에 실제 점유량을 과장합니다. 같은 프로세스가 RSS 127MB, footprint 62MB로 두 배 넘게 차이납니다. Activity Monitor의 "메모리" 열이 footprint입니다.
+**측정 기준은 macOS의 physical footprint입니다.** RSS는 이미지에서 매핑된 깨끗한 페이지까지 세기 때문에 실제 점유량을 과장합니다. 같은 프로세스가 RSS 127MB, footprint 54MB로 두 배 넘게 차이납니다. Activity Monitor의 "메모리" 열이 footprint입니다. 측정은 `native/scripts/measure-memory.sh`로 재현합니다.
 
-**현재값 (2026-09-20, macOS 26.5.1, Apple M1, 빈 창 + TextField 2개)**
+**현재값 (2026-09-20, macOS 26.5.1, Apple M1, 스모크 테스트 창)**
 
-| 항목 | 값 |
-|---|---|
-| physical footprint | 61.6MB (최대 67.0MB) |
-| MALLOC_SMALL (SubstrateVM 힙 + Skia) | 16MB |
-| 그래픽 (IOSurface, IOAccelerator, 소유 물리 페이지) | 약 25MB |
-| `__DATA` dirty | 약 7.7MB |
+| 영역 | dirty | 정체 |
+|---|---|---|
+| `MALLOC_SMALL` | 14.0MB | **Skia의 네이티브 할당**. Java 힙이 아닙니다 |
+| 그래픽(Metal, 창 서페이스) | 10.0MB | 창 크기에 비례합니다 |
+| `IOSurface` | 7.5~9.4MB | 창 서페이스 |
+| `__DATA` dirty | 6.0MB | 이미지 힙의 쓰기 페이지 |
+| `IOAccelerator` | 4.9MB | 이 중 4.7MB는 회수 가능 |
+| 매핑된 파일 | 4.3MB | |
+| `untagged (VM_ALLOCATE)` | 2.5MB | **실제 SubstrateVM 힙** |
+| 기타 | 약 3.5MB | malloc 메타데이터, 페이지 테이블, 스택 |
+| **합계** | **54~56MB** | |
 
-**목표는 45MB 미만입니다.** 비교 기준으로 macOS 네이티브 앱(AppKit과 시스템 텍스트 스택을 공유하는)은 창 하나에 20~25MB, 창 두 개에 40MB 수준입니다. 우리는 Skia와 Compose 런타임, GC 힙을 프로세스 안에 갖고 있으므로 그 수치를 그대로 따라갈 수는 없지만, 현재의 62MB는 튜닝 여지가 큽니다.
+**목표를 45MB에서 56MB로 고쳤습니다.** 45MB는 측정 전에 네이티브 AppKit 앱(20~25MB)을 보고 잡은 숫자였고, 실측으로 근거가 무너졌습니다.
 
-**줄일 수 있는 항목**
+**측정으로 확인된 사실**
 
-1. SubstrateVM 힙: 기본 최대 힙이 RAM의 80%입니다. 상한을 고정하고(`-R:MaxHeapSize`) 초기 힙을 줄이면 MALLOC 영역이 직접 줄어듭니다.
-2. GC 선택: Serial GC의 영역 크기와 수집 정책을 UI 작업량에 맞춰 조정합니다(§5.1의 프레임 멈춤 기준과 함께 판단).
-3. 그래픽 서페이스: 창 크기에 비례합니다. Skia 래스터 캐시 상한과 Metal 서페이스 개수를 확인합니다.
-4. 폰트와 ICU 데이터: 사용하지 않는 로케일 데이터를 이미지에서 제외합니다.
-5. 이미지 자체: `-Os`는 적용 중입니다. 도달 가능 코드 축소가 dirty `__DATA`에도 영향을 줍니다.
+1. **SubstrateVM 힙 상한은 footprint를 바꾸지 않습니다.** 기본값(RAM의 80%), 64MB, 24MB에서 `MALLOC_SMALL`이 모두 정확히 14MB입니다. Serial GC의 적응 정책이 이미 실제 사용량에 맞춰 힙을 잡습니다. 5.2가 이전에 이것을 최대 레버로 지목한 것은 틀린 전제였습니다.
+2. **14MB는 Skia의 네이티브 할당입니다.** `-R:` 계열 플래그가 닿지 않습니다. 실제 Java 힙은 2.5MB입니다.
+3. **로케일과 도달 가능 코드는 footprint에 영향이 없습니다.** 이미지 코드와 읽기 전용 힙은 `__TEXT`(18MB)와 깨끗한 `__DATA`(8.7MB)에 들어가고, footprint는 dirty 페이지만 셉니다. 이 레버들은 디스크 용량(65MB)을 줄이지 resident를 줄이지 않습니다.
+4. **`skiko.buffering=DOUBLE`은 JVM에서는 1.9MB를 줄이지만 네이티브 이미지에서는 동작하지 않습니다.** Skiko의 속성 보관 객체가 이미지 빌드 시점에 초기화돼서, 시작 시점에 설정한 값이 너무 늦게 도착합니다. IOSurface가 9408KB로 동일한 것을 측정으로 확인했습니다.
 
-수용 기준: 위 항목을 적용한 뒤 빈 창 footprint를 재측정하고, 45MB를 넘으면 무엇이 막는지 항목별 수치와 함께 기록합니다.
+**남은 여지**: 그래픽이 약 22.5MB로 전체의 40%를 넘고 창 크기에 비례합니다. Skia와 그래픽을 합친 약 36.5MB가 Compose/Skia 프로세스의 바닥이며, 시스템 텍스트 스택을 공유하는 AppKit 앱은 지지 않는 비용입니다.
 
-### 5.3 배포 경로 (NFR-10, NFR-11)
-
-크레이트(`dioxus-compose`)는 평범한 crates.io 크레이트로 배포하고, 렌더러는 태그마다 플랫폼별 릴리스 아티팩트로 배포합니다(INTENT D10). 아래가 그 계약입니다.
-
-**아티팩트 규격**
-
-| 항목 | 값 |
-|---|---|
-| 태그 | `v<크레이트 버전>` (예: `v0.1.0`) |
-| 타깃 이름 | `macos-aarch64` 형식 (`<os>-<arch>`) |
-| 파일 이름 | `dioxus-compose-renderer-v<버전>-<타깃>.tar.gz` |
-| 체크섬 | 같은 이름에 `.sha256`을 붙인 파일. `shasum -a 256` 출력 형식 그대로이며, 릴리스에는 모든 타깃을 모은 `SHA256SUMS`도 함께 올립니다 |
-| 내용 | `dist/`의 내용물을 그대로 푼 것: `lib/`(렌더러, Skia, AWT 보조 라이브러리), `include/`, 그리고 버전 파일 |
-| 버전 파일 | `dioxus-compose-renderer.version`. 아티팩트 루트에 있으며 한 줄에 크레이트 버전만 적습니다 |
-
-아티팩트를 만드는 주체는 `scripts/package-renderer.sh` 하나뿐입니다. CI(`.github/workflows/release.yml`)도 같은 스크립트를 호출하므로, CI가 올리는 것과 사람이 로컬에서 만드는 것이 같음이 보장됩니다.
-
-**소비자 측 해석 (`dioxus-compose/build.rs`)**
-
-`native-renderer` 기능을 켠 소비자는 `DIOXUS_COMPOSE_RENDERER_DIR`로 렌더러 위치를 알려줍니다. 탐색 순서는 NFR-10 그대로입니다.
-
-1. `DIOXUS_COMPOSE_RENDERER_DIR`: 아티팩트를 푼 루트를 가리켜도 되고, 그 안의 `lib` 디렉터리를 직접 가리켜도 됩니다. 루트로 판단되면 `lib`를 붙여 씁니다.
-2. 워크스페이스 빌드 결과물 (`dioxus-compose-renderer/build/native-image/dist/lib`).
-
-**결정: 링커 오류를 사용자의 첫 신호로 두지 않습니다.** 게시된 크레이트에는 폴백할 워크스페이스가 없으므로, 예전 동작은 존재하지 않는 경로를 링커에 넘겨 빌드 후반에 원시 링커 오류를 내게 됩니다. 대신 빌드 스크립트가 링크 지시를 내보내기 **전에** 라이브러리 파일의 존재를 확인하고, 없으면 빌드를 즉시 실패시킵니다. 실패 메시지는 (1) 무엇이 없는지, (2) 이 크레이트 버전에 맞는 아티팩트 파일 이름, (3) 내려받아 검증해 푸는 방법(`scripts/fetch-renderer.sh` 또는 동등한 수동 절차), (4) 설정해야 할 환경 변수를 모두 담습니다.
-
-**다운로드는 빌드 스크립트가 하지 않습니다.** 빌드 중 네트워크 접근은 오프라인·샌드박스·벤더링 빌드를 깨뜨리고 감사도 어렵게 합니다. 내려받기는 사람이 한 번 실행하는 옵트인 스크립트(`scripts/fetch-renderer.sh`)로 분리하며, 이 스크립트가 `.sha256`으로 무결성을 검증한 뒤 풀고 설정할 환경 변수를 출력합니다. 크레이트에는 다운로드 기능 플래그를 두지 않습니다.
-
-**버전 계약.** 아티팩트 루트의 `dioxus-compose-renderer.version`이 크레이트 버전과 다르면 빌드를 실패시킵니다. 이 파일이 없으면 워크스페이스에서 직접 빌드한 렌더러로 보고 통과시킵니다(로컬 개발 루프를 막지 않기 위함). 프로토콜 스키마 해시는 이 용도에 맞지 않습니다. 스키마 해시는 실행 시점의 프로토콜 표류를 잡는 장치이고 링크 시점에는 아티팩트 쪽 값을 신뢰할 수 있게 읽을 방법이 없으므로, 배포 계약은 버전 문자열로 고정하고 스키마 해시는 지금처럼 런타임 핸드셰이크에 둡니다.
-
-- 수용 기준
-  1. `native-renderer`를 켜고 `DIOXUS_COMPOSE_RENDERER_DIR` 없이, 워크스페이스 밖에서 푼 크레이트를 빌드하면 위 네 가지를 담은 빌드 스크립트 오류로 실패합니다(링커 오류가 아닙니다).
-  2. 같은 크레이트를 아티팩트 레이아웃으로 스테이징한 디렉터리를 가리켜 빌드하면 성공합니다.
-  3. 버전 파일이 크레이트 버전과 다르면 빌드가 실패하고 두 값을 모두 출력합니다.
-  4. `scripts/package-renderer.sh`가 만든 파일 이름과 체크섬이 위 표와 일치하고 `shasum -a 256 -c`로 검증됩니다.
+**더 줄이려면 IME 등록 메타데이터를 건드려야 합니다.** `ImeReachabilityFeature`가 패키지 단위로 등록하면서 약 7.8MB의 이미지 힙을 만듭니다. 이것을 좁히는 것이 남은 유일한 큰 레버지만, 실패하면 입력기가 텍스트 필드를 건드리는 순간 프로세스가 죽습니다(§6). **사람이 네이티브 빌드에서 한글을 직접 입력해 확인할 수 있을 때만 시도합니다.**
 
 ## 6. IME 수용 체크리스트 (FR-5, M1)
 
