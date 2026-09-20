@@ -82,11 +82,11 @@ mkdir -p "$OUT_DIR" "$LOG_DIR"
 # its classpath too (build-native.sh reads java.class.path from the JVM run): the linking
 # step must be handed exactly what the compile used, not a list maintained by hand.
 build_log="$LOG_DIR/$amper_platform-build.log"
-echo "==> kotlin build -m ios -m cabi ($amper_platform)"
+echo "==> kotlin build -m ios -m staticlib ($amper_platform)"
 # The compile has to actually run: an up-to-date task logs no arguments, and its arguments
 # are where the resolved klib list comes from.
 rm -rf "$PROJECT_DIR/build/tasks/_ios_compile${amper_platform}Debug"
-(cd "$PROJECT_DIR" && "$KOTLIN_WRAPPER" --log-level=debug build -m ios -m cabi) >"$build_log" 2>&1 ||
+(cd "$PROJECT_DIR" && "$KOTLIN_WRAPPER" --log-level=debug build -m ios -m staticlib) >"$build_log" 2>&1 ||
     { cat "$build_log" >&2; die "the ios module did not compile" "Full log: $build_log"; }
 
 klib="$PROJECT_DIR/build/tasks/_ios_compile${amper_platform}Debug/ios.klib"
@@ -96,7 +96,7 @@ klib="$PROJECT_DIR/build/tasks/_ios_compile${amper_platform}Debug/ios.klib"
 
 # The compiler arguments are logged as one block per invocation, and the block names the
 # target it belongs to, so the right block is the one containing -target=<this target>. The
-# module's own klib is added below by path, so project outputs are dropped here: the cabi
+# module's own klib is added below by path, so project outputs are dropped here: the staticlib
 # block names the renderer klib under a task directory that differs in case from the one on
 # disk, and two paths with one unique_name is an error rather than a duplicate.
 libraries_file="$LOG_DIR/$amper_platform-libraries.txt"
@@ -127,7 +127,7 @@ done
     "fix: cd $PROJECT_DIR && ./kotlin build -m ios"
 
 output="$OUT_DIR/$LIBRARY_NAME"
-entry_source="$PROJECT_DIR/cabi/src/IosEntryPoints.kt"
+entry_source="$PROJECT_DIR/staticlib/src/IosEntryPoints.kt"
 [[ -f "$entry_source" ]] || die "missing $entry_source"
 
 echo "==> konanc -produce static ($konan_target, $build_type)"
@@ -167,7 +167,7 @@ nm -g "$archive" >"$symbols_file" 2>/dev/null || true
 for symbol in dioxus_compose_renderer_run dioxus_compose_renderer_request_frame; do
     grep -q " T _$symbol\$" "$symbols_file" ||
         die "$archive does not export $symbol" \
-            "Check the @CName annotations in cabi/src/IosEntryPoints.kt."
+            "Check the @CName annotations in staticlib/src/IosEntryPoints.kt."
 done
 
 echo

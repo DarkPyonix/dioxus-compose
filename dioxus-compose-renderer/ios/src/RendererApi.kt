@@ -4,7 +4,7 @@ import org.thisisthepy.dioxus.compose.renderer.IosHostConnection
 import platform.Foundation.NSThread
 
 /**
- * What the C entry points call (SPEC PR-2). See `cabi/src/IosEntryPoints.kt` for the
+ * What the C entry points call (SPEC PR-2). See `staticlib/src/IosEntryPoints.kt` for the
  * symbols themselves and for why they live in a module of their own.
  *
  * The status codes are the desktop shim's codes (`native/c/renderer_entry.c`), so a Host
