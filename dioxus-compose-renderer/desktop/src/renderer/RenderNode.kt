@@ -19,10 +19,18 @@ import androidx.compose.ui.platform.testTag
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.design.ContainerRole
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostContainerColumn
+import dioxus.compose.foundation.HostDialog
 import dioxus.compose.foundation.HostLazyColumn
+import dioxus.compose.foundation.HostLazyRow
+import dioxus.compose.foundation.HostMenu
+import dioxus.compose.foundation.HostTabs
+import dioxus.compose.foundation.HostTooltip
+import dioxus.compose.foundation.HostTopAppBar
 import dioxus.compose.foundation.HostTextField
 import dioxus.compose.foundation.hostKeyEvents
 import dioxus.compose.runtime.EventDispatcher
@@ -127,6 +135,22 @@ fun RenderNode(
             verticalArrangement = node.verticalArrangement(theme),
             horizontalAlignment = node.horizontalAlignment(),
         ) { Children(node, table, dispatcher) }
+
+        // The containers, the overlays and the tab strip carry no appearance of their own:
+        // each one names the kind of container it is and the design system decides what
+        // that looks like.
+        WidgetKind.Card ->
+            HostContainerColumn(ContainerRole.Card, node, modifier, table, dispatcher, theme)
+
+        WidgetKind.Surface ->
+            HostContainerColumn(ContainerRole.Surface, node, modifier, table, dispatcher, theme)
+
+        WidgetKind.TopAppBar -> HostTopAppBar(node, modifier, table, dispatcher, theme)
+        WidgetKind.Dialog -> HostDialog(node, modifier, table, dispatcher, theme)
+        WidgetKind.Menu -> HostMenu(node, modifier, table, dispatcher, theme)
+        WidgetKind.Tabs -> HostTabs(node, modifier, table, dispatcher, theme)
+        WidgetKind.Tooltip -> HostTooltip(node, modifier, table, dispatcher, theme)
+        WidgetKind.LazyRow -> HostLazyRow(node, modifier, table, dispatcher)
     }
 }
 

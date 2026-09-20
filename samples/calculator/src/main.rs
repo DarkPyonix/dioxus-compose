@@ -156,6 +156,18 @@ mod tests {
         assert!(!calculator.display().is_empty());
     }
 
+    /// The whole declared tree, checked against the encoder. A widget or an attribute the
+    /// schema cannot carry fails the frame rather than the one node, so this is the test
+    /// that would have caught it.
+    #[test]
+    fn the_declared_tree_encodes_without_a_protocol_error() {
+        let mut dom = VirtualDom::new(app);
+        let mut renderer = dioxus_compose::renderer::ComposeRenderer::new();
+        renderer.begin_frame();
+        dom.rebuild(&mut renderer);
+        renderer.finish_frame().expect("the calculator tree encodes");
+    }
+
     #[test]
     fn display_is_formatted_not_raw() {
         assert_eq!(engine::format_number(1.0 / 3.0), "0.333333333333");

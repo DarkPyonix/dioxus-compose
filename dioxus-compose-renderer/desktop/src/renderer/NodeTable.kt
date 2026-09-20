@@ -260,12 +260,16 @@ class NodeTable {
                 PropertyKind.OnFocusLost,
                 PropertyKind.OnKeyDown,
                 PropertyKind.OnRangeRequested,
+                PropertyKind.OnDismiss,
                 -> true
 
+                // A Tooltip's text is the explanation it shows, and its description in the
+                // accessibility tree.
                 PropertyKind.Text ->
                     widget == WidgetKind.Text ||
                         widget == WidgetKind.Button ||
-                        widget == WidgetKind.TextField
+                        widget == WidgetKind.TextField ||
+                        widget == WidgetKind.Tooltip
 
                 // Note: SpacerProps has width and height in the Rust schema, but there are
                 // no matching PropertyKind variants, so a Spacer can only be sized with
@@ -275,7 +279,8 @@ class NodeTable {
                 PropertyKind.Enabled -> widget != WidgetKind.Spacer
 
                 // Windowing properties belong to the lazy container alone.
-                PropertyKind.ItemCount -> widget == WidgetKind.LazyColumn
+                PropertyKind.ItemCount ->
+                    widget == WidgetKind.LazyColumn || widget == WidgetKind.LazyRow
                 PropertyKind.ItemKey -> true
 
                 // Design primitives, resolved against the design system's token table when
@@ -301,9 +306,15 @@ class NodeTable {
                     widget == WidgetKind.Row ||
                     widget == WidgetKind.Box ||
                     widget == WidgetKind.LazyColumn ||
+                    widget == WidgetKind.LazyRow ||
                     widget == WidgetKind.ScrollColumn
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
+
+                // The overlays seed the Renderer's own open state; the tab strip seeds its
+                // own selection. Neither is read back every frame.
+                PropertyKind.Open -> widget == WidgetKind.Dialog || widget == WidgetKind.Menu
+                PropertyKind.SelectedIndex -> widget == WidgetKind.Tabs
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.

@@ -158,6 +158,16 @@ interface ComponentRules {
         theme: ResolvedTheme,
     ): ButtonStyle
 
+    /**
+     * How a container or overlay looks. The widget says which kind of container it is and
+     * nothing else: the background, the corner, the resting height, the scrim behind a
+     * modal and the hairline under a bar are all decided here.
+     */
+    fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle
+
+    /** How a tab strip and its selection indicator look. */
+    fun tabs(theme: ResolvedTheme): TabsStyle
+
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
 }
@@ -167,6 +177,59 @@ data class Motion(
     val pressMillis: Int,
     val releaseMillis: Int,
     val easing: androidx.compose.animation.core.Easing,
+    /** How long a pointer rests on something before its explanation appears. */
+    val tooltipDelayMillis: Int = 500,
+)
+
+/**
+ * The kinds of container the core vocabulary has. A widget emits the role; which colour,
+ * corner and height that role means belongs to the design system.
+ */
+enum class ContainerRole { Card, Surface, TopAppBar, Dialog, Menu, Tooltip }
+
+/**
+ * How one container role is drawn.
+ *
+ * `scrim` is what covers what is behind a modal, and is transparent for the roles that
+ * cover nothing. `separator` is the hairline a bar draws under itself, null where the
+ * system draws none.
+ */
+data class ContainerStyle(
+    val container: Color,
+    val content: Color,
+    val shape: Shape,
+    val elevation: Dp,
+    val borderWidth: Dp,
+    val borderColor: Color,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    val separator: Color?,
+    val scrim: Color,
+    val typeRole: TypeRole,
+)
+
+/**
+ * How a tab strip is drawn.
+ *
+ * The three systems disagree about what marks the selection: Material underlines the tab,
+ * Cupertino fills the selected segment, Fluent draws a short bar under the label. All three
+ * are expressed here, so the widget only has to know which tab is selected.
+ */
+data class TabsStyle(
+    val container: Color,
+    val shape: Shape,
+    val selectedContent: Color,
+    val unselectedContent: Color,
+    val selectedContainer: Color,
+    val selectedShape: Shape,
+    val indicator: Color,
+    val indicatorHeight: Dp,
+    val indicatorShape: Shape,
+    /** True where the mark spans the whole tab, false where it is a short centred bar. */
+    val indicatorFillsTab: Boolean,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    val typeRole: TypeRole,
 )
 
 /**

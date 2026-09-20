@@ -99,12 +99,93 @@ internal object Material3Rules : ComponentRules {
         lerp(container, content.copy(alpha = 1f), STATE_LAYER_ALPHA)
             .copy(alpha = if (container.alpha == 0f) STATE_LAYER_ALPHA else container.alpha)
 
+    /**
+     * Material's containers: the card is a tonal surface with a large corner, the dialog
+     * and the menu rise above the screen, and the tooltip inverts the surface so it reads
+     * as an overlay rather than part of the page.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Medium),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        return when (role) {
+            ContainerRole.Card -> base.copy(
+                container = theme.color(ColorRole.SurfaceVariant),
+                content = theme.color(ColorRole.OnSurfaceVariant),
+                shape = theme.shape(ShapeRole.Large),
+                elevation = 1.dp,
+            )
+
+            ContainerRole.Surface -> base
+
+            ContainerRole.TopAppBar -> base.copy(
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Sm),
+                typeRole = TypeRole.Title,
+            )
+
+            ContainerRole.Dialog -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                elevation = 6.dp,
+                horizontalPadding = theme.space(SpaceRole.Lg),
+                verticalPadding = theme.space(SpaceRole.Lg),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            ContainerRole.Menu -> base.copy(
+                shape = theme.shape(ShapeRole.ExtraSmall),
+                elevation = 3.dp,
+                horizontalPadding = 0.dp,
+                verticalPadding = theme.space(SpaceRole.Xs),
+            )
+
+            // The inverse surface: light text on a dark chip, and the reverse in dark mode.
+            ContainerRole.Tooltip -> base.copy(
+                container = theme.color(ColorRole.OnSurface),
+                content = theme.color(ColorRole.Surface),
+                shape = theme.shape(ShapeRole.ExtraSmall),
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                typeRole = TypeRole.Caption,
+            )
+        }
+    }
+
+    /** A Material tab row: the selected tab is underlined across its full width. */
+    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
+        container = theme.color(ColorRole.Surface),
+        shape = theme.shape(ShapeRole.None),
+        selectedContent = theme.color(ColorRole.Primary),
+        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+        selectedContainer = Color.Transparent,
+        selectedShape = theme.shape(ShapeRole.None),
+        indicator = theme.color(ColorRole.Primary),
+        indicatorHeight = 3.dp,
+        indicatorShape = theme.shape(ShapeRole.ExtraSmall),
+        indicatorFillsTab = true,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        typeRole = TypeRole.Label,
+    )
+
     override val motion: Motion = Motion(
         pressMillis = 100,
         releaseMillis = 200,
         easing = FastOutSlowInEasing,
+        tooltipDelayMillis = 500,
     )
 
+    private const val SCRIM_ALPHA = 0.32f
     private const val STATE_LAYER_ALPHA = 0.12f
     private const val TONE_FULL_DP = 24f
     private const val MAX_TONE = 0.14f
@@ -178,12 +259,96 @@ internal object CupertinoRules : ComponentRules {
         }
     }
 
+    /**
+     * HIG containers: grouped content sits on a slightly different surface rather than
+     * casting a shadow, bars are separated by a hairline, and only what floats over the
+     * screen is raised at all.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Medium),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        return when (role) {
+            // A grouped box: no shadow, just a different surface and a generous corner.
+            ContainerRole.Card -> base.copy(
+                container = theme.color(ColorRole.SurfaceVariant),
+                shape = theme.shape(ShapeRole.Large),
+            )
+
+            ContainerRole.Surface -> base
+
+            // A navigation bar is flush with the content and divided by a hairline.
+            ContainerRole.TopAppBar -> base.copy(
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Sm),
+                separator = theme.color(ColorRole.OutlineVariant),
+                typeRole = TypeRole.BodyStrong,
+            )
+
+            // An alert: centred, heavily rounded, over a dimmed screen.
+            ContainerRole.Dialog -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                horizontalPadding = theme.space(SpaceRole.Lg),
+                verticalPadding = theme.space(SpaceRole.Lg),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            ContainerRole.Menu -> base.copy(
+                elevation = 2.dp,
+                horizontalPadding = 0.dp,
+                verticalPadding = theme.space(SpaceRole.Xs),
+                borderWidth = 1.dp,
+                borderColor = theme.color(ColorRole.OutlineVariant),
+            )
+
+            // A help tag: a light chip with a hairline, not an inverted one.
+            ContainerRole.Tooltip -> base.copy(
+                shape = theme.shape(ShapeRole.Small),
+                borderWidth = 1.dp,
+                borderColor = theme.color(ColorRole.OutlineVariant),
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                typeRole = TypeRole.Caption,
+            )
+        }
+    }
+
+    /** A segmented control: the selection is a filled segment inside a track. */
+    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        shape = theme.shape(ShapeRole.Medium),
+        selectedContent = theme.color(ColorRole.OnSurface),
+        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+        selectedContainer = theme.color(ColorRole.Surface),
+        selectedShape = theme.shape(ShapeRole.Small),
+        indicator = Color.Transparent,
+        indicatorHeight = 0.dp,
+        indicatorShape = theme.shape(ShapeRole.None),
+        indicatorFillsTab = true,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Xs),
+        typeRole = TypeRole.Body,
+    )
+
     override val motion: Motion = Motion(
         pressMillis = 80,
         releaseMillis = 180,
         easing = LinearOutSlowInEasing,
+        // A help tag waits until the pointer has clearly stopped.
+        tooltipDelayMillis = 1000,
     )
 
+    private const val SCRIM_ALPHA = 0.4f
     private const val PRESSED_ALPHA = 0.6f
     private const val AMBIENT_ALPHA = 0.08f
     private const val SPOT_ALPHA = 0.12f
@@ -260,12 +425,99 @@ internal object FluentRules : ComponentRules {
         }
     }
 
+    /**
+     * Fluent containers: a layer is a surface with a hairline stroke, and anything that
+     * floats over the page carries both the stroke and a layer shadow.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val stroke = theme.color(ColorRole.OutlineVariant)
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Medium),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        return when (role) {
+            ContainerRole.Card -> base.copy(
+                elevation = 2.dp,
+                borderWidth = 1.dp,
+                borderColor = stroke,
+            )
+
+            ContainerRole.Surface -> base
+
+            // A command bar: flat, tight, and ruled off from the content below it.
+            ContainerRole.TopAppBar -> base.copy(
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                separator = stroke,
+                typeRole = TypeRole.BodyStrong,
+            )
+
+            ContainerRole.Dialog -> base.copy(
+                elevation = 8.dp,
+                borderWidth = 1.dp,
+                borderColor = stroke,
+                horizontalPadding = theme.space(SpaceRole.Lg),
+                verticalPadding = theme.space(SpaceRole.Lg),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            // A flyout.
+            ContainerRole.Menu -> base.copy(
+                elevation = 8.dp,
+                borderWidth = 1.dp,
+                borderColor = stroke,
+                horizontalPadding = 0.dp,
+                verticalPadding = theme.space(SpaceRole.Xs),
+            )
+
+            ContainerRole.Tooltip -> base.copy(
+                container = theme.color(ColorRole.SurfaceVariant),
+                content = theme.color(ColorRole.OnSurfaceVariant),
+                shape = theme.shape(ShapeRole.Small),
+                borderWidth = 1.dp,
+                borderColor = stroke,
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                elevation = 4.dp,
+                typeRole = TypeRole.Caption,
+            )
+        }
+    }
+
+    /** A pivot: a short rounded bar centred under the selected header. */
+    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
+        container = theme.color(ColorRole.Surface),
+        shape = theme.shape(ShapeRole.None),
+        selectedContent = theme.color(ColorRole.OnSurface),
+        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+        selectedContainer = Color.Transparent,
+        selectedShape = theme.shape(ShapeRole.None),
+        indicator = theme.color(ColorRole.Primary),
+        indicatorHeight = 3.dp,
+        indicatorShape = theme.shape(ShapeRole.Full),
+        indicatorFillsTab = false,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        typeRole = TypeRole.Subtitle,
+    )
+
     override val motion: Motion = Motion(
         // Fluent's "ultra fast" duration: the press reads as instant.
         pressMillis = 50,
         releaseMillis = 100,
         easing = LinearEasing,
+        tooltipDelayMillis = 300,
     )
 
+    private const val SCRIM_ALPHA = 0.3f
     private const val PRESS_SHADE = 0.12f
 }

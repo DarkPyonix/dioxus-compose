@@ -62,7 +62,8 @@ val LocalGlassDepth: ProvidableCompositionLocal<Int> = compositionLocalOf { 0 }
  * colour or deciding whether a divider is needed.
  */
 @Composable
-fun isGlassDrawn(): Boolean = !LocalReduceTransparency.current && LocalBlurAvailable.current
+fun isGlassDrawn(): Boolean =
+    drawsAsGlass(LocalReduceTransparency.current, LocalBlurAvailable.current)
 
 /**
  * Paints [material] into the background of this element, clipped to [shape].
@@ -94,9 +95,12 @@ fun Modifier.glassSurface(
     is SurfaceMaterial.Glass -> {
         val depth = LocalGlassDepth.current
         val resolved = material.atDepth(depth)
-        val fill =
-            if (isGlassDrawn()) resolved.tint.copy(alpha = resolved.tintAlpha)
-            else resolved.fallback
+        val fill = glassFill(
+            material = material,
+            reduceTransparency = LocalReduceTransparency.current,
+            blurAvailable = LocalBlurAvailable.current,
+            depth = depth,
+        )
         this
             .background(fill, shape)
             .border(borderWidth, litEdge(resolved.highlight, resolved.shade), shape)
