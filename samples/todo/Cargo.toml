@@ -14,3 +14,10 @@ dioxus-compose = { path = "../../dioxus-compose" }
 dioxus-core.workspace = true
 dioxus-signals.workspace = true
 dioxus-hooks.workspace = true
+
+# The default bin harness does not understand Criterion's flags, and a workspace
+# bench run passes them to every target. A sample has nothing to benchmark.
+[[bin]]
+name = "sample-todo"
+path = "src/main.rs"
+bench = false

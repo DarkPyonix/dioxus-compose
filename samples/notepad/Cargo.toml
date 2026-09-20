@@ -17,3 +17,10 @@ dioxus-hooks.workspace = true
 # A worker thread has to hand its result back to the UI thread, and the library offers no
 # channel for that, so the sample brings its own.
 futures-channel = "0.3"
+
+# The default bin harness does not understand Criterion's flags, and a workspace
+# bench run passes them to every target. A sample has nothing to benchmark.
+[[bin]]
+name = "sample-notepad"
+path = "src/main.rs"
+bench = false
