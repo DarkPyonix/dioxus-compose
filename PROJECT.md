@@ -59,6 +59,7 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 | M5 | iOS | 같은 C ABI를 Kotlin/Native `-produce static`으로 구현 | NFR-4 |
 | M6 | Android | SPEC PR-5 수용 기준 통과 | PR-5 |
 | M7 | Web | wasm 직결 검증(Q3) 후 PR-6 구현 | PR-6 |
+| M8 | 배포 | 렌더러 아티팩트 배포 파이프라인과 체크섬 검증 | NFR-11 |
 
 **M1이 프로젝트의 생사를 가릅니다.** 여기서 한글 조합이 정상이면 나머지는 분량 문제이고, 실패하면 INTENT를 다시 검토합니다.
 
