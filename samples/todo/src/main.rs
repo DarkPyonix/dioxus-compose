@@ -18,8 +18,15 @@ use store::{Filter, Task};
 const BULK_COUNT: usize = 5_000;
 
 fn app() -> Element {
-    let mut tasks = use_signal(|| store::load());
-    let mut next_id = use_signal(|| tasks.read().iter().map(|task| task.id + 1).max().unwrap_or(1));
+    let mut tasks = use_signal(store::load);
+    let mut next_id = use_signal(|| {
+        tasks
+            .read()
+            .iter()
+            .map(|task| task.id + 1)
+            .max()
+            .unwrap_or(1)
+    });
     let mut filter = use_signal(|| Filter::All);
 
     // What the top field currently holds. The field is uncontrolled, so this is a copy the
@@ -257,88 +264,293 @@ fn main() {
 mod tests {
     use super::*;
     use dioxus_compose::Host;
+    use dioxus_compose::protocol::{
+        HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
+    };
+    use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+    use std::collections::HashMap;
+    use std::sync::OnceLock;
 
-    use dioxus_compose::protocol::{Mutation, decode_batch, encode_event};
-    use dioxus_compose::{EventPayload, PropertyKind, WidgetKind};
-    use dioxus_compose::protocol::HostEvent;
+    /// A saved list large enough that a window of twenty is a small fraction of it.
+    const SAVED_TASKS: usize = 5_000;
+    const WINDOW: usize = 20;
+
+    /// Point the store at a generated file, once for the whole test binary. Tests run
+    /// concurrently in one process, so the variable is written before any of them reads it
+    /// rather than once per test.
+    fn saved_list() {
+        static PREPARED: OnceLock<()> = OnceLock::new();
+        PREPARED.get_or_init(|| {
+            let path = std::env::temp_dir().join("sample-todo-window-test.tsv");
+            let saved: String = (0..SAVED_TASKS)
+                .map(|id| format!("{id}\t0\tGenerated task {id}\n"))
+                .collect();
+            std::fs::write(&path, saved).expect("the fixture list could not be written");
+            // SAFETY: written once, before this binary's tests read it through
+            // `store::load`, and nothing else in the process touches the environment.
+            unsafe { std::env::set_var("SAMPLE_TODO_FILE", &path) };
+        });
+    }
+
+    fn task_title(index: usize) -> String {
+        format!("Generated task {index}")
+    }
+
+    fn expected_titles(start: usize, count: usize) -> Vec<String> {
+        let first = start.min(SAVED_TASKS);
+        let last = (first + count).min(SAVED_TASKS);
+        let mut titles: Vec<_> = (first..last).map(task_title).collect();
+        titles.sort();
+        titles
+    }
+
+    /// Stand-in for the Compose interpreter: applies a batch to a node table so the test
+    /// can ask what is alive rather than what was mentioned. Removing a node removes its
+    /// whole subtree, as Compose does.
+    #[derive(Default)]
+    struct MockRenderer {
+        widgets: HashMap<u32, WidgetKind>,
+        texts: HashMap<u32, String>,
+        item_keys: HashMap<u32, String>,
+        parents: HashMap<u32, u32>,
+        item_count: Option<i64>,
+    }
+
+    impl MockRenderer {
+        fn apply(&mut self, batch: &[Mutation<'_>]) {
+            for mutation in batch {
+                match mutation {
+                    Mutation::Create { node_id, widget } => {
+                        self.widgets.insert(*node_id, *widget);
+                    }
+                    Mutation::Insert {
+                        parent_id, node_id, ..
+                    }
+                    | Mutation::Move {
+                        parent_id, node_id, ..
+                    } => {
+                        self.parents.insert(*node_id, *parent_id);
+                    }
+                    Mutation::Remove { node_id } => self.remove_subtree(*node_id),
+                    Mutation::SetProp {
+                        node_id,
+                        property,
+                        value,
+                    } => match (property, value) {
+                        (PropertyKind::Text, PropertyValue::String(value)) => {
+                            self.texts.insert(*node_id, (*value).to_owned());
+                        }
+                        (PropertyKind::ItemKey, PropertyValue::String(value)) => {
+                            self.item_keys.insert(*node_id, (*value).to_owned());
+                        }
+                        (PropertyKind::ItemCount, PropertyValue::Integer(value)) => {
+                            self.item_count = Some(*value);
+                        }
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+        }
+
+        fn remove_subtree(&mut self, node_id: u32) {
+            let children: Vec<_> = self
+                .parents
+                .iter()
+                .filter(|(_, parent)| **parent == node_id)
+                .map(|(child, _)| *child)
+                .collect();
+            for child in children {
+                self.remove_subtree(child);
+            }
+            self.widgets.remove(&node_id);
+            self.texts.remove(&node_id);
+            self.item_keys.remove(&node_id);
+            self.parents.remove(&node_id);
+        }
+
+        /// The titles of the tasks that currently exist as widgets. The screen's own
+        /// chrome carries text too, so a task title is recognised by its text.
+        fn live_task_titles(&self) -> Vec<String> {
+            let mut titles: Vec<_> = self
+                .texts
+                .iter()
+                .filter(|(node_id, _)| self.widgets.contains_key(node_id))
+                .map(|(_, text)| text.clone())
+                .filter(|text| text.starts_with("Generated task "))
+                .collect();
+            titles.sort();
+            titles
+        }
+
+        fn live_item_keys(&self) -> Vec<String> {
+            let mut keys: Vec<_> = self
+                .item_keys
+                .iter()
+                .filter(|(node_id, _)| self.widgets.contains_key(node_id))
+                .map(|(_, key)| key.clone())
+                .collect();
+            keys.sort();
+            keys
+        }
+
+        fn node_count(&self) -> usize {
+            self.widgets.len()
+        }
+    }
+
+    /// The real screen, driven the way the Renderer drives it.
+    struct Screen {
+        host: Host,
+        mock: MockRenderer,
+        list: u32,
+        handler: u64,
+        event: Vec<u8>,
+    }
+
+    impl Screen {
+        fn new() -> Self {
+            saved_list();
+            let mut host = Host::new(app);
+            let first = decode_batch(host.rebuild().expect("the first frame failed to encode"))
+                .expect("the first frame did not decode");
+            let mut mock = MockRenderer::default();
+            mock.apply(&first);
+            let list = first
+                .iter()
+                .find_map(|mutation| match mutation {
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::LazyColumn,
+                    } => Some(*node_id),
+                    _ => None,
+                })
+                .expect("the screen has no LazyColumn");
+            let handler = first
+                .iter()
+                .find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnRangeRequested,
+                        value: PropertyValue::Integer(id),
+                    } if *node_id == list => Some(*id as u64),
+                    _ => None,
+                })
+                .expect("the LazyColumn declared no range handler");
+            drop(first);
+            Self {
+                host,
+                mock,
+                list,
+                handler,
+                event: Vec::new(),
+            }
+        }
+
+        /// Scrolling: the Renderer asks for a window and the Host answers with a batch.
+        /// Returns how many widgets that batch created.
+        fn request_range(&mut self, start: usize, count: usize) -> usize {
+            encode_event(
+                &HostEvent {
+                    node_id: self.list,
+                    handler_id: self.handler,
+                    payload: EventPayload::RangeRequested {
+                        start: start as u32,
+                        count: count as u32,
+                    },
+                },
+                &mut self.event,
+            )
+            .expect("the range request did not encode");
+            let (batch, _) = self
+                .host
+                .dispatch_event(&self.event)
+                .expect("the range request failed");
+            let decoded = decode_batch(batch).expect("the window batch did not decode");
+            self.mock.apply(&decoded);
+            decoded
+                .iter()
+                .filter(|mutation| matches!(mutation, Mutation::Create { .. }))
+                .count()
+        }
+    }
 
     /// Every property this screen sets has to be one the wire can name. A property the
     /// schema does not have fails the whole batch rather than just itself, so a screen that
     /// builds in Rust can still be blank on screen.
     #[test]
     fn the_first_frame_encodes_without_a_protocol_error() {
+        saved_list();
         assert!(Host::new(app).rebuild().is_ok());
     }
 
-    /// A saved list of several thousand tasks must cost widgets in proportion to the window
-    /// the Renderer asked for, not to the list. This is the claim the "Add 5000" button
-    /// exists to let a person check by hand, asserted here so it cannot quietly stop being
-    /// true.
+    /// The Renderer owns the scroll position, so it owns the read-ahead buffer too. The
+    /// Host materialises the range it was asked for and no more: a Host that widened the
+    /// range would leave the Renderer unable to say where the subtree it received belongs
+    /// in the full list.
     #[test]
-    fn fr8_a_long_list_materialises_only_the_requested_window() {
-        let path = std::env::temp_dir().join("sample-todo-window-test.tsv");
-        let saved: String = (0..5_000)
-            .map(|id| format!("{id}\t0\tGenerated task {id}\n"))
-            .collect();
-        std::fs::write(&path, saved).expect("the fixture list could not be written");
-        // SAFETY: this test reads the variable through `store::load` on this same thread
-        // before anything else in the process looks at it.
-        unsafe { std::env::set_var("SAMPLE_TODO_FILE", &path) };
+    fn fr8_only_the_requested_range_is_materialised() {
+        let mut screen = Screen::new();
+        assert_eq!(screen.mock.item_count, Some(SAVED_TASKS as i64));
+        assert!(screen.mock.live_task_titles().len() < SAVED_TASKS);
 
-        let mut host = Host::new(app);
-        let first = decode_batch(host.rebuild().expect("the first frame failed to encode"))
-            .expect("the first frame did not decode");
-        let list = first
-            .iter()
-            .find_map(|mutation| match mutation {
-                Mutation::Create {
-                    node_id,
-                    widget: WidgetKind::LazyColumn,
-                } => Some(*node_id),
-                _ => None,
-            })
-            .expect("the screen has no LazyColumn");
-        let handler = first
-            .iter()
-            .find_map(|mutation| match mutation {
-                Mutation::SetProp {
-                    node_id,
-                    property: PropertyKind::OnRangeRequested,
-                    value,
-                } if *node_id == list => match value {
-                    dioxus_compose::protocol::PropertyValue::Integer(id) => Some(*id as u64),
-                    _ => None,
-                },
-                _ => None,
-            })
-            .expect("the LazyColumn declared no range handler");
-        drop(first);
+        screen.request_range(100, WINDOW);
 
-        let mut event = Vec::new();
-        encode_event(
-            &HostEvent {
-                node_id: list,
-                handler_id: handler,
-                payload: EventPayload::RangeRequested {
-                    start: 4_000,
-                    count: 20,
-                },
-            },
-            &mut event,
-        )
-        .expect("the range request did not encode");
-        let (batch, _) = host.dispatch_event(&event).expect("the range request failed");
-        let created = decode_batch(batch)
-            .expect("the window batch did not decode")
-            .iter()
-            .filter(|mutation| matches!(mutation, Mutation::Create { .. }))
-            .count();
+        assert_eq!(screen.mock.live_task_titles(), expected_titles(100, WINDOW));
+    }
 
-        // Each row is a handful of widgets. What matters is that the count tracks the
-        // window of 20 rather than the 5,000 tasks behind it.
+    /// The claim the "Add 5000" button exists to let a person check by hand, asserted so
+    /// it cannot quietly stop being true. A window of twenty out of five thousand tasks
+    /// costs widgets in proportion to the twenty. This is the test that fails the day
+    /// windowing degrades into building everything.
+    #[test]
+    fn fr8_node_count_is_proportional_to_the_window() {
+        let mut screen = Screen::new();
+        screen.request_range(4_000, WINDOW);
+
+        // A row is a handful of widgets: the row itself, the toggle, the title and four
+        // buttons. The screen's own chrome is a fixed handful on top of that. What matters
+        // is that the total tracks the window and not the list behind it.
+        const PER_ROW: usize = 8;
+        const CHROME: usize = 40;
+        let nodes = screen.mock.node_count();
+        assert_eq!(screen.mock.live_task_titles().len(), WINDOW);
         assert!(
-            created < 400,
-            "{created} widgets were created for a window of 20 out of 5,000 tasks"
+            nodes <= PER_ROW * WINDOW + CHROME,
+            "{nodes} nodes materialised for a window of {WINDOW} out of {SAVED_TASKS} tasks"
         );
+    }
+
+    /// Scrolling away and back rebuilds the identical subtree. The Host owns the data, so
+    /// a row that left the window comes back with the same title under the same key.
+    #[test]
+    fn fr8_re_requesting_an_earlier_range_restores_it() {
+        let mut screen = Screen::new();
+        screen.request_range(0, 10);
+        let first_titles = screen.mock.live_task_titles();
+        let first_keys = screen.mock.live_item_keys();
+        assert_eq!(first_titles, expected_titles(0, 10));
+
+        screen.request_range(4_000, 10);
+        assert_eq!(screen.mock.live_task_titles(), expected_titles(4_000, 10));
+
+        screen.request_range(0, 10);
+        assert_eq!(screen.mock.live_task_titles(), first_titles);
+        assert_eq!(screen.mock.live_item_keys(), first_keys);
+    }
+
+    /// Scrolling stays flat. A window far down the list costs what the first one cost, or
+    /// a long list gets slower the further it is read.
+    #[test]
+    fn fr8_a_later_window_costs_what_the_first_one_cost() {
+        let mut screen = Screen::new();
+        let first = screen.request_range(0, WINDOW);
+        for start in (WINDOW..SAVED_TASKS).step_by(WINDOW).take(50) {
+            let created = screen.request_range(start, WINDOW);
+            assert!(
+                created <= first,
+                "the window at {start} created {created} widgets where the first created {first}"
+            );
+        }
     }
 }
