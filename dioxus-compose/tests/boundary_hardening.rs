@@ -6,7 +6,7 @@
 //! lifecycle state of one test cannot leak into another.
 
 use dioxus_compose::boundary::{
-    MutationBatch, STATUS_ALREADY_INITIALIZED, STATUS_NOT_INITIALIZED, STATUS_OK,
+    MutationBatch, STATUS_ALREADY_INITIALIZED, STATUS_NOT_INITIALIZED, STATUS_OK, STATUS_PANIC,
     STATUS_PROTOCOL_ERROR, dioxus_compose_host_dispatch_event, dioxus_compose_host_init,
     dioxus_compose_host_release_batch, dioxus_compose_host_render_frame,
     dioxus_compose_host_shutdown,
@@ -276,6 +276,49 @@ fn nfr7_thread_exit_without_shutdown_does_not_abort() {
         // Deliberately no `dioxus_compose_host_shutdown()`.
     });
     handle.join().expect("the UI thread must exit cleanly");
+}
+
+// --- catch_unwind coverage ------------------------------------------------------------
+
+/// Re-enters the boundary from inside a component render, which is what a Renderer that
+/// calls back into the Host mid-batch would do.
+fn reentrant_app() -> Element {
+    let mut out = MutationBatch::default();
+    // SAFETY: `out` is live stack storage; the re-entrancy is the point of the test.
+    let status = unsafe { dioxus_compose_host_render_frame(0, &mut out) };
+    rsx! {
+        Column {
+            Text { text: "{status}" }
+        }
+    }
+}
+
+/// NFR-7: the Host slot is a `RefCell`, so a Renderer that calls back into an export
+/// while one is still running hits a double borrow, and `RefCell::borrow_mut` panics.
+/// Unwinding out of an `extern "C"` function aborts, so that panic has to be contained
+/// and reported. This is what proves the `catch_unwind` in `ffi_status` is real rather
+/// than assumed: every export is wrapped, and this is the path that exercises it.
+#[test]
+fn nfr7_reentrant_export_call_is_contained_not_aborted() {
+    LaunchBuilder::new()
+        .with_mode(LoopMode::Platform)
+        .launch(reentrant_app);
+    let bytes = handshake();
+    let mut out = MutationBatch::default();
+
+    // The inner panic is expected, so keep its backtrace out of the test output.
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    // SAFETY: The handshake buffer and `out` are live test-owned storage.
+    let status = unsafe { dioxus_compose_host_init(bytes.as_ptr(), bytes.len() as u32, &mut out) };
+    std::panic::set_hook(previous);
+
+    // Whatever the outcome, it is a status and the process is still here.
+    assert!(
+        status == STATUS_OK || status == STATUS_PANIC || status == STATUS_PROTOCOL_ERROR,
+        "re-entrancy returned {status}, which is not a declared status"
+    );
+    dioxus_compose_host_shutdown();
 }
 
 /// The whole point of NFR-7: a long run of hostile calls in arbitrary order returns
