@@ -2,6 +2,8 @@ package dioxus.compose.liquidglass
 
 import androidx.compose.ui.graphics.Color
 import dioxus.compose.SurfaceMaterial
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 
 /**
  * The one decision a glass surface makes before it draws: translucent, or opaque.
@@ -18,11 +20,16 @@ import dioxus.compose.SurfaceMaterial
  * worth it, so a surface that would blur and cannot has no reason to stay see-through.
  */
 fun glassFill(
-    material: SurfaceMaterial.Glass,
+    material: SurfaceMaterial,
     reduceTransparency: Boolean,
     blurAvailable: Boolean,
     depth: Int = 0,
 ): Color {
+    // An opaque material has one colour and neither setting changes it. Taking any
+    // SurfaceMaterial rather than only the glass case means a caller styling a surface
+    // asks the same question whichever system is active, instead of having to know which
+    // of them uses glass before it can ask.
+    if (material !is SurfaceMaterial.Glass) return (material as SurfaceMaterial.Opaque).color
     val resolved = material.atDepth(depth)
     return if (drawsAsGlass(reduceTransparency, blurAvailable)) {
         resolved.tint.copy(alpha = resolved.tintAlpha)
@@ -34,3 +41,21 @@ fun glassFill(
 /** Whether these conditions leave a glass material drawing as glass. */
 fun drawsAsGlass(reduceTransparency: Boolean, blurAvailable: Boolean): Boolean =
     !reduceTransparency && blurAvailable
+
+/**
+ * The blur radius these conditions actually call for.
+ *
+ * Zero unless the surface is drawing as glass. Turning transparency off, or running where
+ * blur is unavailable, has to remove the render pass and not only the look: blurring a
+ * backdrop nobody can see through is pure cost, paid every frame, by the reader who asked
+ * for less of it.
+ */
+fun glassBlurRadius(
+    material: SurfaceMaterial,
+    reduceTransparency: Boolean,
+    blurAvailable: Boolean,
+): Dp = if (material is SurfaceMaterial.Glass && drawsAsGlass(reduceTransparency, blurAvailable)) {
+    material.blurRadius
+} else {
+    0.dp
+}

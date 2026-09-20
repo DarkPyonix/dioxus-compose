@@ -154,8 +154,14 @@ fun GlassLayer(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val depth = LocalGlassDepth.current
-    val blurRadius =
-        if (material is SurfaceMaterial.Glass) material.blurRadius else 0.dp
+    // Not material.blurRadius: a surface that is not drawing as glass must not pay for a
+    // blur pass either. Reading the radius straight off the material blurred a backdrop
+    // nobody could see through, every frame, for a reader who had asked for less.
+    val blurRadius = glassBlurRadius(
+        material,
+        LocalReduceTransparency.current,
+        LocalBlurAvailable.current,
+    )
 
     Box(modifier) {
         Box(Modifier.glassBackdrop(blurRadius), content = backdrop)
