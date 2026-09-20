@@ -476,7 +476,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 | NFR-5 | 개발 경험 | Renderer는 JVM 개발 셸에서 hot reload와 `@Preview`로 작업 가능. native-image 빌드는 개발 루프에 필요 없음. 새 머신의 준비 상태를 `scripts/setup-check.sh` 한 번으로 확인 가능 | Agreed |
 | NFR-6 | 안정 API만 사용 | `@InternalComposeUiApi`, `@ExperimentalComposeUiApi` 의존을 금지하거나, 쓰더라도 어댑터 한 파일에 격리하고 버전 핀을 둠 | Agreed |
 | NFR-7 | 크래시 격리 | 프로토콜 오류로 프로세스가 종료되지 않고 `ProtocolError` 이벤트를 보냄 | Agreed |
-| NFR-8 | 데스크톱 접근성 | native-image 빌드의 접근성 트리가 JVM 개발 셸과 같은 구조로 노출될 것. smoke test의 종료 코드 0은 근거가 되지 않습니다(접근성을 질의하지 않으므로). **2026-09-20 macOS arm64 미충족**: 접근성 질의 시 프로세스가 중단됩니다(§7) | Draft |
+| NFR-8 | 데스크톱 접근성 | native-image 빌드의 접근성 트리가 JVM 개발 셸과 같은 구조로 노출될 것. smoke test의 종료 코드 0은 근거가 되지 않습니다(접근성을 질의하지 않으므로). **2026-09-21 트리 노출 충족**, VoiceOver 수동 확인은 미완료(§7) | Agreed |
 | NFR-9 | 네이티브 수준 프레임 성능 | §5.1 기준 충족 | Agreed |
 | NFR-10 | 렌더러 탐색 경로 | `DIOXUS_COMPOSE_RENDERER_DIR` → 워크스페이스 빌드 결과물 순서로 찾음 | Agreed |
 | NFR-11 | 배포 | 크레이트는 crates.io, 렌더러는 플랫폼별 체크섬 릴리스 아티팩트. 아티팩트 규격과 소비자 측 해석, 버전 계약은 §5.3 (INTENT D10) | Draft |
@@ -556,28 +556,39 @@ native-image 빌드에서 macOS와 Windows 각각 수동으로 확인합니다.
 
 ## 7. 접근성 (NFR-8)
 
-**2026-09-20 결과: native-image 빌드에서 접근성이 동작하지 않습니다.** 동작하지 않는 정도가 아니라, 접근성 질의가 들어오면 프로세스가 중단됩니다(exit 134).
+**2026-09-21: 네이티브 이미지가 라벨된 접근성 트리를 노출하고, 트리를 읽어도 죽지 않습니다.**
 
-| | JVM 개발 셸 | native-image |
-|---|---|---|
-| 트리 요소 수 | 14 | 1 |
-| 라벨된 컨트롤 | `AXStaticText`, `AXTextField`, `AXButton` | 없음 |
-| 질의 후 프로세스 | 정상 | **중단(exit 134)** |
+| | JVM 개발 셸 | native-image (수정 전) | native-image (수정 후) |
+|---|---|---|---|
+| 트리 요소 수 | 14 | 1 | 12 |
+| 라벨된 컨트롤 | 있음 | 없음 | `AXStaticText`, `AXButton` |
+| 질의 후 프로세스 | 정상 | 중단(exit 134) | 정상 |
 
-**원인은 native-image 설정 누락입니다.** Substrate의 미지원도, Compose의 한계도 아닙니다. JVM에서 같은 화면이 라벨된 트리를 정상적으로 노출하는 것이 그 근거입니다.
+### 원인: 네이티브 링크에서 클래스가 제거됨
 
-확인된 누락 하나는 **리소스 번들**이었습니다. `com.sun.accessibility.internal.resources.accessibility`가 없어서 역할(role) 문자열 조회가 실패하고, null이 된 역할을 AppKit이 자식 배열에 넣으려다 예외를 던집니다. IME 실패와 같은 모양입니다. `AccessibilityReachabilityFeature`로 등록해 그 오류는 사라졌지만, **그것만으로는 동작하지 않습니다.** 트리는 여전히 하나이고 중단도 그대로입니다.
+Objective-C 쪽은 Java의 역할(role)을 **클래스 이름 문자열**로 바꿔 `NSClassFromString`으로 찾습니다. 그래서 `GroupAccessibility`, `ButtonAccessibility`, `StaticTextAccessibility`, `IgnoreAccessibility`를 심볼로 참조하는 코드가 이미지 안에 없습니다. `-force_load`가 오브젝트를 가져와도 링커가 참조 없는 클래스로 보고 제거합니다. 수정 전 빌드에는 아카이브의 `*Accessibility` 클래스 38개 중 12개만 남아 있었고, 사라진 것이 정확히 역할이 가리키는 클래스들이었습니다.
 
-**남은 원인은 closed-world 분석이 보고하지 않는 영역입니다.** `--exact-reachability-metadata`로 빌드해도 접근성 경로에서 더 이상 누락을 보고하지 않는데 증상은 같습니다. 따라서 IME 때와 같은 형태의 Feature 추가만으로는 해결되지 않습니다. 다음 단계는 디버그 이미지와 lldb로 `-[CommonComponentAccessibility createWithParent:accessible:role:index:withEnv:withView:]`에 중단점을 걸어, 역할 문자열이 null인지 반환된 자식이 null인지 가르는 것입니다.
+`NSClassFromString`이 nil을 반환하고, `[nil alloc]`이 nil이 되고, 그 nil을 AppKit이 자식 배열에 넣으려다 예외를 던집니다.
 
-**수용 기준**
+**정적 분석이 이것을 볼 수 없습니다.** 문제가 Java 도달 가능성이 아니라 네이티브 링크에 있기 때문입니다. `--exact-reachability-metadata`가 아무 누락도 보고하지 않으면서 증상이 그대로였던 이유입니다.
 
-- [x] JVM 실행과 비교해 차이 기록
-- [ ] macOS VoiceOver가 Text와 Button 라벨을 읽음: 현재 중단되어 확인 불가
-- [ ] Windows Narrator가 같은 화면을 읽음: Windows 빌드 부재로 미확인
+기각된 가설 둘을 기록해 둡니다. `GetFieldID(AccessibleRole, "key")` 실패는 원인이 아닙니다. 해당 네이티브가 **호출조차 되지 않았습니다**. Java 예외도 아닙니다. Java 예외는 `NSGenericException`으로 나타나며 실제 예외는 `NSInvalidArgumentException`이었고, 이는 nil 자식만이 만듭니다.
+
+### 수정
+
+`build-native.sh`가 아카이브에서 `*Accessibility` 클래스 목록을 읽어 전부 링크 루트(`-Wl,-u`)로 지정합니다. JDK가 역할을 추가해도 목록이 낡지 않습니다. 이미지 크기는 50KB 늘었습니다.
+
+`native/scripts/tests/accessibility-link.test.sh`가 아카이브의 클래스와 빌드된 라이브러리의 클래스를 비교해 누락이 있으면 실패합니다. 빌드도 스모크 테스트도 둘 다 통과하므로, 이 검사가 없으면 부재를 알 방법이 없습니다. CI의 macOS 빌드 뒤에 붙였습니다.
+
+### 남은 수용 기준
+
+- [x] native-image의 접근성 트리가 JVM과 같은 구조로 노출됨
+- [x] 트리를 질의해도 프로세스가 중단되지 않음
+- [ ] macOS VoiceOver가 Text와 Button 라벨을 읽음: **사람이 확인해야 합니다**
 - [ ] Tab 키 포커스 순회
+- [ ] Windows Narrator: Windows 빌드 검증 후
 
-절차와 증거, VoiceOver 수동 체크리스트는 `experiments/accessibility/README.md`에 있습니다. 접근성 확인은 **별도 단계여야 합니다.** smoke test가 0을 반환하는 것은 아무도 접근성 트리를 묻지 않기 때문입니다.
+VoiceOver 수동 절차는 `experiments/accessibility/README.md`에 있습니다. 오늘까지는 VoiceOver를 켜는 것만으로 프로세스가 죽어서 2단계를 넘어갈 수 없었고, 이제 끝까지 진행할 수 있습니다.
 
 ## 8. 열린 질문 추적
 
