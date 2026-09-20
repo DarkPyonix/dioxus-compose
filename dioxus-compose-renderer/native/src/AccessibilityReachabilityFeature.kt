@@ -29,12 +29,9 @@ import org.graalvm.nativeimage.hosted.RuntimeResourceAccess
  * sufficient here, because no tool reported it missing. The `sun.lwawt.macosx` half is
  * already covered by [ImeReachabilityFeature], which takes that package whole.
  *
- * What remains: with the bundle registered and no missing registration reported anywhere,
- * an accessibility query still aborts the process. AppKit raises
- * `NSInvalidArgumentException: object cannot be nil` while `childrenOfParent` builds the
- * array of children, so something on that path still hands Objective-C a null and the
- * closed-world analysis is no longer the one complaining. See
- * `experiments/accessibility/README.md` for the evidence and the next step.
+ * Registration alone was not enough: the role classes are reached only by name from
+ * Objective-C, so the linker dropped 26 of them and the build script now roots them with
+ * `-Wl,-u`. See `experiments/accessibility/README.md` for the evidence.
  */
 class AccessibilityReachabilityFeature : Feature {
 
@@ -63,13 +60,30 @@ class AccessibilityReachabilityFeature : Feature {
         /** The accessibility vocabulary the platform exchanges with `CAccessibility`. */
         val PACKAGES = setOf("javax.accessibility")
 
-        /** AWT types in the signatures Objective-C resolves, from packages too broad to take whole. */
+        /**
+         * AWT types in the signatures Objective-C resolves, from packages too broad to take whole.
+         *
+         * The window types are load-bearing and were missing. AppKit's accessibility
+         * category on NSWindow resolves `java.awt.Window` through `FindClass` in both
+         * `accessibilityHitTest:` and `accessibilityFocusedUIElement`, which are the first
+         * two things an assistive client asks for. With the class unregistered the lookup
+         * logs "Bad JNI lookup java/awt/Window" and AppKit turns it into an uncaught
+         * NSException, so the process aborts the moment the macOS Accessibility Keyboard,
+         * Hover Text or VoiceOver attaches. Frame and Dialog are Window's concrete
+         * subclasses on this path and are registered for the same reason.
+         *
+         * Walking the tree with AXUIElementCopyAttributeValue does not touch either
+         * method, which is how a full and healthy `ax-dump` run coexisted with this abort.
+         */
         val EXTRA_CLASSES = listOf(
             "java.awt.Component",
             "java.awt.Container",
+            "java.awt.Dialog",
             "java.awt.Dimension",
+            "java.awt.Frame",
             "java.awt.Point",
             "java.awt.Rectangle",
+            "java.awt.Window",
             "java.lang.Number",
         )
     }
