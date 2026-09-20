@@ -116,6 +116,33 @@ class InterpreterTest {
         onNodeWithTag(nodeTestTag(RIGHT)).assertTextEquals("right")
     }
 
+    /**
+     * NFR-7: the Rust Host answers a `ProtocolError` event with a protocol-error status,
+     * because no handler owns that event. The report failing must not take the composition
+     * down; the error still has to surface.
+     */
+    @Test
+    fun nfr7_a_host_that_rejects_the_error_report_does_not_break_the_composition() =
+        runComposeUiTest {
+            val reported = mutableListOf<TableError>()
+            val previous = onProtocolError
+            onProtocolError = { error -> reported += error }
+            try {
+                val connection = FakeHostConnection(twoTextColumn() + Mutation.Remove(999))
+                connection.respondWith { throw HostCallException("host rejected the report") }
+                setContent { DioxusContent(rememberDioxusHost(connection)) }
+                waitForIdle()
+
+                assertEquals(
+                    listOf(TableError.UNKNOWN_NODE),
+                    reported.map { error -> error.code },
+                )
+                onNodeWithTag(nodeTestTag(LEFT)).assertTextEquals("left")
+            } finally {
+                onProtocolError = previous
+            }
+        }
+
     @Test
     fun fr4_set_prop_does_not_recompose_siblings() = runComposeUiTest {
         val compositions = mutableMapOf<Int, Int>()
