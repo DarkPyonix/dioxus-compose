@@ -1,0 +1,110 @@
+# CI -- the fast quality gate. Runs on every pull request and every push.
+#
+# This workflow is deliberately Rust-only. `scripts/check.sh` (fmt, clippy,
+# tests, --quick benchmarks) finishes in minutes, so it can gate every PR.
+# The GraalVM native-image build of the renderer is *not* here: it needs a
+# ~1GB Liberica NIK download and tens of minutes of native-image compilation
+# (INTENT D9-macOS), which is too slow to put in front of every push. That
+# build lives in native-renderer.yml, on a schedule and on pushes to main.
+#
+# INTENT D7 is the reason this split is legitimate: the development path (JVM
+# / Rust) and the distribution path (native-image) are separate by design, and
+# SPEC NFR-5 states the native-image build is not part of the development loop.
+#
+# macOS is the primary platform (SPEC PR-8), but the Host crate itself is
+# portable, so Linux is in the matrix too: it costs nothing extra in wall time
+# and it catches accidental macOS-only assumptions in the Rust code early.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  # One in-flight run per branch or PR; superseded runs are cancelled.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep the cache small and the link step quick; CI never needs a debugger.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  rust:
+    name: Rust quality gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple silicon, which is the platform SPEC PR-8
+        # describes and the one the benchmark baseline was measured on.
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Run the quality gate
+        # fmt, clippy -D warnings, tests, and the SPEC 5.1 budget benchmarks in
+        # Criterion's quick mode. The budgets have ~37x headroom against the
+        # recorded baseline, so shared-runner noise does not make them flaky;
+        # the benchmark *assertions* (NFR-9) still fail the build if a real
+        # regression lands.
+        run: ./scripts/check.sh
+
+  shell:
+    name: Shell script tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run scripts/tests
+        # scripts/split-branches.sh and scripts/install-nik.sh carry their own
+        # tests; they run against throwaway temporary directories only.
+        run: |
+          set -euo pipefail
+          for test in scripts/tests/*.test.sh; do
+            echo "== $test"
+            bash "$test"
+          done
+
+  packaging:
+    name: crates.io packaging check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      # Guards the distribution plan: the Host crate must stay publishable as a
+      # plain crate while the ~85MB renderer ships as a release artifact. This
+      # builds the packaged tarball with default features (no `native-renderer`),
+      # which is exactly what a crates.io consumer gets.
+      - name: cargo package
+        run: cargo package -p dioxus-compose
