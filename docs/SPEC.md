@@ -476,7 +476,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 | NFR-5 | 개발 경험 | Renderer는 JVM 개발 셸에서 hot reload와 `@Preview`로 작업 가능. native-image 빌드는 개발 루프에 필요 없음. 새 머신의 준비 상태를 `scripts/setup-check.sh` 한 번으로 확인 가능 | Agreed |
 | NFR-6 | 안정 API만 사용 | `@InternalComposeUiApi`, `@ExperimentalComposeUiApi` 의존을 금지하거나, 쓰더라도 어댑터 한 파일에 격리하고 버전 핀을 둠 | Agreed |
 | NFR-7 | 크래시 격리 | 프로토콜 오류로 프로세스가 종료되지 않고 `ProtocolError` 이벤트를 보냄 | Agreed |
-| NFR-8 | 데스크톱 접근성 | VoiceOver/Narrator 기본 동작 (§7 실험 결과로 확정) | Draft |
+| NFR-8 | 데스크톱 접근성 | native-image 빌드의 접근성 트리가 JVM 개발 셸과 같은 구조로 노출될 것. smoke test의 종료 코드 0은 근거가 되지 않습니다(접근성을 질의하지 않으므로). **2026-09-20 macOS arm64 미충족**: 접근성 질의 시 프로세스가 중단됩니다(§7) | Draft |
 | NFR-9 | 네이티브 수준 프레임 성능 | §5.1 기준 충족 | Agreed |
 | NFR-10 | 렌더러 탐색 경로 | `DIOXUS_COMPOSE_RENDERER_DIR` → 워크스페이스 빌드 결과물 순서로 찾음 | Agreed |
 | NFR-11 | 배포 | 크레이트는 crates.io, 렌더러는 플랫폼별 체크섬 릴리스 아티팩트. 아티팩트 규격과 소비자 측 해석, 버전 계약은 §5.3 (INTENT D10) | Draft |
@@ -554,16 +554,30 @@ native-image 빌드에서 macOS와 Windows 각각 수동으로 확인합니다.
 
 **입력 경로 등록은 반드시 빌드 시점 Feature(`ImeReachabilityFeature`)로 합니다.** 메타데이터에 `allDeclaredMethods`를 쓰면 안 됩니다. JDK가 선언만 하고 라이브러리에 넣지 않은 네이티브 메서드(`CInputMethod.nativeHandleEvent`)까지 링크 대상이 되어, Java 스택 트레이스 없이 dyld 단계에서 라이브러리 로드가 실패합니다. 반대로 등록이 부족하면 렌더링까지 정상 동작한 뒤 입력기가 텍스트 필드를 건드리는 순간 프로세스가 abort합니다.
 
-## 7. 접근성 실험 (Q1, M1)
+## 7. 접근성 (NFR-8)
 
-native-image 빌드에서 AWT 접근성 브리지가 유지되는지 확인합니다. 결과에 따라 NFR-8을 확정합니다.
+**2026-09-20 결과: native-image 빌드에서 접근성이 동작하지 않습니다.** 동작하지 않는 정도가 아니라, 접근성 질의가 들어오면 프로세스가 중단됩니다(exit 134).
 
-- [ ] macOS VoiceOver가 Text와 Button 라벨을 읽음
-- [ ] Windows Narrator가 같은 화면을 읽음
+| | JVM 개발 셸 | native-image |
+|---|---|---|
+| 트리 요소 수 | 14 | 1 |
+| 라벨된 컨트롤 | `AXStaticText`, `AXTextField`, `AXButton` | 없음 |
+| 질의 후 프로세스 | 정상 | **중단(exit 134)** |
+
+**원인은 native-image 설정 누락입니다.** Substrate의 미지원도, Compose의 한계도 아닙니다. JVM에서 같은 화면이 라벨된 트리를 정상적으로 노출하는 것이 그 근거입니다.
+
+확인된 누락 하나는 **리소스 번들**이었습니다. `com.sun.accessibility.internal.resources.accessibility`가 없어서 역할(role) 문자열 조회가 실패하고, null이 된 역할을 AppKit이 자식 배열에 넣으려다 예외를 던집니다. IME 실패와 같은 모양입니다. `AccessibilityReachabilityFeature`로 등록해 그 오류는 사라졌지만, **그것만으로는 동작하지 않습니다.** 트리는 여전히 하나이고 중단도 그대로입니다.
+
+**남은 원인은 closed-world 분석이 보고하지 않는 영역입니다.** `--exact-reachability-metadata`로 빌드해도 접근성 경로에서 더 이상 누락을 보고하지 않는데 증상은 같습니다. 따라서 IME 때와 같은 형태의 Feature 추가만으로는 해결되지 않습니다. 다음 단계는 디버그 이미지와 lldb로 `-[CommonComponentAccessibility createWithParent:accessible:role:index:withEnv:withView:]`에 중단점을 걸어, 역할 문자열이 null인지 반환된 자식이 null인지 가르는 것입니다.
+
+**수용 기준**
+
+- [x] JVM 실행과 비교해 차이 기록
+- [ ] macOS VoiceOver가 Text와 Button 라벨을 읽음: 현재 중단되어 확인 불가
+- [ ] Windows Narrator가 같은 화면을 읽음: Windows 빌드 부재로 미확인
 - [ ] Tab 키 포커스 순회
-- [ ] 같은 화면을 JVM 실행과 비교해 차이 기록
 
-실패하면 원인을 native-image 설정 누락(JNI/리플렉션 config, `javax.accessibility` 서비스)과 Substrate 미지원으로 구분해 기록합니다.
+절차와 증거, VoiceOver 수동 체크리스트는 `experiments/accessibility/README.md`에 있습니다. 접근성 확인은 **별도 단계여야 합니다.** smoke test가 0을 반환하는 것은 아무도 접근성 트리를 묻지 않기 때문입니다.
 
 ## 8. 열린 질문 추적
 
