@@ -36,7 +36,15 @@ fun RenderNode(nodeId: Int, table: NodeTable, dispatcher: EventDispatcher) {
     val node = table.node(nodeId) ?: return
     // Observation point for the FR-4 recomposition check; null in production.
     RenderNodeObserver.onCompose?.let { observer -> SideEffect { observer(nodeId) } }
-    val modifier = node.modifiers.toComposeModifier(nodeId, dispatcher).testTag(nodeTestTag(nodeId))
+    val chain = node.modifiers.toComposeModifier(nodeId, dispatcher).testTag(nodeTestTag(nodeId))
+    // The TextField wires its own key handling, because it has an editor to intercept and a
+    // composition to protect (SPEC FR-12); everything else routes keys here.
+    val keyDownHandler = node.handler(PropertyKind.OnKeyDown)
+    val modifier = if (keyDownHandler == null || node.widget == WidgetKind.TextField) {
+        chain
+    } else {
+        chain.hostKeyEvents(nodeId, keyDownHandler, dispatcher)
+    }
     when (node.widget) {
         WidgetKind.Column -> Column(modifier) { Children(node, table, dispatcher) }
         WidgetKind.Row -> Row(modifier) { Children(node, table, dispatcher) }
@@ -45,9 +53,7 @@ fun RenderNode(nodeId: Int, table: NodeTable, dispatcher: EventDispatcher) {
         WidgetKind.Spacer -> Spacer(modifier)
         WidgetKind.Button -> HostButton(node, modifier, dispatcher)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
-        // TODO(FR-8): windowing, so the Host materialises only the visible range. Rendering
-        // the materialised children keeps the tree correct meanwhile; it is not yet lazy.
-        WidgetKind.LazyColumn -> Column(modifier) { Children(node, table, dispatcher) }
+        WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
     }
 }
 

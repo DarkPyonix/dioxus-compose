@@ -545,6 +545,18 @@ mod tests {
 
     static CLICKS: AtomicUsize = AtomicUsize::new(0);
 
+    /// `APP` is process-global, as `launch` is, so two tests that launch different apps at
+    /// the same time would each see the other's. Cargo runs tests on one thread each, so
+    /// the ones that launch take this first. Poisoning is ignored: a failing test has
+    /// already reported itself, and the rest still need the lock.
+    static LAUNCH: Mutex<()> = Mutex::new(());
+
+    fn launch_guard() -> std::sync::MutexGuard<'static, ()> {
+        LAUNCH
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     fn app() -> Element {
         let mut count = use_signal(|| 0_i64);
         rsx! {
@@ -668,6 +680,7 @@ mod tests {
 
     #[test]
     fn fr12_key_consumption_is_returned_and_does_not_leak() {
+        let _launch = launch_guard();
         LaunchBuilder::new()
             .with_mode(LoopMode::Platform)
             .launch(key_app);
@@ -738,6 +751,7 @@ mod tests {
     /// the isolate). The app the application launched must be reachable from there.
     #[test]
     fn pr3_init_runs_on_a_different_thread_than_launch() {
+        let _launch = launch_guard();
         LaunchBuilder::new()
             .with_mode(LoopMode::Platform)
             .launch(app);
@@ -761,6 +775,7 @@ mod tests {
 
     #[test]
     fn all_exports_isolate_invalid_calls() {
+        let _launch = launch_guard();
         let mut output = MutationBatch::default();
         // SAFETY: Each call uses null or valid test-owned pointers as documented.
         unsafe {

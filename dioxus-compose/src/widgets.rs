@@ -167,23 +167,23 @@ impl RangeRequest {
 }
 
 /// A windowed list (FR-8). The Host declares `item_count` and a stable key per item, and
-/// materialises only the range the Renderer last requested plus `buffer` items on each side.
-/// Scroll position and item identity stay in the Renderer (D5); the data stays in the Host,
-/// so scrolling back re-materialises an identical subtree.
+/// materialises **exactly** the range the Renderer last requested.
+///
+/// The read-ahead buffer belongs to the Renderer, which owns the scroll position (D5) and so
+/// knows how far ahead to ask. Widening the range here would break the Renderer's placement:
+/// `start` is the global index of the first child it receives, and that is what lets it draw
+/// a real Compose `LazyColumn` of `item_count` items. The data stays in the Host, so
+/// scrolling back re-materialises an identical subtree.
 #[component]
 pub fn LazyColumn(
     item_count: usize,
-    #[props(default = 4)] buffer: usize,
     #[props(default)] key_of: Option<Callback<usize, String>>,
     item: Callback<usize, Element>,
 ) -> Element {
     let mut range = use_signal(|| (0_usize, 0_usize));
     let (start, count) = range();
-    let first = start.saturating_sub(buffer);
-    let last = start
-        .saturating_add(count)
-        .saturating_add(buffer)
-        .min(item_count);
+    let first = start.min(item_count);
+    let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazycolumn {
             item_count: item_count as i64,
