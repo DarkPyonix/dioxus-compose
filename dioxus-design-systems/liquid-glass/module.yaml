@@ -23,6 +23,15 @@ dependencies:
 test-dependencies:
   - $kotlin.test
 
+# The corner geometry is checked by building the outline and measuring the path it
+# produces, which is the only way to tell a superellipse from a rounded rectangle without
+# looking at a screen. Building a Path on the JVM runs Skia, and the common Compose
+# artifacts carry its Kotlin classes without the native library, so the JVM test run needs
+# the host's skiko binary on its classpath. Test only, and only on the JVM: the other
+# targets link Skia into the binary themselves.
+test-dependencies@jvm:
+  - $compose.desktop.currentOs
+
 settings:
   compose:
     enabled: true

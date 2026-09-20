@@ -36,7 +36,10 @@ class ContrastTest {
     fun fr14_compositing_a_translucent_colour_lands_between_the_two_and_is_opaque() {
         val result = compositeOver(Color.Black.copy(alpha = 0.5f), Color.White)
         assertEquals(1f, result.alpha)
-        assertEquals(0.5f, result.red, 1e-4f)
+        // Compose stores an sRGB colour with eight bits per channel, so a half way mix
+        // lands on 127/255 rather than on exactly 0.5. One step of that quantisation is
+        // the tightest any assertion about a channel can honestly be.
+        assertEquals(0.5f, result.red, 1f / 255f)
         assertTrue(abs(relativeLuminance(result) - relativeLuminance(Color.White)) > 0.1f)
     }
 
@@ -58,7 +61,10 @@ class ContrastTest {
 
     @Test
     fun fr14_a_colour_that_does_not_meet_the_ratio_is_moved_until_it_does() {
-        val tooClose = Color(0xFF777777)
+        // 0x6A reads at about 3.9 against black, so it genuinely fails the 4.5 body
+        // minimum and the function has to move it. 0x777777 does not: it already reads at
+        // about 4.7, and asking it to move was asking for a change that is not required.
+        val tooClose = Color(0xFF6A6A6A)
         val fixed = ensureContrast(tooClose, Color.Black, 4.5f)
         assertTrue(contrastRatio(fixed, Color.Black) >= 4.5f)
         assertTrue(
@@ -69,7 +75,7 @@ class ContrastTest {
 
     @Test
     fun fr14_the_move_is_the_smallest_one_that_satisfies_the_requirement() {
-        val start = Color(0xFF777777)
+        val start = Color(0xFF6A6A6A)
         val fixed = ensureContrast(start, Color.Black, 4.5f)
         // Anything materially closer to the original fails the ratio, so the search did
         // not overshoot into a colour the design never asked for.
