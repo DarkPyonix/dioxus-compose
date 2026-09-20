@@ -599,3 +599,207 @@ object Protocol {
         }
     }
 }
+
+/** FR-13.2: one rung of the type ladder. Sizes are sp, spacing may be negative. */
+data class TypeToken(
+    val size: Float,
+    val weight: Int,
+    val lineHeight: Float,
+    val letterSpacing: Float,
+    val monospace: Boolean,
+)
+
+/**
+ * Items 1 to 4 of the FR-14.6 table for one design system.
+ *
+ * Arrays are indexed by the role's ordinal, which matches its wire tag minus one.
+ * Items 5 to 7 (elevation rendering, ButtonVariant styling, motion) are the Renderer's.
+ */
+class DesignTokenTable(
+    val system: DesignSystem,
+    /** The published guideline these values come from. */
+    val reference: String,
+    val defaultFamily: String,
+    val monospaceFamily: String,
+    private val lightColors: IntArray,
+    private val darkColors: IntArray,
+    private val typeScale: Array<TypeToken>,
+    private val shapeRadii: FloatArray,
+    private val spaces: FloatArray,
+) {
+    /** The 0xAARRGGBB value for a role. `dark` is the scheme the Renderer resolved. */
+    fun color(role: ColorRole, dark: Boolean): Int =
+        if (dark) darkColors[role.ordinal] else lightColors[role.ordinal]
+
+    fun type(role: TypeRole): TypeToken = typeScale[role.ordinal]
+
+    /** Corner radius in dp. */
+    fun radius(role: ShapeRole): Float = shapeRadii[role.ordinal]
+
+    /** Spacing in dp. */
+    fun space(role: SpaceRole): Float = spaces[role.ordinal]
+}
+
+object DesignTokens {
+    val MATERIAL3: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Material3,
+        "Material 3 baseline scheme and type scale, m3.material.io, 2024 baseline",
+        "Roboto",
+        "Roboto Mono",
+        intArrayOf(
+            0xff6750a4.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff625b71.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xfffef7ff.toInt(), // Surface
+            0xff1d1b20.toInt(), // OnSurface
+            0xffe7e0ec.toInt(), // SurfaceVariant
+            0xff49454f.toInt(), // OnSurfaceVariant
+            0xfffef7ff.toInt(), // Background
+            0xff1d1b20.toInt(), // OnBackground
+            0xff79747e.toInt(), // Outline
+            0xffcac4d0.toInt(), // OutlineVariant
+            0xffb3261e.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        intArrayOf(
+            0xffd0bcff.toInt(), // Primary
+            0xff381e72.toInt(), // OnPrimary
+            0xffccc2dc.toInt(), // Secondary
+            0xff332d41.toInt(), // OnSecondary
+            0xff141218.toInt(), // Surface
+            0xffe6e0e9.toInt(), // OnSurface
+            0xff49454f.toInt(), // SurfaceVariant
+            0xffcac4d0.toInt(), // OnSurfaceVariant
+            0xff141218.toInt(), // Background
+            0xffe6e0e9.toInt(), // OnBackground
+            0xff938f99.toInt(), // Outline
+            0xff49454f.toInt(), // OutlineVariant
+            0xfff2b8b5.toInt(), // Error
+            0xff601410.toInt(), // OnError
+        ),
+        arrayOf(
+            TypeToken(57.0f, 400, 64.0f, 0.0f, false), // Display
+            TypeToken(32.0f, 400, 40.0f, 0.0f, false), // Headline
+            TypeToken(22.0f, 400, 28.0f, 0.0f, false), // Title
+            TypeToken(16.0f, 500, 24.0f, 0.15f, false), // Subtitle
+            TypeToken(16.0f, 400, 24.0f, 0.5f, false), // Body
+            TypeToken(16.0f, 500, 24.0f, 0.15f, false), // BodyStrong
+            TypeToken(14.0f, 500, 20.0f, 0.1f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.4f, false), // Caption
+            TypeToken(14.0f, 400, 20.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 12.0f, 16.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 24.0f, 32.0f, 48.0f),
+    )
+
+    val APPLE_HIG: DesignTokenTable = DesignTokenTable(
+        DesignSystem.AppleHig,
+        "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
+        "SF Pro",
+        "SF Mono",
+        intArrayOf(
+            0xff007aff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff5856d6.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff000000.toInt(), // OnSurface
+            0xfff2f2f7.toInt(), // SurfaceVariant
+            0xff3c3c43.toInt(), // OnSurfaceVariant
+            0xfff2f2f7.toInt(), // Background
+            0xff000000.toInt(), // OnBackground
+            0xffc6c6c8.toInt(), // Outline
+            0xffe5e5ea.toInt(), // OutlineVariant
+            0xffff3b30.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        intArrayOf(
+            0xff0a84ff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff5e5ce6.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xff1c1c1e.toInt(), // Surface
+            0xffffffff.toInt(), // OnSurface
+            0xff2c2c2e.toInt(), // SurfaceVariant
+            0xffebebf5.toInt(), // OnSurfaceVariant
+            0xff000000.toInt(), // Background
+            0xffffffff.toInt(), // OnBackground
+            0xff38383a.toInt(), // Outline
+            0xff48484a.toInt(), // OutlineVariant
+            0xffff453a.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        arrayOf(
+            TypeToken(34.0f, 400, 41.0f, 0.37f, false), // Display
+            TypeToken(28.0f, 400, 34.0f, 0.36f, false), // Headline
+            TypeToken(22.0f, 400, 28.0f, 0.35f, false), // Title
+            TypeToken(17.0f, 600, 22.0f, -0.41f, false), // Subtitle
+            TypeToken(17.0f, 400, 22.0f, -0.41f, false), // Body
+            TypeToken(17.0f, 600, 22.0f, -0.41f, false), // BodyStrong
+            TypeToken(15.0f, 400, 20.0f, -0.24f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
+            TypeToken(15.0f, 400, 20.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 10.0f, 14.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 20.0f, 32.0f, 44.0f),
+    )
+
+    val FLUENT: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Fluent,
+        "WinUI / Fluent 2 web and Windows tokens, fluent2.microsoft.design, 2024",
+        "Segoe UI Variable",
+        "Cascadia Mono",
+        intArrayOf(
+            0xff0f6cbd.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xffebf3fc.toInt(), // Secondary
+            0xff0f548c.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff242424.toInt(), // OnSurface
+            0xfff5f5f5.toInt(), // SurfaceVariant
+            0xff424242.toInt(), // OnSurfaceVariant
+            0xfffafafa.toInt(), // Background
+            0xff242424.toInt(), // OnBackground
+            0xffd1d1d1.toInt(), // Outline
+            0xffe0e0e0.toInt(), // OutlineVariant
+            0xffc50f1f.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+        ),
+        intArrayOf(
+            0xff479ef5.toInt(), // Primary
+            0xff000000.toInt(), // OnPrimary
+            0xff0c3b5e.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xff292929.toInt(), // Surface
+            0xffffffff.toInt(), // OnSurface
+            0xff333333.toInt(), // SurfaceVariant
+            0xffd6d6d6.toInt(), // OnSurfaceVariant
+            0xff1f1f1f.toInt(), // Background
+            0xffffffff.toInt(), // OnBackground
+            0xff666666.toInt(), // Outline
+            0xff3d3d3d.toInt(), // OutlineVariant
+            0xffdc626d.toInt(), // Error
+            0xff000000.toInt(), // OnError
+        ),
+        arrayOf(
+            TypeToken(40.0f, 600, 52.0f, 0.0f, false), // Display
+            TypeToken(28.0f, 600, 36.0f, 0.0f, false), // Headline
+            TypeToken(20.0f, 600, 28.0f, 0.0f, false), // Title
+            TypeToken(16.0f, 600, 22.0f, 0.0f, false), // Subtitle
+            TypeToken(14.0f, 400, 20.0f, 0.0f, false), // Body
+            TypeToken(14.0f, 600, 20.0f, 0.0f, false), // BodyStrong
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
+            TypeToken(13.0f, 400, 18.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 2.0f, 3.0f, 4.0f, 8.0f, 1000.0f),
+        floatArrayOf(0.0f, 2.0f, 4.0f, 8.0f, 12.0f, 20.0f, 32.0f),
+    )
+
+    fun of(system: DesignSystem): DesignTokenTable = when (system) {
+        DesignSystem.Material3 -> MATERIAL3
+        DesignSystem.AppleHig -> APPLE_HIG
+        DesignSystem.Fluent -> FLUENT
+    }
+}

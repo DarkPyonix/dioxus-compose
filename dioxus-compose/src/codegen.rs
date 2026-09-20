@@ -9,6 +9,7 @@ use crate::schema::{
     Paint, PropertyKind, ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme,
     WIDGET_SCHEMA, WidgetKind,
 };
+use crate::tokens::DESIGN_TOKENS;
 use crate::{EventPayload, Modifier};
 use std::fmt::Write as _;
 
@@ -628,6 +629,134 @@ object Protocol {
 }
 "#,
     );
+    write_design_tokens(&mut output);
+    output
+}
+
+/// FR-14.4: the token tables are authored in Rust and executed in the Renderer, so they
+/// are generated into the Renderer binary instead of crossing the boundary (13.7).
+fn write_design_tokens(output: &mut String) {
+    output.push_str(
+        r#"
+/** FR-13.2: one rung of the type ladder. Sizes are sp, spacing may be negative. */
+data class TypeToken(
+    val size: Float,
+    val weight: Int,
+    val lineHeight: Float,
+    val letterSpacing: Float,
+    val monospace: Boolean,
+)
+
+/**
+ * Items 1 to 4 of the FR-14.6 table for one design system.
+ *
+ * Arrays are indexed by the role's ordinal, which matches its wire tag minus one.
+ * Items 5 to 7 (elevation rendering, ButtonVariant styling, motion) are the Renderer's.
+ */
+class DesignTokenTable(
+    val system: DesignSystem,
+    /** The published guideline these values come from. */
+    val reference: String,
+    val defaultFamily: String,
+    val monospaceFamily: String,
+    private val lightColors: IntArray,
+    private val darkColors: IntArray,
+    private val typeScale: Array<TypeToken>,
+    private val shapeRadii: FloatArray,
+    private val spaces: FloatArray,
+) {
+    /** The 0xAARRGGBB value for a role. `dark` is the scheme the Renderer resolved. */
+    fun color(role: ColorRole, dark: Boolean): Int =
+        if (dark) darkColors[role.ordinal] else lightColors[role.ordinal]
+
+    fun type(role: TypeRole): TypeToken = typeScale[role.ordinal]
+
+    /** Corner radius in dp. */
+    fun radius(role: ShapeRole): Float = shapeRadii[role.ordinal]
+
+    /** Spacing in dp. */
+    fun space(role: SpaceRole): Float = spaces[role.ordinal]
+}
+
+object DesignTokens {
+"#,
+    );
+    for table in DESIGN_TOKENS {
+        let name = upper_snake(&format!("{:?}", table.system));
+        writeln!(
+            output,
+            "    val {name}: DesignTokenTable = DesignTokenTable("
+        )
+        .unwrap();
+        writeln!(output, "        DesignSystem.{:?},", table.system).unwrap();
+        writeln!(output, "        \"{}\",", table.reference).unwrap();
+        writeln!(output, "        \"{}\",", table.default_family).unwrap();
+        writeln!(output, "        \"{}\",", table.monospace_family).unwrap();
+        for dark in [false, true] {
+            output.push_str("        intArrayOf(\n");
+            for token in table.colors.iter() {
+                let color = if dark { token.dark } else { token.light };
+                writeln!(
+                    output,
+                    "            0x{:08x}.toInt(), // {:?}",
+                    color.to_argb(),
+                    token.role
+                )
+                .unwrap();
+            }
+            output.push_str("        ),\n");
+        }
+        output.push_str("        arrayOf(\n");
+        for token in table.type_scale.iter() {
+            writeln!(
+                output,
+                "            TypeToken({:?}f, {}, {:?}f, {:?}f, {}), // {:?}",
+                token.size,
+                token.weight,
+                token.line_height,
+                token.letter_spacing,
+                token.monospace,
+                token.role
+            )
+            .unwrap();
+        }
+        output.push_str("        ),\n        floatArrayOf(");
+        for (index, token) in table.shapes.iter().enumerate() {
+            if index != 0 {
+                output.push_str(", ");
+            }
+            write!(output, "{:?}f", token.radius).unwrap();
+        }
+        output.push_str("),\n        floatArrayOf(");
+        for (index, token) in table.spaces.iter().enumerate() {
+            if index != 0 {
+                output.push_str(", ");
+            }
+            write!(output, "{:?}f", token.value).unwrap();
+        }
+        output.push_str("),\n    )\n\n");
+    }
+    output.push_str("    fun of(system: DesignSystem): DesignTokenTable = when (system) {\n");
+    for table in DESIGN_TOKENS {
+        writeln!(
+            output,
+            "        DesignSystem.{:?} -> {}",
+            table.system,
+            upper_snake(&format!("{:?}", table.system))
+        )
+        .unwrap();
+    }
+    output.push_str("    }\n}\n");
+}
+
+fn upper_snake(name: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in name.chars().enumerate() {
+        if character.is_uppercase() && index != 0 {
+            output.push('_');
+        }
+        output.extend(character.to_uppercase());
+    }
     output
 }
 
