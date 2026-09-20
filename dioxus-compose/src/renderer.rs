@@ -100,6 +100,11 @@ impl ComposeRenderer {
         });
     }
 
+    /// FR-9: append the streamed tail to a Text node without resending its whole value.
+    pub fn append_text_node(&mut self, node_id: u32, text: &str) {
+        self.write(Mutation::AppendText { node_id, text });
+    }
+
     fn write(&mut self, mutation: Mutation<'_>) {
         if self.error.is_none() {
             if let Err(error) = self.encoder.encode(&mutation) {

@@ -7,7 +7,7 @@ use std::time::Instant;
 
 const HOST_INTERACTION_BUDGET_NS: u128 = 500_000;
 const STREAMING_FRAME_BUDGET_NS: u128 = 1_000_000;
-const STREAMING_APPENDS_PER_SECOND: usize = 100;
+const STREAMING_TOKENS_PER_FRAME: usize = 2;
 const LONG_CONVERSATION_MESSAGES: usize = 10_000;
 
 fn app() -> Element {
@@ -74,18 +74,17 @@ fn encode_one_hundred(encoder: &mut BatchEncoder) {
     std::hint::black_box(encoder.finish().unwrap());
 }
 
+/// FR-9 streaming shape: a long answer already on screen, then one frame worth of tokens
+/// appended as tails and flushed by a single `render_frame`.
 struct StreamingText {
     host: Host,
     text_node_id: u32,
-    conversation: String,
-    base_len: usize,
-    append_index: usize,
 }
 
 impl StreamingText {
     fn new() -> Self {
         let (mut host, _, text_node_id) = host_and_targets();
-        let mut conversation = String::with_capacity(LONG_CONVERSATION_MESSAGES * 64 + 1024);
+        let mut conversation = String::with_capacity(LONG_CONVERSATION_MESSAGES * 64);
         for message in 0..LONG_CONVERSATION_MESSAGES {
             use std::fmt::Write as _;
             writeln!(
@@ -94,34 +93,18 @@ impl StreamingText {
             )
             .unwrap();
         }
-        let base_len = conversation.len();
-
-        for _ in 0..STREAMING_APPENDS_PER_SECOND {
-            conversation.push_str(" token");
-        }
         let _ = host.set_text(text_node_id, &conversation, None).unwrap();
-        conversation.truncate(base_len);
-
-        Self {
-            host,
-            text_node_id,
-            conversation,
-            base_len,
-            append_index: 0,
-        }
+        let mut streaming = Self { host, text_node_id };
+        streaming.frame();
+        streaming
     }
 
-    fn append(&mut self) {
-        if self.append_index == STREAMING_APPENDS_PER_SECOND {
-            self.conversation.truncate(self.base_len);
-            self.append_index = 0;
+    /// One 16ms frame at 100 tokens per second: the tokens that arrived, then one batch.
+    fn frame(&mut self) {
+        for _ in 0..STREAMING_TOKENS_PER_FRAME {
+            self.host.append_text(self.text_node_id, " token");
         }
-        self.conversation.push_str(" token");
-        self.append_index += 1;
-        let batch = self
-            .host
-            .set_text(self.text_node_id, &self.conversation, None)
-            .unwrap();
+        let batch = self.host.render_frame(0).unwrap();
         std::hint::black_box(batch.len());
     }
 }
@@ -159,8 +142,8 @@ fn benchmarks(criterion: &mut Criterion) {
     encode_group.finish();
 
     let mut streaming = StreamingText::new();
-    criterion.bench_function("streaming_text_100_appends_long_conversation", |bencher| {
-        bencher.iter(|| streaming.append())
+    criterion.bench_function("streaming_text_append_frame_long_conversation", |bencher| {
+        bencher.iter(|| streaming.frame())
     });
 
     let samples = if std::env::var_os("DXC_BENCH_QUICK").is_some() {
@@ -183,11 +166,11 @@ fn benchmarks(criterion: &mut Criterion) {
     let encode_p99 = p99_ns(samples, || encode_one_hundred(&mut sampled_encoder));
 
     let mut sampled_streaming = StreamingText::new();
-    let streaming_p99 = p99_ns(samples, || sampled_streaming.append());
+    let streaming_p99 = p99_ns(samples, || sampled_streaming.frame());
 
     eprintln!("nfr9_p99 click_dispatch_diff_encode_ns={click_p99}");
     eprintln!("nfr9_p99 encode_100_mutations_ns={encode_p99}");
-    eprintln!("nfr9_p99 streaming_text_100_appends_long_conversation_ns={streaming_p99}");
+    eprintln!("nfr9_p99 streaming_text_append_frame_long_conversation_ns={streaming_p99}");
 
     assert!(
         click_p99 <= HOST_INTERACTION_BUDGET_NS,

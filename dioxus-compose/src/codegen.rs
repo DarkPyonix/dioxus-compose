@@ -66,6 +66,7 @@ pub fn generate_kotlin() -> String {
     data class Move(val parentId: Int, val nodeId: Int, val index: Int) : Mutation
     data class Remove(val nodeId: Int) : Mutation
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
+    data class AppendText(val nodeId: Int, val text: String) : Mutation
 }
 
 "#,
@@ -123,6 +124,7 @@ object Protocol {
     private const val TAG_MOVE = 5
     private const val TAG_REMOVE = 6
     private const val TAG_SET_TEXT = 7
+    private const val TAG_APPEND_TEXT = 8
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -232,6 +234,13 @@ object Protocol {
                             readString(batch, base, available, offset + 8),
                             readU32(batch, base, available, offset + 16).toInt(),
                             readU32(batch, base, available, offset + 20).toInt(),
+                        )
+                    }
+                    TAG_APPEND_TEXT -> {
+                        requireRecordLength(length, 16, offset)
+                        Mutation.AppendText(
+                            readU32(batch, base, available, offset + 4).toInt(),
+                            readString(batch, base, available, offset + 8),
                         )
                     }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
@@ -636,6 +645,10 @@ pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
             text: "compose",
             selection: Some(Selection { start: 1, end: 4 }),
         },
+        Mutation::AppendText {
+            node_id: 4,
+            text: " token",
+        },
     ];
     let mut encoder = BatchEncoder::default();
     for mutation in &mutations {
@@ -704,8 +717,8 @@ pub fn generate_vector_description() -> String {
   "mutations": {{
     "file": "mutations.bin",
     "description": "One batch covering every M0 record, property value, and modifier layout",
-    "recordCount": 19,
-    "strings": ["안녕", "compose"]
+    "recordCount": 20,
+    "strings": ["안녕", "compose", " token"]
   }},
   "events": {{
     "file": "events.bin",

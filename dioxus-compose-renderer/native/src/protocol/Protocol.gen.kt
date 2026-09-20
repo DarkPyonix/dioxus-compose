@@ -41,6 +41,7 @@ sealed interface Mutation {
     data class Move(val parentId: Int, val nodeId: Int, val index: Int) : Mutation
     data class Remove(val nodeId: Int) : Mutation
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
+    data class AppendText(val nodeId: Int, val text: String) : Mutation
 }
 
 sealed interface HostEvent {
@@ -59,7 +60,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 2928011465708741517L
+    const val SCHEMA_HASH: Long = 6094773787085373026L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -70,6 +71,7 @@ object Protocol {
     private const val TAG_MOVE = 5
     private const val TAG_REMOVE = 6
     private const val TAG_SET_TEXT = 7
+    private const val TAG_APPEND_TEXT = 8
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -179,6 +181,13 @@ object Protocol {
                             readString(batch, base, available, offset + 8),
                             readU32(batch, base, available, offset + 16).toInt(),
                             readU32(batch, base, available, offset + 20).toInt(),
+                        )
+                    }
+                    TAG_APPEND_TEXT -> {
+                        requireRecordLength(length, 16, offset)
+                        Mutation.AppendText(
+                            readU32(batch, base, available, offset + 4).toInt(),
+                            readString(batch, base, available, offset + 8),
                         )
                     }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)

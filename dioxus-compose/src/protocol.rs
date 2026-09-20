@@ -11,6 +11,7 @@ const TAG_INSERT: u16 = 4;
 const TAG_MOVE: u16 = 5;
 const TAG_REMOVE: u16 = 6;
 const TAG_SET_TEXT: u16 = 7;
+const TAG_APPEND_TEXT: u16 = 8;
 const ENVELOPE_LEN: usize = 12;
 
 const VALUE_NONE: u16 = 0;
@@ -61,6 +62,11 @@ pub enum Mutation<'a> {
         node_id: u32,
         text: &'a str,
         selection: Option<Selection>,
+    },
+    /// FR-9: appends the streamed tail to a Text node instead of resending the whole string.
+    AppendText {
+        node_id: u32,
+        text: &'a str,
     },
 }
 
@@ -341,6 +347,11 @@ impl BatchEncoder {
                 self.put_u32(start);
                 self.put_u32(end);
             }
+            Mutation::AppendText { node_id, text } => {
+                self.begin_record(TAG_APPEND_TEXT, 12);
+                self.put_u32(*node_id);
+                self.put_string_ref(text)?;
+            }
         }
         self.record_count = self
             .record_count
@@ -489,7 +500,11 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                         .then_some(Selection { start, end }),
                 }
             }
-            TAG_CREATE..=TAG_SET_TEXT => {
+            TAG_APPEND_TEXT if len == 16 => Mutation::AppendText {
+                node_id: read_u32(bytes, payload)?,
+                text: read_string(bytes, payload + 4)?,
+            },
+            TAG_CREATE..=TAG_APPEND_TEXT => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),
@@ -615,6 +630,10 @@ mod tests {
                 node_id: 4,
                 text: "compose",
                 selection: Some(Selection { start: 1, end: 4 }),
+            },
+            Mutation::AppendText {
+                node_id: 4,
+                text: " token",
             },
         ];
         let mut encoder = BatchEncoder::default();

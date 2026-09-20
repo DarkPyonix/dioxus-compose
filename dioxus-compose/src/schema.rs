@@ -49,7 +49,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown;",
-    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText"
+    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText"
 );
 
 const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
