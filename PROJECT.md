@@ -27,7 +27,7 @@ Rust(Dioxus)로 선언형 UI를 쓰고, AOT 컴파일된 Compose Multiplatform�
 - Compose API 전체를 Rust로 미러링하는 것. 스키마에 등록된 위젯만 지원합니다.
 - darkpyonix-ember의 도메인 로직(PTY, CLI 관리 등).
 
-## 개발 방식: Spec Driven Development
+## 개발 방식: Spec Driven Development + Test Driven Development
 
 1. **INTENT**: 왜, 무엇을 선택했고 무엇을 버렸는지 기록합니다. 결정이 바뀌면 여기부터 고칩니다.
 2. **SPEC**: 요구사항마다 ID(`FR-*`, `NFR-*`, `PR-*`)와 검증 가능한 수용 기준을 둡니다.
@@ -35,6 +35,17 @@ Rust(Dioxus)로 선언형 UI를 쓰고, AOT 컴파일된 Compose Multiplatform�
 4. **검증**: 수용 기준을 테스트나 수동 체크리스트로 확인하고, SPEC의 상태 표시를 갱신합니다.
 
 SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPEC을 먼저 고칩니다.
+
+구현은 TDD로 합니다. 테스트는 SPEC의 수용 기준에서 나오며, 테스트가 없는 요구사항은 완료가 아닙니다.
+
+1. 실패하는 테스트를 먼저 쓰고, 통과시키고, 정리합니다.
+2. 테스트 이름은 요구사항 ID를 따릅니다(`fr4_set_prop_does_not_recompose_siblings`).
+3. 버그 수정은 그 버그를 재현하는 테스트에서 시작합니다.
+4. 테스트와 구현은 같은 커밋에 넣습니다. 모든 커밋에서 트리가 green이어야 합니다.
+5. 공개 표면(크레이트 API, C export, 인터프리터, `HostConnection`)을 통해 테스트합니다.
+6. §5.1의 성능 예산도 테스트입니다. 벤치마크 수치를 기록하고 할당 상한은 단언으로 검증합니다.
+
+자동화할 수 없는 것은 SPEC에 수동 검증임을 명시합니다. IME(§6)와 접근성(§7)이 여기에 해당하며, 네이티브 이미지 빌드에서 사람이 직접 확인합니다.
 
 ## 마일스톤
 
