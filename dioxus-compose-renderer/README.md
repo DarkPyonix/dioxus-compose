@@ -15,7 +15,7 @@ on first use, so nothing has to be installed separately.
 | `shared` | Compose code shared across platforms, including the IME test screen used to verify text input in a native build. |
 | `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
 | `ios` | **The renderer for iOS.** The same interpreter sources (`ios/src/shared/` symlinks `native/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
-| `cabi` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
+| `staticlib` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
 | `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
 
 The generated protocol bindings live in `native/src/protocol/Protocol.gen.kt`. They are

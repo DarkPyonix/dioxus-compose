@@ -1,8 +1,8 @@
 modules:
   - android
-  - cabi
   - desktop
   - ios
   - native
   - shared
+  - staticlib
   - web
