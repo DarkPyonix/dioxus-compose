@@ -7,6 +7,15 @@ rust-version.workspace = true
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]
+# The lib has no #[bench] items, but `cargo bench` would still run its default test
+# harness, which rejects Criterion's flags (--quick, --noplot). Benchmarks live in
+# benches/host.rs with harness = false.
+bench = false
+
+[[bin]]
+name = "codegen"
+path = "src/bin/codegen.rs"
+bench = false
 
 [features]
 default = []
