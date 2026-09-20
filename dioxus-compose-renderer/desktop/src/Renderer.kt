@@ -11,6 +11,7 @@ import kotlinx.coroutines.delay
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.HostConnection
 import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.runtime.systemDarkObserver
 
 /**
  * Runs the renderer's Compose application on the calling thread until its window closes.
@@ -26,6 +27,10 @@ internal fun runRenderer(
     chrome: WindowChrome = WindowChrome.Modern,
     connection: () -> HostConnection,
 ) = application(exitProcessOnExit = false) {
+    // Compose's own reading of the system appearance is taken once on this platform, so
+    // the renderer is given one that keeps looking.
+    LaunchedEffect(Unit) { systemDarkObserver = { rememberSystemDark().value } }
+
     // Undecorated everywhere the platform will not hand us a transparent title bar, which
     // is everywhere except macOS. There we keep the real one and make it see through, so
     // the close, minimise and zoom buttons stay the system's own.
