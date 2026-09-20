@@ -199,7 +199,7 @@ and wiring B preserves that completely.
 
 Suggested replacement for the PR-6 body (Korean, to match `docs/SPEC.md`):
 
-> ### PR-6 Web 직결 — `Agreed`
+> ### PR-6 Web 경계 (`Agreed`)
 > Rust(wasm32)와 Kotlin/Wasm 모듈을 **arena 복사 없이** 연결합니다.
 > `LoopMode::Platform`입니다.
 >
