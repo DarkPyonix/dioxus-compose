@@ -2,8 +2,8 @@
 #
 # UNTESTED: this script was authored on macOS and has never executed in this repository.
 # Verify on Windows from the repository root with:
-#   powershell -ExecutionPolicy Bypass -File .\dioxus-compose-renderer\native\scripts\build-native-windows.ps1
-#   powershell -ExecutionPolicy Bypass -File .\dioxus-compose-renderer\native\scripts\smoke-test-windows.ps1 -RequireClick
+#   powershell -ExecutionPolicy Bypass -File .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
+#   powershell -ExecutionPolicy Bypass -File .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1 -RequireClick
 #
 # Distribution layout:
 #   build\native-image\dist\
@@ -20,6 +20,20 @@ param()
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+# Runs a native command without letting its progress output count as a failure.
+#
+# With $ErrorActionPreference set to Stop, PowerShell turns anything a native command
+# writes to stderr into a terminating error, even when the command exits 0. The Kotlin CLI
+# reports its downloads there, and native-image reports its progress there, so both looked
+# like failures on a machine that had never run them before. Exit codes are the only
+# signal worth trusting here, and every caller already checks $LASTEXITCODE.
+function Invoke-Native {
+    param([scriptblock]$Command)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command } finally { $ErrorActionPreference = $previous }
+}
 
 function Fail([string]$Message, [string[]]$Hints = @()) {
     [Console]::Error.WriteLine("error: $Message")
@@ -159,8 +173,8 @@ try {
     $env:JAVA_HOME = $GraalHome
     $env:GRAALVM_HOME = $GraalHome
     $env:DIOXUS_COMPOSE_AUTOEXIT_MS = "1"
-    & $KotlinWrapper run -m desktop --no-compose-hot-reload `
-        "--jvm-args=-XshowSettings:properties" 2>&1 | Tee-Object -FilePath $JvmLog
+    Invoke-Native { & $KotlinWrapper run -m desktop --no-compose-hot-reload `
+        "--jvm-args=-XshowSettings:properties" 2>&1 | Tee-Object -FilePath $JvmLog }
     if ($LASTEXITCODE -ne 0) {
         Fail "the JVM classpath probe failed" @("See $JvmLog")
     }
@@ -195,7 +209,7 @@ Set-Content -LiteralPath $ClasspathFile -Value $Classpath -NoNewline
 Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $DistDir, $ObjDir
 New-Item -ItemType Directory -Force -Path $BinDir, $LibDir, $ObjDir | Out-Null
 $RendererObject = Join-Path $ObjDir "renderer_entry.obj"
-& cl.exe /nologo /c /O2 /std:c11 "/Fo$RendererObject" $RendererSource
+Invoke-Native { & cl.exe /nologo /c /O2 /std:c11 "/Fo$RendererObject" $RendererSource }
 if ($LASTEXITCODE -ne 0) {
     Fail "MSVC could not compile $RendererSource"
 }
@@ -220,7 +234,7 @@ $NativeImageArgs = @(
 )
 Push-Location $BinDir
 try {
-    & $NativeImage @NativeImageArgs
+    Invoke-Native { & $NativeImage @NativeImageArgs }
     if ($LASTEXITCODE -ne 0) {
         Fail "native-image failed to build the Windows renderer"
     }
