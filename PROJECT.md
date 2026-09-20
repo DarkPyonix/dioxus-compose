@@ -6,8 +6,8 @@ Rust(Dioxus)로 선언형 UI를 쓰고, AOT 컴파일된 Compose Multiplatform�
 
 ## 배경
 
-- 1차 소비자는 **darkpyonix-ember**입니다. 여러 LLM CLI(Claude Code 등)가 보는 셸을 감싸서, 한 서버에서 도는 CLI들이 지정한 컴퓨터에서 동작하는 것처럼 보이게 하는 원격 개발 환경입니다. 현재는 Tauri 기반인데, 이 스택으로 교체하는 것이 목표입니다.
-- 웹 기반 채팅/IDE 인터페이스의 **메모리 사용량과 배포 용량**을 벗어나는 것이 출발점입니다.
+- 대상은 데스크톱을 중심으로 상시 켜 두는 애플리케이션입니다. 웹뷰나 JVM을 동반하지 않고도 선언형 UI를 쓸 수 있어야 합니다.
+- 웹 기반 데스크톱 앱의 **메모리 사용량과 배포 용량**을 벗어나는 것이 출발점입니다.
 - Rust 진영에는 텍스트·IME·위젯 품질까지 성숙한 선언형 UI 프레임워크가 없습니다. 그 부족분을 Compose로 채웁니다.
 
 자세한 근거는 [docs/INTENT.md](docs/INTENT.md)에 있습니다.
@@ -25,7 +25,7 @@ Rust(Dioxus)로 선언형 UI를 쓰고, AOT 컴파일된 Compose Multiplatform�
 
 **제외 (현재)**
 - Compose API 전체를 Rust로 미러링하는 것. 스키마에 등록된 위젯만 지원합니다.
-- darkpyonix-ember의 도메인 로직(PTY, CLI 관리 등).
+- 이 스택을 쓰는 애플리케이션의 도메인 로직.
 
 ## 개발 방식: Spec Driven Development + Test Driven Development
 
@@ -55,7 +55,7 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 | M1 | 수직 슬라이스 (native-image) | M0를 데스크톱 native-image `--shared` 빌드로 재현하고 **한글 IME 조합 체크리스트를 통과**, 접근성 실험 결과 기록 | NFR-1, NFR-3, NFR-8, FR-5 |
 | M2 | Dioxus 연결 | 하드코딩한 mutation 대신 `rsx!` 컴포넌트와 훅으로 M1 화면을 구성 | FR-6 |
 | M3 | 스키마 코드젠 | Rust 스키마 정의에서 Kotlin 타입과 코덱을 생성하고, 불일치를 빌드 타임에 검출 | FR-7 |
-| M4 | 채팅 필수 위젯 | LazyColumn 윈도잉, 멀티라인 입력, 스트리밍 텍스트 | FR-8, FR-9 |
+| M4 | 긴 목록과 증분 텍스트 | LazyColumn 윈도잉, 멀티라인 입력, 스트리밍 텍스트 | FR-8, FR-9 |
 | M5 | iOS | 같은 C ABI를 Kotlin/Native `-produce static`으로 구현 | NFR-4 |
 | M6 | Android | SPEC PR-5 수용 기준 통과 | PR-5 |
 | M7 | Web | wasm 직결 검증(Q3) 후 PR-6 구현 | PR-6 |

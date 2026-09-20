@@ -7,8 +7,6 @@ Rust에서 **Dioxus 방식으로 선언형 UI를 작성**하고, 렌더링·텍�
 - Compose 렌더러는 JVM 없이 네이티브 라이브러리로 배포됩니다. 데스크톱은 GraalVM native-image, iOS는 Kotlin/Native로 만듭니다.
 - 웹뷰를 쓰지 않고, JVM을 동봉하지 않으며, 수동 JNI도 쓰지 않습니다.
 
-darkpyonix 조직 안에서는 [darkpyonix-ember](../darkpyonix-ember)(멀티 프로바이더 LLM 개발 환경 + 원격 IDE)의 GUI 스택으로 쓰는 것이 1차 목적입니다.
-
 > 상태: **설계 단계 (Spec Driven Development)**. 구현은 `docs/SPEC.md`의 요구사항과 수용 기준을 따라 진행합니다.
 
 ## 저장소 구조
