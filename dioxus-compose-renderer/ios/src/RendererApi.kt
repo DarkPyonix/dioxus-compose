@@ -7,7 +7,7 @@ import platform.Foundation.NSThread
  * What the C entry points call (SPEC PR-2). See `staticlib/src/IosEntryPoints.kt` for the
  * symbols themselves and for why they live in a module of their own.
  *
- * The status codes are the desktop shim's codes (`native/c/renderer_entry.c`), so a Host
+ * The status codes are the desktop shim's codes (`desktop/c/renderer_entry.c`), so a Host
  * reads the same number for the same mistake on both platforms.
  */
 object RendererApi {

@@ -1,1 +1,1 @@
-../../../native/src/renderer/ModifierChain.kt
+../../../desktop/src/renderer/ModifierChain.kt

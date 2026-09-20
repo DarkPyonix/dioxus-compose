@@ -1,1 +1,1 @@
-../../../native/src/renderer/HostLazyColumn.kt
+../../../desktop/src/renderer/HostLazyColumn.kt

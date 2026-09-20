@@ -11,21 +11,21 @@ on first use, so nothing has to be installed separately.
 
 | Module | What it is |
 |---|---|
-| `native` | **The renderer.** The schema interpreter, the `HostConnection` implementations, the C entry points, and the macOS native-image build (`native/scripts/`, `native/c/`). This is the module that matters. |
+| `native` | **The renderer.** The schema interpreter, the `HostConnection` implementations, the C entry points, and the macOS native-image build (`desktop/scripts/`, `desktop/c/`). This is the module that matters. |
 | `shared` | Compose code shared across platforms, including the IME test screen used to verify text input in a native build. |
 | `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
-| `ios` | **The renderer for iOS.** The same interpreter sources (`ios/src/shared/` symlinks `native/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
+| `ios` | **The renderer for iOS.** The same interpreter sources (`ios/src/shared/` symlinks `desktop/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
 | `staticlib` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
 | `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
 
-The generated protocol bindings live in `native/src/protocol/Protocol.gen.kt`. They are
+The generated protocol bindings live in `desktop/src/protocol/Protocol.gen.kt`. They are
 produced from the Rust schema by `cargo run -p dioxus-compose --bin codegen`, edit the Rust
 schema, never that file.
 
 ## Running
 
 ```bash
-./kotlin run -m native     # the renderer's development harness on the JVM
+./kotlin run -m desktop     # the renderer's development harness on the JVM
 ./kotlin run -m desktop    # the Compose development shell
 ```
 
@@ -33,7 +33,7 @@ schema, never that file.
 
 ```bash
 ./kotlin test              # everything
-./kotlin test -m native    # the interpreter's tests
+./kotlin test -m desktop    # the interpreter's tests
 ```
 
 ## Native image
@@ -42,8 +42,8 @@ The desktop renderer ships as a native shared library, built with Liberica NIK (
 GraalVM skips AWT on macOS). From this directory:
 
 ```bash
-./native/scripts/build-native.sh   # build the shared library and stage lib/
-./native/scripts/smoke-test.sh     # link a C host against it and open a window
+./desktop/scripts/build-native.sh   # build the shared library and stage lib/
+./desktop/scripts/smoke-test.sh     # link a C host against it and open a window
 ```
 
 ## iOS
@@ -55,12 +55,12 @@ symbol on the Kotlin function. `dioxus_compose_renderer_run` must be called on t
 main thread, where `UIApplicationMain` installs the run loop, and it never returns.
 
 ```bash
-./native/scripts/build-ios.sh                    # arm64 simulator static library
-./native/scripts/build-ios.sh --target device    # arm64 iPhone
-./native/scripts/ios-smoke-test.sh --screenshot /tmp/ios.png   # run it on the simulator
+./desktop/scripts/build-ios.sh                    # arm64 simulator static library
+./desktop/scripts/build-ios.sh --target device    # arm64 iPhone
+./desktop/scripts/ios-smoke-test.sh --screenshot /tmp/ios.png   # run it on the simulator
 ```
 
-The smoke test links `native/c/smoke_host.c`, the same stand-in Host the desktop smoke test
+The smoke test links `desktop/c/smoke_host.c`, the same stand-in Host the desktop smoke test
 uses, so a passing run on both platforms is evidence that the C ABI really is one ABI.
 
 See the root [README](../README.md) for prerequisites and the

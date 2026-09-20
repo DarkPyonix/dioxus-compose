@@ -8,7 +8,7 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 
 - `dioxus-compose/`: Rust side (Host). Dioxus renderer crate, boundary shims, codegen.
 - `dioxus-compose-renderer/`: Kotlin side (Renderer). Amper project. The schema interpreter
-  lives in `native/src/renderer/`; `ios/src/shared/` symlinks the same files so there is one
+  lives in `desktop/src/renderer/`; `ios/src/shared/` symlinks the same files so there is one
   copy. `shared/` is the JVM development shell only, not the renderer.
 - `dioxus-design-systems/`: a separate Amper project holding the six design systems and the
   Liquid Glass material. It must never depend on the renderer, so it can be published alone.

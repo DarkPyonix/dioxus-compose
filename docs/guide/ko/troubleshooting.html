@@ -79,7 +79,7 @@
 <span class="c"># 기대: libdioxus_compose_renderer.dylib, libskiko-macos-*.dylib,</span>
 <span class="c">#       libjawt.dylib, libawt_lwawt.dylib</span>
 
-./dioxus-compose-renderer/native/scripts/build-native.sh</code></pre>
+./dioxus-compose-renderer/desktop/scripts/build-native.sh</code></pre>
     </figure>
     <p>
       네 파일을 따로 떼어 옮기지 마세요. 렌더러는 <code>dladdr</code>로 자기 위치를 알아낸 다음
@@ -100,7 +100,7 @@
     </p>
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
       <figcaption>shell</figcaption>
-<pre><code>./dioxus-compose-renderer/native/scripts/smoke-test.sh</code></pre>
+<pre><code>./dioxus-compose-renderer/desktop/scripts/smoke-test.sh</code></pre>
     </figure>
     <p>
       여기서는 창이 뜨는데 Rust에서는 안 뜬다면 바이너리 링크 문제입니다. 여기서도 안 뜨면

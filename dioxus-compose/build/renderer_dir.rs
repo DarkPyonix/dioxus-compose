@@ -141,7 +141,7 @@ fn how_to_get_one(crate_version: &str, target: &str) -> String {
          \x20   4. export {RENDERER_DIR_ENV}=<dir>\n\
          \n\
          Building the renderer from source instead: see\n\
-         dioxus-compose-renderer/native/scripts/build-native.sh and point\n\
+         dioxus-compose-renderer/desktop/scripts/build-native.sh and point\n\
          {RENDERER_DIR_ENV} at its dist directory.\n\
          \n\
          The `native-renderer` feature is what requires all this. The crate's default\n\

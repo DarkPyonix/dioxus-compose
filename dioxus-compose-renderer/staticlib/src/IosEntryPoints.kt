@@ -7,7 +7,7 @@ import kotlin.native.CName
  * C entry points of the renderer static library on iOS (SPEC PR-2, NFR-4, M5).
  *
  * The desktop renderer is a GraalVM native image, so its entry points are `@CEntryPoint` and
- * a C shim (`native/c/renderer_entry.c`) owns the isolate and hides the `IsolateThread*`
+ * a C shim (`desktop/c/renderer_entry.c`) owns the isolate and hides the `IsolateThread*`
  * argument from the Host. Kotlin/Native has no isolate, so there is nothing to hide and
  * **there is no shim on iOS**: `@CName` puts the public symbol straight on the Kotlin
  * function, and the Host sees the same two argument-free symbols on both platforms.

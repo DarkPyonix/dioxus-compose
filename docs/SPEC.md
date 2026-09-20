@@ -559,7 +559,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
 
 **검증 (2026-09-21, macOS arm64 + iOS 시뮬레이터)**
 
-데스크톱용 C 스모크 호스트(`native/c/smoke_host.c`)를 **한 글자도 고치지 않고** iOS 정적 아카이브에 링크해 실행했습니다. 같은 `main`, 같은 다섯 개 `dioxus_compose_host_*` 함수가 GraalVM native-image 공유 라이브러리와 Kotlin/Native 아카이브 양쪽에 그대로 붙습니다. 경계 표면이 두 런타임에서 하나라는 근거입니다.
+데스크톱용 C 스모크 호스트(`desktop/c/smoke_host.c`)를 **한 글자도 고치지 않고** iOS 정적 아카이브에 링크해 실행했습니다. 같은 `main`, 같은 다섯 개 `dioxus_compose_host_*` 함수가 GraalVM native-image 공유 라이브러리와 Kotlin/Native 아카이브 양쪽에 그대로 붙습니다. 경계 표면이 두 런타임에서 하나라는 근거입니다.
 
 ```
 dioxus_compose_host_init: 180 bytes, 8 records
@@ -687,7 +687,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 
 ### 5.2 메모리 (NFR-3)
 
-**측정 기준은 macOS의 physical footprint입니다.** RSS는 이미지에서 매핑된 깨끗한 페이지까지 세기 때문에 실제 점유량을 과장합니다. 같은 프로세스가 RSS 127MB, footprint 54MB로 두 배 넘게 차이납니다. Activity Monitor의 "메모리" 열이 footprint입니다. 측정은 `native/scripts/measure-memory.sh`로 재현합니다.
+**측정 기준은 macOS의 physical footprint입니다.** RSS는 이미지에서 매핑된 깨끗한 페이지까지 세기 때문에 실제 점유량을 과장합니다. 같은 프로세스가 RSS 127MB, footprint 54MB로 두 배 넘게 차이납니다. Activity Monitor의 "메모리" 열이 footprint입니다. 측정은 `desktop/scripts/measure-memory.sh`로 재현합니다.
 
 **현재값 (2026-09-20, macOS 26.5.1, Apple M1, 스모크 테스트 창)**
 
@@ -762,7 +762,7 @@ Objective-C 쪽은 Java의 역할(role)을 **클래스 이름 문자열**로 바
 
 `build-native.sh`가 아카이브에서 `*Accessibility` 클래스 목록을 읽어 전부 링크 루트(`-Wl,-u`)로 지정합니다. JDK가 역할을 추가해도 목록이 낡지 않습니다. 이미지 크기는 50KB 늘었습니다.
 
-`native/scripts/tests/accessibility-link.test.sh`가 아카이브의 클래스와 빌드된 라이브러리의 클래스를 비교해 누락이 있으면 실패합니다. 빌드도 스모크 테스트도 둘 다 통과하므로, 이 검사가 없으면 부재를 알 방법이 없습니다. CI의 macOS 빌드 뒤에 붙였습니다.
+`desktop/scripts/tests/accessibility-link.test.sh`가 아카이브의 클래스와 빌드된 라이브러리의 클래스를 비교해 누락이 있으면 실패합니다. 빌드도 스모크 테스트도 둘 다 통과하므로, 이 검사가 없으면 부재를 알 방법이 없습니다. CI의 macOS 빌드 뒤에 붙였습니다.
 
 ### 남은 수용 기준
 

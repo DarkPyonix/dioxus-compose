@@ -1,1 +1,1 @@
-../../../native/src/renderer/NodeTable.kt
+../../../desktop/src/renderer/NodeTable.kt

@@ -2,7 +2,7 @@
 # Links the same minimal C host the desktop smoke test uses against the iOS static library,
 # wraps it in an app bundle, and runs it on the simulator (after build-ios.sh).
 #
-# The host source is shared with the desktop test on purpose: `native/c/smoke_host.c` is the
+# The host source is shared with the desktop test on purpose: `desktop/c/smoke_host.c` is the
 # stand-in for the Rust Host, it implements the five `dioxus_compose_host_*` functions and
 # calls `dioxus_compose_renderer_run` from `main`, and none of that changes on iOS. If the
 # same file draws the same tree on both platforms, the C ABI really is the same (SPEC PR-2).

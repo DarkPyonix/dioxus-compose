@@ -79,7 +79,7 @@
 <span class="c"># expect: libdioxus_compose_renderer.dylib, libskiko-macos-*.dylib,</span>
 <span class="c">#         libjawt.dylib, libawt_lwawt.dylib</span>
 
-./dioxus-compose-renderer/native/scripts/build-native.sh</code></pre>
+./dioxus-compose-renderer/desktop/scripts/build-native.sh</code></pre>
     </figure>
     <p>
       Do not move the four files apart. The renderer finds itself with <code>dladdr</code> and
@@ -100,7 +100,7 @@
     </p>
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
       <figcaption>shell</figcaption>
-<pre><code>./dioxus-compose-renderer/native/scripts/smoke-test.sh</code></pre>
+<pre><code>./dioxus-compose-renderer/desktop/scripts/smoke-test.sh</code></pre>
     </figure>
     <p>
       A window there and none from Rust points at the linking of your binary. No window there

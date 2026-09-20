@@ -19,7 +19,7 @@ die() {
 if [[ "$(uname -s)" != "Darwin" ]]; then
     die "only macOS is scripted so far (this is $(uname -s))" \
         "Linux and Windows native-image builds are not scripted yet." \
-        "The Rust workspace and the JVM dev shell (./kotlin run -m native) work everywhere."
+        "The Rust workspace and the JVM dev shell (./kotlin run -m desktop) work everywhere."
 fi
 
 HOST_ARCH="$(uname -m)"
@@ -33,7 +33,7 @@ esac
 # The C shims and the native-image link step need cc, ld and the AppKit headers.
 if ! xcode-select -p >/dev/null 2>&1 || ! command -v cc >/dev/null 2>&1; then
     die "Xcode command line tools not found" \
-        "They provide cc, ld and the AppKit headers used by native/c/*." \
+        "They provide cc, ld and the AppKit headers used by desktop/c/*." \
         "fix: xcode-select --install"
 fi
 
@@ -91,7 +91,7 @@ run_on_jvm() {
     local log="$BUILD_DIR/jvm-run.log"
     mkdir -p "$BUILD_DIR"
     # Metadata describes the JDK it was collected on, so the JVM run uses NIK itself.
-    (cd "$PROJECT_DIR" && JAVA_HOME="$GRAALVM_HOME" ./kotlin run -m native --no-compose-hot-reload \
+    (cd "$PROJECT_DIR" && JAVA_HOME="$GRAALVM_HOME" ./kotlin run -m desktop --no-compose-hot-reload \
         --jvm-args="-XshowSettings:properties $extra_jvm_args") 2>&1 | tee "$log" >&2
     awk '
         /^ *java\.class\.path = / { sub(/^ *java\.class\.path = /, ""); print; collecting = 1; next }

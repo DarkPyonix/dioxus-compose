@@ -83,7 +83,7 @@ struct renderer_run {
  * The host must export the five dioxus_compose_host_* functions.
  *
  * UNTESTED: this forwarding path has not been compiled or run in this repository. Verify it
- * on Windows x64 with native/scripts/smoke-test-windows.ps1 -RequireClick.
+ * on Windows x64 with desktop/scripts/smoke-test-windows.ps1 -RequireClick.
  */
 typedef struct {
     const uint8_t *ptr;

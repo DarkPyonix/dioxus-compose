@@ -276,7 +276,7 @@ on Darwin** ([oracle/graal#13272](https://github.com/oracle/graal/issues/13272))
 static AWT archive and no way to link the renderer. Liberica NIK Full links AWT statically.
 
 Statically linked macOS AWT then looks for three things by file path at runtime, each met by a thin
-shim in `dioxus-compose-renderer/native/c/`:
+shim in `dioxus-compose-renderer/desktop/c/`:
 
 | Missing thing | Shim |
 |---|---|
@@ -328,7 +328,7 @@ brew install --cask liberica-nik-full
 ./scripts/install-nik.sh
 ```
 
-`dioxus-compose-renderer/native/scripts/env.sh` discovers it in this order:
+`dioxus-compose-renderer/desktop/scripts/env.sh` discovers it in this order:
 
 1. `$GRAALVM_HOME`, if set
 2. the newest match of
@@ -339,7 +339,7 @@ without `lib/static/darwin-*/libawt_lwawt.a`. That catches plain GraalVM up fron
 a long build ends in a link failure.
 
 macOS also needs the Xcode command line tools (`xcode-select --install`) for `cc`, `ld` and the
-AppKit headers used by `dioxus-compose-renderer/native/c/`.
+AppKit headers used by `dioxus-compose-renderer/desktop/c/`.
 
 **The scripts support macOS only today.** Linux and Windows native-image builds are not scripted.
 
@@ -355,7 +355,7 @@ Produces the renderer, Skia and the `libjawt` / `libawt_lwawt` helpers in
 
 ```bash
 cd dioxus-compose-renderer
-./native/scripts/build-native.sh
+./desktop/scripts/build-native.sh
 ```
 
 <details>
@@ -377,7 +377,7 @@ open, and closing it should return 0, the `PR-8` acceptance criterion.
 
 ```bash
 cd dioxus-compose-renderer
-./native/scripts/smoke-test.sh
+./desktop/scripts/smoke-test.sh
 ```
 
 For an unattended run, set `DIOXUS_COMPOSE_AUTOEXIT_MS=6000` to make the window close itself.
@@ -401,7 +401,7 @@ native-image build is needed (`NFR-5`, `D7`).
 ```bash
 cd dioxus-compose-renderer
 ./kotlin run -m desktop   # the Compose development shell
-./kotlin run -m native    # the renderer module itself on the JVM, driven by a scripted Host
+./kotlin run -m desktop    # the renderer module itself on the JVM, driven by a scripted Host
 ```
 
 > The JVM is permitted **only here**. Shipped artifacts never contain one (`C2`).

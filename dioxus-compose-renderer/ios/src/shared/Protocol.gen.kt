@@ -1,1 +1,1 @@
-../../../native/src/protocol/Protocol.gen.kt
+../../../desktop/src/protocol/Protocol.gen.kt

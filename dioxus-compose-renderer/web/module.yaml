@@ -1,7 +1,7 @@
 product: wasm-js/app
 
 dependencies:
-  - //shared
+  - $compose.material3
   - $compose.ui
 
 settings:

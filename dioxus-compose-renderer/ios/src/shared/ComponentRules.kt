@@ -1,1 +1,1 @@
-../../../native/src/renderer/ComponentRules.kt
+../../../desktop/src/renderer/ComponentRules.kt

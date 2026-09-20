@@ -52,12 +52,12 @@ sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
   fonts-noto-cjk xvfb xauth dbus-x11
 export GRAALVM_HOME=/absolute/path/to/graalvm-jdk-25
 cd /absolute/path/to/dioxus-compose-renderer
-xvfb-run -a ./native/scripts/build-native-linux.sh
-bash ./native/scripts/tests/linux-build.test.sh
+xvfb-run -a ./desktop/scripts/build-native-linux.sh
+bash ./desktop/scripts/tests/linux-build.test.sh
 find build/native-image-linux/dist/lib -maxdepth 1 -type f -print | sort
 ldd build/native-image-linux/dist/lib/*.so
 readelf -d build/native-image-linux/dist/lib/libdioxus_compose_renderer.so
-DIOXUS_COMPOSE_AUTOEXIT_MS=5000 xvfb-run -a ./native/scripts/smoke-test-linux.sh
+DIOXUS_COMPOSE_AUTOEXIT_MS=5000 xvfb-run -a ./desktop/scripts/smoke-test-linux.sh
 ```
 
 The last command can prove startup, rendering far enough to auto-close, shutdown, and return
@@ -69,9 +69,9 @@ field before closing the window:
 ```bash
 export LANG=ko_KR.UTF-8
 export XMODIFIERS=@im=ibus
-DIOXUS_COMPOSE_AUTOEXIT_MS=60000 ./native/scripts/collect-metadata-linux.sh
+DIOXUS_COMPOSE_AUTOEXIT_MS=60000 ./desktop/scripts/collect-metadata-linux.sh
 unset DIOXUS_COMPOSE_AUTOEXIT_MS
-./native/scripts/smoke-test-linux.sh
+./desktop/scripts/smoke-test-linux.sh
 ```
 
 Repeat in a separate configured fcitx session with:
@@ -80,9 +80,9 @@ Repeat in a separate configured fcitx session with:
 export LANG=ko_KR.UTF-8
 export XMODIFIERS=@im=fcitx
 LINUX_METADATA_OUTPUT="$PWD/build/native-image-linux/fcitx-agent-metadata" \
-  DIOXUS_COMPOSE_AUTOEXIT_MS=60000 ./native/scripts/collect-metadata-linux.sh
+  DIOXUS_COMPOSE_AUTOEXIT_MS=60000 ./desktop/scripts/collect-metadata-linux.sh
 unset DIOXUS_COMPOSE_AUTOEXIT_MS
-./native/scripts/smoke-test-linux.sh
+./desktop/scripts/smoke-test-linux.sh
 ```
 
 For each IME, verify composition, candidate selection, Enter to confirm composition, Enter

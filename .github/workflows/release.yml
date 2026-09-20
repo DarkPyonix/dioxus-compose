@@ -74,12 +74,12 @@ jobs:
             kotlin-${{ runner.os }}-
 
       - name: Build the renderer shared library
-        run: ./dioxus-compose-renderer/native/scripts/build-native.sh
+        run: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
 
       - name: Smoke test before shipping (SPEC PR-8)
         env:
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
-        run: ./dioxus-compose-renderer/native/scripts/smoke-test.sh
+        run: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
 
       - name: Package the distribution with a checksum
         id: package

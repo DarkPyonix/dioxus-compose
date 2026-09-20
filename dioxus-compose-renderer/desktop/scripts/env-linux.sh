@@ -1,7 +1,7 @@
 # Shared settings for Linux native build scripts. Sourced, not executed.
 #
 # UNTESTED ON LINUX as of 2026-09-20. Verify first with:
-#   GRAALVM_HOME=/path/to/graalvm-jdk-25 ./native/scripts/build-native-linux.sh
+#   GRAALVM_HOME=/path/to/graalvm-jdk-25 ./desktop/scripts/build-native-linux.sh
 
 NATIVE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROJECT_DIR="$(cd "$NATIVE_DIR/.." && pwd)"
@@ -74,7 +74,7 @@ run_on_jvm() {
     [[ -n "${DISPLAY:-}" ]] || die "DISPLAY is not set, so the Compose JVM probe cannot start" \
         "On a headless machine: xvfb-run -a $NATIVE_DIR/scripts/build-native-linux.sh"
     mkdir -p "$BUILD_DIR"
-    (cd "$PROJECT_DIR" && JAVA_HOME="$GRAALVM_HOME" ./kotlin run -m native --no-compose-hot-reload \
+    (cd "$PROJECT_DIR" && JAVA_HOME="$GRAALVM_HOME" ./kotlin run -m desktop --no-compose-hot-reload \
         --jvm-args="-XshowSettings:properties $extra_jvm_args") 2>&1 | tee "$log" >&2
     awk '
         /^ *java\.class\.path = / { sub(/^ *java\.class\.path = /, ""); print; collecting = 1; next }

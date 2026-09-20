@@ -1,1 +1,1 @@
-../../../native/src/renderer/DesignSystem.kt
+../../../desktop/src/renderer/DesignSystem.kt

@@ -1,1 +1,1 @@
-../../../native/src/FrameRequests.kt
+../../../desktop/src/FrameRequests.kt
