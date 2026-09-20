@@ -10,6 +10,10 @@ dependencies:
   # builder at image build time, so it is not bundled into the jar.
   - org.graalvm.sdk:nativeimage:25.0.1: compile-only
 
+test-dependencies:
+  - $compose.desktop.uiTestJUnit4
+  - $kotlin.test
+
 settings:
   compose: enabled
   jvm:
