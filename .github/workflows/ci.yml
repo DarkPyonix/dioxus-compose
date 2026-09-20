@@ -80,7 +80,52 @@ jobs:
         # recorded baseline, so shared-runner noise does not make them flaky;
         # the benchmark *assertions* (NFR-9) still fail the build if a real
         # regression lands.
+        #
+        # Without the Kotlin half. check.sh runs it by default, which is right on a
+        # developer's machine and wrong here: this job is named for Rust, has no Kotlin
+        # caches, and so spent most of ten minutes downloading the Kotlin/Native compiler
+        # and the wasm toolchain before doing eight seconds of work. The kotlin job below
+        # runs it once, with the caches that make it cheap.
+        env:
+          DXC_SKIP_KOTLIN: '1'
         run: ./scripts/check.sh
+
+  kotlin:
+    name: Kotlin gate
+    # macOS only: the interpreter sources are shared with the iOS renderer through
+    # symlinks, and compiling that half needs Apple's toolchain. Running the same build on
+    # Linux would cover the desktop module twice and the iOS one never.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the Kotlin toolchain, konan and Maven dependencies
+        # The expensive parts, none of which change between runs: the Amper distribution,
+        # the Kotlin/Native compiler and its platform libraries, and every Compose and
+        # androidx artifact for five targets.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.konan
+            ~/.m2/repository
+          key: kotlin-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/**/module.yaml', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/kotlin') }}
+          restore-keys: |
+            kotlin-${{ runner.os }}-
+
+      - name: Build and test the renderer
+        working-directory: dioxus-compose-renderer
+        run: |
+          ./kotlin build
+          ./kotlin test
+
+      - name: Build and test the design systems
+        # A separate Amper project, and deliberately so: it must never depend on the
+        # renderer, which is what lets it be published on its own.
+        working-directory: dioxus-design-systems
+        run: |
+          ./kotlin build
+          ./kotlin test
 
   shell:
     name: Shell script tests (${{ matrix.os }})
