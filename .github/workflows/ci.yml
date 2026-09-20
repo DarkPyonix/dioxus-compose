@@ -20,7 +20,11 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, develop]
+  # Pushes to main only. Work lands on develop many times an hour, and running the
+  # matrix on each one is noise; what has to be verified is the branch people receive.
+  # Nothing escapes checking: every release to main arrives as a pull request, and the
+  # pull_request trigger above covers those.
+    branches: [main]
   workflow_dispatch:
 
 concurrency:
