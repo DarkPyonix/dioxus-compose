@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 # Usage: ./scripts/publish-main.sh [--write] [--source BRANCH] [--target BRANCH]
 #
-# Produces or updates the public `main` branch from `develop`.
+# Produces or updates the public branch from `develop`.
 #
-# The repository keeps two branches. `develop` has everything. `main` is what
-# the public sees: the source code, the root README.md, and docs/guide/ (the
-# guide site). The internal planning documents -- PROJECT.md, CLAUDE.md, and
-# everything directly under docs/, which is where INTENT.md and SPEC.md live
-# -- exist only on develop.
+# `develop` has everything. The public tree is the source code, the root
+# README.md, and docs/guide/ (the guide site). The internal planning documents
+# -- PROJECT.md, CLAUDE.md, and everything directly under docs/, which is where
+# INTENT.md and SPEC.md live -- exist only on develop.
+#
+# The default target is `release`, not `main`: `main` is protected and only
+# moves through a pull request, which .github/workflows/publish-main.yml opens
+# from `release`. Pass `--target main` to write it directly, which works only
+# where the protection does not apply.
 #
 #   --write            actually update the target branch. Without it, this is
 #                      a dry run that only prints what it would do.
 #   --source BRANCH    branch to take content from (default: develop)
-#   --target BRANCH    branch to write (default: main)
+#   --target BRANCH    branch to write (default: release)
 #
 #
 # ## Approach: a merge commit built with plumbing, never a checkout
@@ -53,7 +57,7 @@ set -euo pipefail
 
 write=0
 source_branch="develop"
-target_branch="main"
+target_branch="release"
 
 while (( $# )); do
     case "$1" in
@@ -152,8 +156,8 @@ fi
 
 # --- commit and move the ref ------------------------------------------------
 #
-# Parent order matters: the previous main first, so `main` keeps a linear
-# first-parent history, and develop second, so main records exactly which
+# Parent order matters: the previous target first, so it keeps a linear
+# first-parent history, and develop second, so it records exactly which
 # develop commit it was published from.
 parents=()
 [[ -n "$target_commit" ]] && parents+=(-p "$target_commit")
