@@ -85,9 +85,15 @@ class ThemeResolutionTest {
     }
 
     @Test
-    fun fr14_3_adaptive_is_never_implicit() {
-        // No SetTheme at all means unified(Material3), never a platform look.
-        assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Windows, false).system)
+    fun fr14_3_saying_nothing_follows_the_platform() {
+        // No SetTheme at all follows the host platform. The default used to be unified
+        // Material 3, which meant a Windows machine with no theme set drew a Material
+        // window and nothing in the default path ever exercised platform adaptation.
+        assertEquals(DesignSystem.Fluent, resolveTheme(null, HostPlatform.Windows, false).system)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(null, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Android, false).system)
+        // Material 3 remains the fallback where a platform has no look of its own.
+        assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Unknown, false).system)
         assertEquals(false, resolveTheme(null, HostPlatform.Windows, false).dark)
     }
 
