@@ -82,10 +82,11 @@ native-image는 CI와 릴리스에서만 돌립니다.
 2026-09-20에 macOS arm64에서 검증한 내용입니다(SPEC PR-7-macOS).
 
 - Liberica NIK 25 Full로 Compose Desktop을 native-image로 빌드하면 창이 뜨고 렌더링됩니다. JDK 설치가 필요 없습니다.
+- 아래 우회책에 나오는 JNI는 **JDK 내부 이야기입니다.** `java.desktop`은 원래 Java 코드와 네이티브 코드가 JNI로 묶여 있고, JVM에서 Compose를 돌릴 때도 같은 경로를 탑니다. Host ↔ Renderer 경계와는 무관하며, 그 경계는 순수 C ABI입니다(C3은 Android의 수동 JNI를 금지하는 조항입니다).
 - 정적 링크된 macOS AWT는 런타임에 세 가지를 파일 경로로 찾습니다. 각각 얇은 우회책으로 메웁니다.
   - `libawt_lwawt.dylib`: libawt 초기화가 경로로 로드합니다. JNI 함수는 실행 이미지 안에서 해석되므로 자리만 채우는 dylib을 둡니다.
   - `libjawt.dylib`: Skiko가 `<java.home>/lib`에서 dlopen합니다. 이미지 안의 `JAWT_GetAWT`로 넘기는 포워더를 둡니다.
-  - `JNI_OnLoad_osxui`: 정적 JNI 라이브러리에 필수인 심볼인데 아카이브에 없어서 직접 정의합니다.
+  - `JNI_OnLoad_osxui`: 정적으로 링크된 JNI 라이브러리가 반드시 정의해야 하는 심볼인데 NIK의 아카이브에 없어서 직접 정의합니다.
 - **AppKit은 메인 스레드를 요구합니다.** 렌더러는 보조 스레드에서 돌고, 메인 스레드는 NSApplication을 직접 만들어 실행합니다. 이렇게 하면 AWT가 임베디드 모드(SWT/JavaFX 호스트와 같은 방식)로 동작합니다. AWT가 자기 루프를 갖게 두면 `[NSApp run]`을 무한히 다시 들어가서 창을 닫아도 Host로 제어가 돌아오지 않습니다.
 
 ### D9. Android는 Kotlin이 호스트, 경계 정의는 방향 중립
