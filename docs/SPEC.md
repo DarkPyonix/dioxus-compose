@@ -239,13 +239,24 @@ Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=
   3. 흐림을 지원하지 않는 환경에서도 읽을 수 있는 대체 표현이 있습니다(대비를 지키는 불투명 재질).
   4. 접근성 설정의 투명도 감소를 존중합니다.
 
-- Renderer 구현 제약: Compose의 흐림은 자기 콘텐츠에 적용되며, 뒤 배경을 흐리게 하려면 별도 경로가 필요합니다. 사용 가능한 API를 확인하고, 불가능하면 무엇이 막는지와 대체안을 기록합니다. 흉내만 낸 반투명으로 "구현했다"고 표시하지 않습니다.
+**Renderer 구현 제약 (조사 완료, 2026-09-21)**
+
+Compose Multiplatform은 Liquid Glass를 그릴 수 없습니다. JetBrains가 명시합니다([ios-liquid-glass](https://kotlinlang.org/docs/multiplatform/ios-liquid-glass.html)). 효과는 **시스템이** 네이티브 SwiftUI `TabView`, `NavigationStack`, 툴바 API를 통해 그리며, Compose 앱이 채택하려면 Compose 콘텐츠를 **네이티브 SwiftUI 셸로 감싸야** 합니다. iOS 26 + Xcode 26 전용이고, Compose 쪽 API는 없습니다. 이 문서는 iOS만 다루므로 데스크톱에 대해서는 아무 말도 하지 않습니다.
+
+따라서 요구사항을 둘로 나눕니다. 경계는 **흐리게 할 대상이 우리가 그린 것이냐**입니다.
+
+1. **우리가 그릴 수 있는 것 (1.0 범위).** 뒤에 있는 것이 우리 앱 콘텐츠인 경우입니다. 동심 곡률, 가장자리 하이라이트(상단 밝고 하단 어두움), 레이어 겹침으로 표현하는 깊이, 앱 콘텐츠 위의 반투명 컨트롤 표면, 그리고 우리가 그린 콘텐츠에 대한 Compose 흐림. 이것들은 흉내가 아니라 실제 구현이며, iOS 26 화면처럼 보이게 하는 요소의 대부분입니다.
+2. **우리가 그릴 수 없는 것.** 창 뒤의 **시스템 배경**을 비추는 재질입니다. macOS에서는 `NSVisualEffectView`가 필요하고 그것은 Compose 표면 바깥의 플랫폼 경로입니다. 우리가 `NSApplication`을 직접 만들므로(INTENT D9-macOS) 이론적으로 접근 가능성은 있으나, 1.0 범위 밖입니다. iOS에서 진짜 Liquid Glass는 SwiftUI 셸의 내비게이션 크롬에만 적용되며, 그 크롬은 Rust가 작성하는 UI가 아닙니다.
+
+수용 기준 2의 "배경"은 **컨트롤 뒤의 앱 콘텐츠**를 뜻합니다. 창 뒤의 바탕화면이 아닙니다.
+
+**흉내만 낸 반투명으로 "구현했다"고 표시하지 않습니다.** 1번 항목은 실제로 그리는 것이므로 이 규칙에 걸리지 않지만, 2번을 했다고 주장해서는 안 됩니다.
 
 #### 14.2 컴포넌트 변형
 컴포넌트 규칙이 붙는 자리는 변형(variant) 속성입니다. 값은 디자인 시스템 중립 이름입니다.
 - `Button.variant`: `Filled | Tonal | Outlined | Text`
   - Material 3: Filled/Tonal/Outlined/Text 버튼, 큰 곡률, 리플.
-  - HIG: Filled은 강조 버튼(연속 곡률, 그림자 없음), Tonal은 회색 배경, Text는 내용 색만 쓰는 plain 버튼. 리플 대신 하이라이트.
+  - Cupertino: Filled은 강조 버튼(연속 곡률, 그림자 없음), Tonal은 회색 배경, Text는 내용 색만 쓰는 plain 버튼. 리플 대신 하이라이트.
   - Fluent: Accent/Standard/Standard+stroke/Subtle, 4dp 곡률, 위쪽 밝은 테두리.
 - 같은 rsx 코드가 시스템에 따라 다른 모양으로 그려지는 것이 정상 동작입니다.
 
