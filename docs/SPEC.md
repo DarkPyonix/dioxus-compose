@@ -271,6 +271,10 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 
 native-image 빌드에서 macOS와 Windows 각각 수동으로 확인합니다.
 
+**macOS arm64 결과 (2026-09-20, Liberica NIK 25)**: 한국어 입력기로 전환하고 입력창에 한글을 입력하는 기본 경로가 동작합니다. 나머지 항목은 아직 확인 전입니다.
+
+여기서 발견한 실패 양상을 남겨 둡니다. 등록되지 않은 입력 경로는 빌드도 렌더링도 멀쩡히 통과한 뒤, 입력기가 텍스트 필드를 건드리는 순간 Objective-C 예외로 프로세스를 abort시킵니다. Java 스택 트레이스 없이 창이 그냥 사라지므로, 이 증상이 보이면 실행 로그에서 `JNI Lookup Exception`과 그 앞의 `NoSuchMethodError`를 먼저 찾으십시오. 근본 대응은 `ImeReachabilityFeature`가 패키지 단위로 등록하는 것입니다(INTENT D9-macOS).
+
 - [ ] "안녕하세요" 입력 시 조합 과정이 정상 표시됨
 - [ ] 조합 중 백스페이스로 자모 단위 삭제
 - [ ] 조합 중 화살표로 커서 이동 시 조합 확정 후 이동
