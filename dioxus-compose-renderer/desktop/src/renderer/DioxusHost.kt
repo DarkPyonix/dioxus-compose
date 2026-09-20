@@ -7,7 +7,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -23,6 +22,11 @@ import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.node.TableError
 import java.lang.InterruptedException
 import java.lang.System
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import dioxus.compose.ui.platform.rememberSystemDark
+import androidx.compose.runtime.getValue
 
 /**
  * Sends one event to the Host and reports whether the Host consumed it.
@@ -142,7 +146,11 @@ fun rememberDioxusHost(connection: HostConnection): DioxusHost {
  * per frame, inside `withFrameNanos`.
  */
 @Composable
-fun DioxusContent(host: DioxusHost, modifier: Modifier = Modifier) {
+fun DioxusContent(
+    host: DioxusHost,
+    modifier: Modifier = Modifier,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+) {
     LaunchedEffect(host) {
         var applied = FrameRequests.counter.value
         FrameRequests.counter.collect { requested ->
@@ -154,12 +162,22 @@ fun DioxusContent(host: DioxusHost, modifier: Modifier = Modifier) {
     // The theme is resolved once here, and every node reads it from the CompositionLocal. A `SetTheme` is therefore one record on the wire and one
     // invalidation in Compose, not a SetProp per node.
     val platform = remember { detectHostPlatform() }
-    val systemDark = systemDarkOverride ?: isSystemInDarkTheme()
+    // Not Compose's isSystemInDarkTheme(): on this platform it reads the setting once and
+    // never notices it change, so a window would keep its original colours while the rest
+    // of the desktop switched.
+    val observedDark by rememberSystemDark()
+    val systemDark = systemDarkOverride ?: observedDark
     val theme = resolveTheme(host.table.theme, platform, systemDark)
     CompositionLocalProvider(LocalDesignTheme provides theme) {
+        // The background fills the whole window and the inset is applied inside it. Putting
+        // the inset outside instead leaves the window's own background showing through the
+        // strip the title bar used to occupy, which reads as a leftover title bar rather
+        // than as content extending underneath one.
         Box(modifier.background(theme.color(ColorRole.Background))) {
-            host.roots.forEach { rootId ->
-                androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
+            Box(Modifier.padding(contentPadding)) {
+                host.roots.forEach { rootId ->
+                    androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
+                }
             }
         }
     }

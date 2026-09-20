@@ -49,11 +49,11 @@ internal fun runRenderer(
         }
         DioxusContent(
             rememberDioxusHost(remember { connection() }),
-            Modifier
-                .fillMaxSize()
-                // Content runs under the caption on purpose, but a widget sitting where
-                // the window buttons are would leave both unusable.
-                .padding(windowContentInsets(chrome, hasTopAppBar = false)),
+            Modifier.fillMaxSize(),
+            // Content runs under the caption on purpose, but a widget sitting where the
+            // window buttons are would leave both unusable. The inset goes inside the
+            // content's own background so the window has one continuous surface.
+            contentPadding = windowContentInsets(window, chrome, hasTopAppBar = false),
         )
     }
 }

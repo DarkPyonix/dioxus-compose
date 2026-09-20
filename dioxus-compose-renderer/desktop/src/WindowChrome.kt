@@ -1,6 +1,7 @@
 package dioxus.compose.ui.platform
 
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import java.awt.Window as AwtWindow
 import javax.swing.JRootPane
@@ -53,6 +54,10 @@ internal val platformDrawsWindowButtons: Boolean
  * Called after the window exists because AWT reads these when the peer is realised.
  */
 internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
+    // Read the title bar height while the window still has one: fullWindowContent below
+    // makes AWT report a top inset of zero, because the content genuinely starts at the
+    // top from then on.
+    captionHeight(window)
     if (chrome == WindowChrome.System) return
     val root: JRootPane = (window as? RootPaneContainer)?.rootPane ?: return
     if (platformDrawsWindowButtons) {
@@ -67,22 +72,43 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
  *
  * Content is allowed to run underneath the caption, which is the point, but a widget
  * placed where the macOS traffic lights are would leave both unusable. The renderer
- * applies this to the root node; the Host never sees it and cannot set it, because the
- * safe area is a fact about the window rather than a decision the application makes.
+ * applies this; the Host never sees it and cannot set it, because the safe area is a fact
+ * about the window rather than a decision the application makes.
  *
- * 28dp is the height of the macOS title bar area, and 78dp clears the three buttons plus
- * the gap after them.
+ * The height is measured rather than guessed. AWT reports a decorated window's title bar
+ * as the top inset of its frame, and on macOS that is the same strip the traffic lights
+ * sit in. Reading it means the value follows the platform instead of drifting from it the
+ * next time Apple changes the height, which a constant in this file would not.
  */
-internal fun windowContentInsets(chrome: WindowChrome, hasTopAppBar: Boolean): PaddingValues =
-    when {
-        chrome == WindowChrome.System -> PaddingValues(0.dp)
-        // A TopAppBar is the caption, so it positions itself around the buttons rather
-        // than being pushed below them.
-        hasTopAppBar -> PaddingValues(0.dp)
-        platformDrawsWindowButtons -> PaddingValues(top = 28.dp)
-        // Where we draw the caption ourselves, its height is ours to choose.
-        else -> PaddingValues(top = 32.dp)
-    }
+internal fun windowContentInsets(
+    window: AwtWindow?,
+    chrome: WindowChrome,
+    hasTopAppBar: Boolean,
+): PaddingValues = when {
+    chrome == WindowChrome.System -> PaddingValues(0.dp)
+    // A TopAppBar is the caption, so it lays itself out around the buttons rather than
+    // being pushed below them.
+    hasTopAppBar -> PaddingValues(0.dp)
+    else -> PaddingValues(top = captionHeight(window))
+}
+
+/**
+ * The height of the strip the window buttons occupy.
+ *
+ * Asks the window first. A frame that has been made full size content reports a top inset
+ * of zero, since its content really does start at the top, so this reads the inset before
+ * the chrome is applied and remembers it. Where there is nothing to ask, the fallbacks are
+ * each platform's standard height.
+ */
+private fun captionHeight(window: AwtWindow?): Dp {
+    measuredCaptionHeight?.let { return it }
+    val measured = window?.insets?.top?.takeIf { it > 0 }?.dp
+    val height = measured ?: if (platformDrawsWindowButtons) 28.dp else 32.dp
+    measuredCaptionHeight = height
+    return height
+}
+
+private var measuredCaptionHeight: Dp? = null
 
 /** The horizontal room the system window buttons occupy, for a caption to lay out around. */
 internal val systemWindowButtonsWidth
