@@ -283,12 +283,14 @@ mod tests {
         host.dispatch_event(&event).expect("the submit failed");
 
         // Poll frames the way the Renderer would after the Host asked for one. The reply
-        // starts after a short pause, so a second of frames is far more than it needs.
+        // arrives a few characters at a time, so the loop waits several times as long as
+        // the reply needs on an idle machine rather than stopping the moment it would be
+        // enough. The test is about the reply reaching a frame at all, not about its pace.
         // A reply that is still arriving is sent as the new tail alone, so the length on
         // screen is what the node was set to plus everything appended to it since.
         let mut lengths: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
         let mut longest = 0usize;
-        for _ in 0..200 {
+        for _ in 0..800 {
             std::thread::sleep(std::time::Duration::from_millis(5));
             let batch = host.render_frame(0).expect("a streaming frame failed");
             for mutation in decode_batch(batch).expect("a streaming frame did not decode") {
