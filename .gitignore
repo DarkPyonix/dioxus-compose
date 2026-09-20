@@ -26,3 +26,6 @@ target
 # Agent worktrees
 .claude/
 .agent-salvage/
+
+# Machine local cargo settings, written by scripts/setup-worktrees.sh
+.cargo/config.toml
