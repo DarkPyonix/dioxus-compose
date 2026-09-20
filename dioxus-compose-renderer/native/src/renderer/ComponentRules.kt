@@ -111,14 +111,14 @@ internal object Material3Rules : ComponentRules {
 }
 
 /**
- * Apple HIG rules (FR-14.6 items 5 to 7).
+ * Cupertino rules (FR-14.6 items 5 to 7).
  *
  * Reference: Apple Human Interface Guidelines, "Materials", "Buttons" and "Motion", 2024.
  *
  * Shadows are wide and faint rather than layered, the emphasised button is flat with no
  * shadow at all (FR-14.2), and the press feedback is a dim, not a ripple.
  */
-internal object AppleHigRules : ComponentRules {
+internal object CupertinoRules : ComponentRules {
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
         if (elevation.value <= 0f) return modifier
         // One soft shadow spread over roughly twice the requested height, at a low alpha.

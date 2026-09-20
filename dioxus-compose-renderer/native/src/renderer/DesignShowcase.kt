@@ -22,7 +22,7 @@ import org.thisisthepy.dioxus.compose.protocol.WidgetKind
  * A scripted Host that exercises the FR-13 primitives under one design system, so the
  * result of FR-14 can be looked at rather than only asserted on.
  *
- * Nothing here is design system aware: the same records produce Material 3, Apple HIG or
+ * Nothing here is design system aware: the same records produce Material 3, Cupertino or
  * Fluent pixels depending only on the `SetTheme` at the front (SPEC FR-14.1).
  */
 fun designShowcaseHost(theme: Theme): FakeHostConnection {
@@ -127,7 +127,7 @@ private fun roleBits(role: ColorRole): Long = (1L shl 32) or (role.ordinal + 1L)
 
 private fun systemName(theme: Theme): String = when (theme.designSystem) {
     DesignSystem.Material3 -> "Material 3"
-    DesignSystem.AppleHig -> "Apple HIG"
+    DesignSystem.Cupertino -> "Cupertino"
     DesignSystem.Fluent -> "WinUI Fluent 2"
 }
 
@@ -140,7 +140,7 @@ private fun systemName(theme: Theme): String = when (theme.designSystem) {
  */
 fun main() = application {
     val system = when (System.getenv("DXC_DESIGN_SYSTEM")?.lowercase()) {
-        "hig", "apple", "applehig" -> DesignSystem.AppleHig
+        "hig", "apple", "applehig" -> DesignSystem.Cupertino
         "fluent", "winui" -> DesignSystem.Fluent
         else -> DesignSystem.Material3
     }

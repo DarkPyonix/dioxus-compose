@@ -851,10 +851,10 @@ mod tests {
             })
         );
         assert_eq!(
-            first_record(LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::AppleHig))),
+            first_record(LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Cupertino))),
             Mutation::SetTheme(Theme {
-                design_system: DesignSystem::AppleHig,
-                fallback: DesignSystem::AppleHig,
+                design_system: DesignSystem::Cupertino,
+                fallback: DesignSystem::Cupertino,
                 color_scheme: ColorScheme::FollowSystem,
                 adaptive: true,
             })

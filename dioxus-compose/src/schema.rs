@@ -371,7 +371,7 @@ define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
 // FR-14.5: the design systems of phase one. Phase two appends variants here only.
 define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Material3 = 1,
-    AppleHig = 2,
+    Cupertino = 2,
     Fluent = 3,
 });
 

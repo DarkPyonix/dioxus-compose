@@ -859,7 +859,7 @@ mod tests {
     /// FR-14.5: `SetTheme` is a 12-byte record of four `u16` fields.
     #[test]
     fn fr14_set_theme_round_trips_in_twelve_bytes() {
-        let theme = Theme::adaptive(DesignSystem::AppleHig).with_color_scheme(ColorScheme::Dark);
+        let theme = Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
         let mut encoder = BatchEncoder::default();
         encoder.encode(&Mutation::SetTheme(theme)).unwrap();
         let bytes = encoder.finish().unwrap();

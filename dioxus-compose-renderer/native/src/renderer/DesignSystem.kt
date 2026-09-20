@@ -71,7 +71,7 @@ private fun linuxDesktop(xdgCurrentDesktop: String?, desktopSession: String?): H
 internal fun adaptiveSystem(platform: HostPlatform, fallback: DesignSystem): DesignSystem =
     when (platform) {
         HostPlatform.Android -> DesignSystem.Material3
-        HostPlatform.MacOs, HostPlatform.Ios -> DesignSystem.AppleHig
+        HostPlatform.MacOs, HostPlatform.Ios -> DesignSystem.Cupertino
         HostPlatform.Windows -> DesignSystem.Fluent
         // FR-14.3: the browser has no platform look, and Fluent 2 is the documented default.
         HostPlatform.Web -> DesignSystem.Fluent
@@ -211,7 +211,7 @@ fun resolveTheme(
 
 internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {
     DesignSystem.Material3 -> Material3Rules
-    DesignSystem.AppleHig -> AppleHigRules
+    DesignSystem.Cupertino -> CupertinoRules
     DesignSystem.Fluent -> FluentRules
 }
 
