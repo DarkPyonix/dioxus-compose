@@ -96,9 +96,9 @@ klib="$PROJECT_DIR/build/tasks/_iosrenderer_compile${amper_platform}Debug/iosren
 
 # The compiler arguments are logged as one block per invocation, and the block names the
 # target it belongs to, so the right block is the one containing -target=<this target>. The
-# module's own klib is added below by path, so project outputs are dropped here: the
-# iosentry block refers to the renderer klib by a task directory that Amper has since
-# renamed, and two klibs with one unique_name is an error.
+# module's own klib is added below by path, so project outputs are dropped here: the iosentry
+# block names the renderer klib under a task directory that differs in case from the one on
+# disk, and two paths with one unique_name is an error rather than a duplicate.
 libraries_file="$LOG_DIR/$amper_platform-libraries.txt"
 awk -v target="-target=$konan_target" '
     /^[A-Z]+ / {
