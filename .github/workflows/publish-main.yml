@@ -9,6 +9,9 @@
 name: Publish main
 
 on:
+  # develop on purpose, and the one workflow that should watch it. This is not a check on
+  # develop; it is the thing that turns develop into the published branch, so it has to
+  # run where the work lands.
   push:
     branches: [develop]
   workflow_dispatch:
