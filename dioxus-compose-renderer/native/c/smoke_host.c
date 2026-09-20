@@ -24,7 +24,7 @@ enum { STATUS_OK = 0, STATUS_PROTOCOL_ERROR = -1 };
 /* Mutation tags (schema.rs). */
 enum { TAG_ENVELOPE = 0, TAG_CREATE = 1, TAG_SET_PROP = 2, TAG_INSERT = 4 };
 /* WidgetKind tags. */
-enum { WIDGET_COLUMN = 1, WIDGET_TEXT = 4, WIDGET_BUTTON = 6 };
+enum { WIDGET_COLUMN = 1, WIDGET_TEXT = 4, WIDGET_TEXT_FIELD = 5, WIDGET_BUTTON = 6 };
 /* PropertyKind tags. */
 enum { PROP_TEXT = 1, PROP_ON_CLICK = 5 };
 /* PropertyValue tags. */
@@ -128,10 +128,21 @@ static void build_tree(const char *label) {
     set_text_prop(3, "click me");
     set_handler(3, PROP_ON_CLICK, CLICK_HANDLER);
     insert(1, 3, 1);
+#ifdef __linux__
+    /* The Linux smoke window includes an editable control so a real desktop run can exercise
+       XIM through ibus or fcitx. Keep the established macOS smoke tree unchanged. */
+    create(4, WIDGET_TEXT_FIELD);
+    uint32_t field_prop = records_length;
+    set_text_prop(4, "type Korean here");
+    insert(1, 4, 2);
+#endif
     end_batch();
     batch_length = records_length;
     put_string(label_prop + 12, label);
     put_string(button_prop + 12, "click me");
+#ifdef __linux__
+    put_string(field_prop + 12, "type Korean here");
+#endif
 }
 
 static void build_label_update(const char *label) {
