@@ -184,7 +184,7 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 
 `Paint`는 `u64` 하나입니다. 상위 32비트가 종류(`Role=1`, `Literal=2`)이고 하위 32비트가 값(`ColorRole` 태그 또는 ARGB)입니다.
 
-위젯 태그: `ScrollColumn = 9`.
+위젯 태그: 1-9는 13.8 시점의 어휘이고, 10-25는 FR-15.2가 배정합니다.
 
 Modifier 태그(기존 `Empty=0`~`Clickable=8` 뒤에 덧붙입니다):
 
@@ -313,6 +313,84 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 5. `Modifier::Elevation(dp)` → 그림자/톤/스트로크 렌더링 규칙
 6. `ButtonVariant` 4개 → 배경·전경·테두리·눌림 표현
 7. 모션: 상태 전환 duration과 easing
+
+### FR-15 위젯 어휘 (`Agreed`)
+
+M0의 위젯 9개는 데모를 굴리는 데 필요했던 만큼이지 설계된 범위가 아니었습니다. 1.0의 목표 어휘를 여기에 고정합니다.
+
+#### 15.1 기준: 세 시스템 공통 축
+
+위젯은 **Material 3, Cupertino, Fluent 2 모두에 대응물이 있는 것만** 코어 스키마에 넣습니다. 세 곳에 다 있어야 FR-14의 역할 기반 설계가 성립합니다. 위젯이 역할만 내보내고 그리는 방법은 디자인 시스템이 정하려면, 애초에 세 시스템이 그 개념을 공유해야 합니다.
+
+`androidx.compose.material3`를 1:1로 미러링하지 않는 이유가 이것입니다. `AssistChip`, `NavigationRail`, `ExtendedFloatingActionButton`은 Material 고유 어휘이고 Cupertino에 대응물이 없습니다. 코어에 넣으면 Cupertino와 Fluent는 Material을 흉내 내는 스킨이 되고, FR-14.2의 "네 번째 디자인 시스템을 추가할 때 위젯 코드를 건드리지 않는다"가 무너집니다. 그런 위젯은 FR-11 확장 패키지가 맡습니다.
+
+#### 15.2 코어 어휘
+
+기존(태그 1-9): `Column=1, Row=2, Box=3, Text=4, TextField=5, Button=6, Spacer=7, LazyColumn=8, ScrollColumn=9`
+
+추가(태그 10-25):
+
+| 태그 | 위젯 | 세 시스템 대응 |
+|---|---|---|
+| 10 | `Image` | 공통. FR-16 에셋 핸들을 받습니다 |
+| 11 | `Icon` | 공통. FR-16 에셋 핸들과 `ColorRole` 틴트 |
+| 12 | `Checkbox` | Material Checkbox / UIKit 체크 / Fluent CheckBox |
+| 13 | `RadioButton` | 공통 |
+| 14 | `Switch` | Material Switch / UISwitch / Fluent Toggle |
+| 15 | `Slider` | 공통 |
+| 16 | `ProgressIndicator` | 공통. `determinate: bool`, `circular: bool` |
+| 17 | `Divider` | 공통. `vertical: bool` |
+| 18 | `Card` | Material Card / 그룹 박스 / Fluent Card |
+| 19 | `Surface` | 배경과 고도를 갖는 컨테이너. FR-13.5 Elevation을 씁니다 |
+| 20 | `Dialog` | 공통. 모달. 위치와 애니메이션은 디자인 시스템 규칙 |
+| 21 | `Menu` | 공통. 앵커 노드에 붙는 팝업 |
+| 22 | `Tabs` | Material TabRow / UISegmentedControl / Fluent Pivot |
+| 23 | `TopAppBar` | Material TopAppBar / UINavigationBar / Fluent CommandBar |
+| 24 | `LazyRow` | FR-8 윈도잉의 가로 축 |
+| 25 | `Tooltip` | 공통. 데스크톱 전용 동작이 아니라 접근성 설명으로도 쓰입니다 |
+
+여기까지가 1.0입니다. 25개를 넘기지 않습니다.
+
+#### 15.3 넣지 않는 것
+
+| 제외 | 이유 |
+|---|---|
+| `Chip`, `FAB`, `NavigationRail`, `BottomSheet` | Material 고유 어휘. Cupertino 대응물 없음. FR-11 확장으로 |
+| `NavigationBar` | 모바일 고유. Android와 iOS에만 있고 데스크톱 세 시스템에 공통 개념이 없습니다 |
+| `Grid` | 지연 그리드는 FR-8과 다른 윈도잉 프로토콜이 필요합니다. 별도 요구사항으로 분리 |
+| `RichText`, 마크다운 | 위젯이 아니라 `Text`의 스팬 모델 문제입니다. FR-17에서 다룹니다 |
+| 드래그 앤 드롭, 리사이즈 핸들 | 입력 프로토콜 확장이 필요합니다. 1.0 이후 |
+
+#### 15.4 수용 기준
+
+- 25개 위젯 각각이 세 디자인 시스템에서 렌더링되고, `DesignShowcase`에 나타납니다.
+- 위젯을 추가해도 `DesignSystem` enum과 규칙 테이블 외에는 바뀌지 않습니다(FR-14.2 회귀 검사).
+- 각 위젯에 프로토콜 왕복 테스트가 있습니다(PR-4 벡터).
+
+### FR-16 에셋 전달 (`Agreed`)
+
+`Image`와 `Icon`은 리소스가 경계를 넘어야 합니다. 13.7에서 "별도 요구사항으로 분리"한 그 프로토콜입니다.
+
+#### 16.1 제약
+
+PR-4의 고정 레이아웃 레코드에는 이미지 바이트가 들어가지 않습니다. 그리고 PR-1의 동기 경계는 배치를 호출 스택 안에서 소비하므로, 배치가 가리키는 포인터는 호출이 끝나면 무효입니다. 이미지는 프레임보다 오래 살아야 합니다.
+
+#### 16.2 설계: 에셋 핸들
+
+1. Host가 `RegisterAsset` 명령으로 에셋을 등록합니다. 레코드는 `(asset_id: u32, kind: u16, offset: u32, length: u32)`이고, 바이트는 배치의 문자열 영역과 같은 방식으로 레코드 뒤에 놓입니다(PR-4 그대로).
+2. Renderer는 **그 호출 안에서 바이트를 복사해** 자기 캐시에 `asset_id`로 보관합니다. 이미지 디코딩은 Renderer가 합니다. 복사는 등록 시점 1회뿐이고 프레임마다 일어나지 않으므로 NFR-9의 프레임 예산 밖입니다.
+3. `Image`와 `Icon` 위젯은 `asset_id`만 속성으로 받습니다. 고정 레이아웃이 유지됩니다.
+4. `ReleaseAsset(asset_id)`로 캐시에서 내립니다. Host가 소유권을 갖습니다.
+5. 등록되지 않은 `asset_id`는 `ProtocolError`입니다(NFR-7). 프로세스를 중단시키지 않습니다.
+
+- `kind`: `Png=1, Jpeg=2, Svg=3, VectorIcon=4`. Renderer가 해석할 수 없는 종류는 `ProtocolError`입니다.
+- **시스템 아이콘 이름을 보내는 경로는 두지 않습니다.** 이름을 보내면 존재 검증이 런타임으로 밀리고, 폰트 패밀리를 뺀 이유(13.7)와 같은 문제가 생깁니다. 디자인 시스템별 기본 아이콘 세트는 Renderer 번들이 소유하고, `VectorIcon` 종류가 그 세트의 **역할**(`Back`, `Close`, `Search` 등 닫힌 enum)을 가리킵니다. 그래야 Cupertino에서는 SF Symbols 모양, Material에서는 Material Symbols 모양이 나옵니다.
+
+#### 16.3 수용 기준
+
+- PNG 1장을 등록하고 `Image`로 그린 뒤 해제하면, 해제 후 같은 `asset_id` 사용이 `ProtocolError`가 됩니다.
+- 등록은 프레임당 0회인 정상 경로에서 스틸 프레임 할당이 0입니다(NFR-9).
+- 같은 `VectorIcon` 역할이 세 디자인 시스템에서 각 시스템의 아이콘으로 그려집니다.
 
 ### FR-11 스키마 확장 (서드파티 위젯) (`Agreed`)
 스키마에 없는 Compose 컴포넌트는 **E1 확장 스키마 패키지**로 추가합니다. 확장은 런타임 플러그인이 아니라 Host와 Renderer의 소스 빌드에 함께 들어가는 한 쌍입니다. Rust 쪽 선언이 위젯 태그, 속성 태그, 타입이 붙은 Dioxus 컴포넌트를 소유하고, Kotlin 쪽 구현이 그 태그와 속성을 실제 `@Composable` 호출로 해석합니다.
