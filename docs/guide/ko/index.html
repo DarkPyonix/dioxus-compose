@@ -169,7 +169,7 @@
           <tr>
             <td>Web (wasm)</td>
             <td><span class="pill planned">계획</span></td>
-            <td>Rust wasm과 Kotlin/Wasm을 JS 브리지 없이 직결합니다. 실현 가능성은 아직 열린 질문입니다.</td>
+            <td>Kotlin이 wasm linear memory를 소유하고 Rust가 그것을 import합니다. 배치 arena를 제자리에서 공유하므로 복사가 없고, 경계 호출은 코드젠으로 만든 JS forwarder를 거칩니다(실측 약 12&nbsp;ns).</td>
           </tr>
         </tbody>
       </table>
@@ -189,7 +189,7 @@
           <tr><td><code>fill_max_width</code>·<code>fill_max_height</code> 외의 Modifier</td><td><span class="pill partial">일부</span></td><td>패딩, 크기, 배경, clickable은 프로토콜에는 있지만 <code>rsx!</code> 속성이 아직 없습니다.</td></tr>
           <tr><td><code>LazyColumn</code> 윈도잉 (FR-8)</td><td><span class="pill partial">Host 쪽</span></td><td>컴포넌트·프로토콜·Host 테스트는 통과합니다. Kotlin 인터프리터는 아직 <code>Column</code>으로 그리고 <code>RangeRequested</code>를 보내지 않습니다.</td></tr>
           <tr><td><code>AppendText</code> 스트리밍 (FR-9)</td><td><span class="pill partial">Host 쪽</span></td><td>Host가 프레임당 한 건으로 모아 flush합니다. <code>rsx!</code> 수준 API는 아직 없고 <code>Host::append_text</code>는 프로토콜 node id를 받습니다.</td></tr>
-          <tr><td>디자인 시스템과 테마 (FR-13, FR-14)</td><td><span class="pill planned">계획</span></td><td>명세가 <code>Draft</code>입니다. <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code>, <code>SetTheme</code> 모두 아직 없습니다. <a href="design-systems.html">디자인 시스템</a>을 보세요.</td></tr>
+          <tr><td>디자인 시스템과 테마 (FR-13, FR-14)</td><td><span class="pill planned">계획</span></td><td>명세는 와이어 태그까지 <code>Agreed</code>지만 구현된 것은 없습니다. 크레이트에 <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code>, <code>SetTheme</code> 모두 아직 없습니다. <a href="design-systems.html">디자인 시스템</a>을 보세요.</td></tr>
         </tbody>
       </table>
     </div>
