@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Writing UI — dioxus-compose guide</title>
+<title>Writing UI, dioxus-compose guide</title>
 <meta name="description" content="rsx!, the widget set, modifiers, event handlers, event consumption, and the uncontrolled TextField.">
 <link rel="alternate" hreflang="en" href="writing-ui.html">
 <link rel="alternate" hreflang="ko" href="../ko/writing-ui.html">
 <link rel="alternate" hreflang="x-default" href="writing-ui.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="Guide">
       <h2>Guide</h2>
       <ul>
-        <li><a href="./">Overview</a></li>
+        <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html" aria-current="page">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
@@ -105,8 +105,8 @@
 
     <p>
       <code>LoopMode::Renderer</code> is the default and the only mode that runs today.
-      <code>LoopMode::Platform</code> — where Android or the browser owns the loop and calls into
-      the Host — is defined in the protocol but has no implementation yet.
+      <code>LoopMode::Platform</code>, where Android or the browser owns the loop and calls into
+      the Host, is defined in the protocol but has no implementation yet.
     </p>
 
     <h2 id="widgets">The widget set</h2>
@@ -144,7 +144,7 @@
     </div>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust — from dioxus-compose/tests/rsx_api.rs</figcaption>
+      <figcaption>rust, from dioxus-compose/tests/rsx_api.rs</figcaption>
 <pre><code><span class="f">rsx!</span> {
     dioxus_compose::<span class="ty">Box</span> {
         <span class="at">fill_max_width</span>: <span class="k">true</span>,
@@ -155,8 +155,8 @@
 
     <h2 id="modifiers">Modifiers</h2>
     <p>
-      Modifiers are serialised as a list of values — for example
-      <code>[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]</code> — and the
+      Modifiers are serialised as a list of values, for example
+      <code>[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]</code>, and the
       renderer rebuilds them into a Compose <code>Modifier</code> chain. The variants that exist on
       the wire today are <code>Empty</code>, <code>Padding</code>, <code>FillMaxWidth</code>,
       <code>FillMaxHeight</code>, <code>Width</code>, <code>Height</code>, <code>Size</code>,
@@ -190,22 +190,21 @@
           <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
-          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code> — handled inside the component; you pass <code>item</code> and <code>key_of</code> instead</td></tr>
+          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code>, handled inside the component; you pass <code>item</code> and <code>key_of</code> instead</td></tr>
         </tbody>
       </table>
     </div>
 
     <p>
-      Because handlers run on the UI thread, they must stay cheap. Anything that blocks — a PTY
-      read, a network call, a file — belongs on a Host worker thread. Workers update signals; the
+      Because handlers run on the UI thread, they must stay cheap. Anything that blocks, a PTY
+      read, a network call, a file, belongs on a Host worker thread. Workers update signals; the
       Host asks the renderer for a frame on its own. You never call a boundary function yourself.
     </p>
 
     <h2 id="consumption">Event consumption: Enter versus Shift+Enter</h2>
     <p>
       A chat input needs <kbd>Enter</kbd> to send and <kbd>Shift</kbd>+<kbd>Enter</kbd> to insert a
-      newline. That requires telling the renderer, synchronously, whether the key was handled —
-      the same idea as <code>preventDefault()</code> on the web or
+      newline. That requires telling the renderer, synchronously, whether the key was handled, the same idea as <code>preventDefault()</code> on the web or
       <code>PointerInputChange.consume()</code> in Compose.
     </p>
     <p>
@@ -215,7 +214,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust — from dioxus-compose/examples/desktop_demo.rs</figcaption>
+      <figcaption>rust, from dioxus-compose/examples/desktop_demo.rs</figcaption>
 <pre><code><span class="ty">TextField</span> {
     <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
     <span class="at">multiline</span>: <span class="k">true</span>,
@@ -237,7 +236,7 @@
       <code>KeyEvent</code> exposes <code>key()</code>, <code>shift_key()</code>,
       <code>ctrl_key()</code>, <code>alt_key()</code>, <code>meta_key()</code>, plus
       <code>consume()</code> and <code>consumed()</code>. The <code>Key</code> enum currently has a
-      single variant, <code>Key::Enter</code> — the only key the M0 schema carries. More keys are a
+      single variant, <code>Key::Enter</code>, the only key the M0 schema carries. More keys are a
       schema addition, not a code change in your app.
     </p>
 
@@ -258,9 +257,9 @@
       the composition state belong to the renderer. Rust learns about changes through events:
     </p>
     <ul>
-      <li><code>on_value_change</code> — a notification, debounced, of the current text.</li>
-      <li><code>on_submit</code> — a committed value.</li>
-      <li><code>on_focus_lost</code> — the field lost focus.</li>
+      <li><code>on_value_change</code>, a notification, debounced, of the current text.</li>
+      <li><code>on_submit</code>, a committed value.</li>
+      <li><code>on_focus_lost</code>, the field lost focus.</li>
     </ul>
     <p>
       This is not a simplification; it is the central design decision. Round-tripping in-progress
@@ -270,8 +269,8 @@
       Chinese input. Keeping the buffer in Kotlin makes the failure impossible rather than rare.
     </p>
     <p>
-      When the Host genuinely has to change the text — clearing an input after send, restoring a
-      draft — it uses an explicit <code>SetText(node_id, text, selection)</code> command, and the
+      When the Host genuinely has to change the text, clearing an input after send, restoring a
+      draft, it uses an explicit <code>SetText(node_id, text, selection)</code> command, and the
       renderer defers applying it until any composition finishes. On the Rust side that is
       <code>Host::set_text</code>, part of the boundary surface rather than something you reach for
       from a component. In component code, the usual way to clear a field is to give it a new

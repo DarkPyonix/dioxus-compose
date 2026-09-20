@@ -1,23 +1,48 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="landing">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>dioxus-compose — write UI in Rust, draw it with Compose</title>
-<meta name="description" content="dioxus-compose lets Rust code author declarative UI with Dioxus while an AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
-<link rel="alternate" hreflang="en" href="./">
-<link rel="alternate" hreflang="ko" href="../ko/">
-<link rel="alternate" hreflang="x-default" href="./">
-<link rel="stylesheet" href="../assets/style.css">
+<title>dioxus-compose: declarative UI in Rust, rendered by Compose Multiplatform</title>
+<meta name="description" content="dioxus-compose lets you write declarative UI in Rust with Dioxus and have an AOT-compiled Compose Multiplatform renderer draw it. Native desktop UI with no webview and no bundled JVM.">
+<link rel="canonical" href="http://darkpyonix.dev/dioxus-compose/en/">
+<link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/">
+<link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/">
+<link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="dioxus-compose">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="ko_KR">
+<meta property="og:title" content="dioxus-compose: declarative UI in Rust, rendered by Compose">
+<meta property="og:description" content="Write declarative UI in Rust with Dioxus. An AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
+<meta property="og:url" content="http://darkpyonix.dev/dioxus-compose/en/">
+<meta property="og:image" content="http://darkpyonix.dev/dioxus-compose/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="dioxus-compose: declarative UI in Rust, rendered by Compose">
+<meta name="twitter:description" content="Write declarative UI in Rust with Dioxus. An AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
+<meta name="twitter:image" content="http://darkpyonix.dev/dioxus-compose/assets/og.png">
+<link rel="stylesheet" href="../assets/style.css?v=2">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "dioxus-compose",
+  "description": "Declarative UI in Rust, rendered by an AOT-compiled Compose Multiplatform engine.",
+  "codeRepository": "https://github.com/DarkPyonix/dioxus-compose",
+  "url": "http://darkpyonix.dev/dioxus-compose/",
+  "programmingLanguage": ["Rust", "Kotlin"],
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "runtimePlatform": "macOS"
+}
+</script>
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="topbar">
-  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose</a>
   <span class="spacer"></span>
-  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
   <nav class="langswitch" aria-label="Language">
     <a href="./" aria-current="true" hreflang="en">EN</a>
     <a href="../ko/" hreflang="ko">KO</a>
@@ -25,214 +50,89 @@
   <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
 </header>
 
-<div class="shell">
-  <aside class="sidebar" id="sidebar">
-    <nav aria-label="Guide">
-      <h2>Guide</h2>
-      <ul>
-        <li><a href="./" aria-current="page">Overview</a></li>
-        <li><a href="getting-started.html">Getting started</a></li>
-        <li><a href="writing-ui.html">Writing UI</a></li>
-        <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
-        <li><a href="design-systems.html">Design systems</a></li>
-        <li><a href="architecture.html">Architecture</a></li>
-        <li><a href="troubleshooting.html">Troubleshooting</a></li>
-      </ul>
-      <h2>Repository</h2>
-      <ul>
-        <li><a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></li>
-        <li><a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a></li>
-        <li><a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/PROJECT.md">PROJECT.md</a></li>
-      </ul>
-    </nav>
-  </aside>
-
-  <main id="main">
-    <div class="hero">
-      <p class="eyebrow">Native UI, written in Rust</p>
-      <h1>Author your UI with Dioxus. Let Compose draw it.</h1>
-      <p class="lede">
-        dioxus-compose is a GUI stack in which Rust code describes the interface with
-        <code>rsx!</code>, components and hooks, and an ahead-of-time compiled Compose
-        Multiplatform renderer paints it. No webview is embedded, and no JVM ships with
-        your application.
-      </p>
-      <div class="cta">
-        <a class="btn" href="getting-started.html">Get started</a>
-        <a class="btn secondary" href="architecture.html">How it works</a>
-      </div>
+<main id="main">
+  <section class="hero">
+    <h1>Declarative UI in Rust,<span class="said">rendered by Compose.</span></h1>
+    <p class="lede">You write components with <code>rsx!</code>, hooks and signals. An AOT-compiled
+      Compose Multiplatform renderer draws them, with Compose's text layout, its widgets and the
+      platform IME.</p>
+    <p class="sub">Native desktop UI in Rust with no webview and no bundled JVM.</p>
+    <div class="cta">
+      <a class="btn" href="getting-started.html">Get started</a>
+      <a class="btn secondary" href="overview.html">Read the guide</a>
+      <a class="btn secondary" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a>
     </div>
+  </section>
 
-    <h2>Why it exists</h2>
-    <p>
-      The first consumer of this stack is <strong>darkpyonix-ember</strong>, an always-on
-      remote development environment that wraps several LLM CLIs. Always-on tools have to be
-      light. Web-based chat and IDE shells are not: a webview brings a browser engine with it,
-      and a bundled JRE adds 80–120&nbsp;MB even after <code>jlink</code>.
-    </p>
-    <p>
-      The obvious answer — a pure-Rust UI framework — fails on the part that matters most for a
-      chat client: text. Korean, Japanese and Chinese input goes through the platform IME, and an
-      IME that is 90% right is an app you cannot use. Compose Multiplatform already has mature
-      text, IME and widget behaviour, so this project borrows exactly that and nothing else: Rust
-      keeps the application code, Compose becomes an interpreter for a UI tree that Rust sends it.
-    </p>
-
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th scope="col">Constraint</th><th scope="col">Consequence</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>No webview</td><td>No WKWebView, WebView2 or WebKitGTK; no Tauri, no wry.</td></tr>
-          <tr><td>No bundled JVM</td><td>Desktop ships as a GraalVM <code>native-image</code> shared library; iOS is planned as Kotlin/Native.</td></tr>
-          <tr><td>No hand-written JNI or cinterop</td><td>Every boundary shim is generated from the Rust schema.</td></tr>
-          <tr><td>UI code lives in Rust</td><td>Kotlin is an implementation detail of the renderer, not a place you write features.</td></tr>
-          <tr><td>Compose-quality text and IME</td><td>No code path may bypass Compose's platform text input.</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <h2>What it looks like</h2>
-    <p>
-      This is the <code>desktop_demo</code> example from the repository, shortened. The widget
-      names are Compose's; the attributes are their <code>snake_case</code> Rust spellings.
-    </p>
-
-    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>dioxus-compose/examples/desktop_demo.rs</figcaption>
-<pre><code><span class="k">use</span> dioxus_compose::prelude::*;
-
-<span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
-    <span class="k">let</span> <span class="k">mut</span> messages = <span class="f">use_signal</span>(<span class="ty">Vec</span>::&lt;<span class="ty">String</span>&gt;::new);
-    <span class="k">let</span> <span class="k">mut</span> draft = <span class="f">use_signal</span>(<span class="ty">String</span>::new);
-
-    <span class="f">rsx!</span> {
-        <span class="ty">Column</span> {
-            <span class="at">fill_max_width</span>: <span class="k">true</span>,
-            <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"dioxus-compose chat"</span> }
-            <span class="k">for</span> message <span class="k">in</span> messages() {
-                <span class="ty">Text</span> { <span class="at">text</span>: message }
-            }
-            <span class="ty">TextField</span> {
-                <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
-                <span class="at">multiline</span>: <span class="k">true</span>,
-                <span class="at">on_value_change</span>: <span class="k">move</span> |value| draft.<span class="f">set</span>(value),
-                <span class="at">on_key_down</span>: <span class="k">move</span> |event: <span class="ty">KeyEvent</span>| {
-                    <span class="k">if</span> event.<span class="f">key</span>() == <span class="ty">Key</span>::Enter &amp;&amp; !event.<span class="f">shift_key</span>() {
-                        <span class="c">// … push the draft into messages …</span>
-                        event.<span class="f">consume</span>();
-                    }
+  <div class="showcase">
+<pre><code><span class="k">rsx!</span> {
+    <span class="t">Column</span> {
+        <span class="a">fill_max_width</span>: <span class="k">true</span>,
+        <span class="t">Text</span> { <span class="a">text</span>: <span class="s">"Messages"</span> }
+        <span class="t">TextField</span> {
+            <span class="a">placeholder</span>: <span class="s">"Say something"</span>,
+            <span class="a">on_key_down</span>: <span class="k">move</span> |e| {
+                <span class="c">// Enter submits, Shift+Enter breaks the line</span>
+                <span class="k">if</span> e.key() == <span class="t">Key</span>::Enter &amp;&amp; !e.shift_key() {
+                    submit();
+                    e.consume();
                 }
-            }
+            },
         }
     }
-}
-
-<span class="k">fn</span> <span class="f">main</span>() {
-    dioxus_compose::<span class="f">launch</span>(app);
 }</code></pre>
-    </figure>
-
-    <h2>Status</h2>
-    <p>
-      This is an honest table, not a roadmap dressed as a feature list. Only macOS desktop runs
-      end to end today. Everything marked <em>planned</em> is designed in
-      <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> and not implemented.
-    </p>
-
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th scope="col">Platform</th><th scope="col">Status</th><th scope="col">How it is meant to work</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>macOS desktop (arm64)</td>
-            <td><span class="pill works">Works</span></td>
-            <td>Renderer built with GraalVM <code>native-image --shared</code> on Liberica NIK 25 Full; the Rust binary links it. Verified 2026-09-20.</td>
-          </tr>
-          <tr>
-            <td>Windows / Linux desktop</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Same <code>native-image</code> path. Only macOS is scripted so far; the build script refuses to run elsewhere.</td>
-          </tr>
-          <tr>
-            <td>iOS</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin/Native <code>-produce static</code> exporting the same C symbols.</td>
-          </tr>
-          <tr>
-            <td>Android</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims.</td>
-          </tr>
-          <tr>
-            <td>Web (wasm)</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin owns the wasm linear memory and Rust imports it, so the batch arena is shared in place with no copying. Each boundary call goes through a generated JS forwarder, measured at about 12&nbsp;ns.</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="note">
+      <h2>One language for the UI, one engine for the pixels</h2>
+      <p>The Rust side owns your components and your state. The Kotlin side owns the pixels,
+        the text stack and the input method. Between them sits a narrow C ABI: synchronous,
+        same-thread, and zero-copy, so a keystroke gets its answer inside the same frame.</p>
+      <p>Nothing is serialised. There is no async bridge, no webview, and no JVM in the
+        shipped binary.</p>
     </div>
+  </div>
 
-    <h3>Feature status</h3>
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Notes</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>Widgets: <code>Column</code>, <code>Row</code>, <code>Box</code>, <code>Text</code>, <code>TextField</code>, <code>Button</code>, <code>Spacer</code>, <code>LazyColumn</code></td><td><span class="pill works">Works</span></td><td>The whole schema — eight widgets. Anything else has to be added to it first.</td></tr>
-          <tr><td>Events and synchronous consumption</td><td><span class="pill works">Works</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code> with <code>event.consume()</code>.</td></tr>
-          <tr><td>Uncontrolled <code>TextField</code></td><td><span class="pill works">Works</span></td><td>Edit and composition state live in the renderer.</td></tr>
-          <tr><td>Kotlin protocol codegen from the Rust schema</td><td><span class="pill works">Works</span></td><td>A stale Kotlin file fails the test suite.</td></tr>
-          <tr><td>Modifiers beyond <code>fill_max_width</code> / <code>fill_max_height</code></td><td><span class="pill partial">Partial</span></td><td>Padding, size, background and clickable exist in the wire schema but have no <code>rsx!</code> attribute yet.</td></tr>
-          <tr><td><code>LazyColumn</code> windowing (FR-8)</td><td><span class="pill partial">Host side</span></td><td>Component, protocol and Host tests pass; the Kotlin interpreter still draws it as a <code>Column</code> and sends no <code>RangeRequested</code>.</td></tr>
-          <tr><td><code>AppendText</code> streaming (FR-9)</td><td><span class="pill partial">Host side</span></td><td>Coalesced and flushed per frame by the Host. No <code>rsx!</code>-level API yet; <code>Host::append_text</code> takes a protocol node id.</td></tr>
-          <tr><td>Design systems and theming (FR-13, FR-14)</td><td><span class="pill planned">Planned</span></td><td>Specified as <code>Agreed</code>, down to the wire tags, but nothing is built: no <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code> or <code>SetTheme</code> exists in the crate. See <a href="design-systems.html">Design systems</a>.</td></tr>
-        </tbody>
-      </table>
-    </div>
+  <div class="metrics">
+    <div class="metric"><b>61.6 MB</b><span>Memory for an open window, measured on an M1</span></div>
+    <div class="metric"><b>12.5 &micro;s</b><span>Click to diff to encoded batch, p99</span></div>
+    <div class="metric"><b>0</b><span>Allocations per frame at the boundary</span></div>
+    <div class="metric"><b>No JVM</b><span>The desktop build runs on a machine without Java</span></div>
+  </div>
+  <p class="fineprint">Measured on a Mac mini (M1, 16 GiB, macOS 26.5.1), release build. See
+    <a href="architecture.html">Architecture</a> for how these are obtained.</p>
 
-    <h2>Where to go next</h2>
+  <section>
+    <h2>Where it stands today</h2>
+    <table>
+      <thead><tr><th>Platform</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>macOS desktop</td><td>Works end to end, including Korean IME input</td></tr>
+        <tr><td>Windows, Linux desktop</td><td>The Rust side is portable; the renderer build is not scripted yet</td></tr>
+        <tr><td>iOS, Android</td><td>Designed, not implemented</td></tr>
+        <tr><td>Web</td><td>Boundary settled by measurement; not implemented</td></tr>
+      </tbody>
+    </table>
+    <p class="fineprint">This is an early project and it says so plainly. The
+      <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">specification</a>
+      records what is agreed, what is drafted and what is still unproven.</p>
+  </section>
+
+  <section>
+    <h2>Start here</h2>
     <div class="cards">
-      <a class="card" href="getting-started.html">
-        <h3>Getting started</h3>
-        <p>Install Liberica NIK, build the renderer library, run the desktop demo.</p>
-      </a>
-      <a class="card" href="writing-ui.html">
-        <h3>Writing UI</h3>
-        <p>The widget set, event handlers, key consumption, and the uncontrolled text field.</p>
-      </a>
-      <a class="card" href="lists-and-streaming.html">
-        <h3>Lists &amp; streaming</h3>
-        <p>Windowed lists and token streaming: what the Host does today, and what the renderer still owes.</p>
-      </a>
-      <a class="card" href="design-systems.html">
-        <h3>Design systems</h3>
-        <p>Colour, type, shape and spacing roles, and the two theme modes. Specified, not yet built.</p>
-      </a>
-      <a class="card" href="architecture.html">
-        <h3>Architecture</h3>
-        <p>The Host/Renderer split, the C ABI, the wire protocol and the frame model.</p>
-      </a>
+      <a class="card" href="getting-started.html"><h3>Getting started</h3><p>Install the toolchain, build the renderer, run the demo.</p></a>
+      <a class="card" href="writing-ui.html"><h3>Writing UI</h3><p>Widgets, modifiers, events, and the text field rules that keep IME composition intact.</p></a>
+      <a class="card" href="design-systems.html"><h3>Design systems</h3><p>Material 3, Apple HIG and Fluent, unified or following the host platform.</p></a>
+      <a class="card" href="architecture.html"><h3>Architecture</h3><p>The Host and Renderer split, the protocol, and the frame model.</p></a>
     </div>
-
-    <nav class="pagenav" aria-label="Pagination">
-      <a class="next" href="getting-started.html"><span>Next</span>Getting started &rarr;</a>
-    </nav>
-  </main>
-</div>
+  </section>
+</main>
 
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
     <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
-    <span>Guide last reviewed against the repository on 2026-09-20</span>
   </div>
 </footer>
-
 <script src="../assets/guide.js" defer></script>
 </body>
 </html>

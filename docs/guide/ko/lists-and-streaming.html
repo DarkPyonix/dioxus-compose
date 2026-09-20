@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>목록과 스트리밍 — dioxus-compose 가이드</title>
+<title>목록과 스트리밍, dioxus-compose 가이드</title>
 <meta name="description" content="LazyColumn 윈도잉과 AppendText 스트리밍의 설계, 현재 상태, 그리고 지금 만들 수 있는 것.">
 <link rel="alternate" hreflang="en" href="../en/lists-and-streaming.html">
 <link rel="alternate" hreflang="ko" href="lists-and-streaming.html">
 <link rel="alternate" hreflang="x-default" href="../en/lists-and-streaming.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="가이드">
       <h2>가이드</h2>
       <ul>
-        <li><a href="./">개요</a></li>
+        <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
         <li><a href="lists-and-streaming.html" aria-current="page">목록과 스트리밍</a></li>
@@ -76,7 +76,7 @@
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>rust — 데스크톱 데모가 쓰는 패턴</figcaption>
+      <figcaption>rust, 데스크톱 데모가 쓰는 패턴</figcaption>
 <pre><code><span class="f">rsx!</span> {
     <span class="ty">Column</span> {
         <span class="at">fill_max_width</span>: <span class="k">true</span>,
@@ -112,7 +112,7 @@
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>rust — dioxus-compose/src/widgets.rs의 컴포넌트 정의 그대로</figcaption>
+      <figcaption>rust, dioxus-compose/src/widgets.rs의 컴포넌트 정의 그대로</figcaption>
 <pre><code><span class="f">rsx!</span> {
     <span class="ty">LazyColumn</span> {
         <span class="at">item_count</span>: messages.<span class="f">len</span>(),
@@ -161,7 +161,7 @@
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>rust — 현재 존재하는 스트리밍 API의 전부</figcaption>
+      <figcaption>rust, 현재 존재하는 스트리밍 API의 전부</figcaption>
 <pre><code><span class="c">// 다음 프레임에 보낼 꼬리를 쌓아 둡니다. 반복 호출은 노드별 한 건과</span>
 <span class="c">// 프레임 요청 한 번으로 합쳐집니다.</span>
 host.<span class="f">append_text</span>(node_id, <span class="s">" token"</span>);</code></pre>

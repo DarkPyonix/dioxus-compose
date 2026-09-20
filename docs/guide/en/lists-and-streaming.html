@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Long lists and streaming text — dioxus-compose guide</title>
+<title>Long lists and streaming text, dioxus-compose guide</title>
 <meta name="description" content="LazyColumn windowing and AppendText streaming: the design, its status, and what you can build today.">
 <link rel="alternate" hreflang="en" href="lists-and-streaming.html">
 <link rel="alternate" hreflang="ko" href="../ko/lists-and-streaming.html">
 <link rel="alternate" hreflang="x-default" href="lists-and-streaming.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="Guide">
       <h2>Guide</h2>
       <ul>
-        <li><a href="./">Overview</a></li>
+        <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html" aria-current="page">Lists &amp; streaming</a></li>
@@ -77,7 +77,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust — the pattern used by the desktop demo</figcaption>
+      <figcaption>rust, the pattern used by the desktop demo</figcaption>
 <pre><code><span class="f">rsx!</span> {
     <span class="ty">Column</span> {
         <span class="at">fill_max_width</span>: <span class="k">true</span>,
@@ -90,7 +90,7 @@
 
     <p>
       Updating one message sends exactly one <code>SetProp</code> mutation and does not recompose
-      its siblings — a tested requirement (FR-4), not an aspiration. The cost of this pattern is
+      its siblings, a tested requirement (FR-4), not an aspiration. The cost of this pattern is
       the node count, not the update path.
     </p>
 
@@ -115,7 +115,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust — the component as defined in dioxus-compose/src/widgets.rs</figcaption>
+      <figcaption>rust, the component as defined in dioxus-compose/src/widgets.rs</figcaption>
 <pre><code><span class="f">rsx!</span> {
     <span class="ty">LazyColumn</span> {
         <span class="at">item_count</span>: messages.<span class="f">len</span>(),
@@ -135,7 +135,7 @@
     </p>
     <p>
       The acceptance criterion is concrete, and it passes: with 10,000 items and a request for 20
-      visible rows with a buffer of 4, the Host materialises 28 items — proportional to the window,
+      visible rows with a buffer of 4, the Host materialises 28 items, proportional to the window,
       not to the list. The test is
       <code>fr8_node_count_is_proportional_to_the_window</code>.
     </p>
@@ -145,7 +145,7 @@
       <p>
         The Kotlin interpreter currently draws a <code>LazyColumn</code> node as a Compose
         <code>Column</code> and never sends a <code>RangeRequested</code> event. The protocol,
-        the property and the event decoder are all in place — what is missing is the Compose
+        the property and the event decoder are all in place, what is missing is the Compose
         <code>LazyColumn</code> that drives them. Until that lands, a <code>LazyColumn</code>
         renders its initial window and stays there. Write against the component now if you like;
         do not ship a 10,000-item screen on it yet.
@@ -167,7 +167,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust — Host::append_text, the whole streaming API today</figcaption>
+      <figcaption>rust: Host::append_text, the whole streaming API today</figcaption>
 <pre><code><span class="c">// Queue a tail for the next frame. Repeated calls coalesce into one record</span>
 <span class="c">// per node and into a single frame request.</span>
 host.<span class="f">append_text</span>(node_id, <span class="s">" token"</span>);</code></pre>
@@ -186,15 +186,15 @@ host.<span class="f">append_text</span>(node_id, <span class="s">" token"</span>
 
     <p>
       Measured on the Host side: a 36&nbsp;KB message stays under a 64-byte batch per token, and
-      the p99 streaming frame is 125&nbsp;ns. The full criterion — 100 appends per second with
-      scrolling and typing staying smooth — is an end-to-end claim and has to wait for the
+      the p99 streaming frame is 125&nbsp;ns. The full criterion, 100 appends per second with
+      scrolling and typing staying smooth, is an end-to-end claim and has to wait for the
       renderer.
     </p>
 
     <h2 id="workers">Streaming from a worker thread</h2>
     <p>
       This part is not speculative, and it matters more than either feature above. Domain work must
-      not run on the UI thread — the thread that also runs your components and the whole boundary.
+      not run on the UI thread, the thread that also runs your components and the whole boundary.
       PTY reads, HTTP, LLM streaming and file I/O belong on Host worker threads.
     </p>
     <p>

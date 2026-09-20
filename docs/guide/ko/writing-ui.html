@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>UI 작성하기 — dioxus-compose 가이드</title>
+<title>UI 작성하기, dioxus-compose 가이드</title>
 <meta name="description" content="rsx!, 위젯 집합, Modifier, 이벤트 핸들러, 이벤트 소비, 그리고 비제어 TextField.">
 <link rel="alternate" hreflang="en" href="../en/writing-ui.html">
 <link rel="alternate" hreflang="ko" href="writing-ui.html">
 <link rel="alternate" hreflang="x-default" href="../en/writing-ui.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="가이드">
       <h2>가이드</h2>
       <ul>
-        <li><a href="./">개요</a></li>
+        <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html" aria-current="page">UI 작성하기</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
@@ -142,7 +142,7 @@
     </div>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>rust — dioxus-compose/tests/rsx_api.rs</figcaption>
+      <figcaption>rust, dioxus-compose/tests/rsx_api.rs</figcaption>
 <pre><code><span class="f">rsx!</span> {
     dioxus_compose::<span class="ty">Box</span> {
         <span class="at">fill_max_width</span>: <span class="k">true</span>,
@@ -187,7 +187,7 @@
           <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
-          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code> — 컴포넌트 내부에서 처리합니다. 대신 <code>item</code>과 <code>key_of</code>를 넘깁니다</td></tr>
+          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code>, 컴포넌트 내부에서 처리합니다. 대신 <code>item</code>과 <code>key_of</code>를 넘깁니다</td></tr>
         </tbody>
       </table>
     </div>
@@ -212,7 +212,7 @@
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>rust — dioxus-compose/examples/desktop_demo.rs</figcaption>
+      <figcaption>rust, dioxus-compose/examples/desktop_demo.rs</figcaption>
 <pre><code><span class="ty">TextField</span> {
     <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
     <span class="at">multiline</span>: <span class="k">true</span>,
@@ -254,9 +254,9 @@
       상태는 렌더러의 것입니다. Rust는 이벤트로만 변화를 알게 됩니다.
     </p>
     <ul>
-      <li><code>on_value_change</code> — 디바운스된 현재 텍스트 알림입니다.</li>
-      <li><code>on_submit</code> — 확정된 값입니다.</li>
-      <li><code>on_focus_lost</code> — 포커스를 잃었습니다.</li>
+      <li><code>on_value_change</code>, 디바운스된 현재 텍스트 알림입니다.</li>
+      <li><code>on_submit</code>, 확정된 값입니다.</li>
+      <li><code>on_focus_lost</code>, 포커스를 잃었습니다.</li>
     </ul>
     <p>
       이것은 단순화가 아니라 설계의 핵심입니다. 조합 중인 텍스트를 Host로 왕복시키면, 한글 한
@@ -266,8 +266,8 @@
       됩니다.
     </p>
     <p>
-      Host가 정말로 텍스트를 바꿔야 할 때 — 전송 후 입력창을 비우거나 임시 저장한 초안을 되돌릴
-      때 — 는 명시적인 <code>SetText(node_id, text, selection)</code> 명령을 쓰고, 렌더러는 조합이
+      Host가 정말로 텍스트를 바꿔야 할 때, 전송 후 입력창을 비우거나 임시 저장한 초안을 되돌릴
+      때, 는 명시적인 <code>SetText(node_id, text, selection)</code> 명령을 쓰고, 렌더러는 조합이
       끝날 때까지 적용을 미룹니다. Rust 쪽에서는 <code>Host::set_text</code>이며, 컴포넌트에서
       부르는 API가 아니라 경계 표면의 일부입니다. 컴포넌트 코드에서 입력창을 비우는 보통의 방법은
       필드에 새 정체성을 주는 것으로, 다른 Dioxus 렌더러에서와 같습니다.

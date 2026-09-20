@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>아키텍처 — dioxus-compose 가이드</title>
+<title>아키텍처, dioxus-compose 가이드</title>
 <meta name="description" content="Host/Renderer 분리, C ABI 표면, zero-copy 프로토콜, 프레임 모델, macOS 런타임 레이아웃.">
 <link rel="alternate" hreflang="en" href="../en/architecture.html">
 <link rel="alternate" hreflang="ko" href="architecture.html">
 <link rel="alternate" hreflang="x-default" href="../en/architecture.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="가이드">
       <h2>가이드</h2>
       <ul>
-        <li><a href="./">개요</a></li>
+        <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
@@ -99,7 +99,7 @@
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>c — Renderer → Host (Rust가 export)</figcaption>
+      <figcaption>c: Renderer → Host (Rust가 export)</figcaption>
 <pre><code><span class="ty">int32_t</span> <span class="f">dioxus_compose_host_init</span>(<span class="k">const</span> <span class="ty">uint8_t</span>* handshake, <span class="ty">uint32_t</span> len, <span class="ty">MutationBatch</span>* out);
 <span class="ty">int32_t</span> <span class="f">dioxus_compose_host_dispatch_event</span>(<span class="k">const</span> <span class="ty">uint8_t</span>* event, <span class="ty">uint32_t</span> len, <span class="ty">MutationBatch</span>* out);
 <span class="ty">int32_t</span> <span class="f">dioxus_compose_host_render_frame</span>(<span class="ty">uint64_t</span> frame_time_nanos, <span class="ty">MutationBatch</span>* out);
@@ -108,7 +108,7 @@
     </figure>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>c — Host → Renderer (Kotlin이 export)</figcaption>
+      <figcaption>c: Host → Renderer (Kotlin이 export)</figcaption>
 <pre><code><span class="ty">int32_t</span> <span class="f">dioxus_compose_renderer_run</span>(<span class="ty">void</span>);            <span class="c">/* 블로킹. LoopMode::Renderer 전용 */</span>
 <span class="ty">void</span>    <span class="f">dioxus_compose_renderer_request_frame</span>(<span class="ty">void</span>);  <span class="c">/* 스레드 안전 */</span></code></pre>
     </figure>

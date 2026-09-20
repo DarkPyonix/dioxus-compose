@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Getting started — dioxus-compose guide</title>
+<title>Getting started, dioxus-compose guide</title>
 <meta name="description" content="Prerequisites, building the Compose renderer as a native shared library, and running the desktop demo on macOS.">
 <link rel="alternate" hreflang="en" href="getting-started.html">
 <link rel="alternate" hreflang="ko" href="../ko/getting-started.html">
 <link rel="alternate" hreflang="x-default" href="getting-started.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="Guide">
       <h2>Guide</h2>
       <ul>
-        <li><a href="./">Overview</a></li>
+        <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html" aria-current="page">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
@@ -71,7 +71,7 @@
           <tr><td>macOS on Apple silicon or Intel</td><td>The native build script exits immediately on anything but Darwin.</td></tr>
           <tr><td>Xcode command line tools</td><td>The build compiles a few C and Objective-C files and links the library.</td></tr>
           <tr><td>A Rust toolchain (stable)</td><td>The Host crate. <code>rustup</code> is the usual way in.</td></tr>
-          <tr><td><strong>Liberica NIK 25 Full</strong></td><td>Builds the renderer with <code>native-image</code>. See the note below — an ordinary GraalVM will not do.</td></tr>
+          <tr><td><strong>Liberica NIK 25 Full</strong></td><td>Builds the renderer with <code>native-image</code>. See the note below, an ordinary GraalVM will not do.</td></tr>
         </tbody>
       </table>
     </div>
@@ -102,7 +102,7 @@
 
     <p>
       If you have no NIK at all, <code>./scripts/install-nik.sh</code> installs it. The install is
-      addressed by version, so a warm cache makes a second run a no-op — the download happens once
+      addressed by version, so a warm cache makes a second run a no-op, the download happens once
       per NIK version, not once per invocation. The build script itself refuses an installation
       without <code>lib/static/darwin-*/libawt_lwawt.a</code>, which catches a stock GraalVM up
       front instead of at the end of a long build.
@@ -143,12 +143,12 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
     </p>
 
     <p>
-      If you keep a renderer somewhere else — a downloaded artifact, a vendored copy — point
+      If you keep a renderer somewhere else, a downloaded artifact, a vendored copy, point
       <code>DIOXUS_COMPOSE_RENDERER_DIR</code> at its <code>lib</code> directory and the Rust build
       will use that instead of the workspace one (NFR-10).
     </p>
     <p>
-      The first build is slow — <code>native-image</code> compiles Compose, Skiko and AWT ahead of
+      The first build is slow, <code>native-image</code> compiles Compose, Skiko and AWT ahead of
       time. You only repeat it when the Kotlin side changes; normal Rust work reuses the library.
     </p>
 
@@ -193,7 +193,7 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
       <p>
         Building without <code>native-renderer</code> gives you a Host with a no-op renderer:
         <code>launch</code> returns immediately and no window appears. That build is what the unit
-        tests and benchmarks use, so it is useful — just not something you can look at.
+        tests and benchmarks use, so it is useful, just not something you can look at.
       </p>
     </div>
 
@@ -212,12 +212,12 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
 
     <p>
       One of those tests compares the checked-in Kotlin protocol file against what the Rust schema
-      generates. If you change the schema and forget to regenerate, the test fails — which is the
+      generates. If you change the schema and forget to regenerate, the test fails, which is the
       intended behaviour, not an inconvenience.
     </p>
 
     <nav class="pagenav" aria-label="Pagination">
-      <a class="prev" href="./"><span>Previous</span>&larr; Overview</a>
+      <a class="prev" href="overview.html"><span>Previous</span>&larr; Overview</a>
       <a class="next" href="writing-ui.html"><span>Next</span>Writing UI &rarr;</a>
     </nav>
   </main>

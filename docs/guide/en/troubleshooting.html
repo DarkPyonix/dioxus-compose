@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Troubleshooting — dioxus-compose guide</title>
+<title>Troubleshooting, dioxus-compose guide</title>
 <meta name="description" content="How to recognise a missing renderer library, the wrong JDK, an IME that aborts, and the other failures this project actually hit.">
 <link rel="alternate" hreflang="en" href="troubleshooting.html">
 <link rel="alternate" hreflang="ko" href="../ko/troubleshooting.html">
 <link rel="alternate" hreflang="x-default" href="troubleshooting.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="Guide">
       <h2>Guide</h2>
       <ul>
-        <li><a href="./">Overview</a></li>
+        <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
@@ -92,7 +92,7 @@
     <p>
       If you built without <code>--features native-renderer</code>, this is expected: the Host
       falls back to a no-op renderer, <code>launch</code> returns immediately and the process exits.
-      Nothing is broken — that build exists for tests and benchmarks.
+      Nothing is broken, that build exists for tests and benchmarks.
     </p>
     <p>
       If the feature <em>is</em> on, isolate the halves. Run the smoke test: it links a minimal C
@@ -104,14 +104,14 @@
     </figure>
     <p>
       A window there and none from Rust points at the linking of your binary. No window there
-      either means the renderer library itself is bad — usually the next problem.
+      either means the renderer library itself is bad, usually the next problem.
     </p>
 
     <h2 id="wrong-jdk">Wrong JDK: the AWT-on-Darwin trap</h2>
     <p>
       Symptom: the build script stops with
       <code>error: set GRAALVM_HOME to a Liberica NIK 25 Full installation</code>. That is the good
-      case — it caught the problem for you.
+      case, it caught the problem for you.
     </p>
     <p>
       The bad case is a <code>native-image</code> on <code>PATH</code> from upstream GraalVM that
@@ -194,9 +194,9 @@
       </p>
     </div>
     <p>
-      The full manual checklist — composing 안녕하세요, jamo-level backspace, cursor movement
+      The full manual checklist, composing 안녕하세요, jamo-level backspace, cursor movement
       committing the composition, insertion mid-sentence, Enter handling in a multiline field,
-      pasting mixed text, candidate windows for Japanese and Chinese, no tofu glyphs — lives in
+      pasting mixed text, candidate windows for Japanese and Chinese, no tofu glyphs, lives in
       SPEC §6 and is run against the native image, not the JVM shell.
     </p>
 
@@ -204,7 +204,7 @@
     <p>
       A widget type, property or modifier the renderer does not recognise does not crash anything.
       The renderer sends a <code>ProtocolError</code> event carrying a code and a message. Seeing
-      one means the two sides disagree about the schema — normally a renderer library built from
+      one means the two sides disagree about the schema, normally a renderer library built from
       different sources than the Rust crate you are running. Rebuild the renderer.
     </p>
     <p>
@@ -222,7 +222,7 @@
 
     <nav class="pagenav" aria-label="Pagination">
       <a class="prev" href="architecture.html"><span>Previous</span>&larr; Architecture</a>
-      <a class="next" href="./"><span>Next</span>Overview &rarr;</a>
+      <a class="next" href="overview.html"><span>Next</span>Overview &rarr;</a>
     </nav>
   </main>
 </div>

@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Design systems — dioxus-compose guide</title>
+<title>Design systems, dioxus-compose guide</title>
 <meta name="description" content="Design primitives and design systems (SPEC FR-13, FR-14): colour, type, shape and spacing roles, Material 3 / Apple HIG / WinUI Fluent, and the unified and adaptive theme modes. Specified, not yet implemented.">
 <link rel="alternate" hreflang="en" href="design-systems.html">
 <link rel="alternate" hreflang="ko" href="../ko/design-systems.html">
 <link rel="alternate" hreflang="x-default" href="design-systems.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="Guide">
       <h2>Guide</h2>
       <ul>
-        <li><a href="./">Overview</a></li>
+        <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
@@ -64,10 +64,10 @@
     <div class="warn">
       <span class="label">Nothing here is implemented</span>
       <p>
-        As of 2026-09-20 the wire schema carries nine modifiers — <code>Empty</code>,
+        As of 2026-09-20 the wire schema carries nine modifiers, <code>Empty</code>,
         <code>Padding</code>, <code>FillMaxWidth</code>, <code>FillMaxHeight</code>,
         <code>Width</code>, <code>Height</code>, <code>Size</code>, <code>Background</code> and
-        <code>Clickable</code> — and no theme command. There is no <code>Paint</code>, no
+        <code>Clickable</code>, and no theme command. There is no <code>Paint</code>, no
         <code>TypeRole</code>, no <code>DesignSystem</code> and no <code>Theme</code> in the Rust
         crate. The specification is settled; the code is not written. Every code sample below is
         <em>illustrative</em> and will not compile.
@@ -76,15 +76,15 @@
 
     <h2 id="principle">Roles first, literals as the escape hatch</h2>
     <p>
-      The governing rule is that a widget emits a <em>role</em> — "this is a title", "this is the
-      surface colour", "this is medium spacing" — and the renderer decides what that role looks
+      The governing rule is that a widget emits a <em>role</em>: "this is a title", "this is the
+      surface colour", "this is medium spacing", and the renderer decides what that role looks
       like. A literal value is always available too, and always means "draw exactly this".
     </p>
     <p>
       The reason is not taste, it is the frame budget. The Host runs on the renderer's UI thread,
       so any work it does comes straight out of the per-interaction budget. If the Host resolved
       tokens, switching to dark mode would re-send a <code>SetProp</code> for every affected
-      property on every node — O(nodes). With the renderer resolving them, the same switch is one
+      property on every node: O(nodes). With the renderer resolving them, the same switch is one
       <code>SetTheme</code> record and Compose invalidates what it needs to through a
       <code>CompositionLocal</code>.
     </p>
@@ -124,7 +124,7 @@
           <tr>
             <td><code>ShapeRole</code></td>
             <td><code>None</code>, <code>ExtraSmall</code>, <code>Small</code>, <code>Medium</code>, <code>Large</code>, <code>Full</code></td>
-            <td>The design system — 12&nbsp;dp on Material 3, continuous curvature on HIG, 4&nbsp;dp on Fluent</td>
+            <td>The design system, 12&nbsp;dp on Material 3, continuous curvature on HIG, 4&nbsp;dp on Fluent</td>
           </tr>
           <tr>
             <td><code>SpaceRole</code></td>
@@ -134,7 +134,7 @@
           <tr>
             <td><code>Elevation(dp)</code></td>
             <td>A single float</td>
-            <td>The design system. Shadow colour, offset and blur are never sent — Material 3 raises the surface tone, HIG draws a wide soft shadow, Fluent layers a shadow with a hairline stroke</td>
+            <td>The design system. Shadow colour, offset and blur are never sent: Material 3 raises the surface tone, HIG draws a wide soft shadow, Fluent layers a shadow with a hairline stroke</td>
           </tr>
         </tbody>
       </table>
@@ -143,7 +143,7 @@
     <p>
       A <code>Text</code> that carries only <code>type_role</code> takes the system's size, weight,
       line height and tracking wholesale. Adding <code>font_size</code> overrides that one axis and
-      nothing else — each override is an independent <code>SetProp</code>, so the change-only
+      nothing else, each override is an independent <code>SetProp</code>, so the change-only
       transport described in <a href="architecture.html#protocol">the protocol</a> survives.
     </p>
 
@@ -263,8 +263,7 @@
     <p>
       Light and dark are a separate axis from the design system: <code>ColorScheme</code> is
       <code>Light | Dark | FollowSystem</code> and defaults to <code>FollowSystem</code>. The
-      renderer learns of a system change first and applies it itself. The Host is not involved —
-      the same rule that keeps scroll position and focus on the Kotlin side.
+      renderer learns of a system change first and applies it itself. The Host is not involved, the same rule that keeps scroll position and focus on the Kotlin side.
     </p>
 
     <h2 id="wire">What it adds to the wire</h2>

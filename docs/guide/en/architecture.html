@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Architecture — dioxus-compose guide</title>
+<title>Architecture, dioxus-compose guide</title>
 <meta name="description" content="The Host/Renderer split, the C ABI surface, the zero-copy protocol, the frame model and the macOS runtime layout.">
 <link rel="alternate" hreflang="en" href="architecture.html">
 <link rel="alternate" hreflang="ko" href="../ko/architecture.html">
 <link rel="alternate" hreflang="x-default" href="architecture.html">
-<link rel="stylesheet" href="../assets/style.css">
+<link rel="stylesheet" href="../assets/style.css?v=2">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
 <body>
@@ -30,7 +30,7 @@
     <nav aria-label="Guide">
       <h2>Guide</h2>
       <ul>
-        <li><a href="./">Overview</a></li>
+        <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
@@ -99,7 +99,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>c — Renderer → Host (exported by Rust)</figcaption>
+      <figcaption>c: Renderer → Host (exported by Rust)</figcaption>
 <pre><code><span class="ty">int32_t</span> <span class="f">dioxus_compose_host_init</span>(<span class="k">const</span> <span class="ty">uint8_t</span>* handshake, <span class="ty">uint32_t</span> len, <span class="ty">MutationBatch</span>* out);
 <span class="ty">int32_t</span> <span class="f">dioxus_compose_host_dispatch_event</span>(<span class="k">const</span> <span class="ty">uint8_t</span>* event, <span class="ty">uint32_t</span> len, <span class="ty">MutationBatch</span>* out);
 <span class="ty">int32_t</span> <span class="f">dioxus_compose_host_render_frame</span>(<span class="ty">uint64_t</span> frame_time_nanos, <span class="ty">MutationBatch</span>* out);
@@ -108,7 +108,7 @@
     </figure>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>c — Host → Renderer (exported by Kotlin)</figcaption>
+      <figcaption>c: Host → Renderer (exported by Kotlin)</figcaption>
 <pre><code><span class="ty">int32_t</span> <span class="f">dioxus_compose_renderer_run</span>(<span class="ty">void</span>);            <span class="c">/* blocking; LoopMode::Renderer only */</span>
 <span class="ty">void</span>    <span class="f">dioxus_compose_renderer_request_frame</span>(<span class="ty">void</span>);  <span class="c">/* thread-safe */</span></code></pre>
     </figure>
@@ -124,7 +124,7 @@
       The handshake exchanges a schema hash, a protocol version and the loop mode. A hash mismatch
       fails initialisation rather than producing a subtly wrong UI. The Rust status codes are
       <code>0</code> for success and negative values for protocol errors, uninitialised state,
-      double initialisation and caught panics — nothing unwinds across the boundary, because a
+      double initialisation and caught panics, nothing unwinds across the boundary, because a
       protocol error has to become a <code>ProtocolError</code> event, never a process abort.
     </p>
 
@@ -143,7 +143,7 @@
       <li>The batch itself is
           <code>#[repr(C)] struct MutationBatch { ptr, len, result }</code>, pointing into a
           Host-owned arena that is reused every frame. <code>result</code> carries the handler's
-          synchronous return value — for a key event, whether it was consumed.</li>
+          synchronous return value, for a key event, whether it was consumed.</li>
     </ul>
     <p>
       A batch is applied inside a single snapshot transaction, so an intermediate tree state can
@@ -162,12 +162,12 @@
       <li>The Host runs your handler, diffs the VirtualDom, encodes the mutations into the arena
           and returns the batch plus a result value.</li>
       <li>The renderer applies the batch in one snapshot, releases it, and reports the result to
-          Compose — for example as <code>true</code> from <code>onKeyEvent</code>.</li>
+          Compose, for example as <code>true</code> from <code>onKeyEvent</code>.</li>
       <li>Worker threads that changed state cause a frame request; requests coalesce into one
           <code>render_frame</code> inside the next Compose frame clock tick.</li>
     </ol>
     <p>
-      The VirtualDom runs on the renderer's UI thread — not on a thread of its own — which is what
+      The VirtualDom runs on the renderer's UI thread, not on a thread of its own, which is what
       removes the need for locks and for a queue. The single piece of cross-thread communication in
       the whole design is the frame-request wake. A frame requested while a handler is executing is
       held until the handler returns, so the renderer is never re-entered from inside a dispatch.
@@ -185,7 +185,7 @@
     <h2 id="macos">The macOS runtime</h2>
     <p>
       Window ownership was deliberately left to Compose Desktop's AWT path. Taking it over would
-      mean wiring <code>NSTextInputClient</code>, TSF and ibus/fcitx by hand — exactly the text
+      mean wiring <code>NSTextInputClient</code>, TSF and ibus/fcitx by hand, exactly the text
       quality this project refuses to risk. <code>ComposeWindow</code> is an AWT
       <code>JFrame</code>, and ahead-of-time compilation does not change which code paths run, so
       the AWT IME path survives into the native image.

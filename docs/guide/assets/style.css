@@ -1,3 +1,5 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+
 /* dioxus-compose guide: one hand-written stylesheet, no build step.
    Sections: tokens, reset, top bar, layout, typography, code, tables,
    callouts, landing, footer, responsive. */
@@ -39,7 +41,13 @@
           "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", Helvetica, Arial, sans-serif;
   --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas,
           "Liberation Mono", monospace;
+  --sans-ko: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont,
+             "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
   --measure: 70ch;
+
+  /* A border that still reads against the page. --line is for dividers, which may
+     recede; controls need an edge the eye can find. */
+  --line-strong: #9c9382;   /* 3.0:1 on white, so a control's edge is findable */
 }
 
 :root[data-theme="dark"] {
@@ -63,6 +71,8 @@
   --warn:       #dcba6d;
   --warn-bg:    #2a2317;
 
+  --line-strong:#626a7a;    /* 3.2:1 on the dark surface */
+
   --code-bg:    #1b1e24;
   --code-line:  #2b2f37;
   --c-key:      #e08a63;
@@ -80,7 +90,7 @@
     color-scheme: dark;
     --ink:#e8e6e1; --ink-soft:#b4b2ab; --ink-faint:#8e8c86;
     --paper:#141519; --surface:#181a1f; --surface-2:#202329;
-    --line:#2e323a; --line-soft:#24272d;
+    --line:#2e323a; --line-soft:#24272d; --line-strong:#626a7a;
     --accent:#e08a63; --accent-ink:#f0a582; --accent-bg:#2a1d17;
     --ok:#84c39a; --ok-bg:#1a2620; --warn:#dcba6d; --warn-bg:#2a2317;
     --code-bg:#1b1e24; --code-line:#2b2f37;
@@ -88,6 +98,16 @@
     --c-com:#7b818b; --c-fn:#93bad6; --c-attr:#cdbf82;
   }
 }
+
+html[lang="ko"] body {
+  font-family: var(--sans-ko);
+  line-height: 1.78;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+html[lang="ko"] h1, html[lang="ko"] h2, html[lang="ko"] h3 { letter-spacing: -.012em; }
+/* Code stays Latin: a Korean face would widen the monospace grid. */
+html[lang="ko"] code, html[lang="ko"] pre, html[lang="ko"] kbd { font-family: var(--mono); }
 
 /* ---------- reset ---------- */
 *, *::before, *::after { box-sizing: border-box; }
@@ -305,8 +325,8 @@ td code, th code { white-space: nowrap; }
 :root[data-theme="dark"] .btn:not(.secondary) { color: #17120f; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn:not(.secondary) { color: #17120f; } }
 .btn:hover { filter: brightness(1.06); }
-.btn.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
-.btn.secondary:hover { background: var(--surface-2); filter: none; }
+.btn.secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+.btn.secondary:hover { background: var(--surface-2); border-color: var(--accent); color: var(--accent-ink); filter: none; }
 
 .cards {
   display: grid; gap: 1rem; margin: 1.4rem 0 0;
@@ -366,3 +386,39 @@ footer.site .inner { max-width: 78rem; margin: 0 auto; display: flex; gap: 1.2re
   .topbar, .sidebar, .copy, .pagenav { display: none; }
   .shell { display: block; }
 }
+
+/* ---------- landing page ---------- */
+/* The landing page has no sidebar: it is one column, wider than the guide's
+   reading measure, with the hero allowed to breathe. */
+.landing main { max-width: 68rem; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2.5rem); }
+.landing .hero { padding: clamp(3rem, 9vw, 6rem) 0 0; text-align: left; }
+.landing .hero h1 {
+  font-size: clamp(2.3rem, 5.6vw, 3.9rem); line-height: 1.08;
+  letter-spacing: -.03em; max-width: 22ch; margin: 0 0 1.1rem;
+}
+.landing .hero h1 .said { color: var(--accent); display: block; }
+.landing .hero .lede { font-size: clamp(1.05rem, 2.2vw, 1.28rem); max-width: 56ch; color: var(--ink-soft); }
+.landing .hero .sub { font-size: 1rem; color: var(--ink-faint); max-width: 56ch; margin-top: .3rem; }
+.landing .cta { margin-top: 2rem; }
+.landing .btn { padding: .68rem 1.35rem; font-size: 1rem; }
+
+.showcase { display: grid; gap: 1.6rem; margin: 3.2rem 0 0; grid-template-columns: 1fr; }
+@media (min-width: 68rem) { .showcase { grid-template-columns: 1.05fr .95fr; align-items: start; } }
+.showcase pre { margin: 0; min-width: 0; }
+.showcase .note { color: var(--ink-soft); font-size: .95rem; }
+.showcase .note h2 { margin-top: 0; }
+
+.metrics {
+  display: grid; gap: 1px; margin: 3.4rem 0 0;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  background: var(--line-soft); border: 1px solid var(--line-soft); border-radius: var(--radius);
+  overflow: hidden;
+}
+.metric { background: var(--surface); padding: 1.15rem 1.2rem; }
+.metric b { display: block; font-size: 1.5rem; letter-spacing: -.02em; }
+.metric span { display: block; margin-top: .25rem; color: var(--ink-faint); font-size: .85rem; }
+
+.landing section { margin-top: 3.6rem; }
+.landing section > h2 { font-size: 1.45rem; letter-spacing: -.02em; }
+.landing .fineprint { color: var(--ink-faint); font-size: .85rem; margin-top: .8rem; }
+.landing footer.site { margin-top: 4rem; }
