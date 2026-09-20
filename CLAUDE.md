@@ -40,6 +40,13 @@ under `docs/`.
    deletions with it.
 3. `scripts/tests/planning-docs.test.sh` fails if those documents go missing, so the loss
    is caught rather than discovered weeks later.
+4. **Run `scripts/setup-worktrees.sh` once per clone.** Every worktree otherwise builds
+   into its own `target/`, each a full copy of every dependency's output. Ten agent
+   worktrees filled a 349GB volume to 100% and took down every build then running.
+5. **One worktree per agent, and never two workers in the same checkout.** Switching
+   branches changes every file under that checkout, so a `git checkout` while an agent is
+   working pulls the files out from under it. Work has been lost that way. Give a
+   background agent its own worktree and leave that checkout alone until it finishes.
 
 ## Writing
 
