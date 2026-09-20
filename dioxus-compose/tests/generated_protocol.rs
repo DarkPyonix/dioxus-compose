@@ -8,6 +8,12 @@ use dioxus_compose::{EventPayload, Key};
 #[test]
 fn fr7_generated_kotlin_matches_schema() {
     let generated = generate_kotlin();
+    assert!(generated.contains("LinearProgressIndicator"));
+    assert!(generated.contains("Progress"));
+    assert!(generated.contains("10 -> WidgetKind.LinearProgressIndicator"));
+    assert!(generated.contains("27 -> PropertyKind.Progress"));
+    assert!(generated.contains("else -> throw ProtocolException(\"unknown widget tag $tag\""));
+    assert!(generated.contains("else -> throw ProtocolException(\"unknown property tag $tag\""));
     assert!(generated.contains("enum class Key { Enter }"));
     assert!(generated.contains(
         "data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent"
