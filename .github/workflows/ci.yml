@@ -78,8 +78,15 @@ jobs:
         run: ./scripts/check.sh
 
   shell:
-    name: Shell script tests
-    runs-on: ubuntu-latest
+    name: Shell script tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both, because some of these scripts are platform specific and skip elsewhere.
+        # install-nik.sh only means anything on macOS, so running the suite on Linux alone
+        # would silently cover none of it.
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
