@@ -18,7 +18,7 @@ use store::{Filter, Task};
 const BULK_COUNT: usize = 5_000;
 
 fn app() -> Element {
-    let mut tasks = use_signal(|| store::load());
+    let mut tasks = use_signal(store::load);
     let mut next_id = use_signal(|| {
         tasks
             .read()
