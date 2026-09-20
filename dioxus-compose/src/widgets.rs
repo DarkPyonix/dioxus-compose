@@ -7,6 +7,9 @@ use dioxus_signals::WritableExt as _;
 
 use crate as dioxus_elements;
 use crate::Key;
+use crate::schema::{
+    Alignment, Arrangement, ButtonVariant, Paint, SpaceRole, TextAlign, TextOverflow, TypeRole,
+};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -68,14 +71,36 @@ impl KeyEvent {
     }
 }
 
+/// FR-13.8: a role that was not set is tag 0, which means "not sent". The Renderer
+/// never sees a zero role, so it never has to guess what an unset role meant.
+fn role(value: Option<impl Into<u16>>) -> i64 {
+    value.map_or(0, |value| i64::from(value.into()))
+}
+
+fn dp(value: Option<f32>) -> f64 {
+    f64::from(value.unwrap_or(0.0))
+}
+
 #[component]
 pub fn Column(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    #[props(default)] arrangement: Option<Arrangement>,
+    #[props(default)] spacing: Option<f32>,
+    #[props(default)] space_role: Option<SpaceRole>,
+    #[props(default)] alignment: Option<Alignment>,
     children: Element,
 ) -> Element {
     rsx! {
-        column { fill_max_width, fill_max_height, {children} }
+        column {
+            fill_max_width,
+            fill_max_height,
+            arrangement: role(arrangement),
+            spacing: dp(spacing),
+            space_role: role(space_role),
+            alignment: role(alignment),
+            {children}
+        }
     }
 }
 
@@ -83,10 +108,22 @@ pub fn Column(
 pub fn Row(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    #[props(default)] arrangement: Option<Arrangement>,
+    #[props(default)] spacing: Option<f32>,
+    #[props(default)] space_role: Option<SpaceRole>,
+    #[props(default)] alignment: Option<Alignment>,
     children: Element,
 ) -> Element {
     rsx! {
-        row { fill_max_width, fill_max_height, {children} }
+        row {
+            fill_max_width,
+            fill_max_height,
+            arrangement: role(arrangement),
+            spacing: dp(spacing),
+            space_role: role(space_role),
+            alignment: role(alignment),
+            {children}
+        }
     }
 }
 
@@ -94,16 +131,61 @@ pub fn Row(
 pub fn ComposeBox(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    #[props(default)] alignment: Option<Alignment>,
     children: Element,
 ) -> Element {
     rsx! {
-        composebox { fill_max_width, fill_max_height, {children} }
+        composebox {
+            fill_max_width,
+            fill_max_height,
+            alignment: role(alignment),
+            {children}
+        }
     }
 }
 
+/// FR-13.6: the whole content with a vertical scroll attached. The scroll position is
+/// the Renderer's (D5), so scrolling never reaches the Host.
 #[component]
-pub fn Text(#[props(into)] text: String) -> Element {
-    rsx! { text { text } }
+pub fn ScrollColumn(
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    children: Element,
+) -> Element {
+    rsx! {
+        scrollcolumn { fill_max_width, fill_max_height, {children} }
+    }
+}
+
+/// FR-13.2: `type_role` alone takes the design system's size, weight, line height and
+/// letter spacing. Each override replaces one axis and costs one `SetProp` (FR-4).
+#[component]
+pub fn Text(
+    #[props(into)] text: String,
+    #[props(default)] type_role: Option<TypeRole>,
+    #[props(default)] font_size: Option<f32>,
+    #[props(default)] font_weight: Option<u16>,
+    #[props(default)] line_height: Option<f32>,
+    #[props(default)] letter_spacing: Option<f32>,
+    #[props(default)] color: Option<Paint>,
+    #[props(default)] text_align: Option<TextAlign>,
+    #[props(default)] max_lines: Option<u32>,
+    #[props(default)] overflow: Option<TextOverflow>,
+) -> Element {
+    rsx! {
+        text {
+            text,
+            type_role: role(type_role),
+            font_size: dp(font_size),
+            font_weight: i64::from(font_weight.unwrap_or(0)),
+            line_height: dp(line_height),
+            letter_spacing: dp(letter_spacing),
+            color: color.map_or(0, |paint| paint.to_bits() as i64),
+            text_align: role(text_align),
+            max_lines: i64::from(max_lines.unwrap_or(0)),
+            overflow: role(overflow),
+        }
+    }
 }
 
 #[component]
@@ -129,14 +211,22 @@ pub fn TextField(
     }
 }
 
+/// FR-14.2: the variant is the seam the design system's component rule attaches to.
+/// The same rsx draws differently per system, and that is correct behaviour.
 #[component]
 pub fn Button(
     #[props(into)] text: String,
     #[props(default = true)] enabled: bool,
+    #[props(default)] variant: Option<ButtonVariant>,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
-        button { text, enabled, onclick: move |_| on_click.call(()) }
+        button {
+            text,
+            enabled,
+            variant: role(variant),
+            onclick: move |_| on_click.call(()),
+        }
     }
 }
 
@@ -167,23 +257,23 @@ impl RangeRequest {
 }
 
 /// A windowed list (FR-8). The Host declares `item_count` and a stable key per item, and
-/// materialises only the range the Renderer last requested plus `buffer` items on each side.
-/// Scroll position and item identity stay in the Renderer (D5); the data stays in the Host,
-/// so scrolling back re-materialises an identical subtree.
+/// materialises **exactly** the range the Renderer last requested.
+///
+/// The read-ahead buffer belongs to the Renderer, which owns the scroll position (D5) and so
+/// knows how far ahead to ask. Widening the range here would break the Renderer's placement:
+/// `start` is the global index of the first child it receives, and that is what lets it draw
+/// a real Compose `LazyColumn` of `item_count` items. The data stays in the Host, so
+/// scrolling back re-materialises an identical subtree.
 #[component]
 pub fn LazyColumn(
     item_count: usize,
-    #[props(default = 4)] buffer: usize,
     #[props(default)] key_of: Option<Callback<usize, String>>,
     item: Callback<usize, Element>,
 ) -> Element {
     let mut range = use_signal(|| (0_usize, 0_usize));
     let (start, count) = range();
-    let first = start.saturating_sub(buffer);
-    let last = start
-        .saturating_add(count)
-        .saturating_add(buffer)
-        .min(item_count);
+    let first = start.min(item_count);
+    let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazycolumn {
             item_count: item_count as i64,

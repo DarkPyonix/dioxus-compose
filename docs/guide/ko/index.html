@@ -21,7 +21,7 @@
 <meta name="twitter:title" content="dioxus-compose: Rust로 선언하고 Compose가 그리는 네이티브 UI">
 <meta name="twitter:description" content="Rust에서 UI를 선언하면 Compose 렌더러가 화면을 그립니다. 웹뷰도 JVM도 없이 도는 네이티브 데스크톱 앱.">
 <meta name="twitter:image" content="http://darkpyonix.dev/dioxus-compose/assets/og.png">
-<link rel="stylesheet" href="../assets/style.css?v=16">
+<link rel="stylesheet" href="../assets/style.css?v=18">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -94,15 +94,15 @@
   </section>
   </div>
 
-  <div class="showcase">
+  <div class="showcase" id="how">
 <pre><code><span class="k">rsx!</span> {
     <span class="t">Column</span> {
         <span class="a">fill_max_width</span>: <span class="k">true</span>,
         <span class="t">Text</span> { <span class="a">text</span>: <span class="s">"대화"</span> }
         <span class="t">TextField</span> {
             <span class="a">placeholder</span>: <span class="s">"메시지를 입력하세요"</span>,
+            <span class="c">// Enter는 제출, Shift+Enter는 줄바꿈</span>
             <span class="a">on_key_down</span>: <span class="k">move</span> |e| {
-                <span class="c">// Enter는 제출, Shift+Enter는 줄바꿈</span>
                 <span class="k">if</span> e.key() == <span class="t">Key</span>::Enter &amp;&amp; !e.shift_key() {
                     submit();
                     e.consume();

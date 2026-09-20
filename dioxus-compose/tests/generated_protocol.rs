@@ -2,6 +2,7 @@ use dioxus_compose::codegen::{
     generate_event_vector, generate_kotlin, generate_mutation_vector, generate_vector_description,
 };
 use dioxus_compose::protocol::{HostEvent, decode_event, encode_event};
+use dioxus_compose::tokens::DESIGN_TOKENS;
 use dioxus_compose::{EventPayload, Key};
 
 #[test]
@@ -30,6 +31,30 @@ fn fr7_generated_kotlin_matches_schema() {
         generated,
         "generated Kotlin is stale; run `cargo run -p dioxus-compose --bin codegen`",
     );
+}
+
+/// FR-14.1 and 14.4: the role vocabulary and the token tables are generated, so a fourth
+/// design system is one `DesignSystem` variant plus one Renderer rule implementation.
+#[test]
+fn fr14_generated_kotlin_carries_the_roles_and_token_tables() {
+    let generated = generate_kotlin();
+    for role in [
+        "enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError }",
+        "enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }",
+        "enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }",
+        "enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }",
+        "enum class ButtonVariant { Filled, Tonal, Outlined, Text }",
+        "enum class DesignSystem { Material3, AppleHig, Fluent }",
+        "enum class ColorScheme { Light, Dark, FollowSystem }",
+    ] {
+        assert!(generated.contains(role), "missing {role}");
+    }
+    assert!(generated.contains("data class SetTheme(val theme: Theme) : Mutation"));
+    for table in DESIGN_TOKENS {
+        assert!(generated.contains(&format!("DesignSystem.{:?},", table.system)));
+        assert!(generated.contains(table.reference));
+    }
+    assert!(generated.contains("fun of(system: DesignSystem): DesignTokenTable"));
 }
 
 #[test]

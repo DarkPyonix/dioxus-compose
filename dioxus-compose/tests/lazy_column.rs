@@ -1,4 +1,7 @@
-//! FR-8 LazyColumn windowing: only the requested range plus a buffer is materialised.
+//! FR-8 LazyColumn windowing: exactly the requested range is materialised.
+//!
+//! The read-ahead buffer belongs to the Renderer (D5), so `start` is the global index of
+//! the first item the Host materialises.
 
 use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
@@ -7,13 +10,11 @@ use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
 use std::collections::HashMap;
 
 const ITEM_COUNT: usize = 10_000;
-const BUFFER: usize = 4;
 
 fn app() -> Element {
     rsx! {
         LazyColumn {
             item_count: ITEM_COUNT,
-            buffer: BUFFER,
             item: move |index: usize| rsx! { Text { text: "message {index}" } },
         }
     }
@@ -111,8 +112,8 @@ impl MockRenderer {
 }
 
 fn expected_texts(start: usize, count: usize) -> Vec<String> {
-    let first = start.saturating_sub(BUFFER);
-    let last = (start + count + BUFFER).min(ITEM_COUNT);
+    let first = start.min(ITEM_COUNT);
+    let last = (first + count).min(ITEM_COUNT);
     let mut texts: Vec<_> = (first..last)
         .map(|index| format!("message {index}"))
         .collect();
@@ -184,7 +185,7 @@ fn fr8_node_count_is_proportional_to_the_window() {
     let mut fixture = Fixture::new();
     fixture.request_range(5_000, 20);
 
-    let window = 20 + 2 * BUFFER;
+    let window = 20;
     let nodes = fixture.mock.node_count();
     assert_eq!(fixture.mock.live_texts().len(), window);
     assert!(
