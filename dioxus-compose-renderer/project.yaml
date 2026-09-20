@@ -2,6 +2,8 @@ modules:
   - android
   - desktop
   - ios
+  - iosentry
+  - iosrenderer
   - native
   - shared
   - web
