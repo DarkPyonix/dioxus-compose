@@ -78,7 +78,7 @@ Never introduce anything that violates these. If a task seems to require it, sto
   - No extra frames of input latency.
   - Treat budget regressions as bugs.
 - **Crash isolation (NFR-7)**: protocol errors produce a `ProtocolError` event, never a process abort.
-- **Web (PR-6)**: Rust wasm and Kotlin/Wasm link directly. JS may only wire imports at instantiation. Never route calls through a JS bridge.
+- **Web (PR-6)**: Kotlin/Wasm owns the single `WebAssembly.Memory`; Rust imports it and both read the arena in place. Function calls cross a generated JS forwarder (about 12 ns) because a browser cannot give you both direct binding and a shared memory. Never add serialisation, a data copy, an async queue or a thread hop.
 
 ## Commits
 

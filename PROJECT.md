@@ -58,7 +58,7 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 | M4 | 긴 목록과 증분 텍스트 | LazyColumn 윈도잉, 멀티라인 입력, 스트리밍 텍스트 | FR-8, FR-9 |
 | M5 | iOS | 같은 C ABI를 Kotlin/Native `-produce static`으로 구현 | NFR-4 |
 | M6 | Android | SPEC PR-5 수용 기준 통과 | PR-5 |
-| M7 | Web | wasm 직결 검증(Q3) 후 PR-6 구현 | PR-6 |
+| M7 | Web | PR-6 구현 (메모리 공유 + 생성된 JS forwarder) | PR-6 |
 | M8 | 배포 | 렌더러 아티팩트 배포 파이프라인과 체크섬 검증 | NFR-11 |
 
 **M1이 프로젝트의 생사를 가릅니다.** 여기서 한글 조합이 정상이면 나머지는 분량 문제이고, 실패하면 INTENT를 다시 검토합니다.
@@ -69,6 +69,6 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 |---|---|---|
 | Q1 | 데스크톱 접근성이 native-image에서 AWT 경로로 유지되는지 | 실험으로 확인 (M1, SPEC §7) |
 | Q2 | 서드파티 Compose 컴포넌트를 스키마에 확장하는 방식 | 후보 탐색 중 (SPEC FR-11) |
-| Q3 | Web: Kotlin/Wasm의 외부 linear memory 접근과 wasm↔wasm 직접 호출 성능. JS 브리지 경유는 불가 | 실현 가능성 검증 필요 (SPEC PR-6) |
+| Q3 | Web: V8과 SpiderMonkey에서 PR-6의 실측 수치를 재확인 | Safari에서는 확정 (SPEC PR-6, `experiments/web-interop/`) |
 
 경계 호출 모델, 인코딩, 스레드 모델, Android 경계는 결정되었습니다(INTENT D8, D9 / SPEC PR-1~PR-5).

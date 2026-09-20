@@ -40,7 +40,7 @@ Rust에서 Compose API를 직접 호출하지 않습니다. GraalVM `@CEntryPoin
 | 데스크톱 | native-image `--shared`. **macOS에서는 Liberica NIK Full이 필요합니다**: upstream GraalVM은 Darwin에서 AWT 지원을 건너뜁니다(oracle/graal#13272, 2026-09 기준 open). NIK는 AWT를 정적 링크합니다 |
 | iOS | Kotlin/Native `-produce static` + `@CName` C 심볼 |
 | Android | 대상 플랫폼. ART라서 native-image가 불가능합니다. Kotlin/Android 앱이 Rust cdylib을 로드하고, 생성된 JNI 심을 씁니다(D9) |
-| Web | 대상 플랫폼. Compose wasmJs + Dioxus wasm. 브라우저에서 실행하는 것이라 앱이 웹뷰를 내장하는 것과는 다르고 C1에 해당하지 않습니다. JS 브리지 경유는 성능상 금지하고, wasm 모듈끼리 직결합니다(SPEC PR-5) |
+| Web | 대상 플랫폼. Compose wasmJs + Dioxus wasm. 브라우저에서 실행하는 것이라 앱이 웹뷰를 내장하는 것과는 다르고 C1에 해당하지 않습니다. 메모리는 공유하고 호출만 생성된 JS forwarder를 거칩니다(SPEC PR-6) |
 
 ### D4. 창 소유권은 관심사가 아니다. Compose Desktop의 AWT 경로를 그대로 쓴다
 
@@ -74,7 +74,7 @@ native-image는 CI와 릴리스에서만 돌립니다.
 - 옛 React Native 브리지의 병목(직렬화, 비동기 전용, 스레드 홉)을 피하기 위해 JSI 방식을 택했습니다. VirtualDom은 Renderer UI 스레드에서 돌고, 양쪽은 서로를 직접 호출합니다.
 - 버퍼는 큐가 아니라 한 번의 호출에서 Mutation 여러 개를 넘기는 인자입니다. 고정 레이아웃이라 제자리에서 읽습니다.
 - 무거운 도메인 작업은 Host 워커 스레드에서 돌리고, UI 스레드에는 wake 신호만 보냅니다.
-- Web에서도 JS 브리지를 거치지 않습니다.
+- Web에서는 메모리를 공유해 복사를 없애고, 호출만 생성된 JS forwarder를 거칩니다(약 12ns). 직렬화, 비동기 큐, 스레드 홉, 데이터 복사는 없습니다(SPEC PR-6).
 - 근거는 SPEC PR-1~PR-6에 있습니다.
 
 ### D9-macOS. macOS 실행 모델과 우회책
