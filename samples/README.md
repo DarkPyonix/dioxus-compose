@@ -15,10 +15,21 @@ vocabulary, and belongs in an issue rather than in a workaround.
 | `todo` | Lists with stable keys, checkboxes, filtering, per-item state, `LazyColumn` windowing over thousands of rows, file persistence from a worker thread |
 | `chat` | An LLM chat interface: scrollback, a multiline composer where Enter sends and Shift+Enter starts a new line, and a reply streamed in from a worker thread |
 
-Run one with the renderer present:
+Each one is an ordinary dx project: a `Dioxus.toml`, an `assets/` directory and
+`src/main.rs`, the layout `dx new` produces. That is deliberate, because a sample exists to
+be copied, and an arrangement that only works inside this repository teaches nothing.
 
 ```
-DIOXUS_COMPOSE_RENDERER_DIR=dioxus-compose-renderer/build/native-image/dist/lib \
+cd samples/calculator
+dx serve
+```
+
+Building with cargo directly works too, and is what CI does, but the renderer has to be
+found. The path must be absolute: a build script runs with the package directory as its
+working directory, not the workspace root.
+
+```
+DIOXUS_COMPOSE_RENDERER_DIR=$PWD/dioxus-compose-renderer/build/native-image/dist/lib \
   cargo run -p sample-calculator --features dioxus-compose/native-renderer
 ```
 
