@@ -19,7 +19,11 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 3. Decision changes go to `docs/INTENT.md` first, then SPEC, then code.
 4. When a requirement's acceptance criteria are verified, update its status (`Draft` → `Agreed` → `Done`) in the same change that proves it.
 5. Resolved open questions are removed from `PROJECT.md` and recorded as decisions in INTENT/SPEC.
-6. Language: `README.md` and the guide site (`docs/guide/`) are English, with translations under `docs/locales/` and `docs/guide/ko/`. The internal planning documents (`PROJECT.md`, `docs/INTENT.md`, `docs/SPEC.md`) are Korean. Code, code comments, scripts and this file are English.
+
+## Writing
+
+1. **Never use em dashes.** Not in docs, code comments, commit messages, pull request text or UI copy. Use a comma, a colon, parentheses, or start a new sentence. Hyphens in compound words and en dashes in numeric ranges are fine.
+2. Language: `README.md` and the guide site (`docs/guide/`) are English, with translations under `docs/locales/` and `docs/guide/ko/`. The internal planning documents (`PROJECT.md`, `docs/INTENT.md`, `docs/SPEC.md`) are Korean. Code, code comments, scripts and this file are English.
 
 ## Test Driven Development
 

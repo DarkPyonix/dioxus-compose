@@ -17,7 +17,7 @@ on first use, so nothing has to be installed separately.
 | `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
 
 The generated protocol bindings live in `native/src/protocol/Protocol.gen.kt`. They are
-produced from the Rust schema by `cargo run -p dioxus-compose --bin codegen` — edit the Rust
+produced from the Rust schema by `cargo run -p dioxus-compose --bin codegen`, edit the Rust
 schema, never that file.
 
 ## Running

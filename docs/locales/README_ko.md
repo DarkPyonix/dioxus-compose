@@ -78,8 +78,8 @@ dioxus-compose는 Compose의 런타임 비용을 빼고 렌더러만 가져옵�
 
 | ID | 조건 |
 |---|---|
-| **C1** | 웹뷰 금지 — WKWebView, WebView2, WebKitGTK, Tauri, wry 모두 불가 |
-| **C2** | JVM 동봉 금지 — JVM은 개발 셸에서만 허용 |
+| **C1** | 웹뷰 금지: WKWebView, WebView2, WebKitGTK, Tauri, wry 모두 불가 |
+| **C2** | JVM 동봉 금지: JVM은 개발 셸에서만 허용 |
 | **C3** | 수동 JNI·cinterop 글루 금지. 경계 심은 생성물 |
 | **C4** | UI는 **Rust에서** 선언형으로 작성. Kotlin은 렌더러 구현 세부 |
 | **C5** | Compose 수준의 텍스트·IME·위젯 품질. 우회 경로를 만들지 않음 |
@@ -109,16 +109,16 @@ Rust **Host**가 Kotlin **Renderer**보다 앞서 있습니다. 지금 마무리
 
 | 기능 | Host (Rust) | Renderer (Kotlin) |
 |---|---|---|
-| 노드 트리 mutation — `FR-1` | ✅ | ✅ |
-| 스키마 기반 렌더링 — `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
-| 동기 이벤트 전달 — `FR-3`, `FR-12` | ✅ | ✅ 키 소비를 `Modifier.onKeyEvent`에 연결 |
-| 비제어 `TextField`, IME 소유권 — `D5` | ✅ | ✅ |
-| 스키마 코드젠 lockstep — `FR-7` | ✅ | ✅ 생성된 `Protocol.gen.kt` |
-| `LazyColumn` 윈도잉 — `FR-8` | ✅ 요청받은 구간만 생성 | ⚠️ **당분간 평범한 `Column`으로 렌더링**. 윈도잉 절반이 `TODO(FR-8)`로 남아 있음 |
-| 스트리밍 텍스트 `AppendText` — `FR-9` | ✅ | ✅ |
-| Modifier — `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ 위 전부 |
-| 디자인 프리미티브·디자인 시스템 — `FR-13`, `FR-14` | ❌ `Draft` — **명세만 있고 코드는 없음** | ❌ |
-| 서드파티 위젯 확장 — `FR-11` | ❌ `Draft` — 후보 검토 중 (**Q2**) | ❌ |
+| 노드 트리 mutation: `FR-1` | ✅ | ✅ |
+| 스키마 기반 렌더링: `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
+| 동기 이벤트 전달: `FR-3`, `FR-12` | ✅ | ✅ 키 소비를 `Modifier.onKeyEvent`에 연결 |
+| 비제어 `TextField`, IME 소유권: `D5` | ✅ | ✅ |
+| 스키마 코드젠 lockstep: `FR-7` | ✅ | ✅ 생성된 `Protocol.gen.kt` |
+| `LazyColumn` 윈도잉: `FR-8` | ✅ 요청받은 구간만 생성 | ⚠️ **당분간 평범한 `Column`으로 렌더링**. 윈도잉 절반이 `TODO(FR-8)`로 남아 있음 |
+| 스트리밍 텍스트 `AppendText`: `FR-9` | ✅ | ✅ |
+| Modifier: `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ 위 전부 |
+| 디자인 프리미티브·디자인 시스템: `FR-13`, `FR-14` | ❌ `Draft`: **명세만 있고 코드는 없음** | ❌ |
+| 서드파티 위젯 확장: `FR-11` | ❌ `Draft`: 후보 검토 중 (**Q2**) | ❌ |
 
 마일스톤은 [`PROJECT.md`](../../PROJECT.md)에 있습니다(M0~M8). **M1이 프로젝트의 생사를
 가릅니다.** native-image 빌드에서 한글 조합이 정상이면 나머지는 분량 문제입니다.
@@ -212,7 +212,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
   `Theme::unified(DesignSystem::Material3)`입니다. 플랫폼마다 다르게 보이는 것은 기본값으로
   적절하지 않기 때문입니다.
 
-> **상태: `Draft` — 설계뿐입니다.** ⚠️ 아직 코드는 하나도 없습니다. `Theme`, `DesignSystem`,
+> **상태: `Draft`, 설계뿐입니다.** ⚠️ 아직 코드는 하나도 없습니다. `Theme`, `DesignSystem`,
 > `ColorRole`, `TypeRole`, `ScrollColumn`은 지금 `dioxus-compose/src/`에도 Kotlin 렌더러에도
 > 없습니다. 현재 동작하는 것은 리터럴 부분집합, 즉 `Modifier::Background(u32 ARGB)`와
 > `Modifier::Padding(f32)` 같은 것들입니다. 위 코드는 **명세된 API의 예시(illustrative)**이며
@@ -224,7 +224,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 
 ```
 ┌────────────────────── Host (Rust) ───────────────────────┐
-│  사용자 컴포넌트 — rsx!, hooks, signals                    │
+│  사용자 컴포넌트, rsx!, hooks, signals                    │
 │  dioxus-core VirtualDom                                  │
 │  dioxus-compose 렌더러:  Mutations ──► 고정 레이아웃        │
 │                                        바이트 레코드       │
@@ -309,7 +309,7 @@ JavaFX 호스트가 쓰는 것과 같은 방식입니다. AWT가 자기 루프�
 rustup component add rustfmt clippy
 ```
 
-### 2. Liberica NIK 25 **Full** — 렌더러 네이티브 빌드에만 필요
+### 2. Liberica NIK 25 **Full**, 렌더러 네이티브 빌드에만 필요
 
 > ⚠️ **macOS에서는 upstream GraalVM이 동작하지 않습니다.** Darwin에서 AWT 지원을 건너뛰기
 > 때문에([oracle/graal#13272](https://github.com/oracle/graal/issues/13272), 2026-09 기준 open)
@@ -407,7 +407,7 @@ cd dioxus-compose-renderer
 목표(`NFR-9`)는 **같은 화면을 Kotlin/Compose로 직접 작성한 것과 체감 차이가 없는 수준**입니다.
 기준은 120Hz 디스플레이, 프레임당 8.33ms입니다.
 
-### 예산 — `SPEC §5.1`
+### 예산, `SPEC §5.1`
 
 | 항목 | 기준 (p99, 릴리스 빌드) |
 |---|---|
@@ -421,7 +421,7 @@ cd dioxus-compose-renderer
 
 예산 초과는 버그로 취급하며, CI가 빌드를 실패시킵니다.
 
-### 실측 — 2026-09-20
+### 실측, 2026-09-20
 
 [`dioxus-compose/benches/baseline.json`](../../dioxus-compose/benches/baseline.json)에 기록되어
 있고, `scripts/check.sh` 안에서 `cargo bench`로 다시 돌립니다.
@@ -450,7 +450,7 @@ cd dioxus-compose-renderer
 
 ```
 dioxus-compose/
-├─ dioxus-compose/                  # Rust: Host — Dioxus 렌더러 크레이트
+├─ dioxus-compose/                  # Rust: Host, Dioxus 렌더러 크레이트
 │  ├─ src/
 │  │  ├─ lib.rs                     #   공개 API, rsx! 엘리먼트, 이벤트 속성
 │  │  ├─ widgets.rs                 #   Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn
@@ -533,7 +533,7 @@ CI도 같은 방식으로 나뉩니다. [`ci.yml`](../../.github/workflows/ci.ym
 
 ## 📚 문서
 
-**📖 가이드 사이트: <http://darkpyonix.dev/dioxus-compose/>** — 영어와 한국어로 시작하기, UI
+**📖 가이드 사이트: <http://darkpyonix.dev/dioxus-compose/>**, 영어와 한국어로 시작하기, UI
 작성, 목록과 스트리밍, 아키텍처, 문제 해결을 다룹니다.
 
 | 문서 | 내용 |

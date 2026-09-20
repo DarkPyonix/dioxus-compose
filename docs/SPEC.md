@@ -36,53 +36,53 @@
 
 ## 3. 기능 요구사항
 
-### FR-1 노드 트리 구성 — `Agreed`
+### FR-1 노드 트리 구성 (`Agreed`)
 Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭제, 이동할 수 있어야 합니다.
 - 수용 기준: `Create`, `SetProp`, `SetModifier`, `Insert`, `Move`, `Remove`로 임의의 트리를 만들 수 있고, 적용 결과가 Renderer의 트리 덤프와 일치합니다.
 
-### FR-2 스키마 기반 렌더링 — `Agreed`
+### FR-2 스키마 기반 렌더링 (`Agreed`)
 Renderer는 스키마에 정의된 위젯 타입만 해석해서 해당 Compose 컴포저블로 렌더링합니다.
 - 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`, `LazyColumn`(FR-8)
 - 디자인 확장: `ScrollColumn`. 값 모델은 FR-13, 테마는 FR-14를 따릅니다
 - 수용 기준: 스키마에 없는 타입이나 속성을 받으면 크래시하지 않고 `ProtocolError` 이벤트를 보냅니다.
 
-### FR-3 이벤트 전달 — `Agreed`
+### FR-3 이벤트 전달 (`Agreed`)
 사용자 입력은 `(node_id, handler_id, payload)` 형태로 Host 핸들러를 **동기로 직접 호출**합니다(PR-1). 핸들러는 반환값을 돌려줄 수 있습니다. 클로저는 경계를 넘지 않습니다.
 - 수용 기준: Button 클릭이 등록된 Rust 핸들러를 정확히 한 번 호출합니다.
 
-### FR-4 상태 갱신 반영 — `Agreed`
+### FR-4 상태 갱신 반영 (`Agreed`)
 Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드만 recomposition합니다.
 - 수용 기준: Text 하나의 내용을 바꿀 때 전송되는 Mutation은 `SetProp` 1건입니다. 형제 노드는 recomposition되지 않습니다(recomposition 카운터로 확인).
 
-### FR-5 비제어 TextField — `Agreed`
+### FR-5 비제어 TextField (`Agreed`)
 - TextField의 편집 값과 조합 상태는 Renderer가 소유합니다.
 - Renderer는 변경을 알림 이벤트(`TextChanged`, 디바운스 적용)와 확정 이벤트(`TextSubmitted`, `FocusLost`)로 보냅니다.
 - Host가 값을 바꿀 때는 명시적 명령 `SetText(node_id, text, selection)`을 씁니다. Renderer는 IME 조합이 진행 중이면 조합이 끝날 때까지 적용을 미룹니다.
 - 수용 기준: §6 IME 체크리스트를 통과합니다.
 
-### FR-6 Dioxus 렌더러 — `Agreed`
+### FR-6 Dioxus 렌더러 (`Agreed`)
 `dioxus-core` VirtualDom의 `Mutations`를 프로토콜 Mutation으로 변환하는 렌더러를 제공합니다.
 - 사용자 코드는 `rsx!`와 훅만으로 작성하고, 프로토콜을 직접 다루지 않습니다.
 - 수용 기준: M0 화면을 `rsx!` 컴포넌트로 재작성했을 때 동일하게 동작합니다.
 
-### FR-7 스키마 코드젠 — `Draft`
+### FR-7 스키마 코드젠 (`Draft`)
 위젯, 속성, Modifier, 이벤트 페이로드는 Rust에서 단일 소스로 정의하고 Kotlin 타입과 코덱을 생성합니다.
 - 양쪽 모두 exhaustive match가 적용됩니다(Rust `enum`은 Kotlin `sealed interface`로 생성).
 - 핸드셰이크 때 스키마 해시를 비교해서 불일치하면 초기화를 실패시킵니다.
 - 수용 기준: Rust 스키마에 속성을 추가하고 Kotlin 인터프리터를 갱신하지 않으면 **빌드가 실패**합니다.
 
-### FR-8 LazyColumn 윈도잉 — `Agreed`
+### FR-8 LazyColumn 윈도잉 (`Agreed`)
 - Host는 아이템 총 개수와 안정적인 key를 알립니다.
 - Renderer는 보이는 범위를 `RangeRequested`로 요청하고, Host는 그 구간의 서브트리만 생성합니다.
 - 아이템 식별: Host가 아이템마다 `Box` 래퍼 노드를 만들고 `item_key`(문자열)를 실어 보냅니다. Renderer는 그 값을 Compose `LazyColumn`의 key로 씁니다.
 - 와이어: `RangeRequested`는 이벤트 태그 7(24바이트, `start: u32`, `count: u32`)입니다. Host는 `item_count`, `item_key`, `on_range_requested` 속성으로 선언합니다.
 - 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(Host 측 통과: 가시 20 + 버퍼 4 요청에 아이템 28개)**
 
-### FR-9 스트리밍 텍스트 — `Agreed`
+### FR-9 스트리밍 텍스트 (`Agreed`)
 긴 텍스트가 점진적으로 늘어나는 경우를 위해 Text 노드에 `AppendText` 명령을 둡니다(태그 8, 16바이트). 전체 문자열이 아니라 늘어난 꼬리만 보냅니다. Host는 추가분을 모아 프레임당 노드별 1건으로 flush하며, flush 지점은 `render_frame`입니다.
 - 수용 기준: 초당 100회 추가되는 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다. **(Host 측 통과: 36KB 텍스트에서 배치 64바이트 미만, 스트리밍 프레임 p99 125ns)**
 
-### FR-12 이벤트 소비(consume) — `Agreed`
+### FR-12 이벤트 소비(consume) (`Agreed`)
 Dioxus 0.7의 이벤트 핸들러는 반환값이 없습니다. 그래서 핸들러가 **이벤트 객체에 소비 표시를 남기고**, 경계가 그 값을 읽어 `MutationBatch.result`로 돌려줍니다. 웹의 `preventDefault()`, Compose의 `PointerInputChange.consume()`과 같은 모델입니다.
 
 ```rust
@@ -107,10 +107,10 @@ Host 측 규칙:
 - 핸들러 실행 중에 Renderer를 동기로 호출하지 않습니다(재진입 금지). 상태만 바꾸고 프레임 요청으로 넘깁니다.
 - 수용 기준: 멀티라인 TextField에서 Enter는 제출되고 줄바꿈이 생기지 않으며, Shift+Enter는 줄바꿈만 생기고 제출되지 않습니다. 한글 조합 중 Enter는 조합만 확정합니다.
 
-### FR-10 Modifier 값 모델 — `Agreed`
+### FR-10 Modifier 값 모델 (`Agreed`)
 Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]`. Renderer는 이를 `Modifier` 체인으로 재구성합니다.
 
-### FR-13 디자인 프리미티브 — `Draft`
+### FR-13 디자인 프리미티브 (`Draft`)
 위젯만으로는 디자인을 할 수 없습니다. 스키마에 **값 모델**이 필요합니다. 값은 고정 레이아웃 레코드(PR-4)를 넘어야 하므로, Modifier 한 변형이 쓸 수 있는 공간은 `(tag: u16, first: u64, second: u64)`뿐입니다. 아래 프리미티브는 모두 이 한도 안에 들어갑니다.
 
 원칙: **역할(role)을 우선하고 리터럴은 탈출구로 둡니다.** 역할은 FR-14의 디자인 시스템이 해석하고, 리터럴은 그대로 그립니다.
@@ -130,16 +130,16 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 - 수용 기준: `Text { type_role: Title }` 한 개는 `SetProp` 1건만 보냅니다. `font_size`만 바꾸면 추가 `SetProp` 1건만 전송됩니다.
 
 #### 13.3 모양: `Shape`와 `Border`
-- `Modifier::Shape { top_start, top_end, bottom_end, bottom_start }` — f32 4개를 `u64` 2개에 담습니다.
-- `Modifier::ShapeRole(ShapeRole)` — `None|ExtraSmall|Small|Medium|Large|Full`. 실제 반지름은 디자인 시스템이 정합니다. Material 3의 12dp, HIG의 연속 곡률 느낌, Fluent의 4dp가 여기서 갈립니다.
-- `Modifier::Border { width, paint }` — `first` 하위 32비트에 너비, `second`에 `Paint`.
+- `Modifier::Shape { top_start, top_end, bottom_end, bottom_start }`, f32 4개를 `u64` 2개에 담습니다.
+- `Modifier::ShapeRole(ShapeRole)`, `None|ExtraSmall|Small|Medium|Large|Full`. 실제 반지름은 디자인 시스템이 정합니다. Material 3의 12dp, HIG의 연속 곡률 느낌, Fluent의 4dp가 여기서 갈립니다.
+- `Modifier::Border { width, paint }`, `first` 하위 32비트에 너비, `second`에 `Paint`.
 - 테두리와 모양은 서로 독립입니다. Renderer는 `ShapeRole`/`Shape` 중 마지막에 적용된 것을 클립과 테두리 모두에 씁니다.
 
 #### 13.4 간격과 배치
 - `SpaceRole`: `None|Xs|Sm|Md|Lg|Xl|Xxl`. 밀도가 디자인 시스템마다 다른 부분이라 리터럴 dp보다 역할이 먼저입니다.
 - `Modifier::PaddingRole(SpaceRole)`, 기존 `Modifier::Padding(f32)`는 유지합니다.
-- `Modifier::PaddingEach { start, top, end, bottom }` — f32 4개.
-- `Modifier::Weight(f32)` — `RowScope`/`ColumnScope`의 weight입니다.
+- `Modifier::PaddingEach { start, top, end, bottom }`, f32 4개.
+- `Modifier::Weight(f32)`, `RowScope`/`ColumnScope`의 weight입니다.
 - `Column`/`Row` 속성: `arrangement`(`Start|Center|End|SpaceBetween|SpaceAround|SpaceEvenly`), `spacing`(f32 dp) 또는 `space_role`, `alignment`(교차축 정렬).
 - `Box` 속성: `alignment`(9점 정렬).
 - 수용 기준: 위 속성/Modifier가 전부 `(tag, u64, u64)` 안에 들어가고, 인코딩 후 디코딩 결과가 입력과 같습니다.
@@ -163,7 +163,7 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 | 블러/머티리얼(HIG vibrancy), 리플 설정 | 플랫폼 전용 효과라 세 시스템 공통 축이 아닙니다 |
 | Host가 보내는 토큰 테이블 | FR-14에서 해석 위치를 Renderer로 정했습니다. 테이블을 보내면 그 결정이 뒤집힙니다 |
 
-### FR-14 디자인 시스템과 테마 모드 — `Draft`
+### FR-14 디자인 시스템과 테마 모드 (`Draft`)
 디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다. 1급으로 지원하는 세 가지는 Material 3, Apple HIG, WinUI/Fluent입니다.
 
 #### 14.1 추상화
@@ -214,7 +214,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - 비용: Host 쪽 단위 테스트는 "어떤 역할을 보냈는가"까지만 검증할 수 있고, 실제 색·치수는 Renderer 테스트에서 검증합니다. 이 분리를 받아들입니다.
 
 #### 14.5 와이어 추가분
-- Mutation `SetTheme { design_system: u16, adaptive: bool, fallback: u16, color_scheme: u16 }` — 루트(`node_id` 없음)에 적용합니다. Host는 초기 배치의 첫 레코드로 1회 보내고, 앱이 테마를 바꿀 때만 다시 보냅니다.
+- Mutation `SetTheme { design_system: u16, adaptive: bool, fallback: u16, color_scheme: u16 }`, 루트(`node_id` 없음)에 적용합니다. Host는 초기 배치의 첫 레코드로 1회 보내고, 앱이 테마를 바꿀 때만 다시 보냅니다.
 - `DesignSystem` 태그: `Material3 = 1`, `AppleHig = 2`, `Fluent = 3`.
 - `ColorScheme` 태그: `Light = 1`, `Dark = 2`, `FollowSystem = 3`.
 - 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
@@ -229,7 +229,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 6. `ButtonVariant` 4개 → 배경·전경·테두리·눌림 표현
 7. 모션: 상태 전환 duration과 easing
 
-### FR-11 스키마 확장 (서드파티 위젯) — `Draft`
+### FR-11 스키마 확장 (서드파티 위젯) (`Draft`)
 Q2: 스키마에 없는 Compose 컴포넌트를 쓰는 방식입니다. 후보는 다음과 같습니다.
 
 | 안 | 방식 | 장점 | 단점 |
@@ -242,7 +242,7 @@ Q2: 스키마에 없는 Compose 컴포넌트를 쓰는 방식입니다. 후보�
 
 ## 4. 경계 프로토콜
 
-### PR-1 호출 모델: 동기·동일 스레드 직접 호출 — `Agreed`
+### PR-1 호출 모델: 동기·동일 스레드 직접 호출 (`Agreed`)
 옛 React Native 브리지처럼 비동기 큐를 두면 병목이 생깁니다. 비동기 큐는 동기 반환값을 받을 수 없고, 스레드 홉 때문에 최대 1프레임 지연이 생깁니다. 그래서 JSI처럼 **같은 스레드에서 서로를 직접 호출**합니다.
 
 - VirtualDom은 **Renderer의 UI 스레드에서** 돕니다. 이 스레드는 Host의 전용 스레드가 아닙니다.
@@ -250,7 +250,7 @@ Q2: 스키마에 없는 Compose 컴포넌트를 쓰는 방식입니다. 후보�
 - 동기 반환값을 지원합니다. 예: `onKeyEvent`의 "처리됨" 여부. Enter는 제출, Shift+Enter는 줄바꿈으로 나누는 처리가 여기에 해당합니다. 표현 방식은 FR-12를 따릅니다.
 - 경계에 비동기 큐를 두지 않습니다. 스레드 간 통신은 PR-3의 wake 신호 하나뿐입니다.
 
-### PR-2 경계 표면 — `Draft`
+### PR-2 경계 표면 (`Draft`)
 경계는 primitive, 포인터, 길이만 씁니다(GraalVM `@CEntryPoint` 제약). 함수는 호출 방향에 중립적인 **논리 연산**으로 정의하고, 플랫폼별 심은 코드젠(FR-7)이 생성합니다. 사람이 JNI나 cinterop 코드를 직접 쓰지 않습니다.
 
 C 심볼은 Rust 쪽 관례(snake_case, 크레이트 이름 접두사)를 따릅니다. Kotlin 쪽 선언은 코드젠이 Compose 관례에 맞춰 생성합니다. 명명 규칙 전체는 PR-7에 있습니다.
@@ -281,7 +281,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
 - `dispatch_event`와 `render_frame`이 반환한 배치는 Renderer가 **같은 호출 스택 안에서** 적용하고 즉시 `release_batch`합니다. 배치를 쌓아 두는 큐는 없습니다.
 - 배치 하나는 단일 스냅샷 트랜잭션(`Snapshot.withMutableSnapshot`)으로 적용합니다. 중간 상태가 화면에 그려져서는 안 됩니다.
 
-### PR-3 스레드 규칙 — `Agreed`
+### PR-3 스레드 규칙 (`Agreed`)
 - VirtualDom, 사용자 컴포넌트, 모든 `dioxus_compose_host_*` 호출은 Renderer UI 스레드에서만 실행합니다. 그래서 락이 필요 없습니다.
 - **UI 스레드에서 도메인 작업을 금지합니다.** 네트워크, 파일 I/O, 프로세스 관리 같은 작업은 Host 워커 스레드(tokio 등)에서 돌립니다. 워커는 Dioxus signal로 상태를 갱신하고, Host가 내부에서 `request_frame`을 호출합니다. 사용자 코드는 경계 함수를 직접 부르지 않습니다.
 - `request_frame`은 여러 번 불러도 다음 프레임에 `render_frame` 1회로 합쳐집니다. Compose frame clock(`withFrameNanos`) 안에서 실행됩니다.
@@ -289,7 +289,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
 - Android: Host 워커 스레드는 `request_frame`을 부르기 위해 JavaVM에 **1회 영구 attach**합니다. 호출마다 attach하는 것은 금지합니다. `@FastNative`/`@CriticalNative`는 짧은 호출에만 허용합니다.
 - 프레임 예산은 NFR-9를 따릅니다.
 
-### PR-4 배치 버퍼와 인코딩 — `Draft`
+### PR-4 배치 버퍼와 인코딩 (`Draft`)
 원칙: **같은 프로세스 안이므로 직렬화, 복사, 경계 호출 횟수를 최소화합니다.** 버퍼는 큐가 아니라 **한 번의 호출에서 Mutation 여러 개를 넘기는 인자**입니다.
 
 - `#[repr(C)] struct MutationBatch { ptr: *const u8, len: u32, result: i64 }`
@@ -307,7 +307,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
   - Web: 공유 linear memory(PR-6)
 - 수용 기준: 텍스트 하나를 바꾸는 이벤트 처리에서 경계 호출 2회(`dispatch_event`, `release_batch`), 힙 할당은 Compose `String` 생성 1회 이하
 
-### PR-5 Android — `Draft`
+### PR-5 Android (`Draft`)
 - 호스트 관계: Kotlin Activity가 프로세스와 루프를 소유합니다(`LoopMode::Platform`). Rust는 cdylib입니다. VirtualDom은 PR-3에 따라 UI 스레드에서 돕니다.
 - JNI 심: PR-2의 논리 연산에서 jni-rs 기반 심과 Kotlin `external fun` 선언을 코드젠으로 생성합니다. UniFFI(JNA 경유)는 호출당 오버헤드가 커서 쓰지 않습니다.
 - 생명주기:
@@ -320,7 +320,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
   2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100회 추가되는 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
 
-### PR-6 Web 직결 — `Draft`
+### PR-6 Web 직결 (`Draft`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결합니다. `LoopMode::Platform`입니다.
 
 - 함수: 한쪽 모듈의 wasm export를 다른 쪽 모듈의 wasm import로 직접 연결합니다. JS는 인스턴스화 시점의 배선에만 쓰고, 호출 경로에는 JS 프레임이 없습니다.
@@ -330,7 +330,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
   - 브라우저 엔진이 wasm↔wasm import 호출을 JS 트램폴린 없이 처리하는지 벤치마크로 확인해야 합니다.
 - 불가능하면 대안(단일 모듈 링크 등)을 조사한 뒤 INTENT를 갱신합니다. JS 브리지로 되돌아가는 대안은 허용하지 않습니다.
 
-### PR-7 명명 규칙 — `Agreed`
+### PR-7 명명 규칙 (`Agreed`)
 각 언어 생태계의 관례를 따릅니다. 한쪽 관례를 다른 쪽에 억지로 맞추지 않습니다.
 
 | 영역 | 관례 | 예 |
@@ -348,7 +348,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 - Dioxus에 같은 개념이 있으면 Rust 쪽은 Dioxus 이름을 씁니다(`VirtualDom`, `Mutations`, `ElementId`).
 - 두 이름이 충돌하면 Rust 쪽은 Dioxus 이름을, Kotlin 쪽은 Compose 이름을 쓰고, 대응 관계를 코드젠 스키마에 기록합니다.
 
-### PR-8 macOS 런타임 요건 — `Draft`
+### PR-8 macOS 런타임 요건 (`Draft`)
 - 빌드 도구는 Liberica NIK 25 Full입니다(INTENT D9-macOS).
 - 배포 레이아웃은 `<root>/lib/` 하나이며 `java.home`은 그 부모입니다. 렌더러는 자기 라이브러리 경로를 dladdr로 얻어 `java.home`, `skiko.library.path`, `skiko.data.path`를 설정합니다.
 - `lib/`에 함께 두는 파일: 렌더러 라이브러리, Skia(`libskiko-macos-<arch>.dylib`), `libjawt.dylib` 포워더, `libawt_lwawt.dylib` 자리 채우기.

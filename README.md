@@ -22,7 +22,7 @@ rsx! {
 
 You author components with `rsx!`, hooks and signals. `dioxus-core`'s VirtualDom turns them into
 mutations, a narrow C ABI carries those mutations across the boundary, and a Kotlin/Compose
-interpreter materialises them as a real Compose tree — with Compose's text layout, its widgets, and
+interpreter materialises them as a real Compose tree, with Compose's text layout, its widgets, and
 its platform IME.
 
 ---
@@ -48,7 +48,7 @@ its platform IME.
 Two problems meet here.
 
 **Web-stack desktop apps are heavy.** For an application that stays open all day, the memory
-footprint and the download size are the problem — not responsiveness. Embedding a browser, or
+footprint and the download size are the problem, not responsiveness. Embedding a browser, or
 shipping a JVM alongside your app, costs tens to hundreds of megabytes before your own code runs.
 
 **Rust has no toolkit with Compose-grade text.** The Rust GUI ecosystem renders well, but text
@@ -67,7 +67,7 @@ order-of-magnitude comparisons, not benchmarks.
 
 | Approach | Approximate weight | Notes |
 |---|---|---|
-| Webview stack (Electron, Tauri-class) | Heaviest — a browser engine per app or per system | Rejected by **C1**: memory and size |
+| Webview stack (Electron, Tauri-class) | Heaviest: a browser engine per app or per system | Rejected by **C1**: memory and size |
 | Compose + bundled JVM (jlink) | ~80–120 MB of JVM alone | Rejected by **C2**. AppCDS fixes startup, not size |
 | Pure Rust toolkit (Iced-class) | ~10–20 MB | Rejected by **C5**: text and IME maturity |
 | **dioxus-compose** | ~64 MB renderer + ~21 MB Skia | Larger than Iced, far smaller than a webview or JVM stack |
@@ -79,8 +79,8 @@ window**. That requirement is still `Draft`: it gets confirmed by measurement at
 
 | ID | Constraint |
 |---|---|
-| **C1** | No webview — no WKWebView, WebView2, WebKitGTK, Tauri or wry |
-| **C2** | No bundled JVM — the JVM is allowed only in the development shell |
+| **C1** | No webview: no WKWebView, WebView2, WebKitGTK, Tauri or wry |
+| **C2** | No bundled JVM: the JVM is allowed only in the development shell |
 | **C3** | No hand-written JNI or cinterop glue; boundary shims are generated |
 | **C4** | UI is authored declaratively **in Rust**. Kotlin is a renderer implementation detail |
 | **C5** | Compose-grade text, IME and widget quality, never bypassed |
@@ -98,7 +98,7 @@ the API will change.
 |---|---|---|
 | 🍎 **macOS (arm64)** | **Works end to end** | Rust host → C ABI → native-image renderer → window on screen, verified 2026-09-20 on Liberica NIK 25 Full. Basic Korean IME input works; the full IME checklist (`SPEC §6`) is not finished |
 | 🪟 Windows desktop | Not scripted | A target in `NFR-4`, but `build-native.sh` refuses to run outside macOS today |
-| 🐧 Linux desktop | Not scripted | Same. The **Rust workspace and the JVM dev shell do work** on Linux — CI runs the Rust gate on `ubuntu-latest` |
+| 🐧 Linux desktop | Not scripted | Same. The **Rust workspace and the JVM dev shell do work** on Linux: CI runs the Rust gate on `ubuntu-latest` |
 | 📱 iOS | Designed, not implemented | Kotlin/Native `-produce static` with `@CName` symbols (milestone M5) |
 | 🤖 Android | Designed, not implemented | Kotlin host plus generated JNI shims, `PR-5` (milestone M6) |
 | 🌐 Web (wasm) | Designed, feasibility open | Rust wasm ↔ Kotlin/Wasm linked directly, no JS bridge, `PR-6` (milestone M7, open question **Q3**) |
@@ -111,16 +111,16 @@ still landing.
 
 | Capability | Host (Rust) | Renderer (Kotlin) |
 |---|---|---|
-| Node tree mutations — `FR-1` | ✅ | ✅ |
-| Schema-driven rendering — `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
-| Synchronous event dispatch — `FR-3`, `FR-12` | ✅ | ✅ key consumption wired to `Modifier.onKeyEvent` |
-| Uncontrolled `TextField`, IME ownership — `D5` | ✅ | ✅ |
-| Schema codegen in lockstep — `FR-7` | ✅ | ✅ generated `Protocol.gen.kt` |
-| `LazyColumn` windowing — `FR-8` | ✅ the Host materialises only the requested range | ⚠️ **renders as a plain `Column` for now** — the windowing half is an open `TODO(FR-8)` |
-| Streaming text `AppendText` — `FR-9` | ✅ | ✅ |
-| Modifiers — `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ all of the above |
-| Design primitives and design systems — `FR-13`, `FR-14` | ❌ `Draft` — **specified only, no code yet** | ❌ |
-| Third-party widget extension — `FR-11` | ❌ `Draft` — options under evaluation (**Q2**) | ❌ |
+| Node tree mutations: `FR-1` | ✅ | ✅ |
+| Schema-driven rendering: `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
+| Synchronous event dispatch: `FR-3`, `FR-12` | ✅ | ✅ key consumption wired to `Modifier.onKeyEvent` |
+| Uncontrolled `TextField`, IME ownership: `D5` | ✅ | ✅ |
+| Schema codegen in lockstep: `FR-7` | ✅ | ✅ generated `Protocol.gen.kt` |
+| `LazyColumn` windowing: `FR-8` | ✅ the Host materialises only the requested range | ⚠️ **renders as a plain `Column` for now**: the windowing half is an open `TODO(FR-8)` |
+| Streaming text `AppendText`: `FR-9` | ✅ | ✅ |
+| Modifiers: `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ all of the above |
+| Design primitives and design systems: `FR-13`, `FR-14` | ❌ `Draft`: **specified only, no code yet** | ❌ |
+| Third-party widget extension: `FR-11` | ❌ `Draft`: options under evaluation (**Q2**) | ❌ |
 
 Milestones live in [`PROJECT.md`](PROJECT.md) (M0–M8). **M1 decides the project**: if Korean IME
 composition holds up in a native-image build, the rest is volume of work.
@@ -177,21 +177,21 @@ fn main() {
 
 Two details worth noticing:
 
-- **`event.consume()`** is how a handler tells the Renderer it handled the key — the same idea as
+- **`event.consume()`** is how a handler tells the Renderer it handled the key, the same idea as
   `preventDefault()` on the web, or `PointerInputChange.consume()` in Compose. Dioxus 0.7 handlers
   have no return value, so the flag rides back on the event object (`FR-12`).
 - **Key events are not sent to Rust while an IME composition is in progress.** Enter during
   composition commits the composition; it does not submit. Getting this wrong is exactly how Korean
   input loses the syllable being typed.
 
-> ⚠️ `dioxus_compose::Box` has to be written qualified inside `rsx!` — `dioxus-core` 0.7's macro
+> ⚠️ `dioxus_compose::Box` has to be written qualified inside `rsx!`, `dioxus-core` 0.7's macro
 > expansion uses an unqualified `Box<T>`, which the prelude glob would shadow.
 
 ---
 
 ## 🎨 Design systems
 
-The plan is three first-class design systems — **Material 3**, **Apple HIG** and **WinUI/Fluent** —
+The plan is three first-class design systems, **Material 3**, **Apple HIG** and **WinUI/Fluent** , 
 chosen per application, either unified across every platform or adapted to the host platform:
 
 ```rust
@@ -215,7 +215,7 @@ The design is worked out in detail in `FR-13` and `FR-14` of [`docs/SPEC.md`](do
   `Theme::unified(DesignSystem::Material3)`, because a default that looks different on every
   platform is a bad default.
 
-> **Status: `Draft` — design only.** ⚠️ None of this exists in code yet. `Theme`, `DesignSystem`,
+> **Status: `Draft`, design only.** ⚠️ None of this exists in code yet. `Theme`, `DesignSystem`,
 > `ColorRole`, `TypeRole` and `ScrollColumn` appear nowhere in `dioxus-compose/src/` or in the Kotlin
 > renderer today. What ships now is the literal subset: `Modifier::Background(u32 ARGB)`,
 > `Modifier::Padding(f32)` and friends. The snippet above is **illustrative of the specified API**,
@@ -227,7 +227,7 @@ The design is worked out in detail in `FR-13` and `FR-14` of [`docs/SPEC.md`](do
 
 ```
 ┌────────────────────── Host (Rust) ───────────────────────┐
-│  your components — rsx!, hooks, signals                  │
+│  your components, rsx!, hooks, signals                  │
 │  dioxus-core VirtualDom                                  │
 │  dioxus-compose renderer:  Mutations ──► fixed-layout    │
 │                                          byte records    │
@@ -244,7 +244,7 @@ The design is worked out in detail in `FR-13` and `FR-14` of [`docs/SPEC.md`](do
 └────────────────────── Renderer (Kotlin) ─────────────────┘
 ```
 
-**Rust describes the UI; Compose interprets it.** Rust never calls the Compose API directly — it
+**Rust describes the UI; Compose interprets it.** Rust never calls the Compose API directly, it
 cannot. GraalVM's `@CEntryPoint` passes only primitives and word-sized values, so objects like
 `Modifier` or `MutableState` can never cross. Instead the UI tree travels **as a value** and a
 general-purpose interpreter on the Kotlin side rebuilds it. Cash App's Redwood and Jetpack Glance
@@ -253,11 +253,11 @@ use the same pattern.
 **The boundary is synchronous and same-thread** (`PR-1`). The VirtualDom runs on the Renderer's UI
 thread and the two sides call each other directly, the way JSI replaced React Native's old bridge.
 There is no queue, no ring buffer and no thread hop, and an event handler can return a result within
-the same call. Heavy work — I/O, network, PTY — runs on Host worker threads that update signals and
+the same call. Heavy work, I/O, network, PTY, runs on Host worker threads that update signals and
 request a frame (`PR-3`); user code never touches a boundary function.
 
 **Only primitives, pointers and lengths cross** (`PR-2`). Payloads are fixed-layout, zero-copy
-records produced by codegen and read in place — no postcard, bincode or JSON on the hot path
+records produced by codegen and read in place, no postcard, bincode or JSON on the hot path
 (`PR-4`). Type safety is restored above that `bytes` boundary by generating the Kotlin types from a
 single Rust source of truth, with a schema hash that fails the build when the two drift (`FR-7`,
 `D6`).
@@ -270,7 +270,7 @@ too.
 <summary><b>Why macOS needs Liberica NIK, and three small shims</b></summary>
 
 Compose Desktop's window is an AWT `JFrame`, and AOT compilation does not change which code path
-runs — so the AWT IME path survives native-image (`D4`). But upstream GraalVM **skips AWT entirely
+runs, so the AWT IME path survives native-image (`D4`). But upstream GraalVM **skips AWT entirely
 on Darwin** ([oracle/graal#13272](https://github.com/oracle/graal/issues/13272)), which means no
 static AWT archive and no way to link the renderer. Liberica NIK Full links AWT statically.
 
@@ -284,7 +284,7 @@ shim in `dioxus-compose-renderer/native/c/`:
 | `JNI_OnLoad_osxui`, required of a statically linked JNI library and absent from NIK's archive | Defined directly |
 
 Also: **AppKit demands the main thread.** The renderer runs on a secondary thread while the main
-thread creates and runs `NSApplication` itself, putting AWT into embedded mode — the same mode SWT
+thread creates and runs `NSApplication` itself, putting AWT into embedded mode, the same mode SWT
 and JavaFX hosts use. Letting AWT own the loop re-enters `[NSApp run]` forever, and control never
 returns to the Host after the window closes.
 
@@ -313,11 +313,11 @@ so both components are required. The workspace targets Rust **1.85+** (edition 2
 rustup component add rustfmt clippy
 ```
 
-### 2. Liberica NIK 25 **Full** — only for the native renderer build
+### 2. Liberica NIK 25 **Full**, only for the native renderer build
 
 > ⚠️ **Upstream GraalVM does not work on macOS.** It skips AWT support on Darwin
 > ([oracle/graal#13272](https://github.com/oracle/graal/issues/13272), still open as of 2026-09), so
-> Compose Desktop cannot be linked into the image. Use BellSoft **Liberica NIK 25 Full** — the
+> Compose Desktop cannot be linked into the image. Use BellSoft **Liberica NIK 25 Full**, the
 > *Full* variant, not the standard one.
 
 ```bash
@@ -372,7 +372,7 @@ build/native-image/dist/lib/
 ### 5. Smoke-test it
 
 Links a minimal C host against the library and calls `dioxus_compose_renderer_run`. A window should
-open, and closing it should return 0 — the `PR-8` acceptance criterion.
+open, and closing it should return 0, the `PR-8` acceptance criterion.
 
 ```bash
 cd dioxus-compose-renderer
@@ -388,8 +388,8 @@ cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
 The build script looks for the renderer inside the workspace, at
-`dioxus-compose-renderer/build/native-image/dist/lib`. To use a renderer from somewhere else — a
-downloaded artifact, a vendored copy, an offline build — point `DIOXUS_COMPOSE_RENDERER_DIR` at it
+`dioxus-compose-renderer/build/native-image/dist/lib`. To use a renderer from somewhere else, a
+downloaded artifact, a vendored copy, an offline build, point `DIOXUS_COMPOSE_RENDERER_DIR` at it
 (`NFR-10`).
 
 ### 7. The JVM dev shell
@@ -412,7 +412,7 @@ cd dioxus-compose-renderer
 The goal (`NFR-9`) is to be **indistinguishable from the same screen written by hand in
 Kotlin/Compose**. The reference is a 120 Hz display: 8.33 ms per frame.
 
-### Budgets — `SPEC §5.1`
+### Budgets, `SPEC §5.1`
 
 | Item | Budget (p99, release build) |
 |---|---|
@@ -426,7 +426,7 @@ Kotlin/Compose**. The reference is a 120 Hz display: 8.33 ms per frame.
 
 Budget regressions are treated as bugs, and CI fails the build on them.
 
-### Measured — 2026-09-20
+### Measured, 2026-09-20
 
 Recorded in [`dioxus-compose/benches/baseline.json`](dioxus-compose/benches/baseline.json) and
 re-run by `cargo bench` inside `scripts/check.sh`.
@@ -443,7 +443,7 @@ re-run by `cargo bench` inside `scripts/check.sh`.
 
 Those 99 allocations are Dioxus's own, inside diffing and event handling. Driving them to zero would
 mean forking Dioxus, which contradicts `D2`; Rust has no GC, so they do not turn into frame pauses.
-The criterion is that the number **does not grow** across repeated identical interactions — growth is
+The criterion is that the number **does not grow** across repeated identical interactions, growth is
 treated as a leak or a dead cache and investigated.
 
 These are **Host-side numbers**. Renderer-side frame timing, and the 10%-versus-baseline comparison,
@@ -455,7 +455,7 @@ still have to be measured on the native-image build.
 
 ```
 dioxus-compose/
-├─ dioxus-compose/                  # Rust: the Host — Dioxus renderer crate
+├─ dioxus-compose/                  # Rust: the Host, Dioxus renderer crate
 │  ├─ src/
 │  │  ├─ lib.rs                     #   public API, rsx! elements, event attributes
 │  │  ├─ widgets.rs                 #   Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn
@@ -487,7 +487,7 @@ dioxus-compose/
 
 **The SPEC is the source of truth.** Before implementing a behaviour, find its SPEC ID (`FR-*`,
 `NFR-*`, `PR-*`). If none exists, amend the SPEC first, in its own commit. If code and SPEC disagree,
-the code is wrong — unless the SPEC is, in which case fix the SPEC first and explain why. Decisions
+the code is wrong, unless the SPEC is, in which case fix the SPEC first and explain why. Decisions
 change in [`docs/INTENT.md`](docs/INTENT.md) first, then SPEC, then code.
 
 ### Test Driven Development
@@ -495,7 +495,7 @@ change in [`docs/INTENT.md`](docs/INTENT.md) first, then SPEC, then code.
 SDD says what to build; TDD is how it gets built. Tests come from acceptance criteria, so **a
 requirement with no test is not done**.
 
-- Red, green, refactor. Test and implementation land in the **same commit** — the tree builds green
+- Red, green, refactor. Test and implementation land in the **same commit**, the tree builds green
   at every commit.
 - Name tests after the requirement: `fr4_set_prop_does_not_recompose_siblings`,
   `pr2_batch_applies_atomically`.
@@ -519,7 +519,7 @@ SPEC says so explicitly rather than leaving them silently untested.
 CI mirrors that split. [`ci.yml`](.github/workflows/ci.yml) runs the Rust gate on macOS and Linux for
 every push and pull request, while [`native-renderer.yml`](.github/workflows/native-renderer.yml)
 builds the native-image renderer and runs the C smoke test on pushes to `main`/`develop`, nightly,
-and on demand — that build needs a ~1 GB NIK download and tens of minutes, which is too slow to put
+and on demand, that build needs a ~1 GB NIK download and tens of minutes, which is too slow to put
 in front of every push (`NFR-5`, `D7`).
 
 ### Commits
@@ -538,7 +538,7 @@ trailers or any AI attribution.
 
 ## 📚 Documentation
 
-**📖 Guide site: <http://darkpyonix.dev/dioxus-compose/>** — English and Korean, covering getting
+**📖 Guide site: <http://darkpyonix.dev/dioxus-compose/>**, English and Korean, covering getting
 started, writing UI, lists and streaming, architecture and troubleshooting.
 
 | Document | What is in it |
