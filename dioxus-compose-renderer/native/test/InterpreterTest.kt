@@ -85,6 +85,37 @@ class InterpreterTest {
             onNodeWithTag(nodeTestTag(LEFT)).assertTextEquals("left")
         }
 
+    /**
+     * FR-1: node id 0 is the "no node" sentinel, and the Host inserts it where a Dioxus
+     * placeholder stands (an empty `for` body). It draws nothing, takes no slot, and the
+     * siblings around it keep the positions the Host gave them.
+     */
+    @Test
+    fun fr1_placeholder_node_id_zero_takes_no_slot_and_is_not_an_error() = runComposeUiTest {
+        val connection = FakeHostConnection(
+            listOf(
+                Mutation.Create(COLUMN, WidgetKind.Column),
+                Mutation.Create(LEFT, WidgetKind.Text),
+                Mutation.SetProp(LEFT, PropertyKind.Text, PropertyValue.Text("left")),
+                Mutation.Create(RIGHT, WidgetKind.Text),
+                Mutation.SetProp(RIGHT, PropertyKind.Text, PropertyValue.Text("right")),
+                Mutation.Insert(COLUMN, LEFT, 0),
+                Mutation.Insert(COLUMN, NodeTable.ROOT_ID, 1),
+                Mutation.Insert(COLUMN, RIGHT, 2),
+            ),
+        )
+        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        waitForIdle()
+
+        assertEquals(
+            emptyList(),
+            connection.events.filterIsInstance<HostEvent.ProtocolError>(),
+            "the placeholder sentinel is not a protocol error",
+        )
+        onNodeWithTag(nodeTestTag(LEFT)).assertTextEquals("left")
+        onNodeWithTag(nodeTestTag(RIGHT)).assertTextEquals("right")
+    }
+
     @Test
     fun fr4_set_prop_does_not_recompose_siblings() = runComposeUiTest {
         val compositions = mutableMapOf<Int, Int>()

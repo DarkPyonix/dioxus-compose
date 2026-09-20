@@ -139,6 +139,11 @@ class NodeTable {
     }
 
     private fun insert(parentId: Int, nodeId: Int, index: Int) {
+        // Node id 0 is the "no node" sentinel (FR-1). The Host uses it for a Dioxus
+        // placeholder: an empty `for` body still has a position in the parent, but nothing
+        // to draw. It occupies no slot here, and the Host's later Insert for the real
+        // children carries the position the placeholder stood at, so indices still line up.
+        if (nodeId == ROOT_ID) return
         if (!nodes.containsKey(nodeId)) {
             fail(TableError.UNKNOWN_NODE, "Insert of unknown node $nodeId")
             return
@@ -160,6 +165,8 @@ class NodeTable {
     }
 
     private fun remove(nodeId: Int) {
+        // The placeholder sentinel was never materialised, so removing it is a no-op.
+        if (nodeId == ROOT_ID) return
         if (!nodes.containsKey(nodeId)) {
             fail(TableError.UNKNOWN_NODE, "Remove of unknown node $nodeId")
             return
