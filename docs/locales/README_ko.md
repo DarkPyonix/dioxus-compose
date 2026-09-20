@@ -272,7 +272,7 @@ AWT를 통째로 건너뛴다**는 점입니다([oracle/graal#13272](https://git
 링크합니다.
 
 그렇게 정적 링크된 macOS AWT는 런타임에 세 가지를 파일 경로로 찾습니다. 각각
-`dioxus-compose-renderer/native/c/`의 얇은 우회책으로 메웁니다.
+`dioxus-compose-renderer/desktop/c/`의 얇은 우회책으로 메웁니다.
 
 | 찾는 것 | 우회책 |
 |---|---|
@@ -324,7 +324,7 @@ brew install --cask liberica-nik-full
 ./scripts/install-nik.sh
 ```
 
-`dioxus-compose-renderer/native/scripts/env.sh`가 다음 순서로 찾습니다.
+`dioxus-compose-renderer/desktop/scripts/env.sh`가 다음 순서로 찾습니다.
 
 1. `$GRAALVM_HOME`(설정된 경우)
 2. `~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home` 중 최신
@@ -334,7 +334,7 @@ brew install --cask liberica-nik-full
 링크 실패가 아니라 시작 전에 잡아내기 위한 것입니다.
 
 macOS에서는 Xcode 명령줄 도구(`xcode-select --install`)도 필요합니다. `cc`, `ld`와
-`dioxus-compose-renderer/native/c/`가 쓰는 AppKit 헤더 때문입니다.
+`dioxus-compose-renderer/desktop/c/`가 쓰는 AppKit 헤더 때문입니다.
 
 **현재 스크립트가 지원하는 것은 macOS뿐입니다.** Linux와 Windows native-image 빌드는 아직입니다.
 
@@ -350,7 +350,7 @@ macOS에서는 Xcode 명령줄 도구(`xcode-select --install`)도 필요합니�
 
 ```bash
 cd dioxus-compose-renderer
-./native/scripts/build-native.sh
+./desktop/scripts/build-native.sh
 ```
 
 <details>
@@ -372,7 +372,7 @@ build/native-image/dist/lib/
 
 ```bash
 cd dioxus-compose-renderer
-./native/scripts/smoke-test.sh
+./desktop/scripts/smoke-test.sh
 ```
 
 무인 실행이 필요하면 `DIOXUS_COMPOSE_AUTOEXIT_MS=6000`으로 창이 스스로 닫히게 할 수 있습니다.
@@ -396,7 +396,7 @@ native-image 빌드가 필요 없습니다(`NFR-5`, `D7`).
 ```bash
 cd dioxus-compose-renderer
 ./kotlin run -m desktop   # Compose 개발 셸
-./kotlin run -m native    # 렌더러 모듈 자체를 JVM에서, 스크립트된 Host로 구동
+./kotlin run -m desktop    # 렌더러 모듈 자체를 JVM에서, 스크립트된 Host로 구동
 ```
 
 > JVM은 **여기서만** 허용됩니다. 배포 산출물에는 절대 들어가지 않습니다(`C2`).

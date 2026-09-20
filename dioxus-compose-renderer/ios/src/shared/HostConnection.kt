@@ -1,1 +1,1 @@
-../../../native/src/renderer/HostConnection.kt
+../../../desktop/src/renderer/HostConnection.kt

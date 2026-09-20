@@ -8,7 +8,7 @@
 # exactly the two functions PR-2 defines.
 #
 # `kotlin build` type-checks this module and produces a klib that nothing consumes. The
-# static library comes from `native/scripts/build-ios.sh`, which compiles this same source
+# static library comes from `desktop/scripts/build-ios.sh`, which compiles this same source
 # against the renderer klib with `-produce static`.
 product:
   type: lib

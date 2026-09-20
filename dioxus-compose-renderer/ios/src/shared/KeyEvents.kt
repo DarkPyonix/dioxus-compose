@@ -1,1 +1,1 @@
-../../../native/src/renderer/KeyEvents.kt
+../../../desktop/src/renderer/KeyEvents.kt

@@ -6,7 +6,7 @@ import platform.Foundation.NSLog
 /**
  * The handful of JVM names the interpreter sources use, supplied for Kotlin/Native.
  *
- * The interpreter in `native/src/renderer/` is written for the desktop native image and is
+ * The interpreter in `desktop/src/renderer/` is written for the desktop native image and is
  * compiled unchanged for iOS (`src/shared/` symlinks it). It is ordinary Compose code apart
  * from these four names, which have no Kotlin/Native equivalent. Declaring them here in the
  * interpreter's own package keeps the shared sources free of `expect`/`actual` scaffolding

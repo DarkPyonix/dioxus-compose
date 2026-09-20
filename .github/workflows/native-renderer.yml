@@ -113,19 +113,19 @@ jobs:
       - name: Build the renderer shared library
         # Stages build/native-image/dist/lib with the renderer, Skia, and the
         # libjawt / libawt_lwawt shims described in SPEC PR-8.
-        run: ./dioxus-compose-renderer/native/scripts/build-native.sh
+        run: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
 
       - name: Accessibility classes are linked in (SPEC NFR-8)
         # They are reached only by name from AppKit, so the link is free to drop them and
         # the only symptom is that turning VoiceOver on aborts the process.
-        run: ./dioxus-compose-renderer/native/scripts/tests/accessibility-link.test.sh
+        run: ./dioxus-compose-renderer/desktop/scripts/tests/accessibility-link.test.sh
 
       - name: Smoke test (SPEC PR-8 acceptance criterion)
         env:
           # The renderer honours this to close its window unattended; without
           # it the smoke test would wait for a human to close the window.
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
-        run: ./dioxus-compose-renderer/native/scripts/smoke-test.sh
+        run: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
 
       - name: Report the distribution size (NFR-3)
         run: du -sh dioxus-compose-renderer/build/native-image/dist/lib
@@ -174,10 +174,10 @@ jobs:
             kotlin-linux-
 
       - name: Run Linux script contract tests
-        run: bash dioxus-compose-renderer/native/scripts/tests/linux-build.test.sh
+        run: bash dioxus-compose-renderer/desktop/scripts/tests/linux-build.test.sh
 
       - name: Build the Linux renderer under Xvfb
-        run: xvfb-run -a ./dioxus-compose-renderer/native/scripts/build-native-linux.sh
+        run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
 
       - name: Inspect staged dynamic dependencies
         run: |
@@ -187,7 +187,7 @@ jobs:
       - name: Headless startup smoke only
         env:
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
-        run: xvfb-run -a ./dioxus-compose-renderer/native/scripts/smoke-test-linux.sh
+        run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
 
       - name: Upload the Linux renderer for inspection
         uses: actions/upload-artifact@v4
@@ -223,15 +223,15 @@ jobs:
         run: ./kotlin test -m ios
 
       - name: Build the simulator archive
-        run: ./dioxus-compose-renderer/native/scripts/build-ios.sh
+        run: ./dioxus-compose-renderer/desktop/scripts/build-ios.sh
 
       - name: Build the device archive
         # Never run, only linked. It proves the arm64 device slice still compiles and
         # exports the PR-2 symbols; running it needs a signed app on real hardware.
-        run: ./dioxus-compose-renderer/native/scripts/build-ios.sh --target device
+        run: ./dioxus-compose-renderer/desktop/scripts/build-ios.sh --target device
 
       - name: Simulator smoke test (PR-2)
-        run: ./dioxus-compose-renderer/native/scripts/ios-smoke-test.sh --screenshot "${RUNNER_TEMP}/ios-smoke.png"
+        run: ./dioxus-compose-renderer/desktop/scripts/ios-smoke-test.sh --screenshot "${RUNNER_TEMP}/ios-smoke.png"
 
       - name: Upload the simulator screenshot
         # The one artifact a human can judge without a Mac to hand.

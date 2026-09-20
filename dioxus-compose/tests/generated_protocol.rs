@@ -32,7 +32,7 @@ fn fr7_generated_kotlin_matches_schema() {
     assert_eq!(
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../dioxus-compose-renderer/native/src/protocol/Protocol.gen.kt"
+            "/../dioxus-compose-renderer/desktop/src/protocol/Protocol.gen.kt"
         )),
         generated,
         "generated Kotlin is stale; run `cargo run -p dioxus-compose --bin codegen`",

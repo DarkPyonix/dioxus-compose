@@ -64,7 +64,7 @@ fi
 
 skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-linux-$SKIKO_ARCH" | head -1)"
 [[ -n "$skiko_jar" ]] || die "no skiko-awt-runtime-linux-$SKIKO_ARCH jar on the runtime classpath" \
-    "Check $CLASSPATH_FILE and the compose dependency in native/module.yaml."
+    "Check $CLASSPATH_FILE and the compose dependency in desktop/module.yaml."
 skiko_library="libskiko-linux-$SKIKO_ARCH.so"
 unzip -q -o -j "$skiko_jar" "$skiko_library" -d "$lib"
 [[ -f "$lib/$skiko_library" ]] || die "$skiko_library was not present in $skiko_jar"

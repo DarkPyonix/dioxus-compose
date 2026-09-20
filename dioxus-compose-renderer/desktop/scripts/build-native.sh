@@ -73,7 +73,7 @@ done < <(nm -g "$awt_archive" 2>/dev/null |
 linker_args+=("${a11y_classes[@]}")
 
 # Heap and GC settings for NFR-3 (SPEC 5.2 levers 1 and 2). `-R:` options are baked in as
-# the image's runtime defaults. Measure with native/scripts/measure-memory.sh.
+# the image's runtime defaults. Measure with desktop/scripts/measure-memory.sh.
 #
 # Measured 2026-09-20 (M1, smoke test window): pinning the maximum does not move the
 # footprint. At the default (80% of RAM), at 64MB and at 24MB the MALLOC_SMALL region is
@@ -107,7 +107,7 @@ memory_args=("-R:MaxHeapSize=64m"
 # initialiser snapshots the whole System.getProperties() table, which would freeze the build
 # machine's java.home and user.home into the shipped artifact.
 #
-# The fix belongs in native/src/RuntimeLayout.kt, whose configureRuntimeLayout already sets
+# The fix belongs in desktop/src/RuntimeLayout.kt, whose configureRuntimeLayout already sets
 # skiko.library.path and skiko.data.path at run time before Skiko initialises. Adding the
 # two properties there (guarded on getProperty being null, so an operator can override) is
 # the supported way to get this 1.9MB. That file is owned by another engineer.
@@ -136,7 +136,7 @@ skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-macos-$skiko
 [[ -n "$skiko_jar" ]] || die \
     "no skiko-awt-runtime-macos-$skiko_arch jar on the runtime classpath" \
     "Skia ships inside that jar and is staged next to the library." \
-    "Check $CLASSPATH_FILE and the compose dependency in native/module.yaml."
+    "Check $CLASSPATH_FILE and the compose dependency in desktop/module.yaml."
 unzip -q -o -j "$skiko_jar" "libskiko-macos-$skiko_arch.dylib" -d "$lib"
 cc -dynamiclib -O2 -arch "$arch" -install_name @rpath/libjawt.dylib \
     -o "$lib/libjawt.dylib" "$NATIVE_DIR/c/jawt_forwarder.c"

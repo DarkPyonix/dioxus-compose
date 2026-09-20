@@ -159,7 +159,7 @@ try {
     $env:JAVA_HOME = $GraalHome
     $env:GRAALVM_HOME = $GraalHome
     $env:DIOXUS_COMPOSE_AUTOEXIT_MS = "1"
-    & $KotlinWrapper run -m native --no-compose-hot-reload `
+    & $KotlinWrapper run -m desktop --no-compose-hot-reload `
         "--jvm-args=-XshowSettings:properties" 2>&1 | Tee-Object -FilePath $JvmLog
     if ($LASTEXITCODE -ne 0) {
         Fail "the JVM classpath probe failed" @("See $JvmLog")

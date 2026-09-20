@@ -1,1 +1,1 @@
-../../../native/src/renderer/NodeStyle.kt
+../../../desktop/src/renderer/NodeStyle.kt

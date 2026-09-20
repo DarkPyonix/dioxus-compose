@@ -6,7 +6,7 @@
 # number is macOS physical footprint, not RSS: RSS counts clean pages mapped from the image
 # and reads about twice the real occupancy.
 #
-# Usage: ./native/scripts/measure-memory.sh [label]
+# Usage: ./desktop/scripts/measure-memory.sh [label]
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 

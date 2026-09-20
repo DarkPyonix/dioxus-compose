@@ -19,7 +19,7 @@
 //
 //     clang -dynamiclib -framework Foundation -framework AppKit \
 //         -o /tmp/ax-probe.dylib experiments/accessibility/ax-probe.m
-//     DYLD_INSERT_LIBRARIES=/tmp/ax-probe.dylib ./native/scripts/smoke-test.sh
+//     DYLD_INSERT_LIBRARIES=/tmp/ax-probe.dylib ./desktop/scripts/smoke-test.sh
 //
 // then attach ax-dump.swift to the process. The log lines are tagged `[axprobe]`.
 //

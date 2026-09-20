@@ -1,1 +1,1 @@
-../../../native/src/renderer/DioxusHost.kt
+../../../desktop/src/renderer/DioxusHost.kt

@@ -46,7 +46,7 @@ labelled `AXStaticText` and `AXButton` under it, not a bare window.
 JVM dev shell:
 
     cd dioxus-compose-renderer
-    ./kotlin run -m native &
+    ./kotlin run -m desktop &
     # find the app process, not the Compose Hot Reload dev tools process
     pgrep -fl jbrsdk
     swift ../experiments/accessibility/ax-dump.swift <pid>
@@ -54,8 +54,8 @@ JVM dev shell:
 Native image:
 
     cd dioxus-compose-renderer
-    ./native/scripts/build-native.sh
-    ./native/scripts/smoke-test.sh &
+    ./desktop/scripts/build-native.sh
+    ./desktop/scripts/smoke-test.sh &
     swift ../experiments/accessibility/ax-dump.swift "$(pgrep -f smoke_host)"
 
 A native-image run that aborts with `Abort trap: 6` and an
@@ -124,7 +124,7 @@ Before the fix that printed 12 names, and `GroupAccessibility`, `ButtonAccessibi
 `StaticTextAccessibility` and `IgnoreAccessibility` were not among them. The fix in
 `build-native.sh` reads the class list back out of `libawt_lwawt.a` and makes every one a
 root of the link with `-Wl,-u`, so the list cannot rot when the JDK adds a role.
-`native/scripts/tests/accessibility-link.test.sh` compares the two lists and fails if the
+`desktop/scripts/tests/accessibility-link.test.sh` compares the two lists and fails if the
 image is missing any, and it runs in CI after the build.
 
 ### How it was found, and what it rules out
@@ -185,7 +185,7 @@ what the tree above shows. It was worth chasing only because it was the first ni
 
 ### The resource bundle, registered earlier
 
-`native/src/AccessibilityReachabilityFeature.kt` registers
+`desktop/src/AccessibilityReachabilityFeature.kt` registers
 `com.sun.accessibility.internal.resources.accessibility`. That was a real gap, found with
 `--exact-reachability-metadata -R:MissingRegistrationReportingMode=Warn`:
 
@@ -231,8 +231,8 @@ Setup. Grant Accessibility permission to the terminal you will use, or the dump 
 fails with `-25211`. Build and start the app:
 
     cd dioxus-compose-renderer
-    ./native/scripts/build-native.sh
-    ./native/scripts/smoke-test.sh
+    ./desktop/scripts/build-native.sh
+    ./desktop/scripts/smoke-test.sh
 
 Turn VoiceOver on with Command-F5. Keep the VoiceOver caption panel visible (VoiceOver
 Utility > General > Show caption panel) so the spoken text can be transcribed and pasted

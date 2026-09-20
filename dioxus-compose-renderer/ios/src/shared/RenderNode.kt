@@ -1,1 +1,1 @@
-../../../native/src/renderer/RenderNode.kt
+../../../desktop/src/renderer/RenderNode.kt
