@@ -4,8 +4,8 @@ use crate::protocol::{
     BatchEncoder, HostEvent, Mutation, PropertyValue, ProtocolError, encode_event,
 };
 use crate::schema::{
-    EVENT_SCHEMA, EventPayloadType, FieldType, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PROTOCOL_VERSION,
-    PropertyKind, SCHEMA_HASH, Selection, WIDGET_SCHEMA, WidgetKind,
+    EVENT_SCHEMA, EventPayloadType, FieldType, KEY_SCHEMA, Key, MODIFIER_SCHEMA, PROPERTY_SCHEMA,
+    PROTOCOL_VERSION, PropertyKind, SCHEMA_HASH, Selection, WIDGET_SCHEMA, WidgetKind,
 };
 use crate::{EventPayload, Modifier};
 use std::fmt::Write as _;
@@ -30,6 +30,7 @@ pub fn generate_kotlin() -> String {
 
     write_enum(&mut output, "WidgetKind", WIDGET_SCHEMA);
     write_enum(&mut output, "PropertyKind", PROPERTY_SCHEMA);
+    write_enum(&mut output, "Key", KEY_SCHEMA);
 
     output.push_str("sealed interface PropertyValue {\n");
     output.push_str("    data object None : PropertyValue\n");
@@ -85,6 +86,9 @@ pub fn generate_kotlin() -> String {
             EventPayloadType::Text => output.push_str(", val text: String"),
             EventPayloadType::ProtocolError => {
                 output.push_str(", val code: Int, val message: String");
+            }
+            EventPayloadType::KeyDown => {
+                output.push_str(", val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean");
             }
         }
         output.push_str(") : HostEvent\n");
@@ -279,6 +283,14 @@ object Protocol {
                 )
                 .unwrap();
             }
+            EventPayloadType::KeyDown => {
+                writeln!(
+                    output,
+                    "                is HostEvent.{} -> null",
+                    event.name
+                )
+                .unwrap();
+            }
         }
     }
     output.push_str(
@@ -291,6 +303,7 @@ object Protocol {
             EventPayloadType::None => 16,
             EventPayloadType::Text => 24,
             EventPayloadType::ProtocolError => 28,
+            EventPayloadType::KeyDown => 20,
         };
         writeln!(
             output,
@@ -349,6 +362,26 @@ object Protocol {
                 output.push_str(
                     "                    writeStringReference(out, recordLength, text!!)\n",
                 );
+                output.push_str("                }\n");
+            }
+            EventPayloadType::KeyDown => {
+                writeln!(output, "                is HostEvent.{} -> {{", event.name).unwrap();
+                output.push_str("                    out.putShort(keyTag(event.key).toShort())\n");
+                output.push_str("                    var modifiers = 0\n");
+                output.push_str(
+                    "                    if (event.shiftKey) modifiers = modifiers or 0x01\n",
+                );
+                output.push_str(
+                    "                    if (event.ctrlKey) modifiers = modifiers or 0x02\n",
+                );
+                output.push_str(
+                    "                    if (event.altKey) modifiers = modifiers or 0x04\n",
+                );
+                output.push_str(
+                    "                    if (event.metaKey) modifiers = modifiers or 0x08\n",
+                );
+                output.push_str("                    out.put(modifiers.toByte())\n");
+                output.push_str("                    out.put(0.toByte())\n");
                 output.push_str("                }\n");
             }
         }
@@ -415,6 +448,15 @@ object Protocol {
     output.push_str(
         r#"        else -> throw ProtocolException("unknown property tag $tag", offset)
     }
+
+    private fun keyTag(key: Key): Int = when (key) {
+"#,
+    );
+    for variant in KEY_SCHEMA {
+        writeln!(output, "        Key.{} -> {}", variant.name, variant.tag).unwrap();
+    }
+    output.push_str(
+        r#"    }
 
     private fun modifier(tag: Int, first: Long, second: Long, offset: Int): Modifier = when (tag) {
 "#,
@@ -632,6 +674,17 @@ pub fn generate_event_vector() -> Result<Vec<u8>, ProtocolError> {
                 message: "bad tag",
             },
         },
+        HostEvent {
+            node_id: 9,
+            handler_id: 15,
+            payload: EventPayload::KeyDown {
+                key: Key::Enter,
+                shift_key: true,
+                ctrl_key: true,
+                alt_key: true,
+                meta_key: true,
+            },
+        },
     ];
     let mut output = Vec::new();
     let mut encoded = Vec::new();
@@ -656,13 +709,14 @@ pub fn generate_vector_description() -> String {
   }},
   "events": {{
     "file": "events.bin",
-    "description": "Five independently decodable event records concatenated in schema order",
+    "description": "Six independently decodable event records concatenated in schema order",
     "records": [
       {{ "type": "Clicked", "offset": 0, "length": 16, "nodeId": 7, "handlerId": 11 }},
       {{ "type": "TextChanged", "offset": 16, "length": 30, "nodeId": 8, "handlerId": 12, "text": "한글" }},
       {{ "type": "TextSubmitted", "offset": 46, "length": 28, "nodeId": 8, "handlerId": 13, "text": "done" }},
       {{ "type": "FocusLost", "offset": 74, "length": 16, "nodeId": 8, "handlerId": 14 }},
-      {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }}
+      {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }},
+      {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }}
     ]
   }}
 }}

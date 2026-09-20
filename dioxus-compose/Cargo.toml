@@ -25,3 +25,7 @@ criterion = "0.7"
 [[bench]]
 name = "host"
 harness = false
+
+[[example]]
+name = "desktop_demo"
+required-features = ["native-renderer"]

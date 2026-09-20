@@ -31,6 +31,7 @@ pub enum EventPayloadType {
     None,
     Text,
     ProtocolError,
+    KeyDown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,9 +45,10 @@ pub struct EventSchema {
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError;",
+    "keys=Enter;",
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText"
 );
 
@@ -74,6 +76,7 @@ const fn schema_hash() -> u64 {
     let mut hash = hash_bytes(0xcbf2_9ce4_8422_2325_u64, SCHEMA_DESCRIPTOR.as_bytes());
     hash = hash_enum_schema(hash, WIDGET_SCHEMA);
     hash = hash_enum_schema(hash, PROPERTY_SCHEMA);
+    hash = hash_enum_schema(hash, KEY_SCHEMA);
     let mut index = 0;
     while index < MODIFIER_SCHEMA.len() {
         let modifier = MODIFIER_SCHEMA[index];
@@ -106,6 +109,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::None => 0,
                 EventPayloadType::Text => 1,
                 EventPayloadType::ProtocolError => 2,
+                EventPayloadType::KeyDown => 3,
             }],
         );
         index += 1;
@@ -165,6 +169,11 @@ pub struct Selection {
     pub start: u32,
     pub end: u32,
 }
+
+// Compose key identities supported by the M0 schema.
+define_wire_enum!(KEY_SCHEMA, Key {
+    Enter = 1,
+});
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Modifier {
@@ -299,6 +308,7 @@ define_wire_enum!(PROPERTY_SCHEMA, PropertyKind {
     OnValueChange = 6,
     OnSubmit = 7,
     OnFocusLost = 8,
+    OnKeyDown = 9,
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -307,7 +317,17 @@ pub enum EventPayload<'a> {
     TextChanged(&'a str),
     TextSubmitted(&'a str),
     FocusLost,
-    ProtocolError { code: u32, message: &'a str },
+    ProtocolError {
+        code: u32,
+        message: &'a str,
+    },
+    KeyDown {
+        key: Key,
+        shift_key: bool,
+        ctrl_key: bool,
+        alt_key: bool,
+        meta_key: bool,
+    },
 }
 
 pub const EVENT_SCHEMA: &[EventSchema] = &[
@@ -335,5 +355,10 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "ProtocolError",
         tag: 5,
         payload: EventPayloadType::ProtocolError,
+    },
+    EventSchema {
+        name: "KeyDown",
+        tag: 6,
+        payload: EventPayloadType::KeyDown,
     },
 ];
