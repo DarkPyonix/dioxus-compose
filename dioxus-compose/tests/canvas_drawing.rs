@@ -1,4 +1,4 @@
-//! FR-17: the Canvas widget and its closed drawing command set.
+//! The Canvas widget and its closed drawing command set.
 
 use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
