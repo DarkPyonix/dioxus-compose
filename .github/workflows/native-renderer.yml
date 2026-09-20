@@ -30,6 +30,12 @@ on:
     # 03:00 UTC daily. Scheduled runs only fire on the default branch.
     - cron: '0 3 * * *'
   workflow_dispatch:
+    inputs:
+      enable_linux:
+        description: 'Run the unverified Linux native-image experiment'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: native-renderer-${{ github.ref }}
@@ -129,4 +135,62 @@ jobs:
         with:
           name: dioxus-compose-renderer-macos-arm64
           path: dioxus-compose-renderer/build/native-image/dist/
+          retention-days: 7
+
+  # Disabled by default. This job is an executable Linux build hypothesis, not a claim that
+  # the renderer works there. Run it only with the enable_linux workflow-dispatch input.
+  linux_experiment:
+    name: Linux native-image experiment (unverified)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_linux == true }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install upstream GraalVM Community for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25.0.1'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux AWT, Skia, font, and virtual-display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
+            libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
+            fonts-noto-cjk xvfb xauth dbus-x11
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-linux-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-linux-
+
+      - name: Run Linux script contract tests
+        run: bash dioxus-compose-renderer/native/scripts/tests/linux-build.test.sh
+
+      - name: Build the unverified Linux renderer under Xvfb
+        run: xvfb-run -a ./dioxus-compose-renderer/native/scripts/build-native-linux.sh
+
+      - name: Inspect staged dynamic dependencies
+        run: |
+          find dioxus-compose-renderer/build/native-image-linux/dist/lib -maxdepth 1 -type f -print | sort
+          ldd dioxus-compose-renderer/build/native-image-linux/dist/lib/*.so
+
+      - name: Headless startup smoke only
+        env:
+          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
+        run: xvfb-run -a ./dioxus-compose-renderer/native/scripts/smoke-test-linux.sh
+
+      - name: Upload unverified Linux artifacts for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: dioxus-compose-renderer-linux-x64-unverified
+          path: dioxus-compose-renderer/build/native-image-linux/dist/
           retention-days: 7

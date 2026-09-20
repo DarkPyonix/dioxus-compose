@@ -5,8 +5,9 @@ use dioxus_core::{
 };
 use std::collections::HashMap;
 
-/// The first FR-13 property tag. Everything at or above it is a design property.
+/// The inclusive FR-13 design-property range. Extension properties follow this range.
 const FIRST_DESIGN_PROPERTY: u16 = PropertyKind::TypeRole as u16;
+const LAST_DESIGN_PROPERTY: u16 = PropertyKind::Variant as u16;
 
 #[derive(Clone, Copy, Debug)]
 struct Handler {
@@ -218,7 +219,7 @@ impl ComposeRenderer {
         neutral: bool,
     ) -> bool {
         let tag = property as u16;
-        if tag < FIRST_DESIGN_PROPERTY {
+        if !(FIRST_DESIGN_PROPERTY..=LAST_DESIGN_PROPERTY).contains(&tag) {
             return true;
         }
         let bit = 1_u32 << (tag - FIRST_DESIGN_PROPERTY);
@@ -493,45 +494,11 @@ impl WriteMutations for ComposeRenderer {
 }
 
 fn widget_kind(name: &str) -> Result<WidgetKind, ProtocolError> {
-    match name {
-        "Column" => Ok(WidgetKind::Column),
-        "Row" => Ok(WidgetKind::Row),
-        "Box" => Ok(WidgetKind::Box),
-        "Text" => Ok(WidgetKind::Text),
-        "TextField" => Ok(WidgetKind::TextField),
-        "Button" => Ok(WidgetKind::Button),
-        "Spacer" => Ok(WidgetKind::Spacer),
-        "LazyColumn" => Ok(WidgetKind::LazyColumn),
-        "ScrollColumn" => Ok(WidgetKind::ScrollColumn),
-        _ => Err(ProtocolError::InvalidWidget(0)),
-    }
+    WidgetKind::from_name(name).map_err(|()| ProtocolError::InvalidWidget(0))
 }
 
 fn property_kind(name: &str) -> Option<PropertyKind> {
-    match name {
-        "text" => Some(PropertyKind::Text),
-        "placeholder" => Some(PropertyKind::Placeholder),
-        "enabled" => Some(PropertyKind::Enabled),
-        "multiline" => Some(PropertyKind::Multiline),
-        "item_count" => Some(PropertyKind::ItemCount),
-        "item_key" => Some(PropertyKind::ItemKey),
-        // FR-13.2, 13.4 and 14.2.
-        "type_role" => Some(PropertyKind::TypeRole),
-        "font_size" => Some(PropertyKind::FontSize),
-        "font_weight" => Some(PropertyKind::FontWeight),
-        "line_height" => Some(PropertyKind::LineHeight),
-        "letter_spacing" => Some(PropertyKind::LetterSpacing),
-        "color" => Some(PropertyKind::Color),
-        "text_align" => Some(PropertyKind::TextAlign),
-        "max_lines" => Some(PropertyKind::MaxLines),
-        "overflow" => Some(PropertyKind::Overflow),
-        "arrangement" => Some(PropertyKind::Arrangement),
-        "spacing" => Some(PropertyKind::Spacing),
-        "space_role" => Some(PropertyKind::SpaceRole),
-        "alignment" => Some(PropertyKind::Alignment),
-        "variant" => Some(PropertyKind::Variant),
-        _ => None,
-    }
+    PropertyKind::from_name(name).ok()
 }
 
 fn event_property(name: &str) -> Option<PropertyKind> {
