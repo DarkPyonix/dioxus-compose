@@ -390,20 +390,20 @@ footer.site .inner { max-width: 78rem; margin: 0 auto; display: flex; gap: 1.2re
 /* ---------- landing page ---------- */
 /* The landing page has no sidebar: it is one column, wider than the guide's
    reading measure, with the hero allowed to breathe. */
-.landing main { max-width: 68rem; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 2.5rem); }
+.landing main { max-width: 84rem; margin: 0 auto; padding: 0 clamp(1rem, 4vw, 3rem); }
 .landing .hero { padding: clamp(3rem, 9vw, 6rem) 0 0; text-align: left; }
 .landing .hero h1 {
-  font-size: clamp(2.3rem, 5.6vw, 3.9rem); line-height: 1.08;
-  letter-spacing: -.03em; max-width: 22ch; margin: 0 0 1.1rem;
+  font-size: clamp(2.3rem, 5.6vw, 4.2rem); line-height: 1.07;
+  letter-spacing: -.03em; max-width: 24ch; margin: 0 0 1.1rem;
 }
 .landing .hero h1 .said { color: var(--accent); display: block; }
-.landing .hero .lede { font-size: clamp(1.05rem, 2.2vw, 1.28rem); max-width: 56ch; color: var(--ink-soft); }
+.landing .hero .lede { font-size: clamp(1.05rem, 2.2vw, 1.3rem); max-width: 58ch; color: var(--ink-soft); }
 .landing .hero .sub { font-size: 1rem; color: var(--ink-faint); max-width: 56ch; margin-top: .3rem; }
 .landing .cta { margin-top: 2rem; }
 .landing .btn { padding: .68rem 1.35rem; font-size: 1rem; }
 
 .showcase { display: grid; gap: 1.6rem; margin: 3.2rem 0 0; grid-template-columns: 1fr; }
-@media (min-width: 68rem) { .showcase { grid-template-columns: 1.05fr .95fr; align-items: start; } }
+@media (min-width: 62rem) { .showcase { grid-template-columns: 1.05fr .95fr; align-items: start; } }
 .showcase pre {
   margin: 0; min-width: 0; overflow-x: auto;
   background: var(--code-bg); border: 1px solid var(--code-line);
@@ -411,8 +411,18 @@ footer.site .inner { max-width: 78rem; margin: 0 auto; display: flex; gap: 1.2re
   font-family: var(--mono); font-size: .845rem; line-height: 1.62; tab-size: 4;
 }
 .showcase pre code { background: none; border: 0; padding: 0; font-size: inherit; }
-.showcase .note { color: var(--ink-soft); font-size: .95rem; }
-.showcase .note h2 { margin-top: 0; }
+/* The card sits beside the code block, so it drops the note's stacked margin and
+   takes the same padding: both boxes then start on the same line. */
+.showcase .note {
+  margin: 0; padding: .95rem 1.1rem 1.05rem;
+  color: var(--ink-soft); font-size: .95rem;
+}
+.showcase .note h2 {
+  margin: 0 0 .55rem; font-size: 1.08rem; line-height: 1.35;
+  letter-spacing: -.01em; color: var(--ink);
+}
+.showcase .note p { margin: 0 0 .7rem; }
+.showcase .note p:last-child { margin-bottom: 0; }
 
 .metrics {
   display: grid; gap: 1px; margin: 3.4rem 0 0;
