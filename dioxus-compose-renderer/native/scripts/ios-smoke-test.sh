@@ -8,6 +8,12 @@
 # same file draws the same tree on both platforms, the C ABI really is the same (SPEC PR-2).
 #
 # Usage: ios-smoke-test.sh [--device-name "iPhone 16"] [--screenshot <path>]
+#                          [--await-click [seconds]]
+#
+# --await-click keeps the app up and waits for someone to tap the button, then
+# checks that the tap reached the Rust handler. simctl has no tap command, so
+# event dispatch on iOS cannot be checked without a person; CI runs without
+# this flag and proves startup and rendering only.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,10 +31,16 @@ die() {
 
 device_name="iPhone 16"
 screenshot=""
+await_click=0
+await_seconds=120
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device-name) device_name="${2:-}"; shift 2 ;;
         --screenshot) screenshot="${2:-}"; shift 2 ;;
+        --await-click)
+            await_click=1
+            if [[ "${2:-}" =~ ^[0-9]+$ ]]; then await_seconds="$2"; shift 2; else shift; fi
+            ;;
         -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
         *) die "unknown argument '$1'" ;;
     esac
@@ -118,6 +130,15 @@ for _ in $(seq 1 30); do
 done
 sleep 3
 
+if (( await_click )); then
+    echo
+    echo "==> tap 'click me' in the simulator (waiting up to ${await_seconds}s)"
+    for _ in $(seq 1 "$await_seconds"); do
+        grep -q "dispatch_event" "$log" 2>/dev/null && break
+        sleep 1
+    done
+fi
+
 if [[ -n "$screenshot" ]]; then
     xcrun simctl io "$device" screenshot "$screenshot"
     echo "screenshot: $screenshot"
@@ -131,5 +152,14 @@ cat "$log"
 grep -q "dioxus_compose_host_init" "$log" || die \
     "the renderer never called dioxus_compose_host_init" \
     "Console log: $log"
+if (( await_click )); then
+    grep -q "dispatch_event" "$log" || die \
+        "no tap reached the host within ${await_seconds}s" \
+        "Either nobody tapped the button, or hit testing does not reach dioxus_compose_host_dispatch_event on iOS." \
+        "Console log: $log"
+    echo
+    echo "ok: a tap reached the host handler on iOS (SPEC PR-2)"
+fi
+
 echo
 echo "ok: the renderer ran on the simulator and called back into the host (SPEC PR-2)"
