@@ -26,6 +26,11 @@ import dioxus.compose.foundation.HostButton
 import dioxus.compose.foundation.HostContainerColumn
 import dioxus.compose.foundation.HostDialog
 import dioxus.compose.foundation.HostCanvas
+import dioxus.compose.foundation.HostDatePicker
+import dioxus.compose.foundation.HostDropdown
+import dioxus.compose.foundation.HostIcon
+import dioxus.compose.foundation.HostImage
+import dioxus.compose.foundation.HostTimePicker
 import dioxus.compose.foundation.HostLazyColumn
 import dioxus.compose.foundation.HostLazyRow
 import dioxus.compose.foundation.HostMenu
@@ -155,6 +160,18 @@ fun RenderNode(
         WidgetKind.Tabs -> HostTabs(node, modifier, table, dispatcher, theme)
         WidgetKind.Tooltip -> HostTooltip(node, modifier, table, dispatcher, theme)
         WidgetKind.LazyRow -> HostLazyRow(node, modifier, table, dispatcher)
+
+        // A picture is one registered id. The bytes were read when the Host registered
+        // them, so what a frame carries is the id and a lookup.
+        WidgetKind.Image -> HostImage(node, modifier, table.assets, dispatcher)
+        WidgetKind.Icon -> HostIcon(node, modifier, table.assets, dispatcher, theme)
+
+        // The pickers carry a value, a range and a change handler. Which way of picking the
+        // user gets, a calendar grid, a wheel, a dial or a flyout, is the design system's
+        // decision, and there is no property that could ask for one of them.
+        WidgetKind.DatePicker -> HostDatePicker(node, modifier, dispatcher, theme)
+        WidgetKind.TimePicker -> HostTimePicker(node, modifier, dispatcher, theme)
+        WidgetKind.Dropdown -> HostDropdown(node, modifier, table, dispatcher, theme)
     }
 }
 

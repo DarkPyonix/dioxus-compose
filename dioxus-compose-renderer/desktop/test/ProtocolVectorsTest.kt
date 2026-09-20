@@ -62,6 +62,10 @@ class ProtocolVectorsTest {
                 is Mutation.SetTheme -> false
                 is Mutation.AppendText -> mutation.nodeId != 1
                 is Mutation.Create -> false
+                // An asset is not a node. Registering or releasing one says nothing about
+                // the node the rest of the vector is built around.
+                is Mutation.RegisterAsset -> false
+                is Mutation.ReleaseAsset -> false
             }
         }
         assertEquals(badRecords, errors.size, "every unknown-node record must be reported")

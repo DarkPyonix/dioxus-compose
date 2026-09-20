@@ -13,7 +13,10 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dioxus.compose.protocol.ButtonVariant
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.TypeRole
@@ -178,6 +181,25 @@ internal object Material3Rules : ComponentRules {
         typeRole = TypeRole.Label,
     )
 
+    /**
+     * Material Symbols metrics: a 24 dp grid, a 2 dp stem and flat ends.
+     *
+     * Every role is drawn to the same weight, which is what makes a row of them line up.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 24.dp,
+        strokeWidth = 2.dp,
+        cap = StrokeCap.Butt,
+        join = StrokeJoin.Miter,
+    )
+
+    /** A calendar grid for the date, a dial for the time, a menu under the field. */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.CalendarGrid,
+        time = TimePresentation.Dial,
+        choice = ChoicePresentation.ExposedMenu,
+    )
+
     override val motion: Motion = Motion(
         pressMillis = 100,
         releaseMillis = 200,
@@ -338,6 +360,24 @@ internal object CupertinoRules : ComponentRules {
         horizontalPadding = theme.space(SpaceRole.Md),
         verticalPadding = theme.space(SpaceRole.Xs),
         typeRole = TypeRole.Body,
+    )
+
+    /**
+     * SF Symbols metrics: a lighter stroke on a 22 dp grid, with rounded ends and joins.
+     * The rounded terminal is the single thing that reads most as Apple's icon set.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 22.dp,
+        strokeWidth = 1.75.dp,
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round,
+    )
+
+    /** Wheels throughout: a date, a time and a list are all spun to the value. */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.Wheel,
+        time = TimePresentation.Wheel,
+        choice = ChoicePresentation.Wheel,
     )
 
     override val motion: Motion = Motion(
@@ -508,6 +548,24 @@ internal object FluentRules : ComponentRules {
         horizontalPadding = theme.space(SpaceRole.Md),
         verticalPadding = theme.space(SpaceRole.Sm),
         typeRole = TypeRole.Subtitle,
+    )
+
+    /**
+     * Fluent icon metrics: a 20 dp grid, a 1.5 dp stroke and square ends, which is what
+     * keeps a command bar's icons reading as one set with its text.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 20.dp,
+        strokeWidth = 1.5.dp,
+        cap = StrokeCap.Square,
+        join = StrokeJoin.Bevel,
+    )
+
+    /** A calendar flyout, a stepped field for the time, and a combo box for a list. */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.CalendarFlyout,
+        time = TimePresentation.Stepper,
+        choice = ChoicePresentation.ComboBox,
     )
 
     override val motion: Motion = Motion(

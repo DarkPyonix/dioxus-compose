@@ -168,6 +168,24 @@ interface ComponentRules {
     /** How a tab strip and its selection indicator look. */
     fun tabs(theme: ResolvedTheme): TabsStyle
 
+    /**
+     * The metrics this system's icon set is drawn to.
+     *
+     * The Host registers a meaning, never a picture or a system icon name, so the artwork
+     * is chosen here. That is what makes one declaration come out as the shape Cupertino
+     * draws and as the shape Material 3 draws, without the Host knowing either.
+     */
+    fun icon(role: dioxus.compose.protocol.IconRole, theme: ResolvedTheme): IconStyle
+
+    /**
+     * How this system asks for a date, a time and a choice.
+     *
+     * The three systems do not merely style their pickers differently, they are operated
+     * differently: a calendar grid, a wheel, a flyout. The widget carries a value, a range
+     * and a change event, so the way of picking is decided here and nowhere else.
+     */
+    val pickers: PickerRules
+
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
 }
@@ -230,6 +248,70 @@ data class TabsStyle(
     val horizontalPadding: Dp,
     val verticalPadding: Dp,
     val typeRole: TypeRole,
+)
+
+/**
+ * The metrics one icon is drawn to.
+ *
+ * The geometry of each role is shared, because `Back` means the same thing everywhere. What
+ * differs is how it is drawn: Material's heavier stem with flat ends, Cupertino's thin
+ * stroke with rounded ends, Fluent's lighter stroke with square ends, each at its own
+ * optical size.
+ */
+data class IconStyle(
+    val size: Dp,
+    val strokeWidth: Dp,
+    val cap: androidx.compose.ui.graphics.StrokeCap,
+    val join: androidx.compose.ui.graphics.StrokeJoin,
+)
+
+/** The way a date is picked. */
+enum class DatePresentation {
+    /** A month laid out as a grid of days. */
+    CalendarGrid,
+
+    /** Scrolling wheels, one per field. */
+    Wheel,
+
+    /** A field that opens a calendar over the page. */
+    CalendarFlyout,
+}
+
+/** The way a time of day is picked. */
+enum class TimePresentation {
+    /** A clock face the hand is dragged around. */
+    Dial,
+
+    /** Scrolling wheels for the hour and the minute. */
+    Wheel,
+
+    /** A field with the hour and the minute stepped up and down. */
+    Stepper,
+}
+
+/** The way one item out of a list is picked. */
+enum class ChoicePresentation {
+    /** A field that drops a menu below itself. */
+    ExposedMenu,
+
+    /** A wheel of the options, with the chosen one in the middle. */
+    Wheel,
+
+    /** A field that opens a flyout list over the page. */
+    ComboBox,
+}
+
+/**
+ * Which of the ways of picking this design system uses.
+ *
+ * There is no Host property that can override any of these. A widget that could ask for a
+ * wheel would stop being a date and start being a piece of interface design, and the
+ * system's own conventions would be the thing that loses.
+ */
+data class PickerRules(
+    val date: DatePresentation,
+    val time: TimePresentation,
+    val choice: ChoicePresentation,
 )
 
 /**
