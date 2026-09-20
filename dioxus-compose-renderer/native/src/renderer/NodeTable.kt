@@ -223,6 +223,10 @@ class NodeTable {
                         widget == WidgetKind.Button ||
                         widget == WidgetKind.TextField
 
+                // SPEC-GAP: SpacerProps has width and height in the Rust schema, but there
+                // are no matching PropertyKind variants, so a Spacer can only be sized with
+                // modifiers. Either the schema gains the properties or SPEC FR-2 should say
+                // that Spacer is modifier-sized.
                 PropertyKind.Placeholder -> widget == WidgetKind.TextField
                 PropertyKind.Multiline -> widget == WidgetKind.TextField
                 PropertyKind.Enabled -> widget != WidgetKind.Spacer

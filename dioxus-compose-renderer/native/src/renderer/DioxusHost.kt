@@ -12,7 +12,14 @@ import org.thisisthepy.dioxus.compose.nativeimage.FrameRequests
 import org.thisisthepy.dioxus.compose.protocol.HostEvent
 import org.thisisthepy.dioxus.compose.protocol.Mutation
 
-/** Sends one event to the Host and reports whether the Host consumed it (SPEC FR-3, FR-12). */
+/**
+ * Sends one event to the Host and reports whether the Host consumed it (SPEC FR-3).
+ *
+ * SPEC-GAP: event consumption is tracked as FR-12 in the task backlog but has no SPEC item
+ * yet. `MutationBatch.result` carries the handler's return value (PR-4), and the Renderer
+ * treats a non-zero result as "consumed"; a Host that always returns 0 simply never
+ * consumes. This needs an FR-12 entry in docs/SPEC.md with its acceptance criteria.
+ */
 fun interface EventDispatcher {
     fun dispatch(event: HostEvent): Boolean
 }

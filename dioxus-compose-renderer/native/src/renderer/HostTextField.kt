@@ -36,6 +36,13 @@ const val TEXT_CHANGED_DEBOUNCE_MILLIS: Long = 120
  * commit events `TextSubmitted` and `FocusLost`; it changes the value only with `SetText`,
  * which is held back while a composition is in progress.
  *
+ * SPEC-GAP: the protocol has no key event, so a Host handler can only decide about Enter
+ * through `TextSubmitted`. Free-form key routing (and its consumption result) needs a new
+ * event tag in the schema before it can exist.
+ *
+ * SPEC-GAP: FR-5 says `TextChanged` is debounced but names no interval; 120 ms is chosen
+ * here and must be confirmed in the SPEC.
+ *
  * Key events are never dispatched while composing: Enter during a Korean composition means
  * "commit the composition", not "submit".
  */
