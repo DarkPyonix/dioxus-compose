@@ -13,7 +13,16 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+# Which branch this tree belongs to, which is not always a question git can answer.
+# A CI checkout is usually detached, so `git rev-parse --abbrev-ref HEAD` says "HEAD" and
+# the published branches below stop being recognised. GitHub names the ref it checked out,
+# so ask it first and fall back to git for a local run.
+branch="${GITHUB_REF_NAME:-}"
+if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+fi
+# A pull request names the branch being merged, so a release to main proposal reads as
+# "release" here, which is what should be checked.
 case "$branch" in
     main|release)
         echo "ok    $branch is a published branch; the planning documents belong on develop"
