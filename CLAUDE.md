@@ -19,7 +19,7 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 3. Decision changes go to `docs/INTENT.md` first, then SPEC, then code.
 4. When a requirement's acceptance criteria are verified, update its status (`Draft` → `Agreed` → `Done`) in the same change that proves it.
 5. Resolved open questions are removed from `PROJECT.md` and recorded as decisions in INTENT/SPEC.
-6. Project docs (README, PROJECT, INTENT, SPEC) are written in Korean. Code, code comments, and this file are in English.
+6. Language: `README.md` and the guide site (`docs/guide/`) are English, with translations under `docs/locales/` and `docs/guide/ko/`. The internal planning documents (`PROJECT.md`, `docs/INTENT.md`, `docs/SPEC.md`) are Korean. Code, code comments, scripts and this file are English.
 
 ## Test Driven Development
 
