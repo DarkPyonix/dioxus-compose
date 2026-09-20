@@ -61,10 +61,25 @@ emit() {
     fi
 }
 
-if [[ -x "$graalvm_home/bin/native-image" ]]; then
+# Check for the AWT static library, not just for native-image. An install can
+# have a working native-image and still be useless here (build-native.sh needs
+# lib/static/darwin-*/libawt_lwawt.a), and when that install is a restored CI
+# cache, a short-circuit that trusts bin/native-image alone will keep handing
+# back the broken directory on every run until the key changes.
+nik_is_complete() {
+    local home="$1"
+    [[ -x "$home/bin/native-image" ]] || return 1
+    compgen -G "$home/lib/static/darwin-*/libawt_lwawt.a" >/dev/null
+}
+
+if nik_is_complete "$graalvm_home"; then
     echo "Liberica NIK $NIK_VERSION already installed at $graalvm_home" >&2
     emit
     exit 0
+fi
+
+if [[ -d "$graalvm_home" ]]; then
+    echo "Reinstalling: $graalvm_home exists but has no lib/static/darwin-*/libawt_lwawt.a" >&2
 fi
 
 echo "Downloading Liberica NIK $NIK_VERSION ($os/$arch)..." >&2
@@ -87,9 +102,20 @@ fi
 # leave a half-populated $graalvm_home that the short-circuit above trusts.
 mkdir -p "$tmp/stage" "$install_root"
 tar -xzf "$tmp/$archive" -C "$tmp/stage"
-home_bin="$(find "$tmp/stage" -type f -name native-image -path '*/bin/*' -print -quit)"
-[[ -n "$home_bin" ]] || { echo "error: no bin/native-image inside $archive" >&2; exit 1; }
-staged_home="$(cd "$(dirname "$home_bin")/.." && pwd)"
+
+# Locate java.home by the AWT static libraries, because they are the thing this
+# project cannot build without. Do not search for bin/native-image instead: the
+# bundle has two, and the only one `find -type f` matches is
+# Contents/Home/lib/svm/bin/native-image (Contents/Home/bin/native-image is a
+# symlink, which -type f skips). Treating lib/svm as java.home yields a
+# GRAALVM_HOME that runs native-image and has no AWT at all.
+static_dir="$(find "$tmp/stage" -type d -path '*/lib/static' -print -quit)"
+[[ -n "$static_dir" ]] || { echo "error: no lib/static inside $archive; this is not the Full variant" >&2; exit 1; }
+staged_home="$(cd "$static_dir/../.." && pwd)"
+nik_is_complete "$staged_home" || {
+    echo "error: $archive unpacked to $staged_home, which is not a usable NIK Full home" >&2
+    exit 1
+}
 
 rm -rf "$graalvm_home" "$graalvm_home.partial"
 mv "$staged_home" "$graalvm_home.partial"
