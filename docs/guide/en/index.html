@@ -21,7 +21,7 @@
 <meta name="twitter:title" content="dioxus-compose: declarative UI in Rust, rendered by Compose">
 <meta name="twitter:description" content="Write declarative UI in Rust with Dioxus. An AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
 <meta name="twitter:image" content="http://darkpyonix.dev/dioxus-compose/assets/og.png">
-<link rel="stylesheet" href="../assets/style.css?v=2">
+<link rel="stylesheet" href="../assets/style.css?v=10">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -51,6 +51,10 @@
 </header>
 
 <main id="main">
+  <div class="herowrap">
+    <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="gridfade" aria-hidden="true"></div>
+    <span class="edge" aria-hidden="true"></span>
   <section class="hero">
     <h1>Declarative UI in Rust,<span class="said">rendered by Compose.</span></h1>
     <p class="lede">You write components with <code>rsx!</code>, hooks and signals. An AOT-compiled
@@ -62,7 +66,14 @@
       <a class="btn secondary" href="overview.html">Read the guide</a>
       <a class="btn secondary" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a>
     </div>
+      <ul class="claims">
+        <li>No webview</li>
+        <li>No JVM in the shipped binary</li>
+        <li>Platform IME, including Korean</li>
+        <li>Zero-copy boundary</li>
+      </ul>
   </section>
+  </div>
 
   <div class="showcase">
 <pre><code><span class="k">rsx!</span> {
