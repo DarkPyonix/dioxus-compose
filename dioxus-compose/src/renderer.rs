@@ -39,6 +39,13 @@ pub struct ComposeRenderer {
     parents: HashMap<u32, (u32, u32)>,
     /// Which design properties a node has actually been given, one bit per tag.
     design_props: HashMap<u32, u32>,
+    /// A border arrives as a width and a colour in separate attributes; this holds
+    /// whichever came first until the pair can be written as one modifier.
+    pending_borders: HashMap<u32, (Option<f32>, Option<crate::Paint>)>,
+    /// Which Modifier slots a node has actually been given, one bit per slot. Clearing a
+    /// slot that was never written would cost a mutation on the first frame of every
+    /// widget, for a Modifier nobody asked for.
+    modifier_slots: HashMap<u32, u16>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
 }
@@ -59,6 +66,8 @@ impl ComposeRenderer {
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
             design_props: HashMap::with_capacity(64),
+            pending_borders: HashMap::with_capacity(16),
+            modifier_slots: HashMap::with_capacity(64),
             stack: Vec::with_capacity(64),
             error: None,
         }
@@ -115,6 +124,165 @@ impl ComposeRenderer {
     /// Append the streamed tail to a Text node without resending its whole value.
     pub fn append_text_node(&mut self, node_id: u32, text: &str) {
         self.write(Mutation::AppendText { node_id, text });
+    }
+
+    /// Turns a Modifier attribute written in `rsx!` into one slot of the node's chain.
+    ///
+    /// The Renderer applies the chain in list order, exactly as hand-written Compose does,
+    /// so the slot an attribute occupies decides what the result looks like. Padding
+    /// before a background is a margin; after it, it insets the content. Fixing the slots
+    /// here means `Card { background: .., padding: 16.0 }` behaves the way the person who
+    /// wrote it expects, whichever order they happened to type the attributes in.
+    ///
+    /// The order below reads outside in: how big the widget is, what shape it is, what
+    /// fills it, what outlines it, what lifts it, what responds to a press, and finally
+    /// how far its content sits inside all of that.
+    ///
+    /// A `false` or absent value writes `Empty` into the slot rather than dropping the
+    /// mutation, because a slot that keeps its old value would leave the removed modifier
+    /// applied.
+    fn modifier_for(
+        &mut self,
+        element: ElementId,
+        node_id: u32,
+        name: &'static str,
+        value: &AttributeValue,
+    ) -> Option<Option<(u16, crate::Modifier)>> {
+        use crate::Modifier;
+
+        // Slot assignments. Append only: an existing slot never changes meaning, because a
+        // node keeps whatever a slot held until something overwrites it.
+        const WEIGHT: u16 = 0;
+        const FILL_MAX_WIDTH: u16 = 1;
+        const FILL_MAX_HEIGHT: u16 = 2;
+        const WIDTH: u16 = 3;
+        const HEIGHT: u16 = 4;
+        const SHAPE: u16 = 5;
+        const BACKGROUND: u16 = 6;
+        const BORDER: u16 = 7;
+        const ELEVATION: u16 = 8;
+        const CLICKABLE: u16 = 9;
+        const PADDING: u16 = 10;
+
+        let float = |value: &AttributeValue| match value {
+            AttributeValue::Float(number) => Some(*number as f32),
+            AttributeValue::Int(number) => Some(*number as f32),
+            _ => None,
+        };
+        let integer = |value: &AttributeValue| match value {
+            AttributeValue::Int(number) => Some(*number),
+            AttributeValue::Float(number) => Some(*number as i64),
+            _ => None,
+        };
+
+        let slot_of = |name: &str| match name {
+            "weight" => Some(WEIGHT),
+            "fill_max_width" => Some(FILL_MAX_WIDTH),
+            "fill_max_height" => Some(FILL_MAX_HEIGHT),
+            "width" => Some(WIDTH),
+            "height" => Some(HEIGHT),
+            "shape_role" | "corner_radius" => Some(SHAPE),
+            "background" => Some(BACKGROUND),
+            "border_width" | "border_color" => Some(BORDER),
+            "elevation" => Some(ELEVATION),
+            "onclickable" => Some(CLICKABLE),
+            "padding" | "padding_role" => Some(PADDING),
+            _ => None,
+        };
+        let slot = slot_of(name)?;
+
+        // An unset Modifier attribute is not a property, so it must not fall through to
+        // set_property and be rejected as an unknown one. It only produces a mutation if
+        // this slot already holds something, because clearing a slot that was never
+        // written would cost a mutation on the first frame of every widget.
+        if matches!(value, AttributeValue::None) {
+            let used = self.modifier_slots.entry(node_id).or_default();
+            if *used & (1u16 << slot) == 0 {
+                return Some(None);
+            }
+            *used &= !(1u16 << slot);
+            return Some(Some((slot, crate::Modifier::Empty)));
+        }
+        *self.modifier_slots.entry(node_id).or_default() |= 1u16 << slot;
+
+        match name {
+            "fill_max_width" | "fill_max_height" => {
+                let AttributeValue::Bool(enabled) = value else {
+                    return Some(None);
+                };
+                Some(Some((
+                    slot,
+                    if !enabled {
+                        Modifier::Empty
+                    } else if slot == FILL_MAX_WIDTH {
+                        Modifier::FillMaxWidth
+                    } else {
+                        Modifier::FillMaxHeight
+                    },
+                )))
+            }
+            "weight" => Some(Some((WEIGHT, Modifier::Weight(float(value)?)))),
+            "width" => Some(Some((WIDTH, Modifier::Width(float(value)?)))),
+            "height" => Some(Some((HEIGHT, Modifier::Height(float(value)?)))),
+            "padding" => Some(Some((PADDING, Modifier::Padding(float(value)?)))),
+            "padding_role" => Some(Some((
+                PADDING,
+                Modifier::PaddingRole(crate::SpaceRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?),
+            ))),
+            "elevation" => Some(Some((ELEVATION, Modifier::Elevation(float(value)?)))),
+            "corner_radius" => {
+                let radius = float(value)?;
+                Some(Some((
+                    SHAPE,
+                    Modifier::Shape {
+                        top_start: radius,
+                        top_end: radius,
+                        bottom_end: radius,
+                        bottom_start: radius,
+                    },
+                )))
+            }
+            "shape_role" => Some(Some((
+                SHAPE,
+                Modifier::ShapeRole(crate::ShapeRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?),
+            ))),
+            // Colour crosses as the bits of a Paint, so a role and a literal colour take
+            // the same path and there is one wire representation of colour.
+            "background" => Some(Some((
+                BACKGROUND,
+                Modifier::Background(crate::Paint::from_bits(integer(value)? as u64)?),
+            ))),
+            // A border needs a width and a colour, which arrive as two attributes. The
+            // half that arrives first is remembered so the pair can be written as one
+            // modifier, whichever order Dioxus hands them over in.
+            "border_width" | "border_color" => {
+                let pending = self.pending_borders.entry(node_id).or_default();
+                if name == "border_width" {
+                    pending.0 = Some(float(value)?);
+                } else {
+                    pending.1 = Some(crate::Paint::from_bits(integer(value)? as u64)?);
+                }
+                let (Some(width), Some(paint)) = (pending.0, pending.1) else {
+                    return Some(None);
+                };
+                Some(Some((BORDER, Modifier::Border { width, paint })))
+            }
+            "onclickable" => {
+                let AttributeValue::Listener(_) = value else {
+                    return Some(None);
+                };
+                let handler_id = self.next_handler_id;
+                self.next_handler_id += 1;
+                self.handlers.push(Handler {
+                    id: handler_id,
+                    element,
+                    node_id,
+                    name,
+                });
+                Some(Some((CLICKABLE, Modifier::Clickable { handler_id })))
+            }
+            _ => None,
+        }
     }
 
     fn write(&mut self, mutation: Mutation<'_>) {
@@ -398,25 +566,14 @@ impl WriteMutations for ComposeRenderer {
         id: ElementId,
     ) {
         if let Some(node_id) = self.node(id) {
-            if let (Some(index), AttributeValue::Bool(enabled)) = (
-                match name {
-                    "fill_max_width" => Some(0),
-                    "fill_max_height" => Some(1),
-                    _ => None,
-                },
-                value,
-            ) {
-                self.write(Mutation::SetModifier {
-                    node_id,
-                    index,
-                    modifier: if !enabled {
-                        crate::Modifier::Empty
-                    } else if name == "fill_max_width" {
-                        crate::Modifier::FillMaxWidth
-                    } else {
-                        crate::Modifier::FillMaxHeight
-                    },
-                });
+            if let Some(slot) = self.modifier_for(id, node_id, name, value) {
+                if let Some((index, modifier)) = slot {
+                    self.write(Mutation::SetModifier {
+                        node_id,
+                        index,
+                        modifier,
+                    });
+                }
                 return;
             }
             self.set_property(node_id, name, value);

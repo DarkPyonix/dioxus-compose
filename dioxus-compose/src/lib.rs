@@ -52,14 +52,42 @@ pub mod elements {
 
     pub use crate::extensions::elements::*;
 
+    /// The Modifier attributes every widget accepts.
+    ///
+    /// In Compose a Modifier applies to any composable, and the same has to be true here
+    /// or an application cannot give a widget padding, a background, a corner or a border.
+    /// Without them a sample can only place bare text and buttons against the window edge,
+    /// which is what these samples looked like before this existed.
+    ///
+    /// They are declared once, on every widget, rather than listed per element, because
+    /// the set that applies to a Card and to a Text is the same set.
+    macro_rules! modifier_attributes {
+        () => {
+            pub const weight: AttributeDescription = ("weight", None, false);
+            pub const width: AttributeDescription = ("width", None, false);
+            pub const height: AttributeDescription = ("height", None, false);
+            pub const padding: AttributeDescription = ("padding", None, false);
+            pub const padding_role: AttributeDescription = ("padding_role", None, false);
+            pub const background: AttributeDescription = ("background", None, false);
+            pub const shape_role: AttributeDescription = ("shape_role", None, false);
+            pub const corner_radius: AttributeDescription = ("corner_radius", None, false);
+            pub const border_width: AttributeDescription = ("border_width", None, false);
+            pub const border_color: AttributeDescription = ("border_color", None, false);
+            pub const elevation: AttributeDescription = ("elevation", None, false);
+            pub const onclickable: AttributeDescription = ("onclickable", None, false);
+        };
+    }
+
     macro_rules! element {
-        // A widget with no attributes of its own, which is what a container that emits
-        // only roles and children looks like. It needs no attribute descriptions, so it
-        // must not import the type that describes them.
+        // A widget with no attributes of its own still takes Modifiers, so this arm is the
+        // same as the one below with an empty list rather than a smaller module.
         ($module:ident, $tag:literal, []) => {
             pub mod $module {
+                use super::AttributeDescription;
+
                 pub const TAG_NAME: &str = $tag;
                 pub const NAME_SPACE: Option<&str> = None;
+                modifier_attributes!();
             }
         };
         ($module:ident, $tag:literal, [$($attribute:ident),* $(,)?]) => {
@@ -69,6 +97,7 @@ pub mod elements {
                 pub const TAG_NAME: &str = $tag;
                 pub const NAME_SPACE: Option<&str> = None;
                 $(pub const $attribute: AttributeDescription = (stringify!($attribute), None, false);)*
+                modifier_attributes!();
             }
         };
     }
@@ -123,7 +152,9 @@ pub mod elements {
     );
     element!(textfield, "TextField", [placeholder, enabled, multiline]);
     element!(button, "Button", [text, enabled, variant]);
-    element!(spacer, "Spacer", [width, height]);
+    // Spacer has no attributes of its own: its size comes from the Modifier attributes
+    // every widget carries, which is also how a Compose Spacer is sized.
+    element!(spacer, "Spacer", []);
     element!(lazycolumn, "LazyColumn", [item_count]);
     // Widget tags 18 to 25. Each one emits roles and children only: how a card, a bar or a
     // popup is drawn belongs to the design system, not to the Host that declared it.
