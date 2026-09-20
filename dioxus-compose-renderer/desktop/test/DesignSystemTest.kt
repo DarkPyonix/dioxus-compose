@@ -179,7 +179,8 @@ class DesignTokenWiringTest {
         assertTrue(f.topHighlight != null, "Fluent has no top edge highlight")
         assertTrue(m.topHighlight == null && h.topHighlight == null)
 
-        // Motion is a design system rule too (FR-14.6 item 7).
+        // Motion is a design system rule too: transition duration and easing are part of
+        // the table each system fills in, not something a caller sends.
         assertTrue(fluent.rules.motion.pressMillis < material.rules.motion.pressMillis)
     }
 
@@ -218,7 +219,8 @@ class DesignRenderTest {
     @Test
     fun fr13_4_padding_role_measures_by_the_design_system() = runComposeUiTest {
         // The same PaddingRole is a different number of dp per system, which is exactly
-        // what a role is for (FR-13.4).
+        // what a role is for: density is where the three systems disagree, so a caller names
+        // the step and the design system picks the dp.
         fun insetFor(system: DesignSystem): Float {
             var inset = 0f
             runComposeUiTest {
@@ -294,7 +296,7 @@ class DesignRenderTest {
             return height
         }
         // Material's Display rung is 57 sp, Apple's is 34 sp, so the same Text is not the
-        // same size once the design system resolves the role (FR-13.2, FR-14.4).
+        // same size once the design system resolves the role.
         assertTrue(heightFor(DesignSystem.Material3) > heightFor(DesignSystem.Cupertino))
     }
 

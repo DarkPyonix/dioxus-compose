@@ -13,7 +13,6 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
 
@@ -151,5 +150,3 @@ fun ContinuousCornerShape.inset(inset: Dp): ContinuousCornerShape = ContinuousCo
 
 /** A capsule: the continuous corner taken to the largest radius the bounds allow. */
 val CapsuleShape: ContinuousCornerShape = ContinuousCornerShape(10_000.dp)
-
-private fun unusedKeepImports(a: Float, b: Float) = min(a, b)

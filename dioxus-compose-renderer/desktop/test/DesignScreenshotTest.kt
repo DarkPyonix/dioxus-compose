@@ -21,8 +21,9 @@ import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.designShowcaseHost
 
 /**
- * Renders the design showcase for each system and writes a PNG, so the FR-14 result can be
- * looked at. Enabled only when `DXC_SCREENSHOT_DIR` is set, because it writes files.
+ * Renders the design showcase for each system and writes a PNG, so the three systems can
+ * be compared by eye. Whether they really look different is not something an assertion
+ * settles. Enabled only when `DXC_SCREENSHOT_DIR` is set, because it writes files.
  */
 @OptIn(ExperimentalTestApi::class)
 class DesignScreenshotTest {

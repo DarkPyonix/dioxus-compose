@@ -60,7 +60,7 @@ private fun lazyList() = listOf(
 @OptIn(ExperimentalTestApi::class)
 class LazyColumnTest {
     /**
-     * FR-8: the Renderer asks for the visible range plus its own buffer, and the number of
+     * The Renderer asks for the visible range plus its own buffer, and the number of
      * nodes that exist is proportional to that window, not to the 10,000 item list.
      */
     @Test
@@ -96,7 +96,7 @@ class LazyColumnTest {
         )
     }
 
-    /** FR-8: the first materialised child is the item at the requested `start`. */
+    /** The first materialised child is the item at the requested `start`. */
     @Test
     fun fr8_the_window_is_drawn_at_the_requested_global_offset() = runComposeUiTest {
         val connection = FakeHostConnection(lazyList())
@@ -117,7 +117,7 @@ class LazyColumnTest {
         onNodeWithTag(nodeTestTag(FIRST_ITEM_NODE + 1)).assertTextEquals("message $start")
     }
 
-    /** FR-8: the requested window is the visible range widened by the Renderer's buffer. */
+    /** The requested window is the visible range widened by the Renderer's buffer. */
     @Test
     fun fr8_the_request_widens_the_visible_range_by_the_buffer() {
         assertEquals(

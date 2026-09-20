@@ -40,7 +40,7 @@ private fun keyField(vararg extra: Mutation) = listOf(
 @OptIn(ExperimentalTestApi::class)
 class KeyEventTest {
     /**
-     * FR-12: the key reaches the Host handler and the Host's synchronous result decides
+     * The key reaches the Host handler and the Host's synchronous result decides
      * consumption, so Enter in a multiline field submits without inserting a newline.
      */
     @Test
@@ -71,10 +71,11 @@ class KeyEventTest {
     }
 
     /**
-     * FR-12, FR-5, SPEC §6: the project's most important correctness rule. Enter while an
+     * The project's most important correctness rule. Enter while an
      * IME composition is in progress means "commit the composition", so nothing is sent to
      * the Host and the key is left to the editor. Driving a real IME is a manual check
-     * (SPEC §6); this pins the decision the key handler makes.
+     * (type Korean into a native build and watch); this pins the decision the key handler
+     * makes.
      */
     @Test
     fun fr12_no_key_event_is_dispatched_while_an_ime_composition_is_in_progress() {
@@ -87,7 +88,7 @@ class KeyEventTest {
         )
     }
 
-    /** FR-12: key-up is not a key-down, and an unnameable key cannot cross the schema. */
+    /** Key-up is not a key-down, and an unnameable key cannot cross the schema. */
     @Test
     fun fr12_only_schema_key_downs_cross_the_boundary() {
         assertFalse(
@@ -99,7 +100,7 @@ class KeyEventTest {
         assertEquals(null, protocolKey(Key.A))
     }
 
-    /** FR-12: a Host that does not consume leaves the key to the editor. */
+    /** A Host that does not consume leaves the key to the editor. */
     @Test
     fun fr12_an_unconsumed_key_still_reaches_the_editor() = runComposeUiTest {
         val connection = FakeHostConnection(keyField())
@@ -114,7 +115,7 @@ class KeyEventTest {
         onNodeWithTag(nodeTestTag(FIELD)).assertTextEquals("\n")
     }
 
-    /** FR-12: a field with only `on_submit` keeps the TextSubmitted path. */
+    /** A field with only `on_submit` keeps the TextSubmitted path. */
     @Test
     fun fr12_a_field_without_a_key_handler_still_submits() = runComposeUiTest {
         val connection = FakeHostConnection(

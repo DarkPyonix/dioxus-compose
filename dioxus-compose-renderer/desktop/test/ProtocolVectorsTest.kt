@@ -27,10 +27,11 @@ import dioxus.compose.ui.node.nodeTestTag
 
 /**
  * Keeps the interpreter in lockstep with the Rust Host: the checked-in vectors are the bytes
- * both sides are tested against (SPEC PR-4).
+ * both sides are tested against.
  *
  * The reference batch deliberately addresses nodes it never creates, so it doubles as the
- * crash-isolation check: every bad record becomes a `ProtocolError` event (SPEC FR-2, NFR-7).
+ * crash-isolation check: every bad record becomes a `ProtocolError` event rather than
+ * taking the process down.
  */
 @OptIn(ExperimentalTestApi::class)
 class ProtocolVectorsTest {
