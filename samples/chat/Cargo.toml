@@ -14,3 +14,10 @@ dioxus-compose = { path = "../../dioxus-compose" }
 dioxus-core.workspace = true
 dioxus-signals.workspace = true
 dioxus-hooks.workspace = true
+
+# The sample is an application, not a benchmark. Without this `cargo bench` runs the
+# binary with Criterion's flags, which its plain test harness rejects.
+[[bin]]
+name = "sample-chat"
+path = "src/main.rs"
+bench = false
