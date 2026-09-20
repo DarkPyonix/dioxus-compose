@@ -170,7 +170,7 @@
           <tr>
             <td>Web (wasm)</td>
             <td><span class="pill planned">Planned</span></td>
-            <td>Rust wasm and Kotlin/Wasm linked module-to-module with no JS bridge. Feasibility is still an open question.</td>
+            <td>Kotlin owns the wasm linear memory and Rust imports it, so the batch arena is shared in place with no copying. Each boundary call goes through a generated JS forwarder, measured at about 12&nbsp;ns.</td>
           </tr>
         </tbody>
       </table>
@@ -190,7 +190,7 @@
           <tr><td>Modifiers beyond <code>fill_max_width</code> / <code>fill_max_height</code></td><td><span class="pill partial">Partial</span></td><td>Padding, size, background and clickable exist in the wire schema but have no <code>rsx!</code> attribute yet.</td></tr>
           <tr><td><code>LazyColumn</code> windowing (FR-8)</td><td><span class="pill partial">Host side</span></td><td>Component, protocol and Host tests pass; the Kotlin interpreter still draws it as a <code>Column</code> and sends no <code>RangeRequested</code>.</td></tr>
           <tr><td><code>AppendText</code> streaming (FR-9)</td><td><span class="pill partial">Host side</span></td><td>Coalesced and flushed per frame by the Host. No <code>rsx!</code>-level API yet; <code>Host::append_text</code> takes a protocol node id.</td></tr>
-          <tr><td>Design systems and theming (FR-13, FR-14)</td><td><span class="pill planned">Planned</span></td><td>Specified as <code>Draft</code>. No <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code> or <code>SetTheme</code> exists yet — see <a href="design-systems.html">Design systems</a>.</td></tr>
+          <tr><td>Design systems and theming (FR-13, FR-14)</td><td><span class="pill planned">Planned</span></td><td>Specified as <code>Agreed</code>, down to the wire tags, but nothing is built: no <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code> or <code>SetTheme</code> exists in the crate. See <a href="design-systems.html">Design systems</a>.</td></tr>
         </tbody>
       </table>
     </div>

@@ -56,9 +56,9 @@
     <p class="lede">
       A widget set is not a design. The layer that turns <code>Column</code> and
       <code>Button</code> into something that looks like a macOS app, an Android app or a Windows
-      app is specified in SPEC FR-13 and FR-14, and both are still at <code>Draft</code> status.
-      Nothing on this page exists in the crate yet; it is here so you can see the shape your code
-      will take and why the seams fall where they do.
+      app is specified in SPEC FR-13 and FR-14. Both are <code>Agreed</code>, down to the wire
+      tags, and neither is implemented. Nothing on this page exists in the crate yet; it is here so
+      you can see the shape your code will take and why the seams fall where they do.
     </p>
 
     <div class="warn">
@@ -69,7 +69,8 @@
         <code>Width</code>, <code>Height</code>, <code>Size</code>, <code>Background</code> and
         <code>Clickable</code> — and no theme command. There is no <code>Paint</code>, no
         <code>TypeRole</code>, no <code>DesignSystem</code> and no <code>Theme</code> in the Rust
-        crate. Every code sample below is <em>illustrative</em> and will not compile.
+        crate. The specification is settled; the code is not written. Every code sample below is
+        <em>illustrative</em> and will not compile.
       </p>
     </div>
 
@@ -147,7 +148,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>illustrative — FR-13 is Draft; this does not compile</figcaption>
+      <figcaption>illustrative: FR-13 is specified but not built, so this does not compile</figcaption>
 <pre><code><span class="c">// Illustrative. Roles are resolved by whichever design system is active.</span>
 <span class="f">rsx!</span> {
     <span class="ty">Column</span> {
@@ -181,10 +182,16 @@
 
     <h2 id="systems">Three systems, one widget tree (FR-14)</h2>
     <p>
-      A design system here is a pair: a token table and a set of component rules. The three that
-      are first-class are <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong> and
-      <strong>WinUI/Fluent</strong>. The same <code>rsx!</code> drawn under a different system is
-      <em>meant</em> to look different; that is the feature, not a bug to file.
+      A design system here is a pair: a token table and a set of component rules. Phase one is
+      <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong> and
+      <strong>WinUI/Fluent&nbsp;2</strong>. The same <code>rsx!</code> drawn under a different system
+      is <em>meant</em> to look different; that is the feature, not a bug to file.
+    </p>
+    <p>
+      A second phase adds <strong>GNOME&nbsp;50</strong>, <strong>KDE Breeze</strong> and
+      <strong>Deepin</strong> for the Linux desktop, and it only starts once phase one draws
+      correctly. Treat those three as planned: the token tables do not exist, and the
+      <code>DesignSystem</code> tags are assigned only for the first three.
     </p>
     <p>
       Component rules attach to variant properties whose names are design-system-neutral.
@@ -205,7 +212,7 @@
     <p>The application chooses explicitly, at launch.</p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>illustrative — FR-14 is Draft; <code>Theme</code> does not exist yet</figcaption>
+      <figcaption>illustrative: <code>Theme</code> does not exist in the crate yet</figcaption>
 <pre><code><span class="c">// The same design system on every platform.</span>
 <span class="ty">LaunchBuilder</span>::<span class="f">new</span>()
     .<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::Material3))
@@ -231,17 +238,27 @@
         <tbody>
           <tr><td>Android</td><td>Material 3</td></tr>
           <tr><td>macOS, iOS</td><td>Apple HIG</td></tr>
-          <tr><td>Windows</td><td>WinUI/Fluent</td></tr>
-          <tr><td>Linux</td><td>The fallback you passed</td></tr>
-          <tr><td>Web</td><td>The fallback you passed</td></tr>
+          <tr><td>Windows</td><td>WinUI/Fluent 2</td></tr>
+          <tr><td>Linux (GNOME)</td><td>GNOME 50 <span class="pill planned">Planned</span></td></tr>
+          <tr><td>Linux (KDE)</td><td>KDE Breeze <span class="pill planned">Planned</span></td></tr>
+          <tr><td>Linux (anything else, or undetectable)</td><td>Deepin <span class="pill planned">Planned</span></td></tr>
+          <tr><td>Web</td><td>WinUI/Fluent 2, switchable to Material 3 by configuration</td></tr>
         </tbody>
       </table>
     </div>
 
     <p>
-      Linux is deliberately not mapped to GNOME/Adwaita. Adwaita is not one of the three supported
-      systems, and picking one of the three arbitrarily would hand an app author a look they never
-      asked for. Making the choice explicit is the honest option.
+      The Linux rows read the desktop environment once at startup: <code>XDG_CURRENT_DESKTOP</code>
+      first, then <code>DESKTOP_SESSION</code> if that is empty. A value containing
+      <code>GNOME</code> selects GNOME 50, <code>KDE</code> selects Breeze, and anything else, or a
+      failure to tell, selects Deepin. Until those phase-two tables exist, Linux uses the fallback
+      you passed.
+    </p>
+    <p>
+      The web row is a choice rather than a fact. A browser has no design language of its own, so
+      <code>adaptive</code> has nothing to adapt to; the default is Fluent 2 and an app can
+      configure Material 3 instead. On the web, saying <code>unified</code> outright is the clearer
+      thing to write.
     </p>
     <p>
       Light and dark are a separate axis from the design system: <code>ColorScheme</code> is
@@ -252,17 +269,37 @@
 
     <h2 id="wire">What it adds to the wire</h2>
     <p>
-      One mutation: <code>SetTheme { design_system, adaptive, fallback, color_scheme }</code>,
-      applied to the root rather than to a node. The Host sends it once as the first record of the
-      initial batch, and again only when the application changes the theme. The design system tags
-      are <code>Material3 = 1</code>, <code>AppleHig = 2</code>, <code>Fluent = 3</code>; the colour
-      scheme tags are <code>Light = 1</code>, <code>Dark = 2</code>, <code>FollowSystem = 3</code>.
+      One mutation: <code>SetTheme { design_system, fallback, color_scheme, adaptive }</code>,
+      command tag&nbsp;9, a 12-byte record of four <code>u16</code> fields after <code>tag</code>
+      and <code>len</code>, applied to the root rather than to a node. The Host sends it once as the
+      first record of the initial batch, and again only when the application changes the theme. The
+      design system tags are <code>Material3 = 1</code>, <code>AppleHig = 2</code>,
+      <code>Fluent = 3</code>; the colour scheme tags are <code>Light = 1</code>,
+      <code>Dark = 2</code>, <code>FollowSystem = 3</code>.
     </p>
     <p>
-      Implementing a design system is then a table with seven rows: the 14 colour roles in both
-      schemes, the 9 type roles, the 6 shape roles, the 7 spacing roles, the elevation rendering
-      rule, the 4 button variants, and the motion durations and easing. Once those are filled in,
-      no widget code changes.
+      The primitives are tagged too, and the tags are fixed: every role enum starts at 1, because 0
+      means "not sent" and can never be a role. The new modifiers append to the existing list as
+      <code>PaddingRole = 9</code>, <code>PaddingEach = 10</code>, <code>Weight = 11</code>,
+      <code>Shape = 12</code>, <code>ShapeRole = 13</code>, <code>Border = 14</code> and
+      <code>Elevation = 15</code>, and the new text and layout properties append after
+      <code>OnRangeRequested</code> as <code>TypeRole = 13</code> through
+      <code>Variant = 26</code>. One existing field changes shape rather than tag:
+      <code>Modifier::Background</code> (tag 7) carries a <code>Paint</code> as a <code>u64</code>
+      instead of a raw <code>argb: u32</code>, so that colour has exactly one representation in the
+      schema. The record length is unchanged and only the schema hash moves.
+    </p>
+    <p>
+      The token tables themselves are authored in Rust and executed in the renderer. The colour,
+      type, shape and spacing values live in the Rust schema as data, and codegen emits them into
+      <code>Protocol.gen.kt</code>; they are baked into the renderer binary at build time and never
+      cross the boundary at runtime. A renderer implementer fills in the rules, not the numbers.
+    </p>
+    <p>
+      Implementing a design system is then seven tables: the 14 colour roles in both schemes, the 9
+      type roles, the 6 shape roles, the 7 spacing roles, the elevation rendering rule, the 4 button
+      variants, and the motion durations and easing. The first four are generated; the last three
+      are the renderer's own work. Once those are filled in, no widget code changes.
     </p>
 
     <div class="note">
