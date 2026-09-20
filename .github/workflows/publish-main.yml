@@ -62,6 +62,13 @@ jobs:
             echo "pull request already open; it now includes the new commit"
             exit 0
           fi
+          # Creating a pull request needs write permission for workflows, which an
+          # organisation can disable. The branch is pushed either way, so say what to do
+          # rather than failing a publish that otherwise succeeded.
+          if [[ "${{ github.event.repository.owner.type }}" != "" ]] && ! gh auth status >/dev/null 2>&1; then
+            echo "::warning::cannot authenticate to open the pull request"
+          fi
+          set +e
           gh pr create \
             --base main \
             --head release \
@@ -71,3 +78,10 @@ jobs:
           The internal planning documents (\`PROJECT.md\`, \`CLAUDE.md\`, \`docs/INTENT.md\`, \`docs/SPEC.md\`) are excluded; the source, \`README.md\` and \`docs/guide/\` are not.
 
           Merging this leaves \`main\` with exactly the tree the script produced."
+          status=$?
+          set -e
+          if (( status != 0 )); then
+            echo "::warning::could not open the pull request automatically."
+            echo "::warning::Open it with: gh pr create --base main --head release"
+            echo "::warning::If this is the organisation policy 'Allow GitHub Actions to create and approve pull requests', enable it for this repository or accept opening the pull request by hand."
+          fi
