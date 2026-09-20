@@ -1,4 +1,44 @@
-//! Closed Rust-side schema used as the source for future Kotlin code generation.
+//! Closed Rust-side schema and metadata used for Kotlin code generation.
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EnumVariantSchema {
+    pub name: &'static str,
+    pub tag: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FieldType {
+    Float,
+    U32,
+    U64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FieldSchema {
+    pub name: &'static str,
+    pub ty: FieldType,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct VariantSchema {
+    pub name: &'static str,
+    pub tag: u16,
+    pub fields: &'static [FieldSchema],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventPayloadType {
+    None,
+    Text,
+    ProtocolError,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EventSchema {
+    pub name: &'static str,
+    pub tag: u16,
+    pub payload: EventPayloadType,
+}
 
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
@@ -6,12 +46,11 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer;",
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
-    "events=Click,TextChanged,TextSubmitted,FocusLost,ProtocolError;",
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText"
 );
 
-const fn fnv1a64(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
     let mut index = 0;
     while index < bytes.len() {
         hash ^= bytes[index] as u64;
@@ -21,13 +60,89 @@ const fn fnv1a64(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// Stable handshake hash of [`SCHEMA_DESCRIPTOR`].
-pub const SCHEMA_HASH: u64 = fnv1a64(SCHEMA_DESCRIPTOR.as_bytes());
+const fn hash_enum_schema(mut hash: u64, schema: &[EnumVariantSchema]) -> u64 {
+    let mut index = 0;
+    while index < schema.len() {
+        hash = hash_bytes(hash, schema[index].name.as_bytes());
+        hash = hash_bytes(hash, &schema[index].tag.to_le_bytes());
+        index += 1;
+    }
+    hash
+}
+
+const fn schema_hash() -> u64 {
+    let mut hash = hash_bytes(0xcbf2_9ce4_8422_2325_u64, SCHEMA_DESCRIPTOR.as_bytes());
+    hash = hash_enum_schema(hash, WIDGET_SCHEMA);
+    hash = hash_enum_schema(hash, PROPERTY_SCHEMA);
+    let mut index = 0;
+    while index < MODIFIER_SCHEMA.len() {
+        let modifier = MODIFIER_SCHEMA[index];
+        hash = hash_bytes(hash, modifier.name.as_bytes());
+        hash = hash_bytes(hash, &modifier.tag.to_le_bytes());
+        let mut field_index = 0;
+        while field_index < modifier.fields.len() {
+            let field = modifier.fields[field_index];
+            hash = hash_bytes(hash, field.name.as_bytes());
+            hash = hash_bytes(
+                hash,
+                &[match field.ty {
+                    FieldType::Float => 1,
+                    FieldType::U32 => 2,
+                    FieldType::U64 => 3,
+                }],
+            );
+            field_index += 1;
+        }
+        index += 1;
+    }
+    index = 0;
+    while index < EVENT_SCHEMA.len() {
+        let event = EVENT_SCHEMA[index];
+        hash = hash_bytes(hash, event.name.as_bytes());
+        hash = hash_bytes(hash, &event.tag.to_le_bytes());
+        hash = hash_bytes(
+            hash,
+            &[match event.payload {
+                EventPayloadType::None => 0,
+                EventPayloadType::Text => 1,
+                EventPayloadType::ProtocolError => 2,
+            }],
+        );
+        index += 1;
+    }
+    hash
+}
+
+/// Stable handshake hash of the complete ordered schema metadata.
+pub const SCHEMA_HASH: u64 = schema_hash();
 pub const PROTOCOL_VERSION: u16 = 1;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum WidgetKind {
+macro_rules! define_wire_enum {
+    ($schema:ident, $name:ident { $($variant:ident = $tag:literal),+ $(,)? }) => {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[repr(u16)]
+        pub enum $name {
+            $($variant = $tag),+
+        }
+
+        pub const $schema: &[EnumVariantSchema] = &[
+            $(EnumVariantSchema { name: stringify!($variant), tag: $tag }),+
+        ];
+
+        impl TryFrom<u16> for $name {
+            type Error = ();
+
+            fn try_from(value: u16) -> Result<Self, Self::Error> {
+                match value {
+                    $($tag => Ok(Self::$variant),)+
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+define_wire_enum!(WIDGET_SCHEMA, WidgetKind {
     Column = 1,
     Row = 2,
     Box = 3,
@@ -35,24 +150,7 @@ pub enum WidgetKind {
     TextField = 5,
     Button = 6,
     Spacer = 7,
-}
-
-impl TryFrom<u16> for WidgetKind {
-    type Error = ();
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Column),
-            2 => Ok(Self::Row),
-            3 => Ok(Self::Box),
-            4 => Ok(Self::Text),
-            5 => Ok(Self::TextField),
-            6 => Ok(Self::Button),
-            7 => Ok(Self::Spacer),
-            _ => Err(()),
-        }
-    }
-}
+});
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 #[repr(u8)]
@@ -80,6 +178,78 @@ pub enum Modifier {
     Background(u32),
     Clickable { handler_id: u64 },
 }
+
+const NO_FIELDS: &[FieldSchema] = &[];
+const VALUE_FLOAT_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "value",
+    ty: FieldType::Float,
+}];
+const SIZE_FIELDS: &[FieldSchema] = &[
+    FieldSchema {
+        name: "width",
+        ty: FieldType::Float,
+    },
+    FieldSchema {
+        name: "height",
+        ty: FieldType::Float,
+    },
+];
+const ARGB_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "argb",
+    ty: FieldType::U32,
+}];
+const HANDLER_ID_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "handlerId",
+    ty: FieldType::U64,
+}];
+
+pub const MODIFIER_SCHEMA: &[VariantSchema] = &[
+    VariantSchema {
+        name: "Empty",
+        tag: 0,
+        fields: NO_FIELDS,
+    },
+    VariantSchema {
+        name: "Padding",
+        tag: 1,
+        fields: VALUE_FLOAT_FIELD,
+    },
+    VariantSchema {
+        name: "FillMaxWidth",
+        tag: 2,
+        fields: NO_FIELDS,
+    },
+    VariantSchema {
+        name: "FillMaxHeight",
+        tag: 3,
+        fields: NO_FIELDS,
+    },
+    VariantSchema {
+        name: "Width",
+        tag: 4,
+        fields: VALUE_FLOAT_FIELD,
+    },
+    VariantSchema {
+        name: "Height",
+        tag: 5,
+        fields: VALUE_FLOAT_FIELD,
+    },
+    VariantSchema {
+        name: "Size",
+        tag: 6,
+        fields: SIZE_FIELDS,
+    },
+    VariantSchema {
+        name: "Background",
+        tag: 7,
+        fields: ARGB_FIELD,
+    },
+    VariantSchema {
+        name: "Clickable",
+        tag: 8,
+        fields: HANDLER_ID_FIELD,
+    },
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColumnProps {
@@ -120,9 +290,7 @@ pub struct SpacerProps {
     pub height: f32,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum PropertyKind {
+define_wire_enum!(PROPERTY_SCHEMA, PropertyKind {
     Text = 1,
     Placeholder = 2,
     Enabled = 3,
@@ -131,31 +299,41 @@ pub enum PropertyKind {
     OnValueChange = 6,
     OnSubmit = 7,
     OnFocusLost = 8,
-}
-
-impl TryFrom<u16> for PropertyKind {
-    type Error = ();
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Text),
-            2 => Ok(Self::Placeholder),
-            3 => Ok(Self::Enabled),
-            4 => Ok(Self::Multiline),
-            5 => Ok(Self::OnClick),
-            6 => Ok(Self::OnValueChange),
-            7 => Ok(Self::OnSubmit),
-            8 => Ok(Self::OnFocusLost),
-            _ => Err(()),
-        }
-    }
-}
+});
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EventPayload<'a> {
-    Click,
+    Clicked,
     TextChanged(&'a str),
     TextSubmitted(&'a str),
     FocusLost,
     ProtocolError { code: u32, message: &'a str },
 }
+
+pub const EVENT_SCHEMA: &[EventSchema] = &[
+    EventSchema {
+        name: "Clicked",
+        tag: 1,
+        payload: EventPayloadType::None,
+    },
+    EventSchema {
+        name: "TextChanged",
+        tag: 2,
+        payload: EventPayloadType::Text,
+    },
+    EventSchema {
+        name: "TextSubmitted",
+        tag: 3,
+        payload: EventPayloadType::Text,
+    },
+    EventSchema {
+        name: "FocusLost",
+        tag: 4,
+        payload: EventPayloadType::None,
+    },
+    EventSchema {
+        name: "ProtocolError",
+        tag: 5,
+        payload: EventPayloadType::ProtocolError,
+    },
+];

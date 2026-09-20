@@ -73,7 +73,7 @@ fn host_and_click() -> (Host, HostEvent<'static>) {
         HostEvent {
             node_id,
             handler_id,
-            payload: EventPayload::Click,
+            payload: EventPayload::Clicked,
         },
     )
 }
