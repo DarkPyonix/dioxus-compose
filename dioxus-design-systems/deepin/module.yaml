@@ -14,6 +14,14 @@ dependencies:
   - $compose.foundation
   - $compose.ui
 
+test-dependencies:
+  # The test that the three Linux systems have not collapsed onto the same values
+  # needs all three on its classpath. It lives here because this one is the fallback,
+  # the system most likely to drift towards a neutral grey theme.
+  - //gnome
+  - //breeze
+  - $kotlin.test
+
 settings:
   compose:
     enabled: true

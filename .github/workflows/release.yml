@@ -12,12 +12,15 @@
 #   - the renderer ships as a checksummed tarball on the GitHub Release for
 #     this tag, one per platform, fetched at build or install time.
 #
-# Nothing here publishes to crates.io. The publish job is written out below
-# but left commented: it needs a CARGO_REGISTRY_TOKEN secret and a human
-# decision about the first release, and a name on crates.io is unrecallable.
+# Pushing a version tag also publishes the crate to crates.io. That needs a
+# CARGO_REGISTRY_TOKEN secret, and the job refuses to run if the tag and the
+# version in Cargo.toml disagree, because publishing cannot be undone: a
+# version can be yanked but never replaced, and the name is taken forever.
+# Add a required reviewer to the `crates-io` environment if you want a human
+# in that loop.
 #
-# The release is created as a *draft*: a human reviews the artifacts and
-# presses publish. Nothing becomes public from a tag push alone.
+# The GitHub Release itself is created as a *draft*, so the renderer artifacts
+# are reviewed before anyone can download them.
 
 name: Release
 
@@ -145,32 +148,41 @@ jobs:
               artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS
           fi
 
-  # ---------------------------------------------------------------------------
-  # crates.io publish -- intentionally disabled.
-  #
-  # Uncomment only after a human has: (1) decided the crate name and version
-  # are final, (2) added `description` and `repository` to
-  # dioxus-compose/Cargo.toml (crates.io rejects a package without a
-  # description, and `cargo package` already warns about it today),
-  # (3) reconciled the `license = "MIT"` field with the Apache-2.0 LICENSE file
-  # in the repository root, and (4) stored a CARGO_REGISTRY_TOKEN secret.
-  #
-  # Publishing is irreversible: a version can be yanked but never replaced,
-  # and the crate name is taken forever. It should not happen as a side
-  # effect of pushing a tag without someone deciding to.
-  #
-  # publish-crate:
-  #   name: Publish dioxus-compose to crates.io
-  #   needs: release
-  #   runs-on: ubuntu-latest
-  #   environment: crates-io   # require a manual approval gate
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         ref: ${{ inputs.tag || github.ref }}
-  #     - run: rustup toolchain install stable --profile minimal && rustup default stable
-  #     - name: Publish
-  #       env:
-  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-  #       run: cargo publish -p dioxus-compose
-  # ---------------------------------------------------------------------------
+  publish-crate:
+    name: Publish dioxus-compose to crates.io
+    needs: release
+    runs-on: ubuntu-latest
+    # Publishing cannot be undone: a version can be yanked but never replaced, and the
+    # name is taken forever. Add a required reviewer to this environment in the repository
+    # settings if you want a human to approve each one; with no reviewer configured it
+    # runs straight through, which is the intended behaviour for a tag push.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: The tag and Cargo.toml must agree
+        # A tag that does not match the manifest would publish a version nobody asked for,
+        # under a number that then can never be reused.
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag || github.ref_name }}"
+          manifest="$(cargo metadata --no-deps --format-version 1 |
+            python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="dioxus-compose"))')"
+          if [[ "$tag" != "v$manifest" ]]; then
+            echo "tag $tag does not match dioxus-compose $manifest in Cargo.toml" >&2
+            echo "Publishing would release a version that no commit claims. Fix one or the other." >&2
+            exit 1
+          fi
+          echo "tag $tag matches Cargo.toml $manifest"
+
+      - name: Publish
+        # Default features only, so this is exactly what a consumer gets: the Host crate
+        # with no renderer. The renderer is the artifact the release job attached above.
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p dioxus-compose
