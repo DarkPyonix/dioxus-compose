@@ -10,10 +10,10 @@ use crate::schema::{
 use crate::{EventPayload, Modifier};
 use std::fmt::Write as _;
 
-pub const GENERATED_RELATIVE_PATH: &str = concat!(
-    "../dioxus-compose-renderer/native/generated/",
-    "org/thisisthepy/dioxus/compose/protocol/Protocol.gen.kt"
-);
+/// The Kotlin Toolchain compiles the module's `src` tree by convention and offers no way to
+/// add another source root, so generated Kotlin lives inside `src`.
+pub const GENERATED_RELATIVE_PATH: &str =
+    "../dioxus-compose-renderer/native/src/protocol/Protocol.gen.kt";
 pub const MUTATION_VECTOR_RELATIVE_PATH: &str = "tests/vectors/mutations.bin";
 pub const EVENT_VECTOR_RELATIVE_PATH: &str = "tests/vectors/events.bin";
 pub const VECTOR_DESCRIPTION_RELATIVE_PATH: &str = "tests/vectors/vectors.json";

@@ -24,6 +24,14 @@ import org.thisisthepy.dioxus.compose.resources.compose_multiplatform
 @Preview
 @DevelopmentEntryPoint
 fun App() {
+    // The renderer's screen while the interpreter is being built: the IME checklist is the
+    // decisive check for M1 (docs/SPEC.md §6).
+    ImeTestScreen()
+}
+
+@Composable
+@Preview
+fun TemplateApp() {
     MaterialTheme {
         var showContent by remember { mutableStateOf(false) }
         Column(

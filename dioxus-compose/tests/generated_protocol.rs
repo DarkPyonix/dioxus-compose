@@ -8,8 +8,7 @@ fn checked_in_generated_artifacts_are_current() {
     assert_eq!(
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../dioxus-compose-renderer/native/generated/",
-            "org/thisisthepy/dioxus/compose/protocol/Protocol.gen.kt"
+            "/../dioxus-compose-renderer/native/src/protocol/Protocol.gen.kt"
         )),
         generate_kotlin(),
         "generated Kotlin is stale; run `cargo run -p dioxus-compose --bin codegen`",
