@@ -199,6 +199,10 @@ published="$(git -C "$repo" rev-parse release)"
 
 clone="$tmp/from-remote-clone"
 git clone -q "$repo" "$clone"
+# A clone inherits no identity, and a CI runner has no global one to fall back on, so the
+# commits below would fail with "empty ident name" on a machine that is not a developer's.
+git -C "$clone" config user.email test@example.invalid
+git -C "$clone" config user.name "Split Test"
 git -C "$clone" checkout -q develop
 check "the clone has no local release branch" \
     "$(git -C "$clone" rev-parse --verify -q release >/dev/null 2>&1; echo $?)" "1"
