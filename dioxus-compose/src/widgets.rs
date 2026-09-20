@@ -8,7 +8,8 @@ use dioxus_signals::WritableExt as _;
 use crate as dioxus_elements;
 use crate::Key;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, Paint, SpaceRole, TextAlign, TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonVariant, Paint, ShapeRole, SpaceRole, TextAlign, TextOverflow,
+    TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -77,12 +78,38 @@ fn role(value: Option<impl Into<u16>>) -> i64 {
     value.map_or(0, |value| i64::from(value.into()))
 }
 
+/// A Modifier value that was not set sends nothing at all, rather than a zero. No padding
+/// and a padding of zero look the same on screen, but only one of them should cost a
+/// mutation on every frame the widget appears in.
+fn opt_dp(value: Option<f32>) -> Option<f64> {
+    value.map(f64::from)
+}
+
+fn opt_role(value: Option<impl Into<u16>>) -> Option<i64> {
+    value.map(|value| i64::from(value.into()))
+}
+
+fn opt_paint(value: Option<Paint>) -> Option<i64> {
+    value.map(|paint| paint.to_bits() as i64)
+}
+
 fn dp(value: Option<f32>) -> f64 {
     f64::from(value.unwrap_or(0.0))
 }
 
 #[component]
 pub fn Column(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] arrangement: Option<Arrangement>,
@@ -93,6 +120,17 @@ pub fn Column(
 ) -> Element {
     rsx! {
         column {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
             arrangement: role(arrangement),
@@ -106,6 +144,17 @@ pub fn Column(
 
 #[component]
 pub fn Row(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] arrangement: Option<Arrangement>,
@@ -116,6 +165,17 @@ pub fn Row(
 ) -> Element {
     rsx! {
         row {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
             arrangement: role(arrangement),
@@ -129,6 +189,17 @@ pub fn Row(
 
 #[component]
 pub fn ComposeBox(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] alignment: Option<Alignment>,
@@ -136,6 +207,17 @@ pub fn ComposeBox(
 ) -> Element {
     rsx! {
         composebox {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
             alignment: role(alignment),
@@ -162,6 +244,17 @@ pub fn ScrollColumn(
 /// size does not resend the rest of the text's styling.
 #[component]
 pub fn Text(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(into)] text: String,
     #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] font_size: Option<f32>,
@@ -175,6 +268,17 @@ pub fn Text(
 ) -> Element {
     rsx! {
         text {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             text,
             type_role: role(type_role),
             font_size: dp(font_size),
@@ -191,6 +295,17 @@ pub fn Text(
 
 #[component]
 pub fn TextField(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(into, default)] placeholder: String,
     #[props(default = true)] enabled: bool,
     #[props(default)] multiline: bool,
@@ -201,6 +316,17 @@ pub fn TextField(
 ) -> Element {
     rsx! {
         textfield {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             placeholder,
             enabled,
             multiline,
@@ -216,6 +342,17 @@ pub fn TextField(
 /// The same rsx draws differently per system, and that is correct behaviour.
 #[component]
 pub fn Button(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(into)] text: String,
     #[props(default = true)] enabled: bool,
     #[props(default)] variant: Option<ButtonVariant>,
@@ -223,6 +360,17 @@ pub fn Button(
 ) -> Element {
     rsx! {
         button {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             text,
             enabled,
             variant: role(variant),
@@ -232,8 +380,34 @@ pub fn Button(
 }
 
 #[component]
-pub fn Spacer(#[props(default)] width: f32, #[props(default)] height: f32) -> Element {
-    rsx! { spacer { width, height } }
+pub fn Spacer(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+) -> Element {
+    rsx! {
+        spacer {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+        }
+    }
 }
 
 /// The visible item range the Renderer asks the Host to materialise.
@@ -299,18 +473,70 @@ pub fn LazyColumn(
 /// elevation, is the design system's decision, so the widget carries no appearance of its
 /// own. `Modifier::Elevation` overrides the resting height when the Host has a reason to.
 #[component]
-pub fn Card(children: Element) -> Element {
+pub fn Card(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    children: Element,
+) -> Element {
     rsx! {
-        card { {children} }
+        card {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            {children}
+        }
     }
 }
 
 /// A plain background-and-elevation container. Use it where a `Card`'s grouping meaning
 /// would be wrong and only the surface is wanted.
 #[component]
-pub fn Surface(children: Element) -> Element {
+pub fn Surface(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    children: Element,
+) -> Element {
     rsx! {
-        surface { {children} }
+        surface {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            {children}
+        }
     }
 }
 
@@ -320,12 +546,34 @@ pub fn Surface(children: Element) -> Element {
 /// close it, and the Host decides whether to honour that by setting `open` to false.
 #[component]
 pub fn Dialog(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(default)] open: bool,
     #[props(default)] on_dismiss: EventHandler<()>,
     children: Element,
 ) -> Element {
     rsx! {
         dialog {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             open,
             ondismiss: move |_| on_dismiss.call(()),
             {children}
@@ -341,6 +589,17 @@ pub fn Dialog(
 /// chosen. The Renderer closes the popup itself.
 #[component]
 pub fn Menu(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(default)] expanded: bool,
     #[props(default)] on_dismiss: EventHandler<()>,
     anchor: Element,
@@ -348,6 +607,17 @@ pub fn Menu(
 ) -> Element {
     rsx! {
         menu {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
             open: expanded,
             ondismiss: move |_| on_dismiss.call(()),
             {anchor}
@@ -362,18 +632,72 @@ pub fn Menu(
 /// Tapping a tab changes the selection in the Renderer and reports it by firing that tab's
 /// own `on_click`, so switching tabs costs one event and no re-render of the tab strip.
 #[component]
-pub fn Tabs(#[props(default)] selected_index: usize, children: Element) -> Element {
+pub fn Tabs(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] selected_index: usize,
+    children: Element,
+) -> Element {
     rsx! {
-        tabs { selected_index: selected_index as i64, {children} }
+        tabs {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            selected_index: selected_index as i64,
+            {children}
+        }
     }
 }
 
 /// The bar across the top of a screen. Its children are its content, left to right. How the
 /// bar is sized, spaced and separated from what is below it is the design system's rule.
 #[component]
-pub fn TopAppBar(children: Element) -> Element {
+pub fn TopAppBar(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    children: Element,
+) -> Element {
     rsx! {
-        topappbar { {children} }
+        topappbar {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            {children}
+        }
     }
 }
 
@@ -414,8 +738,36 @@ pub fn LazyRow(
 /// Renderer also exposes the text to the accessibility tree, so a pointer is not the only
 /// way to reach it.
 #[component]
-pub fn Tooltip(#[props(into)] text: String, children: Element) -> Element {
+pub fn Tooltip(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(into)] text: String,
+    children: Element,
+) -> Element {
     rsx! {
-        tooltip { text, {children} }
+        tooltip {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            text,
+            {children}
+        }
     }
 }
