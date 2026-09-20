@@ -284,18 +284,29 @@ mod tests {
 
         // Poll frames the way the Renderer would after the Host asked for one. The reply
         // starts after a short pause, so a second of frames is far more than it needs.
+        // A reply that is still arriving is sent as the new tail alone, so the length on
+        // screen is what the node was set to plus everything appended to it since.
+        let mut lengths: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
         let mut longest = 0usize;
         for _ in 0..200 {
             std::thread::sleep(std::time::Duration::from_millis(5));
             let batch = host.render_frame(0).expect("a streaming frame failed");
             for mutation in decode_batch(batch).expect("a streaming frame did not decode") {
-                if let Mutation::SetProp {
-                    property: PropertyKind::Text,
-                    value: PropertyValue::String(text),
-                    ..
-                } = mutation
-                {
-                    longest = longest.max(text.len());
+                let grown = match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                    } => Some(*lengths.entry(node_id).insert_entry(text.len()).get()),
+                    Mutation::AppendText { node_id, text } => {
+                        let total = lengths.entry(node_id).or_default();
+                        *total += text.len();
+                        Some(*total)
+                    }
+                    _ => None,
+                };
+                if let Some(length) = grown {
+                    longest = longest.max(length);
                 }
             }
             if longest > 200 {
