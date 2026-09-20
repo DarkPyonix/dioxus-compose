@@ -187,6 +187,31 @@ release_files="$(files_on "$repo" release)"
 check_absent "release drops PROJECT.md" "$release_files" "PROJECT.md"
 check_contains "release keeps docs/guide/" "$release_files" "docs/guide/index.md"
 
+# --- continues from origin/<target> when there is no local branch -----------
+#
+# Regression: CI checkouts have the remote-tracking ref only. Building from
+# nothing there produces a commit unrelated to what is published, and the push
+# is rejected as a non fast-forward.
+repo="$tmp/from-remote"
+make_repo "$repo"
+(cd "$repo" && "$split" --write >/dev/null 2>&1)
+published="$(git -C "$repo" rev-parse release)"
+
+clone="$tmp/from-remote-clone"
+git clone -q "$repo" "$clone"
+git -C "$clone" checkout -q develop
+check "the clone has no local release branch" \
+    "$(git -C "$clone" rev-parse --verify -q release >/dev/null 2>&1; echo $?)" "1"
+echo "more" > "$clone/dioxus-compose/src/later.rs"
+git -C "$clone" add -A
+git -C "$clone" commit -q -m "Feat: More work"
+out="$(cd "$clone" && "$split" --write 2>&1)"
+check "runs in a clone without a local target branch" "$?" "0"
+check_contains "says where it continued from" "$out" "origin/release"
+check "the new commit descends from what was published" \
+    "$(git -C "$clone" merge-base --is-ancestor "$published" release; echo $?)" "0"
+check_contains "the clone carries the new source across" "$(files_on "$clone" release)" "later.rs"
+
 rm -rf "$tmp"
 
 if (( failures )); then

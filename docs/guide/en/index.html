@@ -21,7 +21,7 @@
 <meta name="twitter:title" content="dioxus-compose: declarative UI in Rust, rendered by Compose">
 <meta name="twitter:description" content="Write declarative UI in Rust with Dioxus. An AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
 <meta name="twitter:image" content="http://darkpyonix.dev/dioxus-compose/assets/og.png">
-<link rel="stylesheet" href="../assets/style.css?v=10">
+<link rel="stylesheet" href="../assets/style.css?v=16">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -52,8 +52,27 @@
 
 <main id="main">
   <div class="herowrap">
-    <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
-    <div class="gridfade" aria-hidden="true"></div>
+    <div class="backdrop" aria-hidden="true">
+      <svg class="tree" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid meet" focusable="false" aria-hidden="true">
+        <g class="still">
+          <rect x="10" y="10" width="380" height="280" rx="14"/>
+          <rect x="34" y="42" width="116" height="16" rx="5"/>
+          <rect x="168" y="42" width="34" height="16" rx="8"/>
+          <rect x="34" y="84" width="332" height="30" rx="7"/>
+          <rect x="34" y="124" width="332" height="30" rx="7"/>
+          <rect x="34" y="164" width="332" height="30" rx="7"/>
+          <rect x="34" y="222" width="332" height="44" rx="10"/>
+          <rect class="caret" x="52" y="236" width="2" height="16" rx="1"/>
+        </g>
+        <g class="lit">
+          <rect x="168" y="42" width="34" height="16" rx="8" style="--at:0s"/>
+          <rect x="34" y="124" width="332" height="30" rx="7" style="--at:4.6s"/>
+          <rect x="34" y="222" width="332" height="44" rx="10" style="--at:9.8s"/>
+          <rect class="caret" x="52" y="236" width="2" height="16" rx="1" style="--at:11.4s"/>
+          <rect x="34" y="84" width="332" height="30" rx="7" style="--at:16.6s"/>
+        </g>
+      </svg>
+    </div>
     <span class="edge" aria-hidden="true"></span>
   <section class="hero">
     <h1>Declarative UI in Rust,<span class="said">rendered by Compose.</span></h1>

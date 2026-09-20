@@ -13,7 +13,7 @@ cd "$repo_root"
 dash=$'—'
 hits="$(git grep -n --fixed-strings -- "$dash" -- \
     '*.md' '*.rs' '*.kt' '*.kts' '*.html' '*.css' '*.js' '*.sh' '*.yml' '*.yaml' '*.toml' \
-    ':!docs/guide/assets/*.min.*' || true)"
+    ':!docs/guide/assets/*.min.*' ':!scripts/tests/no-em-dash.test.sh' || true)"
 
 if [[ -n "$hits" ]]; then
     echo "error: em dashes found (CLAUDE.md forbids them; use a comma, a colon or parentheses)" >&2
