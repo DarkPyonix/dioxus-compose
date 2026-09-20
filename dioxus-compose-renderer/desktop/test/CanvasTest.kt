@@ -13,6 +13,7 @@ import kotlin.test.assertTrue
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.DrawCommand
 import dioxus.compose.protocol.DrawCommands
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.Paint
 import dioxus.compose.protocol.PropertyKind
@@ -81,7 +82,12 @@ class CanvasTest {
     @Test
     fun fr17_a_canvas_without_commands_still_draws() = runComposeUiTest {
         val connection = FakeHostConnection(
-            listOf(Mutation.Create(1, WidgetKind.Canvas)),
+            listOf(
+                Mutation.Create(1, WidgetKind.Canvas),
+                // The size comes from the modifier chain. A canvas nobody sized has
+                // nothing to show, which is Compose's own rule for a drawing area.
+                Mutation.SetModifier(1, 0, ProtocolModifier.Size(64f, 64f)),
+            ),
         )
         lateinit var host: DioxusHost
         setContent {

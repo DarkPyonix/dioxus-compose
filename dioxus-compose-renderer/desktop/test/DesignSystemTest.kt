@@ -85,9 +85,12 @@ class ThemeResolutionTest {
     }
 
     @Test
-    fun fr14_3_adaptive_is_never_implicit() {
-        // No SetTheme at all means unified(Material3), never a platform look.
-        assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Windows, false).system)
+    fun fr14_3_the_default_theme_follows_the_platform() {
+        // A Host that has not sent a theme yet gets the platform's own system, with
+        // Material 3 where the platform has none of its own.
+        assertEquals(DesignSystem.Fluent, resolveTheme(null, HostPlatform.Windows, false).system)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(null, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Unknown, false).system)
         assertEquals(false, resolveTheme(null, HostPlatform.Windows, false).dark)
     }
 
