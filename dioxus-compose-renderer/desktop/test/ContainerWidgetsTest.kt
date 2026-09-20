@@ -142,7 +142,9 @@ class ContainerWidgetsTest {
         setContent { DioxusContent(rememberDioxusHost(connection)) }
         waitForIdle()
 
-        onNodeWithTag(nodeTestTag(3)).performClick()
+        // A tab merges its label into the tab row's semantics, so the node carrying the
+        // test tag is only reachable in the unmerged tree.
+        onNodeWithTag(nodeTestTag(3), useUnmergedTree = true).performClick()
         waitForIdle()
 
         val clicks = connection.events.filterIsInstance<HostEvent.Clicked>()
