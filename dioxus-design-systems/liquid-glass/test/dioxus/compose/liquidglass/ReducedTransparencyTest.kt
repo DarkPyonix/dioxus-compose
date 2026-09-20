@@ -35,7 +35,7 @@ class ReducedTransparencyTest {
     fun fr14_the_opaque_path_is_readable() {
         for (reduce in listOf(true, false)) {
             for (blur in listOf(true, false)) {
-                if (isGlassDrawn(reduce, blur)) continue
+                if (drawsAsGlass(reduce, blur)) continue
                 val fill = glassFill(glass, reduce, blur)
                 assertTrue(
                     contrastRatio(fill, Color.Black) >= LiquidGlass.MIN_CONTRAST_BODY,
@@ -48,13 +48,16 @@ class ReducedTransparencyTest {
 
     @Test
     fun fr14_the_translucent_path_is_taken_only_when_both_conditions_allow_it() {
-        assertTrue(isGlassDrawn(reduceTransparency = false, blurAvailable = true))
-        assertTrue(!isGlassDrawn(reduceTransparency = true, blurAvailable = true))
-        assertTrue(!isGlassDrawn(reduceTransparency = false, blurAvailable = false))
-        assertTrue(!isGlassDrawn(reduceTransparency = true, blurAvailable = false))
+        assertTrue(drawsAsGlass(reduceTransparency = false, blurAvailable = true))
+        assertTrue(!drawsAsGlass(reduceTransparency = true, blurAvailable = true))
+        assertTrue(!drawsAsGlass(reduceTransparency = false, blurAvailable = false))
+        assertTrue(!drawsAsGlass(reduceTransparency = true, blurAvailable = false))
 
         val translucent = glassFill(glass, reduceTransparency = false, blurAvailable = true)
-        assertEquals(glass.tintAlpha, translucent.alpha, 0.0001f)
+        // Compose packs sRGB at eight bits per channel, so a stored 0.70 reads back as
+        // 0.7019608. One step of 1/255 is the resolution of the format, not a drift worth
+        // failing over.
+        assertEquals(glass.tintAlpha, translucent.alpha, 1f / 255f)
         assertTrue(translucent.alpha < 1f)
     }
 

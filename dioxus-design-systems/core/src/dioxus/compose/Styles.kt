@@ -86,3 +86,147 @@ sealed interface SurfaceMaterial {
         val fallback: Color,
     ) : SurfaceMaterial
 }
+
+/**
+ * What a small interactive control looks like and how it answers a press.
+ *
+ * One shape for the four of them because they share the same parts: something that holds
+ * a state, something that indicates it, and a reaction to being touched. A Slider's track
+ * is its container and its thumb is its indicator, which is the same relationship a
+ * Switch has.
+ */
+@Immutable
+data class ControlStyle(
+    /** The control's own footprint, before any label beside it. */
+    val size: Dp,
+    /** The track, box or circle that holds the state. */
+    val container: Color,
+    val containerSelected: Color,
+    /** The tick, dot or thumb that shows it. */
+    val indicator: Color,
+    val indicatorSelected: Color,
+    val border: Color?,
+    val borderWidth: Dp,
+    val shape: ShapeRole,
+    /** Thumb size for a Switch or a Slider; unused by the others. */
+    val thumbSize: Dp,
+    val trackHeight: Dp,
+    val disabledAlpha: Float,
+    /** A Material control ripples. A Cupertino one dims, and rippling would look wrong. */
+    val ripple: Boolean,
+)
+
+/** How progress is drawn, which is a bar in some systems and a spinner in others. */
+@Immutable
+data class ProgressStyle(
+    val thickness: Dp,
+    val track: Color,
+    val indicator: Color,
+    /** Diameter when circular. */
+    val size: Dp,
+    val rounded: Boolean,
+    /** One full sweep of the indeterminate animation. */
+    val indeterminatePeriodMillis: Int,
+)
+
+/** A rule between things. Thin and full width in some systems, inset in others. */
+@Immutable
+data class DividerStyle(
+    val thickness: Dp,
+    val color: Color,
+    /** How far it is held back from the leading edge. */
+    val inset: Dp,
+)
+
+/**
+ * How a text field reads, which is one of the clearest differences between the systems.
+ *
+ * Material fills a box and underlines it, Cupertino draws a rounded rectangle, Fluent
+ * draws a box with an accent line along the bottom that thickens on focus.
+ */
+@Immutable
+data class FieldStyle(
+    val container: Color,
+    val containerFocused: Color,
+    val content: Color,
+    val placeholder: Color,
+    val border: Color?,
+    val borderFocused: Color?,
+    val borderWidth: Dp,
+    val borderWidthFocused: Dp,
+    /** Drawn along the bottom edge only, which is how Material and Fluent mark focus. */
+    val underline: Boolean,
+    val shape: ShapeRole,
+    val contentPadding: SpaceRole,
+    val cursor: Color,
+)
+
+/**
+ * How a value gets picked.
+ *
+ * The presentation is the decision; the rest is what the renderer needs to draw whichever
+ * one was chosen. A widget carries a value and a range and never sees this.
+ */
+@Immutable
+data class PickerStyle(
+    val presentation: PickerPresentation,
+    val surface: Color,
+    val shape: ShapeRole,
+    val elevation: Dp,
+    /** Row height on a wheel, cell size on a grid. */
+    val itemExtent: Dp,
+    /** How many rows a wheel shows at once. Ignored by the other presentations. */
+    val visibleItems: Int,
+)
+
+/** How something that sits over the screen arrives, and what it does to what is behind. */
+@Immutable
+data class OverlayStyle(
+    val presentation: OverlayPresentation,
+    val surface: Color,
+    val shape: ShapeRole,
+    val elevation: Dp,
+    /** Null where a system dims nothing, which is usual for a menu and a tooltip. */
+    val scrim: Color?,
+    val padding: SpaceRole,
+    val enterMillis: Int,
+    val exitMillis: Int,
+)
+
+/** How a navigation surface is laid out. */
+@Immutable
+data class NavigationStyle(
+    val height: Dp,
+    val surface: Color,
+    val content: Color,
+    val contentSelected: Color,
+    val indicator: TabIndicator,
+    val indicatorThickness: Dp,
+    val titleAlignment: TitleAlignment,
+    /** Lifted only once the content beneath has scrolled, in the systems that do it. */
+    val elevationOnScroll: Dp,
+)
+
+/** How a scrolling surface behaves at its edges and whether it shows a scrollbar. */
+@Immutable
+data class ScrollStyle(
+    val overscroll: OverscrollBehaviour,
+    /** A scrollbar that is always there, rather than one that fades in while scrolling. */
+    val persistentScrollbar: Boolean,
+    val scrollbarThickness: Dp,
+    val scrollbarColor: Color,
+)
+
+/**
+ * The icon family a system draws with.
+ *
+ * A role names a meaning, never a glyph, which is what lets the same declaration come out
+ * as SF Symbols under Cupertino and Material Symbols under Material 3.
+ */
+@Immutable
+data class IconStyle(
+    val size: Dp,
+    val strokeWidth: Dp,
+    /** Systems differ on whether an icon is drawn as an outline or filled in. */
+    val filled: Boolean,
+)
