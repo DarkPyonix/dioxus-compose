@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import org.thisisthepy.dioxus.compose.protocol.Mutation
 import org.thisisthepy.dioxus.compose.protocol.PropertyKind
 import org.thisisthepy.dioxus.compose.protocol.PropertyValue
+import org.thisisthepy.dioxus.compose.protocol.Theme
 import org.thisisthepy.dioxus.compose.protocol.WidgetKind
 import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
 
@@ -65,6 +66,10 @@ class NodeTable {
     private val errors = mutableListOf<TableError>()
     private var revision = 0L
 
+    /** Null until the Host sends its first `SetTheme` record (FR-14.3). */
+    var theme: Theme? by mutableStateOf(null)
+        private set
+
     /** Top-level nodes, in creation order until the Host parents them. */
     val roots: List<Int> get() = rootChildren
 
@@ -88,6 +93,9 @@ class NodeTable {
             is Mutation.Remove -> remove(mutation.nodeId)
             is Mutation.SetText -> setText(mutation)
             is Mutation.AppendText -> appendText(mutation)
+            // TODO(FR-14): the theme is recorded so the Host contract holds; the token
+            // tables and component rules that read it are the Renderer's next piece of work.
+            is Mutation.SetTheme -> theme = mutation.theme
         }
     }
 
@@ -261,6 +269,33 @@ class NodeTable {
                 // Windowing properties belong to the lazy container alone (FR-8).
                 PropertyKind.ItemCount -> widget == WidgetKind.LazyColumn
                 PropertyKind.ItemKey -> true
+
+                // FR-13 design primitives. Accepted and stored now so the Host and the
+                // wire format stay in step; TODO(FR-13) applies them to the Compose tree.
+                PropertyKind.TypeRole,
+                PropertyKind.FontSize,
+                PropertyKind.FontWeight,
+                PropertyKind.LineHeight,
+                PropertyKind.LetterSpacing,
+                PropertyKind.Color,
+                PropertyKind.TextAlign,
+                PropertyKind.MaxLines,
+                PropertyKind.Overflow,
+                -> widget == WidgetKind.Text ||
+                    widget == WidgetKind.Button ||
+                    widget == WidgetKind.TextField
+
+                PropertyKind.Arrangement,
+                PropertyKind.Spacing,
+                PropertyKind.SpaceRole,
+                PropertyKind.Alignment,
+                -> widget == WidgetKind.Column ||
+                    widget == WidgetKind.Row ||
+                    widget == WidgetKind.Box ||
+                    widget == WidgetKind.LazyColumn ||
+                    widget == WidgetKind.ScrollColumn
+
+                PropertyKind.Variant -> widget == WidgetKind.Button
             }
     }
 }

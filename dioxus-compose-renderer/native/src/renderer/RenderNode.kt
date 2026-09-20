@@ -3,6 +3,8 @@ package org.thisisthepy.dioxus.compose.renderer
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.text.BasicText
@@ -54,6 +56,11 @@ fun RenderNode(nodeId: Int, table: NodeTable, dispatcher: EventDispatcher) {
         WidgetKind.Button -> HostButton(node, modifier, dispatcher)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
         WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
+        // FR-13: a column that scrolls without the Host windowing it, so every child is
+        // materialised. Use LazyColumn when the list is long.
+        WidgetKind.ScrollColumn -> Column(modifier.verticalScroll(rememberScrollState())) {
+            Children(node, table, dispatcher)
+        }
     }
 }
 
