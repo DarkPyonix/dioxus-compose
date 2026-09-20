@@ -114,6 +114,18 @@ echo "==> booting $device_name ($device)"
 xcrun simctl boot "$device" 2>/dev/null || true
 xcrun simctl bootstatus "$device" -b >/dev/null
 
+# `simctl boot` boots the device headless. Nothing is on screen until Simulator.app
+# is running and showing this device, which is invisible to a screenshot-only run
+# and the reason --await-click had nothing to tap.
+if (( await_click )); then
+    open -a Simulator --args -CurrentDeviceUDID "$device"
+    for _ in $(seq 1 20); do
+        pgrep -q -x Simulator && break
+        sleep 1
+    done
+    pgrep -q -x Simulator || die "Simulator.app did not start, so there is no window to tap"
+fi
+
 echo "==> installing and launching"
 xcrun simctl uninstall "$device" "$BUNDLE_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$device" "$app"
