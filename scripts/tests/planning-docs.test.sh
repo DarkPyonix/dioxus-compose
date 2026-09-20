@@ -13,7 +13,21 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+# Which branch this tree belongs to, which is not always a question git can answer.
+#
+# A CI checkout is detached, so `git rev-parse --abbrev-ref HEAD` says "HEAD". GitHub
+# names the ref instead, but not the same way for every event: on a pull request
+# GITHUB_REF_NAME is the merge ref, "8/merge", and the branch being proposed is in
+# GITHUB_HEAD_REF. Reading the wrong one made a release-to-main proposal look like a
+# branch called "8/merge", which is not a published branch and so was held to develop's
+# rules and failed.
+branch="${GITHUB_HEAD_REF:-}"
+if [[ -z "$branch" ]]; then
+    branch="${GITHUB_REF_NAME:-}"
+fi
+if [[ -z "$branch" || "$branch" == "HEAD" ]]; then
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo detached)"
+fi
 case "$branch" in
     main|release)
         echo "ok    $branch is a published branch; the planning documents belong on develop"

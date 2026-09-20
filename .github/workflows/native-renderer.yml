@@ -23,7 +23,11 @@ name: Native renderer
 
 on:
   push:
-    branches: [main, develop]
+  # Pushes to main only. This is the slow half of the gate, a ~1GB toolchain download
+  # and tens of minutes of native-image compilation, so it runs where the published
+  # branch is produced rather than on every push to develop. The nightly schedule below
+  # catches toolchain drift in between.
+    branches: [main]
     paths:
       - 'dioxus-compose-renderer/**'
       - 'scripts/install-nik.sh'
