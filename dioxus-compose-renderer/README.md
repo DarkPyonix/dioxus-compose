@@ -14,6 +14,8 @@ on first use, so nothing has to be installed separately.
 | `native` | **The renderer.** The schema interpreter, the `HostConnection` implementations, the C entry points, and the macOS native-image build (`native/scripts/`, `native/c/`). This is the module that matters. |
 | `shared` | Compose code shared across platforms, including the IME test screen used to verify text input in a native build. |
 | `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
+| `iosrenderer` | **The renderer for iOS.** The same interpreter sources (`iosrenderer/src/shared/` symlinks `native/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
+| `iosentry` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
 | `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
 
 The generated protocol bindings live in `native/src/protocol/Protocol.gen.kt`. They are
@@ -43,6 +45,23 @@ GraalVM skips AWT on macOS). From this directory:
 ./native/scripts/build-native.sh   # build the shared library and stage lib/
 ./native/scripts/smoke-test.sh     # link a C host against it and open a window
 ```
+
+## iOS
+
+iOS ships as a Kotlin/Native static library that exports the same two C symbols the desktop
+library does, so the Host does not know which platform it is linked against (SPEC PR-2, M5).
+There is no GraalVM and therefore no isolate, so there is no C shim either: `@CName` puts the
+symbol on the Kotlin function. `dioxus_compose_renderer_run` must be called on the process
+main thread, where `UIApplicationMain` installs the run loop, and it never returns.
+
+```bash
+./native/scripts/build-ios.sh                    # arm64 simulator static library
+./native/scripts/build-ios.sh --target device    # arm64 iPhone
+./native/scripts/ios-smoke-test.sh --screenshot /tmp/ios.png   # run it on the simulator
+```
+
+The smoke test links `native/c/smoke_host.c`, the same stand-in Host the desktop smoke test
+uses, so a passing run on both platforms is evidence that the C ABI really is one ABI.
 
 See the root [README](../README.md) for prerequisites and the
 [guide](http://darkpyonix.dev/dioxus-compose/) for everything else.
