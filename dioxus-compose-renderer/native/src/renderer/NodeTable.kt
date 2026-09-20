@@ -93,8 +93,8 @@ class NodeTable {
             is Mutation.Remove -> remove(mutation.nodeId)
             is Mutation.SetText -> setText(mutation)
             is Mutation.AppendText -> appendText(mutation)
-            // TODO(FR-14): the theme is recorded so the Host contract holds; the token
-            // tables and component rules that read it are the Renderer's next piece of work.
+            // FR-14.4: one record changes the whole tree's appearance. `DioxusContent`
+            // resolves it into tokens and rules, and Compose invalidates the readers.
             is Mutation.SetTheme -> theme = mutation.theme
         }
     }
@@ -270,8 +270,8 @@ class NodeTable {
                 PropertyKind.ItemCount -> widget == WidgetKind.LazyColumn
                 PropertyKind.ItemKey -> true
 
-                // FR-13 design primitives. Accepted and stored now so the Host and the
-                // wire format stay in step; TODO(FR-13) applies them to the Compose tree.
+                // FR-13 design primitives, resolved against the design system's token
+                // table when the node is drawn (FR-14.4).
                 PropertyKind.TypeRole,
                 PropertyKind.FontSize,
                 PropertyKind.FontWeight,

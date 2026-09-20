@@ -2,7 +2,6 @@ package org.thisisthepy.dioxus.compose.renderer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
@@ -14,12 +13,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Paint
 import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
 
 /**
@@ -27,58 +25,70 @@ import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
  *
  * List order is chain order, so `[Padding(16), FillMaxWidth]` and the reverse differ exactly
  * as they do in hand-written Compose.
+ *
+ * Roles are resolved here against the active design system's token table (SPEC FR-14.4):
+ * the Host sent a role, the Renderer decides what it measures.
  */
 internal fun List<ProtocolModifier>.toComposeModifier(
     nodeId: Int,
     dispatcher: EventDispatcher,
-): Modifier = fold(Modifier as Modifier) { chain, value ->
-    when (value) {
-        is ProtocolModifier.Empty -> chain
-        is ProtocolModifier.Padding -> chain.padding(value.value.dp)
-        is ProtocolModifier.FillMaxWidth -> chain.fillMaxWidth()
-        is ProtocolModifier.FillMaxHeight -> chain.fillMaxHeight()
-        is ProtocolModifier.Width -> chain.width(value.value.dp)
-        is ProtocolModifier.Height -> chain.height(value.value.dp)
-        is ProtocolModifier.Size -> chain.size(value.width.dp, value.height.dp)
-        is ProtocolModifier.Background -> value.paint.color()?.let { chain.background(it) } ?: chain
-        is ProtocolModifier.Clickable -> chain.hostClickable(nodeId, value.handlerId, dispatcher)
+    theme: ResolvedTheme,
+): Modifier {
+    // FR-13.3: the last Shape or ShapeRole in the list is what clips, what the border
+    // follows and what the background fills, whatever their order in the chain.
+    val shape = resolvedShape(theme)
+    return fold(Modifier as Modifier) { chain, value ->
+        when (value) {
+            is ProtocolModifier.Empty -> chain
+            is ProtocolModifier.Padding -> chain.padding(value.value.dp)
+            is ProtocolModifier.FillMaxWidth -> chain.fillMaxWidth()
+            is ProtocolModifier.FillMaxHeight -> chain.fillMaxHeight()
+            is ProtocolModifier.Width -> chain.width(value.value.dp)
+            is ProtocolModifier.Height -> chain.height(value.value.dp)
+            is ProtocolModifier.Size -> chain.size(value.width.dp, value.height.dp)
+            is ProtocolModifier.Background -> chain.background(theme.color(value.paint), shape)
+            is ProtocolModifier.Clickable -> chain.hostClickable(nodeId, value.handlerId, dispatcher)
 
-        // FR-13 primitives that carry a value the Renderer can honour without a design
-        // system behind it.
-        is ProtocolModifier.PaddingEach ->
-            chain.padding(value.start.dp, value.top.dp, value.end.dp, value.bottom.dp)
-        is ProtocolModifier.Shape -> chain.clip(
-            RoundedCornerShape(
+            is ProtocolModifier.PaddingEach ->
+                chain.padding(value.start.dp, value.top.dp, value.end.dp, value.bottom.dp)
+            is ProtocolModifier.PaddingRole -> chain.padding(theme.space(value.role))
+            is ProtocolModifier.Shape -> chain.clip(shape)
+            is ProtocolModifier.ShapeRole -> chain.clip(shape)
+            is ProtocolModifier.Border ->
+                chain.border(value.width.dp, theme.color(value.paint), shape)
+            is ProtocolModifier.Elevation ->
+                theme.rules.elevation(chain, value.value.dp, shape, theme)
+
+            // Weight is parent data: it is applied by the Column or Row that owns this node,
+            // not here. See `weightOf` and `Children` in RenderNode.kt.
+            is ProtocolModifier.Weight -> chain
+        }
+    }
+}
+
+/** The shape this node's clip, border and background all use (SPEC FR-13.3). */
+internal fun List<ProtocolModifier>.resolvedShape(theme: ResolvedTheme): Shape {
+    for (index in indices.reversed()) {
+        when (val value = this[index]) {
+            is ProtocolModifier.Shape -> return androidx.compose.foundation.shape.RoundedCornerShape(
                 topStart = value.topStart.dp,
                 topEnd = value.topEnd.dp,
                 bottomEnd = value.bottomEnd.dp,
                 bottomStart = value.bottomStart.dp,
-            ),
-        )
-        is ProtocolModifier.Border -> value.paint.color()
-            ?.let { chain.border(value.width.dp, it) } ?: chain
-        is ProtocolModifier.Elevation -> chain.shadow(value.value.dp)
+            )
 
-        // TODO(FR-14): these name a role in a design system's token table, and the tables
-        // are the Renderer's next piece of work. Ignoring them leaves the widget unstyled
-        // rather than wrongly styled.
-        is ProtocolModifier.PaddingRole -> chain
-        is ProtocolModifier.ShapeRole -> chain
-
-        // TODO(FR-13): weight belongs to the parent's layout scope, not to a modifier
-        // chain built outside it, so it needs plumbing through Column and Row.
-        is ProtocolModifier.Weight -> chain
+            is ProtocolModifier.ShapeRole -> return theme.shape(value.role)
+            else -> Unit
+        }
     }
+    return RectangleShape
 }
 
-/**
- * A literal colour becomes a Compose colour. A role has to be resolved against a design
- * system's token table, which does not exist yet, so it paints nothing for now.
- */
-private fun Paint.color(): Color? = when (this) {
-    is Paint.Literal -> Color(argb)
-    is Paint.Role -> null
-}
+/** The weight this node asked its parent layout for, or null (SPEC FR-13.4). */
+internal fun List<ProtocolModifier>.weightOf(): Float? =
+    lastOrNull { it is ProtocolModifier.Weight }
+        ?.let { (it as ProtocolModifier.Weight).value }
+        ?.takeIf { it > 0f }
 
 /**
  * Pointer handling for `Modifier.Clickable`.

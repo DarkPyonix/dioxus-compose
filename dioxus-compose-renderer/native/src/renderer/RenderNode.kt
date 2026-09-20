@@ -1,20 +1,22 @@
 package org.thisisthepy.dioxus.compose.renderer
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
 import org.thisisthepy.dioxus.compose.protocol.PropertyKind
+import org.thisisthepy.dioxus.compose.protocol.TypeRole
 import org.thisisthepy.dioxus.compose.protocol.WidgetKind
 
 /**
@@ -32,13 +34,25 @@ fun nodeTestTag(nodeId: Int): String = "dioxus-node-$nodeId"
  *
  * Only the node's own state is read here, so a `SetProp` on a sibling cannot invalidate this
  * composable (SPEC FR-4).
+ *
+ * `parentModifier` carries what only the parent layout can express, which today is the
+ * `Weight` of FR-13.4: weight is parent data of a `Column` or `Row` scope and cannot be
+ * produced by a modifier chain built outside that scope.
  */
 @Composable
-fun RenderNode(nodeId: Int, table: NodeTable, dispatcher: EventDispatcher) {
+fun RenderNode(
+    nodeId: Int,
+    table: NodeTable,
+    dispatcher: EventDispatcher,
+    parentModifier: Modifier = Modifier,
+) {
     val node = table.node(nodeId) ?: return
     // Observation point for the FR-4 recomposition check; null in production.
     RenderNodeObserver.onCompose?.let { observer -> SideEffect { observer(nodeId) } }
-    val chain = node.modifiers.toComposeModifier(nodeId, dispatcher).testTag(nodeTestTag(nodeId))
+    val theme = LocalDesignTheme.current
+    val chain = parentModifier
+        .then(node.modifiers.toComposeModifier(nodeId, dispatcher, theme))
+        .testTag(nodeTestTag(nodeId))
     // The TextField wires its own key handling, because it has an editor to intercept and a
     // composition to protect (SPEC FR-12); everything else routes keys here.
     val keyDownHandler = node.handler(PropertyKind.OnKeyDown)
@@ -48,42 +62,88 @@ fun RenderNode(nodeId: Int, table: NodeTable, dispatcher: EventDispatcher) {
         chain.hostKeyEvents(nodeId, keyDownHandler, dispatcher)
     }
     when (node.widget) {
-        WidgetKind.Column -> Column(modifier) { Children(node, table, dispatcher) }
-        WidgetKind.Row -> Row(modifier) { Children(node, table, dispatcher) }
-        WidgetKind.Box -> Box(modifier) { Children(node, table, dispatcher) }
-        WidgetKind.Text -> BasicText(text = node.text(PropertyKind.Text), modifier = modifier)
+        WidgetKind.Column -> Column(
+            modifier = modifier,
+            verticalArrangement = node.verticalArrangement(theme),
+            horizontalAlignment = node.horizontalAlignment(),
+        ) { Children(node, table, dispatcher) }
+
+        WidgetKind.Row -> Row(
+            modifier = modifier,
+            horizontalArrangement = node.horizontalArrangement(theme),
+            verticalAlignment = node.verticalAlignment(),
+        ) { Children(node, table, dispatcher) }
+
+        WidgetKind.Box -> Box(modifier, contentAlignment = node.boxAlignment()) {
+            Children(node, table, dispatcher)
+        }
+
+        WidgetKind.Text -> BasicText(
+            text = node.text(PropertyKind.Text),
+            modifier = modifier,
+            style = node.textStyle(theme),
+            maxLines = node.maxLines(),
+            overflow = node.overflow(),
+        )
+
         WidgetKind.Spacer -> Spacer(modifier)
-        WidgetKind.Button -> HostButton(node, modifier, dispatcher)
+        WidgetKind.Button -> HostButton(node, modifier, dispatcher, theme)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
         WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
         // FR-13: a column that scrolls without the Host windowing it, so every child is
         // materialised. Use LazyColumn when the list is long.
-        WidgetKind.ScrollColumn -> Column(modifier.verticalScroll(rememberScrollState())) {
-            Children(node, table, dispatcher)
-        }
+        WidgetKind.ScrollColumn -> Column(
+            modifier = modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = node.verticalArrangement(theme),
+            horizontalAlignment = node.horizontalAlignment(),
+        ) { Children(node, table, dispatcher) }
     }
 }
 
+/**
+ * Children of a Column: weight is applied here because `Modifier.weight` exists only inside
+ * `ColumnScope` (SPEC FR-13.4).
+ */
 @Composable
-private fun Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
+private fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
     // `key` keeps each child's state attached to its Host node id across Move mutations.
-    node.children.forEach { childId ->
-        androidx.compose.runtime.key(childId) { RenderNode(childId, table, dispatcher) }
-    }
+    node.children.forEach { childId -> key(childId) { WeightedChild(childId, table, dispatcher) } }
 }
 
 @Composable
-private fun HostButton(node: Node, modifier: Modifier, dispatcher: EventDispatcher) {
-    val enabled = node.flag(PropertyKind.Enabled, default = true)
-    val handlerId = node.handler(PropertyKind.OnClick)
-    val clickable = if (handlerId == null) {
-        modifier
-    } else {
-        // Compose's `clickable` owns the gesture and its consumption; the Host result is not
-        // used here because a click that reached a Button is never offered to anything below.
-        modifier.clickable(enabled = enabled, role = Role.Button) {
-            dispatcher.dispatch(HostEvent.Clicked(node.id, handlerId))
-        }
-    }
-    Box(clickable) { BasicText(node.text(PropertyKind.Text)) }
+private fun ColumnScope.WeightedChild(childId: Int, table: NodeTable, dispatcher: EventDispatcher) {
+    // Its own composable, so reading the child's modifier list subscribes this scope alone
+    // and a `SetModifier` on one child cannot invalidate its siblings (SPEC FR-4).
+    val weight = table.node(childId)?.modifiers?.weightOf()
+    RenderNode(
+        childId,
+        table,
+        dispatcher,
+        if (weight == null) Modifier else Modifier.weight(weight),
+    )
 }
+
+@Composable
+private fun RowScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
+    node.children.forEach { childId -> key(childId) { WeightedChild(childId, table, dispatcher) } }
+}
+
+@Composable
+private fun RowScope.WeightedChild(childId: Int, table: NodeTable, dispatcher: EventDispatcher) {
+    val weight = table.node(childId)?.modifiers?.weightOf()
+    RenderNode(
+        childId,
+        table,
+        dispatcher,
+        if (weight == null) Modifier else Modifier.weight(weight),
+    )
+}
+
+/** A Box has no weight axis, so its children are drawn as they are. */
+@Composable
+private fun BoxScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
+    node.children.forEach { childId -> key(childId) { RenderNode(childId, table, dispatcher) } }
+}
+
+/** The label of a Button follows the design system's button type role unless overridden. */
+internal fun Node.buttonTextStyle(theme: ResolvedTheme, role: TypeRole) = textStyle(theme, role)
