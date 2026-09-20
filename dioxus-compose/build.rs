@@ -7,7 +7,7 @@ mod renderer_dir {
     include!("build/renderer_dir.rs");
 }
 
-use renderer_dir::{artifact_target, resolve_renderer, RENDERER_DIR_ENV};
+use renderer_dir::{RENDERER_DIR_ENV, artifact_target, resolve_renderer};
 
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
@@ -30,7 +30,8 @@ fn main() {
     // Only present in a checkout of this repository. A consumer of the published crate
     // has no workspace, which is exactly why resolution has to fail with instructions
     // rather than pass a nonexistent path to the linker (SPEC NFR-11).
-    let workspace_lib_dir = manifest_dir.join("../dioxus-compose-renderer/build/native-image/dist/lib");
+    let workspace_lib_dir =
+        manifest_dir.join("../dioxus-compose-renderer/build/native-image/dist/lib");
     let crate_version = std::env::var("CARGO_PKG_VERSION").expect("Cargo sets CARGO_PKG_VERSION");
     let target = artifact_target(
         &std::env::var("CARGO_CFG_TARGET_OS").expect("checked above"),

@@ -574,11 +574,6 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    /// PR-3 makes `APP` process-global while `HOST` is thread-local, so two tests that
-    /// launch different apps in parallel can build a Host from the other test's app.
-    /// Launching tests take this lock to stay independent of the test thread count.
-    static LAUNCH_LOCK: Mutex<()> = Mutex::new(());
-
     static CLICKS: AtomicUsize = AtomicUsize::new(0);
 
     /// `APP` is process-global, as `launch` is, so two tests that launch different apps at
