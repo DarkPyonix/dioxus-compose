@@ -7,9 +7,9 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested }
 
 enum class Key { Enter }
 
@@ -54,13 +54,14 @@ sealed interface HostEvent {
     data class FocusLost(override val nodeId: Int, override val handlerId: Long) : HostEvent
     data class ProtocolError(override val nodeId: Int, override val handlerId: Long, val code: Int, val message: String) : HostEvent
     data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent
+    data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 6094773787085373026L
+    const val SCHEMA_HASH: Long = 2023235891227298086L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -217,6 +218,7 @@ object Protocol {
                 is HostEvent.FocusLost -> null
                 is HostEvent.ProtocolError -> event.message.toByteArray(StandardCharsets.UTF_8)
                 is HostEvent.KeyDown -> null
+                is HostEvent.RangeRequested -> null
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -225,6 +227,7 @@ object Protocol {
                 is HostEvent.FocusLost -> 16
                 is HostEvent.ProtocolError -> 28
                 is HostEvent.KeyDown -> 20
+                is HostEvent.RangeRequested -> 24
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -237,6 +240,7 @@ object Protocol {
                 is HostEvent.FocusLost -> 4
                 is HostEvent.ProtocolError -> 5
                 is HostEvent.KeyDown -> 6
+                is HostEvent.RangeRequested -> 7
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -260,6 +264,10 @@ object Protocol {
                     if (event.metaKey) modifiers = modifiers or 0x08
                     out.put(modifiers.toByte())
                     out.put(0.toByte())
+                }
+                is HostEvent.RangeRequested -> {
+                    out.putInt(event.start)
+                    out.putInt(event.count)
                 }
             }
             if (text != null) out.put(text)
@@ -301,6 +309,7 @@ object Protocol {
         5 -> WidgetKind.TextField
         6 -> WidgetKind.Button
         7 -> WidgetKind.Spacer
+        8 -> WidgetKind.LazyColumn
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
 
@@ -314,6 +323,9 @@ object Protocol {
         7 -> PropertyKind.OnSubmit
         8 -> PropertyKind.OnFocusLost
         9 -> PropertyKind.OnKeyDown
+        10 -> PropertyKind.ItemCount
+        11 -> PropertyKind.ItemKey
+        12 -> PropertyKind.OnRangeRequested
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
 

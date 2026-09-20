@@ -32,6 +32,7 @@ pub enum EventPayloadType {
     Text,
     ProtocolError,
     KeyDown,
+    Range,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,11 +45,11 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable;",
     "keys=Enter;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown;",
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText"
 );
 
@@ -110,6 +111,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::Text => 1,
                 EventPayloadType::ProtocolError => 2,
                 EventPayloadType::KeyDown => 3,
+                EventPayloadType::Range => 4,
             }],
         );
         index += 1;
@@ -154,6 +156,7 @@ define_wire_enum!(WIDGET_SCHEMA, WidgetKind {
     TextField = 5,
     Button = 6,
     Spacer = 7,
+    LazyColumn = 8,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -309,6 +312,9 @@ define_wire_enum!(PROPERTY_SCHEMA, PropertyKind {
     OnSubmit = 7,
     OnFocusLost = 8,
     OnKeyDown = 9,
+    ItemCount = 10,
+    ItemKey = 11,
+    OnRangeRequested = 12,
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -327,6 +333,11 @@ pub enum EventPayload<'a> {
         ctrl_key: bool,
         alt_key: bool,
         meta_key: bool,
+    },
+    /// FR-8: the Renderer asks the Host to materialise the visible item range.
+    RangeRequested {
+        start: u32,
+        count: u32,
     },
 }
 
@@ -360,5 +371,10 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "KeyDown",
         tag: 6,
         payload: EventPayloadType::KeyDown,
+    },
+    EventSchema {
+        name: "RangeRequested",
+        tag: 7,
+        payload: EventPayloadType::Range,
     },
 ];

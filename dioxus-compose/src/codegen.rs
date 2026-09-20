@@ -91,6 +91,7 @@ pub fn generate_kotlin() -> String {
             EventPayloadType::KeyDown => {
                 output.push_str(", val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean");
             }
+            EventPayloadType::Range => output.push_str(", val start: Int, val count: Int"),
         }
         output.push_str(") : HostEvent\n");
     }
@@ -292,7 +293,7 @@ object Protocol {
                 )
                 .unwrap();
             }
-            EventPayloadType::KeyDown => {
+            EventPayloadType::KeyDown | EventPayloadType::Range => {
                 writeln!(
                     output,
                     "                is HostEvent.{} -> null",
@@ -313,6 +314,7 @@ object Protocol {
             EventPayloadType::Text => 24,
             EventPayloadType::ProtocolError => 28,
             EventPayloadType::KeyDown => 20,
+            EventPayloadType::Range => 24,
         };
         writeln!(
             output,
@@ -391,6 +393,12 @@ object Protocol {
                 );
                 output.push_str("                    out.put(modifiers.toByte())\n");
                 output.push_str("                    out.put(0.toByte())\n");
+                output.push_str("                }\n");
+            }
+            EventPayloadType::Range => {
+                writeln!(output, "                is HostEvent.{} -> {{", event.name).unwrap();
+                output.push_str("                    out.putInt(event.start)\n");
+                output.push_str("                    out.putInt(event.count)\n");
                 output.push_str("                }\n");
             }
         }
@@ -698,6 +706,14 @@ pub fn generate_event_vector() -> Result<Vec<u8>, ProtocolError> {
                 meta_key: true,
             },
         },
+        HostEvent {
+            node_id: 10,
+            handler_id: 16,
+            payload: EventPayload::RangeRequested {
+                start: 100,
+                count: 20,
+            },
+        },
     ];
     let mut output = Vec::new();
     let mut encoded = Vec::new();
@@ -722,14 +738,15 @@ pub fn generate_vector_description() -> String {
   }},
   "events": {{
     "file": "events.bin",
-    "description": "Six independently decodable event records concatenated in schema order",
+    "description": "Seven independently decodable event records concatenated in schema order",
     "records": [
       {{ "type": "Clicked", "offset": 0, "length": 16, "nodeId": 7, "handlerId": 11 }},
       {{ "type": "TextChanged", "offset": 16, "length": 30, "nodeId": 8, "handlerId": 12, "text": "한글" }},
       {{ "type": "TextSubmitted", "offset": 46, "length": 28, "nodeId": 8, "handlerId": 13, "text": "done" }},
       {{ "type": "FocusLost", "offset": 74, "length": 16, "nodeId": 8, "handlerId": 14 }},
       {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }},
-      {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }}
+      {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }},
+      {{ "type": "RangeRequested", "offset": 145, "length": 24, "nodeId": 10, "handlerId": 16, "start": 100, "count": 20 }}
     ]
   }}
 }}

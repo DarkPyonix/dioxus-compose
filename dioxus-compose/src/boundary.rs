@@ -1,7 +1,7 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
 use crate::schema::{EventPayload, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH};
-use crate::{Element, KeyEvent, Selection, VirtualDom};
+use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
 use std::cell::RefCell;
 use std::ffi::c_int;
@@ -190,6 +190,9 @@ impl Host {
                 let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
                 key_event = Some(value.clone());
                 Event::new(Rc::new(value), true).into_any()
+            }
+            EventPayload::RangeRequested { start, count } => {
+                Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
         };
         let _dispatch_guard = EventDispatchGuard::enter();

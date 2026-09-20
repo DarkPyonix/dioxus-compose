@@ -1,7 +1,9 @@
 #![allow(non_snake_case)]
 
-use dioxus_core::{Element, EventHandler};
+use dioxus_core::{Callback, Element, EventHandler};
 use dioxus_core_macro::{Props, component, rsx};
+use dioxus_hooks::use_signal;
+use dioxus_signals::WritableExt as _;
 
 use crate as dioxus_elements;
 use crate::Key;
@@ -141,4 +143,63 @@ pub fn Button(
 #[component]
 pub fn Spacer(#[props(default)] width: f32, #[props(default)] height: f32) -> Element {
     rsx! { spacer { width, height } }
+}
+
+/// FR-8: the visible item range the Renderer asks the Host to materialise.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RangeRequest {
+    start: u32,
+    count: u32,
+}
+
+impl RangeRequest {
+    pub(crate) fn new(start: u32, count: u32) -> Self {
+        Self { start, count }
+    }
+
+    pub fn start(&self) -> usize {
+        self.start as usize
+    }
+
+    pub fn count(&self) -> usize {
+        self.count as usize
+    }
+}
+
+/// A windowed list (FR-8). The Host declares `item_count` and a stable key per item, and
+/// materialises only the range the Renderer last requested plus `buffer` items on each side.
+/// Scroll position and item identity stay in the Renderer (D5); the data stays in the Host,
+/// so scrolling back re-materialises an identical subtree.
+#[component]
+pub fn LazyColumn(
+    item_count: usize,
+    #[props(default = 4)] buffer: usize,
+    #[props(default)] key_of: Option<Callback<usize, String>>,
+    item: Callback<usize, Element>,
+) -> Element {
+    let mut range = use_signal(|| (0_usize, 0_usize));
+    let (start, count) = range();
+    let first = start.saturating_sub(buffer);
+    let last = start
+        .saturating_add(count)
+        .saturating_add(buffer)
+        .min(item_count);
+    rsx! {
+        lazycolumn {
+            item_count: item_count as i64,
+            onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
+                let requested = event.data();
+                range.set((requested.start(), requested.count()));
+            },
+            for index in first..last {
+                {
+                    let item_key = key_of
+                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
+                    rsx! {
+                        composebox { key: "{item_key}", item_key, {item.call(index)} }
+                    }
+                }
+            }
+        }
+    }
 }

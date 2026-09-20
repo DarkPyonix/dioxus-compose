@@ -457,6 +457,7 @@ fn widget_kind(name: &str) -> Result<WidgetKind, ProtocolError> {
         "TextField" => Ok(WidgetKind::TextField),
         "Button" => Ok(WidgetKind::Button),
         "Spacer" => Ok(WidgetKind::Spacer),
+        "LazyColumn" => Ok(WidgetKind::LazyColumn),
         _ => Err(ProtocolError::InvalidWidget(0)),
     }
 }
@@ -467,6 +468,8 @@ fn property_kind(name: &str) -> Option<PropertyKind> {
         "placeholder" => Some(PropertyKind::Placeholder),
         "enabled" => Some(PropertyKind::Enabled),
         "multiline" => Some(PropertyKind::Multiline),
+        "item_count" => Some(PropertyKind::ItemCount),
+        "item_key" => Some(PropertyKind::ItemKey),
         _ => None,
     }
 }
@@ -478,6 +481,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "submit" | "onsubmit" => Some(PropertyKind::OnSubmit),
         "focuslost" | "onfocuslost" => Some(PropertyKind::OnFocusLost),
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
+        "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         _ => None,
     }
 }

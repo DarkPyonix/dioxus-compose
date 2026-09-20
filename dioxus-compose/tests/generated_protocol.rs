@@ -79,3 +79,24 @@ fn fr12_keydown_roundtrips_through_vectors() {
     encode_event(&expected, &mut encoded).unwrap();
     assert_eq!(encoded, key_down);
 }
+
+#[test]
+fn fr8_range_requested_roundtrips_through_vectors() {
+    let bytes = include_bytes!("vectors/events.bin");
+    let range_requested = &bytes[145..169];
+    assert_eq!(&range_requested[0..4], &[7, 0, 24, 0]);
+
+    let expected = HostEvent {
+        node_id: 10,
+        handler_id: 16,
+        payload: EventPayload::RangeRequested {
+            start: 100,
+            count: 20,
+        },
+    };
+    assert_eq!(decode_event(range_requested).unwrap(), expected);
+
+    let mut encoded = Vec::new();
+    encode_event(&expected, &mut encoded).unwrap();
+    assert_eq!(encoded, range_requested);
+}
