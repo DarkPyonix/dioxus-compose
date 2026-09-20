@@ -43,6 +43,7 @@ Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭�
 ### FR-2 스키마 기반 렌더링 — `Agreed`
 Renderer는 스키마에 정의된 위젯 타입만 해석해서 해당 Compose 컴포저블로 렌더링합니다.
 - 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`, `LazyColumn`(FR-8)
+- 디자인 확장: `ScrollColumn`. 값 모델은 FR-13, 테마는 FR-14를 따릅니다
 - 수용 기준: 스키마에 없는 타입이나 속성을 받으면 크래시하지 않고 `ProtocolError` 이벤트를 보냅니다.
 
 ### FR-3 이벤트 전달 — `Agreed`
@@ -108,6 +109,125 @@ Host 측 규칙:
 
 ### FR-10 Modifier 값 모델 — `Agreed`
 Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]`. Renderer는 이를 `Modifier` 체인으로 재구성합니다.
+
+### FR-13 디자인 프리미티브 — `Draft`
+위젯만으로는 디자인을 할 수 없습니다. 스키마에 **값 모델**이 필요합니다. 값은 고정 레이아웃 레코드(PR-4)를 넘어야 하므로, Modifier 한 변형이 쓸 수 있는 공간은 `(tag: u16, first: u64, second: u64)`뿐입니다. 아래 프리미티브는 모두 이 한도 안에 들어갑니다.
+
+원칙: **역할(role)을 우선하고 리터럴은 탈출구로 둡니다.** 역할은 FR-14의 디자인 시스템이 해석하고, 리터럴은 그대로 그립니다.
+
+#### 13.1 색: `Color`와 `ColorRole`, 그리고 `Paint`
+- `Color`는 `u32` ARGB 한 개입니다(`#[repr(transparent)]`). 그라데이션과 이미지 브러시는 넣지 않습니다.
+- `ColorRole`은 의미 슬롯입니다: `Primary`, `OnPrimary`, `Secondary`, `OnSecondary`, `Surface`, `OnSurface`, `SurfaceVariant`, `OnSurfaceVariant`, `Background`, `OnBackground`, `Outline`, `OutlineVariant`, `Error`, `OnError`.
+- `Paint`는 둘 중 하나입니다: `Paint::Role(ColorRole)` 또는 `Paint::Literal(Color)`. `u64` 하나로 인코딩합니다(상위 32비트 = 종류, 하위 32비트 = 값).
+- 색을 받는 자리는 전부 `Paint`를 씁니다. 색 표현이 스키마에 두 번 등장하지 않게 하기 위해서입니다.
+- 수용 기준: `Modifier::Background(Paint::Role(ColorRole::Surface))`와 `Modifier::Background(Paint::Literal(Color::rgb(0x1B1B1F)))`가 같은 레코드 길이로 왕복하고, 디코드 결과가 입력과 같습니다.
+
+#### 13.2 타이포그래피
+- `TypeRole`은 9단 사다리입니다: `Display`, `Headline`, `Title`, `Subtitle`, `Body`, `BodyStrong`, `Label`, `Caption`, `Mono`. 세 디자인 시스템의 타입 스케일이 모두 이 사다리에 대응합니다.
+- `Text`의 속성으로 개별 재정의를 둡니다. 각각 독립된 `SetProp`이라서 FR-4의 변경분 전송이 유지됩니다.
+  - `type_role`, `font_size`(sp), `font_weight`(100~900), `line_height`, `letter_spacing`, `color`(`Paint`), `text_align`(`Start|Center|End|Justify`), `max_lines`, `overflow`(`Clip|Ellipsis|Visible`)
+- `type_role`만 지정한 Text는 디자인 시스템이 정한 크기·굵기·행간·자간을 그대로 씁니다. 재정의 속성이 있으면 그 축만 덮어씁니다.
+- 수용 기준: `Text { type_role: Title }` 한 개는 `SetProp` 1건만 보냅니다. `font_size`만 바꾸면 추가 `SetProp` 1건만 전송됩니다.
+
+#### 13.3 모양: `Shape`와 `Border`
+- `Modifier::Shape { top_start, top_end, bottom_end, bottom_start }` — f32 4개를 `u64` 2개에 담습니다.
+- `Modifier::ShapeRole(ShapeRole)` — `None|ExtraSmall|Small|Medium|Large|Full`. 실제 반지름은 디자인 시스템이 정합니다. Material 3의 12dp, HIG의 연속 곡률 느낌, Fluent의 4dp가 여기서 갈립니다.
+- `Modifier::Border { width, paint }` — `first` 하위 32비트에 너비, `second`에 `Paint`.
+- 테두리와 모양은 서로 독립입니다. Renderer는 `ShapeRole`/`Shape` 중 마지막에 적용된 것을 클립과 테두리 모두에 씁니다.
+
+#### 13.4 간격과 배치
+- `SpaceRole`: `None|Xs|Sm|Md|Lg|Xl|Xxl`. 밀도가 디자인 시스템마다 다른 부분이라 리터럴 dp보다 역할이 먼저입니다.
+- `Modifier::PaddingRole(SpaceRole)`, 기존 `Modifier::Padding(f32)`는 유지합니다.
+- `Modifier::PaddingEach { start, top, end, bottom }` — f32 4개.
+- `Modifier::Weight(f32)` — `RowScope`/`ColumnScope`의 weight입니다.
+- `Column`/`Row` 속성: `arrangement`(`Start|Center|End|SpaceBetween|SpaceAround|SpaceEvenly`), `spacing`(f32 dp) 또는 `space_role`, `alignment`(교차축 정렬).
+- `Box` 속성: `alignment`(9점 정렬).
+- 수용 기준: 위 속성/Modifier가 전부 `(tag, u64, u64)` 안에 들어가고, 인코딩 후 디코딩 결과가 입력과 같습니다.
+
+#### 13.5 고도(elevation)
+- `Modifier::Elevation(f32 dp)` 하나만 둡니다. **그림자를 어떻게 그릴지는 디자인 시스템의 규칙입니다.** Material 3는 톤 상승 + 그림자, HIG는 넓고 옅은 그림자, Fluent는 층 그림자 + 가는 스트로크로 같은 값을 다르게 해석합니다.
+- 그림자 색·오프셋·블러를 Host가 지정하는 경로는 두지 않습니다. 두면 디자인 시스템이 값만 받는 껍데기가 됩니다.
+
+#### 13.6 스크롤 컨테이너
+- `ScrollColumn`: 콘텐츠 전체를 구성하고 세로 스크롤만 붙입니다. 스크롤 위치는 Renderer가 소유합니다(D5).
+- `LazyColumn`: FR-8의 윈도잉 프로토콜을 씁니다.
+- 가로 스크롤 컨테이너는 넣지 않습니다. 세 샘플 어디에도 필요가 없고, 넣으면 검증되지 않은 위젯이 하나 늘어납니다.
+
+#### 13.7 넣지 않은 것과 이유
+| 제외 | 이유 |
+|---|---|
+| 그라데이션, 이미지 브러시 | `(u64, u64)`에 들어가지 않고, 리소스가 경계를 넘어야 합니다(PR-4 위반) |
+| 폰트 패밀리, 커스텀 폰트 | 폰트 리소스는 Renderer 번들에 있습니다. Host가 이름을 보내면 존재 검증이 런타임으로 밀립니다 |
+| 아이콘·이미지 위젯 | 에셋 전달 프로토콜이 따로 필요합니다. 별도 요구사항으로 분리합니다 |
+| 애니메이션 스펙(duration, easing) | 모션은 디자인 시스템의 규칙입니다(FR-14). Host가 값을 주면 13.5와 같은 이유로 무너집니다 |
+| 블러/머티리얼(HIG vibrancy), 리플 설정 | 플랫폼 전용 효과라 세 시스템 공통 축이 아닙니다 |
+| Host가 보내는 토큰 테이블 | FR-14에서 해석 위치를 Renderer로 정했습니다. 테이블을 보내면 그 결정이 뒤집힙니다 |
+
+### FR-14 디자인 시스템과 테마 모드 — `Draft`
+디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다. 1급으로 지원하는 세 가지는 Material 3, Apple HIG, WinUI/Fluent입니다.
+
+#### 14.1 추상화
+- 위젯은 **역할만 내보냅니다**(FR-13의 `ColorRole`, `TypeRole`, `ShapeRole`, `SpaceRole`, 그리고 `ButtonVariant` 같은 컴포넌트 변형).
+- 디자인 시스템은 Renderer 안에 있는 **토큰 테이블 + 컴포넌트 규칙 구현** 한 쌍입니다.
+- 따라서 **네 번째 디자인 시스템을 추가할 때 위젯 코드, 속성, Modifier, 와이어 포맷은 건드리지 않습니다.** Rust `DesignSystem` enum에 변형 1개, Kotlin에 테이블 1개와 규칙 구현 1개를 더하면 끝입니다.
+- 수용 기준: `DesignSystem`에 변형을 하나 추가했을 때 `widgets.rs`의 위젯 정의와 Modifier/Property 스키마가 변경되지 않습니다.
+
+#### 14.2 컴포넌트 변형
+컴포넌트 규칙이 붙는 자리는 변형(variant) 속성입니다. 값은 디자인 시스템 중립 이름입니다.
+- `Button.variant`: `Filled | Tonal | Outlined | Text`
+  - Material 3: Filled/Tonal/Outlined/Text 버튼, 큰 곡률, 리플.
+  - HIG: Filled은 강조 버튼(연속 곡률, 그림자 없음), Tonal은 회색 배경, Text는 내용 색만 쓰는 plain 버튼. 리플 대신 하이라이트.
+  - Fluent: Accent/Standard/Standard+stroke/Subtle, 4dp 곡률, 위쪽 밝은 테두리.
+- 같은 rsx 코드가 시스템에 따라 다른 모양으로 그려지는 것이 정상 동작입니다.
+
+#### 14.3 두 가지 테마 모드
+애플리케이션이 **명시적으로** 고릅니다.
+
+```rust
+// 모든 플랫폼에서 같은 디자인 시스템
+LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::Material3)).launch(app);
+// 호스트 플랫폼을 따라감. 대응이 없는 플랫폼에서 쓸 시스템을 반드시 함께 지정합니다
+LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch(app);
+```
+
+- `adaptive`는 **기본값이 아닙니다.** `with_theme`을 부르지 않으면 `Theme::unified(DesignSystem::Material3)`입니다. 기본값으로 플랫폼마다 다르게 보이는 동작은 두지 않습니다.
+- `Theme::adaptive`는 fallback 인자가 **필수**입니다. 그래서 adaptive에 "대응이 애매한 플랫폼"이 남지 않습니다.
+
+| 플랫폼 | `adaptive`가 고르는 시스템 |
+|---|---|
+| Android | Material 3 |
+| macOS, iOS | Apple HIG |
+| Windows | WinUI/Fluent |
+| Linux | fallback 인자 |
+| Web | fallback 인자 |
+
+- Linux에 GNOME/Adwaita를 매핑하지 않는 이유: Adwaita는 1급 지원 대상이 아니고, 셋 중 하나를 임의로 고르면 앱 저자가 의도하지 않은 모양이 됩니다. 고르게 하는 편이 정직합니다.
+- 명암(`ColorScheme`)은 `Light | Dark | FollowSystem`이고 기본은 `FollowSystem`입니다. 시스템 설정 변화는 Renderer가 먼저 알고 스스로 반영합니다. Host는 관여하지 않습니다(D5).
+
+#### 14.4 해석 위치: Renderer
+**토큰 해석과 컴포넌트 규칙은 Renderer가 수행합니다.** Host는 역할과 선택만 보냅니다.
+
+근거:
+- **PR-3/NFR-9(프레임 예산).** Host는 Renderer UI 스레드에서 돌기 때문에 Host의 작업이 그대로 프레임 예산(§5.1, 상호작용당 ≤ 0.5ms)에서 빠집니다. Host가 토큰을 푼다면 다크모드 전환이나 플랫폼 테마 변경이 트리 전체에 대한 `SetProp` 재전송(O(노드 수))이 됩니다. Renderer가 풀면 같은 변경이 `SetTheme` 1건이고, 나머지는 Compose의 `CompositionLocal` 무효화로 끝납니다.
+- **PR-1(동기 경계).** 시스템 명암 전환과 플랫폼 식별은 Renderer 쪽 정보입니다. Host가 해석하려면 Renderer→Host 질의가 필요한데, 경계는 동기 단방향 호출 모델이라 질의를 추가하면 PR-2의 표면이 늘어납니다.
+- **D5.** 테마는 UI 로컬 상태입니다. 스크롤 위치·포커스와 같은 부류입니다.
+- 비용: Host 쪽 단위 테스트는 "어떤 역할을 보냈는가"까지만 검증할 수 있고, 실제 색·치수는 Renderer 테스트에서 검증합니다. 이 분리를 받아들입니다.
+
+#### 14.5 와이어 추가분
+- Mutation `SetTheme { design_system: u16, adaptive: bool, fallback: u16, color_scheme: u16 }` — 루트(`node_id` 없음)에 적용합니다. Host는 초기 배치의 첫 레코드로 1회 보내고, 앱이 테마를 바꿀 때만 다시 보냅니다.
+- `DesignSystem` 태그: `Material3 = 1`, `AppleHig = 2`, `Fluent = 3`.
+- `ColorScheme` 태그: `Light = 1`, `Dark = 2`, `FollowSystem = 3`.
+- 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
+
+#### 14.6 Renderer 구현자가 채워야 할 표
+디자인 시스템마다 아래 7개를 채웁니다. 채워지면 위젯 코드는 건드리지 않습니다.
+1. `ColorRole` 14개 × {Light, Dark} 색값
+2. `TypeRole` 9개 → 크기/굵기/행간/자간/폰트
+3. `ShapeRole` 6개 → 곡률(HIG는 연속 곡률)
+4. `SpaceRole` 7개 → dp
+5. `Modifier::Elevation(dp)` → 그림자/톤/스트로크 렌더링 규칙
+6. `ButtonVariant` 4개 → 배경·전경·테두리·눌림 표현
+7. 모션: 상태 전환 duration과 easing
 
 ### FR-11 스키마 확장 (서드파티 위젯) — `Draft`
 Q2: 스키마에 없는 Compose 컴포넌트를 쓰는 방식입니다. 후보는 다음과 같습니다.
