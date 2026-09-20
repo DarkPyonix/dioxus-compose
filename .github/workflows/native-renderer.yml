@@ -14,8 +14,10 @@
 #     when nobody touched the renderer,
 #   - on demand.
 #
-# macOS only: SPEC NFR-4 lists Windows and Linux desktop as targets, but only
-# the macOS path is scripted today (build-native.sh refuses elsewhere).
+# Every target SPEC NFR-4 names is built here: macOS, Windows, Linux and iOS. None of
+# the maintainers own a Windows or Linux machine, so these jobs are the only place
+# those platforms are exercised at all. Keep them unconditional. A job that is skipped
+# by default reports green while proving nothing, which is how Windows sat untested.
 
 name: Native renderer
 
@@ -30,12 +32,6 @@ on:
     # 03:00 UTC daily. Scheduled runs only fire on the default branch.
     - cron: '0 3 * * *'
   workflow_dispatch:
-    inputs:
-      enable_linux:
-        description: 'Run the unverified Linux native-image experiment'
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: native-renderer-${{ github.ref }}
@@ -45,13 +41,12 @@ permissions:
   contents: read
 
 jobs:
-  # UNTESTED and disabled by default. Remove `if: ${{ false }}` only after a Windows x64
-  # developer has run build-native-windows.ps1 plus the interactive -RequireClick smoke test.
-  # The reference project measured about five minutes from a clean local build. Allow 15-30
-  # minutes on a standard hosted runner until this repository records a real CI duration.
-  windows-native-image-untested:
-    if: ${{ false }}
-    name: Windows x64 native-image build (disabled, untested)
+  # Runs on every push to develop and main, and nightly. Nobody here owns a Windows
+  # machine, so this job *is* the Windows verification: if it goes red, Windows is
+  # broken. It proves build, startup, render, clean close and exit 0. It cannot prove
+  # mouse input, because a hosted runner has no one to click (see SPEC PR-8).
+  windows:
+    name: Windows x64 native-image build and smoke test
     runs-on: windows-2022
     timeout-minutes: 90
     steps:
@@ -76,15 +71,15 @@ jobs:
         shell: powershell
         run: .\dioxus-compose-renderer\native\scripts\smoke-test-windows.ps1
 
-      - name: Upload the unverified renderer
+      - name: Upload the renderer
         uses: actions/upload-artifact@v4
         with:
-          name: dioxus-compose-renderer-windows-x64-untested
+          name: dioxus-compose-renderer-windows-x64
           path: dioxus-compose-renderer/build/native-image/dist/
           retention-days: 7
 
   build:
-    name: native-image build and smoke test
+    name: macOS arm64 native-image build and smoke test
     # macos-latest is Apple silicon; the renderer's AWT workarounds are
     # arm64 macOS specific (INTENT D9-macOS).
     runs-on: macos-latest
@@ -142,11 +137,12 @@ jobs:
           path: dioxus-compose-renderer/build/native-image/dist/
           retention-days: 7
 
-  # Disabled by default. This job is an executable Linux build hypothesis, not a claim that
-  # the renderer works there. Run it only with the enable_linux workflow-dispatch input.
-  linux_experiment:
-    name: Linux native-image experiment (unverified)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_linux == true }}
+  # Same reasoning as the Windows job: this is the only Linux verification the project
+  # has, so it runs unconditionally rather than behind a workflow-dispatch input. It
+  # builds and starts the renderer under Xvfb; a headless runner cannot judge what was
+  # drawn, so rendering quality on Linux stays unverified until a human looks at it.
+  linux:
+    name: Linux x64 native-image build and headless smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:
@@ -180,7 +176,7 @@ jobs:
       - name: Run Linux script contract tests
         run: bash dioxus-compose-renderer/native/scripts/tests/linux-build.test.sh
 
-      - name: Build the unverified Linux renderer under Xvfb
+      - name: Build the Linux renderer under Xvfb
         run: xvfb-run -a ./dioxus-compose-renderer/native/scripts/build-native-linux.sh
 
       - name: Inspect staged dynamic dependencies
@@ -193,9 +189,55 @@ jobs:
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
         run: xvfb-run -a ./dioxus-compose-renderer/native/scripts/smoke-test-linux.sh
 
-      - name: Upload unverified Linux artifacts for inspection
+      - name: Upload the Linux renderer for inspection
         uses: actions/upload-artifact@v4
         with:
-          name: dioxus-compose-renderer-linux-x64-unverified
+          name: dioxus-compose-renderer-linux-x64
           path: dioxus-compose-renderer/build/native-image-linux/dist/
+          retention-days: 7
+
+  # iOS is Kotlin/Native, not native-image, so it shares nothing with the jobs above
+  # except the interpreter source. It builds both slices (simulator and device) and
+  # runs the *desktop* C smoke host against the simulator archive, which is what makes
+  # it evidence for PR-2: one unmodified host, two renderers, one ABI.
+  ios:
+    name: iOS build and simulator smoke test
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the Kotlin toolchain, konan and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.konan
+            ~/.m2/repository
+          key: kotlin-ios-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-ios-
+
+      - name: Protocol codec tests on Kotlin/Native (PR-4)
+        working-directory: dioxus-compose-renderer
+        run: ./kotlin test -m iosrenderer
+
+      - name: Build the simulator archive
+        run: ./dioxus-compose-renderer/native/scripts/build-ios.sh
+
+      - name: Build the device archive
+        # Never run, only linked. It proves the arm64 device slice still compiles and
+        # exports the PR-2 symbols; running it needs a signed app on real hardware.
+        run: ./dioxus-compose-renderer/native/scripts/build-ios.sh --target device
+
+      - name: Simulator smoke test (PR-2)
+        run: ./dioxus-compose-renderer/native/scripts/ios-smoke-test.sh --screenshot "${RUNNER_TEMP}/ios-smoke.png"
+
+      - name: Upload the simulator screenshot
+        # The one artifact a human can judge without a Mac to hand.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-screenshot
+          path: ${{ runner.temp }}/ios-smoke.png
           retention-days: 7
