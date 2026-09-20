@@ -21,7 +21,7 @@
 <meta name="twitter:title" content="dioxus-compose: declarative UI in Rust, rendered by Compose">
 <meta name="twitter:description" content="Write declarative UI in Rust with Dioxus. An AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
 <meta name="twitter:image" content="http://darkpyonix.dev/dioxus-compose/assets/og.png">
-<link rel="stylesheet" href="../assets/style.css?v=16">
+<link rel="stylesheet" href="../assets/style.css?v=18">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -94,15 +94,15 @@
   </section>
   </div>
 
-  <div class="showcase">
+  <div class="showcase" id="how">
 <pre><code><span class="k">rsx!</span> {
     <span class="t">Column</span> {
         <span class="a">fill_max_width</span>: <span class="k">true</span>,
         <span class="t">Text</span> { <span class="a">text</span>: <span class="s">"Messages"</span> }
         <span class="t">TextField</span> {
             <span class="a">placeholder</span>: <span class="s">"Say something"</span>,
+            <span class="c">// Enter submits, Shift+Enter breaks the line</span>
             <span class="a">on_key_down</span>: <span class="k">move</span> |e| {
-                <span class="c">// Enter submits, Shift+Enter breaks the line</span>
                 <span class="k">if</span> e.key() == <span class="t">Key</span>::Enter &amp;&amp; !e.shift_key() {
                     submit();
                     e.consume();

@@ -5,6 +5,9 @@ use dioxus_core::{
 };
 use std::collections::HashMap;
 
+/// The first FR-13 property tag. Everything at or above it is a design property.
+const FIRST_DESIGN_PROPERTY: u16 = PropertyKind::TypeRole as u16;
+
 #[derive(Clone, Copy, Debug)]
 struct Handler {
     id: u64,
@@ -33,6 +36,8 @@ pub struct ComposeRenderer {
     nodes: Vec<Option<u32>>,
     handlers: Vec<Handler>,
     parents: HashMap<u32, (u32, u32)>,
+    /// Which FR-13 design properties a node has actually been given, one bit per tag.
+    design_props: HashMap<u32, u32>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
 }
@@ -52,6 +57,7 @@ impl ComposeRenderer {
             nodes: Vec::with_capacity(256),
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
+            design_props: HashMap::with_capacity(64),
             stack: Vec::with_capacity(64),
             error: None,
         }
@@ -90,6 +96,11 @@ impl ComposeRenderer {
             text,
             selection,
         });
+    }
+
+    /// FR-14.5: the root theme record. Written once per rebuild, never per frame.
+    pub fn set_theme(&mut self, theme: crate::schema::Theme) {
+        self.write(Mutation::SetTheme(theme));
     }
 
     pub fn set_text_node(&mut self, node_id: u32, text: &str, selection: Option<crate::Selection>) {
@@ -197,6 +208,32 @@ impl ComposeRenderer {
         }
     }
 
+    /// FR-13.8: role tag 0 means "not sent", so a design property at its neutral value
+    /// produces no record at all. A property that was set and then cleared still sends
+    /// its zero once, which is what tells the Renderer to drop the override.
+    fn should_write_design_property(
+        &mut self,
+        node_id: u32,
+        property: PropertyKind,
+        neutral: bool,
+    ) -> bool {
+        let tag = property as u16;
+        if tag < FIRST_DESIGN_PROPERTY {
+            return true;
+        }
+        let bit = 1_u32 << (tag - FIRST_DESIGN_PROPERTY);
+        let seen = self.design_props.get(&node_id).copied().unwrap_or(0);
+        if neutral {
+            if seen & bit == 0 {
+                return false;
+            }
+            self.design_props.insert(node_id, seen & !bit);
+        } else if seen & bit == 0 {
+            self.design_props.insert(node_id, seen | bit);
+        }
+        true
+    }
+
     fn set_property(&mut self, node_id: u32, name: &str, value: &AttributeValue) {
         let Some(property) = property_kind(name) else {
             // SPEC-GAP: dioxus-core has no fallible WriteMutations methods. Preserve the
@@ -212,6 +249,13 @@ impl ComposeRenderer {
             AttributeValue::None => PropertyValue::None,
             AttributeValue::Listener(_) | AttributeValue::Any(_) => return,
         };
+        let neutral = matches!(
+            value,
+            PropertyValue::None | PropertyValue::Integer(0) | PropertyValue::Float(0.0)
+        );
+        if !self.should_write_design_property(node_id, property, neutral) {
+            return;
+        }
         self.write(Mutation::SetProp {
             node_id,
             property,
@@ -458,6 +502,7 @@ fn widget_kind(name: &str) -> Result<WidgetKind, ProtocolError> {
         "Button" => Ok(WidgetKind::Button),
         "Spacer" => Ok(WidgetKind::Spacer),
         "LazyColumn" => Ok(WidgetKind::LazyColumn),
+        "ScrollColumn" => Ok(WidgetKind::ScrollColumn),
         _ => Err(ProtocolError::InvalidWidget(0)),
     }
 }
@@ -470,6 +515,21 @@ fn property_kind(name: &str) -> Option<PropertyKind> {
         "multiline" => Some(PropertyKind::Multiline),
         "item_count" => Some(PropertyKind::ItemCount),
         "item_key" => Some(PropertyKind::ItemKey),
+        // FR-13.2, 13.4 and 14.2.
+        "type_role" => Some(PropertyKind::TypeRole),
+        "font_size" => Some(PropertyKind::FontSize),
+        "font_weight" => Some(PropertyKind::FontWeight),
+        "line_height" => Some(PropertyKind::LineHeight),
+        "letter_spacing" => Some(PropertyKind::LetterSpacing),
+        "color" => Some(PropertyKind::Color),
+        "text_align" => Some(PropertyKind::TextAlign),
+        "max_lines" => Some(PropertyKind::MaxLines),
+        "overflow" => Some(PropertyKind::Overflow),
+        "arrangement" => Some(PropertyKind::Arrangement),
+        "spacing" => Some(PropertyKind::Spacing),
+        "space_role" => Some(PropertyKind::SpaceRole),
+        "alignment" => Some(PropertyKind::Alignment),
+        "variant" => Some(PropertyKind::Variant),
         _ => None,
     }
 }

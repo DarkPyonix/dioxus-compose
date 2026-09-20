@@ -36,9 +36,8 @@ const val TEXT_CHANGED_DEBOUNCE_MILLIS: Long = 120
  * commit events `TextSubmitted` and `FocusLost`; it changes the value only with `SetText`,
  * which is held back while a composition is in progress.
  *
- * SPEC-GAP: the protocol has no key event, so a Host handler can only decide about Enter
- * through `TextSubmitted`. Free-form key routing (and its consumption result) needs a new
- * event tag in the schema before it can exist.
+ * A Host `on_key_down` handler is offered the key first and its result decides consumption
+ * (SPEC FR-12); `TextSubmitted` remains for a field that only declares `on_submit`.
  *
  * SPEC-GAP: FR-5 says `TextChanged` is debounced but names no interval; 120 ms is chosen
  * here and must be confirmed in the SPEC.
@@ -59,6 +58,7 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
     val enabled = node.flag(PropertyKind.Enabled, default = true)
     val changeHandler = node.handler(PropertyKind.OnValueChange)
     val submitHandler = node.handler(PropertyKind.OnSubmit)
+    val keyDownHandler = node.handler(PropertyKind.OnKeyDown)
     val focusLostHandler = node.handler(PropertyKind.OnFocusLost)
     val placeholder = node.text(PropertyKind.Placeholder)
     val hostText = node.hostText
@@ -95,13 +95,20 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
         }
         // Preview is required because this intercepts Enter before the editor inserts a
         // newline; the Host's synchronous result decides whether it is consumed (SPEC FR-12).
+        //
+        // `value.composition` is read here rather than from the `composing` snapshot above so
+        // the state is the one that exists at the moment the key arrives: that read is the
+        // guard that keeps Enter away from Rust during a Korean composition (SPEC §6).
         .onPreviewKeyEvent { event ->
-            val isEnterDown = event.type == KeyEventType.KeyDown &&
-                (event.key == Key.Enter || event.key == Key.NumPadEnter)
-            if (!isEnterDown) {
+            val composingNow = value.composition != null
+            val consumedByHandler = keyDownHandler != null &&
+                dispatchKeyDown(nodeId, keyDownHandler, event, composingNow, dispatcher)
+            if (consumedByHandler) {
+                true
+            } else if (!isDispatchableKeyDown(event, composingNow)) {
                 false
             } else if (!shouldSubmitOnEnter(
-                    composing = value.composition != null,
+                    composing = composingNow,
                     multiline = multiline,
                     shiftPressed = event.isShiftPressed,
                     hasSubmitHandler = submitHandler != null,

@@ -1,4 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+// The resolution rules and every error message live here, free of Cargo directives so
+// tests/renderer_resolution.rs can exercise them directly (SPEC NFR-10, NFR-11).
+#[allow(dead_code)]
+mod renderer_dir {
+    include!("build/renderer_dir.rs");
+}
+
+use renderer_dir::{RENDERER_DIR_ENV, artifact_target, resolve_renderer};
 
 fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
@@ -9,6 +18,8 @@ fn main() {
     // time, not while this cdylib is being built.
     println!("cargo:rustc-link-arg-cdylib=-Wl,-undefined,dynamic_lookup");
 
+    println!("cargo:rerun-if-env-changed={RENDERER_DIR_ENV}");
+
     if std::env::var_os("CARGO_FEATURE_NATIVE_RENDERER").is_none() {
         return;
     }
@@ -16,40 +27,36 @@ fn main() {
     let manifest_dir = PathBuf::from(
         std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"),
     );
-    let renderer_lib_dir = renderer_lib_dir(&manifest_dir);
+    // Only present in a checkout of this repository. A consumer of the published crate
+    // has no workspace, which is exactly why resolution has to fail with instructions
+    // rather than pass a nonexistent path to the linker (SPEC NFR-11).
+    let workspace_lib_dir =
+        manifest_dir.join("../dioxus-compose-renderer/build/native-image/dist/lib");
+    let crate_version = std::env::var("CARGO_PKG_VERSION").expect("Cargo sets CARGO_PKG_VERSION");
+    let target = artifact_target(
+        &std::env::var("CARGO_CFG_TARGET_OS").expect("checked above"),
+        &std::env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo sets CARGO_CFG_TARGET_ARCH"),
+    );
 
-    println!("cargo:rerun-if-env-changed={RENDERER_DIR_ENV}");
-    println!("cargo:rerun-if-changed={}", renderer_lib_dir.display());
-    println!(
-        "cargo:rustc-link-search=native={}",
-        renderer_lib_dir.display()
-    );
+    let renderer = match resolve_renderer(
+        std::env::var_os(RENDERER_DIR_ENV)
+            .map(PathBuf::from)
+            .as_deref(),
+        &workspace_lib_dir,
+        &crate_version,
+        &target,
+    ) {
+        Ok(renderer) => renderer,
+        // A build script panic is reported as the build failure itself, message and all.
+        // That is the point: the consumer reads this instead of an undefined-symbol dump.
+        Err(message) => panic!("\n\n{message}\n\n"),
+    };
+
+    let lib_dir = renderer.lib_dir;
+    println!("cargo:rerun-if-changed={}", lib_dir.display());
+    println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=dylib=dioxus_compose_renderer");
-    println!(
-        "cargo:rustc-link-arg=-Wl,-rpath,{}",
-        renderer_lib_dir.display()
-    );
+    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     // The Renderer resolves the Host's dioxus_compose_host_* symbols from this executable.
     println!("cargo:rustc-link-arg=-Wl,-export_dynamic");
-}
-
-const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
-
-/// Where to find the Renderer shared library, in order of precedence:
-///
-/// 1. `DIOXUS_COMPOSE_RENDERER_DIR`, for a downloaded release artifact, a vendored copy, or
-///    a distribution staged somewhere else entirely.
-/// 2. The renderer built from this workspace by
-///    `dioxus-compose-renderer/native/scripts/build-native.sh`.
-///
-/// Publishing the renderer as a prebuilt artifact is the planned distribution route, and it
-/// arrives through (1): the build is ~85 MB of shared library and Skia, far past what a
-/// crates.io package can carry, so the crate will fetch it and point this variable at the
-/// unpacked directory. Keeping the lookup ordered this way now means that change does not
-/// touch anything but the fetching step.
-fn renderer_lib_dir(manifest_dir: &Path) -> PathBuf {
-    if let Some(dir) = std::env::var_os(RENDERER_DIR_ENV) {
-        return PathBuf::from(dir);
-    }
-    manifest_dir.join("../dioxus-compose-renderer/build/native-image/dist/lib")
 }

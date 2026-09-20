@@ -69,21 +69,41 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
             protocolErrors += table.drainErrors()
         }
         // Reported after the transaction so the Host is never re-entered mid-batch.
+        //
+        // A Host is free to reject the report itself: PR-2 gives the report no success
+        // contract, and the Rust Host answers a `ProtocolError` event with a protocol-error
+        // status because no handler owns it. Letting that failure out of here would turn a
+        // reported error into a crashed composition, which is exactly what NFR-7 forbids,
+        // so the report is best effort and the original error is what gets printed.
         protocolErrors.forEach { error ->
-            connection.dispatchEvent(
-                HostEvent.ProtocolError(
-                    nodeId = NodeTable.ROOT_ID,
-                    handlerId = 0,
-                    code = error.code,
-                    message = error.message,
-                ),
-            ) { mutation -> Snapshot.withMutableSnapshot { table.apply(mutation) } }
+            try {
+                connection.dispatchEvent(
+                    HostEvent.ProtocolError(
+                        nodeId = NodeTable.ROOT_ID,
+                        handlerId = 0,
+                        code = error.code,
+                        message = error.message,
+                    ),
+                ) { mutation -> Snapshot.withMutableSnapshot { table.apply(mutation) } }
+            } catch (report: Throwable) {
+                if (report is InterruptedException) throw report
+                onProtocolError(error)
+            }
         }
     }
 
     private companion object {
         const val PROTOCOL_DECODE_ERROR = 100
     }
+}
+
+/**
+ * Where a protocol error goes when the Host will not take the report (SPEC NFR-7).
+ *
+ * Tests replace it to assert on what was reported; production leaves it printing.
+ */
+internal var onProtocolError: (TableError) -> Unit = { error ->
+    System.err.println("dioxus-compose protocol error ${error.code}: ${error.message}")
 }
 
 /** Creates a Host bound to the composition's lifetime (SPEC PR-7 naming). */
