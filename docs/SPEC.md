@@ -79,6 +79,31 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 LLM 응답 스트리밍을 위해 Text 노드에 `AppendText` 명령을 둡니다. Host는 프레임 주기(약 16ms) 단위로 토큰을 모아서 보냅니다.
 - 수용 기준: 초당 100토큰 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다.
 
+### FR-12 이벤트 소비(consume) — `Agreed`
+Dioxus 0.7의 이벤트 핸들러는 반환값이 없습니다. 그래서 핸들러가 **이벤트 객체에 소비 표시를 남기고**, 경계가 그 값을 읽어 `MutationBatch.result`로 돌려줍니다. 웹의 `preventDefault()`, Compose의 `PointerInputChange.consume()`과 같은 모델입니다.
+
+```rust
+rsx! {
+    TextField {
+        on_key_down: move |event| {
+            if event.key() == Key::Enter && !event.shift_key() {
+                submit();
+                event.consume();   // Renderer의 onKeyEvent가 true를 반환합니다
+            }
+        }
+    }
+}
+```
+
+Renderer 측 규칙:
+- `Modifier.onKeyEvent`에 연결합니다. `onPreviewKeyEvent`는 전역 단축키처럼 가로채야 하는 경우에만 씁니다.
+- **IME 조합 중에는 키 이벤트를 Host로 보내지 않습니다.** 조합 중의 Enter는 제출이 아니라 조합 확정입니다. 이를 어기면 한글 입력 중 Enter에서 조합 중이던 글자가 사라진 채 제출됩니다(FR-5).
+- 포인터 이벤트도 같은 방식으로 `PointerInputChange.consume()`에 대응시킵니다.
+
+Host 측 규칙:
+- 핸들러 실행 중에 Renderer를 동기로 호출하지 않습니다(재진입 금지). 상태만 바꾸고 프레임 요청으로 넘깁니다.
+- 수용 기준: 멀티라인 TextField에서 Enter는 제출되고 줄바꿈이 생기지 않으며, Shift+Enter는 줄바꿈만 생기고 제출되지 않습니다. 한글 조합 중 Enter는 조합만 확정합니다.
+
 ### FR-10 Modifier 값 모델 — `Agreed`
 Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]`. Renderer는 이를 `Modifier` 체인으로 재구성합니다.
 
@@ -100,7 +125,7 @@ Q2: 스키마에 없는 Compose 컴포넌트를 쓰는 방식입니다. 후보�
 
 - VirtualDom은 **Renderer의 UI 스레드에서** 돕니다. 이 스레드는 Host의 전용 스레드가 아닙니다.
 - 사용자 입력이 들어오면 Renderer가 Host 핸들러를 직접 호출합니다. Host는 그 자리에서 핸들러를 실행하고 diff를 계산한 뒤, 결과 Mutation 배치와 반환값을 돌려줍니다.
-- 동기 반환값을 지원합니다. 예: `onKeyEvent`의 "처리됨" 여부. Enter는 제출, Shift+Enter는 줄바꿈으로 나누는 처리가 여기에 해당합니다.
+- 동기 반환값을 지원합니다. 예: `onKeyEvent`의 "처리됨" 여부. Enter는 제출, Shift+Enter는 줄바꿈으로 나누는 처리가 여기에 해당합니다. 표현 방식은 FR-12를 따릅니다.
 - 경계에 비동기 큐를 두지 않습니다. 스레드 간 통신은 PR-3의 wake 신호 하나뿐입니다.
 
 ### PR-2 경계 표면 — `Draft`
