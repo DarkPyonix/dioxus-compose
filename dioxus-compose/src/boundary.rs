@@ -277,9 +277,37 @@ impl Host {
     }
 }
 
+/// Holds the thread's `Host` and, crucially, keeps it out of thread-local teardown.
+///
+/// NFR-7: dropping a `VirtualDom` reaches back into the Dioxus runtime's own
+/// thread-locals. Thread-local destruction order is unspecified, so if the UI thread
+/// ends without `dioxus_compose_host_shutdown`, that drop can run after the Dioxus
+/// locals are already gone and panic with "cannot access a TLS value during or after
+/// destruction". A panic in a destructor is non-unwinding: it aborts the process, which
+/// is the abort NFR-7 forbids.
+///
+/// So the slot empties itself and leaks the `Host` when the thread is tearing down. An
+/// orderly `shutdown` still drops it properly; only the unorderly path leaks, and that
+/// path is a thread ending anyway.
+struct HostSlot(RefCell<Option<Host>>);
+
+impl Drop for HostSlot {
+    fn drop(&mut self) {
+        std::mem::forget(self.0.borrow_mut().take());
+    }
+}
+
+impl std::ops::Deref for HostSlot {
+    type Target = RefCell<Option<Host>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 thread_local! {
     static APP: RefCell<Option<fn() -> Element>> = const { RefCell::new(None) };
-    static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
+    static HOST: HostSlot = const { HostSlot(RefCell::new(None)) };
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -372,14 +400,22 @@ unsafe fn write_batch(
     Ok(())
 }
 
-fn ffi_status(operation: impl FnOnce() -> Result<(), ProtocolError>) -> i32 {
+/// A call-order failure is not a malformed message: PR-2 declares distinct statuses so
+/// the Renderer can tell "you called me too early" from "your bytes were wrong". The
+/// closures below therefore yield a status directly.
+fn ffi_status(operation: impl FnOnce() -> Result<(), i32>) -> i32 {
     // SPEC-GAP: PR-2 provides no Host-to-Renderer event return channel for a
     // ProtocolError event. Malformed calls therefore return STATUS_PROTOCOL_ERROR.
     match catch_unwind(AssertUnwindSafe(operation)) {
         Ok(Ok(())) => STATUS_OK,
-        Ok(Err(_)) => STATUS_PROTOCOL_ERROR,
+        Ok(Err(status)) => status,
         Err(_) => STATUS_PANIC,
     }
+}
+
+/// Every `ProtocolError` leaving an export is reported as one status code.
+fn protocol_error(_error: ProtocolError) -> i32 {
+    STATUS_PROTOCOL_ERROR
 }
 
 #[unsafe(no_mangle)]
@@ -394,20 +430,20 @@ pub unsafe extern "C" fn dioxus_compose_host_init(
 ) -> i32 {
     ffi_status(|| {
         // SAFETY: Validated according to the function's C ABI contract.
-        let bytes = unsafe { input_slice(handshake, len)? };
-        let _mode = parse_handshake(bytes)?;
+        let bytes = unsafe { input_slice(handshake, len) }.map_err(protocol_error)?;
+        let _mode = parse_handshake(bytes).map_err(protocol_error)?;
         let app = APP
             .with(|slot| *slot.borrow())
-            .ok_or(ProtocolError::InvalidEnvelope)?;
+            .ok_or(STATUS_NOT_INITIALIZED)?;
         HOST.with(|slot| {
             let mut host_slot = slot.borrow_mut();
             if host_slot.is_some() {
-                return Err(ProtocolError::InvalidEnvelope);
+                return Err(STATUS_ALREADY_INITIALIZED);
             }
             let mut host = Host::new(app);
-            let batch = host.rebuild()?;
+            let batch = host.rebuild().map_err(protocol_error)?;
             // SAFETY: `out` is checked before writing.
-            unsafe { write_batch(out, batch, 0)? };
+            unsafe { write_batch(out, batch, 0) }.map_err(protocol_error)?;
             *host_slot = Some(host);
             Ok(())
         })
@@ -426,13 +462,13 @@ pub unsafe extern "C" fn dioxus_compose_host_dispatch_event(
 ) -> i32 {
     ffi_status(|| {
         // SAFETY: Validated according to the function's C ABI contract.
-        let bytes = unsafe { input_slice(event, len)? };
+        let bytes = unsafe { input_slice(event, len) }.map_err(protocol_error)?;
         HOST.with(|slot| {
             let mut host_slot = slot.borrow_mut();
-            let host = host_slot.as_mut().ok_or(ProtocolError::InvalidEnvelope)?;
-            let (batch, result) = host.dispatch_event(bytes)?;
+            let host = host_slot.as_mut().ok_or(STATUS_NOT_INITIALIZED)?;
+            let (batch, result) = host.dispatch_event(bytes).map_err(protocol_error)?;
             // SAFETY: `out` is checked before writing.
-            unsafe { write_batch(out, batch, result) }
+            unsafe { write_batch(out, batch, result) }.map_err(protocol_error)
         })
     })
 }
@@ -449,10 +485,12 @@ pub unsafe extern "C" fn dioxus_compose_host_render_frame(
     ffi_status(|| {
         HOST.with(|slot| {
             let mut host_slot = slot.borrow_mut();
-            let host = host_slot.as_mut().ok_or(ProtocolError::InvalidEnvelope)?;
-            let batch = host.render_frame(frame_time_nanos)?;
+            let host = host_slot.as_mut().ok_or(STATUS_NOT_INITIALIZED)?;
+            let batch = host
+                .render_frame(frame_time_nanos)
+                .map_err(protocol_error)?;
             // SAFETY: `out` is checked before writing.
-            unsafe { write_batch(out, batch, 0) }
+            unsafe { write_batch(out, batch, 0) }.map_err(protocol_error)
         })
     })
 }
@@ -688,9 +726,10 @@ mod tests {
                 dioxus_compose_host_init(std::ptr::null(), 1, &mut output),
                 STATUS_PROTOCOL_ERROR
             );
+            // No handshake has run on this thread, so this is a call-order error.
             assert_eq!(
                 dioxus_compose_host_render_frame(0, &mut output),
-                STATUS_PROTOCOL_ERROR
+                STATUS_NOT_INITIALIZED
             );
             dioxus_compose_host_release_batch(std::ptr::null_mut());
         }

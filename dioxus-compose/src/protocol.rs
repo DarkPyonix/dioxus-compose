@@ -13,6 +13,8 @@ const TAG_REMOVE: u16 = 6;
 const TAG_SET_TEXT: u16 = 7;
 const TAG_APPEND_TEXT: u16 = 8;
 const ENVELOPE_LEN: usize = 12;
+/// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
+const MIN_RECORD_LEN: usize = 8;
 
 const VALUE_NONE: u16 = 0;
 const VALUE_STRING: u16 = 1;
@@ -120,15 +122,15 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
     let payload = match tag {
         EVENT_CLICK if record_len == 16 => crate::schema::EventPayload::Clicked,
         EVENT_TEXT_CHANGED if record_len == 24 => {
-            crate::schema::EventPayload::TextChanged(read_string(bytes, 16)?)
+            crate::schema::EventPayload::TextChanged(read_string(bytes, 16, record_len)?)
         }
         EVENT_TEXT_SUBMITTED if record_len == 24 => {
-            crate::schema::EventPayload::TextSubmitted(read_string(bytes, 16)?)
+            crate::schema::EventPayload::TextSubmitted(read_string(bytes, 16, record_len)?)
         }
         EVENT_FOCUS_LOST if record_len == 16 => crate::schema::EventPayload::FocusLost,
         EVENT_PROTOCOL_ERROR if record_len == 28 => crate::schema::EventPayload::ProtocolError {
             code: read_u32(bytes, 16)?,
-            message: read_string(bytes, 20)?,
+            message: read_string(bytes, 20, record_len)?,
         },
         EVENT_KEY_DOWN if record_len == 20 => {
             let raw_key = read_u16(bytes, 16)?;
@@ -447,7 +449,12 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
     if records_len < ENVELOPE_LEN || records_len > bytes.len() || records_len % 4 != 0 {
         return Err(ProtocolError::InvalidEnvelope);
     }
-    let mut output = Vec::with_capacity(count);
+    // NFR-7: `count` is attacker-controlled, so it only sizes the buffer up to what the
+    // record region could actually hold. The shortest mutation record is `Remove` at 8
+    // bytes, so that is the ceiling. Reserving `count` directly let a 12-byte message ask
+    // for a >100 GB allocation.
+    let capacity = count.min((records_len - ENVELOPE_LEN) / MIN_RECORD_LEN);
+    let mut output = Vec::with_capacity(capacity);
     let mut position = ENVELOPE_LEN;
     while position < records_len {
         let tag = read_u16(bytes, position)?;
@@ -468,7 +475,9 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                 let value_kind = read_u16(bytes, payload + 6)?;
                 let value = match value_kind {
                     VALUE_NONE => PropertyValue::None,
-                    VALUE_STRING => PropertyValue::String(read_string(bytes, payload + 8)?),
+                    VALUE_STRING => {
+                        PropertyValue::String(read_string(bytes, payload + 8, records_len)?)
+                    }
                     VALUE_BOOL => PropertyValue::Bool(read_u64(bytes, payload + 8)? != 0),
                     VALUE_I64 => PropertyValue::Integer(read_u64(bytes, payload + 8)? as i64),
                     VALUE_F32 => {
@@ -510,14 +519,14 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                 let end = read_u32(bytes, payload + 16)?;
                 Mutation::SetText {
                     node_id: read_u32(bytes, payload)?,
-                    text: read_string(bytes, payload + 4)?,
+                    text: read_string(bytes, payload + 4, records_len)?,
                     selection: (start != u32::MAX || end != u32::MAX)
                         .then_some(Selection { start, end }),
                 }
             }
             TAG_APPEND_TEXT if len == 16 => Mutation::AppendText {
                 node_id: read_u32(bytes, payload)?,
-                text: read_string(bytes, payload + 4)?,
+                text: read_string(bytes, payload + 4, records_len)?,
             },
             TAG_CREATE..=TAG_APPEND_TEXT => {
                 return Err(ProtocolError::InvalidRecordLength);
@@ -567,7 +576,13 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
     }
 }
 
-fn read_string(bytes: &[u8], position: usize) -> Result<&str, ProtocolError> {
+/// Reads a `(offset: u32, len: u32)` string reference at `position`.
+///
+/// PR-4 keeps strings in the arena that follows the records, so `arena_start` is the
+/// first byte a string may legally point at. Without that floor a hostile Renderer can
+/// aim a string at the record region and have the decoder reinterpret record headers as
+/// text - garbage decoding into a valid-looking mutation (NFR-7).
+fn read_string(bytes: &[u8], position: usize, arena_start: usize) -> Result<&str, ProtocolError> {
     let offset =
         usize::try_from(read_u32(bytes, position)?).map_err(|_| ProtocolError::LengthOverflow)?;
     let len = usize::try_from(read_u32(bytes, position + 4)?)
@@ -575,6 +590,9 @@ fn read_string(bytes: &[u8], position: usize) -> Result<&str, ProtocolError> {
     let end = offset
         .checked_add(len)
         .ok_or(ProtocolError::InvalidStringRange)?;
+    if offset < arena_start {
+        return Err(ProtocolError::InvalidStringRange);
+    }
     let value = bytes
         .get(offset..end)
         .ok_or(ProtocolError::InvalidStringRange)?;
