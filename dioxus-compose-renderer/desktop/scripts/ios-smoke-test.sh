@@ -170,8 +170,8 @@ if (( await_click )); then
         "Either nobody tapped the button, or hit testing does not reach dioxus_compose_host_dispatch_event on iOS." \
         "Console log: $log"
     echo
-    echo "ok: a tap reached the host handler on iOS (SPEC PR-2)"
+    echo "ok: a tap reached the host handler on iOS"
 fi
 
 echo
-echo "ok: the renderer ran on the simulator and called back into the host (SPEC PR-2)"
+echo "ok: the renderer ran on the simulator and called back into the host"

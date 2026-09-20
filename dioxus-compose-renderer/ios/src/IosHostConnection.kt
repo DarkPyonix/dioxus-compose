@@ -158,7 +158,11 @@ private object HostSymbols {
     private fun <T : CFunction<*>> lookup(name: String): CPointer<T> =
         dlsym(image, name)?.reinterpret()
             ?: throw HostCallException(
-                "$name is not in this image: the Host executable must link and export the " +
-                    "five dioxus_compose_host_* functions (SPEC PR-2)",
+                "$name is not in this image. The renderer resolves the Host's functions by " +
+                    "name at startup, so the Host executable has to export all five of " +
+                    "dioxus_compose_host_init, _dispatch_event, _render_frame, " +
+                    "_release_batch and _shutdown. If they are present but not found, they " +
+                    "are probably missing from the dynamic symbol table: build the Host " +
+                    "with -Wl,-export_dynamic.",
             )
 }

@@ -65,7 +65,7 @@ done
 
 as_mb() { awk -v b="$1" 'BEGIN { printf "%.1f", b / 1048576 }'; }
 
-echo "== NFR-3 measurement: $label =="
+echo "== resident memory measurement: $label =="
 echo "pid            $host_pid"
 echo "footprint      $(as_mb "$last") MB"
 echo "peak           $(as_mb "$peak") MB"

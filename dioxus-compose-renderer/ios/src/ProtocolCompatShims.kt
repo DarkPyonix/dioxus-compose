@@ -9,6 +9,10 @@ import java.nio.charset.Charset
  * `toByteArray` produces, so the charset argument is checked rather than interpreted.
  */
 internal fun String.toByteArray(charset: Charset): ByteArray {
-    require(charset.name == "UTF-8") { "the protocol encodes strings as UTF-8 (SPEC PR-4)" }
+    require(charset.name == "UTF-8") {
+        "this shim only encodes UTF-8, and ${charset.name} was requested. " +
+            "Every string on the wire is UTF-8, so a different charset here means the " +
+            "caller and the wire format disagree about what the bytes mean."
+    }
     return encodeToByteArray()
 }
