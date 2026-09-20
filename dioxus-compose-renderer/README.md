@@ -1,26 +1,48 @@
-This is a Kotlin Multiplatform project targeting Android, Desktop (JVM), iOS, Web, built with the [Kotlin Toolchain](https://kotlin-toolchain.org/dev/).
+# dioxus-compose-renderer
 
-- [/androidApp](./androidApp) contains the Android application.
-- [/desktopApp](./desktopApp) contains the desktop (JVM) application.
-- [/iosApp](./iosApp) contains the iOS application.
-- [/shared](./shared) holds the code shared across your applications — Compose UI, business logic, and platform-specific implementations. [src](./shared/src) is for common code; the sibling `src@<platform>` folders (for example `src@android`) hold code compiled only for the platform named in the folder.
-- [/webApp](./webApp) contains the web application, compiled to WebAssembly with Kotlin/Wasm.
+The Kotlin half of dioxus-compose: the Compose Multiplatform renderer that interprets the
+protocol the Rust Host sends and draws it with real Compose widgets.
 
-The `kotlin` (macOS/Linux) and `kotlin.bat` (Windows) scripts in the project root are self-bootstrapping wrappers for the Kotlin Toolchain: they download the pinned toolchain version on first use, so no separate installation is required. Build the whole project with `./kotlin build`.
+Built with the [Kotlin Toolchain](https://kotlin-toolchain.org/dev/). The `kotlin` (macOS,
+Linux) and `kotlin.bat` (Windows) wrappers in this directory bootstrap the pinned toolchain
+on first use, so nothing has to be installed separately.
 
-### Running
+## Modules
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also run each module from the command line:
+| Module | What it is |
+|---|---|
+| `native` | **The renderer.** The schema interpreter, the `HostConnection` implementations, the C entry points, and the macOS native-image build (`native/scripts/`, `native/c/`). This is the module that matters. |
+| `shared` | Compose code shared across platforms, including the IME test screen used to verify text input in a native build. |
+| `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
+| `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
 
-- Android app: `./kotlin run -m androidApp`
-- Desktop app: `./kotlin run -m desktopApp`
-- iOS app: `./kotlin run -m iosApp`
-- Web app: `./kotlin run -m webApp`
+The generated protocol bindings live in `native/src/protocol/Protocol.gen.kt`. They are
+produced from the Rust schema by `cargo run -p dioxus-compose --bin codegen`, edit the Rust
+schema, never that file.
 
-### Testing
+## Running
 
-Run the project's tests with `./kotlin test`, or `./kotlin test -m <module>` for a single module.
+```bash
+./kotlin run -m native     # the renderer's development harness on the JVM
+./kotlin run -m desktop    # the Compose development shell
+```
 
----
+## Testing
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html), [Kotlin Toolchain](https://kotlin-toolchain.org/dev/), [Compose Multiplatform](https://kotlinlang.org/compose-multiplatform/), [Kotlin/Wasm](https://kotl.in/wasm/).
+```bash
+./kotlin test              # everything
+./kotlin test -m native    # the interpreter's tests
+```
+
+## Native image
+
+The desktop renderer ships as a native shared library, built with Liberica NIK (upstream
+GraalVM skips AWT on macOS). From this directory:
+
+```bash
+./native/scripts/build-native.sh   # build the shared library and stage lib/
+./native/scripts/smoke-test.sh     # link a C host against it and open a window
+```
+
+See the root [README](../README.md) for prerequisites and the
+[guide](http://darkpyonix.dev/dioxus-compose/) for everything else.

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started · dioxus-compose guide</title>
+<meta name="description" content="Prerequisites, building the Compose renderer as a native shared library, and running the desktop demo on macOS.">
+<link rel="alternate" hreflang="en" href="getting-started.html">
+<link rel="alternate" hreflang="ko" href="../ko/getting-started.html">
+<link rel="alternate" hreflang="x-default" href="getting-started.html">
+<link rel="stylesheet" href="../assets/style.css?v=3">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="getting-started.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/getting-started.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>Guide</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html" aria-current="page">Getting started</a></li>
+        <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
+        <li><a href="design-systems.html">Design systems</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#prerequisites">Prerequisites</a></li>
+        <li><a href="#renderer">Build the renderer</a></li>
+        <li><a href="#smoke">Smoke-test the library</a></li>
+        <li><a href="#demo">Run the demo</a></li>
+        <li><a href="#checks">Run the checks</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Getting started</p>
+    <h1>From a clean checkout to a window on screen</h1>
+    <p class="lede">
+      Today this path is macOS only. The renderer is compiled ahead of time into a shared
+      library, and your Rust binary links against it, so the renderer has to be built before
+      any Rust example will run.
+    </p>
+
+    <h2 id="prerequisites">Prerequisites</h2>
+    <p>
+      Before anything else, run <code>./scripts/setup-check.sh</code>. It checks every tool the
+      build and the quality gate need, names what is missing, and prints the command that fixes
+      it. Everything in the table below is on its list.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">What</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+          <tr><td>macOS on Apple silicon or Intel</td><td>The native build script exits immediately on anything but Darwin.</td></tr>
+          <tr><td>Xcode command line tools</td><td>The build compiles a few C and Objective-C files and links the library.</td></tr>
+          <tr><td>A Rust toolchain (stable)</td><td>The Host crate. <code>rustup</code> is the usual way in.</td></tr>
+          <tr><td><strong>Liberica NIK 25 Full</strong></td><td>Builds the renderer with <code>native-image</code>. See the note below, an ordinary GraalVM will not do.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="warn">
+      <span class="label">Use Liberica NIK, not upstream GraalVM</span>
+      <p>
+        Upstream GraalVM skips AWT support on Darwin (<a href="https://github.com/oracle/graal/issues/13272">oracle/graal#13272</a>,
+        still open as of 2026-09). Compose Desktop draws through AWT, so an image built with upstream
+        GraalVM has no window to show. Liberica NIK Full links AWT statically, which is why it is the
+        required toolchain on macOS.
+      </p>
+    </div>
+
+    <p>
+      The build script looks for NIK in the standard install location and otherwise reads
+      <code>GRAALVM_HOME</code>:
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>shell</figcaption>
+<pre><code><span class="c"># Auto-detected if installed here:</span>
+~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home
+
+<span class="c"># Otherwise point at it explicitly:</span>
+<span class="k">export</span> GRAALVM_HOME=/path/to/bellsoft-liberica-vm-full-openjdk25/Contents/Home</code></pre>
+    </figure>
+
+    <p>
+      If you have no NIK at all, <code>./scripts/install-nik.sh</code> installs it. The install is
+      addressed by version, so a warm cache makes a second run a no-op, the download happens once
+      per NIK version, not once per invocation. The build script itself refuses an installation
+      without <code>lib/static/darwin-*/libawt_lwawt.a</code>, which catches a stock GraalVM up
+      front instead of at the end of a long build.
+    </p>
+
+    <p>
+      Kotlin itself needs no separate install. The renderer project ships a self-bootstrapping
+      <code>./kotlin</code> wrapper that downloads the pinned Kotlin Toolchain on first use.
+    </p>
+
+    <h2 id="renderer">Build the renderer</h2>
+    <p>
+      One script does the whole thing: it runs the renderer briefly on the NIK JVM to capture the
+      exact runtime classpath, compiles the C entry points, and then builds the shared library.
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>shell</figcaption>
+<pre><code>./dioxus-compose-renderer/native/scripts/build-native.sh</code></pre>
+    </figure>
+
+    <p>The result is a self-contained runtime directory:</p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>dioxus-compose-renderer/build/native-image/dist/lib/</figcaption>
+<pre><code>libdioxus_compose_renderer.dylib   <span class="c"># the renderer: AWT, Skiko JNI, Compose, our code</span>
+libskiko-macos-&lt;arch&gt;.dylib        <span class="c"># Skia, which Skiko loads by path</span>
+libjawt.dylib                      <span class="c"># forwards JAWT_GetAWT into the renderer</span>
+libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loads by path</span></code></pre>
+    </figure>
+
+    <p>
+      The three small libraries alongside the renderer are not padding. Statically linked AWT on
+      macOS still looks for some things by file path at runtime, and these fill those slots.
+      <a href="architecture.html#macos">Architecture</a> explains the detail; the short version is
+      that the whole deployment layout is one <code>lib/</code> directory whose parent the renderer
+      reports as <code>java.home</code>.
+    </p>
+
+    <p>
+      If you keep a renderer somewhere else, a downloaded artifact, a vendored copy, point
+      <code>DIOXUS_COMPOSE_RENDERER_DIR</code> at its <code>lib</code> directory and the Rust build
+      will use that instead of the workspace one (NFR-10).
+    </p>
+    <p>
+      The first build is slow, <code>native-image</code> compiles Compose, Skiko and AWT ahead of
+      time. You only repeat it when the Kotlin side changes; normal Rust work reuses the library.
+    </p>
+
+    <h2 id="smoke">Smoke-test the library</h2>
+    <p>
+      Before involving Rust, check that the library alone can open a window. This links a tiny C
+      host against it and calls <code>dioxus_compose_renderer_run</code>:
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>shell</figcaption>
+<pre><code>./dioxus-compose-renderer/native/scripts/smoke-test.sh</code></pre>
+    </figure>
+
+    <p>
+      A window should appear. Closing it makes <code>run</code> return <code>0</code> and the
+      process exit normally. That is the acceptance criterion for the macOS runtime requirement
+      (SPEC PR-8), and it passed on 2026-09-20.
+    </p>
+
+    <h2 id="demo">Run the demo</h2>
+    <p>
+      The desktop example is behind the <code>native-renderer</code> feature, because that feature
+      is what makes the Rust build link against the library you just produced:
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>shell</figcaption>
+<pre><code>cargo run -p dioxus-compose --features native-renderer --example desktop_demo</code></pre>
+    </figure>
+
+    <p>
+      Type a message and press <kbd>Enter</kbd> to send it, or <kbd>Shift</kbd>+<kbd>Enter</kbd>
+      for a newline. If you use a Korean, Japanese or Chinese IME, press <kbd>Enter</kbd> while a
+      syllable is still composing: it should commit the composition and <em>not</em> send the
+      message. That distinction is the point of the whole design and is covered in
+      <a href="writing-ui.html#consumption">Writing UI</a>.
+    </p>
+
+    <div class="note">
+      <span class="label">Without the feature flag</span>
+      <p>
+        Building without <code>native-renderer</code> gives you a Host with a no-op renderer:
+        <code>launch</code> returns immediately and no window appears. That build is what the unit
+        tests and benchmarks use, so it is useful, just not something you can look at.
+      </p>
+    </div>
+
+    <h2 id="checks">Run the checks</h2>
+    <p>
+      The repository's quality gates are one script: formatting, Clippy with warnings denied, the
+      test suite, the benchmarks in Criterion's quick mode, and the Kotlin build and tests.
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>shell</figcaption>
+<pre><code>./scripts/check.sh              <span class="c"># quick benchmark sampling, for presubmit</span>
+./scripts/check.sh --full       <span class="c"># full benchmark sampling</span>
+./scripts/check.sh --no-kotlin  <span class="c"># Rust only; DXC_SKIP_KOTLIN=1 does the same</span></code></pre>
+    </figure>
+
+    <p>
+      One of those tests compares the checked-in Kotlin protocol file against what the Rust schema
+      generates. If you change the schema and forget to regenerate, the test fails, which is the
+      intended behaviour, not an inconvenience.
+    </p>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="overview.html"><span>Previous</span>&larr; Overview</a>
+      <a class="next" href="writing-ui.html"><span>Next</span>Writing UI &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/main/docs/INTENT.md">INTENT.md</a></span>
+    <span>Guide last reviewed against the repository on 2026-09-20</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

@@ -48,7 +48,7 @@ tmp="$(mktemp -d)"
 repo="$tmp/dirty"
 make_repo "$repo"
 echo "scratch" >> "$repo/README.md"
-out="$(cd "$repo" && "$split" 2>&1)"
+out="$(cd "$repo" && "$split" --target main 2>&1)"
 status=$?
 check "refuses with uncommitted changes (exit)" "$status" "1"
 check_contains "refuses with uncommitted changes (message)" "$out" "uncommitted"
@@ -58,7 +58,7 @@ check "refuses with uncommitted changes (main not created)" \
 # --- dry run is the default and writes nothing -----------------------------
 repo="$tmp/dry"
 make_repo "$repo"
-out="$(cd "$repo" && "$split" 2>&1)"
+out="$(cd "$repo" && "$split" --target main 2>&1)"
 check "dry run succeeds" "$?" "0"
 check_contains "dry run names itself" "$out" "dry run"
 check_contains "dry run lists PROJECT.md" "$out" "PROJECT.md"
@@ -70,7 +70,7 @@ check "dry run does not create main" \
 # --- --write produces main with the private documents removed --------------
 repo="$tmp/write"
 make_repo "$repo"
-out="$(cd "$repo" && "$split" --write 2>&1)"
+out="$(cd "$repo" && "$split" --write --target main 2>&1)"
 check "--write succeeds" "$?" "0"
 main_files="$(files_on "$repo" main)"
 check "main keeps the public tree" "$main_files" "$(printf '%s\n' \
@@ -92,7 +92,7 @@ check "no remote was contacted (none exists)" "$(git -C "$repo" remote)" ""
 
 # --- idempotent: a second run is a no-op -----------------------------------
 before="$(git -C "$repo" rev-parse main)"
-out="$(cd "$repo" && "$split" --write 2>&1)"
+out="$(cd "$repo" && "$split" --write --target main 2>&1)"
 check "second run succeeds" "$?" "0"
 check_contains "second run reports no work" "$out" "up to date"
 check "second run leaves main unmoved" "$(git -C "$repo" rev-parse main)" "$before"
@@ -102,7 +102,7 @@ echo more > "$repo/dioxus-compose/src/extra.rs"
 echo "more spec" >> "$repo/docs/SPEC.md"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "Feat: More"
-(cd "$repo" && "$split" --write >/dev/null 2>&1)
+(cd "$repo" && "$split" --write --target main >/dev/null 2>&1)
 main_files="$(files_on "$repo" main)"
 check_contains "an advanced develop brings new source to main" "$main_files" "extra.rs"
 check_absent "an advanced develop still drops docs/SPEC.md" "$main_files" "docs/SPEC.md"
@@ -120,16 +120,16 @@ check "main records develop in its history" \
 echo notes > "$repo/docs/ROADMAP.md"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "Docs: Roadmap"
-(cd "$repo" && "$split" --write >/dev/null 2>&1)
+(cd "$repo" && "$split" --write --target main >/dev/null 2>&1)
 check_absent "a new docs/ document is dropped too" "$(files_on "$repo" main)" "ROADMAP.md"
 check_contains "docs/guide/ survives" "$(files_on "$repo" main)" "docs/guide/index.md"
 
 # --- safe to run while main itself is checked out --------------------------
 repo="$tmp/on-main"
 make_repo "$repo"
-(cd "$repo" && "$split" --write >/dev/null 2>&1)
+(cd "$repo" && "$split" --write --target main >/dev/null 2>&1)
 git -C "$repo" checkout -q main
-out="$(cd "$repo" && "$split" --write 2>&1)"
+out="$(cd "$repo" && "$split" --write --target main 2>&1)"
 check "running while on main succeeds" "$?" "0"
 check "running while on main leaves the tree clean" "$(git -C "$repo" status --porcelain)" ""
 check "running while on main keeps main's checkout intact" \
@@ -150,7 +150,7 @@ echo "edited on the feature branch" >> "$repo/PROJECT.md"
 echo "edited on the feature branch" >> "$repo/docs/SPEC.md"
 git -C "$repo" add -A
 git -C "$repo" commit -q -m "Feat: Work in progress"
-out="$(cd "$repo" && "$split" --write 2>&1)"
+out="$(cd "$repo" && "$split" --write --target main 2>&1)"
 check "runs from a diverged branch" "$?" "0"
 main_files="$(files_on "$repo" main)"
 check_absent "a diverged HEAD still drops PROJECT.md" "$main_files" "PROJECT.md"
@@ -162,11 +162,30 @@ check "the diverged branch is still clean" "$(git -C "$repo" status --porcelain)
 repo="$tmp/no-develop"
 make_repo "$repo"
 git -C "$repo" branch -m develop trunk
-out="$(cd "$repo" && "$split" 2>&1)"
+out="$(cd "$repo" && "$split" --target main 2>&1)"
 check "missing source branch fails" "$?" "1"
 check_contains "missing source branch explains itself" "$out" "develop"
-out="$(cd "$repo" && "$split" --source trunk 2>&1)"
+out="$(cd "$repo" && "$split" --source trunk --target main 2>&1)"
 check "--source selects another branch" "$?" "0"
+
+# --- the default target is release, so the workflow needs no arguments -----
+#
+# main is protected and only moves through a pull request, so an argument-less
+# run has to write the branch that pull request comes from.
+repo="$tmp/default-target"
+make_repo "$repo"
+out="$(cd "$repo" && "$split" 2>&1)"
+check "dry run names release as the target" "$?" "0"
+check_contains "dry run names release as the target (message)" "$out" "release"
+out="$(cd "$repo" && "$split" --write 2>&1)"
+check_contains "prints the release push command" "$out" "git push origin release"
+check "--write with no arguments creates release" \
+    "$(git -C "$repo" rev-parse --verify -q release >/dev/null 2>&1; echo $?)" "0"
+check "--write with no arguments leaves main alone" \
+    "$(git -C "$repo" rev-parse --verify -q main >/dev/null 2>&1; echo $?)" "1"
+release_files="$(files_on "$repo" release)"
+check_absent "release drops PROJECT.md" "$release_files" "PROJECT.md"
+check_contains "release keeps docs/guide/" "$release_files" "docs/guide/index.md"
 
 rm -rf "$tmp"
 
