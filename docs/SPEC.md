@@ -211,7 +211,7 @@ Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=
 
 | 단계 | 디자인 시스템 |
 |---|---|
-| 1단계 | Material 3, Apple HIG, WinUI/Fluent 2 |
+| 1단계 | Material 3, Cupertino, WinUI/Fluent 2 |
 | 2단계 | GNOME 50, KDE Breeze, Deepin |
 
 2단계는 1단계가 동작한 뒤에 추가합니다. 14.1의 추상화가 성립하면 각각 `DesignSystem` 변형 1개와 Renderer 측 테이블 1개, 규칙 구현 1개로 끝나야 하며, 이것이 그 추상화의 실제 검증입니다.
@@ -221,6 +221,25 @@ Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=
 - 디자인 시스템은 Renderer 안에 있는 **토큰 테이블 + 컴포넌트 규칙 구현** 한 쌍입니다.
 - 따라서 **네 번째 디자인 시스템을 추가할 때 위젯 코드, 속성, Modifier, 와이어 포맷은 건드리지 않습니다.** Rust `DesignSystem` enum에 변형 1개, Kotlin에 테이블 1개와 규칙 구현 1개를 더하면 끝입니다.
 - 수용 기준: `DesignSystem`에 변형을 하나 추가했을 때 `widgets.rs`의 위젯 정의와 Modifier/Property 스키마가 변경되지 않습니다.
+
+#### 14.1-2 Apple 디자인 시스템의 이름과 현재 언어
+
+**이름은 `Cupertino`입니다.** HIG(Human Interface Guidelines)는 지침 문서이지 디자인 시스템의 이름이 아닙니다. Apple은 자사 디자인 언어에 공개된 제품명을 붙이지 않으므로, 크로스플랫폼 툴킷에서 Apple 스타일 위젯 집합을 가리키는 관례적 이름인 `Cupertino`를 씁니다.
+
+**현재 언어는 Liquid Glass입니다.** macOS 26과 iOS 26부터 Apple의 디자인 언어가 바뀌었고, 이 프로젝트가 대상으로 하는 macOS가 그 버전입니다. 평면 채움과 단색 배경을 전제한 이전 스타일로는 플랫폼을 따라간다고 할 수 없습니다. Cupertino 토큰과 컴포넌트 규칙은 다음을 표현해야 합니다.
+
+- **재질(material)**: 컨트롤과 표면이 뒤 배경을 비춥니다. 불투명 채움이 아니라 반투명 레이어와 흐림입니다.
+- **가장자리 하이라이트**: 광원을 받은 유리처럼 테두리 상단이 밝고 하단이 어둡습니다. 단색 1px 테두리와는 다릅니다.
+- **동심 곡률**: 안쪽 요소의 모서리 반경이 바깥 컨테이너와 동심을 이루도록 계산됩니다. 고정된 반경 값 하나로는 표현되지 않습니다.
+- **깊이**: 그림자보다 레이어의 겹침과 굴절로 깊이를 나타냅니다.
+
+- 수용 기준
+  1. `DesignSystem::Cupertino`로 그린 화면이 재질, 가장자리 하이라이트, 동심 곡률에서 Material 3 및 Fluent와 눈으로 구분됩니다.
+  2. 배경이 바뀌면 그 위의 컨트롤 색이 따라 바뀝니다. 고정 색을 칠하고 끝내지 않습니다.
+  3. 흐림을 지원하지 않는 환경에서도 읽을 수 있는 대체 표현이 있습니다(대비를 지키는 불투명 재질).
+  4. 접근성 설정의 투명도 감소를 존중합니다.
+
+- Renderer 구현 제약: Compose의 흐림은 자기 콘텐츠에 적용되며, 뒤 배경을 흐리게 하려면 별도 경로가 필요합니다. 사용 가능한 API를 확인하고, 불가능하면 무엇이 막는지와 대체안을 기록합니다. 흉내만 낸 반투명으로 "구현했다"고 표시하지 않습니다.
 
 #### 14.2 컴포넌트 변형
 컴포넌트 규칙이 붙는 자리는 변형(variant) 속성입니다. 값은 디자인 시스템 중립 이름입니다.
@@ -246,7 +265,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 | 플랫폼 | `adaptive`가 고르는 시스템 |
 |---|---|
 | Android | Material 3 |
-| macOS, iOS | Apple HIG |
+| macOS, iOS | Cupertino |
 | Windows | WinUI/Fluent 2 |
 | Linux (GNOME) | GNOME 50 |
 | Linux (KDE) | KDE Breeze |
@@ -277,7 +296,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 
 #### 14.5 와이어 추가분
 - Mutation `SetTheme { design_system: u16, fallback: u16, color_scheme: u16, adaptive: u16 }`: **명령 태그 9**, 레코드 길이 12바이트(`tag`, `len`, 뒤이어 u16 4개). 루트(`node_id` 없음)에 적용합니다. `adaptive`는 0 또는 1입니다. Host는 초기 배치의 첫 레코드로 1회 보내고, 앱이 테마를 바꿀 때만 다시 보냅니다.
-- `DesignSystem` 태그: `Material3 = 1`, `AppleHig = 2`, `Fluent = 3`.
+- `DesignSystem` 태그: `Material3 = 1`, `Cupertino = 2`, `Fluent = 3`. 태그 값은 바뀌지 않습니다. 이전 이름은 `AppleHig`였습니다.
 - `ColorScheme` 태그: `Light = 1`, `Dark = 2`, `FollowSystem = 3`.
 - 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
 
