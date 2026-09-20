@@ -173,10 +173,21 @@ try {
     $env:JAVA_HOME = $GraalHome
     $env:GRAALVM_HOME = $GraalHome
     $env:DIOXUS_COMPOSE_AUTOEXIT_MS = "1"
-    Invoke-Native { & $KotlinWrapper run -m desktop --no-compose-hot-reload `
-        "--jvm-args=-XshowSettings:properties" 2>&1 | Tee-Object -FilePath $JvmLog }
+    # The Kotlin CLI looks for project.yaml in the working directory and its parents, so it
+    # has to be run from the Amper project rather than from wherever the build was started.
+    # Pointing at the wrapper by full path is not enough: it found no project and said so.
+    Push-Location $ProjectDir
+    try {
+        Invoke-Native { & $KotlinWrapper run -m desktop --no-compose-hot-reload `
+            "--jvm-args=-XshowSettings:properties" 2>&1 | Tee-Object -FilePath $JvmLog }
+    } finally {
+        Pop-Location
+    }
     if ($LASTEXITCODE -ne 0) {
-        Fail "the JVM classpath probe failed" @("See $JvmLog")
+        Fail "the JVM classpath probe failed" @(
+            "See $JvmLog",
+            "The Kotlin CLI must run from $ProjectDir, which holds project.yaml."
+        )
     }
 } finally {
     $env:JAVA_HOME = $OldJavaHome
