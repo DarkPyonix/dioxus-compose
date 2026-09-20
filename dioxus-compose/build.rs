@@ -73,5 +73,20 @@ fn main() {
     println!("cargo:rustc-link-lib=dylib=dioxus_compose_renderer");
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
     // The Renderer resolves the Host's dioxus_compose_host_* symbols from this executable.
-    println!("cargo:rustc-link-arg=-Wl,-export_dynamic");
+    // GNU ld spells this `--export-dynamic`. Passing the macOS spelling to it is not a
+    // harmless no-op: `-export_dynamic` parses as `-e xport_dynamic`, which sets the
+    // entry point to a symbol that does not exist, so the link succeeds with a warning
+    // and the program jumps into the middle of its own text and dies on the first
+    // instruction.
+    let export_dynamic = if cfg_target_os() == "macos" {
+        "-Wl,-export_dynamic"
+    } else {
+        "-Wl,--export-dynamic"
+    };
+    println!("cargo:rustc-link-arg={export_dynamic}");
+}
+
+/// The target this build is for, which decides which linker spelling is correct.
+fn cfg_target_os() -> String {
+    std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default()
 }
