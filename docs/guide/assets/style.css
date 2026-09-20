@@ -439,7 +439,10 @@ footer.site .inner { max-width: 78rem; margin: 0 auto; display: flex; gap: 1.2re
 /* main > * is clamped to the 70ch reading measure. The hero wrapper must opt out
    or the backdrop is positioned against 70ch while the hero sits in the 68rem
    column, which is what made the old version fight the content. */
-.landing .herowrap { position: relative; isolation: isolate; padding-bottom: 2rem; max-width: none; }
+/* The landing page is not a reading column: its sections are as wide as the page.
+   Clamping them to the 70ch measure left the hero wider than everything under it. */
+.landing main > * { max-width: none; }
+.landing .herowrap { position: relative; isolation: isolate; padding-bottom: 2rem; }
 .landing .herowrap .hero { position: relative; z-index: 1; }
 .landing .herowrap .hero h1 { text-wrap: balance; }
 
