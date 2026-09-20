@@ -110,7 +110,7 @@
 
     <h2 id="widgets">위젯 집합</h2>
     <p>
-      스키마는 의도적으로 닫혀 있습니다. 렌더러는 정확히 이 일곱 가지만 해석하고, 모르는 타입을
+      스키마는 의도적으로 닫혀 있습니다. 렌더러는 정확히 이 여덟 가지만 해석하고, 모르는 타입을
       받으면 크래시 대신 <code>ProtocolError</code> 이벤트를 보냅니다. 위젯을 추가한다는 것은
       Rust 스키마, Kotlin 인터프리터, 코드젠을 함께 넓히는 일입니다.
     </p>
@@ -126,6 +126,7 @@
           <tr><td><code>TextField</code></td><td><code>placeholder</code>, <code>enabled</code>, <code>multiline</code></td><td>비제어 위젯입니다. <code>value</code> 속성이 없는 것은 의도입니다.</td></tr>
           <tr><td><code>Button</code></td><td><code>text</code>, <code>enabled</code></td><td><code>enabled</code>의 기본값은 <code>true</code>입니다.</td></tr>
           <tr><td><code>Spacer</code></td><td><code>width</code>, <code>height</code></td><td>둘 다 <code>f32</code>이고 기본값은 <code>0.0</code>입니다.</td></tr>
+          <tr><td><code>LazyColumn</code></td><td><code>item_count</code>, <code>buffer</code>, <code>key_of</code>, <code>item</code></td><td>윈도잉 목록. Host 쪽은 동작하고 렌더러는 아직 <code>Column</code>으로 그립니다. <a href="lists-and-streaming.html#windowing">목록과 스트리밍</a>을 보세요.</td></tr>
         </tbody>
       </table>
     </div>
@@ -186,6 +187,7 @@
           <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code> — 컴포넌트 내부에서 처리합니다. 대신 <code>item</code>과 <code>key_of</code>를 넘깁니다</td></tr>
         </tbody>
       </table>
     </div>

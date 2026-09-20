@@ -182,12 +182,14 @@
           <tr><th scope="col">기능</th><th scope="col">상태</th><th scope="col">메모</th></tr>
         </thead>
         <tbody>
-          <tr><td>위젯: <code>Column</code>, <code>Row</code>, <code>Box</code>, <code>Text</code>, <code>TextField</code>, <code>Button</code>, <code>Spacer</code></td><td><span class="pill works">동작</span></td><td>스키마 전체입니다. 이 밖의 것은 스키마부터 넓혀야 합니다.</td></tr>
+          <tr><td>위젯: <code>Column</code>, <code>Row</code>, <code>Box</code>, <code>Text</code>, <code>TextField</code>, <code>Button</code>, <code>Spacer</code>, <code>LazyColumn</code></td><td><span class="pill works">동작</span></td><td>스키마 전체입니다. 이 밖의 것은 스키마부터 넓혀야 합니다.</td></tr>
           <tr><td>이벤트와 동기 소비</td><td><span class="pill works">동작</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code>과 <code>event.consume()</code>.</td></tr>
           <tr><td>비제어 <code>TextField</code></td><td><span class="pill works">동작</span></td><td>편집 값과 조합 상태를 렌더러가 소유합니다.</td></tr>
           <tr><td>Rust 스키마 → Kotlin 프로토콜 코드젠</td><td><span class="pill works">동작</span></td><td>생성물이 낡으면 테스트가 실패합니다.</td></tr>
           <tr><td><code>fill_max_width</code>·<code>fill_max_height</code> 외의 Modifier</td><td><span class="pill partial">일부</span></td><td>패딩, 크기, 배경, clickable은 프로토콜에는 있지만 <code>rsx!</code> 속성이 아직 없습니다.</td></tr>
-          <tr><td><code>LazyColumn</code> 윈도잉, <code>AppendText</code> 스트리밍</td><td><span class="pill planned">계획</span></td><td>명세(FR-8, FR-9)만 있고 구현은 없습니다.</td></tr>
+          <tr><td><code>LazyColumn</code> 윈도잉 (FR-8)</td><td><span class="pill partial">Host 쪽</span></td><td>컴포넌트·프로토콜·Host 테스트는 통과합니다. Kotlin 인터프리터는 아직 <code>Column</code>으로 그리고 <code>RangeRequested</code>를 보내지 않습니다.</td></tr>
+          <tr><td><code>AppendText</code> 스트리밍 (FR-9)</td><td><span class="pill partial">Host 쪽</span></td><td>Host가 프레임당 한 건으로 모아 flush합니다. <code>rsx!</code> 수준 API는 아직 없고 <code>Host::append_text</code>는 프로토콜 node id를 받습니다.</td></tr>
+          <tr><td>디자인 시스템과 테마 (FR-13, FR-14)</td><td><span class="pill planned">계획</span></td><td>명세가 <code>Draft</code>입니다. <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code>, <code>SetTheme</code> 모두 아직 없습니다. <a href="design-systems.html">디자인 시스템</a>을 보세요.</td></tr>
         </tbody>
       </table>
     </div>
@@ -204,7 +206,7 @@
       </a>
       <a class="card" href="lists-and-streaming.html">
         <h3>목록과 스트리밍</h3>
-        <p>긴 목록과 토큰 스트리밍에 필요한 것, 그리고 지금 할 수 있는 것.</p>
+        <p>윈도잉 목록과 토큰 스트리밍. Host가 지금 하는 일과 Renderer가 아직 못 한 일.</p>
       </a>
       <a class="card" href="design-systems.html">
         <h3>디자인 시스템</h3>
