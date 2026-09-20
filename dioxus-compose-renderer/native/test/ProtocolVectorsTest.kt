@@ -13,6 +13,10 @@ import kotlin.test.assertTrue
 import org.thisisthepy.dioxus.compose.protocol.HostEvent
 import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
 import org.thisisthepy.dioxus.compose.protocol.Mutation
+import org.thisisthepy.dioxus.compose.protocol.Paint
+import org.thisisthepy.dioxus.compose.protocol.ShapeRole
+import org.thisisthepy.dioxus.compose.protocol.SpaceRole
+import org.thisisthepy.dioxus.compose.protocol.ColorRole
 import org.thisisthepy.dioxus.compose.protocol.Protocol
 import org.thisisthepy.dioxus.compose.protocol.WidgetKind
 
@@ -48,6 +52,8 @@ class ProtocolVectorsTest {
                 is Mutation.Move -> mutation.nodeId != 1
                 is Mutation.Remove -> mutation.nodeId != 1
                 is Mutation.SetText -> mutation.nodeId != 1
+                // The theme applies to the tree, not to a node, so it is never a bad record.
+                is Mutation.SetTheme -> false
                 is Mutation.AppendText -> mutation.nodeId != 1
                 is Mutation.Create -> false
             }
@@ -69,8 +75,16 @@ class ProtocolVectorsTest {
                 ProtocolModifier.Width(120f),
                 ProtocolModifier.Height(48f),
                 ProtocolModifier.Size(20f, 30f),
-                ProtocolModifier.Background(0xFF112233.toInt()),
+                ProtocolModifier.Background(Paint.Literal(0xFF112233.toInt())),
                 ProtocolModifier.Clickable(42L),
+                ProtocolModifier.Background(Paint.Role(ColorRole.Surface)),
+                ProtocolModifier.PaddingRole(SpaceRole.Md),
+                ProtocolModifier.PaddingEach(1f, 2f, 3f, 4f),
+                ProtocolModifier.Weight(0.5f),
+                ProtocolModifier.Shape(4f, 8f, 12f, 16f),
+                ProtocolModifier.ShapeRole(ShapeRole.Large),
+                ProtocolModifier.Border(2f, Paint.Role(ColorRole.Outline)),
+                ProtocolModifier.Elevation(6f),
             ),
             modifiers,
         )
