@@ -39,6 +39,44 @@ permissions:
   contents: read
 
 jobs:
+  # UNTESTED and disabled by default. Remove `if: ${{ false }}` only after a Windows x64
+  # developer has run build-native-windows.ps1 plus the interactive -RequireClick smoke test.
+  # The reference project measured about five minutes from a clean local build. Allow 15-30
+  # minutes on a standard hosted runner until this repository records a real CI duration.
+  windows-native-image-untested:
+    if: ${{ false }}
+    name: Windows x64 native-image build (disabled, untested)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install upstream GraalVM 25
+        # Upstream GraalVM supports AWT on Windows. Liberica NIK is a macOS requirement only.
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          native-image-job-reports: 'true'
+
+      - name: Build the Windows renderer
+        shell: powershell
+        run: .\dioxus-compose-renderer\native\scripts\build-native-windows.ps1
+
+      - name: Non-interactive Windows smoke test
+        # This proves startup, rendering long enough to open, clean close, and return 0.
+        # It does not prove mouse input because a hosted runner cannot perform the required click.
+        shell: powershell
+        run: .\dioxus-compose-renderer\native\scripts\smoke-test-windows.ps1
+
+      - name: Upload the unverified renderer
+        uses: actions/upload-artifact@v4
+        with:
+          name: dioxus-compose-renderer-windows-x64-untested
+          path: dioxus-compose-renderer/build/native-image/dist/
+          retention-days: 7
+
   build:
     name: native-image build and smoke test
     # macos-latest is Apple silicon; the renderer's AWT workarounds are
