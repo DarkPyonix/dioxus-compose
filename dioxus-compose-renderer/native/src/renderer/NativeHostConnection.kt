@@ -12,21 +12,25 @@ import org.thisisthepy.dioxus.compose.protocol.HostEvent
 import org.thisisthepy.dioxus.compose.protocol.Mutation
 import org.thisisthepy.dioxus.compose.protocol.Protocol
 
+// Word-typed parameters are declared nullable on purpose: Kotlin emits a null check for a
+// non-null reference parameter, and that check would hand the word value to a method that
+// expects an Object, which native-image rejects.
+//
 // The only file that mentions GraalVM types, so a JVM development run never loads them
 // (SPEC NFR-5). The `dioxus_compose_host_*` symbols are resolved from the Rust executable
 // this library is loaded into; the library is linked with `-undefined dynamic_lookup`.
 
 @CFunction("dioxus_compose_host_init")
-private external fun hostInit(handshake: CCharPointer, length: Int, out: Pointer): Int
+private external fun hostInit(handshake: CCharPointer?, length: Int, out: Pointer?): Int
 
 @CFunction("dioxus_compose_host_dispatch_event")
-private external fun hostDispatchEvent(event: CCharPointer, length: Int, out: Pointer): Int
+private external fun hostDispatchEvent(event: CCharPointer?, length: Int, out: Pointer?): Int
 
 @CFunction("dioxus_compose_host_render_frame")
-private external fun hostRenderFrame(frameTimeNanos: Long, out: Pointer): Int
+private external fun hostRenderFrame(frameTimeNanos: Long, out: Pointer?): Int
 
 @CFunction("dioxus_compose_host_release_batch")
-private external fun hostReleaseBatch(batch: Pointer)
+private external fun hostReleaseBatch(batch: Pointer?)
 
 @CFunction("dioxus_compose_host_shutdown")
 private external fun hostShutdown()
@@ -47,10 +51,23 @@ class NativeHostConnection : HostConnection {
     override fun init(onMutation: (Mutation) -> Unit) {
         eventBuffer.clear()
         val length = Protocol.handshake(eventBuffer)
-        withEncodedInput(length) { pointer, len ->
+        // Word values never cross a method or lambda boundary here: native-image only
+        // accepts them in straight-line code inside a single method.
+        val pinned = PinnedObject.create(eventBytes)
+        try {
             val batch = StackValue.get<Pointer>(BATCH_BYTES)
-            checkStatus(hostInit(pointer, len, batch), "init")
-            consume(batch, onMutation)
+            checkStatus(hostInit(pinned.addressOfArrayElement(0), length, batch), "init")
+            try {
+                val pointer = batch.readWord<Pointer>(PTR_OFFSET)
+                val batchLength = batch.readInt(LENGTH_OFFSET)
+                if (pointer.isNonNull && batchLength > 0) {
+                    Protocol.decode(CTypeConversion.asByteBuffer(pointer, batchLength), onMutation)
+                }
+            } finally {
+                hostReleaseBatch(batch)
+            }
+        } finally {
+            pinned.close()
         }
     }
 
@@ -58,11 +75,25 @@ class NativeHostConnection : HostConnection {
         eventBuffer.clear()
         val length = Protocol.encodeEvent(event, eventBuffer)
         var result = 0L
-        withEncodedInput(length) { pointer, len ->
+        val pinned = PinnedObject.create(eventBytes)
+        try {
             val batch = StackValue.get<Pointer>(BATCH_BYTES)
-            checkStatus(hostDispatchEvent(pointer, len, batch), "dispatch_event")
-            result = batch.readLong(RESULT_OFFSET)
-            consume(batch, onMutation)
+            checkStatus(
+                hostDispatchEvent(pinned.addressOfArrayElement(0), length, batch),
+                "dispatch_event",
+            )
+            try {
+                result = batch.readLong(RESULT_OFFSET)
+                val pointer = batch.readWord<Pointer>(PTR_OFFSET)
+                val batchLength = batch.readInt(LENGTH_OFFSET)
+                if (pointer.isNonNull && batchLength > 0) {
+                    Protocol.decode(CTypeConversion.asByteBuffer(pointer, batchLength), onMutation)
+                }
+            } finally {
+                hostReleaseBatch(batch)
+            }
+        } finally {
+            pinned.close()
         }
         return result
     }
@@ -70,32 +101,19 @@ class NativeHostConnection : HostConnection {
     override fun renderFrame(frameTimeNanos: Long, onMutation: (Mutation) -> Unit) {
         val batch = StackValue.get<Pointer>(BATCH_BYTES)
         checkStatus(hostRenderFrame(frameTimeNanos, batch), "render_frame")
-        consume(batch, onMutation)
-    }
-
-    override fun shutdown() = hostShutdown()
-
-    private inline fun withEncodedInput(length: Int, body: (CCharPointer, Int) -> Unit) {
-        val pinned = PinnedObject.create(eventBytes)
-        try {
-            body(pinned.addressOfArrayElement(0), length)
-        } finally {
-            pinned.close()
-        }
-    }
-
-    private fun consume(batch: Pointer, onMutation: (Mutation) -> Unit) {
         try {
             val pointer = batch.readWord<Pointer>(PTR_OFFSET)
-            val length = batch.readInt(LENGTH_OFFSET)
-            if (pointer.isNonNull && length > 0) {
-                Protocol.decode(CTypeConversion.asByteBuffer(pointer, length), onMutation)
+            val batchLength = batch.readInt(LENGTH_OFFSET)
+            if (pointer.isNonNull && batchLength > 0) {
+                Protocol.decode(CTypeConversion.asByteBuffer(pointer, batchLength), onMutation)
             }
         } finally {
             // Released on the same call stack, always (SPEC PR-2).
             hostReleaseBatch(batch)
         }
     }
+
+    override fun shutdown() = hostShutdown()
 
     private fun checkStatus(status: Int, operation: String) {
         if (status != STATUS_OK) {

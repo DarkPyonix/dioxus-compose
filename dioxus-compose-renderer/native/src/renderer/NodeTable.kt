@@ -87,6 +87,7 @@ class NodeTable {
             is Mutation.Move -> insert(mutation.parentId, mutation.nodeId, mutation.index)
             is Mutation.Remove -> remove(mutation.nodeId)
             is Mutation.SetText -> setText(mutation)
+            is Mutation.AppendText -> appendText(mutation)
         }
     }
 
@@ -172,6 +173,23 @@ class NodeTable {
         node.children.toList().forEach(::removeSubtree)
     }
 
+    /**
+     * Appends to a Text node's content (FR-9). Streaming sends only the new tail, so the
+     * batch does not grow with the text already on screen.
+     */
+    private fun appendText(mutation: Mutation.AppendText) {
+        val node = nodes[mutation.nodeId] ?: return fail(
+            TableError.UNKNOWN_NODE,
+            "AppendText for unknown node ${mutation.nodeId}",
+        )
+        if (!supportsProperty(node.widget, PropertyKind.Text)) {
+            fail(TableError.UNSUPPORTED_PROPERTY, "AppendText on ${node.widget}")
+            return
+        }
+        revision += 1
+        node.props[PropertyKind.Text] = PropertyValue.Text(node.text(PropertyKind.Text) + mutation.text)
+    }
+
     private fun setText(mutation: Mutation.SetText) {
         val node = nodes[mutation.nodeId] ?: return fail(
             TableError.UNKNOWN_NODE,
@@ -216,6 +234,8 @@ class NodeTable {
                 PropertyKind.OnValueChange,
                 PropertyKind.OnSubmit,
                 PropertyKind.OnFocusLost,
+                PropertyKind.OnKeyDown,
+                PropertyKind.OnRangeRequested,
                 -> true
 
                 PropertyKind.Text ->
@@ -230,6 +250,10 @@ class NodeTable {
                 PropertyKind.Placeholder -> widget == WidgetKind.TextField
                 PropertyKind.Multiline -> widget == WidgetKind.TextField
                 PropertyKind.Enabled -> widget != WidgetKind.Spacer
+
+                // Windowing properties belong to the lazy container alone (FR-8).
+                PropertyKind.ItemCount -> widget == WidgetKind.LazyColumn
+                PropertyKind.ItemKey -> true
             }
     }
 }

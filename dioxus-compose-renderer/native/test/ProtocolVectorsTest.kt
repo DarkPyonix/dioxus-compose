@@ -48,6 +48,7 @@ class ProtocolVectorsTest {
                 is Mutation.Move -> mutation.nodeId != 1
                 is Mutation.Remove -> mutation.nodeId != 1
                 is Mutation.SetText -> mutation.nodeId != 1
+                is Mutation.AppendText -> mutation.nodeId != 1
                 is Mutation.Create -> false
             }
         }

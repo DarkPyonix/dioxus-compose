@@ -45,6 +45,9 @@ fun RenderNode(nodeId: Int, table: NodeTable, dispatcher: EventDispatcher) {
         WidgetKind.Spacer -> Spacer(modifier)
         WidgetKind.Button -> HostButton(node, modifier, dispatcher)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
+        // TODO(FR-8): windowing, so the Host materialises only the visible range. Rendering
+        // the materialised children keeps the tree correct meanwhile; it is not yet lazy.
+        WidgetKind.LazyColumn -> Column(modifier) { Children(node, table, dispatcher) }
     }
 }
 
