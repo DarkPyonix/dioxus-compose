@@ -45,16 +45,33 @@ assert_run "setup_check_rejects_unknown_argument" 2 "usage:" \
     "$setup_check" --nonsense
 
 # No cargo on PATH, and an empty HOME so the NIK glob finds nothing.
+real_home="$HOME"
 empty_home="$(mktemp -d)"
 trap 'rm -rf "$empty_home"' EXIT
 
 assert_run "setup_check_reports_missing_cargo" 1 "cargo not found on PATH" \
     env -u GRAALVM_HOME PATH=/usr/bin:/bin HOME="$empty_home" "$setup_check"
 
-assert_run "setup_check_reports_missing_nik" 1 "no Liberica NIK found" \
-    env -u GRAALVM_HOME HOME="$empty_home" "$setup_check"
+# Which toolchain is missing, and whether its absence is fatal, depends on the platform.
+# macOS cannot build the renderer without Liberica NIK Full, so that is an error. Anywhere
+# else upstream GraalVM is the right toolchain and not having it only blocks the renderer,
+# which is why it warns and exits zero: the Rust side is the whole loop apart from that.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    assert_run "setup_check_reports_missing_nik" 1 "no Liberica NIK found" \
+        env -u GRAALVM_HOME HOME="$empty_home" "$setup_check"
+else
+    # Keep rustup discoverable. The empty HOME above exists to make the macOS toolchain
+    # glob find nothing, and that glob is not used here, but rustup does live under HOME,
+    # so blanking it would report missing rustfmt and clippy that are installed.
+    assert_run "setup_check_warns_about_a_missing_graalvm" 0 "GRAALVM_HOME is not set" \
+        env -u GRAALVM_HOME HOME="$empty_home" \
+            RUSTUP_HOME="${RUSTUP_HOME:-$real_home/.rustup}" \
+            CARGO_HOME="${CARGO_HOME:-$real_home/.cargo}" \
+            "$setup_check"
+fi
 
-# A GRAALVM_HOME that exists but has no native-image at all.
+# A GRAALVM_HOME that exists but has no native-image at all. Wrong on every platform:
+# the variable was set, so someone meant to point at a toolchain.
 bogus_home="$empty_home/bogus-jdk"
 mkdir -p "$bogus_home/bin"
 assert_run "setup_check_reports_graalvm_home_without_native_image" 1 "has no bin/native-image" \
