@@ -22,11 +22,16 @@
 name: Native renderer
 
 on:
+  # Pushes to main only, and deliberately not on the pull request that proposes them.
+  # This is the slow half of the gate: a ~1GB toolchain download and tens of minutes of
+  # native-image compilation per platform. Running it on the release proposal would hold
+  # every publication behind an hour of building, so it runs once the tree is on main and
+  # reports afterwards, with the nightly schedule catching toolchain drift in between.
+  #
+  # That is a real gap and worth naming: a renderer that stops building is found after
+  # main has moved, not before. The release workflow builds the renderer again for the
+  # artifacts, so nothing is published from a tree that cannot produce one.
   push:
-  # Pushes to main only. This is the slow half of the gate, a ~1GB toolchain download
-  # and tens of minutes of native-image compilation, so it runs where the published
-  # branch is produced rather than on every push to develop. The nightly schedule below
-  # catches toolchain drift in between.
     branches: [main]
     paths:
       - 'dioxus-compose-renderer/**'
