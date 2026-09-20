@@ -6,6 +6,7 @@ import org.graalvm.nativeimage.IsolateThread
 import org.graalvm.nativeimage.c.function.CEntryPoint
 import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
+import org.thisisthepy.dioxus.compose.renderer.NativeHostConnection
 
 // C entry points of the renderer shared library (SPEC PR-2).
 //
@@ -26,7 +27,9 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
     try {
         configureRuntimeLayout(CTypeConversion.toJavaString(libraryDir))
         // Lets automated smoke tests close the window; unset in normal use.
-        runRenderer(System.getenv("DIOXUS_COMPOSE_AUTOEXIT_MS")?.toLongOrNull())
+        runRenderer(System.getenv("DIOXUS_COMPOSE_AUTOEXIT_MS")?.toLongOrNull()) {
+            NativeHostConnection()
+        }
         0
     } catch (t: Throwable) {
         // Nothing may unwind across the C boundary (NFR-7).
