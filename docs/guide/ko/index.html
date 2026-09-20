@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dioxus-compose — UI는 Rust로 쓰고, 그리는 일은 Compose에게</title>
+<meta name="description" content="dioxus-compose는 Rust에서 Dioxus 방식으로 선언형 UI를 작성하고, AOT 컴파일된 Compose Multiplatform이 그리게 하는 GUI 스택입니다. 웹뷰도, 동봉된 JVM도 없습니다.">
+<link rel="alternate" hreflang="en" href="../en/">
+<link rel="alternate" hreflang="ko" href="./">
+<link rel="alternate" hreflang="x-default" href="../en/">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/" hreflang="en">EN</a>
+    <a href="./" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>가이드</h2>
+      <ul>
+        <li><a href="./" aria-current="page">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="writing-ui.html">UI 작성하기</a></li>
+        <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>저장소 문서</h2>
+      <ul>
+        <li><a href="../../INTENT.md">INTENT.md</a></li>
+        <li><a href="../../SPEC.md">SPEC.md</a></li>
+        <li><a href="../../../PROJECT.md">PROJECT.md</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <div class="hero">
+      <p class="eyebrow">Rust로 쓰는 네이티브 UI</p>
+      <h1>UI는 Dioxus로 쓰고, 그리는 일은 Compose에게 맡깁니다.</h1>
+      <p class="lede">
+        dioxus-compose는 Rust 코드가 <code>rsx!</code>와 컴포넌트, 훅으로 화면을 기술하고,
+        미리 컴파일해 둔 Compose Multiplatform 렌더러가 그것을 그리는 GUI 스택입니다.
+        웹뷰를 품지 않고, JVM을 함께 배포하지도 않습니다.
+      </p>
+      <div class="cta">
+        <a class="btn" href="getting-started.html">시작하기</a>
+        <a class="btn secondary" href="architecture.html">동작 원리</a>
+      </div>
+    </div>
+
+    <h2>왜 만드는가</h2>
+    <p>
+      이 스택의 첫 사용처는 여러 LLM CLI를 감싸는 원격 개발 환경
+      <strong>darkpyonix-ember</strong>입니다. 늘 켜 두는 도구는 가벼워야 합니다. 그런데 웹 기반
+      채팅·IDE 셸은 가볍지 않습니다. 웹뷰는 브라우저 엔진을 통째로 데려오고, JRE는
+      <code>jlink</code>로 줄여도 80~120&nbsp;MB가 붙습니다.
+    </p>
+    <p>
+      그렇다고 순수 Rust UI 프레임워크로 가면, 채팅 클라이언트에서 가장 중요한 부분인 텍스트에서
+      막힙니다. 한국어·일본어·중국어 입력은 플랫폼 IME를 거치고, 90%만 맞는 IME는 결국 쓸 수 없는
+      앱입니다. Compose Multiplatform은 텍스트와 IME, 위젯 품질이 이미 성숙해 있습니다. 그래서 이
+      프로젝트는 딱 그 부분만 빌려 옵니다. 애플리케이션 코드는 Rust에 남고, Compose는 Rust가
+      보내는 UI 트리를 해석하는 인터프리터가 됩니다.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th scope="col">협상 불가 조건</th><th scope="col">그래서 생기는 결과</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>웹뷰 금지</td><td>WKWebView, WebView2, WebKitGTK를 쓰지 않습니다. Tauri와 wry도 마찬가지입니다.</td></tr>
+          <tr><td>JVM 동봉 금지</td><td>데스크톱은 GraalVM <code>native-image</code> 공유 라이브러리로 배포하고, iOS는 Kotlin/Native로 만들 계획입니다.</td></tr>
+          <tr><td>수동 JNI·cinterop 금지</td><td>경계 심(shim)은 전부 Rust 스키마에서 생성합니다.</td></tr>
+          <tr><td>UI 코드는 Rust에</td><td>Kotlin은 렌더러의 구현 세부일 뿐, 기능을 작성하는 자리가 아닙니다.</td></tr>
+          <tr><td>Compose 수준의 텍스트·IME</td><td>Compose의 플랫폼 텍스트 입력을 우회하는 경로를 만들지 않습니다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>코드는 이렇게 생겼습니다</h2>
+    <p>
+      저장소의 <code>desktop_demo</code> 예제를 줄인 것입니다. 위젯 이름은 Compose 그대로이고,
+      속성은 그것을 <code>snake_case</code>로 옮긴 Rust 표기입니다.
+    </p>
+
+    <figure class="codeblock" data-copy="복사" data-copied="복사됨">
+      <figcaption>dioxus-compose/examples/desktop_demo.rs</figcaption>
+<pre><code><span class="k">use</span> dioxus_compose::prelude::*;
+
+<span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
+    <span class="k">let</span> <span class="k">mut</span> messages = <span class="f">use_signal</span>(<span class="ty">Vec</span>::&lt;<span class="ty">String</span>&gt;::new);
+    <span class="k">let</span> <span class="k">mut</span> draft = <span class="f">use_signal</span>(<span class="ty">String</span>::new);
+
+    <span class="f">rsx!</span> {
+        <span class="ty">Column</span> {
+            <span class="at">fill_max_width</span>: <span class="k">true</span>,
+            <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"dioxus-compose chat"</span> }
+            <span class="k">for</span> message <span class="k">in</span> messages() {
+                <span class="ty">Text</span> { <span class="at">text</span>: message }
+            }
+            <span class="ty">TextField</span> {
+                <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
+                <span class="at">multiline</span>: <span class="k">true</span>,
+                <span class="at">on_value_change</span>: <span class="k">move</span> |value| draft.<span class="f">set</span>(value),
+                <span class="at">on_key_down</span>: <span class="k">move</span> |event: <span class="ty">KeyEvent</span>| {
+                    <span class="k">if</span> event.<span class="f">key</span>() == <span class="ty">Key</span>::Enter &amp;&amp; !event.<span class="f">shift_key</span>() {
+                        <span class="c">// … draft를 messages에 넣습니다 …</span>
+                        event.<span class="f">consume</span>();
+                    }
+                }
+            }
+        }
+    }
+}
+
+<span class="k">fn</span> <span class="f">main</span>() {
+    dioxus_compose::<span class="f">launch</span>(app);
+}</code></pre>
+    </figure>
+
+    <h2>현재 상태</h2>
+    <p>
+      로드맵을 기능 목록처럼 포장하지 않고 있는 그대로 적습니다. 지금 끝에서 끝까지 도는 것은
+      macOS 데스크톱뿐입니다. <em>계획</em>으로 표시한 항목은 <a href="../../SPEC.md">SPEC.md</a>에
+      설계만 되어 있고 구현은 없습니다.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th scope="col">플랫폼</th><th scope="col">상태</th><th scope="col">방식</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>macOS 데스크톱 (arm64)</td>
+            <td><span class="pill works">동작</span></td>
+            <td>Liberica NIK 25 Full로 <code>native-image --shared</code> 빌드한 렌더러를 Rust 바이너리가 링크합니다. 2026-09-20 확인.</td>
+          </tr>
+          <tr>
+            <td>Windows / Linux 데스크톱</td>
+            <td><span class="pill planned">계획</span></td>
+            <td>같은 <code>native-image</code> 경로입니다. 빌드 스크립트는 아직 macOS 외에서는 바로 멈춥니다.</td>
+          </tr>
+          <tr>
+            <td>iOS</td>
+            <td><span class="pill planned">계획</span></td>
+            <td>Kotlin/Native <code>-produce static</code>으로 같은 C 심볼을 내보냅니다.</td>
+          </tr>
+          <tr>
+            <td>Android</td>
+            <td><span class="pill planned">계획</span></td>
+            <td>Kotlin이 프로세스와 루프를 소유하고, Rust cdylib을 생성된 JNI 심으로 호출합니다.</td>
+          </tr>
+          <tr>
+            <td>Web (wasm)</td>
+            <td><span class="pill planned">계획</span></td>
+            <td>Rust wasm과 Kotlin/Wasm을 JS 브리지 없이 직결합니다. 실현 가능성은 아직 열린 질문입니다.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>기능별 상태</h3>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th scope="col">기능</th><th scope="col">상태</th><th scope="col">메모</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>위젯: <code>Column</code>, <code>Row</code>, <code>Box</code>, <code>Text</code>, <code>TextField</code>, <code>Button</code>, <code>Spacer</code></td><td><span class="pill works">동작</span></td><td>스키마 전체입니다. 이 밖의 것은 스키마부터 넓혀야 합니다.</td></tr>
+          <tr><td>이벤트와 동기 소비</td><td><span class="pill works">동작</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code>과 <code>event.consume()</code>.</td></tr>
+          <tr><td>비제어 <code>TextField</code></td><td><span class="pill works">동작</span></td><td>편집 값과 조합 상태를 렌더러가 소유합니다.</td></tr>
+          <tr><td>Rust 스키마 → Kotlin 프로토콜 코드젠</td><td><span class="pill works">동작</span></td><td>생성물이 낡으면 테스트가 실패합니다.</td></tr>
+          <tr><td><code>fill_max_width</code>·<code>fill_max_height</code> 외의 Modifier</td><td><span class="pill partial">일부</span></td><td>패딩, 크기, 배경, clickable은 프로토콜에는 있지만 <code>rsx!</code> 속성이 아직 없습니다.</td></tr>
+          <tr><td><code>LazyColumn</code> 윈도잉, <code>AppendText</code> 스트리밍</td><td><span class="pill planned">계획</span></td><td>명세(FR-8, FR-9)만 있고 구현은 없습니다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>다음으로 읽을 곳</h2>
+    <div class="cards">
+      <a class="card" href="getting-started.html">
+        <h3>시작하기</h3>
+        <p>Liberica NIK 설치, 렌더러 라이브러리 빌드, 데모 실행.</p>
+      </a>
+      <a class="card" href="writing-ui.html">
+        <h3>UI 작성하기</h3>
+        <p>위젯 집합, 이벤트 핸들러, 키 소비, 비제어 텍스트 필드.</p>
+      </a>
+      <a class="card" href="lists-and-streaming.html">
+        <h3>목록과 스트리밍</h3>
+        <p>긴 목록과 토큰 스트리밍에 필요한 것, 그리고 지금 할 수 있는 것.</p>
+      </a>
+      <a class="card" href="architecture.html">
+        <h3>아키텍처</h3>
+        <p>Host/Renderer 분리, C ABI, 프로토콜, 프레임 모델.</p>
+      </a>
+    </div>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="next" href="getting-started.html"><span>다음</span>시작하기 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span>이 가이드는 2026-09-20 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

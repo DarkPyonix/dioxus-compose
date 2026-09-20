@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dioxus-compose — write UI in Rust, draw it with Compose</title>
+<meta name="description" content="dioxus-compose lets Rust code author declarative UI with Dioxus while an AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
+<link rel="alternate" hreflang="en" href="./">
+<link rel="alternate" hreflang="ko" href="../ko/">
+<link rel="alternate" hreflang="x-default" href="./">
+<link rel="stylesheet" href="../assets/style.css">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="./" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>Guide</h2>
+      <ul>
+        <li><a href="./" aria-current="page">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>Repository</h2>
+      <ul>
+        <li><a href="../../INTENT.md">INTENT.md</a></li>
+        <li><a href="../../SPEC.md">SPEC.md</a></li>
+        <li><a href="../../../PROJECT.md">PROJECT.md</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <div class="hero">
+      <p class="eyebrow">Native UI, written in Rust</p>
+      <h1>Author your UI with Dioxus. Let Compose draw it.</h1>
+      <p class="lede">
+        dioxus-compose is a GUI stack in which Rust code describes the interface with
+        <code>rsx!</code>, components and hooks, and an ahead-of-time compiled Compose
+        Multiplatform renderer paints it. No webview is embedded, and no JVM ships with
+        your application.
+      </p>
+      <div class="cta">
+        <a class="btn" href="getting-started.html">Get started</a>
+        <a class="btn secondary" href="architecture.html">How it works</a>
+      </div>
+    </div>
+
+    <h2>Why it exists</h2>
+    <p>
+      The first consumer of this stack is <strong>darkpyonix-ember</strong>, an always-on
+      remote development environment that wraps several LLM CLIs. Always-on tools have to be
+      light. Web-based chat and IDE shells are not: a webview brings a browser engine with it,
+      and a bundled JRE adds 80–120&nbsp;MB even after <code>jlink</code>.
+    </p>
+    <p>
+      The obvious answer — a pure-Rust UI framework — fails on the part that matters most for a
+      chat client: text. Korean, Japanese and Chinese input goes through the platform IME, and an
+      IME that is 90% right is an app you cannot use. Compose Multiplatform already has mature
+      text, IME and widget behaviour, so this project borrows exactly that and nothing else: Rust
+      keeps the application code, Compose becomes an interpreter for a UI tree that Rust sends it.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Constraint</th><th scope="col">Consequence</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>No webview</td><td>No WKWebView, WebView2 or WebKitGTK; no Tauri, no wry.</td></tr>
+          <tr><td>No bundled JVM</td><td>Desktop ships as a GraalVM <code>native-image</code> shared library; iOS is planned as Kotlin/Native.</td></tr>
+          <tr><td>No hand-written JNI or cinterop</td><td>Every boundary shim is generated from the Rust schema.</td></tr>
+          <tr><td>UI code lives in Rust</td><td>Kotlin is an implementation detail of the renderer, not a place you write features.</td></tr>
+          <tr><td>Compose-quality text and IME</td><td>No code path may bypass Compose's platform text input.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>What it looks like</h2>
+    <p>
+      This is the <code>desktop_demo</code> example from the repository, shortened. The widget
+      names are Compose's; the attributes are their <code>snake_case</code> Rust spellings.
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>dioxus-compose/examples/desktop_demo.rs</figcaption>
+<pre><code><span class="k">use</span> dioxus_compose::prelude::*;
+
+<span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
+    <span class="k">let</span> <span class="k">mut</span> messages = <span class="f">use_signal</span>(<span class="ty">Vec</span>::&lt;<span class="ty">String</span>&gt;::new);
+    <span class="k">let</span> <span class="k">mut</span> draft = <span class="f">use_signal</span>(<span class="ty">String</span>::new);
+
+    <span class="f">rsx!</span> {
+        <span class="ty">Column</span> {
+            <span class="at">fill_max_width</span>: <span class="k">true</span>,
+            <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"dioxus-compose chat"</span> }
+            <span class="k">for</span> message <span class="k">in</span> messages() {
+                <span class="ty">Text</span> { <span class="at">text</span>: message }
+            }
+            <span class="ty">TextField</span> {
+                <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
+                <span class="at">multiline</span>: <span class="k">true</span>,
+                <span class="at">on_value_change</span>: <span class="k">move</span> |value| draft.<span class="f">set</span>(value),
+                <span class="at">on_key_down</span>: <span class="k">move</span> |event: <span class="ty">KeyEvent</span>| {
+                    <span class="k">if</span> event.<span class="f">key</span>() == <span class="ty">Key</span>::Enter &amp;&amp; !event.<span class="f">shift_key</span>() {
+                        <span class="c">// … push the draft into messages …</span>
+                        event.<span class="f">consume</span>();
+                    }
+                }
+            }
+        }
+    }
+}
+
+<span class="k">fn</span> <span class="f">main</span>() {
+    dioxus_compose::<span class="f">launch</span>(app);
+}</code></pre>
+    </figure>
+
+    <h2>Status</h2>
+    <p>
+      This is an honest table, not a roadmap dressed as a feature list. Only macOS desktop runs
+      end to end today. Everything marked <em>planned</em> is designed in
+      <a href="../../SPEC.md">SPEC.md</a> and not implemented.
+    </p>
+
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Platform</th><th scope="col">Status</th><th scope="col">How it is meant to work</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>macOS desktop (arm64)</td>
+            <td><span class="pill works">Works</span></td>
+            <td>Renderer built with GraalVM <code>native-image --shared</code> on Liberica NIK 25 Full; the Rust binary links it. Verified 2026-09-20.</td>
+          </tr>
+          <tr>
+            <td>Windows / Linux desktop</td>
+            <td><span class="pill planned">Planned</span></td>
+            <td>Same <code>native-image</code> path. Only macOS is scripted so far; the build script refuses to run elsewhere.</td>
+          </tr>
+          <tr>
+            <td>iOS</td>
+            <td><span class="pill planned">Planned</span></td>
+            <td>Kotlin/Native <code>-produce static</code> exporting the same C symbols.</td>
+          </tr>
+          <tr>
+            <td>Android</td>
+            <td><span class="pill planned">Planned</span></td>
+            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims.</td>
+          </tr>
+          <tr>
+            <td>Web (wasm)</td>
+            <td><span class="pill planned">Planned</span></td>
+            <td>Rust wasm and Kotlin/Wasm linked module-to-module with no JS bridge. Feasibility is still an open question.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Feature status</h3>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Widgets: <code>Column</code>, <code>Row</code>, <code>Box</code>, <code>Text</code>, <code>TextField</code>, <code>Button</code>, <code>Spacer</code></td><td><span class="pill works">Works</span></td><td>The whole schema. Anything else has to be added to it first.</td></tr>
+          <tr><td>Events and synchronous consumption</td><td><span class="pill works">Works</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code> with <code>event.consume()</code>.</td></tr>
+          <tr><td>Uncontrolled <code>TextField</code></td><td><span class="pill works">Works</span></td><td>Edit and composition state live in the renderer.</td></tr>
+          <tr><td>Kotlin protocol codegen from the Rust schema</td><td><span class="pill works">Works</span></td><td>A stale Kotlin file fails the test suite.</td></tr>
+          <tr><td>Modifiers beyond <code>fill_max_width</code> / <code>fill_max_height</code></td><td><span class="pill partial">Partial</span></td><td>Padding, size, background and clickable exist in the wire schema but have no <code>rsx!</code> attribute yet.</td></tr>
+          <tr><td><code>LazyColumn</code> windowing, <code>AppendText</code> streaming</td><td><span class="pill planned">Planned</span></td><td>Specified (FR-8, FR-9), not implemented.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Where to go next</h2>
+    <div class="cards">
+      <a class="card" href="getting-started.html">
+        <h3>Getting started</h3>
+        <p>Install Liberica NIK, build the renderer library, run the desktop demo.</p>
+      </a>
+      <a class="card" href="writing-ui.html">
+        <h3>Writing UI</h3>
+        <p>The widget set, event handlers, key consumption, and the uncontrolled text field.</p>
+      </a>
+      <a class="card" href="lists-and-streaming.html">
+        <h3>Lists &amp; streaming</h3>
+        <p>What long lists and token streaming will need, and what you can do today.</p>
+      </a>
+      <a class="card" href="architecture.html">
+        <h3>Architecture</h3>
+        <p>The Host/Renderer split, the C ABI, the wire protocol and the frame model.</p>
+      </a>
+    </div>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="next" href="getting-started.html"><span>Next</span>Getting started &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span>Guide last reviewed against the repository on 2026-09-20</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>
