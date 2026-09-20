@@ -1,4 +1,4 @@
-/* dioxus-compose guide — one hand-written stylesheet, no build step.
+/* dioxus-compose guide: one hand-written stylesheet, no build step.
    Sections: tokens, reset, top bar, layout, typography, code, tables,
    callouts, landing, footer, responsive. */
 
@@ -198,6 +198,7 @@ h2 {
   font-weight: 650; margin: 3rem 0 .8rem; padding-top: .9rem;
   border-top: 1px solid var(--line-soft);
 }
+h1, h2, h3, h4 { scroll-margin-top: 4.5rem; }
 h3 { font-size: 1.08rem; font-weight: 640; margin: 2rem 0 .5rem; letter-spacing: -0.008em; }
 h4 { font-size: .95rem; font-weight: 640; margin: 1.5rem 0 .4rem; color: var(--ink-soft); }
 p { margin: 0 0 1.05rem; }
@@ -301,8 +302,8 @@ td code, th code { white-space: nowrap; }
   font-size: .93rem; font-weight: 620; text-decoration: none;
   border: 1px solid var(--accent); background: var(--accent); color: #ffffff;
 }
-:root[data-theme="dark"] .btn { color: #17120f; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn { color: #17120f; } }
+:root[data-theme="dark"] .btn:not(.secondary) { color: #17120f; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn:not(.secondary) { color: #17120f; } }
 .btn:hover { filter: brightness(1.06); }
 .btn.secondary { background: transparent; color: var(--ink); border-color: var(--line); }
 .btn.secondary:hover { background: var(--surface-2); filter: none; }
