@@ -30,7 +30,8 @@ fake_install() {
     printf '#!/bin/sh\n' > "$home/bin/native-image"
     chmod +x "$home/bin/native-image"
     # A NIK Full home is only usable if it carries the AWT static libraries;
-    # build-native.sh links libawt_lwawt.a directly (SPEC PR-8).
+    # build-native.sh links libawt_lwawt.a directly, and refuses to start an
+    # image build without it.
     mkdir -p "$home/lib/static/darwin-$(host_arch)"
     : > "$home/lib/static/darwin-$(host_arch)/libawt_lwawt.a"
     echo "$home"

@@ -69,12 +69,12 @@ pub enum Mutation<'a> {
         text: &'a str,
         selection: Option<Selection>,
     },
-    /// FR-9: appends the streamed tail to a Text node instead of resending the whole string.
+    /// Appends the streamed tail to a Text node instead of resending the whole string.
     AppendText {
         node_id: u32,
         text: &'a str,
     },
-    /// FR-14.5: the root theme. Sent once as the first record of the initial batch.
+    /// The root theme. Sent once as the first record of the initial batch.
     SetTheme(Theme),
 }
 
@@ -463,7 +463,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
     if records_len < ENVELOPE_LEN || records_len > bytes.len() || records_len % 4 != 0 {
         return Err(ProtocolError::InvalidEnvelope);
     }
-    // NFR-7: `count` is attacker-controlled, so it only sizes the buffer up to what the
+    // `count` is attacker-controlled, so it only sizes the buffer up to what the
     // record region could actually hold. The shortest mutation record is `Remove` at 8
     // bytes, so that is the ceiling. Reserving `count` directly let a 12-byte message ask
     // for a >100 GB allocation.
@@ -574,7 +574,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
     Ok(output)
 }
 
-/// FR-13.8: two `f32` share one `u64`, with the first value in the low 32 bits.
+/// Two `f32` share one `u64`, with the first value in the low 32 bits.
 const fn pack_floats(low: f32, high: f32) -> u64 {
     (low.to_bits() as u64) | ((high.to_bits() as u64) << 32)
 }
@@ -673,10 +673,10 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
 
 /// Reads a `(offset: u32, len: u32)` string reference at `position`.
 ///
-/// PR-4 keeps strings in the arena that follows the records, so `arena_start` is the
+/// Strings live in the arena that follows the records, so `arena_start` is the
 /// first byte a string may legally point at. Without that floor a hostile Renderer can
 /// aim a string at the record region and have the decoder reinterpret record headers as
-/// text - garbage decoding into a valid-looking mutation (NFR-7).
+/// text, garbage decoding into a valid-looking mutation.
 fn read_string(bytes: &[u8], position: usize, arena_start: usize) -> Result<&str, ProtocolError> {
     let offset =
         usize::try_from(read_u32(bytes, position)?).map_err(|_| ProtocolError::LengthOverflow)?;
@@ -772,7 +772,7 @@ mod tests {
         assert_eq!(decoded, mutations);
     }
 
-    /// FR-13.1: a role Paint and a literal Paint occupy the same record length and
+    /// A role Paint and a literal Paint occupy the same record length and
     /// decode back to the value that was encoded.
     #[test]
     fn fr13_paint_role_and_literal_share_one_record_length() {
@@ -812,7 +812,7 @@ mod tests {
         );
     }
 
-    /// FR-13.4: every design primitive fits in `(tag, u64, u64)` and survives a round trip.
+    /// Every design primitive fits in `(tag, u64, u64)` and survives a round trip.
     #[test]
     fn fr13_design_modifiers_round_trip_in_two_words() {
         let modifiers = [
@@ -851,12 +851,12 @@ mod tests {
             encoder.encode(mutation).unwrap();
         }
         let bytes = encoder.finish().unwrap();
-        // Every modifier record is the same fixed 28 bytes (PR-4).
+        // Every modifier record is the same fixed 28 bytes.
         assert_eq!(bytes.len(), ENVELOPE_LEN + expected.len() * 28);
         assert_eq!(decode_batch(bytes).unwrap(), expected);
     }
 
-    /// FR-14.5: `SetTheme` is a 12-byte record of four `u16` fields.
+    /// `SetTheme` is a 12-byte record of four `u16` fields.
     #[test]
     fn fr14_set_theme_round_trips_in_twelve_bytes() {
         let theme = Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
@@ -869,7 +869,7 @@ mod tests {
         assert_eq!(decode_batch(bytes).unwrap(), [Mutation::SetTheme(theme)]);
     }
 
-    /// NFR-7: an out-of-range theme tag is an error, never a panic.
+    /// An out-of-range theme tag is an error, never a panic.
     #[test]
     fn fr14_rejects_unknown_theme_tags() {
         let mut encoder = BatchEncoder::default();

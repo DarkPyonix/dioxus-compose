@@ -43,7 +43,7 @@ class StreamingTextTest {
     }
 
     /**
-     * FR-9: `AppendText` grows a Text node by its tail. Only that node recomposes, so the
+     * `AppendText` grows a Text node by its tail. Only that node recomposes, so the
      * rest of the screen is not laid out again on every streamed token.
      */
     @Test
@@ -87,7 +87,7 @@ class StreamingTextTest {
         )
     }
 
-    /** FR-9: the batch carries the tail only, so the cost does not grow with the text. */
+    /** The batch carries the tail only, so the cost does not grow with the text. */
     @Test
     fun fr9_only_the_tail_is_sent_and_the_node_keeps_what_it_had() = runComposeUiTest {
         val connection = FakeHostConnection(

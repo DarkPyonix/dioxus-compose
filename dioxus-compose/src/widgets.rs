@@ -71,7 +71,7 @@ impl KeyEvent {
     }
 }
 
-/// FR-13.8: a role that was not set is tag 0, which means "not sent". The Renderer
+/// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
 fn role(value: Option<impl Into<u16>>) -> i64 {
     value.map_or(0, |value| i64::from(value.into()))
@@ -144,8 +144,8 @@ pub fn ComposeBox(
     }
 }
 
-/// FR-13.6: the whole content with a vertical scroll attached. The scroll position is
-/// the Renderer's (D5), so scrolling never reaches the Host.
+/// The whole content with a vertical scroll attached. The scroll position is the
+/// Renderer's, like focus and animation state, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollColumn(
     #[props(default)] fill_max_width: bool,
@@ -157,8 +157,9 @@ pub fn ScrollColumn(
     }
 }
 
-/// FR-13.2: `type_role` alone takes the design system's size, weight, line height and
-/// letter spacing. Each override replaces one axis and costs one `SetProp` (FR-4).
+/// `type_role` alone takes the design system's size, weight, line height and letter
+/// spacing. Each override replaces one axis and costs one `SetProp`, so changing the font
+/// size does not resend the rest of the text's styling.
 #[component]
 pub fn Text(
     #[props(into)] text: String,
@@ -211,7 +212,7 @@ pub fn TextField(
     }
 }
 
-/// FR-14.2: the variant is the seam the design system's component rule attaches to.
+/// The variant is the seam the design system's component rule attaches to.
 /// The same rsx draws differently per system, and that is correct behaviour.
 #[component]
 pub fn Button(
@@ -235,7 +236,7 @@ pub fn Spacer(#[props(default)] width: f32, #[props(default)] height: f32) -> El
     rsx! { spacer { width, height } }
 }
 
-/// FR-8: the visible item range the Renderer asks the Host to materialise.
+/// The visible item range the Renderer asks the Host to materialise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RangeRequest {
     start: u32,
@@ -256,10 +257,10 @@ impl RangeRequest {
     }
 }
 
-/// A windowed list (FR-8). The Host declares `item_count` and a stable key per item, and
+/// A windowed list. The Host declares `item_count` and a stable key per item, and
 /// materialises **exactly** the range the Renderer last requested.
 ///
-/// The read-ahead buffer belongs to the Renderer, which owns the scroll position (D5) and so
+/// The read-ahead buffer belongs to the Renderer, which owns the scroll position and so
 /// knows how far ahead to ask. Widening the range here would break the Renderer's placement:
 /// `start` is the global index of the first child it receives, and that is what lets it draw
 /// a real Compose `LazyColumn` of `item_count` items. The data stays in the Host, so
@@ -291,5 +292,130 @@ pub fn LazyColumn(
                 }
             }
         }
+    }
+}
+
+/// A grouped container. What a card looks like, its background, corner and resting
+/// elevation, is the design system's decision, so the widget carries no appearance of its
+/// own. `Modifier::Elevation` overrides the resting height when the Host has a reason to.
+#[component]
+pub fn Card(children: Element) -> Element {
+    rsx! {
+        card { {children} }
+    }
+}
+
+/// A plain background-and-elevation container. Use it where a `Card`'s grouping meaning
+/// would be wrong and only the surface is wanted.
+#[component]
+pub fn Surface(children: Element) -> Element {
+    rsx! {
+        surface { {children} }
+    }
+}
+
+/// A modal. `open` seeds the Renderer's own open state and carries changes that came from
+/// somewhere other than the Renderer; the Renderer runs the enter and exit itself so the
+/// animation never round trips through the Host. `on_dismiss` fires when the user asks to
+/// close it, and the Host decides whether to honour that by setting `open` to false.
+#[component]
+pub fn Dialog(
+    #[props(default)] open: bool,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    children: Element,
+) -> Element {
+    rsx! {
+        dialog {
+            open,
+            ondismiss: move |_| on_dismiss.call(()),
+            {children}
+        }
+    }
+}
+
+/// A popup anchored to `anchor`, which is the widget the menu hangs off. The anchor is the
+/// first child on the wire and the entries follow it, so the Renderer can place the popup
+/// without the Host knowing any screen coordinates.
+///
+/// Each entry supplies its own `on_click`, which is what tells the Host which one was
+/// chosen. The Renderer closes the popup itself.
+#[component]
+pub fn Menu(
+    #[props(default)] expanded: bool,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    anchor: Element,
+    children: Element,
+) -> Element {
+    rsx! {
+        menu {
+            open: expanded,
+            ondismiss: move |_| on_dismiss.call(()),
+            {anchor}
+            {children}
+        }
+    }
+}
+
+/// A row of tabs. Each child is one tab.
+///
+/// `selected_index` seeds the Renderer's selection and moves it when the Host changes it.
+/// Tapping a tab changes the selection in the Renderer and reports it by firing that tab's
+/// own `on_click`, so switching tabs costs one event and no re-render of the tab strip.
+#[component]
+pub fn Tabs(#[props(default)] selected_index: usize, children: Element) -> Element {
+    rsx! {
+        tabs { selected_index: selected_index as i64, {children} }
+    }
+}
+
+/// The bar across the top of a screen. Its children are its content, left to right. How the
+/// bar is sized, spaced and separated from what is below it is the design system's rule.
+#[component]
+pub fn TopAppBar(children: Element) -> Element {
+    rsx! {
+        topappbar { {children} }
+    }
+}
+
+/// The horizontal axis of the same windowing protocol `LazyColumn` uses, with the same
+/// contract: the Host materialises exactly the range the Renderer last asked for, and the
+/// read-ahead buffer belongs to the Renderer because the scroll position does.
+#[component]
+pub fn LazyRow(
+    item_count: usize,
+    #[props(default)] key_of: Option<Callback<usize, String>>,
+    item: Callback<usize, Element>,
+) -> Element {
+    let mut range = use_signal(|| (0_usize, 0_usize));
+    let (start, count) = range();
+    let first = start.min(item_count);
+    let last = first.saturating_add(count).min(item_count);
+    rsx! {
+        lazyrow {
+            item_count: item_count as i64,
+            onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
+                let requested = event.data();
+                range.set((requested.start(), requested.count()));
+            },
+            for index in first..last {
+                {
+                    let item_key = key_of
+                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
+                    rsx! {
+                        composebox { key: "{item_key}", item_key, {item.call(index)} }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// An explanation attached to its child. It is a description as much as a hover popup: the
+/// Renderer also exposes the text to the accessibility tree, so a pointer is not the only
+/// way to reach it.
+#[component]
+pub fn Tooltip(#[props(into)] text: String, children: Element) -> Element {
+    rsx! {
+        tooltip { text, {children} }
     }
 }

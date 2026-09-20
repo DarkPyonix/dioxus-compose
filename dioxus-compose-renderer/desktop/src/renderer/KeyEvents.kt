@@ -16,27 +16,27 @@ import androidx.compose.ui.input.key.KeyEvent as ComposeKeyEvent
 import dioxus.compose.runtime.EventDispatcher
 
 /**
- * Key routing to the Host (SPEC FR-12).
+ * Key routing to the Host.
  *
  * The Host handler runs synchronously on this call stack and its result decides whether the
  * key is consumed, the same model as `PointerInputChange.consume()`.
  *
  * **A key event is never sent while an IME composition is in progress.** Enter during a
  * Korean composition means "commit the composition", not "submit": dispatching it would let
- * a Host handler clear the field and the syllable being composed would vanish unsubmitted
- * (SPEC FR-5, FR-12, §6).
+ * a Host handler clear the field and the syllable being composed would vanish.
  */
 
 /** The protocol key for a Compose key, or null when the schema cannot name it. */
 internal fun protocolKey(key: Key): ProtocolKey? = when (key) {
     Key.Enter, Key.NumPadEnter -> ProtocolKey.Enter
-    // SPEC-GAP: the schema's `Key` enum has only `Enter`, so no other key can cross the
-    // boundary. Every additional key needs a schema variant and a new hash (FR-7).
+    // The schema's `Key` enum has only `Enter`, so no other key can cross the boundary.
+    // Every additional key needs a schema variant, which changes the schema hash and so
+    // requires both sides to be rebuilt together.
     else -> null
 }
 
 /**
- * Whether a key press may be offered to the Host at all (SPEC FR-12).
+ * Whether a key press may be offered to the Host at all.
  *
  * Key-down only (a Host handler is `on_key_down`), a key the schema can name, and **never
  * while an IME composition is in progress**. Kept free of Compose types so the rule that
@@ -57,7 +57,7 @@ internal fun isDispatchableKeyDown(event: ComposeKeyEvent, composing: Boolean): 
     )
 
 /**
- * Sends one key press to the Host and returns its consumption result (SPEC FR-12).
+ * Sends one key press to the Host and returns its consumption result.
  *
  * Returns false without calling the Host whenever [isDispatchableKeyDown] says no, so a
  * composition keystroke never reaches Rust.
@@ -85,7 +85,7 @@ internal fun dispatchKeyDown(
 }
 
 /**
- * `Modifier.onKeyEvent` for a widget that owns no text composition (SPEC FR-12).
+ * `Modifier.onKeyEvent` for a widget that owns no text composition.
  *
  * `onKeyEvent` rather than `onPreviewKeyEvent`: preview is for interception, and a widget
  * without an editor has nothing to intercept. The TextField is the exception and wires its

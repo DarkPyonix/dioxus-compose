@@ -32,22 +32,26 @@ import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.textStyle
 import dioxus.compose.ui.node.HostText
 
-/** Quiet period before a `TextChanged` notification is sent (SPEC FR-5, "debounced"). */
+/**
+ * Quiet period before a `TextChanged` notification is sent.
+ *
+ * The Host is told about edits, but not once per keystroke: `TextChanged` is a notification,
+ * not the mechanism that keeps the field's value, so it can wait for typing to pause. The
+ * interval is chosen here rather than negotiated; 120 ms is short enough to feel immediate
+ * and long enough to collapse a burst of typing into one event.
+ */
 const val TEXT_CHANGED_DEBOUNCE_MILLIS: Long = 120
 
 /**
- * The uncontrolled TextField (SPEC FR-5, INTENT D5).
+ * The uncontrolled TextField.
  *
  * The editing value and the IME composition live in `remember` and never round-trip through
  * the Host. The Host learns about edits through debounced `TextChanged` and through the
  * commit events `TextSubmitted` and `FocusLost`; it changes the value only with `SetText`,
  * which is held back while a composition is in progress.
  *
- * A Host `on_key_down` handler is offered the key first and its result decides consumption
- * (SPEC FR-12); `TextSubmitted` remains for a field that only declares `on_submit`.
- *
- * SPEC-GAP: FR-5 says `TextChanged` is debounced but names no interval; 120 ms is chosen
- * here and must be confirmed in the SPEC.
+ * A Host `on_key_down` handler is offered the key first and its result decides consumption;
+ * `TextSubmitted` remains for a field that only declares `on_submit`.
  *
  * Key events are never dispatched while composing: Enter during a Korean composition means
  * "commit the composition", not "submit".
@@ -70,12 +74,13 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
     val placeholder = node.text(PropertyKind.Placeholder)
     val hostText = node.hostText
     val composing = value.composition != null
-    // FR-14.4: the field takes its type role and its colours from the design system, the
-    // same way a Text does.
+    // The field takes its type role and its colours from the design system, the same way a
+    // Text does.
     val theme = LocalDesignTheme.current
     val textStyle = node.textStyle(theme)
 
-    // A Host SetText is applied only once the composition has finished (SPEC FR-5).
+    // A Host SetText is applied only once the composition has finished: replacing the text
+    // mid-composition would destroy the syllable being assembled.
     LaunchedEffect(hostText, composing) {
         if (hostText != null && hostText.revision != appliedHostRevision && !composing) {
             value = TextFieldValue(hostText.text, selection = hostText.selection(hostText.text))
@@ -105,11 +110,11 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
             focused = state.isFocused
         }
         // Preview is required because this intercepts Enter before the editor inserts a
-        // newline; the Host's synchronous result decides whether it is consumed (SPEC FR-12).
+        // newline; the Host's synchronous result decides whether it is consumed.
         //
         // `value.composition` is read here rather than from the `composing` snapshot above so
         // the state is the one that exists at the moment the key arrives: that read is the
-        // guard that keeps Enter away from Rust during a Korean composition (SPEC §6).
+        // guard that keeps Enter away from Rust during a Korean composition.
         .onPreviewKeyEvent { event ->
             val composingNow = value.composition != null
             val consumedByHandler = keyDownHandler != null &&
@@ -162,7 +167,7 @@ private fun HostText.selection(text: String): TextRange {
 }
 
 /**
- * Whether an Enter key press becomes a `TextSubmitted` event (SPEC FR-5, FR-12).
+ * Whether an Enter key press becomes a `TextSubmitted` event.
  *
  * While an IME composition is in progress Enter means "commit the composition", so nothing
  * is dispatched and the key is left to the editor. In a multiline field Shift+Enter is a

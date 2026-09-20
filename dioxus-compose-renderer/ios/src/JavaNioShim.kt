@@ -8,7 +8,7 @@ import kotlinx.cinterop.get
 import kotlinx.cinterop.set
 
 /**
- * The slice of `java.nio` that the generated protocol codec uses (SPEC PR-4).
+ * The slice of `java.nio` that the generated protocol codec uses.
  *
  * `Protocol.gen.kt` is generated from the Rust schema by `cargo run -p dioxus-compose --bin
  * codegen` and is written against `java.nio.ByteBuffer`. Kotlin/Native has no JDK, so this
@@ -19,11 +19,11 @@ import kotlinx.cinterop.set
  * This is a stopgap. The proper fix is for codegen to emit a buffer-neutral codec, which is a
  * change to `dioxus-compose/src/codegen.rs` on the Rust side.
  *
- * Two backings, both read in place (PR-4 forbids copying the batch):
+ * Two backings, both read in place, because the batch is never copied:
  * - a Kotlin `ByteArray`, for the event buffer the renderer fills and hands to the Host;
  * - a raw `CPointer`, for the Host's arena, which this side only reads.
  *
- * Both byte orders are honoured even though the protocol is little-endian (PR-4): the codec
+ * Both byte orders are honoured even though the protocol is little-endian: the codec
  * reads the buffer's previous order, sets its own, and restores the old one when it is done,
  * and a JDK buffer starts out big-endian.
  */

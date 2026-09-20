@@ -4,7 +4,7 @@ import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.CName
 
 /**
- * C entry points of the renderer static library on iOS (SPEC PR-2, NFR-4, M5).
+ * C entry points of the renderer static library on iOS.
  *
  * The desktop renderer is a GraalVM native image, so its entry points are `@CEntryPoint` and
  * a C shim (`desktop/c/renderer_entry.c`) owns the isolate and hides the `IsolateThread*`
@@ -24,17 +24,18 @@ import kotlin.native.CName
  *
  * **The main thread rule has the opposite shape to macOS's.** On macOS the renderer runs on
  * a secondary thread and the shim keeps the process main thread for `NSApplication`, because
- * AWT would otherwise re-enter `[NSApp run]` and never hand control back (INTENT D9-macOS).
+ * AWT would otherwise re-enter `[NSApp run]` and never hand control back.
  * On iOS the rule is stricter and simpler: `UIApplicationMain` must be called on the process
  * main thread, it installs the main run loop there, and it never returns. Compose for iOS
  * composes and draws on that thread, so the VirtualDom and every `dioxus_compose_host_*`
- * call run there too (PR-1, PR-3). Called anywhere else, `run` returns `RUN_NOT_MAIN_THREAD`
+ * call run there too, which is also why neither side needs a lock. Called anywhere else,
+ * `run` returns `RUN_NOT_MAIN_THREAD`
  * without starting anything, exactly as on macOS.
  *
  * **Memory model.** Kotlin/Native's current memory model has no freezing and no per-thread
  * object ownership, so `request_frame` may touch `FrameRequests` from a Host worker thread
- * (PR-3) without hopping to the main queue. The batch arena is Host memory, read through
- * `CPointer` inside the call that produced it (PR-4), so no Kotlin object refers to it after
+ * without hopping to the main queue. The batch arena is Host memory, read through
+ * `CPointer` inside the call that produced it, so no Kotlin object refers to it after
  * the call returns and the Kotlin garbage collector never sees it.
  */
 

@@ -74,7 +74,7 @@ fn encode_one_hundred(encoder: &mut BatchEncoder) {
     std::hint::black_box(encoder.finish().unwrap());
 }
 
-/// FR-9 streaming shape: a long answer already on screen, then one frame worth of tokens
+/// Streaming shape: a long answer already on screen, then one frame worth of tokens
 /// appended as tails and flushed by a single `render_frame`.
 struct StreamingText {
     host: Host,

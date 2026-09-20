@@ -23,12 +23,12 @@ import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.runtime.EventDispatcher
 
 /**
- * Rebuilds a Compose `Modifier` chain from the Host's modifier value list (SPEC FR-10).
+ * Rebuilds a Compose `Modifier` chain from the Host's modifier value list.
  *
  * List order is chain order, so `[Padding(16), FillMaxWidth]` and the reverse differ exactly
  * as they do in hand-written Compose.
  *
- * Roles are resolved here against the active design system's token table (SPEC FR-14.4):
+ * Roles are resolved here against the active design system's token table:
  * the Host sent a role, the Renderer decides what it measures.
  */
 internal fun List<ProtocolModifier>.toComposeModifier(
@@ -36,7 +36,7 @@ internal fun List<ProtocolModifier>.toComposeModifier(
     dispatcher: EventDispatcher,
     theme: ResolvedTheme,
 ): Modifier {
-    // FR-13.3: the last Shape or ShapeRole in the list is what clips, what the border
+    // The last Shape or ShapeRole in the list is what clips, what the border
     // follows and what the background fills, whatever their order in the chain.
     val shape = resolvedShape(theme)
     return fold(Modifier as Modifier) { chain, value ->
@@ -68,7 +68,7 @@ internal fun List<ProtocolModifier>.toComposeModifier(
     }
 }
 
-/** The shape this node's clip, border and background all use (SPEC FR-13.3). */
+/** The shape this node's clip, border and background all use. */
 internal fun List<ProtocolModifier>.resolvedShape(theme: ResolvedTheme): Shape {
     for (index in indices.reversed()) {
         when (val value = this[index]) {
@@ -86,7 +86,7 @@ internal fun List<ProtocolModifier>.resolvedShape(theme: ResolvedTheme): Shape {
     return RectangleShape
 }
 
-/** The weight this node asked its parent layout for, or null (SPEC FR-13.4). */
+/** The weight this node asked its parent layout for, or null. */
 internal fun List<ProtocolModifier>.weightOf(): Float? =
     lastOrNull { it is ProtocolModifier.Weight }
         ?.let { (it as ProtocolModifier.Weight).value }
@@ -96,7 +96,7 @@ internal fun List<ProtocolModifier>.weightOf(): Float? =
  * Pointer handling for `Modifier.Clickable`.
  *
  * The Host handler runs synchronously inside the gesture, and its result decides whether the
- * pointer change is consumed (SPEC FR-12). A Host that does not consume leaves the gesture
+ * pointer change is consumed. A Host that does not consume leaves the gesture
  * available to whatever is underneath.
  */
 private fun Modifier.hostClickable(

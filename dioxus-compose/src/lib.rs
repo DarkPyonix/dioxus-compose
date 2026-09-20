@@ -24,20 +24,21 @@ pub use schema::{
     SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
 };
 pub use widgets::{
-    Button, Column, ComposeBox as Box, KeyEvent, LazyColumn, RangeRequest, Row, ScrollColumn,
-    Spacer, Text, TextField,
+    Button, Card, Column, ComposeBox as Box, Dialog, KeyEvent, LazyColumn, LazyRow, Menu,
+    RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs, Text, TextField, Tooltip, TopAppBar,
 };
 
 pub mod prelude {
     pub use crate as dioxus_elements;
-    // SPEC-GAP: dioxus-core 0.7's rsx! expansion uses unqualified `Box<T>`.
+    // dioxus-core 0.7's rsx! expansion uses unqualified `Box<T>`.
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, Button, ButtonVariant, Color, ColorRole, ColorScheme, Column,
-        DesignSystem, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LinearProgressIndicator,
-        LoopMode, Modifier, Paint, RangeRequest, Row, ScrollColumn, ShapeRole, SpaceRole, Spacer,
-        Text, TextAlign, TextField, TextOverflow, Theme, TypeRole, component, launch, rsx,
+        Alignment, Arrangement, Button, ButtonVariant, Card, Color, ColorRole, ColorScheme, Column,
+        DesignSystem, Dialog, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
+        LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
+        ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
+        Theme, Tooltip, TopAppBar, TypeRole, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -52,6 +53,15 @@ pub mod elements {
     pub use crate::extensions::elements::*;
 
     macro_rules! element {
+        // A widget with no attributes of its own, which is what a container that emits
+        // only roles and children looks like. It needs no attribute descriptions, so it
+        // must not import the type that describes them.
+        ($module:ident, $tag:literal, []) => {
+            pub mod $module {
+                pub const TAG_NAME: &str = $tag;
+                pub const NAME_SPACE: Option<&str> = None;
+            }
+        };
         ($module:ident, $tag:literal, [$($attribute:ident),* $(,)?]) => {
             pub mod $module {
                 use super::AttributeDescription;
@@ -63,7 +73,7 @@ pub mod elements {
         };
     }
 
-    // FR-13.4: layout containers carry arrangement, spacing and cross-axis alignment.
+    // Layout containers carry arrangement, spacing and cross-axis alignment.
     element!(
         column,
         "Column",
@@ -93,8 +103,8 @@ pub mod elements {
         "Box",
         [fill_max_width, fill_max_height, item_key, alignment]
     );
-    // FR-13.2: the type role plus one attribute per override axis, so changing one axis
-    // is one SetProp (FR-4).
+    // The type role plus one attribute per override axis, so changing one axis is one
+    // SetProp and the rest of the text's styling is not resent.
     element!(
         text,
         "Text",
@@ -115,7 +125,21 @@ pub mod elements {
     element!(button, "Button", [text, enabled, variant]);
     element!(spacer, "Spacer", [width, height]);
     element!(lazycolumn, "LazyColumn", [item_count]);
-    // FR-13.6: whole content plus a vertical scroll. The position stays in the Renderer.
+    // Widget tags 18 to 25. Each one emits roles and children only: how a card, a bar or a
+    // popup is drawn belongs to the design system, not to the Host that declared it.
+    element!(card, "Card", []);
+    element!(surface, "Surface", []);
+    // `open` seeds the Renderer's own open state rather than driving it frame by frame: the
+    // Renderer owns the enter and exit so neither crosses the boundary.
+    element!(dialog, "Dialog", [open]);
+    element!(menu, "Menu", [open]);
+    // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
+    // change came from outside the Renderer.
+    element!(tabs, "Tabs", [selected_index]);
+    element!(topappbar, "TopAppBar", []);
+    element!(lazyrow, "LazyRow", [item_count]);
+    element!(tooltip, "Tooltip", [text]);
+    // Whole content plus a vertical scroll. The position stays in the Renderer.
     element!(
         scrollcolumn,
         "ScrollColumn",
@@ -135,6 +159,14 @@ pub mod elements {
             spacer {},
             lazycolumn {},
             scrollcolumn {},
+            card {},
+            surface {},
+            dialog {},
+            menu {},
+            tabs {},
+            topappbar {},
+            lazyrow {},
+            tooltip {},
         }
     }
 }
@@ -176,4 +208,6 @@ pub mod events {
     event!(onfocuslost, ());
     event!(onkeydown, crate::KeyEvent);
     event!(onrangerequest, crate::RangeRequest);
+    // A dismissal carries no value, so it reuses the empty event payload a click uses.
+    event!(ondismiss, ());
 }

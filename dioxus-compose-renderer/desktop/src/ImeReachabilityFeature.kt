@@ -3,7 +3,7 @@ package dioxus.compose.ui.platform
 import org.graalvm.nativeimage.hosted.Feature
 
 /**
- * Registers the AWT text input path for the image (SPEC §6, INTENT D9-macOS).
+ * Registers the AWT text input path for the image.
  *
  * The platform calls into Java through JNI to drive an input method: it asks which character
  * a point maps to, where the caret is, what the composed text is. Those Java methods are

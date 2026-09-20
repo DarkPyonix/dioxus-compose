@@ -1,5 +1,4 @@
-// Resolving the Renderer distribution for the `native-renderer` feature (SPEC NFR-10,
-// NFR-11).
+// Resolving the Renderer distribution for the `native-renderer` feature.
 //
 // This file is `include!`d by `build.rs` and by `tests/renderer_resolution.rs`, so the
 // rules a consumer hits at build time are the rules the tests exercise. It touches the
@@ -9,7 +8,8 @@
 use std::path::{Path, PathBuf};
 
 /// Points at a directory laid out like the release artifact, or at its `lib`
-/// subdirectory. Takes precedence over the workspace build output (SPEC NFR-10).
+/// subdirectory. Takes precedence over the workspace build output, so an unpacked release
+/// artifact, a vendored copy or an offline build can all be pointed at with one variable.
 pub const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
 
 /// The shared library every distribution of the Renderer contains, whatever else
@@ -25,7 +25,7 @@ pub fn renderer_lib_file(target_os: &str) -> &'static str {
 
 /// One line holding the crate version the artifact was built for. The release packaging
 /// script writes it into the artifact root; a renderer built straight from the workspace
-/// has no such file (SPEC NFR-11).
+/// has no such file.
 pub const RENDERER_VERSION_FILE: &str = "dioxus-compose-renderer.version";
 
 /// The release artifact for a crate version and platform target, as
@@ -53,7 +53,7 @@ pub struct Renderer {
 /// in-repository fallback, which does not exist for a consumer building a published
 /// crate. That case is the whole point of the error paths here: without this check the
 /// build would hand a nonexistent directory to the linker and the consumer's first signal
-/// would be an undefined-symbol dump (SPEC NFR-11).
+/// would be an undefined-symbol dump.
 pub fn resolve_renderer(
     env_dir: Option<&Path>,
     workspace_lib_dir: &Path,
@@ -126,7 +126,7 @@ fn how_to_get_one(crate_version: &str, target: &str) -> String {
     format!(
         "\n\
          The renderer ships as a checksummed release artifact, not inside this crate: it is\n\
-         about 85MB of shared library and Skia (SPEC NFR-11).\n\
+         about 85MB of shared library and Skia, far over the crates.io package limit.\n\
          \n\
          Get it with one command, from a checkout of the repository:\n\
          \n\
@@ -198,7 +198,7 @@ fn version_mismatch_message(
          The renderer in {lib_dir} declares version {artifact_version} ({file}), but this\n\
          crate is version {crate_version}. Linking them would pair a Host against a Renderer\n\
          it was never built for, and the mismatch would surface as a protocol error at\n\
-         runtime instead of here (SPEC NFR-11).\n\
+         runtime instead of here.\n\
          \n\
          Use the artifact for this crate version, {artifact}, or depend on\n\
          dioxus-compose {artifact_version} instead.",

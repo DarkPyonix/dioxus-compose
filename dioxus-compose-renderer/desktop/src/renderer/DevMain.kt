@@ -22,7 +22,7 @@ private const val VALUE_CHANGE_HANDLER = 12L
 private const val SUBMIT_HANDLER = 13L
 
 /**
- * The M0 screen driven by a scripted Host (SPEC NFR-5).
+ * The demo screen driven by a scripted Host.
  *
  * Hot reload and `@Preview` work against this without building the Rust side.
  */

@@ -68,7 +68,7 @@ class TextFieldTest {
     @Test
     fun fr5_enter_during_composition_only_commits_the_composition() {
         // An Enter press while the IME is composing must never reach the Host: it means
-        // "commit the composition". Driving a real IME is a manual check (SPEC §6); this
+        // "commit the composition". Driving a real IME is a manual check; this
         // pins the decision the key handler makes.
         assertFalse(
             shouldSubmitOnEnter(

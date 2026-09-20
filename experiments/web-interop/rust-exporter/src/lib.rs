@@ -1,7 +1,8 @@
-//! PR-6 experiment: the Rust (Host) side of a two-module WebAssembly link.
+//! Web-interop experiment: the Rust (Host) side of a two-module WebAssembly link.
 //!
 //! This crate plays the role the `dioxus-compose` Host would play on the Web
-//! target. It owns a fixed-layout arena in linear memory (PR-4) and exports the
+//! target. It owns a fixed-layout arena in linear memory, read in place with no
+//! serialisation or copying, and exports the
 //! boundary functions the Renderer module is supposed to import directly,
 //! without a JavaScript frame on the call path.
 //!
@@ -20,7 +21,8 @@ fn panic(_: &PanicInfo) -> ! {
     core::arch::wasm32::unreachable()
 }
 
-/// The protocol arena (PR-4). Fixed size, reused every frame, never reallocated.
+/// The protocol arena. Fixed size, reused every frame, never reallocated, so a
+/// steady-state frame does no allocation at all.
 const ARENA_LEN: usize = 64 * 1024;
 static mut ARENA: [u8; ARENA_LEN] = [0; ARENA_LEN];
 

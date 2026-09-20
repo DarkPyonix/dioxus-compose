@@ -31,7 +31,7 @@ import dioxus.compose.ui.textStyle
 import dioxus.compose.ui.variant
 
 /**
- * A Button drawn by the active design system's component rules (SPEC FR-14.2, FR-14.6).
+ * A Button drawn by the active design system's component rules.
  *
  * The same rsx deliberately produces different pixels per system: the shape, the label
  * weight and the press feedback all come from [ComponentRules], not from this function.
@@ -75,7 +75,7 @@ internal fun HostButton(
     } else {
         // The Host result is not used here: a click that reached a Button is never offered
         // to anything below it. Indication is null because the design system owns the
-        // feedback (FR-14.6 item 6), and a ripple is only one system's answer.
+        // feedback, and a ripple is only one system's answer.
         modifier.clickable(
             interactionSource = interactions,
             indication = null,
@@ -106,7 +106,7 @@ internal fun HostButton(
     }
 }
 
-/** Fluent's lighter top edge. Other systems pass null and pay nothing (FR-14.2). */
+/** Fluent's lighter top edge. Other systems pass null and pay nothing. */
 private fun Modifier.topHighlight(color: Color?): Modifier {
     if (color == null) return this
     return drawWithContent {

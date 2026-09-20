@@ -4,7 +4,7 @@ import dioxus.compose.ui.platform.IosHostConnection
 import platform.Foundation.NSThread
 
 /**
- * What the C entry points call (SPEC PR-2). See `staticlib/src/IosEntryPoints.kt` for the
+ * What the C entry points call. See `staticlib/src/IosEntryPoints.kt` for the
  * symbols themselves and for why they live in a module of their own.
  *
  * The status codes are the desktop shim's codes (`desktop/c/renderer_entry.c`), so a Host
@@ -22,7 +22,9 @@ object RendererApi {
      * Blocks for the lifetime of the process (see `runRenderer`).
      *
      * Must be called on the process main thread: `UIApplicationMain` installs the main run
-     * loop there and Compose for iOS composes on it. Nothing may unwind into C (NFR-7).
+     * loop there and Compose for iOS composes on it. Nothing may unwind into C: a Kotlin
+     * exception crossing the boundary is undefined behaviour, so failures come back as a
+     * status code.
      */
     fun run(): Int =
         try {
@@ -39,6 +41,7 @@ object RendererApi {
             RUN_FAILED
         }
 
-    /** Thread-safe (SPEC PR-3): requests coalesce into one `render_frame` per frame. */
+    /** Thread-safe, because Host worker threads call it: requests coalesce into one
+     *  `render_frame` per frame. */
     fun requestFrame() = FrameRequests.request()
 }

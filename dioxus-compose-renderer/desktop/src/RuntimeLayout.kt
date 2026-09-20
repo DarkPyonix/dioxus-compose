@@ -25,5 +25,5 @@ internal fun configureRuntimeLayout(libraryDir: String) {
     // Setting skiko.buffering here does nothing in a native image, measured: IOSurface
     // stays at 9408KB across 11 regions either way, while the same property on the JVM
     // drops it to 7696KB. Skiko's property holder is initialised when the image is built,
-    // so a value written at startup arrives too late to be read (SPEC 5.2).
+    // so a value written at startup arrives too late to be read.
 }

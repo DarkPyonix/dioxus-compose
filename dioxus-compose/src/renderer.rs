@@ -5,7 +5,7 @@ use dioxus_core::{
 };
 use std::collections::HashMap;
 
-/// The inclusive FR-13 design-property range. Extension properties follow this range.
+/// The inclusive range of design-property tags. Extension properties follow this range.
 const FIRST_DESIGN_PROPERTY: u16 = PropertyKind::TypeRole as u16;
 const LAST_DESIGN_PROPERTY: u16 = PropertyKind::Variant as u16;
 
@@ -37,7 +37,7 @@ pub struct ComposeRenderer {
     nodes: Vec<Option<u32>>,
     handlers: Vec<Handler>,
     parents: HashMap<u32, (u32, u32)>,
-    /// Which FR-13 design properties a node has actually been given, one bit per tag.
+    /// Which design properties a node has actually been given, one bit per tag.
     design_props: HashMap<u32, u32>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
@@ -99,7 +99,7 @@ impl ComposeRenderer {
         });
     }
 
-    /// FR-14.5: the root theme record. Written once per rebuild, never per frame.
+    /// The root theme record. Written once per rebuild, never per frame.
     pub fn set_theme(&mut self, theme: crate::schema::Theme) {
         self.write(Mutation::SetTheme(theme));
     }
@@ -112,7 +112,7 @@ impl ComposeRenderer {
         });
     }
 
-    /// FR-9: append the streamed tail to a Text node without resending its whole value.
+    /// Append the streamed tail to a Text node without resending its whole value.
     pub fn append_text_node(&mut self, node_id: u32, text: &str) {
         self.write(Mutation::AppendText { node_id, text });
     }
@@ -209,7 +209,7 @@ impl ComposeRenderer {
         }
     }
 
-    /// FR-13.8: role tag 0 means "not sent", so a design property at its neutral value
+    /// Role tag 0 means "not sent", so a design property at its neutral value
     /// produces no record at all. A property that was set and then cleared still sends
     /// its zero once, which is what tells the Renderer to drop the override.
     fn should_write_design_property(
@@ -237,7 +237,7 @@ impl ComposeRenderer {
 
     fn set_property(&mut self, node_id: u32, name: &str, value: &AttributeValue) {
         let Some(property) = property_kind(name) else {
-            // SPEC-GAP: dioxus-core has no fallible WriteMutations methods. Preserve the
+            // dioxus-core has no fallible WriteMutations methods. Preserve the
             // protocol error and surface it when the batch is finalized.
             self.error = Some(ProtocolError::InvalidProperty(0));
             return;
@@ -509,6 +509,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "focuslost" | "onfocuslost" => Some(PropertyKind::OnFocusLost),
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
+        "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
         _ => None,
     }
 }

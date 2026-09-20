@@ -15,7 +15,7 @@ import dioxus.compose.runtime.rememberDioxusHost
  * Runs the renderer's Compose application on the calling thread until its window closes.
  *
  * The window draws the interpreted Host tree and nothing else: every widget on screen comes
- * from the mutation batches `connection` streams (SPEC FR-1, FR-2).
+ * from the mutation batches `connection` streams.
  *
  * `exitProcessOnExit` is off because the process belongs to the Rust host: closing the
  * window must return control to it, not terminate it.

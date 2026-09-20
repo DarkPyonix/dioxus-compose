@@ -18,8 +18,9 @@ import dioxus.compose.runtime.HostConnection
 // expects an Object, which native-image rejects.
 //
 // The only file that mentions GraalVM types, so a JVM development run never loads them
-// (SPEC NFR-5). The `dioxus_compose_host_*` symbols are resolved from the Rust executable
-// this library is loaded into; the library is linked with `-undefined dynamic_lookup`.
+// and can still hot reload. The `dioxus_compose_host_*` symbols are resolved from the Rust
+// executable this library is loaded into; the library is linked with `-undefined
+// dynamic_lookup`.
 
 @CFunction("dioxus_compose_host_init")
 private external fun hostInit(handshake: CCharPointer?, length: Int, out: Pointer?): Int
@@ -37,14 +38,15 @@ private external fun hostReleaseBatch(batch: Pointer?)
 private external fun hostShutdown()
 
 /**
- * The real Host boundary (SPEC PR-2, PR-8).
+ * The real Host boundary.
  *
  * Each call writes a `MutationBatch { const uint8_t* ptr; uint32_t len; int64_t result; }`
  * into stack storage, the batch is decoded in place and applied on the same call stack, and
  * `release_batch` runs before returning. No batch is ever kept.
  */
 class NativeHostConnection : HostConnection {
-    // Reused so that steady-state event dispatch allocates nothing (SPEC §5.1).
+    // Reused so that steady-state event dispatch allocates nothing. The frame budget allows
+    // no allocation on the encode path, and a fresh buffer per event would be one.
     private val eventBytes = ByteArray(EVENT_BUFFER_BYTES)
     private val eventBuffer: ByteBuffer =
         ByteBuffer.wrap(eventBytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -109,7 +111,8 @@ class NativeHostConnection : HostConnection {
                 Protocol.decode(CTypeConversion.asByteBuffer(pointer, batchLength), onMutation)
             }
         } finally {
-            // Released on the same call stack, always (SPEC PR-2).
+            // Released on the same call stack, always: the batch points into an arena the
+            // Host reuses, so it is invalid the moment this call returns.
             hostReleaseBatch(batch)
         }
     }
@@ -132,5 +135,5 @@ class NativeHostConnection : HostConnection {
     }
 }
 
-/** A boundary call that returned a non-zero status (SPEC NFR-7: reported, never fatal). */
+/** A boundary call that returned a non-zero status. Reported, never fatal. */
 class HostCallException(message: String) : RuntimeException(message)

@@ -25,7 +25,7 @@ import platform.posix.dlsym
 import dioxus.compose.runtime.HostConnection
 
 /**
- * The real Host boundary on iOS (SPEC PR-2, PR-4). The counterpart of `NativeHostConnection`.
+ * The real Host boundary on iOS. The counterpart of `NativeHostConnection`.
  *
  * Same five `dioxus_compose_host_*` functions, same `MutationBatch` record, same rule that a
  * batch is decoded and released inside the call that produced it. Two things differ from the
@@ -37,10 +37,11 @@ import dioxus.compose.runtime.HostConnection
  *   Host executable that does not exist yet when this compiles. `dlsym(RTLD_NOW image, name)`
  *   resolves against whatever finally links it, which is the same late binding the macOS
  *   build gets from `-undefined dynamic_lookup`. The lookup happens once, not per call.
- * - Foreign memory is read through `CPointer`, not `Pointer` (PR-4 lists both).
+ * - Foreign memory is read through `CPointer`, not `Pointer`.
  */
 class IosHostConnection : HostConnection {
-    // Reused so that steady-state event dispatch allocates nothing (SPEC 5.1).
+    // Reused so that steady-state event dispatch allocates nothing. The frame budget
+    // allows no allocation on the encode path, and a fresh buffer per event would be one.
     private val eventBytes = ByteArray(EVENT_BUFFER_BYTES)
     private val eventBuffer: ByteBuffer =
         ByteBuffer.wrap(eventBytes).order(ByteOrder.LITTLE_ENDIAN)
@@ -91,7 +92,12 @@ class IosHostConnection : HostConnection {
 
     override fun shutdown() = HostSymbols.shutdown()
 
-    /** Decodes in place, then releases on the same call stack, always (SPEC PR-2). */
+    /**
+     * Decodes in place, then releases on the same call stack, always.
+     *
+     * The batch points into an arena the Host reuses, so it is only valid until the call
+     * that produced it returns. Holding on to it, or queueing it, reads freed memory.
+     */
     private fun readBatch(batch: CPointer<ByteVar>, onMutation: (Mutation) -> Unit) {
         try {
             val pointer = batch.reinterpret<CPointerVar<ByteVar>>()[0]

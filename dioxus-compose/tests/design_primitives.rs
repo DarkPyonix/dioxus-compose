@@ -1,4 +1,4 @@
-//! FR-13: the design primitives as seen from rsx.
+//! The design primitives as seen from rsx.
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
@@ -54,7 +54,7 @@ fn props_of(app: fn() -> Element) -> Vec<(PropertyKind, PropertyValue<'static>)>
         .collect()
 }
 
-/// FR-13.2: a Text that only names a `type_role` pays exactly one SetProp for it, and
+/// A Text that only names a `type_role` pays exactly one SetProp for it, and
 /// the eight overrides it did not set cost nothing. A role is sent; zero is not.
 #[test]
 fn fr13_type_role_costs_one_set_prop() {
@@ -72,7 +72,8 @@ fn fr13_type_role_costs_one_set_prop() {
     );
 }
 
-/// FR-13.4 and 14.2: layout roles and the component variant reach the wire as their tags.
+/// Layout roles and the component variant reach the wire as their tags. The Host sends the
+/// role; what it looks like is the design system's decision, not the caller's.
 #[test]
 fn fr13_layout_roles_and_variant_are_sent_as_tags() {
     let props = props_of(styled_column);
@@ -104,7 +105,7 @@ fn fr13_layout_roles_and_variant_are_sent_as_tags() {
     );
 }
 
-/// FR-13.6: ScrollColumn is a widget of its own, at wire tag 9.
+/// ScrollColumn is a widget of its own, at wire tag 9.
 #[test]
 fn fr13_scroll_column_is_its_own_widget() {
     let mut host = Host::new(scrolling);

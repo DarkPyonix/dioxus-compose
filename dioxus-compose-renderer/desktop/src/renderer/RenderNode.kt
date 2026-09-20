@@ -38,7 +38,8 @@ import dioxus.compose.ui.verticalArrangement
 import dioxus.compose.ui.weightOf
 
 /**
- * Counts recompositions of interpreted nodes (SPEC FR-4). Set only by tests.
+ * Counts recompositions of interpreted nodes, so a test can assert that changing one node
+ * does not recompose its siblings. Set only by tests.
  */
 internal object RenderNodeObserver {
     var onCompose: ((Int) -> Unit)? = null
@@ -48,13 +49,13 @@ internal object RenderNodeObserver {
 fun nodeTestTag(nodeId: Int): String = "dioxus-node-$nodeId"
 
 /**
- * Interprets one node of the table into real Compose widgets (SPEC FR-2).
+ * Interprets one node of the table into real Compose widgets.
  *
  * Only the node's own state is read here, so a `SetProp` on a sibling cannot invalidate this
- * composable (SPEC FR-4).
+ * composable.
  *
  * `parentModifier` carries what only the parent layout can express, which today is the
- * `Weight` of FR-13.4: weight is parent data of a `Column` or `Row` scope and cannot be
+ * `Weight` modifier: weight is parent data of a `Column` or `Row` scope and cannot be
  * produced by a modifier chain built outside that scope.
  */
 @Composable
@@ -65,14 +66,14 @@ fun RenderNode(
     parentModifier: Modifier = Modifier,
 ) {
     val node = table.node(nodeId) ?: return
-    // Observation point for the FR-4 recomposition check; null in production.
+    // Observation point for the recomposition test; null in production.
     RenderNodeObserver.onCompose?.let { observer -> SideEffect { observer(nodeId) } }
     val theme = LocalDesignTheme.current
     val chain = parentModifier
         .then(node.modifiers.toComposeModifier(nodeId, dispatcher, theme))
         .testTag(nodeTestTag(nodeId))
     // The TextField wires its own key handling, because it has an editor to intercept and a
-    // composition to protect (SPEC FR-12); everything else routes keys here.
+    // composition to protect; everything else routes keys here.
     val keyDownHandler = node.handler(PropertyKind.OnKeyDown)
     val modifier = if (keyDownHandler == null || node.widget == WidgetKind.TextField) {
         chain
@@ -108,10 +109,11 @@ fun RenderNode(
         WidgetKind.Button -> HostButton(node, modifier, dispatcher, theme)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
         WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
-        // FR-13: a column that scrolls without the Host windowing it, so every child is
-        // materialised. Use LazyColumn when the list is long.
-        // FR-11: declared by an extension package rather than the core schema, and drawn
-        // like any built-in widget.
+        // ScrollColumn is a column that scrolls without the Host windowing it, so every
+        // child is materialised. Use LazyColumn when the list is long.
+        //
+        // LinearProgressIndicator is declared by an extension package rather than the core
+        // schema, and is drawn like any built-in widget.
         WidgetKind.LinearProgressIndicator -> {
             val progress = node.number(PropertyKind.Progress)
             if (progress == null) {
@@ -130,7 +132,7 @@ fun RenderNode(
 
 /**
  * Children of a Column: weight is applied here because `Modifier.weight` exists only inside
- * `ColumnScope` (SPEC FR-13.4).
+ * `ColumnScope`.
  */
 @Composable
 private fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
@@ -141,7 +143,7 @@ private fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: Event
 @Composable
 private fun ColumnScope.WeightedChild(childId: Int, table: NodeTable, dispatcher: EventDispatcher) {
     // Its own composable, so reading the child's modifier list subscribes this scope alone
-    // and a `SetModifier` on one child cannot invalidate its siblings (SPEC FR-4).
+    // and a `SetModifier` on one child cannot invalidate its siblings.
     val weight = table.node(childId)?.modifiers?.weightOf()
     RenderNode(
         childId,

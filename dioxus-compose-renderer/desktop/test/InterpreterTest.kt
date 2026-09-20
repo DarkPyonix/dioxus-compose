@@ -97,7 +97,7 @@ class InterpreterTest {
         }
 
     /**
-     * FR-1: node id 0 is the "no node" sentinel, and the Host inserts it where a Dioxus
+     * Node id 0 is the "no node" sentinel, and the Host inserts it where a Dioxus
      * placeholder stands (an empty `for` body). It draws nothing, takes no slot, and the
      * siblings around it keep the positions the Host gave them.
      */
@@ -128,7 +128,7 @@ class InterpreterTest {
     }
 
     /**
-     * NFR-7: the Rust Host answers a `ProtocolError` event with a protocol-error status,
+     * The Rust Host answers a `ProtocolError` event with a protocol-error status,
      * because no handler owns that event. The report failing must not take the composition
      * down; the error still has to surface.
      */

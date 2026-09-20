@@ -29,9 +29,9 @@ import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
 
 /**
- * How many items are asked for beyond the visible range on each side (SPEC FR-8).
+ * How many items are asked for beyond the visible range on each side.
  *
- * The buffer lives here because the scroll position does (D5): the Renderer is the side that
+ * The buffer lives here because the scroll position does: the Renderer is the side that
  * knows what is on screen and therefore how far ahead to read. The Host answers a request
  * exactly, so `start` is the global index of the first child it sends back.
  */
@@ -40,7 +40,7 @@ const val LAZY_COLUMN_BUFFER: Int = 4
 /** Height a not-yet-materialised slot stands at until a real item has been measured. */
 private val ESTIMATED_ITEM_HEIGHT: Dp = 24.dp
 
-/** The window of items to ask the Host for, given what is on screen (SPEC FR-8). */
+/** The window of items to ask the Host for, given what is on screen. */
 internal fun requestedRange(
     firstVisible: Int,
     visibleCount: Int,
@@ -54,7 +54,7 @@ internal fun requestedRange(
 }
 
 /**
- * A windowed list (SPEC FR-8).
+ * A windowed list.
  *
  * This is a real Compose `LazyColumn` over all `item_count` items, so the scrollbar and the
  * scroll distance match the whole list even though only a window of it exists as nodes.

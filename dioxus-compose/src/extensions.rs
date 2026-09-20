@@ -1,4 +1,7 @@
-//! FR-11 compile-time widget extensions.
+//! Compile-time widget extensions.
+//!
+//! An extension is a pair of source files, one Rust and one Kotlin, built into both sides.
+//! It is not a runtime plugin: a deployed Renderer has no way to load a new widget.
 //!
 //! An application that builds a paired Renderer owns a patched copy of this registry. To add a
 //! widget, update the descriptor, append its wire entries in both macros as needed, then declare
@@ -49,7 +52,7 @@ pub mod elements {
     }
 }
 
-/// Material 3's determinate linear progress indicator, exposed as an FR-11 extension example.
+/// Material 3's determinate linear progress indicator, as a worked extension example.
 #[component]
 pub fn LinearProgressIndicator(progress: f32) -> Element {
     rsx! { linearprogressindicator { progress } }

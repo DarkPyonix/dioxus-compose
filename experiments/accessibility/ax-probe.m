@@ -1,4 +1,9 @@
-// Traces the Objective-C half of the AWT accessibility bridge (SPEC NFR-8, section 7).
+// Traces the Objective-C half of the AWT accessibility bridge.
+//
+// The desktop renderer must expose the same accessibility tree from a native image as it
+// does on the JVM. It did not: the native build published a single element and aborted
+// when the tree was queried, because the linker dropped the role classes AppKit looks up
+// by name. This probe is how that was traced.
 //
 // The native image aborts with `NSInvalidArgumentException: object cannot be nil` while
 // AppKit builds a window's children, which means `+[CommonComponentAccessibility

@@ -17,7 +17,7 @@ import dioxus.compose.ui.node.nodeTestTag
 
 private const val LABEL = 1
 
-/** The frame loop: a worker's request turns into one `render_frame` call (SPEC PR-3). */
+/** The frame loop: however many requests a worker makes, one `render_frame` call follows. */
 @OptIn(ExperimentalTestApi::class)
 class FrameLoopTest {
     @Test

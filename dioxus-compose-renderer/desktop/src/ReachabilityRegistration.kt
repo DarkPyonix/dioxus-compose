@@ -6,7 +6,7 @@ import java.lang.reflect.Modifier
 
 /**
  * Shared registration helpers for the Features that keep JDK internal JNI paths reachable
- * (SPEC §6, §7, INTENT D9-macOS).
+ * for text input and accessibility.
  *
  * Several parts of `java.desktop` are entered only from Objective-C. The closed-world
  * analysis cannot see those entries, so each one has to be registered by hand. The failure

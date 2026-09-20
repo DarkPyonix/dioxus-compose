@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Does the image survive what an assistive technology actually asks it? (SPEC NFR-8, §7)
+# Does the image survive what an assistive technology actually asks it?
 #
 # accessibility-link.test.sh checks that the role classes are in the binary. That is a
 # necessary condition and not a sufficient one: with every symbol present and a full,

@@ -1,4 +1,7 @@
-// Walks the macOS accessibility tree of a running process and prints it (SPEC NFR-8, §7).
+// Walks the macOS accessibility tree of a running process and prints it.
+//
+// Used to compare what the native-image desktop build exposes against what the JVM
+// development shell exposes; the two trees have to have the same shape.
 //
 // VoiceOver itself needs a human, but the tree VoiceOver reads is the same one the
 // Accessibility API exposes, so an empty or role-less tree here is a real failure and a

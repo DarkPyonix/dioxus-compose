@@ -4,7 +4,7 @@ import org.graalvm.nativeimage.hosted.Feature
 import org.graalvm.nativeimage.hosted.RuntimeResourceAccess
 
 /**
- * Registers the AWT accessibility bridge for the image (SPEC NFR-8, §7, INTENT D9-macOS).
+ * Registers the AWT accessibility bridge for the image.
  *
  * VoiceOver reaches a Compose window through AWT. Compose asks Skiko to attach the window's
  * `Accessible` to the platform, Skiko's native `initializeCAccessible` looks up

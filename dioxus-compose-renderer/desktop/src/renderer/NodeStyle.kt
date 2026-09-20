@@ -28,9 +28,9 @@ import dioxus.compose.design.family
 import dioxus.compose.design.fontSize
 
 /**
- * Reads FR-13 design properties off a node and turns them into Compose values.
+ * Reads design properties off a node and turns them into Compose values.
  *
- * Every role arrives as its wire tag in an integer property, and FR-13.8 reserves tag 0 for
+ * Every role arrives as its wire tag in an integer property, and tag 0 is reserved for
  * "not sent", so an absent role is simply a missing property rather than a guessed default.
  */
 internal fun <T : Enum<T>> Node.role(kind: PropertyKind, values: Array<T>): T? {
@@ -49,7 +49,7 @@ internal fun Node.floatProp(kind: PropertyKind): Float? =
 internal fun Node.intProp(kind: PropertyKind): Long? =
     (props[kind] as? PropertyValue.Integer)?.value?.takeIf { it != 0L }
 
-/** The `Color` property carries `Paint` bits, like every other colour slot (FR-13.1). */
+/** The `Color` property carries `Paint` bits, like every other colour slot. */
 internal fun Node.paintProp(kind: PropertyKind): Paint? {
     val bits = intProp(kind) ?: return null
     val value = bits.toInt()
@@ -66,8 +66,8 @@ internal fun Node.variant(): ButtonVariant =
     role(PropertyKind.Variant, ButtonVariant.entries.toTypedArray()) ?: ButtonVariant.Filled
 
 /**
- * The text style for a node: the design system's rung of the ladder, with each FR-13.2
- * override replacing exactly one axis.
+ * The text style for a node: the design system's rung of the ladder, with each override
+ * replacing exactly one axis.
  */
 internal fun Node.textStyle(theme: ResolvedTheme, defaultRole: TypeRole = TypeRole.Body): TextStyle {
     val token = theme.type(typeRole() ?: defaultRole)
@@ -160,7 +160,7 @@ internal fun Node.horizontalArrangement(theme: ResolvedTheme): Arrangement.Horiz
 private fun Node.alignmentRole(): Alignment? =
     role(PropertyKind.Alignment, Alignment.entries.toTypedArray())
 
-/** A Column aligns its children on the horizontal axis (FR-13.4). */
+/** A Column aligns its children on the horizontal axis. */
 internal fun Node.horizontalAlignment(): ComposeAlignment.Horizontal =
     when (alignmentRole()) {
         Alignment.TopCenter, Alignment.Center, Alignment.BottomCenter ->
@@ -170,7 +170,7 @@ internal fun Node.horizontalAlignment(): ComposeAlignment.Horizontal =
         else -> ComposeAlignment.Start
     }
 
-/** A Row aligns its children on the vertical axis (FR-13.4). */
+/** A Row aligns its children on the vertical axis. */
 internal fun Node.verticalAlignment(): ComposeAlignment.Vertical =
     when (alignmentRole()) {
         Alignment.CenterStart, Alignment.Center, Alignment.CenterEnd ->
@@ -180,7 +180,7 @@ internal fun Node.verticalAlignment(): ComposeAlignment.Vertical =
         else -> ComposeAlignment.Top
     }
 
-/** A Box takes the full nine point alignment (FR-13.4). */
+/** A Box takes the full nine point alignment. */
 internal fun Node.boxAlignment(): ComposeAlignment = when (alignmentRole()) {
     Alignment.TopStart, null -> ComposeAlignment.TopStart
     Alignment.TopCenter -> ComposeAlignment.TopCenter

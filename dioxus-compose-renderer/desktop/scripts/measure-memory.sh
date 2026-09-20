@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Measures the renderer's memory for NFR-3 (SPEC 5.2).
+# Measures the renderer's memory against the desktop weight target: an empty window under
+# 56MB of physical footprint.
 #
 # Runs the smoke host with its window open, samples `footprint` until the process settles,
-# and prints the steady footprint, the peak, and the vmmap regions 5.2 tracks. The measured
+# and prints the steady footprint, the peak, and the vmmap regions that account for it. The measured
 # number is macOS physical footprint, not RSS: RSS counts clean pages mapped from the image
 # and reads about twice the real occupancy.
 #
@@ -34,7 +35,7 @@ for _ in $(seq "$settle_seconds"); do
 done
 
 footprint_bytes() {
-    # `footprint -p` reports the phys_footprint line; that value is the NFR-3 number.
+    # `footprint -p` reports the phys_footprint line; that value is the one we hold to.
     footprint -p "$1" 2>/dev/null | awk '
         /phys_footprint/ {
             for (i = 1; i <= NF; i++) {

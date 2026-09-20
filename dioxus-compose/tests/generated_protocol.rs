@@ -39,7 +39,7 @@ fn fr7_generated_kotlin_matches_schema() {
     );
 }
 
-/// FR-14.1 and 14.4: the role vocabulary and the token tables are generated, so a fourth
+/// The role vocabulary and the token tables are generated, so a fourth
 /// design system is one `DesignSystem` variant plus one Renderer rule implementation.
 #[test]
 fn fr14_generated_kotlin_carries_the_roles_and_token_tables() {

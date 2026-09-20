@@ -1,4 +1,6 @@
-//! FR-11: compile-time schema extensions use the same typed RSX and fixed protocol as M0 widgets.
+//! Compile-time schema extensions use the same typed RSX and the same fixed-layout protocol
+//! as the built-in widgets. An extension is a pair of source files, one Rust and one Kotlin,
+//! compiled into both sides; it is not a runtime plugin.
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{Mutation, PropertyValue, ProtocolError, decode_batch};

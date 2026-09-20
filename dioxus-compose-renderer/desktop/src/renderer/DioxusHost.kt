@@ -25,19 +25,23 @@ import java.lang.InterruptedException
 import java.lang.System
 
 /**
- * Sends one event to the Host and reports whether the Host consumed it (SPEC FR-3).
+ * Sends one event to the Host and reports whether the Host consumed it.
  *
- * SPEC-GAP: event consumption is tracked as FR-12 in the task backlog but has no SPEC item
- * yet. `MutationBatch.result` carries the handler's return value (PR-4), and the Renderer
- * treats a non-zero result as "consumed"; a Host that always returns 0 simply never
- * consumes. This needs an FR-12 entry in docs/SPEC.md with its acceptance criteria.
+ * Consumption is the same model as the web's `preventDefault()` and Compose's
+ * `PointerInputChange.consume()`: the handler marks the event, and the boundary returns that
+ * mark in `MutationBatch.result`. The Renderer treats a non-zero result as "consumed", so a
+ * Host that always returns 0 simply never consumes. It is what lets Enter in a multiline
+ * field submit without also inserting a newline.
  */
 fun interface EventDispatcher {
     fun dispatch(event: HostEvent): Boolean
 }
 
 /**
- * Owns the interpreted tree and the boundary calls for one Host (SPEC PR-1, PR-2).
+ * Owns the interpreted tree and the boundary calls for one Host.
+ *
+ * The calls are synchronous and on this thread: there is no queue between the two sides, and
+ * a batch is consumed inside the call that produced it.
  *
  * Every batch is applied inside a single `Snapshot.withMutableSnapshot` transaction, so the
  * intermediate states of a batch are never drawn.
@@ -51,14 +55,14 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
         applyTransaction { apply -> connection.init(apply) }
     }
 
-    /** Dispatches synchronously and returns the Host's consumption result (SPEC FR-12). */
+    /** Dispatches synchronously and returns the Host's consumption result. */
     override fun dispatch(event: HostEvent): Boolean {
         var result = 0L
         applyTransaction { apply -> result = connection.dispatchEvent(event, apply) }
         return result != 0L
     }
 
-    /** Called once per frame after a Host worker asked for one (SPEC PR-3). */
+    /** Called once per frame after a Host worker asked for one. */
     fun renderFrame(frameTimeNanos: Long) {
         applyTransaction { apply -> connection.renderFrame(frameTimeNanos, apply) }
     }
@@ -71,7 +75,8 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
             try {
                 call { mutation -> table.apply(mutation) }
             } catch (error: Throwable) {
-                // A malformed batch must not take the process down (SPEC NFR-7).
+                // A malformed batch must not take the process down: it becomes a reported
+                // protocol error instead.
                 if (error is InterruptedException) throw error
                 protocolErrors += TableError(
                     PROTOCOL_DECODE_ERROR,
@@ -82,11 +87,12 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
         }
         // Reported after the transaction so the Host is never re-entered mid-batch.
         //
-        // A Host is free to reject the report itself: PR-2 gives the report no success
-        // contract, and the Rust Host answers a `ProtocolError` event with a protocol-error
-        // status because no handler owns it. Letting that failure out of here would turn a
-        // reported error into a crashed composition, which is exactly what NFR-7 forbids,
-        // so the report is best effort and the original error is what gets printed.
+        // A Host is free to reject the report itself: nothing promises that reporting an
+        // error succeeds, and the Rust Host answers a `ProtocolError` event with a
+        // protocol-error status because no handler owns it. Letting that failure out of here
+        // would turn a reported error into a crashed composition, which is the outcome the
+        // report exists to prevent, so the report is best effort and the original error is
+        // what gets printed.
         protocolErrors.forEach { error ->
             try {
                 connection.dispatchEvent(
@@ -110,7 +116,7 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
 }
 
 /**
- * Where a protocol error goes when the Host will not take the report (SPEC NFR-7).
+ * Where a protocol error goes when the Host will not take the report.
  *
  * Tests replace it to assert on what was reported; production leaves it printing.
  */
@@ -118,7 +124,7 @@ internal var onProtocolError: (TableError) -> Unit = { error ->
     System.err.println("dioxus-compose protocol error ${error.code}: ${error.message}")
 }
 
-/** Creates a Host bound to the composition's lifetime (SPEC PR-7 naming). */
+/** Creates a Host bound to the composition's lifetime. */
 @Composable
 fun rememberDioxusHost(connection: HostConnection): DioxusHost {
     val host = remember(connection) { DioxusHost(connection) }
@@ -130,7 +136,7 @@ fun rememberDioxusHost(connection: HostConnection): DioxusHost {
 }
 
 /**
- * Draws the Host's tree and runs the frame loop (SPEC PR-3).
+ * Draws the Host's tree and runs the frame loop.
  *
  * Frame requests coming from Host worker threads coalesce into at most one `render_frame`
  * per frame, inside `withFrameNanos`.
@@ -145,8 +151,7 @@ fun DioxusContent(host: DioxusHost, modifier: Modifier = Modifier) {
             withFrameNanos { frameTimeNanos -> host.renderFrame(frameTimeNanos) }
         }
     }
-    // FR-14.4: the theme is resolved once here, and every node reads it from the
-    // CompositionLocal. A `SetTheme` is therefore one record on the wire and one
+    // The theme is resolved once here, and every node reads it from the CompositionLocal. A `SetTheme` is therefore one record on the wire and one
     // invalidation in Compose, not a SetProp per node.
     val platform = remember { detectHostPlatform() }
     val systemDark = systemDarkOverride ?: isSystemInDarkTheme()
@@ -163,6 +168,6 @@ fun DioxusContent(host: DioxusHost, modifier: Modifier = Modifier) {
 /**
  * Overrides the platform's dark mode reading, for tests and for the dev harness.
  *
- * `ColorScheme.FollowSystem` reads the platform (FR-14.3); nothing else consults this.
+ * `ColorScheme.FollowSystem` reads the platform; nothing else consults this.
  */
 var systemDarkOverride: Boolean? = null

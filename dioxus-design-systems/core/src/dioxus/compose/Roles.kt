@@ -1,7 +1,7 @@
 package dioxus.compose
 
 /**
- * The vocabulary a caller speaks to a design system (SPEC FR-13, FR-14).
+ * The vocabulary a caller speaks to a design system.
  *
  * A caller names a role. The design system decides what it looks like. That direction is
  * the whole point: it is what lets a fourth design system be added without touching a
