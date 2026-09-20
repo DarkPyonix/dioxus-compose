@@ -1,0 +1,322 @@
+{
+  "reflection": [
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsLookAndFeel",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.WindowsRootPaneUI",
+      "methods": [
+        {
+          "name": "createUI",
+          "parameterTypes": [
+            "javax.swing.JComponent"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "com.sun.java.swing.plaf.windows.resources.windows"
+    },
+    {
+      "type": "org.jetbrains.skiko.redrawer.Direct3DRedrawer",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "isAdapterSupported",
+          "parameterTypes": [
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.Win32GraphicsConfig",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "visual"
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.Win32GraphicsDevice",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "dynamicColorModel"
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.Win32GraphicsEnvironment",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "dwmCompositionChanged",
+          "parameterTypes": [
+            "boolean"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WCanvasPeer"
+    },
+    {
+      "type": "sun.awt.windows.WComponentPeer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "hwnd"
+        },
+        {
+          "name": "winGraphicsConfig"
+        }
+      ],
+      "methods": [
+        {
+          "name": "disposeLater",
+          "parameterTypes": []
+        },
+        {
+          "name": "replaceSurfaceData",
+          "parameterTypes": []
+        },
+        {
+          "name": "replaceSurfaceDataLater",
+          "parameterTypes": []
+        },
+        {
+          "name": "handleExpose",
+          "parameterTypes": [
+            "int",
+            "int",
+            "int",
+            "int"
+          ]
+        },
+        {
+          "name": "postEvent",
+          "parameterTypes": [
+            "java.awt.AWTEvent"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WDefaultFontCharset",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "fontName"
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WDesktopPeer",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "systemSleepCallback",
+          "parameterTypes": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "userSessionCallback",
+          "parameterTypes": [
+            "boolean",
+            "java.awt.desktop.UserSessionEvent$Reason"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WDesktopProperties",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "pData"
+        }
+      ],
+      "methods": [
+        {
+          "name": "setBooleanProperty",
+          "parameterTypes": [
+            "java.lang.String",
+            "boolean"
+          ]
+        },
+        {
+          "name": "setColorProperty",
+          "parameterTypes": [
+            "java.lang.String",
+            "int",
+            "int",
+            "int"
+          ]
+        },
+        {
+          "name": "setFontProperty",
+          "parameterTypes": [
+            "java.lang.String",
+            "java.lang.String",
+            "int",
+            "int"
+          ]
+        },
+        {
+          "name": "setIntegerProperty",
+          "parameterTypes": [
+            "java.lang.String",
+            "int"
+          ]
+        },
+        {
+          "name": "setSoundProperty",
+          "parameterTypes": [
+            "java.lang.String",
+            "java.lang.String"
+          ]
+        },
+        {
+          "name": "setStringProperty",
+          "parameterTypes": [
+            "java.lang.String",
+            "java.lang.String"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WFontPeer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "textComponentFontName"
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WFramePeer",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "getExtendedState",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WObjectPeer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "createError"
+        },
+        {
+          "name": "destroyed"
+        },
+        {
+          "name": "pData"
+        },
+        {
+          "name": "target"
+        }
+      ],
+      "methods": [
+        {
+          "name": "getPeerForTarget",
+          "parameterTypes": [
+            "java.lang.Object"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WPanelPeer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "insets_"
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WToolkit",
+      "jniAccessible": true,
+      "methods": [
+        {
+          "name": "displayChanged",
+          "parameterTypes": []
+        },
+        {
+          "name": "windowsSettingChange",
+          "parameterTypes": []
+        },
+        {
+          "name": "paletteChanged",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WWindowPeer",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "windowType"
+        }
+      ],
+      "methods": [
+        {
+          "name": "draggedToNewScreen",
+          "parameterTypes": []
+        },
+        {
+          "name": "notifyWindowStateChanged",
+          "parameterTypes": [
+            "int",
+            "int"
+          ]
+        },
+        {
+          "name": "setBackground",
+          "parameterTypes": [
+            "java.awt.Color"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "sun.awt.windows.WingDings",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "sun.java2d.windows.WindowsFlags",
+      "jniAccessible": true,
+      "fields": [
+        {
+          "name": "d3dEnabled"
+        },
+        {
+          "name": "d3dSet"
+        },
+        {
+          "name": "setHighDPIAware"
+        }
+      ]
+    }
+  ]
+}
