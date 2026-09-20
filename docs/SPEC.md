@@ -42,7 +42,7 @@ Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭�
 
 ### FR-2 스키마 기반 렌더링 — `Agreed`
 Renderer는 스키마에 정의된 위젯 타입만 해석해서 해당 Compose 컴포저블로 렌더링합니다.
-- 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`
+- 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`, `LazyColumn`(FR-8)
 - 수용 기준: 스키마에 없는 타입이나 속성을 받으면 크래시하지 않고 `ProtocolError` 이벤트를 보냅니다.
 
 ### FR-3 이벤트 전달 — `Agreed`
@@ -70,14 +70,16 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - 핸드셰이크 때 스키마 해시를 비교해서 불일치하면 초기화를 실패시킵니다.
 - 수용 기준: Rust 스키마에 속성을 추가하고 Kotlin 인터프리터를 갱신하지 않으면 **빌드가 실패**합니다.
 
-### FR-8 LazyColumn 윈도잉 — `Draft`
+### FR-8 LazyColumn 윈도잉 — `Agreed`
 - Host는 아이템 총 개수와 안정적인 key를 알립니다.
 - Renderer는 보이는 범위를 `RangeRequested`로 요청하고, Host는 그 구간의 서브트리만 생성합니다.
-- 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다.
+- 아이템 식별: Host가 아이템마다 `Box` 래퍼 노드를 만들고 `item_key`(문자열)를 실어 보냅니다. Renderer는 그 값을 Compose `LazyColumn`의 key로 씁니다.
+- 와이어: `RangeRequested`는 이벤트 태그 7(24바이트, `start: u32`, `count: u32`)입니다. Host는 `item_count`, `item_key`, `on_range_requested` 속성으로 선언합니다.
+- 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(Host 측 통과: 가시 20 + 버퍼 4 요청에 아이템 28개)**
 
-### FR-9 스트리밍 텍스트 — `Draft`
-LLM 응답 스트리밍을 위해 Text 노드에 `AppendText` 명령을 둡니다. Host는 프레임 주기(약 16ms) 단위로 토큰을 모아서 보냅니다.
-- 수용 기준: 초당 100토큰 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다.
+### FR-9 스트리밍 텍스트 — `Agreed`
+LLM 응답 스트리밍을 위해 Text 노드에 `AppendText` 명령을 둡니다(태그 8, 16바이트). 전체 문자열이 아니라 늘어난 꼬리만 보냅니다. Host는 토큰을 모아 프레임당 노드별 1건으로 flush하며, flush 지점은 `render_frame`입니다.
+- 수용 기준: 초당 100토큰 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다. **(Host 측 통과: 36KB 응답에서 배치 64바이트 미만, 스트리밍 프레임 p99 125ns)**
 
 ### FR-12 이벤트 소비(consume) — `Agreed`
 Dioxus 0.7의 이벤트 핸들러는 반환값이 없습니다. 그래서 핸들러가 **이벤트 객체에 소비 표시를 남기고**, 경계가 그 값을 읽어 `MutationBatch.result`로 돌려줍니다. 웹의 `preventDefault()`, Compose의 `PointerInputChange.consume()`과 같은 모델입니다.
