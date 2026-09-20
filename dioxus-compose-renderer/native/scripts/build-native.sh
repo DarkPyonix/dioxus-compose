@@ -52,6 +52,26 @@ for symbol in "${exported[@]}"; do
     linker_args+=("-H:NativeLinkerOption=-Wl,-exported_symbol,_$symbol")
 done
 
+# Forcing the archive in is not enough for the accessibility classes (SPEC NFR-8, section 7).
+# AppKit never names them: the Objective-C side maps a Java role to a class name and looks the
+# class up with NSClassFromString, so nothing in the image refers to GroupAccessibility,
+# ButtonAccessibility or the rest by symbol, and the link drops them as dead code. The lookup
+# then returns nil, allocating from a nil class gives a nil child, and AppKit aborts the
+# process with "object cannot be nil" the moment anything reads the window's children.
+#
+# Listing the classes by hand would rot, so the list is read back out of the archive that
+# defines them and every one is made a root of the link. They are small, and keeping them is
+# the whole of the accessibility tree below the window.
+a11y_classes=()
+while IFS= read -r class_symbol; do
+    a11y_classes+=("-H:NativeLinkerOption=-Wl,-u,$class_symbol")
+done < <(nm -g "$awt_archive" 2>/dev/null |
+    awk '$2 == "S" && $3 ~ /^_OBJC_CLASS_\$_[A-Za-z]+Accessibility$/ { print $3 }' | sort -u)
+[[ ${#a11y_classes[@]} -gt 0 ]] || die \
+    "no Objective-C accessibility classes found in $awt_archive" \
+    "NFR-8 needs them linked in by name; without them VoiceOver aborts the process."
+linker_args+=("${a11y_classes[@]}")
+
 # Heap and GC settings for NFR-3 (SPEC 5.2 levers 1 and 2). `-R:` options are baked in as
 # the image's runtime defaults. Measure with native/scripts/measure-memory.sh.
 #

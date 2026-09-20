@@ -62,17 +62,21 @@ A native-image run that aborts with `Abort trap: 6` and an
 `NSInvalidArgumentException ... object cannot be nil` the moment the dumper touches it is
 the regression this experiment exists to catch. The abort happens inside AppKit while it
 builds the children array, and there is no Java stack trace, so the smoke test's exit code
-(134) is the signal to watch.
+(134) is the signal to watch. That was the state until 2026-09-21; see the result below for
+what caused it and how to tell if it comes back.
 
-## Result, 2026-09-20, macOS arm64, Liberica NIK 25 Full
+## Result, 2026-09-21, macOS arm64, Liberica NIK 25 Full
 
-| | JVM dev shell | native image |
-|---|---|---|
-| elements in tree | 14 | 1 |
-| labelled controls | `AXStaticText`, `AXTextField`, `AXButton` | none |
-| process after the dump | alive | aborted, exit 134 |
+| | JVM dev shell | native image, before | native image, after |
+|---|---|---|---|
+| elements in tree | 14 | 1 | 12 |
+| labelled controls | `AXStaticText`, `AXTextField`, `AXButton` | none | `AXStaticText`, `AXButton` |
+| process after the dump | alive | aborted, exit 134 | alive, smoke test exits 0 |
 
-The JVM tree is complete and labelled:
+The three runs compose different screens, so the counts are not meant to match: the JVM run
+draws the M0 demo and the smoke test draws a label and a button. What matters is the shape.
+
+The JVM tree:
 
     AXWindow subrole=AXStandardWindow title=DioxusCompose
       AXUnknown
@@ -82,49 +86,116 @@ The JVM tree is complete and labelled:
             AXTextField desc=type here
             AXButton desc=increment
 
-So Compose Desktop supports accessibility and the screen carries the semantics. The native
-image exposes the window and nothing under it, and aborts the moment anything asks for the
-window's children. Under §7's required split this is a native-image configuration gap, not
-a Substrate or Compose limitation. **NFR-8 does not hold on the native image today.**
+The native image now produces the same shape, and the process survives the dump:
 
-### Verdict on the fix: one gap closed, not yet working
+    AXWindow subrole=AXStandardWindow title=DioxusCompose
+      AXUnknown value=0
+        AXGroup value=0
+          AXUnknown value=0
+            AXUnknown value=0
+              AXStaticText desc=smoke host: 0 clicks value=smoke host: 0 clicks
+              AXButton desc=click me
+      AXButton subrole=AXCloseButton
+      AXButton subrole=AXFullScreenButton
+      AXButton subrole=AXMinimizeButton
+      AXStaticText value=DioxusCompose
 
-`native/src/AccessibilityReachabilityFeature.kt` closes one proven gap. It does not make
-accessibility work. The tree is still one element and the abort is unchanged.
+Before the fix it was one element and an abort. **The automated half of NFR-8 now holds on
+the native image.** The manual VoiceOver checklist below has not been run yet, so NFR-8 is
+not finished; what has changed is that the checklist can now get past step 2.
 
-What was proven. Building with `--exact-reachability-metadata` and
-`-R:MissingRegistrationReportingMode=Warn` makes the image report what it would have
-refused, and it named the gap exactly:
+### The cause: the link dropped the Objective-C role classes
+
+Objective-C keeps a table from a Java role to the name of the class that implements it
+(`pushbutton` to `ButtonAccessibility`, `groupbox` to `GroupAccessibility`, and every role
+the platform ignores to `IgnoreAccessibility`). It resolves that name with
+`NSClassFromString`, so **nothing in the image ever names those classes**. They are in the
+archive, `-force_load` brings their objects in, and the link then drops them as dead code
+because no symbol refers to them. `NSClassFromString` returns nil, `[nil alloc]` is nil, and
+`childrenOfParent` inserts that nil into the array it is building for AppKit. That is the
+`NSInvalidArgumentException: object cannot be nil`.
+
+Only the few classes that some other Objective-C code happens to mention survived:
+
+    otool -oV build/native-image/dist/lib/libdioxus_compose_renderer.dylib \
+      | awk '$1 == "name" && $NF ~ /Accessibility$/ { print $NF }' | sort -u
+
+Before the fix that printed 12 names, and `GroupAccessibility`, `ButtonAccessibility`,
+`StaticTextAccessibility` and `IgnoreAccessibility` were not among them. The fix in
+`build-native.sh` reads the class list back out of `libawt_lwawt.a` and makes every one a
+root of the link with `-Wl,-u`, so the list cannot rot when the JDK adds a role.
+`native/scripts/tests/accessibility-link.test.sh` compares the two lists and fails if the
+image is missing any, and it runs in CI after the build.
+
+### How it was found, and what it rules out
+
+`ax-probe.m` in this directory is the tool. The library is stripped, so lldb cannot resolve
+a selector in it and a breakpoint by name never binds; a debug image would have worked but
+costs a full rebuild. Swizzling does not need symbols, because the Objective-C runtime still
+carries the class, so the probe wraps `createWithParent:withClass:...`,
+`getComponentAccessibilityClass:andParent:`, `getCAccessible:withEnv:`, `childrenOfParent:`
+and `initializeRolesMap`, and it exports `Java_sun_lwawt_macosx_CAccessibility_roleKey` so
+that an inserted copy shadows the real one.
+
+    clang -dynamiclib -framework Foundation -framework AppKit \
+        -I"$GRAALVM_HOME/include" -I"$GRAALVM_HOME/include/darwin" \
+        -o /tmp/ax-probe.dylib experiments/accessibility/ax-probe.m
+    cd dioxus-compose-renderer
+    DYLD_INSERT_LIBRARIES=/tmp/ax-probe.dylib ./build/native-image/smoke_host
+
+Insert it into the host binary directly. Going through `smoke-test.sh` does not work:
+`/bin/bash` is protected by SIP, so the loader strips `DYLD_*` before the script runs.
+
+The probe printed the answer on the first try:
+
+    [axprobe] childrenOfParent enter which=-1 allowIgnored=0
+    [axprobe] initializeRolesMap enter
+    [axprobe] getComponentAccessibilityClass role=rootpane -> (nil)
+    [axprobe] getCAccessible accessible=0xd -> 0x24
+    [axprobe] createWithParent role=rootpane classType=(nil) accessible=0xd -> (nil)
+
+`getCAccessible` returned a real object, so the Java half of the call was working the whole
+time. The nil is the **class**, not the accessible and not the role string.
+
+That rules out the two hypotheses this experiment had been carrying:
+
+- **The `key` field.** `roleKey` was never called at all, so no `GetFieldID(AccessibleRole,
+  "key")` ever ran. The JNI field lookup was never the problem, which is why registering the
+  `AccessibleBundle` superclass chain changed nothing.
+- **A missing registration.** Nothing on the Java side failed. The closed-world analysis was
+  right to report nothing: the gap was in the native link, which it cannot see.
+
+A JNI lookup that misses would also not have produced this abort. The JDK's `LOG_NULL`
+raises `NSGenericException` and logs `Bad JNI lookup`, and a Java exception raises
+`NSGenericException` through `CHECK_EXCEPTION`. Running with `JNU_APPKIT_TRACE=1`, which
+makes `CHECK_EXCEPTION` call `ExceptionDescribe`, printed no Java stack at all. The
+exception was `NSInvalidArgumentException` from `insertObject:atIndex:`, which only the nil
+child can produce.
+
+### A second ordering bug, visible but harmless once the classes are linked
+
+The probe also showed `childrenOfParent` entering **before** `initializeRolesMap`. That
+matters because `initializeRolesMap` is the only thing that ever calls
+`CAccessibility.getAccessibility(String[])`, which is the only thing that fills
+`CAccessibility.ignoredRoles`. On the first query `ignoredRoles` is still null, `_addChildren`
+guards on it, and so no role is ignored: `rootpane`, which the platform ignores, is handed
+to Objective-C instead of being skipped. With `IgnoreAccessibility` linked in that is
+harmless, because Objective-C then builds an ignored element and AppKit drops it, which is
+what the tree above shows. It was worth chasing only because it was the first nil to appear.
+
+### The resource bundle, registered earlier
+
+`native/src/AccessibilityReachabilityFeature.kt` registers
+`com.sun.accessibility.internal.resources.accessibility`. That was a real gap, found with
+`--exact-reachability-metadata -R:MissingRegistrationReportingMode=Warn`:
 
     MissingResourceRegistrationError: Cannot access resource bundle with name
       'com.sun.accessibility.internal.resources.accessibility'
-      java.util.ResourceBundle.getBundle(ResourceBundle.java:921)
       javax.accessibility.AccessibleBundle.toDisplayString(AccessibleBundle.java:92)
-      javax.accessibility.AccessibleBundle.toString(AccessibleBundle.java:126)
       sun.lwawt.macosx.CAccessibility.getAccessibleRole(CAccessibility.java:943)
-      sun.lwawt.macosx.CAccessibility._addChildren(CAccessibility.java:1038)
-      sun.lwawt.macosx.CAccessibility.getChildrenAndRolesImpl(CAccessibility.java:703)
 
-Registering the bundle removes that error: it no longer appears in the diagnostic run, and
-the role display strings (`push button`, `check box`) are now in the binary.
-
-What is still unknown. With the bundle registered, the diagnostic run reports **no**
-missing registration on the accessibility path at all, and the process still aborts with
-the identical stack: AppKit's `childrenOfParent` inserting nil into the children array.
-Something on that path still returns null to Objective-C, and the closed-world analysis is
-no longer the thing complaining, so the remaining cause is not a metadata gap that GraalVM
-can see.
-
-The leading remaining suspect, not confirmed. Objective-C reads the role string as the
-`key` field of `javax.accessibility.AccessibleRole` through
-`GetFieldID(AccessibleRole, "key")`, but `key` is declared on the superclass
-`AccessibleBundle`. Registering the superclass chain for JNI as well was tried and did
-**not** fix it, so either that is not the cause or the registration is not doing what the
-lookup needs. The next step is to confirm from the Objective-C side which value is null:
-build a debug image, attach lldb, and break on `-[CommonComponentAccessibility
-createWithParent:accessible:role:index:withEnv:withView:]` to see whether it is the role
-string or the returned child that comes back nil. That distinguishes a JNI field lookup
-failure from a role the ObjC role table does not map.
+It is not what caused the abort, and registering it alone did not fix anything. It stays
+because the role display names would otherwise be missing from the binary.
 
 ### What was already fine
 
@@ -140,9 +211,10 @@ too. Check the archive instead:
 ### Note on the smoke test
 
 `smoke-test.sh` composes a Column, a Text and a Button, not two text fields. It exits 0 on
-its own, because nothing asks the process for its accessibility tree. It exits 134 only
-when the dumper or VoiceOver attaches. A green smoke test is therefore not evidence for
-NFR-8, and the accessibility check has to be run as its own step.
+its own, because nothing asks the process for its accessibility tree, and it used to exit
+134 as soon as the dumper or VoiceOver attached. A green smoke test is therefore not
+evidence for NFR-8 either way, and the accessibility check has to be run as its own step:
+start the smoke test, attach the dumper, and check both the tree and the exit code.
 
 ## Manual VoiceOver procedure (needs a human)
 
@@ -150,11 +222,10 @@ NFR-8, and the accessibility check has to be run as its own step.
 exposed; only a listener can confirm VoiceOver speaks them usefully. Run this on the
 native image, then repeat on the JVM run and record any difference.
 
-Run it on the JVM today. On the native image the procedure stops at step 2: turning
-VoiceOver on is enough to make the process abort, for the reason above. That is itself the
-expected result for now, and step 2 is the check that tells you the remaining bug is fixed.
-Keep the whole procedure written down so that the day it gets past step 2 there is
-something to run rather than something to invent.
+It has not been run on the native image yet. Until 2026-09-21 it could not be: turning
+VoiceOver on aborted the process at step 2. The tree dump above says the elements and the
+labels are there now, so the procedure should run to the end, and running it is what is
+left of NFR-8.
 
 Setup. Grant Accessibility permission to the terminal you will use, or the dump step
 fails with `-25211`. Build and start the app:
