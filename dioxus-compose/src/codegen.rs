@@ -65,7 +65,13 @@ data class Theme(
     output.push_str("    data class Bool(val value: Boolean) : PropertyValue\n");
     output.push_str("    data class Integer(val value: Long) : PropertyValue\n");
     output.push_str("    data class Float(val value: kotlin.Float) : PropertyValue\n");
+    // Compared by identity, not content: a new Bytes value means the Host sent a new
+    // list, and copying a command list to compare it every recomposition is exactly the
+    // per-frame work the fixed layout exists to avoid.
+    output.push_str("    class Bytes(val value: ByteArray) : PropertyValue\n");
     output.push_str("}\n\n");
+
+    write_draw_commands(&mut output);
 
     output.push_str("sealed interface Modifier {\n");
     for variant in MODIFIER_SCHEMA {
@@ -162,6 +168,7 @@ object Protocol {
     private const val VALUE_BOOL = 2
     private const val VALUE_INTEGER = 3
     private const val VALUE_FLOAT = 4
+    private const val VALUE_BYTES = 5
 
     /** Decodes a batch in place. Must not copy the buffer; only strings become Kotlin Strings. */
     fun decode(batch: ByteBuffer, onMutation: (Mutation) -> Unit) {
@@ -216,6 +223,7 @@ object Protocol {
                             VALUE_FLOAT -> PropertyValue.Float(
                                 kotlin.Float.fromBits(readU64(batch, base, available, offset + 12).toInt()),
                             )
+                            VALUE_BYTES -> PropertyValue.Bytes(readBytes(batch, base, available, offset + 12))
                             else -> throw ProtocolException("unknown property value tag $valueKind", offset + 10)
                         }
                         Mutation.SetProp(
@@ -578,6 +586,23 @@ object Protocol {
         r#"        else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 
+    /** An arena range with no UTF-8 requirement: a drawing command list is not text. */
+    private fun readBytes(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): ByteArray {
+        val offsetLong = readU32(batch, base, available, referenceOffset)
+        val lengthLong = readU32(batch, base, available, referenceOffset + 4)
+        if (offsetLong > Int.MAX_VALUE || lengthLong > Int.MAX_VALUE) {
+            throw ProtocolException("byte range is too large", referenceOffset)
+        }
+        val offset = offsetLong.toInt()
+        val length = lengthLong.toInt()
+        requireRange(available, offset, length, referenceOffset)
+        val copy = ByteArray(length)
+        val view = batch.duplicate()
+        view.position(base + offset)
+        view.get(copy)
+        return copy
+    }
+
     private fun readString(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): String {
         val offsetLong = readU32(batch, base, available, referenceOffset)
         val lengthLong = readU32(batch, base, available, referenceOffset + 4)
@@ -762,7 +787,27 @@ fn upper_snake(name: &str) -> String {
     output
 }
 
+/// One of each drawing command, in schema order, with a string region behind them.
+pub fn canvas_vector() -> crate::drawing::DrawList {
+    crate::drawing::DrawList::builder()
+        .line(Paint::Role(ColorRole::Primary), 1.0, 2.0, 3.0, 4.0, 1.5)
+        .rect(Paint::Literal(Color::argb(0xff11_2233)), 0.0, 0.0, 8.0, 9.0, 0.0)
+        .round_rect(Paint::Role(ColorRole::Surface), 1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
+        .circle(Paint::Role(ColorRole::Error), 4.0, 5.0, 6.0, 0.5)
+        .arc(Paint::Role(ColorRole::Outline), 1.0, 2.0, 3.0, 0.0, 90.0, 2.0)
+        .polyline_ref(Paint::Role(ColorRole::Secondary), 42, 3.0)
+        .text_at(
+            Paint::Role(ColorRole::OnSurface),
+            "한글",
+            7.0,
+            8.0,
+            crate::schema::TypeRole::Label,
+        )
+        .build()
+}
+
 pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
+    let canvas_vector_bytes = canvas_vector();
     let mutations = [
         Mutation::SetTheme(
             Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark),
@@ -917,6 +962,17 @@ pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
             node_id: 4,
             text: " token",
         },
+        Mutation::Create {
+            node_id: 5,
+            widget: WidgetKind::Canvas,
+        },
+        // Every drawing command, so both sides decode the same fixed-length records and
+        // the same text region behind them.
+        Mutation::SetProp {
+            node_id: 5,
+            property: PropertyKind::Commands,
+            value: PropertyValue::Bytes(canvas_vector_bytes.as_bytes()),
+        },
     ];
     let mut encoder = BatchEncoder::default();
     for mutation in &mutations {
@@ -992,8 +1048,8 @@ pub fn generate_vector_description() -> String {
   "byteOrder": "little-endian",
   "mutations": {{
     "file": "mutations.bin",
-    "description": "One batch covering every record, property value, and modifier layout",
-    "recordCount": 30,
+    "description": "One batch covering every record, property value, modifier layout, and drawing command",
+    "recordCount": 32,
     "strings": ["안녕", "compose", " token"]
   }},
   "events": {{
@@ -1064,6 +1120,145 @@ fn modifier_decode_expression(field: &FieldSchema) -> String {
 }
 
 fn lower_camel(name: &str) -> String {
+    let mut characters = name.chars();
+    match characters.next() {
+        Some(first) => first.to_lowercase().chain(characters).collect(),
+        None => String::new(),
+    }
+}
+
+/// The drawing command vocabulary, mirrored into Kotlin with a decoder for the byte blob a
+/// `Canvas` node carries.
+fn write_draw_commands(output: &mut String) {
+    use crate::drawing::{COMMAND_LEN, DRAW_COMMAND_SCHEMA, DrawFieldType};
+
+    output.push_str(
+        "/**\n * One drawing command. Coordinates are dp from the Canvas's top-left corner.\n *\n \
+         * Colour is a [Paint], so a command may name a ColorRole and the design system\n \
+         * decides what it looks like.\n */\n",
+    );
+    output.push_str("sealed interface DrawCommand {\n");
+    output.push_str("    val paint: Paint\n\n");
+    for command in DRAW_COMMAND_SCHEMA {
+        write!(output, "    data class {}(override val paint: Paint", command.name).unwrap();
+        for field in command.fields {
+            let ty = match field.ty {
+                DrawFieldType::Float => "kotlin.Float",
+                DrawFieldType::U32 => "Int",
+                DrawFieldType::Role(name) => name,
+            };
+            write!(output, ", val {}: {ty}", field.name).unwrap();
+        }
+        output.push_str(") : DrawCommand\n");
+    }
+    output.push_str("}\n\n");
+
+    output.push_str(
+        r#"/** Decodes a Canvas command list: fixed-size records, then the TextAt strings. */
+object DrawCommands {
+"#,
+    );
+    writeln!(output, "    const val COMMAND_LENGTH = {COMMAND_LEN}\n").unwrap();
+    output.push_str(
+        r#"    fun decode(bytes: ByteArray): List<DrawCommand> {
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val commands = ArrayList<DrawCommand>(bytes.size / COMMAND_LENGTH)
+        var offset = 0
+        while (offset + COMMAND_LENGTH <= bytes.size) {
+            val tag = buffer.getShort(offset).toInt() and 0xffff
+            val length = buffer.getShort(offset + 2).toInt() and 0xffff
+            // The text region starts where the records stop decoding, so an unreadable
+            // record ends the list rather than failing the whole batch.
+            if (length != COMMAND_LENGTH) break
+            val paintBits = buffer.getLong(offset + 4)
+            val kind = (paintBits ushr 32).toInt()
+            if (kind != 1 && kind != 2) break
+            val paint = if (kind == 1) {
+                Paint.Role(colorRoleOrNull(paintBits.toInt()) ?: break)
+            } else {
+                Paint.Literal(paintBits.toInt())
+            }
+            fun word(index: Int): Int = buffer.getInt(offset + 12 + index * 4)
+            fun real(index: Int): kotlin.Float = kotlin.Float.fromBits(word(index))
+            val command = when (tag) {
+"#,
+    );
+    for command in DRAW_COMMAND_SCHEMA {
+        write!(output, "                {} -> DrawCommand.{}(paint", command.tag, command.name)
+            .unwrap();
+        for field in command.fields {
+            match field.ty {
+                DrawFieldType::Float => write!(output, ", real({})", field.word).unwrap(),
+                DrawFieldType::U32 => write!(output, ", word({})", field.word).unwrap(),
+                DrawFieldType::Role(name) => write!(
+                    output,
+                    ", {}OrNull(word({})) ?: break",
+                    lower_first(name),
+                    field.word
+                )
+                .unwrap(),
+            }
+        }
+        output.push_str(")\n");
+    }
+    output.push_str(
+        r#"                else -> break
+            }
+            commands.add(command)
+            offset += COMMAND_LENGTH
+        }
+        return commands
+    }
+
+    /** The string a TextAt points at, measured from the start of the list. */
+    fun textOf(bytes: ByteArray, command: DrawCommand.TextAt): String {
+        val end = command.textOffset.toLong() + command.textLength.toLong()
+        if (command.textOffset < 0 || command.textLength < 0 || end > bytes.size.toLong()) {
+            return ""
+        }
+        return String(bytes, command.textOffset, command.textLength, StandardCharsets.UTF_8)
+    }
+
+"#,
+    );
+    // Role lookups that answer null rather than throwing: a command list is data inside a
+    // property value, and one bad word must end the list, not the batch.
+    let mut roles: Vec<&str> = DRAW_COMMAND_SCHEMA
+        .iter()
+        .flat_map(|command| command.fields.iter())
+        .filter_map(|field| match field.ty {
+            DrawFieldType::Role(name) => Some(name),
+            _ => None,
+        })
+        .collect();
+    roles.push("ColorRole");
+    roles.dedup();
+    for role in roles {
+        let variants = ROLE_ENUM_SCHEMA
+            .iter()
+            .find(|entry| entry.name == role)
+            .expect("a drawing command names a role the schema declares")
+            .variants;
+        writeln!(
+            output,
+            "    private fun {}OrNull(tag: Int): {role}? = when (tag) {{",
+            lower_first(role)
+        )
+        .unwrap();
+        for variant in variants {
+            writeln!(
+                output,
+                "        {} -> {role}.{}",
+                variant.tag, variant.name
+            )
+            .unwrap();
+        }
+        output.push_str("        else -> null\n    }\n\n");
+    }
+    output.push_str("}\n\n");
+}
+
+fn lower_first(name: &str) -> String {
     let mut characters = name.chars();
     match characters.next() {
         Some(first) => first.to_lowercase().chain(characters).collect(),

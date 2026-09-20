@@ -7,9 +7,9 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Open, OnDismiss, SelectedIndex, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Open, OnDismiss, SelectedIndex, Commands, Progress }
 
 enum class Key { Enter }
 
@@ -55,6 +55,107 @@ sealed interface PropertyValue {
     data class Bool(val value: Boolean) : PropertyValue
     data class Integer(val value: Long) : PropertyValue
     data class Float(val value: kotlin.Float) : PropertyValue
+    class Bytes(val value: ByteArray) : PropertyValue
+}
+
+/**
+ * One drawing command. Coordinates are dp from the Canvas's top-left corner.
+ *
+ * Colour is a [Paint], so a command may name a ColorRole and the design system
+ * decides what it looks like.
+ */
+sealed interface DrawCommand {
+    val paint: Paint
+
+    data class Line(override val paint: Paint, val x1: kotlin.Float, val y1: kotlin.Float, val x2: kotlin.Float, val y2: kotlin.Float, val strokeWidth: kotlin.Float) : DrawCommand
+    data class Rect(override val paint: Paint, val x: kotlin.Float, val y: kotlin.Float, val width: kotlin.Float, val height: kotlin.Float, val strokeWidth: kotlin.Float) : DrawCommand
+    data class RoundRect(override val paint: Paint, val x: kotlin.Float, val y: kotlin.Float, val width: kotlin.Float, val height: kotlin.Float, val radius: kotlin.Float, val strokeWidth: kotlin.Float) : DrawCommand
+    data class Circle(override val paint: Paint, val centerX: kotlin.Float, val centerY: kotlin.Float, val radius: kotlin.Float, val strokeWidth: kotlin.Float) : DrawCommand
+    data class Arc(override val paint: Paint, val centerX: kotlin.Float, val centerY: kotlin.Float, val radius: kotlin.Float, val startDegrees: kotlin.Float, val sweepDegrees: kotlin.Float, val strokeWidth: kotlin.Float) : DrawCommand
+    data class PolylineRef(override val paint: Paint, val assetId: Int, val strokeWidth: kotlin.Float) : DrawCommand
+    data class TextAt(override val paint: Paint, val textOffset: Int, val textLength: Int, val x: kotlin.Float, val y: kotlin.Float, val typeRole: TypeRole) : DrawCommand
+}
+
+/** Decodes a Canvas command list: fixed-size records, then the TextAt strings. */
+object DrawCommands {
+    const val COMMAND_LENGTH = 36
+
+    fun decode(bytes: ByteArray): List<DrawCommand> {
+        val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val commands = ArrayList<DrawCommand>(bytes.size / COMMAND_LENGTH)
+        var offset = 0
+        while (offset + COMMAND_LENGTH <= bytes.size) {
+            val tag = buffer.getShort(offset).toInt() and 0xffff
+            val length = buffer.getShort(offset + 2).toInt() and 0xffff
+            // The text region starts where the records stop decoding, so an unreadable
+            // record ends the list rather than failing the whole batch.
+            if (length != COMMAND_LENGTH) break
+            val paintBits = buffer.getLong(offset + 4)
+            val kind = (paintBits ushr 32).toInt()
+            if (kind != 1 && kind != 2) break
+            val paint = if (kind == 1) {
+                Paint.Role(colorRoleOrNull(paintBits.toInt()) ?: break)
+            } else {
+                Paint.Literal(paintBits.toInt())
+            }
+            fun word(index: Int): Int = buffer.getInt(offset + 12 + index * 4)
+            fun real(index: Int): kotlin.Float = kotlin.Float.fromBits(word(index))
+            val command = when (tag) {
+                1 -> DrawCommand.Line(paint, real(0), real(1), real(2), real(3), real(4))
+                2 -> DrawCommand.Rect(paint, real(0), real(1), real(2), real(3), real(4))
+                3 -> DrawCommand.RoundRect(paint, real(0), real(1), real(2), real(3), real(4), real(5))
+                4 -> DrawCommand.Circle(paint, real(0), real(1), real(2), real(3))
+                5 -> DrawCommand.Arc(paint, real(0), real(1), real(2), real(3), real(4), real(5))
+                6 -> DrawCommand.PolylineRef(paint, word(0), real(1))
+                7 -> DrawCommand.TextAt(paint, word(0), word(1), real(2), real(3), typeRoleOrNull(word(4)) ?: break)
+                else -> break
+            }
+            commands.add(command)
+            offset += COMMAND_LENGTH
+        }
+        return commands
+    }
+
+    /** The string a TextAt points at, measured from the start of the list. */
+    fun textOf(bytes: ByteArray, command: DrawCommand.TextAt): String {
+        val end = command.textOffset.toLong() + command.textLength.toLong()
+        if (command.textOffset < 0 || command.textLength < 0 || end > bytes.size.toLong()) {
+            return ""
+        }
+        return String(bytes, command.textOffset, command.textLength, StandardCharsets.UTF_8)
+    }
+
+    private fun typeRoleOrNull(tag: Int): TypeRole? = when (tag) {
+        1 -> TypeRole.Display
+        2 -> TypeRole.Headline
+        3 -> TypeRole.Title
+        4 -> TypeRole.Subtitle
+        5 -> TypeRole.Body
+        6 -> TypeRole.BodyStrong
+        7 -> TypeRole.Label
+        8 -> TypeRole.Caption
+        9 -> TypeRole.Mono
+        else -> null
+    }
+
+    private fun colorRoleOrNull(tag: Int): ColorRole? = when (tag) {
+        1 -> ColorRole.Primary
+        2 -> ColorRole.OnPrimary
+        3 -> ColorRole.Secondary
+        4 -> ColorRole.OnSecondary
+        5 -> ColorRole.Surface
+        6 -> ColorRole.OnSurface
+        7 -> ColorRole.SurfaceVariant
+        8 -> ColorRole.OnSurfaceVariant
+        9 -> ColorRole.Background
+        10 -> ColorRole.OnBackground
+        11 -> ColorRole.Outline
+        12 -> ColorRole.OutlineVariant
+        13 -> ColorRole.Error
+        14 -> ColorRole.OnError
+        else -> null
+    }
+
 }
 
 sealed interface Modifier {
@@ -105,7 +206,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -4135051450166659538L
+    const val SCHEMA_HASH: Long = -2056599216721257643L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -125,6 +226,7 @@ object Protocol {
     private const val VALUE_BOOL = 2
     private const val VALUE_INTEGER = 3
     private const val VALUE_FLOAT = 4
+    private const val VALUE_BYTES = 5
 
     /** Decodes a batch in place. Must not copy the buffer; only strings become Kotlin Strings. */
     fun decode(batch: ByteBuffer, onMutation: (Mutation) -> Unit) {
@@ -179,6 +281,7 @@ object Protocol {
                             VALUE_FLOAT -> PropertyValue.Float(
                                 kotlin.Float.fromBits(readU64(batch, base, available, offset + 12).toInt()),
                             )
+                            VALUE_BYTES -> PropertyValue.Bytes(readBytes(batch, base, available, offset + 12))
                             else -> throw ProtocolException("unknown property value tag $valueKind", offset + 10)
                         }
                         Mutation.SetProp(
@@ -379,6 +482,7 @@ object Protocol {
         23 -> WidgetKind.TopAppBar
         24 -> WidgetKind.LazyRow
         25 -> WidgetKind.Tooltip
+        26 -> WidgetKind.Canvas
         10 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -413,6 +517,7 @@ object Protocol {
         40 -> PropertyKind.Open
         41 -> PropertyKind.OnDismiss
         42 -> PropertyKind.SelectedIndex
+        50 -> PropertyKind.Commands
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -560,6 +665,23 @@ object Protocol {
         14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
         15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
+    }
+
+    /** An arena range with no UTF-8 requirement: a drawing command list is not text. */
+    private fun readBytes(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): ByteArray {
+        val offsetLong = readU32(batch, base, available, referenceOffset)
+        val lengthLong = readU32(batch, base, available, referenceOffset + 4)
+        if (offsetLong > Int.MAX_VALUE || lengthLong > Int.MAX_VALUE) {
+            throw ProtocolException("byte range is too large", referenceOffset)
+        }
+        val offset = offsetLong.toInt()
+        val length = lengthLong.toInt()
+        requireRange(available, offset, length, referenceOffset)
+        val copy = ByteArray(length)
+        val view = batch.duplicate()
+        view.position(base + offset)
+        view.get(copy)
+        return copy
     }
 
     private fun readString(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): String {

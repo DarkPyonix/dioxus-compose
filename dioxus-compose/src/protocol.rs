@@ -25,6 +25,9 @@ const VALUE_STRING: u16 = 1;
 const VALUE_BOOL: u16 = 2;
 const VALUE_I64: u16 = 3;
 const VALUE_F32: u16 = 4;
+/// An opaque byte run in the arena. Same `(offset, length)` layout as a string, with no
+/// UTF-8 check, because a Canvas command list is not text.
+const VALUE_BYTES: u16 = 5;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PropertyValue<'a> {
@@ -33,6 +36,7 @@ pub enum PropertyValue<'a> {
     Bool(bool),
     Integer(i64),
     Float(f32),
+    Bytes(&'a [u8]),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -319,6 +323,11 @@ impl BatchEncoder {
                         self.put_u64(u64::from(value.to_bits()));
                         self.put_u32(0);
                     }
+                    PropertyValue::Bytes(value) => {
+                        self.put_u16(VALUE_BYTES);
+                        self.put_bytes_ref(value)?;
+                        self.put_u32(0);
+                    }
                 }
             }
             Mutation::SetModifier {
@@ -427,13 +436,17 @@ impl BatchEncoder {
     }
 
     fn put_string_ref(&mut self, value: &str) -> Result<(), ProtocolError> {
+        self.put_bytes_ref(value.as_bytes())
+    }
+
+    fn put_bytes_ref(&mut self, value: &[u8]) -> Result<(), ProtocolError> {
         let offset =
             u32::try_from(self.strings.len()).map_err(|_| ProtocolError::LengthOverflow)?;
         let len = u32::try_from(value.len()).map_err(|_| ProtocolError::LengthOverflow)?;
         self.string_fixups.push(self.records.len());
         self.put_u32(offset);
         self.put_u32(len);
-        self.strings.extend_from_slice(value.as_bytes());
+        self.strings.extend_from_slice(value);
         Ok(())
     }
 
@@ -496,6 +509,9 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     VALUE_I64 => PropertyValue::Integer(read_u64(bytes, payload + 8)? as i64),
                     VALUE_F32 => {
                         PropertyValue::Float(f32::from_bits(read_u64(bytes, payload + 8)? as u32))
+                    }
+                    VALUE_BYTES => {
+                        PropertyValue::Bytes(read_bytes(bytes, payload + 8, records_len)?)
                     }
                     other => return Err(ProtocolError::InvalidValueKind(other)),
                 };
@@ -678,6 +694,12 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
 /// aim a string at the record region and have the decoder reinterpret record headers as
 /// text, garbage decoding into a valid-looking mutation.
 fn read_string(bytes: &[u8], position: usize, arena_start: usize) -> Result<&str, ProtocolError> {
+    let value = read_bytes(bytes, position, arena_start)?;
+    std::str::from_utf8(value).map_err(|_| ProtocolError::InvalidUtf8)
+}
+
+/// The same arena range a string uses, without the UTF-8 requirement.
+fn read_bytes(bytes: &[u8], position: usize, arena_start: usize) -> Result<&[u8], ProtocolError> {
     let offset =
         usize::try_from(read_u32(bytes, position)?).map_err(|_| ProtocolError::LengthOverflow)?;
     let len = usize::try_from(read_u32(bytes, position + 4)?)
@@ -688,10 +710,9 @@ fn read_string(bytes: &[u8], position: usize, arena_start: usize) -> Result<&str
     if offset < arena_start {
         return Err(ProtocolError::InvalidStringRange);
     }
-    let value = bytes
+    bytes
         .get(offset..end)
-        .ok_or(ProtocolError::InvalidStringRange)?;
-    std::str::from_utf8(value).map_err(|_| ProtocolError::InvalidUtf8)
+        .ok_or(ProtocolError::InvalidStringRange)
 }
 
 fn read_u16(bytes: &[u8], position: usize) -> Result<u16, ProtocolError> {

@@ -1,3 +1,4 @@
+use crate::drawing::DrawList;
 use crate::protocol::{BatchEncoder, Mutation, PropertyValue, ProtocolError};
 use crate::schema::{PropertyKind, WidgetKind};
 use dioxus_core::{
@@ -248,7 +249,14 @@ impl ComposeRenderer {
             AttributeValue::Int(value) => PropertyValue::Integer(*value),
             AttributeValue::Bool(value) => PropertyValue::Bool(*value),
             AttributeValue::None => PropertyValue::None,
-            AttributeValue::Listener(_) | AttributeValue::Any(_) => return,
+            // A drawing command list is the one value that is neither a number nor text.
+            // dioxus-core compares it before calling here, so an unchanged list never
+            // reaches this point and costs no record.
+            AttributeValue::Any(value) => match value.as_any().downcast_ref::<DrawList>() {
+                Some(list) => PropertyValue::Bytes(list.as_bytes()),
+                None => return,
+            },
+            AttributeValue::Listener(_) => return,
         };
         let neutral = matches!(
             value,

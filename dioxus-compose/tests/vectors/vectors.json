@@ -1,11 +1,11 @@
 {
   "format": "dioxus-compose protocol vectors v1",
-  "schemaHashUnsigned": "14311692623542892078",
+  "schemaHashUnsigned": "16390144856988293973",
   "byteOrder": "little-endian",
   "mutations": {
     "file": "mutations.bin",
-    "description": "One batch covering every record, property value, and modifier layout",
-    "recordCount": 30,
+    "description": "One batch covering every record, property value, modifier layout, and drawing command",
+    "recordCount": 32,
     "strings": ["안녕", "compose", " token"]
   },
   "events": {
