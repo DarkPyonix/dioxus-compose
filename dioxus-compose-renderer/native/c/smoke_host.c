@@ -11,6 +11,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define HOST_EXPORT __declspec(dllexport)
+#else
+#define HOST_EXPORT
+#endif
+
 int32_t dioxus_compose_renderer_run(void);
 
 typedef struct {
@@ -154,7 +160,9 @@ static void build_label_update(const char *label) {
     put_string(label_prop + 12, label);
 }
 
-int32_t dioxus_compose_host_init(const uint8_t *handshake, uint32_t len, MutationBatch *out) {
+HOST_EXPORT int32_t dioxus_compose_host_init(
+    const uint8_t *handshake, uint32_t len, MutationBatch *out
+) {
     if (out == NULL || handshake == NULL || len < 12) {
         return STATUS_PROTOCOL_ERROR;
     }
@@ -166,7 +174,9 @@ int32_t dioxus_compose_host_init(const uint8_t *handshake, uint32_t len, Mutatio
     return STATUS_OK;
 }
 
-int32_t dioxus_compose_host_dispatch_event(const uint8_t *event, uint32_t len, MutationBatch *out) {
+HOST_EXPORT int32_t dioxus_compose_host_dispatch_event(
+    const uint8_t *event, uint32_t len, MutationBatch *out
+) {
     static int clicks;
     static char label[64];
     if (out == NULL || event == NULL || len < 4) {
@@ -175,13 +185,16 @@ int32_t dioxus_compose_host_dispatch_event(const uint8_t *event, uint32_t len, M
     clicks += 1;
     snprintf(label, sizeof label, "smoke host: %d clicks", clicks);
     build_label_update(label);
+    printf("dioxus_compose_host_dispatch_event: click %d\n", clicks);
     out->ptr = batch_bytes;
     out->len = batch_length;
     out->result = 1;
     return STATUS_OK;
 }
 
-int32_t dioxus_compose_host_render_frame(uint64_t frame_time_nanos, MutationBatch *out) {
+HOST_EXPORT int32_t dioxus_compose_host_render_frame(
+    uint64_t frame_time_nanos, MutationBatch *out
+) {
     (void)frame_time_nanos;
     if (out == NULL) {
         return STATUS_PROTOCOL_ERROR;
@@ -192,7 +205,7 @@ int32_t dioxus_compose_host_render_frame(uint64_t frame_time_nanos, MutationBatc
     return STATUS_OK;
 }
 
-void dioxus_compose_host_release_batch(MutationBatch *batch) {
+HOST_EXPORT void dioxus_compose_host_release_batch(MutationBatch *batch) {
     if (batch != NULL) {
         batch->ptr = NULL;
         batch->len = 0;
@@ -200,7 +213,7 @@ void dioxus_compose_host_release_batch(MutationBatch *batch) {
     }
 }
 
-void dioxus_compose_host_shutdown(void) {
+HOST_EXPORT void dioxus_compose_host_shutdown(void) {
     printf("dioxus_compose_host_shutdown\n");
 }
 
