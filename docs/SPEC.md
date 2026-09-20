@@ -164,7 +164,16 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 | Host가 보내는 토큰 테이블 | FR-14에서 해석 위치를 Renderer로 정했습니다. 테이블을 보내면 그 결정이 뒤집힙니다 |
 
 ### FR-14 디자인 시스템과 테마 모드 (`Draft`)
-디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다. 1급으로 지원하는 세 가지는 Material 3, Apple HIG, WinUI/Fluent입니다.
+디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다.
+
+지원 대상은 두 단계로 나눕니다.
+
+| 단계 | 디자인 시스템 |
+|---|---|
+| 1단계 | Material 3, Apple HIG, WinUI/Fluent 2 |
+| 2단계 | GNOME 50, KDE Breeze, Deepin |
+
+2단계는 1단계가 동작한 뒤에 추가합니다. 14.1의 추상화가 성립하면 각각 `DesignSystem` 변형 1개와 Renderer 측 테이블 1개, 규칙 구현 1개로 끝나야 하며, 이것이 그 추상화의 실제 검증입니다.
 
 #### 14.1 추상화
 - 위젯은 **역할만 내보냅니다**(FR-13의 `ColorRole`, `TypeRole`, `ShapeRole`, `SpaceRole`, 그리고 `ButtonVariant` 같은 컴포넌트 변형).
@@ -197,11 +206,17 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 |---|---|
 | Android | Material 3 |
 | macOS, iOS | Apple HIG |
-| Windows | WinUI/Fluent |
-| Linux | fallback 인자 |
-| Web | fallback 인자 |
+| Windows | WinUI/Fluent 2 |
+| Linux (GNOME) | GNOME 50 |
+| Linux (KDE) | KDE Breeze |
+| Linux (그 외, 판별 불가) | Deepin |
+| Web | WinUI/Fluent 2 (설정으로 Material 3로 교체 가능) |
 
-- Linux에 GNOME/Adwaita를 매핑하지 않는 이유: Adwaita는 1급 지원 대상이 아니고, 셋 중 하나를 임의로 고르면 앱 저자가 의도하지 않은 모양이 됩니다. 고르게 하는 편이 정직합니다.
+- **Linux 데스크톱 환경 판별**: `XDG_CURRENT_DESKTOP`을 먼저 보고, 비어 있으면 `DESKTOP_SESSION`을 봅니다. 값에 `GNOME`이 포함되면 GNOME 50, `KDE`면 Breeze, 그 외와 판별 실패는 Deepin입니다. 판별 결과는 시작 시 한 번만 읽습니다.
+- **Web에 플랫폼 룩은 없습니다.** 브라우저는 자기 디자인 언어를 갖지 않으므로 `adaptive`에서도 선택은 임의입니다. 기본을 Fluent 2로 두되, 앱이 설정으로 Material 3를 고를 수 있습니다. 문서에서는 Web에 대해 `unified`를 명시하는 것을 권장합니다.
+- 2단계 시스템이 구현되기 전까지 Linux는 `fallback` 인자를 씁니다. 구현 완료 시 위 표가 적용됩니다.
+- **GNOME 50 주의**: 버전을 명시한 것은 GNOME의 디자인 언어가 릴리스마다 바뀌기 때문입니다. 구현 전에 해당 릴리스의 HIG를 직접 확인하고, 참조한 문서와 버전을 토큰 테이블 주석에 남깁니다.
+- **Deepin 주의**: 토큰값과 스타일 규칙만 참조합니다. 아이콘 세트와 전용 폰트는 별도 라이선스가 걸리므로 가져다 쓰지 않습니다.
 - 명암(`ColorScheme`)은 `Light | Dark | FollowSystem`이고 기본은 `FollowSystem`입니다. 시스템 설정 변화는 Renderer가 먼저 알고 스스로 반영합니다. Host는 관여하지 않습니다(D5).
 
 #### 14.4 해석 위치: Renderer
