@@ -1,9 +1,8 @@
 modules:
   - android
+  - cabi
   - desktop
   - ios
-  - iosentry
-  - iosrenderer
   - native
   - shared
   - web

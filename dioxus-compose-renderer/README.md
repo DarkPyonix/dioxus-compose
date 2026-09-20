@@ -14,8 +14,8 @@ on first use, so nothing has to be installed separately.
 | `native` | **The renderer.** The schema interpreter, the `HostConnection` implementations, the C entry points, and the macOS native-image build (`native/scripts/`, `native/c/`). This is the module that matters. |
 | `shared` | Compose code shared across platforms, including the IME test screen used to verify text input in a native build. |
 | `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
-| `iosrenderer` | **The renderer for iOS.** The same interpreter sources (`iosrenderer/src/shared/` symlinks `native/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
-| `iosentry` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
+| `ios` | **The renderer for iOS.** The same interpreter sources (`ios/src/shared/` symlinks `native/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
+| `cabi` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
 | `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
 
 The generated protocol bindings live in `native/src/protocol/Protocol.gen.kt`. They are

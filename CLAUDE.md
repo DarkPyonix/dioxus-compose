@@ -7,7 +7,11 @@ Guidance for working in this repository.
 dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-core` VirtualDom, `rsx!`, hooks). An **AOT-compiled Compose Multiplatform** renderer draws the UI and handles text and IME.
 
 - `dioxus-compose/`: Rust side (Host). Dioxus renderer crate, boundary shims, codegen.
-- `dioxus-compose-renderer/`: Kotlin side (Renderer). Amper project; the schema interpreter lives in `shared/`.
+- `dioxus-compose-renderer/`: Kotlin side (Renderer). Amper project. The schema interpreter
+  lives in `native/src/renderer/`; `ios/src/shared/` symlinks the same files so there is one
+  copy. `shared/` is the JVM development shell only, not the renderer.
+- `dioxus-design-systems/`: a separate Amper project holding the six design systems and the
+  Liquid Glass material. It must never depend on the renderer, so it can be published alone.
 - `docs/INTENT.md`: why the project exists, decisions (D1–D9), rejected alternatives.
 - `docs/SPEC.md`: requirements (`FR-*`, `NFR-*`, `PR-*`) with acceptance criteria.
 - `PROJECT.md`: scope, milestones (M0–M7), open questions.
