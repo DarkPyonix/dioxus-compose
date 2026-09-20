@@ -7,11 +7,47 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant }
 
 enum class Key { Enter }
+
+enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError }
+
+enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
+
+enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
+
+enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
+
+enum class TextAlign { Start, Center, End, Justify }
+
+enum class TextOverflow { Clip, Ellipsis, Visible }
+
+enum class Arrangement { Start, Center, End, SpaceBetween, SpaceAround, SpaceEvenly }
+
+enum class Alignment { TopStart, TopCenter, TopEnd, CenterStart, Center, CenterEnd, BottomStart, BottomCenter, BottomEnd }
+
+enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+
+enum class DesignSystem { Material3, AppleHig, Fluent }
+
+enum class ColorScheme { Light, Dark, FollowSystem }
+
+sealed interface Paint {
+    data class Role(val role: ColorRole) : Paint
+
+    /** A literal 0xAARRGGBB colour. */
+    data class Literal(val argb: Int) : Paint
+}
+
+data class Theme(
+    val designSystem: DesignSystem,
+    val fallback: DesignSystem,
+    val colorScheme: ColorScheme,
+    val adaptive: Boolean,
+)
 
 sealed interface PropertyValue {
     data object None : PropertyValue
@@ -29,8 +65,15 @@ sealed interface Modifier {
     data class Width(val value: kotlin.Float) : Modifier
     data class Height(val value: kotlin.Float) : Modifier
     data class Size(val width: kotlin.Float, val height: kotlin.Float) : Modifier
-    data class Background(val argb: Int) : Modifier
+    data class Background(val paint: Paint) : Modifier
     data class Clickable(val handlerId: Long) : Modifier
+    data class PaddingRole(val role: org.thisisthepy.dioxus.compose.protocol.SpaceRole) : Modifier
+    data class PaddingEach(val start: kotlin.Float, val top: kotlin.Float, val end: kotlin.Float, val bottom: kotlin.Float) : Modifier
+    data class Weight(val value: kotlin.Float) : Modifier
+    data class Shape(val topStart: kotlin.Float, val topEnd: kotlin.Float, val bottomEnd: kotlin.Float, val bottomStart: kotlin.Float) : Modifier
+    data class ShapeRole(val role: org.thisisthepy.dioxus.compose.protocol.ShapeRole) : Modifier
+    data class Border(val width: kotlin.Float, val paint: Paint) : Modifier
+    data class Elevation(val value: kotlin.Float) : Modifier
 }
 
 sealed interface Mutation {
@@ -42,6 +85,7 @@ sealed interface Mutation {
     data class Remove(val nodeId: Int) : Mutation
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
+    data class SetTheme(val theme: Theme) : Mutation
 }
 
 sealed interface HostEvent {
@@ -61,7 +105,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 2023235891227298086L
+    const val SCHEMA_HASH: Long = -7526777000988176584L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -73,6 +117,7 @@ object Protocol {
     private const val TAG_REMOVE = 6
     private const val TAG_SET_TEXT = 7
     private const val TAG_APPEND_TEXT = 8
+    private const val TAG_SET_THEME = 9
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -189,6 +234,21 @@ object Protocol {
                         Mutation.AppendText(
                             readU32(batch, base, available, offset + 4).toInt(),
                             readString(batch, base, available, offset + 8),
+                        )
+                    }
+                    TAG_SET_THEME -> {
+                        requireRecordLength(length, 12, offset)
+                        val adaptive = readU16(batch, base, available, offset + 10)
+                        if (adaptive > 1) {
+                            throw ProtocolException("invalid adaptive flag $adaptive", offset + 10)
+                        }
+                        Mutation.SetTheme(
+                            Theme(
+                                designSystem(readU16(batch, base, available, offset + 4), offset + 4),
+                                designSystem(readU16(batch, base, available, offset + 6), offset + 6),
+                                colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
+                                adaptive == 1,
+                            ),
                         )
                     }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
@@ -310,6 +370,7 @@ object Protocol {
         6 -> WidgetKind.Button
         7 -> WidgetKind.Spacer
         8 -> WidgetKind.LazyColumn
+        9 -> WidgetKind.ScrollColumn
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
 
@@ -326,11 +387,146 @@ object Protocol {
         10 -> PropertyKind.ItemCount
         11 -> PropertyKind.ItemKey
         12 -> PropertyKind.OnRangeRequested
+        13 -> PropertyKind.TypeRole
+        14 -> PropertyKind.FontSize
+        15 -> PropertyKind.FontWeight
+        16 -> PropertyKind.LineHeight
+        17 -> PropertyKind.LetterSpacing
+        18 -> PropertyKind.Color
+        19 -> PropertyKind.TextAlign
+        20 -> PropertyKind.MaxLines
+        21 -> PropertyKind.Overflow
+        22 -> PropertyKind.Arrangement
+        23 -> PropertyKind.Spacing
+        24 -> PropertyKind.SpaceRole
+        25 -> PropertyKind.Alignment
+        26 -> PropertyKind.Variant
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
 
     private fun keyTag(key: Key): Int = when (key) {
         Key.Enter -> 1
+    }
+
+    private fun colorRole(tag: Int, offset: Int): ColorRole = when (tag) {
+        1 -> ColorRole.Primary
+        2 -> ColorRole.OnPrimary
+        3 -> ColorRole.Secondary
+        4 -> ColorRole.OnSecondary
+        5 -> ColorRole.Surface
+        6 -> ColorRole.OnSurface
+        7 -> ColorRole.SurfaceVariant
+        8 -> ColorRole.OnSurfaceVariant
+        9 -> ColorRole.Background
+        10 -> ColorRole.OnBackground
+        11 -> ColorRole.Outline
+        12 -> ColorRole.OutlineVariant
+        13 -> ColorRole.Error
+        14 -> ColorRole.OnError
+        else -> throw ProtocolException("unknown ColorRole tag $tag", offset)
+    }
+
+    private fun typeRole(tag: Int, offset: Int): TypeRole = when (tag) {
+        1 -> TypeRole.Display
+        2 -> TypeRole.Headline
+        3 -> TypeRole.Title
+        4 -> TypeRole.Subtitle
+        5 -> TypeRole.Body
+        6 -> TypeRole.BodyStrong
+        7 -> TypeRole.Label
+        8 -> TypeRole.Caption
+        9 -> TypeRole.Mono
+        else -> throw ProtocolException("unknown TypeRole tag $tag", offset)
+    }
+
+    private fun shapeRole(tag: Int, offset: Int): ShapeRole = when (tag) {
+        1 -> ShapeRole.None
+        2 -> ShapeRole.ExtraSmall
+        3 -> ShapeRole.Small
+        4 -> ShapeRole.Medium
+        5 -> ShapeRole.Large
+        6 -> ShapeRole.Full
+        else -> throw ProtocolException("unknown ShapeRole tag $tag", offset)
+    }
+
+    private fun spaceRole(tag: Int, offset: Int): SpaceRole = when (tag) {
+        1 -> SpaceRole.None
+        2 -> SpaceRole.Xs
+        3 -> SpaceRole.Sm
+        4 -> SpaceRole.Md
+        5 -> SpaceRole.Lg
+        6 -> SpaceRole.Xl
+        7 -> SpaceRole.Xxl
+        else -> throw ProtocolException("unknown SpaceRole tag $tag", offset)
+    }
+
+    private fun textAlign(tag: Int, offset: Int): TextAlign = when (tag) {
+        1 -> TextAlign.Start
+        2 -> TextAlign.Center
+        3 -> TextAlign.End
+        4 -> TextAlign.Justify
+        else -> throw ProtocolException("unknown TextAlign tag $tag", offset)
+    }
+
+    private fun textOverflow(tag: Int, offset: Int): TextOverflow = when (tag) {
+        1 -> TextOverflow.Clip
+        2 -> TextOverflow.Ellipsis
+        3 -> TextOverflow.Visible
+        else -> throw ProtocolException("unknown TextOverflow tag $tag", offset)
+    }
+
+    private fun arrangement(tag: Int, offset: Int): Arrangement = when (tag) {
+        1 -> Arrangement.Start
+        2 -> Arrangement.Center
+        3 -> Arrangement.End
+        4 -> Arrangement.SpaceBetween
+        5 -> Arrangement.SpaceAround
+        6 -> Arrangement.SpaceEvenly
+        else -> throw ProtocolException("unknown Arrangement tag $tag", offset)
+    }
+
+    private fun alignment(tag: Int, offset: Int): Alignment = when (tag) {
+        1 -> Alignment.TopStart
+        2 -> Alignment.TopCenter
+        3 -> Alignment.TopEnd
+        4 -> Alignment.CenterStart
+        5 -> Alignment.Center
+        6 -> Alignment.CenterEnd
+        7 -> Alignment.BottomStart
+        8 -> Alignment.BottomCenter
+        9 -> Alignment.BottomEnd
+        else -> throw ProtocolException("unknown Alignment tag $tag", offset)
+    }
+
+    private fun buttonVariant(tag: Int, offset: Int): ButtonVariant = when (tag) {
+        1 -> ButtonVariant.Filled
+        2 -> ButtonVariant.Tonal
+        3 -> ButtonVariant.Outlined
+        4 -> ButtonVariant.Text
+        else -> throw ProtocolException("unknown ButtonVariant tag $tag", offset)
+    }
+
+    private fun designSystem(tag: Int, offset: Int): DesignSystem = when (tag) {
+        1 -> DesignSystem.Material3
+        2 -> DesignSystem.AppleHig
+        3 -> DesignSystem.Fluent
+        else -> throw ProtocolException("unknown DesignSystem tag $tag", offset)
+    }
+
+    private fun colorScheme(tag: Int, offset: Int): ColorScheme = when (tag) {
+        1 -> ColorScheme.Light
+        2 -> ColorScheme.Dark
+        3 -> ColorScheme.FollowSystem
+        else -> throw ProtocolException("unknown ColorScheme tag $tag", offset)
+    }
+
+    private fun paint(bits: Long, offset: Int): Paint {
+        val value = bits.toInt()
+        return when (val kind = (bits ushr 32).toInt()) {
+            1 -> Paint.Role(colorRole(value, offset))
+            2 -> Paint.Literal(value)
+            else -> throw ProtocolException("unknown paint kind $kind", offset)
+        }
     }
 
     private fun modifier(tag: Int, first: Long, second: Long, offset: Int): Modifier = when (tag) {
@@ -341,8 +537,15 @@ object Protocol {
         4 -> Modifier.Width(kotlin.Float.fromBits(first.toInt()))
         5 -> Modifier.Height(kotlin.Float.fromBits(first.toInt()))
         6 -> Modifier.Size(kotlin.Float.fromBits(first.toInt()), kotlin.Float.fromBits(second.toInt()))
-        7 -> Modifier.Background(first.toInt())
+        7 -> Modifier.Background(paint(first, offset))
         8 -> Modifier.Clickable(first)
+        9 -> Modifier.PaddingRole(spaceRole(first.toInt(), offset))
+        10 -> Modifier.PaddingEach(kotlin.Float.fromBits(first.toInt()), kotlin.Float.fromBits((first ushr 32).toInt()), kotlin.Float.fromBits(second.toInt()), kotlin.Float.fromBits((second ushr 32).toInt()))
+        11 -> Modifier.Weight(kotlin.Float.fromBits(first.toInt()))
+        12 -> Modifier.Shape(kotlin.Float.fromBits(first.toInt()), kotlin.Float.fromBits((first ushr 32).toInt()), kotlin.Float.fromBits(second.toInt()), kotlin.Float.fromBits((second ushr 32).toInt()))
+        13 -> Modifier.ShapeRole(shapeRole(first.toInt(), offset))
+        14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
+        15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 

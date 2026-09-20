@@ -1,6 +1,9 @@
 //! Fixed-layout little-endian boundary protocol.
 
-use crate::schema::{Key, Modifier, PropertyKind, Selection, WidgetKind};
+use crate::schema::{
+    ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole, SpaceRole,
+    Theme, WidgetKind,
+};
 use core::fmt;
 
 const TAG_ENVELOPE: u16 = 0;
@@ -12,6 +15,7 @@ const TAG_MOVE: u16 = 5;
 const TAG_REMOVE: u16 = 6;
 const TAG_SET_TEXT: u16 = 7;
 const TAG_APPEND_TEXT: u16 = 8;
+const TAG_SET_THEME: u16 = 9;
 const ENVELOPE_LEN: usize = 12;
 /// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
 const MIN_RECORD_LEN: usize = 8;
@@ -70,6 +74,8 @@ pub enum Mutation<'a> {
         node_id: u32,
         text: &'a str,
     },
+    /// FR-14.5: the root theme. Sent once as the first record of the initial batch.
+    SetTheme(Theme),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -82,6 +88,7 @@ pub enum ProtocolError {
     InvalidProperty(u16),
     InvalidValueKind(u16),
     InvalidModifier(u16),
+    InvalidTheme(u16),
     InvalidStringRange,
     InvalidUtf8,
     LengthOverflow,
@@ -369,6 +376,13 @@ impl BatchEncoder {
                 self.put_u32(*node_id);
                 self.put_string_ref(text)?;
             }
+            Mutation::SetTheme(theme) => {
+                self.begin_record(TAG_SET_THEME, 8);
+                self.put_u16(theme.design_system as u16);
+                self.put_u16(theme.fallback as u16);
+                self.put_u16(theme.color_scheme as u16);
+                self.put_u16(u16::from(theme.adaptive));
+            }
         }
         self.record_count = self
             .record_count
@@ -528,7 +542,25 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                 node_id: read_u32(bytes, payload)?,
                 text: read_string(bytes, payload + 4, records_len)?,
             },
-            TAG_CREATE..=TAG_APPEND_TEXT => {
+            TAG_SET_THEME if len == 12 => {
+                let design_system = read_u16(bytes, payload)?;
+                let fallback = read_u16(bytes, payload + 2)?;
+                let color_scheme = read_u16(bytes, payload + 4)?;
+                let adaptive = read_u16(bytes, payload + 6)?;
+                if adaptive > 1 {
+                    return Err(ProtocolError::InvalidTheme(adaptive));
+                }
+                Mutation::SetTheme(Theme {
+                    design_system: DesignSystem::try_from(design_system)
+                        .map_err(|()| ProtocolError::InvalidTheme(design_system))?,
+                    fallback: DesignSystem::try_from(fallback)
+                        .map_err(|()| ProtocolError::InvalidTheme(fallback))?,
+                    color_scheme: ColorScheme::try_from(color_scheme)
+                        .map_err(|()| ProtocolError::InvalidTheme(color_scheme))?,
+                    adaptive: adaptive == 1,
+                })
+            }
+            TAG_CREATE..=TAG_SET_THEME => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),
@@ -542,6 +574,19 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
     Ok(output)
 }
 
+/// FR-13.8: two `f32` share one `u64`, with the first value in the low 32 bits.
+const fn pack_floats(low: f32, high: f32) -> u64 {
+    (low.to_bits() as u64) | ((high.to_bits() as u64) << 32)
+}
+
+const fn unpack_low(word: u64) -> f32 {
+    f32::from_bits(word as u32)
+}
+
+const fn unpack_high(word: u64) -> f32 {
+    f32::from_bits((word >> 32) as u32)
+}
+
 fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
     match modifier {
         Modifier::Empty => (0, 0, 0),
@@ -553,9 +598,39 @@ fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
         Modifier::Size { width, height } => {
             (6, u64::from(width.to_bits()), u64::from(height.to_bits()))
         }
-        Modifier::Background(argb) => (7, u64::from(*argb), 0),
+        Modifier::Background(paint) => (7, paint.to_bits(), 0),
         Modifier::Clickable { handler_id } => (8, *handler_id, 0),
+        Modifier::PaddingRole(role) => (9, *role as u64, 0),
+        Modifier::PaddingEach {
+            start,
+            top,
+            end,
+            bottom,
+        } => (10, pack_floats(*start, *top), pack_floats(*end, *bottom)),
+        Modifier::Weight(value) => (11, u64::from(value.to_bits()), 0),
+        Modifier::Shape {
+            top_start,
+            top_end,
+            bottom_end,
+            bottom_start,
+        } => (
+            12,
+            pack_floats(*top_start, *top_end),
+            pack_floats(*bottom_end, *bottom_start),
+        ),
+        Modifier::ShapeRole(role) => (13, *role as u64, 0),
+        Modifier::Border { width, paint } => (14, u64::from(width.to_bits()), paint.to_bits()),
+        Modifier::Elevation(dp) => (15, u64::from(dp.to_bits()), 0),
     }
+}
+
+fn decode_role<T: TryFrom<u16, Error = ()>>(first: u64) -> Result<T, ProtocolError> {
+    let tag = u16::try_from(first).map_err(|_| ProtocolError::InvalidModifier(0))?;
+    T::try_from(tag).map_err(|()| ProtocolError::InvalidModifier(tag))
+}
+
+fn decode_paint(bits: u64) -> Result<Paint, ProtocolError> {
+    Paint::from_bits(bits).ok_or(ProtocolError::InvalidModifier(0))
 }
 
 fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, ProtocolError> {
@@ -570,8 +645,28 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
             width: f32::from_bits(first as u32),
             height: f32::from_bits(second as u32),
         }),
-        7 => Ok(Modifier::Background(first as u32)),
+        7 => Ok(Modifier::Background(decode_paint(first)?)),
         8 => Ok(Modifier::Clickable { handler_id: first }),
+        9 => Ok(Modifier::PaddingRole(decode_role::<SpaceRole>(first)?)),
+        10 => Ok(Modifier::PaddingEach {
+            start: unpack_low(first),
+            top: unpack_high(first),
+            end: unpack_low(second),
+            bottom: unpack_high(second),
+        }),
+        11 => Ok(Modifier::Weight(f32::from_bits(first as u32))),
+        12 => Ok(Modifier::Shape {
+            top_start: unpack_low(first),
+            top_end: unpack_high(first),
+            bottom_end: unpack_low(second),
+            bottom_start: unpack_high(second),
+        }),
+        13 => Ok(Modifier::ShapeRole(decode_role::<ShapeRole>(first)?)),
+        14 => Ok(Modifier::Border {
+            width: f32::from_bits(first as u32),
+            paint: decode_paint(second)?,
+        }),
+        15 => Ok(Modifier::Elevation(f32::from_bits(first as u32))),
         other => Err(ProtocolError::InvalidModifier(other)),
     }
 }
@@ -675,6 +770,115 @@ mod tests {
         }
         let decoded = decode_batch(encoder.finish().unwrap()).unwrap();
         assert_eq!(decoded, mutations);
+    }
+
+    /// FR-13.1: a role Paint and a literal Paint occupy the same record length and
+    /// decode back to the value that was encoded.
+    #[test]
+    fn fr13_paint_role_and_literal_share_one_record_length() {
+        let encode_one = |modifier| {
+            let mut encoder = BatchEncoder::default();
+            encoder
+                .encode(&Mutation::SetModifier {
+                    node_id: 1,
+                    index: 0,
+                    modifier,
+                })
+                .unwrap();
+            encoder.finish().unwrap().to_vec()
+        };
+        let role = encode_one(Modifier::Background(Paint::Role(
+            crate::schema::ColorRole::Surface,
+        )));
+        let literal = encode_one(Modifier::Background(Paint::Literal(
+            crate::schema::Color::rgb(0x1b1b1f),
+        )));
+        assert_eq!(role.len(), literal.len());
+        assert_eq!(
+            decode_batch(&role).unwrap(),
+            [Mutation::SetModifier {
+                node_id: 1,
+                index: 0,
+                modifier: Modifier::Background(Paint::Role(crate::schema::ColorRole::Surface)),
+            }]
+        );
+        assert_eq!(
+            decode_batch(&literal).unwrap(),
+            [Mutation::SetModifier {
+                node_id: 1,
+                index: 0,
+                modifier: Modifier::Background(Paint::Literal(crate::schema::Color::rgb(0x1b1b1f))),
+            }]
+        );
+    }
+
+    /// FR-13.4: every design primitive fits in `(tag, u64, u64)` and survives a round trip.
+    #[test]
+    fn fr13_design_modifiers_round_trip_in_two_words() {
+        let modifiers = [
+            Modifier::PaddingRole(SpaceRole::Md),
+            Modifier::PaddingEach {
+                start: 1.0,
+                top: 2.0,
+                end: 3.0,
+                bottom: 4.0,
+            },
+            Modifier::Weight(0.25),
+            Modifier::Shape {
+                top_start: 4.0,
+                top_end: 8.0,
+                bottom_end: 12.0,
+                bottom_start: 16.0,
+            },
+            Modifier::ShapeRole(ShapeRole::Full),
+            Modifier::Border {
+                width: 2.0,
+                paint: Paint::Role(crate::schema::ColorRole::Outline),
+            },
+            Modifier::Elevation(6.0),
+        ];
+        let mut encoder = BatchEncoder::default();
+        let expected: Vec<_> = modifiers
+            .iter()
+            .enumerate()
+            .map(|(index, modifier)| Mutation::SetModifier {
+                node_id: 1,
+                index: index as u16,
+                modifier: modifier.clone(),
+            })
+            .collect();
+        for mutation in &expected {
+            encoder.encode(mutation).unwrap();
+        }
+        let bytes = encoder.finish().unwrap();
+        // Every modifier record is the same fixed 28 bytes (PR-4).
+        assert_eq!(bytes.len(), ENVELOPE_LEN + expected.len() * 28);
+        assert_eq!(decode_batch(bytes).unwrap(), expected);
+    }
+
+    /// FR-14.5: `SetTheme` is a 12-byte record of four `u16` fields.
+    #[test]
+    fn fr14_set_theme_round_trips_in_twelve_bytes() {
+        let theme = Theme::adaptive(DesignSystem::AppleHig).with_color_scheme(ColorScheme::Dark);
+        let mut encoder = BatchEncoder::default();
+        encoder.encode(&Mutation::SetTheme(theme)).unwrap();
+        let bytes = encoder.finish().unwrap();
+        assert_eq!(bytes.len(), ENVELOPE_LEN + 12);
+        assert_eq!(read_u16(bytes, ENVELOPE_LEN).unwrap(), TAG_SET_THEME);
+        assert_eq!(read_u16(bytes, ENVELOPE_LEN + 2).unwrap(), 12);
+        assert_eq!(decode_batch(bytes).unwrap(), [Mutation::SetTheme(theme)]);
+    }
+
+    /// NFR-7: an out-of-range theme tag is an error, never a panic.
+    #[test]
+    fn fr14_rejects_unknown_theme_tags() {
+        let mut encoder = BatchEncoder::default();
+        encoder
+            .encode(&Mutation::SetTheme(Theme::default()))
+            .unwrap();
+        let mut bytes = encoder.finish().unwrap().to_vec();
+        bytes[ENVELOPE_LEN + 4..ENVELOPE_LEN + 6].copy_from_slice(&99_u16.to_le_bytes());
+        assert_eq!(decode_batch(&bytes), Err(ProtocolError::InvalidTheme(99)));
     }
 
     #[test]

@@ -613,7 +613,8 @@ mod tests {
                     Mutation::SetProp { .. }
                     | Mutation::SetModifier { .. }
                     | Mutation::SetText { .. }
-                    | Mutation::AppendText { .. } => {}
+                    | Mutation::AppendText { .. }
+                    | Mutation::SetTheme(_) => {}
                 }
             }
         }
