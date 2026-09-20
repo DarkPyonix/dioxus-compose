@@ -1,6 +1,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod boundary;
+#[doc(hidden)]
+pub mod codegen;
 pub mod protocol;
 pub mod renderer;
 pub mod schema;

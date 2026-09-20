@@ -137,7 +137,7 @@ impl Host {
             return Err(ProtocolError::InvalidValueKind(0));
         }
         let event_data = match event.payload {
-            EventPayload::Click | EventPayload::FocusLost => {
+            EventPayload::Clicked | EventPayload::FocusLost => {
                 Event::new(Rc::new(()), true).into_any()
             }
             EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
@@ -479,7 +479,7 @@ mod tests {
         let event = HostEvent {
             node_id: button_node,
             handler_id,
-            payload: EventPayload::Click,
+            payload: EventPayload::Clicked,
         };
         let (batch, result) = host.dispatch(event).unwrap();
         let mutations = decode_batch(batch).unwrap();

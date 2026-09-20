@@ -105,7 +105,7 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
     let node_id = read_u32(bytes, 4)?;
     let handler_id = read_u64(bytes, 8)?;
     let payload = match tag {
-        EVENT_CLICK if record_len == 16 => crate::schema::EventPayload::Click,
+        EVENT_CLICK if record_len == 16 => crate::schema::EventPayload::Clicked,
         EVENT_TEXT_CHANGED if record_len == 24 => {
             crate::schema::EventPayload::TextChanged(read_string(bytes, 16)?)
         }
@@ -131,7 +131,7 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
 pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
     output.clear();
     let (tag, record_len, text, error_code) = match &event.payload {
-        crate::schema::EventPayload::Click => (EVENT_CLICK, 16_u16, None, None),
+        crate::schema::EventPayload::Clicked => (EVENT_CLICK, 16_u16, None, None),
         crate::schema::EventPayload::TextChanged(value) => {
             (EVENT_TEXT_CHANGED, 24, Some(*value), None)
         }
@@ -600,7 +600,7 @@ mod tests {
             HostEvent {
                 node_id: 7,
                 handler_id: 11,
-                payload: crate::EventPayload::Click,
+                payload: crate::EventPayload::Clicked,
             },
             HostEvent {
                 node_id: 8,
