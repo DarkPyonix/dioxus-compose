@@ -66,6 +66,7 @@ pub fn generate_kotlin() -> String {
     data class Move(val parentId: Int, val nodeId: Int, val index: Int) : Mutation
     data class Remove(val nodeId: Int) : Mutation
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
+    data class AppendText(val nodeId: Int, val text: String) : Mutation
 }
 
 "#,
@@ -90,6 +91,7 @@ pub fn generate_kotlin() -> String {
             EventPayloadType::KeyDown => {
                 output.push_str(", val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean");
             }
+            EventPayloadType::Range => output.push_str(", val start: Int, val count: Int"),
         }
         output.push_str(") : HostEvent\n");
     }
@@ -123,6 +125,7 @@ object Protocol {
     private const val TAG_MOVE = 5
     private const val TAG_REMOVE = 6
     private const val TAG_SET_TEXT = 7
+    private const val TAG_APPEND_TEXT = 8
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -234,6 +237,13 @@ object Protocol {
                             readU32(batch, base, available, offset + 20).toInt(),
                         )
                     }
+                    TAG_APPEND_TEXT -> {
+                        requireRecordLength(length, 16, offset)
+                        Mutation.AppendText(
+                            readU32(batch, base, available, offset + 4).toInt(),
+                            readString(batch, base, available, offset + 8),
+                        )
+                    }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
                 }
                 onMutation(mutation)
@@ -283,7 +293,7 @@ object Protocol {
                 )
                 .unwrap();
             }
-            EventPayloadType::KeyDown => {
+            EventPayloadType::KeyDown | EventPayloadType::Range => {
                 writeln!(
                     output,
                     "                is HostEvent.{} -> null",
@@ -304,6 +314,7 @@ object Protocol {
             EventPayloadType::Text => 24,
             EventPayloadType::ProtocolError => 28,
             EventPayloadType::KeyDown => 20,
+            EventPayloadType::Range => 24,
         };
         writeln!(
             output,
@@ -382,6 +393,12 @@ object Protocol {
                 );
                 output.push_str("                    out.put(modifiers.toByte())\n");
                 output.push_str("                    out.put(0.toByte())\n");
+                output.push_str("                }\n");
+            }
+            EventPayloadType::Range => {
+                writeln!(output, "                is HostEvent.{} -> {{", event.name).unwrap();
+                output.push_str("                    out.putInt(event.start)\n");
+                output.push_str("                    out.putInt(event.count)\n");
                 output.push_str("                }\n");
             }
         }
@@ -636,6 +653,10 @@ pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
             text: "compose",
             selection: Some(Selection { start: 1, end: 4 }),
         },
+        Mutation::AppendText {
+            node_id: 4,
+            text: " token",
+        },
     ];
     let mut encoder = BatchEncoder::default();
     for mutation in &mutations {
@@ -685,6 +706,14 @@ pub fn generate_event_vector() -> Result<Vec<u8>, ProtocolError> {
                 meta_key: true,
             },
         },
+        HostEvent {
+            node_id: 10,
+            handler_id: 16,
+            payload: EventPayload::RangeRequested {
+                start: 100,
+                count: 20,
+            },
+        },
     ];
     let mut output = Vec::new();
     let mut encoded = Vec::new();
@@ -704,19 +733,20 @@ pub fn generate_vector_description() -> String {
   "mutations": {{
     "file": "mutations.bin",
     "description": "One batch covering every M0 record, property value, and modifier layout",
-    "recordCount": 19,
-    "strings": ["안녕", "compose"]
+    "recordCount": 20,
+    "strings": ["안녕", "compose", " token"]
   }},
   "events": {{
     "file": "events.bin",
-    "description": "Six independently decodable event records concatenated in schema order",
+    "description": "Seven independently decodable event records concatenated in schema order",
     "records": [
       {{ "type": "Clicked", "offset": 0, "length": 16, "nodeId": 7, "handlerId": 11 }},
       {{ "type": "TextChanged", "offset": 16, "length": 30, "nodeId": 8, "handlerId": 12, "text": "한글" }},
       {{ "type": "TextSubmitted", "offset": 46, "length": 28, "nodeId": 8, "handlerId": 13, "text": "done" }},
       {{ "type": "FocusLost", "offset": 74, "length": 16, "nodeId": 8, "handlerId": 14 }},
       {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }},
-      {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }}
+      {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }},
+      {{ "type": "RangeRequested", "offset": 145, "length": 24, "nodeId": 10, "handlerId": 16, "start": 100, "count": 20 }}
     ]
   }}
 }}

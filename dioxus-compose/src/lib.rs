@@ -16,7 +16,10 @@ pub use dioxus_core::{Element, VirtualDom};
 pub use dioxus_core_macro::{component, rsx};
 pub use elements::*;
 pub use schema::{EventPayload, Key, LoopMode, Modifier, SCHEMA_HASH, Selection, WidgetKind};
-pub use widgets::{Button, Column, ComposeBox as Box, KeyEvent, Row, Spacer, Text, TextField};
+pub use widgets::{
+    Button, Column, ComposeBox as Box, KeyEvent, LazyColumn, RangeRequest, Row, Spacer, Text,
+    TextField,
+};
 
 pub mod prelude {
     pub use crate as dioxus_elements;
@@ -24,8 +27,8 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Button, Column, Element, Key, KeyEvent, LaunchBuilder, LoopMode, Modifier, Row, Spacer,
-        Text, TextField, component, launch, rsx,
+        Button, Column, Element, Key, KeyEvent, LaunchBuilder, LazyColumn, LoopMode, Modifier,
+        RangeRequest, Row, Spacer, Text, TextField, component, launch, rsx,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -51,11 +54,16 @@ pub mod elements {
 
     element!(column, "Column", [fill_max_width, fill_max_height]);
     element!(row, "Row", [fill_max_width, fill_max_height]);
-    element!(composebox, "Box", [fill_max_width, fill_max_height]);
+    element!(
+        composebox,
+        "Box",
+        [fill_max_width, fill_max_height, item_key]
+    );
     element!(text, "Text", [text]);
     element!(textfield, "TextField", [placeholder, enabled, multiline]);
     element!(button, "Button", [text, enabled]);
     element!(spacer, "Spacer", [width, height]);
+    element!(lazycolumn, "LazyColumn", [item_count]);
 
     #[doc(hidden)]
     pub mod completions {
@@ -68,6 +76,7 @@ pub mod elements {
             textfield {},
             button {},
             spacer {},
+            lazycolumn {},
         }
     }
 }
@@ -108,4 +117,5 @@ pub mod events {
     event!(onsubmit, String);
     event!(onfocuslost, ());
     event!(onkeydown, crate::KeyEvent);
+    event!(onrangerequest, crate::RangeRequest);
 }
