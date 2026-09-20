@@ -76,4 +76,4 @@ case "$out" in
 esac
 
 echo "$out" | grep -E "^total elements:" || true
-echo "ok    the image answers assistive-client queries and stays alive (NFR-8)"
+echo "ok    the image answers assistive-client queries and stays alive"

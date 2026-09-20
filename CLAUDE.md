@@ -45,6 +45,23 @@ under `docs/`.
 
 1. **Never use em dashes.** Not in docs, code comments, commit messages, pull request text or UI copy. Use a comma, a colon, parentheses, or start a new sentence. Hyphens in compound words and en dashes in numeric ranges are fine.
 2. Language: `README.md` and the guide site (`docs/guide/`) are English, with translations under `docs/locales/` and `docs/guide/ko/`. The internal planning documents (`PROJECT.md`, `docs/INTENT.md`, `docs/SPEC.md`) are Korean. Code, code comments, scripts and this file are English.
+3. **Never cite SPEC or INTENT from code.** No `(SPEC PR-4)`, no `NFR-8 needs this`, no
+   `INTENT D9-macOS`, in comments, error messages, log lines or assertion text. Those
+   documents are stripped from the published branch, so a citation points at nothing for
+   most readers, and it goes stale the moment a requirement is renumbered. Worse, it reads
+   as an explanation while explaining nothing: a reader who hits the error still does not
+   know what went wrong.
+
+   Say the actual reason instead. `"the protocol encodes strings as UTF-8 (SPEC PR-4)"`
+   becomes `"this codec only encodes UTF-8; $name was requested"`. If the reason needs a
+   paragraph, write the paragraph. The test is whether someone with no access to the
+   planning documents can act on what you wrote.
+
+   Two exceptions, both deliberate: **commit messages and pull request text** may reference
+   requirement IDs, because they are addressed to people working in this repository, and
+   **test names** (`fr4_set_prop_does_not_recompose_siblings`) keep theirs, because the
+   traceability from a failing test to its requirement is the point of the TDD rules below.
+   Anything a test *prints* follows the rule above.
 
 ## Test Driven Development
 

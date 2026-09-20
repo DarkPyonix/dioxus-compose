@@ -146,7 +146,9 @@ fn nfr9_host_path_allocation_ceiling() {
 
     assert!(
         allocations <= NFR9_HOST_ALLOCATION_CEILING,
-        "Host click path allocated {allocations} times; SPEC ceiling is {NFR9_HOST_ALLOCATION_CEILING}"
+        "the Host allocated {allocations} times while handling a click; the ceiling is \
+         {NFR9_HOST_ALLOCATION_CEILING}. A click in a steady state UI changes one node, so \
+         any growth here means something is allocating per event rather than reusing a buffer."
     );
 }
 

@@ -69,7 +69,9 @@ done < <(nm -g "$awt_archive" 2>/dev/null |
     awk '$2 == "S" && $3 ~ /^_OBJC_CLASS_\$_[A-Za-z]+Accessibility$/ { print $3 }' | sort -u)
 [[ ${#a11y_classes[@]} -gt 0 ]] || die \
     "no Objective-C accessibility classes found in $awt_archive" \
-    "NFR-8 needs them linked in by name; without them VoiceOver aborts the process."
+    "AppKit looks these classes up by name at runtime, so nothing references them by symbol\n"
+    "and the linker is free to drop them. When it does, the build and the window are fine\n"
+    "and the process aborts the moment VoiceOver attaches."
 linker_args+=("${a11y_classes[@]}")
 
 # Heap and GC settings for NFR-3 (SPEC 5.2 levers 1 and 2). `-R:` options are baked in as
