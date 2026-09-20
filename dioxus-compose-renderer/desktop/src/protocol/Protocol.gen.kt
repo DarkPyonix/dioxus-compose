@@ -7,9 +7,9 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Open, OnDismiss, SelectedIndex, Commands, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Progress }
 
 enum class Key { Enter }
 
@@ -34,6 +34,10 @@ enum class ButtonVariant { Filled, Tonal, Outlined, Text }
 enum class DesignSystem { Material3, Cupertino, Fluent }
 
 enum class ColorScheme { Light, Dark, FollowSystem }
+
+enum class AssetKind { Png, Jpeg, Svg, VectorIcon }
+
+enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More }
 
 sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
@@ -187,6 +191,26 @@ sealed interface Mutation {
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
     data class SetTheme(val theme: Theme) : Mutation
+
+    /**
+     * The bytes of one asset. `kind` is the raw wire tag rather than an [AssetKind],
+     * because a kind this Renderer cannot read has to be reported as a protocol error by
+     * the asset cache instead of stopping the rest of the batch from being applied.
+     *
+     * `bytes` is already a copy: the batch buffer is only valid for the call that carried
+     * it, and an asset has to outlive the frame that draws it.
+     */
+    data class RegisterAsset(val assetId: Int, val kind: Int, val bytes: ByteArray) : Mutation {
+        override fun equals(other: Any?): Boolean =
+            this === other ||
+                (other is RegisterAsset && assetId == other.assetId && kind == other.kind &&
+                    bytes.contentEquals(other.bytes))
+
+        override fun hashCode(): Int =
+            (assetId * 31 + kind) * 31 + bytes.contentHashCode()
+    }
+
+    data class ReleaseAsset(val assetId: Int) : Mutation
 }
 
 sealed interface HostEvent {
@@ -200,13 +224,14 @@ sealed interface HostEvent {
     data class ProtocolError(override val nodeId: Int, override val handlerId: Long, val code: Int, val message: String) : HostEvent
     data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent
     data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
+    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Long) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -2056599216721257643L
+    const val SCHEMA_HASH: Long = -1945212457916591098L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -219,6 +244,8 @@ object Protocol {
     private const val TAG_SET_TEXT = 7
     private const val TAG_APPEND_TEXT = 8
     private const val TAG_SET_THEME = 9
+    private const val TAG_REGISTER_ASSET = 10
+    private const val TAG_RELEASE_ASSET = 11
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -354,6 +381,18 @@ object Protocol {
                             ),
                         )
                     }
+                    TAG_REGISTER_ASSET -> {
+                        requireRecordLength(length, 20, offset)
+                        Mutation.RegisterAsset(
+                            readU32(batch, base, available, offset + 4).toInt(),
+                            readU16(batch, base, available, offset + 8),
+                            readBytes(batch, base, available, offset + 12),
+                        )
+                    }
+                    TAG_RELEASE_ASSET -> {
+                        requireRecordLength(length, 8, offset)
+                        Mutation.ReleaseAsset(readU32(batch, base, available, offset + 4).toInt())
+                    }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
                 }
                 onMutation(mutation)
@@ -382,6 +421,7 @@ object Protocol {
                 is HostEvent.ProtocolError -> event.message.toByteArray(StandardCharsets.UTF_8)
                 is HostEvent.KeyDown -> null
                 is HostEvent.RangeRequested -> null
+                is HostEvent.ValueChanged -> null
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -391,6 +431,7 @@ object Protocol {
                 is HostEvent.ProtocolError -> 28
                 is HostEvent.KeyDown -> 20
                 is HostEvent.RangeRequested -> 24
+                is HostEvent.ValueChanged -> 24
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -404,6 +445,7 @@ object Protocol {
                 is HostEvent.ProtocolError -> 5
                 is HostEvent.KeyDown -> 6
                 is HostEvent.RangeRequested -> 7
+                is HostEvent.ValueChanged -> 8
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -432,6 +474,7 @@ object Protocol {
                     out.putInt(event.start)
                     out.putInt(event.count)
                 }
+                is HostEvent.ValueChanged -> out.putLong(event.value)
             }
             if (text != null) out.put(text)
             return out.position() - start
@@ -474,6 +517,8 @@ object Protocol {
         7 -> WidgetKind.Spacer
         8 -> WidgetKind.LazyColumn
         9 -> WidgetKind.ScrollColumn
+        10 -> WidgetKind.Image
+        11 -> WidgetKind.Icon
         18 -> WidgetKind.Card
         19 -> WidgetKind.Surface
         20 -> WidgetKind.Dialog
@@ -483,7 +528,10 @@ object Protocol {
         24 -> WidgetKind.LazyRow
         25 -> WidgetKind.Tooltip
         26 -> WidgetKind.Canvas
-        10 -> WidgetKind.LinearProgressIndicator
+        27 -> WidgetKind.DatePicker
+        28 -> WidgetKind.TimePicker
+        29 -> WidgetKind.Dropdown
+        100 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
 
@@ -514,10 +562,14 @@ object Protocol {
         24 -> PropertyKind.SpaceRole
         25 -> PropertyKind.Alignment
         26 -> PropertyKind.Variant
+        28 -> PropertyKind.Asset
         40 -> PropertyKind.Open
         41 -> PropertyKind.OnDismiss
         42 -> PropertyKind.SelectedIndex
         50 -> PropertyKind.Commands
+        51 -> PropertyKind.Value
+        52 -> PropertyKind.Min
+        53 -> PropertyKind.Max
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -638,6 +690,26 @@ object Protocol {
         else -> throw ProtocolException("unknown ColorScheme tag $tag", offset)
     }
 
+    private fun assetKind(tag: Int, offset: Int): AssetKind = when (tag) {
+        1 -> AssetKind.Png
+        2 -> AssetKind.Jpeg
+        3 -> AssetKind.Svg
+        4 -> AssetKind.VectorIcon
+        else -> throw ProtocolException("unknown AssetKind tag $tag", offset)
+    }
+
+    private fun iconRole(tag: Int, offset: Int): IconRole = when (tag) {
+        1 -> IconRole.Back
+        2 -> IconRole.Forward
+        3 -> IconRole.Close
+        4 -> IconRole.Search
+        5 -> IconRole.Add
+        6 -> IconRole.Check
+        7 -> IconRole.Settings
+        8 -> IconRole.More
+        else -> throw ProtocolException("unknown IconRole tag $tag", offset)
+    }
+
     private fun paint(bits: Long, offset: Int): Paint {
         val value = bits.toInt()
         return when (val kind = (bits ushr 32).toInt()) {
@@ -667,7 +739,11 @@ object Protocol {
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 
-    /** An arena range with no UTF-8 requirement: a drawing command list is not text. */
+    /**
+     * An arena range with no UTF-8 requirement, used by both a drawing command list and an
+     * asset's bytes. For an asset this is the one copy this side makes, and it happens at
+     * registration rather than per frame.
+     */
     private fun readBytes(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): ByteArray {
         val offsetLong = readU32(batch, base, available, referenceOffset)
         val lengthLong = readU32(batch, base, available, referenceOffset + 4)

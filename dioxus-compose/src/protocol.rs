@@ -1,8 +1,8 @@
 //! Fixed-layout little-endian boundary protocol.
 
 use crate::schema::{
-    ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole, SpaceRole,
-    Theme, WidgetKind,
+    AssetKind, ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole,
+    SpaceRole, Theme, WidgetKind,
 };
 use core::fmt;
 
@@ -16,6 +16,8 @@ const TAG_REMOVE: u16 = 6;
 const TAG_SET_TEXT: u16 = 7;
 const TAG_APPEND_TEXT: u16 = 8;
 const TAG_SET_THEME: u16 = 9;
+const TAG_REGISTER_ASSET: u16 = 10;
+const TAG_RELEASE_ASSET: u16 = 11;
 const ENVELOPE_LEN: usize = 12;
 /// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
 const MIN_RECORD_LEN: usize = 8;
@@ -80,6 +82,18 @@ pub enum Mutation<'a> {
     },
     /// The root theme. Sent once as the first record of the initial batch.
     SetTheme(Theme),
+    /// Hands the Renderer the bytes of one asset. The Renderer copies them into its own
+    /// cache inside this call, because the batch buffer is only valid for the call that
+    /// carries it and an image has to outlive the frame that draws it.
+    RegisterAsset {
+        asset_id: u32,
+        kind: AssetKind,
+        bytes: &'a [u8],
+    },
+    /// Drops an asset from the Renderer's cache. The Host owns the lifetime.
+    ReleaseAsset {
+        asset_id: u32,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,6 +107,7 @@ pub enum ProtocolError {
     InvalidValueKind(u16),
     InvalidModifier(u16),
     InvalidTheme(u16),
+    InvalidAssetKind(u16),
     InvalidStringRange,
     InvalidUtf8,
     LengthOverflow,
@@ -112,6 +127,7 @@ const EVENT_FOCUS_LOST: u16 = 4;
 const EVENT_PROTOCOL_ERROR: u16 = 5;
 const EVENT_KEY_DOWN: u16 = 6;
 const EVENT_RANGE_REQUESTED: u16 = 7;
+const EVENT_VALUE_CHANGED: u16 = 8;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -159,7 +175,10 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
             start: read_u32(bytes, 16)?,
             count: read_u32(bytes, 20)?,
         },
-        EVENT_CLICK..=EVENT_RANGE_REQUESTED => return Err(ProtocolError::InvalidRecordLength),
+        EVENT_VALUE_CHANGED if record_len == 24 => {
+            crate::schema::EventPayload::ValueChanged(read_u64(bytes, 16)? as i64)
+        }
+        EVENT_CLICK..=EVENT_VALUE_CHANGED => return Err(ProtocolError::InvalidRecordLength),
         other => return Err(ProtocolError::InvalidTag(other)),
     };
     Ok(HostEvent {
@@ -193,6 +212,14 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.push(0);
         return Ok(());
     }
+    if let crate::schema::EventPayload::ValueChanged(value) = event.payload {
+        output.extend_from_slice(&EVENT_VALUE_CHANGED.to_le_bytes());
+        output.extend_from_slice(&24_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        output.extend_from_slice(&(value as u64).to_le_bytes());
+        return Ok(());
+    }
     if let crate::schema::EventPayload::RangeRequested { start, count } = event.payload {
         output.extend_from_slice(&EVENT_RANGE_REQUESTED.to_le_bytes());
         output.extend_from_slice(&24_u16.to_le_bytes());
@@ -215,7 +242,8 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
         crate::schema::EventPayload::KeyDown { .. }
-        | crate::schema::EventPayload::RangeRequested { .. } => unreachable!(),
+        | crate::schema::EventPayload::RangeRequested { .. }
+        | crate::schema::EventPayload::ValueChanged(_) => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());
@@ -385,6 +413,21 @@ impl BatchEncoder {
                 self.put_u32(*node_id);
                 self.put_string_ref(text)?;
             }
+            Mutation::RegisterAsset {
+                asset_id,
+                kind,
+                bytes,
+            } => {
+                self.begin_record(TAG_REGISTER_ASSET, 16);
+                self.put_u32(*asset_id);
+                self.put_u16(*kind as u16);
+                self.put_u16(0);
+                self.put_bytes_ref(bytes)?;
+            }
+            Mutation::ReleaseAsset { asset_id } => {
+                self.begin_record(TAG_RELEASE_ASSET, 4);
+                self.put_u32(*asset_id);
+            }
             Mutation::SetTheme(theme) => {
                 self.begin_record(TAG_SET_THEME, 8);
                 self.put_u16(theme.design_system as u16);
@@ -439,6 +482,8 @@ impl BatchEncoder {
         self.put_bytes_ref(value.as_bytes())
     }
 
+    /// Asset bytes ride in the same trailing region as strings, with the same
+    /// `(offset, len)` reference and the same fixup, so the record stays fixed layout.
     fn put_bytes_ref(&mut self, value: &[u8]) -> Result<(), ProtocolError> {
         let offset =
             u32::try_from(self.strings.len()).map_err(|_| ProtocolError::LengthOverflow)?;
@@ -576,7 +621,19 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     adaptive: adaptive == 1,
                 })
             }
-            TAG_CREATE..=TAG_SET_THEME => {
+            TAG_REGISTER_ASSET if len == 20 => {
+                let raw_kind = read_u16(bytes, payload + 4)?;
+                Mutation::RegisterAsset {
+                    asset_id: read_u32(bytes, payload)?,
+                    kind: AssetKind::try_from(raw_kind)
+                        .map_err(|()| ProtocolError::InvalidAssetKind(raw_kind))?,
+                    bytes: read_bytes(bytes, payload + 8, records_len)?,
+                }
+            }
+            TAG_RELEASE_ASSET if len == 8 => Mutation::ReleaseAsset {
+                asset_id: read_u32(bytes, payload)?,
+            },
+            TAG_CREATE..=TAG_RELEASE_ASSET => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),

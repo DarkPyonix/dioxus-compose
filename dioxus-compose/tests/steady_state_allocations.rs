@@ -1,7 +1,8 @@
-use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
+use dioxus_compose::protocol::ProtocolError;
 use dioxus_compose::protocol::{BatchEncoder, HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{EventPayload, PropertyKind};
+use dioxus_compose::{AssetKind, Host};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
@@ -168,4 +169,94 @@ fn nfr9_allocations_do_not_grow_across_repeated_interactions() {
         allocations.iter().all(|&count| count == expected),
         "per-interaction allocations grew or varied: {allocations:?}"
     );
+}
+
+fn image_app() -> Element {
+    let mut count = use_signal(|| 0_u64);
+    rsx! {
+        Column {
+            dioxus_compose::Image { asset_id: 7 }
+            Text { text: count().to_string() }
+            Button {
+                text: "Increment",
+                on_click: move |_| *count.write() += 1,
+            }
+        }
+    }
+}
+
+const ASSET_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+
+/// Registration copies the bytes once, and then never again: the id is what the frame
+/// carries. So a screen with an image on it encodes its frames with the same warm buffers
+/// as one without, and no `RegisterAsset` record appears after the first.
+#[test]
+fn fr16_registering_an_asset_stays_out_of_the_per_frame_path() {
+    let mut host = Host::new(image_app);
+    host.register_asset(7, AssetKind::Png, ASSET_BYTES).unwrap();
+    let initial = decode_batch(host.rebuild().unwrap()).unwrap();
+    let (node_id, handler_id) = initial
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::OnClick,
+                value: PropertyValue::Integer(handler),
+            } => Some((*node_id, *handler as u64)),
+            _ => None,
+        })
+        .unwrap();
+    drop(initial);
+    let click = HostEvent {
+        node_id,
+        handler_id,
+        payload: EventPayload::Clicked,
+    };
+    // Warm the encoder's buffers the way a running application would have.
+    for _ in 0..2 {
+        let _ = host.dispatch(click.clone()).unwrap();
+    }
+
+    let allocations = measure_click(&mut host, &click);
+    assert!(
+        allocations <= NFR9_HOST_ALLOCATION_CEILING,
+        "a frame drawing a registered asset allocated {allocations} times; the ceiling is \
+         {NFR9_HOST_ALLOCATION_CEILING}"
+    );
+
+    let (batch, _) = host.dispatch(click.clone()).unwrap();
+    let per_frame_registrations = decode_batch(batch)
+        .unwrap()
+        .into_iter()
+        .filter(|mutation| matches!(mutation, Mutation::RegisterAsset { .. }))
+        .count();
+    assert_eq!(
+        per_frame_registrations, 0,
+        "an asset was registered again during a steady-state frame; the bytes are supposed \
+         to have been copied once, at registration"
+    );
+}
+
+/// Encoding the registration itself is the one place the bytes are copied on this side.
+/// Once the arena is warm that copy is the only cost: it does not grow a buffer.
+#[test]
+fn fr16_registering_into_a_warm_encoder_does_not_allocate() {
+    let mut encoder = BatchEncoder::with_capacity(4096, 2048, 128);
+    let register = |encoder: &mut BatchEncoder| -> Result<(), ProtocolError> {
+        encoder.clear();
+        encoder.encode(&Mutation::RegisterAsset {
+            asset_id: 7,
+            kind: AssetKind::Png,
+            bytes: ASSET_BYTES,
+        })?;
+        std::hint::black_box(encoder.finish()?);
+        Ok(())
+    };
+    register(&mut encoder).unwrap();
+
+    let measurement = AllocationMeasurement::start();
+    register(&mut encoder).unwrap();
+    let allocations = measurement.finish();
+
+    assert_eq!(allocations, 0, "warm asset registration allocated");
 }

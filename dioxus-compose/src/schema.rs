@@ -51,6 +51,7 @@ pub enum EventPayloadType {
     ProtocolError,
     KeyDown,
     Range,
+    Integer,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,12 +64,12 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,open,on_dismiss,selected_index,commands;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,open,on_dismiss,selected_index,commands,value,min,max;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested;",
-    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme"
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged;",
+    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset"
 );
 
 const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
@@ -178,6 +179,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::ProtocolError => 2,
                 EventPayloadType::KeyDown => 3,
                 EventPayloadType::Range => 4,
+                EventPayloadType::Integer => 5,
             }],
         );
         index += 1;
@@ -250,6 +252,8 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     Spacer = 7,
     LazyColumn = 8,
     ScrollColumn = 9,
+    Image = 10,
+    Icon = 11,
     Card = 18,
     Surface = 19,
     Dialog = 20,
@@ -260,6 +264,9 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     Tooltip = 25,
     // Drawing commands instead of child nodes. The command list is its only property.
     Canvas = 26,
+    DatePicker = 27,
+    TimePicker = 28,
+    Dropdown = 29,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -405,6 +412,30 @@ define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
     Text = 4,
 });
 
+// What the bytes behind an asset id are. A kind the Renderer cannot read is a reported
+// protocol error, not a guess.
+define_wire_enum!(ASSET_KIND_SCHEMA, AssetKind {
+    Png = 1,
+    Jpeg = 2,
+    Svg = 3,
+    VectorIcon = 4,
+});
+
+// The closed set of icon meanings. An icon is addressed by what it is for, never by a
+// system icon name: a name would defer the check that the icon exists to run time, and it
+// would pin one platform's artwork into the protocol. The role is what lets the same
+// declaration come out as SF Symbols under Cupertino and Material Symbols under Material 3.
+define_wire_enum!(ICON_ROLE_SCHEMA, IconRole {
+    Back = 1,
+    Forward = 2,
+    Close = 3,
+    Search = 4,
+    Add = 5,
+    Check = 6,
+    Settings = 7,
+    More = 8,
+});
+
 // The design systems of phase one. Later ones append variants here and nowhere else: a new
 // design system is one variant plus one token table and rule implementation in the Renderer.
 define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
@@ -466,6 +497,14 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
         name: "ColorScheme",
         variants: COLOR_SCHEME_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "AssetKind",
+        variants: ASSET_KIND_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "IconRole",
+        variants: ICON_ROLE_SCHEMA,
     },
 ];
 
@@ -836,6 +875,9 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     SpaceRole = 24,
     Alignment = 25,
     Variant = 26,
+    // The id of an asset the Host registered. Image and Icon carry nothing else: the
+    // bytes were copied into the Renderer's cache once, at registration.
+    Asset = 28,
     // Whether an overlay is showing. The Renderer owns the state; this seeds it and
     // carries changes that came from outside the Renderer.
     Open = 40,
@@ -843,6 +885,13 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     SelectedIndex = 42,
     // The Canvas drawing command list, a byte blob in the batch arena.
     Commands = 50,
+    // The picker's current value, as an epoch integer in the widget's own unit: days
+    // since 1970-01-01 for a date, minutes since midnight for a time, the chosen position
+    // for a Dropdown.
+    Value = 51,
+    // The ends of the selectable range, in the same unit as `Value`.
+    Min = 52,
+    Max = 53,
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -867,6 +916,9 @@ pub enum EventPayload<'a> {
         start: u32,
         count: u32,
     },
+    /// A picker's new value, in the widget's own epoch unit. The Renderer decided how the
+    /// user picked it, so nothing about calendars, wheels or clocks crosses here.
+    ValueChanged(i64),
 }
 
 pub const EVENT_SCHEMA: &[EventSchema] = &[
@@ -904,5 +956,10 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "RangeRequested",
         tag: 7,
         payload: EventPayloadType::Range,
+    },
+    EventSchema {
+        name: "ValueChanged",
+        tag: 8,
+        payload: EventPayloadType::Integer,
     },
 ];
