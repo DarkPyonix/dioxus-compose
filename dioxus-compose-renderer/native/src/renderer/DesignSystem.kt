@@ -188,8 +188,11 @@ data class ButtonStyle(
  * Resolves the Host's `SetTheme` into the table and rules used for this frame.
  *
  * The Host's choice is read, never second-guessed: `adaptive` follows the platform only
- * because the Host said `adaptive = true`, and FR-14.3 makes that explicit at the call site.
- * Without a `SetTheme` the default is `unified(Material3)`, as FR-14.3 requires.
+ * because the Host said `adaptive = true`.
+ *
+ * With no `SetTheme` at all the default follows the platform, with Material 3 as the
+ * fallback (FR-14.3). A Host that has sent a theme is a different case from one that has
+ * not said anything yet, and only the second is this default.
  */
 fun resolveTheme(
     theme: Theme?,
@@ -197,7 +200,7 @@ fun resolveTheme(
     systemDark: Boolean,
 ): ResolvedTheme {
     val system = when {
-        theme == null -> DesignSystem.Material3
+        theme == null -> adaptiveSystem(platform, DesignSystem.Material3)
         theme.adaptive -> adaptiveSystem(platform, theme.fallback)
         else -> theme.designSystem
     }

@@ -837,9 +837,10 @@ mod tests {
             .unwrap()
         };
 
+        // FR-14.3: saying nothing follows the host platform, falling back to Material 3.
         assert_eq!(
             first_record(LaunchBuilder::new()),
-            Mutation::SetTheme(Theme::unified(DesignSystem::Material3))
+            Mutation::SetTheme(Theme::adaptive(DesignSystem::Material3))
         );
         assert_eq!(
             first_record(LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::Fluent))),
