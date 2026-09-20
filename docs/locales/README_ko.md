@@ -1,14 +1,15 @@
 # dioxus-compose
 
+**Rust로 선언형 UI를 작성하면, AOT 컴파일된 Compose Multiplatform 엔진이 그립니다.**
+
+*웹뷰도 동봉된 JVM도 없는 Rust 네이티브 데스크톱 UI.*
+
 [![CI](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml)
 [![Native renderer](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../../LICENSE)
 [![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
 
 [English](../../README.md) · **한국어**
-
-> UI는 Rust에서 Dioxus 방식으로 쓰고, 그리는 일은 AOT 컴파일된 Compose Multiplatform 렌더러에 맡깁니다.
-> 웹뷰 없이, JVM을 동봉하지 않고, 수동 JNI 없이.
 
 ```rust
 rsx! {
