@@ -25,8 +25,8 @@ import java.lang.System
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
-import dioxus.compose.ui.platform.rememberSystemDark
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.isSystemInDarkTheme
 
 /**
  * Sends one event to the Host and reports whether the Host consumed it.
@@ -162,10 +162,11 @@ fun DioxusContent(
     // The theme is resolved once here, and every node reads it from the CompositionLocal. A `SetTheme` is therefore one record on the wire and one
     // invalidation in Compose, not a SetProp per node.
     val platform = remember { detectHostPlatform() }
-    // Not Compose's isSystemInDarkTheme(): on this platform it reads the setting once and
-    // never notices it change, so a window would keep its original colours while the rest
-    // of the desktop switched.
-    val observedDark by rememberSystemDark()
+    // Compose's isSystemInDarkTheme() reads the setting once on the desktop and never
+    // notices it change, so a window there keeps its original colours while the rest of
+    // the screen switches. The desktop installs an observer that does follow the system;
+    // where nobody installs one, Compose's own answer is correct and is used.
+    val observedDark = systemDarkObserver?.invoke() ?: isSystemInDarkTheme()
     val systemDark = systemDarkOverride ?: observedDark
     val theme = resolveTheme(host.table.theme, platform, systemDark)
     CompositionLocalProvider(LocalDesignTheme provides theme) {
@@ -189,3 +190,17 @@ fun DioxusContent(
  * `ColorScheme.FollowSystem` reads the platform; nothing else consults this.
  */
 var systemDarkOverride: Boolean? = null
+
+/**
+ * How to find out whether the system is in dark mode, when the platform knows better than
+ * Compose does.
+ *
+ * Installed by the platform at startup. The desktop installs a poller, because Compose's
+ * own reading there is taken once and never revisited. iOS and Android leave it null,
+ * where Compose observes the change itself and a second mechanism would be noise.
+ *
+ * It lives here rather than in the desktop module because this file is compiled for every
+ * target: the iOS renderer symlinks it, and Skiko, which the desktop observer reads, does
+ * not exist on Kotlin/Native.
+ */
+var systemDarkObserver: (@Composable () -> Boolean)? = null
