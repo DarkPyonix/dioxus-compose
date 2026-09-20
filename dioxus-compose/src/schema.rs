@@ -498,10 +498,12 @@ impl Theme {
     }
 }
 
-/// FR-14.3: adaptive is never implicit. Saying nothing means unified Material 3.
+/// FR-14.3: saying nothing follows the host platform, with Material 3 where it has no look
+/// of its own. An application that wants one design system everywhere says
+/// `Theme::unified(..)`, which is a clearer statement of that intent than silence was.
 impl Default for Theme {
     fn default() -> Self {
-        Self::unified(DesignSystem::Material3)
+        Self::adaptive(DesignSystem::Material3)
     }
 }
 

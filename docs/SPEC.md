@@ -259,8 +259,10 @@ LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::Material3)).launch(
 LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch(app);
 ```
 
-- `adaptive`는 **기본값이 아닙니다.** `with_theme`을 부르지 않으면 `Theme::unified(DesignSystem::Material3)`입니다. 기본값으로 플랫폼마다 다르게 보이는 동작은 두지 않습니다.
-- `Theme::adaptive`는 fallback 인자가 **필수**입니다. 그래서 adaptive에 "대응이 애매한 플랫폼"이 남지 않습니다.
+- **기본값은 `Theme::adaptive(DesignSystem::Material3)`입니다.** `with_theme`을 부르지 않으면 호스트 플랫폼을 따라갑니다.
+- 이 값은 원래 `unified(Material3)`였습니다. 기본값이 플랫폼마다 다르게 보이는 것이 예측 가능성을 해친다고 봤기 때문입니다. 실제로 써 보니 판단이 틀렸습니다. macOS에서 아무 설정 없이 실행하면 Material 3 화면이 나오는데, 네이티브 데스크톱 UI를 표방하는 툴킷의 첫인상으로 맞지 않고, 무엇보다 **플랫폼 적응이 동작하는지 확인할 방법이 기본 경로에 없었습니다.** 깨져 있어도 알 수 없는 기본값은 예측 가능성이 아닙니다.
+- 플랫폼과 무관하게 같은 화면을 원하면 `Theme::unified(...)`를 명시합니다. 한 줄이고, 그렇게 쓰는 쪽이 의도를 드러냅니다.
+- `Theme::adaptive`는 fallback 인자가 **필수**입니다. 그래서 adaptive에 "대응이 애매한 플랫폼"이 남지 않습니다. 기본값의 fallback은 Material 3입니다.
 
 | 플랫폼 | `adaptive`가 고르는 시스템 |
 |---|---|
