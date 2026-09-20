@@ -20,7 +20,7 @@ pub const GENERATED_RELATIVE_PATH: &str =
 pub const MUTATION_VECTOR_RELATIVE_PATH: &str = "tests/vectors/mutations.bin";
 pub const EVENT_VECTOR_RELATIVE_PATH: &str = "tests/vectors/events.bin";
 pub const VECTOR_DESCRIPTION_RELATIVE_PATH: &str = "tests/vectors/vectors.json";
-const KOTLIN_PACKAGE: &str = "org.thisisthepy.dioxus.compose.protocol";
+const KOTLIN_PACKAGE: &str = "dioxus.compose.protocol";
 
 pub fn generate_kotlin() -> String {
     let mut output = String::new();

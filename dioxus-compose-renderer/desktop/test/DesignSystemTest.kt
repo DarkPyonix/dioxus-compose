@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.test
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.ExperimentalTestApi
@@ -14,20 +14,27 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
-import org.thisisthepy.dioxus.compose.protocol.ButtonVariant
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.protocol.ColorScheme
-import org.thisisthepy.dioxus.compose.protocol.DesignSystem
-import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.Paint
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.PropertyValue
-import org.thisisthepy.dioxus.compose.protocol.ShapeRole
-import org.thisisthepy.dioxus.compose.protocol.SpaceRole
-import org.thisisthepy.dioxus.compose.protocol.Theme
-import org.thisisthepy.dioxus.compose.protocol.TypeRole
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.ButtonVariant
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.ColorScheme
+import dioxus.compose.protocol.DesignSystem
+import dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.Paint
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.ShapeRole
+import dioxus.compose.protocol.SpaceRole
+import dioxus.compose.protocol.Theme
+import dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.design.HostPlatform
+import dioxus.compose.design.detectHostPlatform
+import dioxus.compose.design.resolveTheme
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.tooling.FakeHostConnection
+import dioxus.compose.ui.node.nodeTestTag
 
 private const val ROW = 1
 private const val LEFT = 2

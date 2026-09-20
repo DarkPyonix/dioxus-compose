@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.ui.platform
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -16,12 +16,13 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.plus
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.Protocol
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.Protocol
 import platform.posix.RTLD_NOW
 import platform.posix.dlopen
 import platform.posix.dlsym
+import dioxus.compose.runtime.HostConnection
 
 /**
  * The real Host boundary on iOS (SPEC PR-2, PR-4). The counterpart of `NativeHostConnection`.

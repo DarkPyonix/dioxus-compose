@@ -1,6 +1,6 @@
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
-import org.thisisthepy.dioxus.compose.renderer.m0DemoHost
+import dioxus.compose.tooling.m0DemoHost
 
 /**
  * JVM entry point for collecting reachability metadata with the GraalVM tracing agent.

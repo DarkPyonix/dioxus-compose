@@ -1,15 +1,19 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.test
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
-import org.thisisthepy.dioxus.compose.nativeimage.FrameRequests
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.PropertyValue
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
+import dioxus.compose.ui.platform.FrameRequests
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.tooling.FakeHostConnection
+import dioxus.compose.ui.node.nodeTestTag
 
 private const val LABEL = 1
 

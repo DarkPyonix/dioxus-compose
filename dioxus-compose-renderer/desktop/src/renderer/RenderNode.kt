@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.ui.node
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -16,9 +16,26 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.TypeRole
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.design.LocalDesignTheme
+import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostLazyColumn
+import dioxus.compose.foundation.HostTextField
+import dioxus.compose.foundation.hostKeyEvents
+import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.ui.boxAlignment
+import dioxus.compose.ui.horizontalAlignment
+import dioxus.compose.ui.horizontalArrangement
+import dioxus.compose.ui.maxLines
+import dioxus.compose.ui.overflow
+import dioxus.compose.ui.textStyle
+import dioxus.compose.ui.toComposeModifier
+import dioxus.compose.ui.verticalAlignment
+import dioxus.compose.ui.verticalArrangement
+import dioxus.compose.ui.weightOf
 
 /**
  * Counts recompositions of interpreted nodes (SPEC FR-4). Set only by tests.

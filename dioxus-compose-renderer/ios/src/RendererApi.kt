@@ -1,6 +1,6 @@
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
-import org.thisisthepy.dioxus.compose.renderer.IosHostConnection
+import dioxus.compose.ui.platform.IosHostConnection
 import platform.Foundation.NSThread
 
 /**

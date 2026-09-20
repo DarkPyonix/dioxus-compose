@@ -29,7 +29,7 @@ cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
     -cp "$classpath" \
     -o "$LIBRARY_NAME" \
     --no-fallback \
-    --features=org.thisisthepy.dioxus.compose.nativeimage.ImeReachabilityFeature \
+    --features=dioxus.compose.ui.platform.ImeReachabilityFeature \
     -Djava.awt.headless=false \
     -H:IncludeLocales=en,ko \
     -Os \

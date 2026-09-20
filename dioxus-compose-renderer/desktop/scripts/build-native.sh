@@ -69,9 +69,9 @@ done < <(nm -g "$awt_archive" 2>/dev/null |
     awk '$2 == "S" && $3 ~ /^_OBJC_CLASS_\$_[A-Za-z]+Accessibility$/ { print $3 }' | sort -u)
 [[ ${#a11y_classes[@]} -gt 0 ]] || die \
     "no Objective-C accessibility classes found in $awt_archive" \
-    "AppKit looks these classes up by name at runtime, so nothing references them by symbol\n"
-    "and the linker is free to drop them. When it does, the build and the window are fine\n"
-    "and the process aborts the moment VoiceOver attaches."
+    "AppKit looks these classes up by name at runtime, so nothing references them by symbol" \
+    "and the linker is free to drop them. When it does, the build and the window are fine" \
+    "and the process aborts the moment an assistive technology attaches."
 linker_args+=("${a11y_classes[@]}")
 
 # Heap and GC settings for NFR-3 (SPEC 5.2 levers 1 and 2). `-R:` options are baked in as
@@ -125,8 +125,8 @@ memory_args=("-R:MaxHeapSize=64m"
     -cp "$classpath" \
     -o "$LIBRARY_NAME" \
     --no-fallback \
-    --features=org.thisisthepy.dioxus.compose.nativeimage.ImeReachabilityFeature \
-    --features=org.thisisthepy.dioxus.compose.nativeimage.AccessibilityReachabilityFeature \
+    --features=dioxus.compose.ui.platform.ImeReachabilityFeature \
+    --features=dioxus.compose.ui.platform.AccessibilityReachabilityFeature \
     -Djava.awt.headless=false \
     -H:IncludeLocales=en,ko \
     -Os \

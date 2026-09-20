@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.design
 
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -10,17 +10,18 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.protocol.ColorScheme
-import org.thisisthepy.dioxus.compose.protocol.DesignSystem
-import org.thisisthepy.dioxus.compose.protocol.DesignTokenTable
-import org.thisisthepy.dioxus.compose.protocol.DesignTokens
-import org.thisisthepy.dioxus.compose.protocol.Paint
-import org.thisisthepy.dioxus.compose.protocol.ShapeRole
-import org.thisisthepy.dioxus.compose.protocol.SpaceRole
-import org.thisisthepy.dioxus.compose.protocol.Theme
-import org.thisisthepy.dioxus.compose.protocol.TypeRole
-import org.thisisthepy.dioxus.compose.protocol.TypeToken
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.ColorScheme
+import dioxus.compose.protocol.DesignSystem
+import dioxus.compose.protocol.DesignTokenTable
+import dioxus.compose.protocol.DesignTokens
+import dioxus.compose.protocol.Paint
+import dioxus.compose.protocol.ShapeRole
+import dioxus.compose.protocol.SpaceRole
+import dioxus.compose.protocol.Theme
+import dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.TypeToken
+import java.lang.System
 
 /**
  * The platforms `Theme::adaptive` distinguishes (SPEC FR-14.3).
@@ -146,7 +147,7 @@ interface ComponentRules {
 
     /** How a `ButtonVariant` looks, resting and pressed (FR-14.2, FR-14.6 item 6). */
     fun button(
-        variant: org.thisisthepy.dioxus.compose.protocol.ButtonVariant,
+        variant: dioxus.compose.protocol.ButtonVariant,
         theme: ResolvedTheme,
     ): ButtonStyle
 

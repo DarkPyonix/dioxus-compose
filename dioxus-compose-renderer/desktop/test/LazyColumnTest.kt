@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.test
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
@@ -7,12 +7,20 @@ import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.PropertyValue
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.foundation.requestedRange
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.DioxusHost
+import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.tooling.FakeHostConnection
+import dioxus.compose.tooling.HostResponse
+import dioxus.compose.ui.node.nodeTestTag
+import dioxus.compose.foundation.LAZY_COLUMN_BUFFER
 
 private const val LIST = 1
 private const val RANGE_HANDLER = 91L

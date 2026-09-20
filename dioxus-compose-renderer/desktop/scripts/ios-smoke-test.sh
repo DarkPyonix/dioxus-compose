@@ -19,7 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NATIVE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_DIR="$(cd "$NATIVE_DIR/.." && pwd)"
-BUNDLE_ID="org.thisisthepy.dioxus.compose.smoke"
+BUNDLE_ID="dioxus.compose.smoke"
 
 die() {
     echo "error: $1" >&2

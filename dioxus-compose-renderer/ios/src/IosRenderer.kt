@@ -1,14 +1,14 @@
-package org.thisisthepy.dioxus.compose.nativeimage
+package dioxus.compose.ui.platform
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeUIViewController
 import kotlinx.cinterop.ObjCObjectBase.OverrideInit
-import org.thisisthepy.dioxus.compose.renderer.DioxusContent
-import org.thisisthepy.dioxus.compose.renderer.HostConnection
-import org.thisisthepy.dioxus.compose.renderer.IosHostConnection
-import org.thisisthepy.dioxus.compose.renderer.rememberDioxusHost
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.HostConnection
+import dioxus.compose.ui.platform.IosHostConnection
+import dioxus.compose.runtime.rememberDioxusHost
 import platform.Foundation.NSStringFromClass
 import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationDelegateProtocol

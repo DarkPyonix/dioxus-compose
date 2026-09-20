@@ -1,16 +1,16 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.ui.node
 
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import org.thisisthepy.dioxus.compose.protocol.Mutation
-import org.thisisthepy.dioxus.compose.protocol.PropertyKind
-import org.thisisthepy.dioxus.compose.protocol.PropertyValue
-import org.thisisthepy.dioxus.compose.protocol.Theme
-import org.thisisthepy.dioxus.compose.protocol.WidgetKind
-import org.thisisthepy.dioxus.compose.protocol.Modifier as ProtocolModifier
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.Theme
+import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 
 /** Text the Host pushed into a TextField with `SetText` (SPEC FR-5). */
 data class HostText(

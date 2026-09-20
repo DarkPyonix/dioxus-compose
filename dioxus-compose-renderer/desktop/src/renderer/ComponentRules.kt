@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.design
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -12,11 +12,11 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import org.thisisthepy.dioxus.compose.protocol.ButtonVariant
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.protocol.ShapeRole
-import org.thisisthepy.dioxus.compose.protocol.SpaceRole
-import org.thisisthepy.dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.ButtonVariant
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.ShapeRole
+import dioxus.compose.protocol.SpaceRole
+import dioxus.compose.protocol.TypeRole
 
 /**
  * Material 3 rules (FR-14.6 items 5 to 7).

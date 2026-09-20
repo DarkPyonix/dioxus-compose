@@ -8,7 +8,7 @@ PROJECT_DIR="$(cd "$NATIVE_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_DIR/build/native-image-linux"
 DIST_DIR="$BUILD_DIR/dist"
 LIBRARY_NAME="libdioxus_compose_renderer"
-METADATA_DIR="$NATIVE_DIR/resources/META-INF/native-image/org.thisisthepy/dioxus-compose-renderer"
+METADATA_DIR="$NATIVE_DIR/resources/META-INF/native-image/dioxus.compose/dioxus-compose-renderer"
 
 die() {
     echo "error: $1" >&2

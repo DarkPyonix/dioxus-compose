@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.runtime
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -11,10 +11,18 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
-import org.thisisthepy.dioxus.compose.protocol.ColorRole
-import org.thisisthepy.dioxus.compose.nativeimage.FrameRequests
-import org.thisisthepy.dioxus.compose.protocol.HostEvent
-import org.thisisthepy.dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.ui.platform.FrameRequests
+import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.Mutation
+import dioxus.compose.design.LocalDesignTheme
+import dioxus.compose.design.detectHostPlatform
+import dioxus.compose.design.resolveTheme
+import dioxus.compose.ui.node.NodeTable
+import dioxus.compose.ui.node.RenderNode
+import dioxus.compose.ui.node.TableError
+import java.lang.InterruptedException
+import java.lang.System
 
 /**
  * Sends one event to the Host and reports whether the Host consumed it (SPEC FR-3).
@@ -67,7 +75,7 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
                 if (error is InterruptedException) throw error
                 protocolErrors += TableError(
                     PROTOCOL_DECODE_ERROR,
-                    error.message ?: error::class.java.name,
+                    error.message ?: error::class.qualifiedName ?: "unknown error",
                 )
             }
             protocolErrors += table.drainErrors()

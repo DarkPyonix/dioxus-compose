@@ -1,4 +1,4 @@
-package org.thisisthepy.dioxus.compose.renderer
+package dioxus.compose.test
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -13,9 +13,12 @@ import java.io.File
 import kotlin.test.Test
 import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
-import org.thisisthepy.dioxus.compose.protocol.ColorScheme
-import org.thisisthepy.dioxus.compose.protocol.DesignSystem
-import org.thisisthepy.dioxus.compose.protocol.Theme
+import dioxus.compose.protocol.ColorScheme
+import dioxus.compose.protocol.DesignSystem
+import dioxus.compose.protocol.Theme
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.tooling.designShowcaseHost
 
 /**
  * Renders the design showcase for each system and writes a PNG, so the FR-14 result can be
