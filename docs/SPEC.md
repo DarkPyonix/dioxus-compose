@@ -233,7 +233,10 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 - 배포 레이아웃은 `<root>/lib/` 하나이며 `java.home`은 그 부모입니다. 렌더러는 자기 라이브러리 경로를 dladdr로 얻어 `java.home`, `skiko.library.path`, `skiko.data.path`를 설정합니다.
 - `lib/`에 함께 두는 파일: 렌더러 라이브러리, Skia(`libskiko-macos-<arch>.dylib`), `libjawt.dylib` 포워더, `libawt_lwawt.dylib` 자리 채우기.
 - `dioxus_compose_renderer_run`은 프로세스 메인 스레드에서 호출해야 합니다. 아니면 `RUN_NOT_MAIN_THREAD`를 반환합니다.
-- 수용 기준: C 호스트가 라이브러리를 링크해 `run`을 호출하면 창이 뜨고, 창을 닫으면 `run`이 0을 반환하며 프로세스가 정상 종료됩니다. **(2026-09-20 통과)**
+- 빌드 스크립트는 `lib/static/darwin-*/libawt_lwawt.a`가 없는 설치를 이미지 빌드 시작 전에 거부합니다. 순정 GraalVM과 비 Full NIK을 걸러내기 위한 것입니다.
+- 수용 기준
+  1. C 호스트가 라이브러리를 링크해 `run`을 호출하면 창이 뜨고, 창을 닫으면 `run`이 0을 반환하며 프로세스가 정상 종료됩니다. **(2026-09-20 통과)**
+  2. 잘못된 툴체인(`GRAALVM_HOME` 미설정/없는 경로/`native-image` 없음/정적 AWT 아카이브 없음)에서 빌드가 즉시 실패하고 조치 방법을 출력합니다. **(2026-09-20 통과)**
 
 ## 5. 비기능 요구사항
 
@@ -243,7 +246,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 | NFR-2 | 웹뷰 불필요 | WKWebView, WebView2, WebKitGTK에 링크하지 않음 | Agreed |
 | NFR-3 | 데스크톱 무게 | 빈 창 RSS < 100MB, 배포 용량 < 100MB (목표치, M1에서 측정 후 확정) | Draft |
 | NFR-4 | 플랫폼 | macOS, Windows, Linux 데스크톱, iOS, Android, Web(wasm). Android와 Web은 PR-5, PR-6 참조 | Agreed |
-| NFR-5 | 개발 경험 | Renderer는 JVM 개발 셸에서 hot reload와 `@Preview`로 작업 가능. native-image 빌드는 개발 루프에 필요 없음 | Agreed |
+| NFR-5 | 개발 경험 | Renderer는 JVM 개발 셸에서 hot reload와 `@Preview`로 작업 가능. native-image 빌드는 개발 루프에 필요 없음. 새 머신의 준비 상태를 `scripts/setup-check.sh` 한 번으로 확인 가능 | Agreed |
 | NFR-6 | 안정 API만 사용 | `@InternalComposeUiApi`, `@ExperimentalComposeUiApi` 의존을 금지하거나, 쓰더라도 어댑터 한 파일에 격리하고 버전 핀을 둠 | Agreed |
 | NFR-7 | 크래시 격리 | 프로토콜 오류로 프로세스가 종료되지 않고 `ProtocolError` 이벤트를 보냄 | Agreed |
 | NFR-8 | 데스크톱 접근성 | VoiceOver/Narrator 기본 동작 (§7 실험 결과로 확정) | Draft |
@@ -290,6 +293,8 @@ native-image 빌드에서 macOS와 Windows 각각 수동으로 확인합니다.
 - [ ] 한글 폰트 폴백 (두부 문자 없음)
 
 실패하면 INTENT D4에 따라 native-image 설정(ServiceLoader, JNI/리플렉션 config, 로케일/문자셋)부터 점검합니다.
+
+**입력 경로 등록은 반드시 빌드 시점 Feature(`ImeReachabilityFeature`)로 합니다.** 메타데이터에 `allDeclaredMethods`를 쓰면 안 됩니다. JDK가 선언만 하고 라이브러리에 넣지 않은 네이티브 메서드(`CInputMethod.nativeHandleEvent`)까지 링크 대상이 되어, Java 스택 트레이스 없이 dyld 단계에서 라이브러리 로드가 실패합니다. 반대로 등록이 부족하면 렌더링까지 정상 동작한 뒤 입력기가 텍스트 필드를 건드리는 순간 프로세스가 abort합니다.
 
 ## 7. 접근성 실험 (Q1, M1)
 

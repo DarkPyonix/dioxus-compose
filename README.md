@@ -31,108 +31,90 @@ dioxus-compose/
 | [docs/INTENT.md](docs/INTENT.md) | 동기, 협상 불가 조건, 아키텍처 결정 기록 |
 | [docs/SPEC.md](docs/SPEC.md) | 기능/비기능 요구사항, 경계 프로토콜, 검증 기준 |
 
-## Development setup
+## 개발 환경 준비
 
-Run `./scripts/setup-check.sh` first. It verifies everything below and prints the exact
-command to install whatever is missing.
+먼저 `./scripts/setup-check.sh`를 실행하세요. 아래 항목을 모두 점검하고, 빠진 것이 있으면 설치 명령을 그대로 알려줍니다.
 
 ### Rust
 
-Install the toolchain with [rustup](https://rustup.rs). `scripts/check.sh` runs
-`cargo fmt` and `cargo clippy`, so both components are required:
+[rustup](https://rustup.rs)으로 설치합니다. `scripts/check.sh`가 `cargo fmt`와 `cargo clippy`를 쓰므로 두 컴포넌트가 필요합니다.
 
 ```bash
 rustup component add rustfmt clippy
 ```
 
-### Liberica NIK 25 Full (renderer native image)
+### Liberica NIK 25 Full (렌더러 네이티브 이미지)
 
-The desktop renderer is built with GraalVM native-image. **On macOS, upstream GraalVM
-does not work**: it skips AWT on Darwin ([oracle/graal#13272](https://github.com/oracle/graal/issues/13272)),
-so Compose Desktop cannot be linked into an image. Use BellSoft Liberica NIK 25 **Full**
-(the Full variant; the standard one is not enough).
+데스크톱 렌더러는 GraalVM native-image로 빌드합니다. **macOS에서는 upstream GraalVM이 동작하지 않습니다.** Darwin에서 AWT 지원을 건너뛰기 때문에([oracle/graal#13272](https://github.com/oracle/graal/issues/13272)) Compose Desktop을 이미지에 링크할 수 없습니다. BellSoft Liberica NIK 25 **Full**을 쓰세요. 표준 버전이 아니라 Full이어야 합니다.
 
 ```bash
 brew install --cask liberica-nik-full
-# or download "NIK 25 Full" from https://bell-sw.com/pages/downloads/native-image-kit/
+# 또는 https://bell-sw.com/pages/downloads/native-image-kit/ 에서 "NIK 25 Full" 내려받기
 ```
 
-`dioxus-compose-renderer/native/scripts/env.sh` finds it in this order:
+`dioxus-compose-renderer/native/scripts/env.sh`가 다음 순서로 찾습니다.
 
-1. `$GRAALVM_HOME`, if set.
-2. Otherwise the newest match of
-   `~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home`.
+1. `$GRAALVM_HOME`(설정된 경우)
+2. `~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25*/Contents/Home` 중 최신
 
-The installation used for development is
-`~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25-25.0.4.1`.
-The scripts reject an installation without `lib/static/darwin-*/libawt_lwawt.a`, which is
-how a plain GraalVM is caught before a long build fails at the link step.
+개발에 사용한 설치 경로는 `~/Library/Java/JavaVirtualMachines/bellsoft-liberica-vm-full-openjdk25-25.0.4.1`입니다. 스크립트는 `lib/static/darwin-*/libawt_lwawt.a`가 없는 설치를 거부합니다. 순정 GraalVM을 긴 빌드 끝의 링크 실패가 아니라 시작 전에 잡아내기 위한 것입니다.
 
-macOS also needs the Xcode command line tools (`xcode-select --install`) for `cc`, `ld`
-and the AppKit headers used by `dioxus-compose-renderer/native/c/`.
+macOS에서는 Xcode 명령줄 도구(`xcode-select --install`)도 필요합니다. `cc`, `ld`와 `dioxus-compose-renderer/native/c/`가 쓰는 AppKit 헤더 때문입니다.
 
-Only macOS is scripted so far. Linux and Windows native-image builds are not yet.
+현재 스크립트가 지원하는 것은 macOS뿐입니다. Linux와 Windows 네이티브 이미지 빌드는 아직입니다.
 
 ### Kotlin
 
-Nothing to install. `dioxus-compose-renderer/kotlin` (and `kotlin.bat` on Windows) is a
-self-bootstrapping Kotlin Toolchain wrapper: it downloads the pinned toolchain on first
-use.
+설치할 것이 없습니다. `dioxus-compose-renderer/kotlin`(Windows는 `kotlin.bat`)이 자체 부트스트랩 래퍼라, 처음 실행할 때 고정된 버전의 툴체인을 내려받습니다.
 
-## Building and running
+## 빌드와 실행
 
-### JVM development shell
+### JVM 개발 셸
 
-The fastest loop for renderer work, with hot reload and `@Preview` (NFR-5). No
-native-image build required:
+렌더러 작업에서 가장 빠른 반복 경로입니다. hot reload와 `@Preview`를 쓸 수 있고(NFR-5) 네이티브 이미지 빌드가 필요 없습니다.
 
 ```bash
 cd dioxus-compose-renderer
-./kotlin run -m desktop   # Compose dev shell
-./kotlin run -m native    # the renderer module itself, on the JVM
+./kotlin run -m desktop   # Compose 개발 셸
+./kotlin run -m native    # 렌더러 모듈 자체를 JVM에서 실행
 ```
 
-### Renderer native shared library
+### 렌더러 네이티브 공유 라이브러리
 
-Produces `dioxus-compose-renderer/build/native-image/dist/lib/` with the renderer,
-Skia, and the `libjawt` / `libawt_lwawt` shims (SPEC PR-8). Takes a few minutes:
+`dioxus-compose-renderer/build/native-image/dist/lib/`에 렌더러, Skia, `libjawt`/`libawt_lwawt` 보조 라이브러리를 만듭니다(SPEC PR-8). 몇 분 걸립니다.
 
 ```bash
 cd dioxus-compose-renderer
 ./native/scripts/build-native.sh
 ```
 
-### C smoke host
+### C 스모크 호스트
 
-Links a minimal C host against the built library and calls
-`dioxus_compose_renderer_run`. A window opens; closing it must return 0 (PR-8
-acceptance criterion):
+최소한의 C 호스트를 빌드해 `dioxus_compose_renderer_run`을 호출합니다. 창이 뜨고, 닫으면 0을 반환해야 합니다(PR-8 수용 기준).
 
 ```bash
 cd dioxus-compose-renderer
 ./native/scripts/smoke-test.sh
 ```
 
-Set `DIOXUS_COMPOSE_AUTOEXIT_MS=6000` to have the window close itself, for unattended runs.
+무인 실행이 필요하면 `DIOXUS_COMPOSE_AUTOEXIT_MS=6000`으로 창이 스스로 닫히게 할 수 있습니다.
 
-### Rust demo
+### Rust 데모
 
-After the native library is built:
+네이티브 라이브러리를 빌드한 뒤에 실행합니다.
 
 ```bash
 cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
-The build script looks for the renderer in this workspace's
-`dioxus-compose-renderer/build/native-image/dist/lib`. Set
-`DIOXUS_COMPOSE_RENDERER_DIR` to use a renderer staged somewhere else.
+빌드 스크립트는 워크스페이스의 `dioxus-compose-renderer/build/native-image/dist/lib`에서 렌더러를 찾습니다. 다른 위치에 둔 렌더러를 쓰려면 `DIOXUS_COMPOSE_RENDERER_DIR`을 설정하세요(NFR-10).
 
-## Quality gate
+## 품질 게이트
 
 ```bash
-./scripts/check.sh              # fmt, clippy, tests, quick benchmarks, Kotlin build + test
-./scripts/check.sh --full       # same, with the full benchmark sample
-./scripts/check.sh --no-kotlin  # Rust only (also: DXC_SKIP_KOTLIN=1)
+./scripts/check.sh              # fmt, clippy, 테스트, 빠른 벤치마크, Kotlin 빌드와 테스트
+./scripts/check.sh --full       # 위와 같되 벤치마크를 전체 샘플로
+./scripts/check.sh --no-kotlin  # Rust만 (DXC_SKIP_KOTLIN=1도 동일)
 ```
 
 ## 라이선스
