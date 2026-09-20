@@ -8,7 +8,7 @@ import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
 import dioxus.compose.ui.platform.NativeHostConnection
 
-// C entry points of the renderer shared library (SPEC PR-2).
+// C entry points of the renderer shared library.
 //
 // The public symbols `dioxus_compose_renderer_run` and `dioxus_compose_renderer_request_frame`
 // take no isolate argument; the C shim in `c/renderer_entry.c` owns the isolate and calls
@@ -32,7 +32,9 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
         }
         0
     } catch (t: Throwable) {
-        // Nothing may unwind across the C boundary (NFR-7).
+        // Nothing may unwind across the C boundary: a Kotlin exception crossing into C is
+        // undefined behaviour, and a protocol error must never abort the process. Report it
+        // as a non-zero status instead.
         t.printStackTrace()
         1
     }
