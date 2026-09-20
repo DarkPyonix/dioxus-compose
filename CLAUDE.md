@@ -4,7 +4,7 @@ Guidance for working in this repository.
 
 ## Project
 
-dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-core` VirtualDom, `rsx!`, hooks). An **AOT-compiled Compose Multiplatform** renderer draws the UI and handles text and IME. It is the GUI stack for `darkpyonix-ember`.
+dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-core` VirtualDom, `rsx!`, hooks). An **AOT-compiled Compose Multiplatform** renderer draws the UI and handles text and IME.
 
 - `dioxus-compose/`: Rust side (Host). Dioxus renderer crate, boundary shims, codegen.
 - `dioxus-compose-renderer/`: Kotlin side (Renderer). Amper project; the schema interpreter lives in `shared/`.

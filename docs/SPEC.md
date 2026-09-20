@@ -42,7 +42,7 @@ Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭�
 
 ### FR-2 스키마 기반 렌더링 — `Agreed`
 Renderer는 스키마에 정의된 위젯 타입만 해석해서 해당 Compose 컴포저블로 렌더링합니다.
-- 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`
+- 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`, `LazyColumn`(FR-8)
 - 수용 기준: 스키마에 없는 타입이나 속성을 받으면 크래시하지 않고 `ProtocolError` 이벤트를 보냅니다.
 
 ### FR-3 이벤트 전달 — `Agreed`
@@ -70,14 +70,16 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - 핸드셰이크 때 스키마 해시를 비교해서 불일치하면 초기화를 실패시킵니다.
 - 수용 기준: Rust 스키마에 속성을 추가하고 Kotlin 인터프리터를 갱신하지 않으면 **빌드가 실패**합니다.
 
-### FR-8 LazyColumn 윈도잉 — `Draft`
+### FR-8 LazyColumn 윈도잉 — `Agreed`
 - Host는 아이템 총 개수와 안정적인 key를 알립니다.
 - Renderer는 보이는 범위를 `RangeRequested`로 요청하고, Host는 그 구간의 서브트리만 생성합니다.
-- 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다.
+- 아이템 식별: Host가 아이템마다 `Box` 래퍼 노드를 만들고 `item_key`(문자열)를 실어 보냅니다. Renderer는 그 값을 Compose `LazyColumn`의 key로 씁니다.
+- 와이어: `RangeRequested`는 이벤트 태그 7(24바이트, `start: u32`, `count: u32`)입니다. Host는 `item_count`, `item_key`, `on_range_requested` 속성으로 선언합니다.
+- 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(Host 측 통과: 가시 20 + 버퍼 4 요청에 아이템 28개)**
 
-### FR-9 스트리밍 텍스트 — `Draft`
-LLM 응답 스트리밍을 위해 Text 노드에 `AppendText` 명령을 둡니다. Host는 프레임 주기(약 16ms) 단위로 토큰을 모아서 보냅니다.
-- 수용 기준: 초당 100토큰 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다.
+### FR-9 스트리밍 텍스트 — `Agreed`
+긴 텍스트가 점진적으로 늘어나는 경우를 위해 Text 노드에 `AppendText` 명령을 둡니다(태그 8, 16바이트). 전체 문자열이 아니라 늘어난 꼬리만 보냅니다. Host는 추가분을 모아 프레임당 노드별 1건으로 flush하며, flush 지점은 `render_frame`입니다.
+- 수용 기준: 초당 100회 추가되는 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다. **(Host 측 통과: 36KB 텍스트에서 배치 64바이트 미만, 스트리밍 프레임 p99 125ns)**
 
 ### FR-12 이벤트 소비(consume) — `Agreed`
 Dioxus 0.7의 이벤트 핸들러는 반환값이 없습니다. 그래서 핸들러가 **이벤트 객체에 소비 표시를 남기고**, 경계가 그 값을 읽어 `MutationBatch.result`로 돌려줍니다. 웹의 `preventDefault()`, Compose의 `PointerInputChange.consume()`과 같은 모델입니다.
@@ -161,7 +163,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
 
 ### PR-3 스레드 규칙 — `Agreed`
 - VirtualDom, 사용자 컴포넌트, 모든 `dioxus_compose_host_*` 호출은 Renderer UI 스레드에서만 실행합니다. 그래서 락이 필요 없습니다.
-- **UI 스레드에서 도메인 작업을 금지합니다.** PTY, 네트워크, LLM 스트리밍, 파일 I/O 같은 작업은 Host 워커 스레드(tokio 등)에서 돌립니다. 워커는 Dioxus signal로 상태를 갱신하고, Host가 내부에서 `request_frame`을 호출합니다. 사용자 코드는 경계 함수를 직접 부르지 않습니다.
+- **UI 스레드에서 도메인 작업을 금지합니다.** 네트워크, 파일 I/O, 프로세스 관리 같은 작업은 Host 워커 스레드(tokio 등)에서 돌립니다. 워커는 Dioxus signal로 상태를 갱신하고, Host가 내부에서 `request_frame`을 호출합니다. 사용자 코드는 경계 함수를 직접 부르지 않습니다.
 - `request_frame`은 여러 번 불러도 다음 프레임에 `render_frame` 1회로 합쳐집니다. Compose frame clock(`withFrameNanos`) 안에서 실행됩니다.
 - macOS에서 `dioxus_compose_renderer_run`은 프로세스 메인 스레드에서 호출해야 합니다(AppKit 요구사항).
 - Android: Host 워커 스레드는 `request_frame`을 부르기 위해 JavaVM에 **1회 영구 attach**합니다. 호출마다 attach하는 것은 금지합니다. `@FastNative`/`@CriticalNative`는 짧은 호출에만 허용합니다.
@@ -195,7 +197,7 @@ void    dioxus_compose_renderer_request_frame(void);  // 스레드 안전. 다�
 - android-activity, NativeActivity, GameActivity 진입점은 쓰지 않습니다. ComposeView와 공존한 사례가 없고 IME 충돌 위험이 있습니다. JavaVM은 `JNI_OnLoad`에서 얻습니다.
 - 수용 기준(M6):
   1. 일반 JNI와 `@FastNative`의 호출당 비용을 실측합니다. 공개 수치(약 115ns, 약 35ns)와 비교해 기록합니다.
-  2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100토큰 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
+  2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100회 추가되는 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
 
 ### PR-6 Web 직결 — `Draft`
@@ -246,6 +248,8 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 | NFR-7 | 크래시 격리 | 프로토콜 오류로 프로세스가 종료되지 않고 `ProtocolError` 이벤트를 보냄 | Agreed |
 | NFR-8 | 데스크톱 접근성 | VoiceOver/Narrator 기본 동작 (§7 실험 결과로 확정) | Draft |
 | NFR-9 | 네이티브 수준 프레임 성능 | §5.1 기준 충족 | Agreed |
+| NFR-10 | 렌더러 탐색 경로 | `DIOXUS_COMPOSE_RENDERER_DIR` → 워크스페이스 빌드 결과물 순서로 찾음 | Agreed |
+| NFR-11 | 배포 | 구현 안정화 후 플랫폼별 렌더러를 릴리스 아티팩트로 배포하고 체크섬 검증 후 내려받아 사용(INTENT D10) | Draft |
 
 ### 5.1 프레임 예산 (NFR-9)
 
@@ -259,7 +263,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 | 배치 적용 (Renderer 디코드 + 스냅샷 적용) | Mutation 100건당 ≤ 0.3ms |
 | 입력 → 화면 반영 | 기준선과 같은 프레임 수. 추가 프레임 지연 0 |
 | 정상 상태 할당 | 경계 인코딩(arena 재사용) 0회. Host 전체 경로는 프레임당 200회 이하이고, 같은 상호작용을 반복해도 증가하지 않을 것. Renderer: 변경된 문자열의 `String` 생성 외 할당 0회 |
-| 프레임 드랍 | 초당 100토큰 스트리밍 + 스크롤 중 드랍 0 (1만 개 메시지 대화) |
+| 프레임 드랍 | 초당 100회 추가되는 스트리밍 + 스크롤 중 드랍 0 (아이템 1만 개 목록) |
 
 - 모든 수치는 실측으로 확인하고, 측정 환경(기기, OS, 빌드 설정)과 함께 기록합니다.
 - 할당은 횟수 자체보다 **증가하지 않는지**가 기준입니다. Dioxus는 diff와 이벤트 처리 과정에서 내부적으로 할당하며(2026-09-20 측정: 클릭당 99회), 이를 0으로 만들려면 Dioxus를 포크해야 해서 D2와 충돌합니다. Rust에는 GC가 없어 이 할당이 프레임 멈춤으로 이어지지 않습니다. 반복 상호작용에서 할당 수가 늘어나면 누수나 캐시 미작동으로 보고 조사합니다.
@@ -270,6 +274,10 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 **JS 글루를 거치지 않고** 연결�
 ## 6. IME 수용 체크리스트 (FR-5, M1)
 
 native-image 빌드에서 macOS와 Windows 각각 수동으로 확인합니다.
+
+**macOS arm64 결과 (2026-09-20, Liberica NIK 25)**: 한국어 입력기로 전환하고 입력창에 한글을 입력하는 기본 경로가 동작합니다. 나머지 항목은 아직 확인 전입니다.
+
+여기서 발견한 실패 양상을 남겨 둡니다. 등록되지 않은 입력 경로는 빌드도 렌더링도 멀쩡히 통과한 뒤, 입력기가 텍스트 필드를 건드리는 순간 Objective-C 예외로 프로세스를 abort시킵니다. Java 스택 트레이스 없이 창이 그냥 사라지므로, 이 증상이 보이면 실행 로그에서 `JNI Lookup Exception`과 그 앞의 `NoSuchMethodError`를 먼저 찾으십시오. 근본 대응은 `ImeReachabilityFeature`가 패키지 단위로 등록하는 것입니다(INTENT D9-macOS).
 
 - [ ] "안녕하세요" 입력 시 조합 과정이 정상 표시됨
 - [ ] 조합 중 백스페이스로 자모 단위 삭제

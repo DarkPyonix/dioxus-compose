@@ -35,7 +35,14 @@ exported=(dioxus_compose_renderer_run dioxus_compose_renderer_request_frame
 # The renderer calls the Host's dioxus_compose_host_* functions, which live in the Rust
 # executable that loads this library. They are resolved at load time, so the link must
 # tolerate them being undefined here (SPEC PR-2).
+# The IME entry points (Java_sun_lwawt_macosx_CInputMethod_*) live in objects of the AWT
+# toolkit archive that nothing else references, so the linker drops them and the image
+# aborts the first time an input method touches a text field (SPEC §6).
+awt_archive="$GRAALVM_HOME/lib/static/darwin-$([[ "$arch" == "arm64" ]] && echo aarch64 || echo amd64)/libawt_lwawt.a"
+[[ -f "$awt_archive" ]] || { echo "error: missing $awt_archive" >&2; exit 1; }
+
 linker_args=("-H:NativeLinkerOption=-Wl,-undefined,dynamic_lookup"
+             "-H:NativeLinkerOption=-Wl,-force_load,$awt_archive"
              "-H:NativeLinkerOption=$obj/renderer_entry.o" "-H:NativeLinkerOption=$obj/macos_awt_compat.o"
              "-H:NativeLinkerOption=$obj/macos_main_thread.o"
              "-H:NativeLinkerOption=-Wl,-install_name,@rpath/$LIBRARY_NAME.dylib")
@@ -48,6 +55,7 @@ done
     -cp "$classpath" \
     -o "$LIBRARY_NAME" \
     --no-fallback \
+    --features=org.thisisthepy.dioxus.compose.nativeimage.ImeReachabilityFeature \
     -Djava.awt.headless=false \
     -H:IncludeLocales=en,ko \
     -Os \
