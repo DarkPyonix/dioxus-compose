@@ -33,8 +33,9 @@ fn main() {
     let workspace_lib_dir =
         manifest_dir.join("../dioxus-compose-renderer/build/native-image/dist/lib");
     let crate_version = std::env::var("CARGO_PKG_VERSION").expect("Cargo sets CARGO_PKG_VERSION");
+    let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("checked above");
     let target = artifact_target(
-        &std::env::var("CARGO_CFG_TARGET_OS").expect("checked above"),
+        &target_os,
         &std::env::var("CARGO_CFG_TARGET_ARCH").expect("Cargo sets CARGO_CFG_TARGET_ARCH"),
     );
 
@@ -45,6 +46,7 @@ fn main() {
         &workspace_lib_dir,
         &crate_version,
         &target,
+        &target_os,
     ) {
         Ok(renderer) => renderer,
         // A build script panic is reported as the build failure itself, message and all.

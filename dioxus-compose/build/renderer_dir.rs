@@ -13,8 +13,15 @@ use std::path::{Path, PathBuf};
 pub const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
 
 /// The shared library every distribution of the Renderer contains, whatever else
-/// travels alongside it.
-pub const RENDERER_LIB_FILE: &str = "libdioxus_compose_renderer.dylib";
+/// travels alongside it. The name follows the platform's own convention, which is what
+/// its loader will look for.
+pub fn renderer_lib_file(target_os: &str) -> &'static str {
+    match target_os {
+        "windows" => "dioxus_compose_renderer.dll",
+        "macos" => "libdioxus_compose_renderer.dylib",
+        _ => "libdioxus_compose_renderer.so",
+    }
+}
 
 /// One line holding the crate version the artifact was built for. The release packaging
 /// script writes it into the artifact root; a renderer built straight from the workspace
@@ -52,16 +59,18 @@ pub fn resolve_renderer(
     workspace_lib_dir: &Path,
     crate_version: &str,
     target: &str,
+    target_os: &str,
 ) -> Result<Renderer, String> {
+    let lib_file = renderer_lib_file(target_os);
     let lib_dir = match env_dir {
-        Some(dir) => lib_dir_within(dir),
+        Some(dir) => lib_dir_within(dir, lib_file),
         None => workspace_lib_dir.to_path_buf(),
     };
 
-    if !lib_dir.join(RENDERER_LIB_FILE).is_file() {
+    if !lib_dir.join(lib_file).is_file() {
         return Err(match env_dir {
-            Some(dir) => missing_from_env_message(dir, &lib_dir, crate_version, target),
-            None => missing_entirely_message(&lib_dir, crate_version, target),
+            Some(dir) => missing_from_env_message(dir, &lib_dir, crate_version, target, lib_file),
+            None => missing_entirely_message(&lib_dir, crate_version, target, lib_file),
         });
     }
 
@@ -85,9 +94,9 @@ pub fn resolve_renderer(
 
 /// Accept either the unpacked artifact root or its `lib` directory. Both are natural
 /// things for a human to point the variable at, and guessing wrong is a linker error.
-fn lib_dir_within(dir: &Path) -> PathBuf {
+fn lib_dir_within(dir: &Path, lib_file: &str) -> PathBuf {
     let nested = dir.join("lib");
-    if nested.join(RENDERER_LIB_FILE).is_file() {
+    if nested.join(lib_file).is_file() {
         return nested;
     }
     dir.to_path_buf()
@@ -140,14 +149,19 @@ fn how_to_get_one(crate_version: &str, target: &str) -> String {
     )
 }
 
-fn missing_entirely_message(looked_in: &Path, crate_version: &str, target: &str) -> String {
+fn missing_entirely_message(
+    looked_in: &Path,
+    crate_version: &str,
+    target: &str,
+    lib_file: &str,
+) -> String {
     format!(
         "dioxus-compose: the `native-renderer` feature is enabled but no renderer was found.\n\
          \n\
          {RENDERER_DIR_ENV} is not set, and the workspace build output is not there either\n\
          (looked for {lib} in {looked_in}). A published crate has no workspace to fall back\n\
          on, so this variable is how you point the build at a renderer.{how}",
-        lib = RENDERER_LIB_FILE,
+        lib = lib_file,
         looked_in = looked_in.display(),
         how = how_to_get_one(crate_version, target),
     )
@@ -158,13 +172,14 @@ fn missing_from_env_message(
     looked_in: &Path,
     crate_version: &str,
     target: &str,
+    lib_file: &str,
 ) -> String {
     format!(
         "dioxus-compose: {RENDERER_DIR_ENV} is set to {env_dir}, but no renderer is there.\n\
          \n\
          Looked for {lib} in {looked_in} and in {env_dir}/lib. Point the variable either at\n\
          the directory an artifact was unpacked into, or directly at its `lib` directory.{how}",
-        lib = RENDERER_LIB_FILE,
+        lib = lib_file,
         env_dir = env_dir.display(),
         looked_in = looked_in.display(),
         how = how_to_get_one(crate_version, target),

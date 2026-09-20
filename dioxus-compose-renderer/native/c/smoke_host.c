@@ -11,6 +11,12 @@
 #include <stdio.h>
 #include <string.h>
 
+#ifdef _WIN32
+#define HOST_EXPORT __declspec(dllexport)
+#else
+#define HOST_EXPORT
+#endif
+
 int32_t dioxus_compose_renderer_run(void);
 
 typedef struct {
@@ -24,7 +30,7 @@ enum { STATUS_OK = 0, STATUS_PROTOCOL_ERROR = -1 };
 /* Mutation tags (schema.rs). */
 enum { TAG_ENVELOPE = 0, TAG_CREATE = 1, TAG_SET_PROP = 2, TAG_INSERT = 4 };
 /* WidgetKind tags. */
-enum { WIDGET_COLUMN = 1, WIDGET_TEXT = 4, WIDGET_BUTTON = 6 };
+enum { WIDGET_COLUMN = 1, WIDGET_TEXT = 4, WIDGET_TEXT_FIELD = 5, WIDGET_BUTTON = 6 };
 /* PropertyKind tags. */
 enum { PROP_TEXT = 1, PROP_ON_CLICK = 5 };
 /* PropertyValue tags. */
@@ -128,10 +134,21 @@ static void build_tree(const char *label) {
     set_text_prop(3, "click me");
     set_handler(3, PROP_ON_CLICK, CLICK_HANDLER);
     insert(1, 3, 1);
+#ifdef __linux__
+    /* The Linux smoke window includes an editable control so a real desktop run can exercise
+       XIM through ibus or fcitx. Keep the established macOS smoke tree unchanged. */
+    create(4, WIDGET_TEXT_FIELD);
+    uint32_t field_prop = records_length;
+    set_text_prop(4, "type Korean here");
+    insert(1, 4, 2);
+#endif
     end_batch();
     batch_length = records_length;
     put_string(label_prop + 12, label);
     put_string(button_prop + 12, "click me");
+#ifdef __linux__
+    put_string(field_prop + 12, "type Korean here");
+#endif
 }
 
 static void build_label_update(const char *label) {
@@ -143,7 +160,9 @@ static void build_label_update(const char *label) {
     put_string(label_prop + 12, label);
 }
 
-int32_t dioxus_compose_host_init(const uint8_t *handshake, uint32_t len, MutationBatch *out) {
+HOST_EXPORT int32_t dioxus_compose_host_init(
+    const uint8_t *handshake, uint32_t len, MutationBatch *out
+) {
     if (out == NULL || handshake == NULL || len < 12) {
         return STATUS_PROTOCOL_ERROR;
     }
@@ -155,7 +174,9 @@ int32_t dioxus_compose_host_init(const uint8_t *handshake, uint32_t len, Mutatio
     return STATUS_OK;
 }
 
-int32_t dioxus_compose_host_dispatch_event(const uint8_t *event, uint32_t len, MutationBatch *out) {
+HOST_EXPORT int32_t dioxus_compose_host_dispatch_event(
+    const uint8_t *event, uint32_t len, MutationBatch *out
+) {
     static int clicks;
     static char label[64];
     if (out == NULL || event == NULL || len < 4) {
@@ -164,13 +185,16 @@ int32_t dioxus_compose_host_dispatch_event(const uint8_t *event, uint32_t len, M
     clicks += 1;
     snprintf(label, sizeof label, "smoke host: %d clicks", clicks);
     build_label_update(label);
+    printf("dioxus_compose_host_dispatch_event: click %d\n", clicks);
     out->ptr = batch_bytes;
     out->len = batch_length;
     out->result = 1;
     return STATUS_OK;
 }
 
-int32_t dioxus_compose_host_render_frame(uint64_t frame_time_nanos, MutationBatch *out) {
+HOST_EXPORT int32_t dioxus_compose_host_render_frame(
+    uint64_t frame_time_nanos, MutationBatch *out
+) {
     (void)frame_time_nanos;
     if (out == NULL) {
         return STATUS_PROTOCOL_ERROR;
@@ -181,7 +205,7 @@ int32_t dioxus_compose_host_render_frame(uint64_t frame_time_nanos, MutationBatc
     return STATUS_OK;
 }
 
-void dioxus_compose_host_release_batch(MutationBatch *batch) {
+HOST_EXPORT void dioxus_compose_host_release_batch(MutationBatch *batch) {
     if (batch != NULL) {
         batch->ptr = NULL;
         batch->len = 0;
@@ -189,7 +213,7 @@ void dioxus_compose_host_release_batch(MutationBatch *batch) {
     }
 }
 
-void dioxus_compose_host_shutdown(void) {
+HOST_EXPORT void dioxus_compose_host_shutdown(void) {
     printf("dioxus_compose_host_shutdown\n");
 }
 
