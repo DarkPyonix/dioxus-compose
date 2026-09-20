@@ -86,6 +86,15 @@ git rev-parse --verify -q "refs/heads/$source_branch" >/dev/null \
 source_commit="$(git rev-parse "refs/heads/$source_branch")"
 
 target_commit=""
+# A fresh clone, and every CI checkout, has the remote-tracking ref but no local
+# branch. Starting from nothing there would build a commit with no link to what is
+# already published, and the push is then rejected as a non fast-forward.
+if ! git rev-parse --verify -q "refs/heads/$target_branch" >/dev/null \
+    && git rev-parse --verify -q "refs/remotes/origin/$target_branch" >/dev/null; then
+    git update-ref "refs/heads/$target_branch" "refs/remotes/origin/$target_branch"
+    echo "note: started $target_branch from origin/$target_branch"
+fi
+
 if git rev-parse --verify -q "refs/heads/$target_branch" >/dev/null; then
     target_commit="$(git rev-parse "refs/heads/$target_branch")"
 fi
