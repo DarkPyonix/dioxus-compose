@@ -1,0 +1,94 @@
+# Native renderer -- the slow half of the quality gate.
+#
+# This is the counterpart to ci.yml. ci.yml runs on every PR because it is
+# fast; this workflow builds the Compose renderer as a GraalVM native-image
+# shared library and runs the C smoke test (SPEC PR-8 acceptance criterion),
+# which costs a ~1GB Liberica NIK download plus tens of minutes of
+# native-image compilation. Putting that in front of every push would make
+# review unbearable, and SPEC NFR-5 / INTENT D7 explicitly say the
+# native-image build is not part of the development loop.
+#
+# So it runs:
+#   - on pushes to main and develop that touch the renderer or its scripts,
+#   - nightly, to catch toolchain drift (a new Xcode or runner image) even
+#     when nobody touched the renderer,
+#   - on demand.
+#
+# macOS only: SPEC NFR-4 lists Windows and Linux desktop as targets, but only
+# the macOS path is scripted today (build-native.sh refuses elsewhere).
+
+name: Native renderer
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'dioxus-compose-renderer/**'
+      - 'scripts/install-nik.sh'
+      - '.github/workflows/native-renderer.yml'
+  schedule:
+    # 03:00 UTC daily. Scheduled runs only fire on the default branch.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: native-renderer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: native-image build and smoke test
+    # macos-latest is Apple silicon; the renderer's AWT workarounds are
+    # arm64 macOS specific (INTENT D9-macOS).
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Liberica NIK
+        # Keyed on the installer script: bumping NIK_VERSION in it invalidates
+        # the cache, which is exactly when a fresh download is wanted.
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/dioxus-compose/nik
+          key: nik-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-nik.sh') }}
+
+      - name: Install Liberica NIK 25 Full
+        # A no-op when the cache was restored; otherwise downloads and
+        # checksum-verifies the pinned archive.
+        run: ./scripts/install-nik.sh --github-env
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-${{ runner.os }}-
+
+      - name: Build the renderer shared library
+        # Stages build/native-image/dist/lib with the renderer, Skia, and the
+        # libjawt / libawt_lwawt shims described in SPEC PR-8.
+        run: ./dioxus-compose-renderer/native/scripts/build-native.sh
+
+      - name: Smoke test (SPEC PR-8 acceptance criterion)
+        env:
+          # The renderer honours this to close its window unattended; without
+          # it the smoke test would wait for a human to close the window.
+          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
+        run: ./dioxus-compose-renderer/native/scripts/smoke-test.sh
+
+      - name: Report the distribution size (NFR-3)
+        run: du -sh dioxus-compose-renderer/build/native-image/dist/lib
+
+      - name: Upload the renderer for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: dioxus-compose-renderer-macos-arm64
+          path: dioxus-compose-renderer/build/native-image/dist/
+          retention-days: 7
