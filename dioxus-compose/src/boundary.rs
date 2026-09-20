@@ -10,7 +10,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::pin;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::task::{Context, Poll, Wake, Waker};
 
 pub const STATUS_OK: i32 = 0;
@@ -305,9 +305,26 @@ impl std::ops::Deref for HostSlot {
     }
 }
 
+/// The launched application.
+///
+/// PR-3 puts the `VirtualDom` and every `dioxus_compose_host_*` call on the Renderer UI
+/// thread, and that thread is not the one that called `launch`: with `LoopMode::Renderer`
+/// the Rust main thread blocks inside `dioxus_compose_renderer_run` while Compose composes
+/// on the toolkit's own thread. So the app function, unlike the `Host` it builds, has to be
+/// reachable across threads. A `fn() -> Element` is a plain function pointer, so sharing it
+/// costs nothing and adds no thread affinity.
+///
+/// `shutdown` deliberately leaves this set: it belongs to `launch`, not to one UI thread's
+/// `Host`. That is also what `LoopMode::Platform` needs, where the Renderer may tear the
+/// Host down and initialize it again (PR-5 surface recreation) without relaunching.
+static APP: Mutex<Option<fn() -> Element>> = Mutex::new(None);
+
 thread_local! {
-    static APP: RefCell<Option<fn() -> Element>> = const { RefCell::new(None) };
     static HOST: HostSlot = const { HostSlot(RefCell::new(None)) };
+}
+
+fn launched_app() -> Option<fn() -> Element> {
+    APP.lock().map_or(None, |app| *app)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -334,7 +351,9 @@ impl LaunchBuilder {
     }
 
     pub fn launch(self, app: fn() -> Element) {
-        APP.with(|slot| *slot.borrow_mut() = Some(app));
+        if let Ok(mut slot) = APP.lock() {
+            *slot = Some(app);
+        }
         if self.mode == LoopMode::Renderer {
             let _ = (renderer_api().run)();
         }
@@ -432,9 +451,7 @@ pub unsafe extern "C" fn dioxus_compose_host_init(
         // SAFETY: Validated according to the function's C ABI contract.
         let bytes = unsafe { input_slice(handshake, len) }.map_err(protocol_error)?;
         let _mode = parse_handshake(bytes).map_err(protocol_error)?;
-        let app = APP
-            .with(|slot| *slot.borrow())
-            .ok_or(STATUS_NOT_INITIALIZED)?;
+        let app = launched_app().ok_or(STATUS_NOT_INITIALIZED)?;
         HOST.with(|slot| {
             let mut host_slot = slot.borrow_mut();
             if host_slot.is_some() {
@@ -513,7 +530,6 @@ pub unsafe extern "C" fn dioxus_compose_host_release_batch(batch: *mut MutationB
 pub extern "C" fn dioxus_compose_host_shutdown() {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         HOST.with(|slot| *slot.borrow_mut() = None);
-        APP.with(|slot| *slot.borrow_mut() = None);
         FRAME_REQUESTED.store(false, Ordering::Release);
     }));
 }
@@ -715,6 +731,32 @@ mod tests {
         dispatch(handlers[0].0, handlers[0].1, false, &mut output);
         assert_ne!(output.result, 0);
         dioxus_compose_host_shutdown();
+    }
+
+    /// PR-3: `launch` runs on the Rust main thread, but the Renderer UI thread that calls
+    /// `dioxus_compose_host_init` is a different thread (on macOS, AWT's event thread inside
+    /// the isolate). The app the application launched must be reachable from there.
+    #[test]
+    fn pr3_init_runs_on_a_different_thread_than_launch() {
+        LaunchBuilder::new()
+            .with_mode(LoopMode::Platform)
+            .launch(app);
+        let mut handshake = Vec::with_capacity(12);
+        handshake.extend_from_slice(&SCHEMA_HASH.to_le_bytes());
+        handshake.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+        handshake.extend_from_slice(&[LoopMode::Platform as u8, 0]);
+        std::thread::spawn(move || {
+            let mut output = MutationBatch::default();
+            // SAFETY: Both buffers are live test-owned storage for the duration of the call.
+            let status = unsafe {
+                dioxus_compose_host_init(handshake.as_ptr(), handshake.len() as u32, &mut output)
+            };
+            assert_eq!(status, STATUS_OK, "init must work off the launch thread");
+            assert!(output.len > 0, "init returns the initial tree batch");
+            dioxus_compose_host_shutdown();
+        })
+        .join()
+        .unwrap();
     }
 
     #[test]
