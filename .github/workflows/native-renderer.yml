@@ -220,7 +220,7 @@ jobs:
 
       - name: Protocol codec tests on Kotlin/Native (PR-4)
         working-directory: dioxus-compose-renderer
-        run: ./kotlin test -m iosrenderer
+        run: ./kotlin test -m ios
 
       - name: Build the simulator archive
         run: ./dioxus-compose-renderer/native/scripts/build-ios.sh

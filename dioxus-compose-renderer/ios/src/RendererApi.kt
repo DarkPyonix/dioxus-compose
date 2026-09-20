@@ -1,0 +1,44 @@
+package org.thisisthepy.dioxus.compose.nativeimage
+
+import org.thisisthepy.dioxus.compose.renderer.IosHostConnection
+import platform.Foundation.NSThread
+
+/**
+ * What the C entry points call (SPEC PR-2). See `cabi/src/IosEntryPoints.kt` for the
+ * symbols themselves and for why they live in a module of their own.
+ *
+ * The status codes are the desktop shim's codes (`native/c/renderer_entry.c`), so a Host
+ * reads the same number for the same mistake on both platforms.
+ */
+object RendererApi {
+    const val RUN_OK = 0
+    const val RUN_FAILED = 1
+    const val RUN_ALREADY_RUNNING = -2
+    const val RUN_NOT_MAIN_THREAD = -4
+
+    private var started = false
+
+    /**
+     * Blocks for the lifetime of the process (see `runRenderer`).
+     *
+     * Must be called on the process main thread: `UIApplicationMain` installs the main run
+     * loop there and Compose for iOS composes on it. Nothing may unwind into C (NFR-7).
+     */
+    fun run(): Int =
+        try {
+            when {
+                !NSThread.isMainThread -> RUN_NOT_MAIN_THREAD
+                started -> RUN_ALREADY_RUNNING
+                else -> {
+                    started = true
+                    runRenderer { IosHostConnection() }
+                }
+            }
+        } catch (error: Throwable) {
+            println("dioxus-compose: renderer run failed: ${error.message}")
+            RUN_FAILED
+        }
+
+    /** Thread-safe (SPEC PR-3): requests coalesce into one `render_frame` per frame. */
+    fun requestFrame() = FrameRequests.request()
+}

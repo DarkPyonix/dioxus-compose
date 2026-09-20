@@ -1,0 +1,20 @@
+# Fluent 2.
+#
+# Microsoft ships no Compose library. Konyaco/compose-fluent-ui is the candidate and is
+# self described as experimental with an API that changes without notice, which is in
+# tension with NFR-6. Adoption is a feasibility question to be settled by a build, not an
+# assumption.
+
+product:
+  type: kmp/lib
+  platforms: [ jvm, android, iosArm64, iosSimulatorArm64, wasmJs ]
+
+dependencies:
+  - //core: exported
+  - $compose.runtime
+  - $compose.foundation
+  - $compose.ui
+
+settings:
+  compose:
+    enabled: true

@@ -1,7 +1,6 @@
 product: jvm/app
 
 dependencies:
-  - //shared
   - $compose.desktop.currentOs
   # FR-11's example extension draws a Material 3 progress indicator.
   - $compose.material3
