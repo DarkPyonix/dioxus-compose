@@ -19,7 +19,14 @@ const BULK_COUNT: usize = 5_000;
 
 fn app() -> Element {
     let mut tasks = use_signal(|| store::load());
-    let mut next_id = use_signal(|| tasks.read().iter().map(|task| task.id + 1).max().unwrap_or(1));
+    let mut next_id = use_signal(|| {
+        tasks
+            .read()
+            .iter()
+            .map(|task| task.id + 1)
+            .max()
+            .unwrap_or(1)
+    });
     let mut filter = use_signal(|| Filter::All);
 
     // What the top field currently holds. The field is uncontrolled, so this is a copy the
@@ -253,12 +260,13 @@ fn main() {
     dioxus_compose::launch(app);
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use dioxus_compose::Host;
-    use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
+    use dioxus_compose::protocol::{
+        HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
+    };
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
     use std::collections::HashMap;
     use std::sync::OnceLock;
