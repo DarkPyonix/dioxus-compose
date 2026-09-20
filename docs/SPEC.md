@@ -293,16 +293,39 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 6. `ButtonVariant` 4개 → 배경·전경·테두리·눌림 표현
 7. 모션: 상태 전환 duration과 easing
 
-### FR-11 스키마 확장 (서드파티 위젯) (`Draft`)
-Q2: 스키마에 없는 Compose 컴포넌트를 쓰는 방식입니다. 후보는 다음과 같습니다.
+### FR-11 스키마 확장 (서드파티 위젯) (`Agreed`)
+스키마에 없는 Compose 컴포넌트는 **E1 확장 스키마 패키지**로 추가합니다. 확장은 런타임 플러그인이 아니라 Host와 Renderer의 소스 빌드에 함께 들어가는 한 쌍입니다. Rust 쪽 선언이 위젯 태그, 속성 태그, 타입이 붙은 Dioxus 컴포넌트를 소유하고, Kotlin 쪽 구현이 그 태그와 속성을 실제 `@Composable` 호출로 해석합니다.
 
 | 안 | 방식 | 장점 | 단점 |
 |---|---|---|---|
-| E1 확장 스키마 패키지 | 위젯 정의(Rust)와 인터프리터 구현(Kotlin)을 한 쌍으로 묶은 확장 단위. 빌드 시 코드젠으로 스키마에 병합 | 타입 안전(FR-7 그대로), 오버헤드 없음 | Renderer 재빌드 필요 |
+| E1 확장 스키마 패키지 | 위젯 정의(Rust)와 인터프리터 구현(Kotlin)을 한 쌍으로 묶은 확장 단위. 빌드 시 코드젠으로 스키마에 병합 | 타입 안전(FR-7 그대로), 오버헤드 없음 | Host와 Renderer 재빌드 필요 |
 | E2 Kotlin 어노테이션 기반 역생성 | `@DioxusWidget` 붙인 `@Composable` 함수에서 KSP로 Rust 컴포넌트와 스키마 생성 | Compose 라이브러리 래핑 비용이 최소 | 단일 소스가 Kotlin으로 뒤집힘(D6와 충돌 검토 필요), 파라미터 타입 매핑 한계 |
 | E3 동적 Slot 위젯 | `Custom { kind: "id", props: bytes }` 범용 노드, Renderer 측 레지스트리 | 스키마 변경 없이 추가 | 타입 안전이 런타임 검사로 격하 (C3 위반 소지) |
 
-잠정 권장: **E1을 기본**으로, 대량 래핑에 한해 E2를 E1 산출물을 만드는 보조 도구로 씁니다. E3는 채택하지 않습니다. AOT 특성상 어느 쪽이든 Renderer 재빌드는 필수입니다.
+현재 `dioxus-compose/src/codegen.rs`는 Rust의 정적 스키마 표를 순회해 `Protocol.gen.kt`를 만드는 단방향 생성기입니다. 이 구조에서는 E1이 D6와 FR-7을 그대로 보존합니다. 새 태그가 표와 스키마 해시에 들어가고, 기존 `Create`와 `SetProp`의 고정 레이아웃을 그대로 사용하며, 표에 없는 태그는 계속 `ProtocolError`입니다.
+
+E2를 기본 경로로 삼으면 KSP가 Rust 열거형, Dioxus element, 컴포넌트 API까지 역생성해야 합니다. Kotlin 타입 중 Rust와 와이어 타입으로 손실 없이 옮길 수 없는 타입도 별도 규칙이 필요합니다. 이는 현재 생성 방향을 뒤집고 Rust 단일 소스를 깨므로 채택하지 않습니다. 나중에 많은 Compose API를 감쌀 때에도 E2는 Kotlin을 런타임에 등록하는 장치가 아니라, 검토해서 커밋할 E1 Rust 선언 초안을 만드는 오프라인 도구로만 허용합니다. E3는 임의 바이트와 문자열 식별자가 고정 스키마를 우회하므로 채택하지 않습니다.
+
+#### 11.1 저작 단위와 빌드 비용
+확장 작성자는 다음 두 소스 파일을 책임집니다.
+
+1. Host의 Rust 확장 파일 하나: 추가 전용 범위의 위젯 태그와 속성 태그, Dioxus element, 타입이 붙은 `#[component]`를 선언합니다. 속성은 기존 `PropertyValue`의 `String`, `bool`, `i64`, `f32` 중 하나로 내립니다.
+2. Renderer의 Kotlin 확장 파일 하나: 생성된 `WidgetKind`와 `PropertyKind`를 처리하고 실제 Compose 라이브러리의 `@Composable`을 호출합니다. 외부 라이브러리라면 Renderer 빌드 의존성도 추가합니다.
+
+`cargo run -p dioxus-compose --bin codegen`은 별도 저작 파일을 요구하지 않고 이 Rust 선언을 정규 스키마에 병합해 `Protocol.gen.kt`를 다시 만듭니다. 생성 파일은 커밋합니다. 태그를 추가하거나 속성 계약을 바꿀 때마다 Host 라이브러리와 모든 플랫폼 Renderer를 함께 다시 빌드하고 배포해야 합니다. 앱의 UI 코드만 바뀌고 확장 스키마가 그대로면 Renderer를 다시 빌드할 필요가 없습니다. 이미 배포된 Renderer에는 새 컴포넌트를 로드하거나 등록할 방법이 없습니다.
+
+#### 11.2 태그와 호환성
+- 기본 스키마 태그는 그대로 유지합니다. 확장 위젯과 속성은 추가 전용 태그를 쓰며 기존 태그를 재사용하거나 재정렬하지 않습니다.
+- 확장 메타데이터는 `WIDGET_SCHEMA`, `PROPERTY_SCHEMA`, `SCHEMA_HASH`에 포함됩니다. Host와 Renderer 중 한쪽만 갱신하면 핸드셰이크가 화면을 만들기 전에 실패합니다.
+- 확장도 `Create` 12바이트와 `SetProp` 24바이트 레코드만 사용합니다. 별도 payload, 동적 map, 직렬화 포맷을 만들지 않습니다.
+- Renderer는 생성된 열거형의 모든 확장 위젯을 명시적으로 해석해야 합니다. 생성 코드는 Compose 구현을 추론하지 않습니다.
+
+#### 11.3 수용 기준
+- M0에 없는 실제 Compose 컴포넌트 하나를 Rust의 타입이 붙은 컴포넌트로 선언하고, RSX에서 사용하면 추가 위젯 태그와 속성 태그를 가진 고정 레이아웃 Mutation이 나옵니다.
+- 코드젠 결과에 같은 `WidgetKind`, `PropertyKind`, 디코더 분기가 생기며 생성 파일 일치 테스트가 통과합니다.
+- 확장을 포함한 스키마 해시는 확장이 없던 스키마 해시와 다르고, 잘못된 핸드셰이크는 초기화에 실패합니다.
+- 선언되지 않은 위젯 태그와 속성 태그는 Rust와 Kotlin 디코더에서 `ProtocolError`로 남습니다.
+- Renderer 구현에는 생성된 종류별 분기와 Compose 호출이 필요하다는 사실을 문서와 빌드가 숨기지 않습니다.
 
 ## 4. 경계 프로토콜
 
