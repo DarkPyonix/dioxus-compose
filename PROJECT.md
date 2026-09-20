@@ -24,7 +24,7 @@ Rust(Dioxus)로 선언형 UI를 쓰고, AOT 컴파일된 Compose Multiplatform�
 - Web(wasmJs) 타깃. JS 브리지 없이 wasm 모듈끼리 직결합니다(SPEC PR-6, 실현 가능성 검증 필요).
 
 **제외 (현재)**
-- Compose API 전체를 Rust로 미러링하는 것. 코어 스키마는 세 디자인 시스템 공통 축에 있는 위젯 25개로 한정하고(FR-15), 특정 시스템 고유 위젯은 FR-11 확장 패키지가 맡습니다.
+- Compose API 전체를 Rust로 미러링하는 것. 코어 스키마는 세 디자인 시스템 공통 축에 있는 위젯 29개로 한정하고(FR-15), 특정 시스템 고유 위젯은 FR-11 확장 패키지가 맡습니다.
 - 이 스택을 쓰는 애플리케이션의 도메인 로직.
 
 ## 개발 방식: Spec Driven Development + Test Driven Development

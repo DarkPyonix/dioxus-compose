@@ -359,8 +359,20 @@ M0의 위젯 9개는 데모를 굴리는 데 필요했던 만큼이지 설계된
 | 23 | `TopAppBar` | Material TopAppBar / UINavigationBar / Fluent CommandBar |
 | 24 | `LazyRow` | FR-8 윈도잉의 가로 축 |
 | 25 | `Tooltip` | 공통. 데스크톱 전용 동작이 아니라 접근성 설명으로도 쓰입니다 |
+| 26 | `Canvas` | FR-17의 커스텀 드로잉 |
+| 27 | `DatePicker` | Material DatePicker / `UIDatePicker` / Fluent CalendarDatePicker |
+| 28 | `TimePicker` | Material TimePicker / `UIDatePicker`(시간 모드) / Fluent TimePicker |
+| 29 | `Dropdown` | 목록에서 하나 고르기. Material ExposedDropdownMenu / Cupertino Picker / Fluent ComboBox |
 
-여기까지가 1.0입니다. 25개를 넘기지 않습니다.
+#### 15.2.1 선택기(picker)에 대한 주의
+
+날짜와 시간 선택기는 세 시스템에서 **겉모습만 다른 것이 아니라 상호작용 자체가 다릅니다.** Material은 달력 격자와 다이얼, Cupertino는 휠, Fluent는 달력 플라이아웃입니다. FR-14의 역할 기반 설계가 특히 중요한 자리입니다. 위젯은 **값과 범위와 변경 이벤트만** 내보내고, 어떤 방식으로 고르게 할지는 전적으로 디자인 시스템이 정합니다. Host가 "휠로 고르게 하라"고 지시할 수 있는 속성을 두면 안 됩니다.
+
+- 값은 에폭 기준 정수로 주고받습니다. 날짜는 `days: i64`(1970-01-01 기준), 시간은 `minutes: u32`(자정 기준). 고정 레이아웃을 유지하고 타임존 해석이 경계를 넘지 않습니다.
+- **타임존과 로케일은 Renderer가 소유합니다(D5).** 표시 형식, 주 시작 요일, 12/24시간제는 플랫폼 설정을 따릅니다. Host가 형식 문자열을 보내는 경로는 두지 않습니다. 보내면 플랫폼을 따라간다는 말이 거짓이 됩니다.
+- 범위 제한은 `min`과 `max`로 같은 단위로 보냅니다.
+
+여기까지가 1.0의 코어 어휘 29개입니다.
 
 #### 15.3 넣지 않는 것
 
@@ -374,7 +386,8 @@ M0의 위젯 9개는 데모를 굴리는 데 필요했던 만큼이지 설계된
 
 #### 15.4 수용 기준
 
-- 25개 위젯 각각이 세 디자인 시스템에서 렌더링되고, `DesignShowcase`에 나타납니다.
+- 29개 위젯 각각이 세 디자인 시스템에서 렌더링되고, `DesignShowcase`에 나타납니다.
+- `DatePicker`가 세 시스템에서 **서로 다른 고르기 방식**으로 나타납니다. 같은 모양을 세 번 그린 것이면 실패입니다.
 - 위젯을 추가해도 `DesignSystem` enum과 규칙 테이블 외에는 바뀌지 않습니다(FR-14.2 회귀 검사).
 - 각 위젯에 프로토콜 왕복 테스트가 있습니다(PR-4 벡터).
 
@@ -411,7 +424,7 @@ Renderer가 AOT 컴파일된 바이너리이므로 Host가 그리기 코드를 �
 
 #### 17.1 Canvas 위젯
 
-위젯 태그 `Canvas = 26`. 자식 노드 대신 드로잉 명령 목록을 갖습니다. 크기는 Modifier가 정하고, 좌표는 위젯 좌상단 기준 dp입니다.
+위젯 태그 `Canvas = 26`(FR-15.2에도 등재). 자식 노드 대신 드로잉 명령 목록을 갖습니다. 크기는 Modifier가 정하고, 좌표는 위젯 좌상단 기준 dp입니다.
 
 #### 17.2 드로잉 명령
 
