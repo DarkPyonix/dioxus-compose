@@ -1,5 +1,11 @@
 [workspace]
-members = ["dioxus-compose", "samples/calculator", "samples/notepad", "samples/todo"]
+members = [
+    "dioxus-compose",
+    "samples/calculator",
+    "samples/chat",
+    "samples/notepad",
+    "samples/todo",
+]
 resolver = "2"
 
 [workspace.package]
