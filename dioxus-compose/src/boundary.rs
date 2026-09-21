@@ -255,6 +255,11 @@ impl Host {
         self.dispatch(event)
     }
 
+    /// The batch arena, reported to the Renderer on every boundary call.
+    pub fn arena(&self) -> (*const u8, usize) {
+        self.renderer.arena()
+    }
+
     /// Answers with the whole tree, for a Renderer that no longer has a node table.
     ///
     /// The Host keeps no shadow of what it has already sent, so the only way to produce a
@@ -788,6 +793,18 @@ pub unsafe extern "C" fn dioxus_compose_host_release_batch(batch: *mut MutationB
             unsafe { batch.write(MutationBatch::default()) };
         }
     }));
+}
+
+/// The UI thread's batch arena.
+///
+/// Not a boundary entry point: it is crate-internal, and the generated Android shims use
+/// it to tell the Renderer where the arena is so it can map it once instead of per call.
+pub fn current_arena() -> (*const u8, usize) {
+    HOST.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map_or((std::ptr::null(), 0), Host::arena)
+    })
 }
 
 #[unsafe(no_mangle)]

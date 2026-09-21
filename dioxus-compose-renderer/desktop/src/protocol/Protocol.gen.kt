@@ -43,6 +43,14 @@ enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, 
 
 enum class MessageDuration { Short, Long }
 
+enum class LoopMode(val wire: Byte) {
+    /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
+    Renderer(0),
+
+    /** The platform owns the process and the loop. Android, iOS and the web. */
+    Platform(1),
+}
+
 sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
 
@@ -538,8 +546,13 @@ object Protocol {
         }
     }
 
-    /** Handshake payload the Renderer sends to dioxus_compose_host_init. */
-    fun handshake(out: ByteBuffer): Int {
+    /**
+     * Handshake payload the Renderer sends to dioxus_compose_host_init.
+     *
+     * `loopMode` says who owns the frame loop: the Renderer on desktop, the platform on
+     * Android, iOS and the web.
+     */
+    fun handshake(out: ByteBuffer, loopMode: LoopMode = LoopMode.Renderer): Int {
         val start = out.position()
         if (out.remaining() < 12) {
             throw ProtocolException("handshake output buffer is too small", 0)
@@ -549,7 +562,7 @@ object Protocol {
         try {
             out.putLong(SCHEMA_HASH)
             out.putShort(PROTOCOL_VERSION.toShort())
-            out.put(0.toByte()) // LoopMode.Renderer
+            out.put(loopMode.wire)
             out.put(0.toByte()) // Reserved for alignment.
             return out.position() - start
         } finally {

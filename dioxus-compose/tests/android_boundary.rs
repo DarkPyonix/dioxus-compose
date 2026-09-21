@@ -120,3 +120,22 @@ fn pr5_resync_answers_with_the_whole_tree() {
         "a resync batch has to create the tree, not diff it"
     );
 }
+
+/// A runtime that cannot read Host memory directly is given the arena once and reads the
+/// batch where it lies, so the batch has to be inside the arena the Host reports.
+#[test]
+fn pr4_the_batch_lies_inside_the_reported_arena() {
+    let _state = frame_state();
+    let mut host = Host::new(app);
+    let batch = host.rebuild().unwrap();
+    let (batch_start, batch_len) = (batch.as_ptr() as usize, batch.len());
+    let (base, capacity) = host.arena();
+
+    assert!(!base.is_null());
+    let base = base as usize;
+    assert!(batch_start >= base, "the batch starts before the arena");
+    assert!(
+        batch_start + batch_len <= base + capacity,
+        "the batch runs past the end of the arena"
+    );
+}

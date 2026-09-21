@@ -40,6 +40,20 @@ pub fn generate_kotlin() -> String {
         write_enum(&mut output, role.name, role.variants);
     }
 
+    // Who owns the frame loop. The value is one byte of the handshake, so the two sides
+    // have to agree on it before anything else is said.
+    output.push_str(
+        r#"enum class LoopMode(val wire: Byte) {
+    /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
+    Renderer(0),
+
+    /** The platform owns the process and the loop. Android, iOS and the web. */
+    Platform(1),
+}
+
+"#,
+    );
+
     // Colour crosses the boundary only as a Paint, so there is exactly one representation
     // of colour in the schema.
     output.push_str(
@@ -553,8 +567,13 @@ object Protocol {
         }
     }
 
-    /** Handshake payload the Renderer sends to dioxus_compose_host_init. */
-    fun handshake(out: ByteBuffer): Int {
+    /**
+     * Handshake payload the Renderer sends to dioxus_compose_host_init.
+     *
+     * `loopMode` says who owns the frame loop: the Renderer on desktop, the platform on
+     * Android, iOS and the web.
+     */
+    fun handshake(out: ByteBuffer, loopMode: LoopMode = LoopMode.Renderer): Int {
         val start = out.position()
         if (out.remaining() < 12) {
             throw ProtocolException("handshake output buffer is too small", 0)
@@ -564,7 +583,7 @@ object Protocol {
         try {
             out.putLong(SCHEMA_HASH)
             out.putShort(PROTOCOL_VERSION.toShort())
-            out.put(0.toByte()) // LoopMode.Renderer
+            out.put(loopMode.wire)
             out.put(0.toByte()) // Reserved for alignment.
             return out.position() - start
         } finally {

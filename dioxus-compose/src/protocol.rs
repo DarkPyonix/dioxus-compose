@@ -539,6 +539,16 @@ impl BatchEncoder {
         Ok(&self.arena)
     }
 
+    /// Where the arena a finished batch lives in starts, and how much of it is mapped.
+    ///
+    /// A runtime that cannot read the Host's memory directly wraps this range once and
+    /// keeps the view: every batch is a prefix of the arena, so it is read where it lies
+    /// and no byte is copied out. Growing the arena moves it, which is why the address is
+    /// reported again on every call rather than once at startup.
+    pub fn arena(&self) -> (*const u8, usize) {
+        (self.arena.as_ptr(), self.arena.capacity())
+    }
+
     pub fn capacity(&self) -> usize {
         self.records.capacity() + self.strings.capacity() + self.arena.capacity()
     }
