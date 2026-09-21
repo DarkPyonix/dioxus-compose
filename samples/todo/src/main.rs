@@ -301,13 +301,11 @@ fn app() -> Element {
                                 // protocol carries, and a swipe is not a gesture the
                                 // schema has.
                                 //
-                                // The entries are declared whether the menu is open or
-                                // not. Declaring them only while it is open would be
-                                // better, and it recurses until the stack overflows: a
-                                // `Menu` whose children are a conditional or a loop,
-                                // inside a `LazyColumn` item, does not terminate. Four
-                                // entries and an anchor per visible row is still a cost
-                                // that tracks the window rather than the list.
+                                // The entries exist only while the menu is open, so a
+                                // row that nobody has asked anything of costs one
+                                // control: the menu and the anchor it hangs off. Four
+                                // buttons per visible row were being built and laid out
+                                // for a popup that was not on screen.
                                 Menu {
                                     expanded: menu_open() == Some(task.id),
                                     on_dismiss: move |_| menu_open.set(None),
@@ -319,65 +317,67 @@ fn app() -> Element {
                                             on_click: move |_| menu_open.set(Some(task.id)),
                                         }
                                     },
-                                    Button {
-                                        text: "Edit",
-                                        variant: ButtonVariant::Text,
-                                        fill_max_width: true,
-                                        on_click: move |_| {
-                                            menu_open.set(None);
-                                            edit_draft.set(String::new());
-                                            editing.set(Some(task.id));
-                                        },
-                                    }
-                                    Button {
-                                        text: "Move up",
-                                        variant: ButtonVariant::Text,
-                                        fill_max_width: true,
-                                        enabled: previous.is_some(),
-                                        on_click: move |_| {
-                                            menu_open.set(None);
-                                            if let Some(above) = previous {
-                                                swap_tasks(index, above);
-                                            }
-                                        },
-                                    }
-                                    Button {
-                                        text: "Move down",
-                                        variant: ButtonVariant::Text,
-                                        fill_max_width: true,
-                                        enabled: next.is_some(),
-                                        on_click: move |_| {
-                                            menu_open.set(None);
-                                            if let Some(below) = next {
-                                                swap_tasks(index, below);
-                                            }
-                                        },
-                                    }
-                                    // Deleting is the one action here that throws work
-                                    // away without asking first, so it says what it did
-                                    // and offers the task back. The message is not a
-                                    // widget this code places: it is handed over once and
-                                    // the Renderer decides where it goes and how long it
-                                    // stays, which is why nothing here holds a timer.
-                                    Button {
-                                        text: "Delete",
-                                        variant: ButtonVariant::Text,
-                                        fill_max_width: true,
-                                        color: Paint::Role(ColorRole::Error),
-                                        on_click: move |_| {
-                                            menu_open.set(None);
-                                            let removed = tasks.write().remove(index);
-                                            store::save(&tasks.read());
-                                            let title = removed.title.clone();
-                                            Message::new(format!("Deleted \u{201c}{title}\u{201d}"))
-                                                .with_action("Undo", move |()| {
-                                                    let at = index.min(tasks.read().len());
-                                                    tasks.write().insert(at, removed.clone());
-                                                    store::save(&tasks.read());
-                                                })
-                                                .with_duration(MessageDuration::Long)
-                                                .show();
-                                        },
+                                    if menu_open() == Some(task.id) {
+                                        Button {
+                                            text: "Edit",
+                                            variant: ButtonVariant::Text,
+                                            fill_max_width: true,
+                                            on_click: move |_| {
+                                                menu_open.set(None);
+                                                edit_draft.set(String::new());
+                                                editing.set(Some(task.id));
+                                            },
+                                        }
+                                        Button {
+                                            text: "Move up",
+                                            variant: ButtonVariant::Text,
+                                            fill_max_width: true,
+                                            enabled: previous.is_some(),
+                                            on_click: move |_| {
+                                                menu_open.set(None);
+                                                if let Some(above) = previous {
+                                                    swap_tasks(index, above);
+                                                }
+                                            },
+                                        }
+                                        Button {
+                                            text: "Move down",
+                                            variant: ButtonVariant::Text,
+                                            fill_max_width: true,
+                                            enabled: next.is_some(),
+                                            on_click: move |_| {
+                                                menu_open.set(None);
+                                                if let Some(below) = next {
+                                                    swap_tasks(index, below);
+                                                }
+                                            },
+                                        }
+                                        // Deleting is the one action here that throws work
+                                        // away without asking first, so it says what it did
+                                        // and offers the task back. The message is not a
+                                        // widget this code places: it is handed over once and
+                                        // the Renderer decides where it goes and how long it
+                                        // stays, which is why nothing here holds a timer.
+                                        Button {
+                                            text: "Delete",
+                                            variant: ButtonVariant::Text,
+                                            fill_max_width: true,
+                                            color: Paint::Role(ColorRole::Error),
+                                            on_click: move |_| {
+                                                menu_open.set(None);
+                                                let removed = tasks.write().remove(index);
+                                                store::save(&tasks.read());
+                                                let title = removed.title.clone();
+                                                Message::new(format!("Deleted \u{201c}{title}\u{201d}"))
+                                                    .with_action("Undo", move |()| {
+                                                        let at = index.min(tasks.read().len());
+                                                        tasks.write().insert(at, removed.clone());
+                                                        store::save(&tasks.read());
+                                                    })
+                                                    .with_duration(MessageDuration::Long)
+                                                    .show();
+                                            },
+                                        }
                                     }
                                 }
                             }
@@ -550,6 +550,10 @@ mod tests {
     /// A saved list large enough that a window of twenty is a small fraction of it.
     const SAVED_TASKS: usize = 5_000;
     const WINDOW: usize = 20;
+
+    /// What a row's action menu offers, and the glyph on the control that opens it.
+    const ACTIONS: [&str; 4] = ["Edit", "Move up", "Move down", "Delete"];
+    const ACTIONS_ANCHOR: &str = "\u{22ef}";
 
     /// Point the store at a generated file, once for the whole test binary. Tests run
     /// concurrently in one process, so the variable is written before any of them reads it
@@ -764,6 +768,19 @@ mod tests {
                 handler,
                 event: Vec::new(),
             }
+        }
+
+        /// Opens the action menu on the first visible row, which is what builds its
+        /// entries, and says which control it hangs off.
+        fn open_first_menu(&mut self) -> u32 {
+            let anchor = self
+                .mock
+                .nodes_with_text(ACTIONS_ANCHOR)
+                .into_iter()
+                .min()
+                .expect("no visible row carried an action menu");
+            self.click(anchor);
+            anchor
         }
 
         /// Presses a node, the way the Renderer reports a press, and returns what the
@@ -1066,17 +1083,29 @@ mod tests {
             WINDOW,
             "each visible row should carry exactly one action menu"
         );
-        assert_eq!(screen.mock.nodes_with_text("\u{22ef}").len(), WINDOW);
-        for action in ["Edit", "Move up", "Move down", "Delete"] {
-            let nodes = screen.mock.nodes_with_text(action);
-            assert_eq!(nodes.len(), WINDOW, "{action} is not once per visible row");
-            for node in nodes {
-                assert!(
-                    screen.mock.is_inside(node, WidgetKind::Menu),
-                    "{action} is on the face of a row rather than inside its menu"
-                );
-            }
+        assert_eq!(screen.mock.nodes_with_text(ACTIONS_ANCHOR).len(), WINDOW);
+        for action in ACTIONS {
+            assert!(
+                screen.mock.nodes_with_text(action).is_empty(),
+                "{action} was built for a menu nobody has opened"
+            );
         }
+
+        let closed = screen.mock.node_count();
+        screen.open_first_menu();
+        for action in ACTIONS {
+            let nodes = screen.mock.nodes_with_text(action);
+            assert_eq!(nodes.len(), 1, "{action} is not once for the one open menu");
+            assert!(
+                screen.mock.is_inside(nodes[0], WidgetKind::Menu),
+                "{action} is on the face of a row rather than inside its menu"
+            );
+        }
+        assert_eq!(
+            screen.mock.node_count(),
+            closed + ACTIONS.len(),
+            "opening one menu cost more than its own entries"
+        );
     }
 
     /// The three filters are three destinations, and this screen never asks how wide the
@@ -1103,13 +1132,16 @@ mod tests {
     fn fr21_deleting_a_task_says_so_and_offers_it_back() {
         let mut screen = Screen::new();
         screen.request_range(0, WINDOW);
+        // Deleting is behind the row's menu, and the entries do not exist until it is
+        // opened.
+        screen.open_first_menu();
         let before = screen.mock.node_count();
         let delete = screen
             .mock
             .nodes_with_text("Delete")
             .into_iter()
             .min()
-            .expect("no row offered a Delete");
+            .expect("the open menu offered no Delete");
 
         let said = screen.click(delete);
         assert_eq!(screen.mock.item_count, Some(SAVED_TASKS as i64 - 1));

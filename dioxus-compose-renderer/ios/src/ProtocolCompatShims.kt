@@ -25,9 +25,12 @@ internal fun String.toByteArray(charset: Charset): ByteArray {
  * name is declared here, in the codec's own package, where it is found ahead of the
  * `kotlin.String` factories.
  *
- * Decoding is strict: malformed UTF-8 throws rather than turning into replacement
- * characters, because a bad string means the two sides disagree about the arena and the
- * Renderer has to say so rather than draw nonsense.
+ * Decoding is strict even though the codec has already checked the bytes are UTF-8 before
+ * it gets here. Replacement characters are the one answer this must never give: a bad
+ * string means the two sides disagree about the arena, and the Renderer has to say so
+ * rather than draw nonsense. Strict is what the desktop path is too, by having nothing
+ * left to replace, so a validator that ever let something through would fail here rather
+ * than reach the screen.
  */
 @Suppress("FunctionName")
 internal fun String(bytes: ByteArray, offset: Int, length: Int, charset: Charset): kotlin.String {
