@@ -43,10 +43,11 @@ on:
   # main has moved, not before. The release workflow builds the renderer again for the
   # artifacts, so nothing is published from a tree that cannot produce one.
   # A version tag also runs this, and then the release jobs at the bottom attach what it
-  # built. There is no path filter, and there cannot be one: a path filter applies to tag
-  # pushes too, so a release whose tagged commit happened not to touch the renderer would
-  # skip its own build and publish nothing. Builds on main pushes that changed nothing in
-  # the renderer are the price of that.
+  # built. There is no path filter on the trigger, and there cannot be one: a path filter
+  # applies to tag pushes too, so a release whose tagged commit happened not to touch the
+  # renderer would skip its own build and publish nothing. The `changed` job below does the
+  # same filtering where it can tell a tag from a branch, so main pushes that left the
+  # renderer alone cost one cheap job instead of four long ones.
   push:
     branches: [main]
     tags: ['v*']
@@ -63,11 +64,51 @@ permissions:
   contents: read
 
 jobs:
+  # main moves on every publication, not only on releases, so without this every push of
+  # unrelated work would start four native-image builds. A tag always builds: that is the
+  # release, and it must produce artifacts whatever its commit happened to touch.
+  changed:
+    name: Is there anything to build
+    runs-on: ubuntu-latest
+    outputs:
+      renderer: ${{ steps.check.outputs.renderer }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit and its first parent, which is the previous main, so the diff
+          # is everything the publication brought in rather than one commit of it.
+          fetch-depth: 2
+      - id: check
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            echo "a tag always builds"
+            echo "renderer=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # The nightly run exists to catch toolchain drift, which by definition changes
+          # nothing in this repository, and a manual run was asked for on purpose.
+          if [[ "$GITHUB_EVENT_NAME" != "push" ]]; then
+            echo "$GITHUB_EVENT_NAME always builds"
+            echo "renderer=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only HEAD^ HEAD |
+              grep -qE '^(dioxus-compose-renderer/|scripts/install-nik\.sh|\.github/workflows/native-renderer\.yml)'; then
+            echo "the renderer changed"
+            echo "renderer=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "nothing under the renderer changed"
+            echo "renderer=false" >> "$GITHUB_OUTPUT"
+          fi
+
   # Runs on every push to develop and main, and nightly. Nobody here owns a Windows
   # machine, so this job *is* the Windows verification: if it goes red, Windows is
   # broken. It proves build, startup, render, clean close and exit 0. It cannot prove
   # mouse input, because a hosted runner has no one to click (see SPEC PR-8).
   windows:
+    needs: changed
+    if: needs.changed.outputs.renderer == 'true'
     name: Windows x64 native-image build and smoke test
     runs-on: windows-2022
     timeout-minutes: 90
@@ -128,6 +169,8 @@ jobs:
           retention-days: 7
 
   build:
+    needs: changed
+    if: needs.changed.outputs.renderer == 'true'
     name: macOS arm64 native-image build and smoke test
     # macos-latest is Apple silicon; the renderer's AWT workarounds are
     # arm64 macOS specific (INTENT D9-macOS).
@@ -224,6 +267,8 @@ jobs:
   # builds and starts the renderer under Xvfb; a headless runner cannot judge what was
   # drawn, so rendering quality on Linux stays unverified until a human looks at it.
   linux:
+    needs: changed
+    if: needs.changed.outputs.renderer == 'true'
     name: Linux x64 native-image build and headless smoke test
     runs-on: ubuntu-24.04
     timeout-minutes: 90
@@ -313,6 +358,8 @@ jobs:
   # runs the *desktop* C smoke host against the simulator archive, which is what makes
   # it evidence for PR-2: one unmodified host, two renderers, one ABI.
   ios:
+    needs: changed
+    if: needs.changed.outputs.renderer == 'true'
     name: iOS build and simulator smoke test
     # macos-26, not macos-latest. Compose Multiplatform's iOS artifacts carry
     # precompiled Objective-C objects built against the iOS 26 SDK, and one of them
@@ -366,7 +413,7 @@ jobs:
   # never be made to work.
   release:
     name: Draft the GitHub Release
-    needs: [build, windows, linux]
+    needs: [changed, build, windows, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
