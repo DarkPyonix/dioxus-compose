@@ -93,14 +93,15 @@ object LiquidGlass {
     /**
      * The tint of the glass itself, before anything shows through it.
      *
-     * White in light, and a grey clearly lighter than the darkest page in dark. The tint
-     * has to differ from the background it will usually sit over, or the material has
-     * nothing to say: glass reads as glass because it is lighter than what is behind it
-     * and because the rim catches light, and a tint the colour of the page cancels the
-     * first of those.
+     * White in light, and in dark a grey lighter than any page the surface can land on
+     * and than any fill that can land on the surface. The tint has to differ from both,
+     * or the material has nothing to say: glass reads as glass because it is lighter than
+     * what is behind it and because the rim catches light, and a tint the colour of the
+     * page cancels the first of those. The dark value was two levels from the secondary
+     * fill grey once, and a tinted button on a bar disappeared into the bar.
      */
     val LIGHT_TINT: Color = Color(0xFFFFFFFF)
-    val DARK_TINT: Color = Color(0xFF2C2C30)
+    val DARK_TINT: Color = Color(0xFF3A3A3C)
 
     /**
      * The ratio the opaque fallback is held to: WCAG 2.2 AA for body text.

@@ -13,6 +13,7 @@ import dioxus.compose.design.HostPlatform
 import dioxus.compose.design.LiquidGlass
 import dioxus.compose.design.SurfaceMaterial
 import dioxus.compose.design.adaptiveSystem
+import dioxus.compose.design.compositeOver
 import dioxus.compose.design.concentricRadius
 import dioxus.compose.design.contrastRatio
 import dioxus.compose.design.relativeLuminance
@@ -20,6 +21,7 @@ import dioxus.compose.design.drawsAsGlass
 import dioxus.compose.design.glassBlurRadius
 import dioxus.compose.design.glassFill
 import dioxus.compose.design.resolveTheme
+import dioxus.compose.protocol.ButtonVariant
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
@@ -39,6 +41,15 @@ import kotlin.test.assertTrue
  * that reduced transparency reaches both the colour and the blur pass, and that an inner
  * corner is cut concentric with its container.
  */
+/**
+ * The smallest difference in levels that still reads as a separate surface.
+ *
+ * Six out of 255 is not a contrast guarantee for text, and is not meant to be. It is the
+ * point below which a fill stops being a fill: two levels is what the vanishing tinted
+ * button measured, and nobody could see it.
+ */
+private const val MIN_FILL_STEP = 6
+
 class LiquidGlassTest {
 
     private fun appleTheme(dark: Boolean, sizeClass: WindowSizeClass) = resolveTheme(
@@ -199,6 +210,49 @@ class LiquidGlassTest {
         assertTrue(bounds.right in 199f..200f)
         assertTrue(bounds.bottom in 199f..200f)
     }
+
+    /**
+     * A tinted button has to be a step away from whatever it lands on: the page, a panel,
+     * or the bar. A stored grey cannot promise that. The secondary fill and the tint of a
+     * dark bar are neighbours, so a tinted button on a toolbar came out the colour of the
+     * toolbar and the control simply was not there.
+     */
+    @Test
+    fun fr14_2_a_tinted_button_is_visible_on_everything_it_can_land_on() {
+        listOf(true, false).forEach { dark ->
+            listOf(WindowSizeClass.Compact, WindowSizeClass.Expanded).forEach { sizeClass ->
+                val theme = appleTheme(dark, sizeClass)
+                val fill = theme.rules.button(ButtonVariant.Tonal, theme).container
+                val backdrops = mapOf(
+                    "the page" to theme.color(ColorRole.Background),
+                    "a panel" to theme.color(ColorRole.Surface),
+                    "the bar" to barFill(theme),
+                )
+                backdrops.forEach { (name, backdrop) ->
+                    val drawn = compositeOver(fill, backdrop)
+                    assertTrue(
+                        channelDistance(drawn, backdrop) >= MIN_FILL_STEP,
+                        "a tinted button on $name is ${channelDistance(drawn, backdrop)} levels " +
+                            "from it (dark=$dark, $sizeClass), which is not a control anyone can see",
+                    )
+                }
+            }
+        }
+    }
+
+    /** The colour a top app bar actually draws once its glass is composited on the page. */
+    private fun barFill(theme: dioxus.compose.design.ResolvedTheme): Color {
+        val material = requireNotNull(theme.rules.container(ContainerRole.TopAppBar, theme).material)
+        val glass = glassFill(material, reduceTransparency = false, blurAvailable = true)
+        return compositeOver(glass, theme.color(ColorRole.Background))
+    }
+
+    /** How far apart two colours are on their furthest channel, in levels out of 255. */
+    private fun channelDistance(a: Color, b: Color): Int = maxOf(
+        kotlin.math.abs(a.red - b.red),
+        kotlin.math.abs(a.green - b.green),
+        kotlin.math.abs(a.blue - b.blue),
+    ).let { (it * 255f).toInt() }
 
     /**
      * The page is the one colour Apple specifies twice, so it is the one colour the

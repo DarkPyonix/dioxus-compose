@@ -349,11 +349,15 @@ internal object LiquidGlassRules : ComponentRules {
                 content = theme.color(ColorRole.OnPrimary),
             )
 
-            // A glass button: the surface tint rather than a solid grey, with the lit edge
-            // that tells it apart from a flat chip.
+            // A glass button: a translucent fill rather than a solid grey, so it is
+            // always a step away from whatever it sits on. A stored grey cannot be: the
+            // secondary fill and the tint of the bar are neighbours, so a tinted button
+            // on a toolbar came out the colour of the toolbar and vanished. Apple's own
+            // fill colours are defined this way too, dark in light mode and light in
+            // dark, which is why the direction flips with the scheme.
             ButtonVariant.Tonal -> base.copy(
-                container = theme.color(ColorRole.SurfaceVariant),
-                pressedContainer = theme.color(ColorRole.OutlineVariant),
+                container = tintedFill(theme.dark, TONAL_ALPHA),
+                pressedContainer = tintedFill(theme.dark, TONAL_PRESSED_ALPHA),
                 content = theme.color(ColorRole.Primary),
             )
 
@@ -493,10 +497,24 @@ internal object LiquidGlassRules : ComponentRules {
     )
 
     /**
+     * A fill that lightens or darkens whatever it lands on, rather than replacing it.
+     *
+     * Light mode fills are translucent black and dark mode fills are translucent white,
+     * which is how Apple defines them and the reason a control keeps its separation over
+     * a page, over a panel and over a bar without any of the three being named here.
+     */
+    private fun tintedFill(dark: Boolean, alpha: Float): Color =
+        if (dark) Color.White.copy(alpha = alpha) else Color.Black.copy(alpha = alpha)
+
+    /**
      * systemGray6 in dark: the darkest of Apple's greys that is not black, and the tone a
      * macOS window is. Far enough from the 0x1c1c1e of a panel that the panel has an edge.
      */
     private val DESKTOP_PAGE_DARK = Color(0xFF2C2C2E)
+
+    /** How far a tinted button moves what is under it, resting and pressed. */
+    private const val TONAL_ALPHA = 0.08f
+    private const val TONAL_PRESSED_ALPHA = 0.16f
 
     private const val SCRIM_ALPHA = 0.4f
     private const val PRESSED_ALPHA = 0.6f
