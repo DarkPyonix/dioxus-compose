@@ -133,10 +133,22 @@ fn app() -> Element {
                 fill_max_width: true,
                 fill_max_height: true,
                 alignment: Alignment::TopCenter,
+            // The thread is a reading surface, and the incoming bubble is a fill on it.
+            //
+            // Separation by fill was the right call and the wrong page to do it on. The
+            // page was the grouped background and the bubble was the quiet fill, which in
+            // Cupertino is 0xe9e9eb on 0xf2f2f7: enough apart to pass a contrast check and
+            // not enough to see. Position cannot carry it on its own either, because a
+            // left-aligned run of unfilled text beside a filled run of the user's reads as
+            // one speaker with a highlighter. So the fill stays and the page moves: a
+            // conversation is something you read, the reading surface is `Surface`, and
+            // the quiet fill is guaranteed to be visible against it. That is what the
+            // three roles are for.
             Column {
                 fill_max_width: measure.is_none(),
                 width: measure,
                 fill_max_height: true,
+                background: Paint::Role(ColorRole::Surface),
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Md,
 
@@ -225,8 +237,16 @@ fn app() -> Element {
                 // The composer, grouped so it reads as one control at the foot of the
                 // conversation rather than as a field and a button that happen to be
                 // side by side.
+                //
+                // It is drawn with an edge rather than with a fill, because the thread it
+                // sits at the foot of is the reading surface. A filled panel on a reading
+                // surface would either match the page, which is nothing, or match the
+                // incoming bubble, which would make the place you type look like something
+                // the assistant said.
                 Surface {
                     fill_max_width: true,
+                    border_width: 1.0,
+                    border_color: Paint::Role(ColorRole::Outline),
                     Row {
                         fill_max_width: true,
                         space_role: SpaceRole::Sm,
