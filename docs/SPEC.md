@@ -205,6 +205,14 @@ Modifier 태그(기존 `Empty=0`~`Clickable=8` 뒤에 덧붙입니다):
 
 Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=13, FontSize=14, FontWeight=15, LineHeight=16, LetterSpacing=17, Color=18, TextAlign=19, MaxLines=20, Overflow=21, Arrangement=22, Spacing=23, SpaceRole=24, Alignment=25, Variant=26`.
 
+#### 13.9 파괴적 동작과 구분선
+목록과 폼을 실제로 그려 보면 13.1~13.8 어휘로는 두 가지를 말할 수 없습니다. 둘 다 새 위젯이나 새 태그 없이 해결합니다.
+
+- **파괴적 동작**: 삭제 버튼은 세 시스템 모두에서 "평범한 버튼인데 라벨만 경고색"입니다. `ButtonVariant`를 하나 더 늘리는 대신, `Button`이 이미 있는 `Color`(태그 18) 속성을 받습니다. 노드가 색을 지정하면 그 값이 variant가 정한 라벨 색을 덮고, 지정하지 않으면 지금까지와 같습니다. 보내는 것은 여전히 `Paint::Role(ColorRole::Error)`이므로 실제 색조는 디자인 시스템이 정합니다.
+  - 수용 기준: `fr13_button_label_colour_is_sent_as_a_role`.
+- **구분선**: 묶인 목록은 행과 행 사이를 1dp 하이라인으로 나눕니다(HIG의 그룹 목록, Material의 Divider, Fluent의 층 스트로크). 두께는 역할로 표현할 수 없는 상수이므로 애플리케이션 코드가 아니라 라이브러리의 `Separator`가 들고 있습니다. 색은 `OutlineVariant`이고, 그리는 것은 `Box` 하나라서 위젯 태그가 늘지 않습니다.
+  - 수용 기준: `fr13_separator_is_a_hairline_filled_with_the_quiet_edge`.
+
 ### FR-14 디자인 시스템과 테마 모드 (`Agreed`)
 디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다.
 
