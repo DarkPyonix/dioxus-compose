@@ -2,9 +2,11 @@
 //! restart.
 //!
 //! The list is drawn with `LazyColumn`, so the number of widgets that exist is
-//! proportional to what is on screen rather than to the number of tasks. "Add 5000" is
-//! there to make that claim checkable: a list that only ever holds a dozen items never
-//! exercises the windowing protocol at all.
+//! proportional to what is on screen rather than to the number of tasks. Filling it with
+//! five thousand rows is how that claim becomes something a person can check, and the
+//! button that does it lives behind "About this sample" rather than on the list: a task
+//! list does not have a button that invents five thousand tasks, and putting one on the
+//! main surface says this is a demonstration of a list rather than a list.
 //!
 //! Every task carries an id that never changes, and that id is the list key. Editing one
 //! row therefore rebuilds that row and leaves its neighbours alone.
@@ -16,6 +18,97 @@ use store::{Filter, Task};
 
 /// Enough rows that the window is a small fraction of the list.
 const BULK_COUNT: usize = 5_000;
+
+/// What opens the sheet, and what the sheet is called.
+const ABOUT_LABEL: &str = "About";
+
+/// The bar across the top of the window, with its contents held to the list's measure.
+///
+/// A bar spans its container because it belongs to the window. Its contents belong to the
+/// list, and a title that starts at the window's edge while the list it counts starts
+/// forty dp further in is a window whose two halves disagree about where the left side is.
+///
+/// `done` and `total` are the second thing this bar does: a list of tasks says how much of
+/// itself is finished, and a number plus a bar says it twice, once for reading and once
+/// for glancing.
+fn list_bar(measure: Option<f32>, done: usize, total: usize, children: Element) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            TopAppBar {
+                fill_max_width: true,
+                dioxus_compose::Box {
+                    weight: 1.0,
+                    alignment: Alignment::Center,
+                    Row {
+                        width: measure,
+                        fill_max_width: measure.is_none(),
+                        padding_role: measure.map(|_| SpaceRole::Md),
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        {children}
+                    }
+                }
+            }
+            // An empty list has no progress to report, and a bar sitting at zero on a
+            // screen with nothing on it reads as something that failed to load.
+            if total > 0 {
+                ProgressIndicator { value: done as f32 / total as f32 }
+            }
+        }
+    }
+}
+
+/// What this sample is and the one control that only a sample has.
+///
+/// The button used to sit under the list, in the caption ink, with a sentence beside it
+/// explaining that it was a demonstration control. That is an apology printed on the
+/// primary surface. Behind a sheet it is simply somewhere else, and the list is a list.
+fn about_panel(total: usize, fill: EventHandler<()>, close: EventHandler<()>) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            space_role: SpaceRole::Md,
+            Row {
+                fill_max_width: true,
+                alignment: Alignment::CenterStart,
+                Text { text: "About this sample", type_role: TypeRole::Subtitle, weight: 1.0 }
+                // "Close" rather than "Done", which is one of this screen's three
+                // filters. Two things a sentence apart should not have one word.
+                Button {
+                    text: "Close",
+                    variant: ButtonVariant::Filled,
+                    on_click: move |_| close.call(()),
+                }
+            }
+            Separator {}
+            Text {
+                text: "The list windows its rows: the widgets that exist are the ones on \
+                       screen, not the ones in the list. A dozen tasks never exercises \
+                       that, so this fills the list with enough rows that the window is a \
+                       small fraction of it.",
+                type_role: TypeRole::Body,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            Row {
+                fill_max_width: true,
+                space_role: SpaceRole::Sm,
+                alignment: Alignment::CenterStart,
+                Text {
+                    text: "{total} tasks now",
+                    type_role: TypeRole::Label,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    weight: 1.0,
+                }
+                Button {
+                    text: "Add {BULK_COUNT} tasks",
+                    variant: ButtonVariant::Tonal,
+                    on_click: move |_| fill.call(()),
+                }
+            }
+        }
+    }
+}
 
 fn app() -> Element {
     let window = use_window_size();
@@ -38,6 +131,7 @@ fn app() -> Element {
             .unwrap_or(1)
     });
     let mut filter = use_signal(|| Filter::All);
+    let mut about_open = use_signal(|| false);
 
     // What the top field currently holds. The field is uncontrolled, so this is a copy the
     // field pushes up, not the field's value being driven from here.
@@ -147,22 +241,18 @@ fn app() -> Element {
                         fill_max_width: true,
                         Row {
                             fill_max_width: true,
-                            padding_role: SpaceRole::Xs,
-                            space_role: SpaceRole::Xs,
+                            padding_role: SpaceRole::Sm,
+                            space_role: SpaceRole::Sm,
                             alignment: Alignment::CenterStart,
-                            // A ballot box reads as something you can tick. Ticking
-                            // it colours the mark rather than putting a container
-                            // behind it: a filled box around one row's first
-                            // column would weigh more than the row it belongs to.
-                            Button {
-                                text: if task.done { "\u{2611}" } else { "\u{2610}" },
-                                variant: ButtonVariant::Text,
-                                color: if task.done {
-                                    Paint::Role(ColorRole::Primary)
-                                } else {
-                                    Paint::Role(ColorRole::Outline)
-                                },
-                                on_click: move |_| {
+                            // A real checkbox, not a ballot box character in a text
+                            // button. The glyph was the same shape everywhere, sized by
+                            // the type ladder rather than by the control ladder, with no
+                            // press state, no transition and nothing for a screen reader
+                            // to call a checkbox. This one is the design system's, and it
+                            // announces itself as a checkbox that is or is not ticked.
+                            Checkbox {
+                                checked: task.done,
+                                on_change: move |_| {
                                     tasks.write()[index].done = !task.done;
                                     store::save(&tasks.read());
                                 },
@@ -326,10 +416,7 @@ fn app() -> Element {
             fill_max_width: true,
             fill_max_height: true,
 
-            // The count belongs beside the title, which is where a list says how much of
-            // itself is left. The title takes the weight and pushes it to the far end.
-            TopAppBar {
-                fill_max_width: true,
+            {list_bar(measure, total - remaining, total, rsx! {
                 Text { text: "Tasks", type_role: TypeRole::Title, weight: 1.0 }
                 Text {
                     text: "{remaining} of {total} remaining",
@@ -337,17 +424,33 @@ fn app() -> Element {
                     color: Paint::Role(ColorRole::OnSurfaceVariant),
                 }
                 // Clearing throws work away, so it says so in the same colour a row's own
-                // Delete uses. It sits beside the count because it is about the count.
+                // Delete uses, and offers the same way back.
                 Button {
                     text: if stacked { "Clear" } else { "Clear completed" },
                     variant: ButtonVariant::Text,
                     color: Paint::Role(ColorRole::Error),
+                    enabled: total > remaining,
                     on_click: move |_| {
+                        let before = tasks();
+                        let cleared = before.len() - remaining;
                         tasks.write().retain(|task| !task.done);
                         store::save(&tasks.read());
+                        let plural = if cleared == 1 { "task" } else { "tasks" };
+                        Message::new(format!("Cleared {cleared} completed {plural}"))
+                            .with_action("Undo", move |()| {
+                                tasks.set(before.clone());
+                                store::save(&tasks.read());
+                            })
+                            .with_duration(MessageDuration::Long)
+                            .show();
                     },
                 }
-            }
+                Button {
+                    text: ABOUT_LABEL,
+                    variant: ButtonVariant::Text,
+                    on_click: move |_| about_open.set(true),
+                }
+            })}
 
             dioxus_compose::Box {
                 fill_max_width: true,
@@ -357,7 +460,10 @@ fn app() -> Element {
                 fill_max_width: measure.is_none(),
                 width: measure,
                 fill_max_height: true,
-                padding_role: SpaceRole::Lg,
+                // The medium step, because that is what the bar insets its own contents
+                // by. Anything else and the title and the list under it start at two
+                // different places.
+                padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Md,
 
                 // The composer: one grouped strip whose field grows with the window, so
@@ -382,60 +488,38 @@ fn app() -> Element {
                     }
                 }
 
-                // List and detail. Narrower than a desktop window the list is the whole
-                // width and the editor is the row itself.
                 {list}
-
-                // The demo footer. Filling the list with five thousand rows is not
-                // something a task list does, it is how this sample makes its claim about
-                // windowing checkable, so it says that and sits below the list in the
-                // caption ink. It used to share the filter strip with "Clear completed",
-                // where a tonal container beside bare red text read as two peers styled by
-                // accident rather than as an action and a demo control.
-                Row {
-                    fill_max_width: true,
-                    space_role: SpaceRole::Sm,
-                    alignment: Alignment::CenterStart,
-                    if !stacked {
-                        Text {
-                            text: "Sample: the list windows its rows, so only what is on screen exists.",
-                            weight: 1.0,
-                            type_role: TypeRole::Caption,
-                            color: Paint::Role(ColorRole::OnSurfaceVariant),
-                            max_lines: 1,
-                            overflow: TextOverflow::Ellipsis,
-                        }
-                    } else {
-                        Spacer { weight: 1.0 }
-                    }
-                    Button {
-                        text: if stacked {
-                            format!("+{BULK_COUNT}")
-                        } else {
-                            format!("Add {BULK_COUNT} tasks")
-                        },
-                        variant: ButtonVariant::Text,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                        on_click: move |_| {
-                            let start = next_id();
-                            {
-                                let mut list = tasks.write();
-                                list.reserve(BULK_COUNT);
-                                for offset in 0..BULK_COUNT as u64 {
-                                    let id = start + offset;
-                                    list.push(Task {
-                                        id,
-                                        title: format!("Generated task {id}"),
-                                        done: offset % 3 == 0,
-                                    });
-                                }
-                            }
-                            next_id.set(start + BULK_COUNT as u64);
-                            store::save(&tasks.read());
-                        },
-                    }
-                }
             }
+            }
+
+            // What this sample is, and the one control that belongs to the sample rather
+            // than to the task list.
+            Sheet {
+                open: about_open(),
+                on_dismiss: move |_| about_open.set(false),
+                fill_max_width: true,
+                {about_panel(
+                    total,
+                    EventHandler::new(move |()| {
+                        let start = next_id();
+                        {
+                            let mut list = tasks.write();
+                            list.reserve(BULK_COUNT);
+                            for offset in 0..BULK_COUNT as u64 {
+                                let id = start + offset;
+                                list.push(Task {
+                                    id,
+                                    title: format!("Generated task {id}"),
+                                    done: offset % 3 == 0,
+                                });
+                            }
+                        }
+                        next_id.set(start + BULK_COUNT as u64);
+                        store::save(&tasks.read());
+                        about_open.set(false);
+                    }),
+                    EventHandler::new(move |()| about_open.set(false)),
+                )}
             }
         }
         }
@@ -889,32 +973,81 @@ mod tests {
         widths
     }
 
-    /// A phone shortens the worded actions, because at 400dp the words leave the title no
-    /// room, and drops the line that explains the demo control. A desktop window stops the
-    /// screen widening and centres it, because a one line item read across 1200dp cannot
-    /// be scanned.
+    /// A phone shortens the worded action, because at 420dp the words leave the title no
+    /// room. A desktop window stops the screen widening and centres it, because a one line
+    /// item read across 1200dp cannot be scanned.
     ///
-    /// The row's own actions are not in this any more: they are entries in the row's menu,
-    /// so they are read at their full length at every width and never crowd the title.
+    /// The row's own actions are not in this: they are entries in the row's menu, so they
+    /// are read at their full length at every width and never crowd the title.
     #[test]
     fn fr20_the_screen_shortens_on_a_phone_and_stops_widening_on_a_desktop() {
         let narrow = texts_at(420.0);
         assert!(narrow.iter().any(|text| text == "Clear"), "{narrow:?}");
         assert!(!narrow.iter().any(|text| text == "Clear completed"));
-        assert!(narrow.iter().any(|text| text == "+5000"));
 
         let wide = texts_at(1200.0);
         assert!(
             wide.iter().any(|text| text == "Clear completed"),
             "{wide:?}"
         );
-        assert!(wide.iter().any(|text| text == "Add 5000 tasks"));
 
         assert!(widths_at(420.0).is_empty());
         assert!(
             widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
             "the screen did not take a measure"
         );
+    }
+
+    /// The bar's contents and the list are held to the same measure, so the title starts
+    /// where the list starts.
+    #[test]
+    fn fr20_the_bar_holds_its_contents_to_the_same_measure_as_the_list() {
+        let measure = dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP;
+        let widths = widths_at(1200.0);
+        assert_eq!(
+            widths.iter().filter(|width| **width == measure).count(),
+            2,
+            "the bar and the list should both be the measure: {widths:?}"
+        );
+    }
+
+    /// The only control that invents five thousand tasks is behind the sheet that says
+    /// what this sample is. A task list does not have one, and one on the main surface
+    /// says this is a demonstration of a list rather than a list.
+    #[test]
+    fn fr21_the_bulk_fill_is_behind_the_about_sheet_rather_than_on_the_list() {
+        let screen = Screen::new();
+        assert_eq!(screen.mock.count_of(WidgetKind::Sheet), 1);
+
+        let fill = screen
+            .mock
+            .nodes_with_text(&format!("Add {BULK_COUNT} tasks"));
+        assert_eq!(fill.len(), 1, "the bulk fill control is not on the screen");
+        assert!(
+            screen.mock.is_inside(fill[0], WidgetKind::Sheet),
+            "the bulk fill control is on the list rather than inside the sheet"
+        );
+    }
+
+    /// A row ticks with the design system's own checkbox rather than with a ballot box
+    /// character in a text button. The glyph was one shape everywhere, sized by the type
+    /// ladder rather than by the control ladder, and announced itself to a screen reader
+    /// as a button whose label was a box.
+    #[test]
+    fn fr15_2_4_a_row_is_ticked_with_a_checkbox() {
+        let mut screen = Screen::new();
+        screen.request_range(0, WINDOW);
+        assert_eq!(
+            screen.mock.count_of(WidgetKind::Checkbox),
+            WINDOW,
+            "each visible row should carry exactly one checkbox"
+        );
+        for glyph in ["\u{2610}", "\u{2611}"] {
+            assert!(
+                screen.mock.nodes_with_text(glyph).is_empty(),
+                "a ballot box character is still standing in for a checkbox"
+            );
+        }
     }
 
     /// A row carries one action control, and what it can do sits behind it.

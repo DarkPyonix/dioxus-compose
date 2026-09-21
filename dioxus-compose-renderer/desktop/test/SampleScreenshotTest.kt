@@ -8,7 +8,6 @@ import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -73,7 +72,8 @@ class SampleScreenshotTest {
             .orEmpty()
         check(frames.isNotEmpty()) {
             "${directory.absolutePath} holds no recordings. Write them first with " +
-                "`DXC_FRAME_DIR=${directory.absolutePath} cargo test --workspace fr14_`."
+                "`DXC_FRAME_DIR=${directory.absolutePath} cargo test --workspace " +
+                "is_recorded_under_every_design_system`."
         }
         frames.forEach { frame ->
             val mutations = mutableListOf<Mutation>()
@@ -104,7 +104,10 @@ class SampleScreenshotTest {
                     }
                 }
                 waitForIdle()
-                val bitmap = onRoot().captureToImage().asSkiaBitmap()
+                // The whole scene rather than a root. A sheet is a Popup, which is a root
+                // of its own, so a recording with one open has two and asking for "the"
+                // root fails. The scene is what a person would have seen.
+                val bitmap = captureToImage().asSkiaBitmap()
                 check(bitmap.width == widthDp && bitmap.height == heightDp) {
                     "${frame.name} was drawn ${bitmap.width} by ${bitmap.height} instead of " +
                         "$widthDp by $heightDp, so the picture is not of the window the Host " +

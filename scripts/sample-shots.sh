@@ -24,7 +24,8 @@ filter="${2:-}"
 mkdir -p "$directory"
 rm -f "$directory"/*.bin "$directory"/*.png
 
-DXC_FRAME_DIR="$directory" cargo test --workspace fr14_ --quiet
+# Every recording test says so in its name, whichever requirement it is named after.
+DXC_FRAME_DIR="$directory" cargo test --workspace is_recorded_under_every_design_system --quiet
 cd "$repo_root/dioxus-compose-renderer"
 DXC_FRAME_DIR="$directory" DXC_FRAME_FILTER="$filter" \
     ./kotlin test -p jvm --include-module desktop --include-classes '*SampleScreenshotTest'
