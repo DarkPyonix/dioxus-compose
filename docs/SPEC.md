@@ -302,7 +302,7 @@ macOS 26과 iOS 26은 같은 재질을 다른 범위에 씁니다. macOS는 크�
 컴포넌트 규칙이 붙는 자리는 변형(variant) 속성입니다. 값은 디자인 시스템 중립 이름입니다.
 - `Button.variant`: `Filled | Tonal | Outlined | Text`
   - Material 3: Filled/Tonal/Outlined/Text 버튼, 큰 곡률, 리플.
-  - Cupertino: Filled은 강조 버튼(연속 곡률, 그림자 없음), Tonal은 회색 배경, Text는 내용 색만 쓰는 plain 버튼. 리플 대신 하이라이트.
+  - Cupertino: Filled은 강조 버튼(연속 곡률, 그림자 없음), Tonal은 반투명한 칠(라이트에서 검정, 다크에서 흰색)이라 페이지 위에서도 바 위에서도 배경과 떨어져 보이고, Text는 내용 색만 쓰는 plain 버튼. 리플 대신 하이라이트.
   - Fluent: Accent/Standard/Standard+stroke/Subtle, 4dp 곡률, 위쪽 밝은 테두리.
 - 같은 rsx 코드가 시스템에 따라 다른 모양으로 그려지는 것이 정상 동작입니다.
 

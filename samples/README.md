@@ -44,6 +44,14 @@ of its two colour schemes.
 |---|---|---|
 | `DXC_DESIGN` | `material3`, `cupertino` (also `apple`, `liquid-glass`, `liquidglass`), `fluent` | follows the host platform |
 | `DXC_SCHEME` | `light`, `dark` | follows the system appearance |
+| `DXC_REDUCE_TRANSPARENCY` | anything but `0` or `false` turns it on | off |
+
+`DXC_REDUCE_TRANSPARENCY` is the accessibility setting rather than a sample switch, and it
+is read by the renderer rather than by the sample. Both Apple platforms expose it, and a
+platform that can query it directly does so; this is how you see the same thing on a
+machine where nothing has been wired up yet. With it on, every glass surface draws the
+opaque colour whose contrast was guaranteed when the material was built, and the blur pass
+that fed it disappears with it.
 
 ```
 DXC_DESIGN=apple DXC_SCHEME=dark cargo run -p sample-chat --features dioxus-compose/native-renderer
