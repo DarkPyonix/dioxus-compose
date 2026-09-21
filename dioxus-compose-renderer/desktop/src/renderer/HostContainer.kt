@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -129,13 +130,15 @@ internal fun HostTopAppBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // The bar is the window's caption where the tree opens with one: at
+                // least as tall as the strip the window buttons sit in, and starting
+                // clear of them. Its content shares that row rather than stacking under
+                // it, because macOS 26 puts the toolbar on the same line as the traffic
+                // lights and a bar that began below them would be twice as tall for
+                // nothing.
+                .heightIn(min = caption.height)
                 .containerDecoration(node, style, theme)
-                // The bar is the window's caption where the tree opens with one, so it
-                // grows up into the strip the window buttons sit in and steps its own
-                // content clear of them. The decoration comes first on purpose: the bar's
-                // surface has to cover that strip, or the window keeps a band of page
-                // colour above the bar and reads as having a title bar after all.
-                .padding(top = caption.height, start = caption.buttonsWidth),
+                .padding(start = caption.buttonsWidth),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {

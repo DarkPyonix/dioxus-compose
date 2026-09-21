@@ -70,8 +70,9 @@ class WindowCaptionTest {
     }
 
     /**
-     * A bar that has the caption steps its content below the window buttons and clear of
-     * them, rather than drawing the application's title where the traffic lights are.
+     * A bar that has the caption covers the strip and lays its content out beside the
+     * window buttons, rather than drawing the application's title where the traffic
+     * lights are or starting a second row below them.
      */
     @Test
     fun fr19_2_a_bar_lays_its_content_out_clear_of_the_window_buttons() = runComposeUiTest {
@@ -91,12 +92,17 @@ class WindowCaptionTest {
         // strip instead of beginning underneath it.
         assertTrue(bar.top.value <= 0.5f, "the bar starts at ${bar.top}, not at the top of the window")
         assertTrue(
-            title.top >= CAPTION.height,
-            "the title starts at ${title.top}, inside the ${CAPTION.height} caption",
+            bar.bottom - bar.top >= CAPTION.height,
+            "the bar is ${bar.bottom - bar.top} tall, shorter than the ${CAPTION.height} caption it covers",
         )
         assertTrue(
             title.left >= CAPTION.buttonsWidth,
             "the title starts at ${title.left}, over the window buttons",
+        )
+        // One row, not two: the title shares the line the window buttons are on.
+        assertTrue(
+            title.top < CAPTION.height,
+            "the title starts at ${title.top}, on a second row below the window buttons",
         )
     }
 

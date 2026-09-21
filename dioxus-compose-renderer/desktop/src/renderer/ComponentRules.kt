@@ -286,6 +286,25 @@ internal object LiquidGlassRules : ComponentRules {
         SurfaceMaterial.Opaque(container)
     }
 
+    /**
+     * The page, which Apple specifies twice.
+     *
+     * In dark mode iOS's grouped page is pure black, and on a phone that is right: the
+     * screen is almost all content and the black is what the panels sit on. A macOS
+     * window has never been black. Painting one black leaves a 0x1c1c1e panel two levels
+     * away from the page it sits on, so the panels stop reading as panels and the window
+     * reads as a video player rather than as a document. The desktop page is the darkest
+     * of the system greys instead, which is what the panels are meant to be a well in.
+     *
+     * Light needs no such choice: the grouped page is already close to what a macOS
+     * window is, and white panels read against it at either size.
+     */
+    override fun color(role: ColorRole, dark: Boolean, sizeClass: WindowSizeClass): Color? = when {
+        role != ColorRole.Background || !dark -> null
+        sizeClass == WindowSizeClass.Compact -> null
+        else -> DESKTOP_PAGE_DARK
+    }
+
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
         if (elevation.value <= 0f) return modifier
         // One soft shadow spread over roughly twice the requested height, at a low alpha.
@@ -472,6 +491,12 @@ internal object LiquidGlassRules : ComponentRules {
         // A help tag waits until the pointer has clearly stopped.
         tooltipDelayMillis = 1000,
     )
+
+    /**
+     * systemGray6 in dark: the darkest of Apple's greys that is not black, and the tone a
+     * macOS window is. Far enough from the 0x1c1c1e of a panel that the panel has an edge.
+     */
+    private val DESKTOP_PAGE_DARK = Color(0xFF2C2C2E)
 
     private const val SCRIM_ALPHA = 0.4f
     private const val PRESSED_ALPHA = 0.6f

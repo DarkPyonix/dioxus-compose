@@ -15,16 +15,19 @@ import dioxus.compose.design.SurfaceMaterial
 import dioxus.compose.design.adaptiveSystem
 import dioxus.compose.design.concentricRadius
 import dioxus.compose.design.contrastRatio
+import dioxus.compose.design.relativeLuminance
 import dioxus.compose.design.drawsAsGlass
 import dioxus.compose.design.glassBlurRadius
 import dioxus.compose.design.glassFill
 import dioxus.compose.design.resolveTheme
+import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.WindowSizeClass
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -195,6 +198,49 @@ class LiquidGlassTest {
         assertEquals(0f, bounds.top)
         assertTrue(bounds.right in 199f..200f)
         assertTrue(bounds.bottom in 199f..200f)
+    }
+
+    /**
+     * The page is the one colour Apple specifies twice, so it is the one colour the
+     * window's width is allowed to change. A phone's grouped page is black; a desktop
+     * window's is not, or the panels on it have no edge.
+     */
+    @Test
+    fun fr14_1_3_the_dark_page_is_black_on_a_phone_and_not_in_a_desktop_window() {
+        val phone = appleTheme(dark = true, sizeClass = WindowSizeClass.Compact)
+        val desktop = appleTheme(dark = true, sizeClass = WindowSizeClass.Expanded)
+
+        assertEquals(Color(0xFF000000), phone.color(ColorRole.Background))
+        assertNotEquals(Color(0xFF000000), desktop.color(ColorRole.Background))
+        // The panel has to be visible against whichever page it sits on, and against the
+        // desktop page it is the darker of the two: a well in the window, which is what a
+        // macOS document area is.
+        assertNotEquals(desktop.color(ColorRole.Background), desktop.color(ColorRole.Surface))
+        assertTrue(
+            relativeLuminance(desktop.color(ColorRole.Background)) >
+                relativeLuminance(desktop.color(ColorRole.Surface)),
+            "the desktop page is no lighter than the panels on it, so they have no edge",
+        )
+    }
+
+    /** Every other role, and light mode, answer with the generated table at every width. */
+    @Test
+    fun fr14_1_3_only_the_page_changes_with_the_window() {
+        val phone = appleTheme(dark = true, sizeClass = WindowSizeClass.Compact)
+        val desktop = appleTheme(dark = true, sizeClass = WindowSizeClass.Expanded)
+        ColorRole.entries.filter { it != ColorRole.Background }.forEach { role ->
+            assertEquals(phone.color(role), desktop.color(role), "$role changed with the window width")
+        }
+
+        val lightPhone = appleTheme(dark = false, sizeClass = WindowSizeClass.Compact)
+        val lightDesktop = appleTheme(dark = false, sizeClass = WindowSizeClass.Expanded)
+        ColorRole.entries.forEach { role ->
+            assertEquals(
+                lightPhone.color(role),
+                lightDesktop.color(role),
+                "$role changed with the window width in light mode",
+            )
+        }
     }
 
     @Test

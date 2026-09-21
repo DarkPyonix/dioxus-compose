@@ -108,7 +108,8 @@ class ResolvedTheme(
      */
     val sizeClass: WindowSizeClass = WindowSizeClass.Compact,
 ) {
-    fun color(role: ColorRole): Color = Color(tokens.color(role, dark))
+    fun color(role: ColorRole): Color =
+        rules.color(role, dark, sizeClass) ?: Color(tokens.color(role, dark))
 
     /** A literal paints itself, a role goes through the table. */
     fun color(paint: Paint): Color = when (paint) {
@@ -187,6 +188,22 @@ val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace els
  * format changes.
  */
 interface ComponentRules {
+    /**
+     * A colour this system answers differently in a window of this class, or null to take
+     * the generated table's value.
+     *
+     * Null for almost everything, because a design system has one palette. Apple is the
+     * exception and only in one place: its page is a different colour on a phone and in a
+     * desktop window, and both values are part of the same design language. The table can
+     * carry one value per role, so the choice between two of Apple's own has to be made
+     * here.
+     *
+     * This is not a way for a system to redecorate at will. A role answered here is one
+     * the platform vendor specifies twice; anything else belongs in the table, where the
+     * Host's own colour resolution can see it.
+     */
+    fun color(role: ColorRole, dark: Boolean, sizeClass: WindowSizeClass): Color? = null
+
     /** How `Modifier::Elevation(dp)` is drawn. The Host sends a dp value and nothing else. */
     fun elevation(
         modifier: androidx.compose.ui.Modifier,
