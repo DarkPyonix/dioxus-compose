@@ -6,6 +6,7 @@ members = [
     "samples/frames",
     "samples/minimal",
     "samples/notepad",
+    "samples/store",
     "samples/todo",
 ]
 resolver = "2"

@@ -811,6 +811,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sample-store"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
 name = "sample-todo"
 version = "0.1.0"
 dependencies = [

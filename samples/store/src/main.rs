@@ -1,0 +1,1004 @@
+//! A clothing shop: a catalogue you can browse by category, a product you can size and
+//! count, and a bag that adds up.
+//!
+//! Unified rather than adaptive. The reference is an iOS design and the shop's look is the
+//! shop's, not the platform's, so `Theme::unified(DesignSystem::Cupertino)` is named once
+//! in `main` and the same declaration draws the same screen everywhere.
+//!
+//! The one thing the reference has that this cannot is photography. `Image` takes an id
+//! the Host registered and an application only has the tree, so every garment here is a
+//! tile filled with one of the three accent containers. That is a role rather than a
+//! stand-in colour: it follows the reader into dark, and the ink on it is guaranteed to
+//! stay readable, which a pastel literal would not be.
+
+mod catalogue;
+
+use catalogue::{BagLine, CATALOGUE, Category, Product, SIZES, price, stars, total, under};
+use dioxus_compose::prelude::*;
+
+/// How wide the page is once the window is wider than a phone. A phone design in a desktop
+/// window is still a phone design.
+const PAGE_MEASURE: f32 = 420.0;
+
+/// How tall a garment's tile is on the catalogue and on the carousel.
+///
+/// Numbers, because these are the proportions of a picture and the space ladder answers
+/// how far apart two things sit rather than how large a picture is.
+const TILE_HEIGHT: f32 = 168.0;
+const CAROUSEL_HEIGHT: f32 = 200.0;
+const HERO_HEIGHT: f32 = 300.0;
+
+/// The destinations along the bottom.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Destination {
+    Shop,
+    Search,
+    Bag,
+    Account,
+}
+
+impl Destination {
+    const STRIP: [Destination; 4] = [
+        Destination::Shop,
+        Destination::Search,
+        Destination::Bag,
+        Destination::Account,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Destination::Shop => "Shop",
+            Destination::Search => "Search",
+            Destination::Bag => "Bag",
+            Destination::Account => "Account",
+        }
+    }
+
+    /// What the destination means, so the Renderer draws its own artwork for it.
+    fn icon(self) -> IconRole {
+        match self {
+            Destination::Shop => IconRole::Home,
+            Destination::Search => IconRole::Search,
+            Destination::Bag => IconRole::Inbox,
+            Destination::Account => IconRole::Settings,
+        }
+    }
+
+    fn index(self) -> usize {
+        Self::STRIP
+            .iter()
+            .position(|found| *found == self)
+            .unwrap_or(0)
+    }
+}
+
+/// The picture of a garment, which is a fill and a name because it cannot be a photograph.
+fn tile(product: &Product, height: f32, on_open: EventHandler<u32>) -> Element {
+    let (fill, ink) = product.tint.pair();
+    let id = product.id;
+    rsx! {
+        dioxus_compose::Box {
+            fill_max_width: true,
+            height,
+            background: Paint::Role(fill),
+            shape_role: ShapeRole::Large,
+            alignment: Alignment::BottomStart,
+            Column {
+                fill_max_width: true,
+                padding_role: SpaceRole::Md,
+                space_role: SpaceRole::Xs,
+                Text {
+                    text: product.name,
+                    type_role: TypeRole::Subtitle,
+                    color: Paint::Role(ink),
+                    max_lines: 1,
+                    overflow: TextOverflow::Ellipsis,
+                }
+                Text {
+                    text: product.support,
+                    type_role: TypeRole::Caption,
+                    color: Paint::Role(ink),
+                    max_lines: 1,
+                    overflow: TextOverflow::Ellipsis,
+                }
+                Button {
+                    text: "View",
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ink),
+                    on_click: move |_| on_open.call(id),
+                }
+            }
+        }
+    }
+}
+
+/// One cell of the two-up grid: the tile, then the name, support and price under it.
+fn grid_cell(product: &Product, on_open: EventHandler<u32>) -> Element {
+    rsx! {
+        Column {
+            weight: 1.0,
+            space_role: SpaceRole::Xs,
+            {tile(product, TILE_HEIGHT, on_open)}
+            Text {
+                text: product.name,
+                type_role: TypeRole::BodyStrong,
+                max_lines: 1,
+                overflow: TextOverflow::Ellipsis,
+            }
+            Text {
+                text: product.support,
+                type_role: TypeRole::Caption,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                max_lines: 1,
+                overflow: TextOverflow::Ellipsis,
+            }
+            Text { text: price(product.cents), type_role: TypeRole::BodyStrong }
+        }
+    }
+}
+
+/// The catalogue: a headline, a carousel, the category strip and a two-up grid.
+fn catalogue_screen(
+    category: Signal<Category>,
+    bag: Signal<Vec<BagLine>>,
+    on_open: EventHandler<u32>,
+) -> Element {
+    let mut category = category;
+    let shelf = under(category());
+    let rows: Vec<Vec<&'static Product>> = shelf.chunks(2).map(<[_]>::to_vec).collect();
+    let in_bag: u32 = bag().iter().map(|line| line.quantity).sum();
+
+    rsx! {
+        Column {
+            fill_max_width: true,
+            padding_role: SpaceRole::Md,
+            space_role: SpaceRole::Md,
+
+            Row {
+                fill_max_width: true,
+                alignment: Alignment::CenterStart,
+                Text {
+                    text: "Let's find your sports outfit",
+                    type_role: TypeRole::Headline,
+                    weight: 1.0,
+                }
+                if in_bag > 0 {
+                    // The count of what is waiting, in the accent, which is the one place
+                    // on this screen the accent is used for a number rather than an action.
+                    Text {
+                        text: "{in_bag}",
+                        type_role: TypeRole::BodyStrong,
+                        color: Paint::Role(ColorRole::OnPrimary),
+                        background: Paint::Role(ColorRole::Primary),
+                        shape_role: ShapeRole::Full,
+                        padding_role: SpaceRole::Sm,
+                    }
+                }
+            }
+
+            // The whole catalogue across, windowed. A carousel materialises the slides the
+            // Renderer asked for and nothing else, which is the horizontal half of the
+            // same windowing protocol the task list uses down a column.
+            LazyRow {
+                fill_max_width: true,
+                height: CAROUSEL_HEIGHT,
+                item_count: CATALOGUE.len(),
+                key_of: move |position: usize| CATALOGUE[position].id.to_string(),
+                // The gap between slides is the slide's own padding. A windowing list has
+                // no spacing of its own: it materialises the range the Renderer asked for
+                // and puts each item straight beside the last, so anything between two
+                // items has to belong to one of them.
+                item: move |position: usize| {
+                    rsx! {
+                        dioxus_compose::Box {
+                            width: PAGE_MEASURE * 0.62,
+                            fill_max_height: true,
+                            padding_role: SpaceRole::Xs,
+                            {tile(&CATALOGUE[position], CAROUSEL_HEIGHT, on_open)}
+                        }
+                    }
+                },
+            }
+
+            Tabs {
+                fill_max_width: true,
+                selected_index: category().index(),
+                for choice in Category::STRIP {
+                    Button {
+                        key: "{choice.label()}",
+                        text: choice.label(),
+                        variant: ButtonVariant::Text,
+                        on_click: move |_| category.set(choice),
+                    }
+                }
+            }
+
+            Column {
+                fill_max_width: true,
+                space_role: SpaceRole::Md,
+                for (index, row) in rows.iter().enumerate() {
+                    Row {
+                        key: "{index}",
+                        fill_max_width: true,
+                        space_role: SpaceRole::Md,
+                        alignment: Alignment::TopStart,
+                        for product in row.iter().copied() {
+                            Column { key: "{product.id}", weight: 1.0,
+                                {grid_cell(product, on_open)}
+                            }
+                        }
+                        // A shelf with an odd number of garments leaves a gap rather than
+                        // letting the last one stretch to twice the width of its
+                        // neighbours, which would read as a different kind of product.
+                        if row.len() == 1 {
+                            Spacer { weight: 1.0 }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One garment: the picture, what it is, what size, how many, and what it costs.
+fn detail_screen(
+    product: &Product,
+    size: Signal<&'static str>,
+    quantity: Signal<u32>,
+    on_back: EventHandler<()>,
+    on_add: EventHandler<()>,
+) -> Element {
+    let mut size = size;
+    let mut quantity = quantity;
+    let (fill, ink) = product.tint.pair();
+    let line_total = price(product.cents * quantity());
+    let rating = product.rating;
+
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+
+            dioxus_compose::Box {
+                fill_max_width: true,
+                height: HERO_HEIGHT,
+                background: Paint::Role(fill),
+                alignment: Alignment::TopStart,
+                Row {
+                    fill_max_width: true,
+                    padding_role: SpaceRole::Md,
+                    alignment: Alignment::CenterStart,
+                    Button {
+                        text: "\u{2190}",
+                        variant: ButtonVariant::Text,
+                        color: Paint::Role(ink),
+                        on_click: move |_| on_back.call(()),
+                    }
+                    Spacer { weight: 1.0 }
+                    Text {
+                        text: product.name,
+                        type_role: TypeRole::Title,
+                        color: Paint::Role(ink),
+                    }
+                }
+            }
+
+            // The panel that covers the lower part of the picture, which is the shape the
+            // reference draws and the shape a grouped iOS sheet has.
+            Surface {
+                fill_max_width: true,
+                weight: 1.0,
+                shape_role: ShapeRole::Large,
+                padding_role: SpaceRole::Md,
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+
+                    Column {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Xs,
+                        Text { text: product.name, type_role: TypeRole::Headline }
+                        Text {
+                            text: product.support,
+                            type_role: TypeRole::Body,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                        Row {
+                            space_role: SpaceRole::Sm,
+                            alignment: Alignment::CenterStart,
+                            Text {
+                                text: stars(rating),
+                                type_role: TypeRole::Body,
+                                color: Paint::Role(ColorRole::Primary),
+                            }
+                            Text {
+                                text: "({catalogue::rating_text(rating)})",
+                                type_role: TypeRole::Label,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            }
+                        }
+                    }
+
+                    Column {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        Text {
+                            text: "Select size",
+                            type_role: TypeRole::Label,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                        Row {
+                            fill_max_width: true,
+                            space_role: SpaceRole::Sm,
+                            for option in SIZES {
+                                // The selected size is a filled button and the rest are
+                                // outlined. Which colour "filled" is belongs to the design
+                                // system, so this never names one.
+                                Button {
+                                    key: "{option}",
+                                    text: option,
+                                    weight: 1.0,
+                                    variant: if option == size() {
+                                        ButtonVariant::Filled
+                                    } else {
+                                        ButtonVariant::Outlined
+                                    },
+                                    on_click: move |_| size.set(option),
+                                }
+                            }
+                        }
+                    }
+
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        Button {
+                            text: "\u{2212}",
+                            variant: ButtonVariant::Tonal,
+                            enabled: quantity() > 1,
+                            on_click: move |_| quantity.set(quantity().saturating_sub(1).max(1)),
+                        }
+                        Text { text: "{quantity}", type_role: TypeRole::Subtitle }
+                        Button {
+                            text: "+",
+                            variant: ButtonVariant::Tonal,
+                            enabled: quantity() < 9,
+                            on_click: move |_| quantity.set((quantity() + 1).min(9)),
+                        }
+                        Spacer { weight: 1.0 }
+                        Text { text: line_total, type_role: TypeRole::Headline }
+                    }
+
+                    Button {
+                        text: "Add to bag",
+                        fill_max_width: true,
+                        variant: ButtonVariant::Filled,
+                        on_click: move |_| on_add.call(()),
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// What is waiting to be paid for.
+fn bag_screen(bag: Signal<Vec<BagLine>>) -> Element {
+    let mut bag = bag;
+    let lines = bag();
+    let sum = total(&lines);
+
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            padding_role: SpaceRole::Md,
+            space_role: SpaceRole::Md,
+            Text { text: "Bag", type_role: TypeRole::Headline }
+            if lines.is_empty() {
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    alignment: Alignment::Center,
+                    Text {
+                        text: "Nothing in the bag yet.",
+                        type_role: TypeRole::Body,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                }
+            } else {
+                Surface {
+                    fill_max_width: true,
+                    shape_role: ShapeRole::Large,
+                    Column {
+                        fill_max_width: true,
+                        for (index, line) in lines.iter().enumerate() {
+                            {
+                                let line = *line;
+                                let named = catalogue::product(line.product);
+                                let last = index + 1 == lines.len();
+                                rsx! {
+                                    Column { key: "{index}", fill_max_width: true,
+                                        Row {
+                                            fill_max_width: true,
+                                            padding_role: SpaceRole::Md,
+                                            space_role: SpaceRole::Sm,
+                                            alignment: Alignment::CenterStart,
+                                            Column {
+                                                weight: 1.0,
+                                                space_role: SpaceRole::Xs,
+                                                Text {
+                                                    text: named.map_or("Unavailable", |found| found.name),
+                                                    type_role: TypeRole::Body,
+                                                    max_lines: 1,
+                                                    overflow: TextOverflow::Ellipsis,
+                                                }
+                                                Text {
+                                                    text: "Size {line.size} \u{00b7} {line.quantity}",
+                                                    type_role: TypeRole::Caption,
+                                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                                }
+                                            }
+                                            Text {
+                                                text: price(
+                                                    named.map_or(0, |found| found.cents) * line.quantity,
+                                                ),
+                                                type_role: TypeRole::BodyStrong,
+                                            }
+                                            Button {
+                                                text: "Remove",
+                                                variant: ButtonVariant::Text,
+                                                color: Paint::Role(ColorRole::Error),
+                                                on_click: move |_| {
+                                                    let removed = bag.write().remove(index);
+                                                    let name = catalogue::product(removed.product)
+                                                        .map_or("An item", |found| found.name);
+                                                    Message::new(format!("Removed {name}"))
+                                                        .with_action("Undo", move |()| {
+                                                            let at = index.min(bag.read().len());
+                                                            bag.write().insert(at, removed);
+                                                        })
+                                                        .with_duration(MessageDuration::Long)
+                                                        .show();
+                                                },
+                                            }
+                                        }
+                                        if !last {
+                                            Separator {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer { weight: 1.0 }
+                Row {
+                    fill_max_width: true,
+                    alignment: Alignment::CenterStart,
+                    Text {
+                        text: "Total",
+                        type_role: TypeRole::Body,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        weight: 1.0,
+                    }
+                    Text { text: price(sum), type_role: TypeRole::Headline }
+                }
+                Button {
+                    text: "Checkout",
+                    fill_max_width: true,
+                    variant: ButtonVariant::Filled,
+                    on_click: move |_| {
+                        Message::new("Checkout is not part of this sample").show();
+                    },
+                }
+            }
+        }
+    }
+}
+
+/// Search, which is a field and the shelves as a list.
+fn search_screen(on_open: EventHandler<u32>) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            padding_role: SpaceRole::Md,
+            space_role: SpaceRole::Md,
+            Text { text: "Search", type_role: TypeRole::Headline }
+            TextField { fill_max_width: true, placeholder: "T-shirts, joggers, jackets" }
+            Column {
+                fill_max_width: true,
+                space_role: SpaceRole::Sm,
+                for product in CATALOGUE {
+                    Row {
+                        key: "{product.id}",
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        dioxus_compose::Box {
+                            width: 44.0,
+                            height: 44.0,
+                            background: Paint::Role(product.tint.pair().0),
+                            shape_role: ShapeRole::Medium,
+                        }
+                        Column {
+                            weight: 1.0,
+                            Text {
+                                text: product.name,
+                                type_role: TypeRole::Body,
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                            Text {
+                                text: product.support,
+                                type_role: TypeRole::Caption,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                        }
+                        Button {
+                            text: price(product.cents),
+                            variant: ButtonVariant::Text,
+                            on_click: move |_| on_open.call(product.id),
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The account page, which is a short list of the things a shop keeps about a person.
+fn account_screen() -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            padding_role: SpaceRole::Md,
+            space_role: SpaceRole::Md,
+            Text { text: "Account", type_role: TypeRole::Headline }
+            Surface {
+                fill_max_width: true,
+                shape_role: ShapeRole::Large,
+                Column {
+                    fill_max_width: true,
+                    for (index, entry) in ["Orders", "Addresses", "Payment", "Notifications"]
+                        .iter()
+                        .enumerate()
+                    {
+                        Column { key: "{entry}", fill_max_width: true,
+                            Row {
+                                fill_max_width: true,
+                                padding_role: SpaceRole::Md,
+                                alignment: Alignment::CenterStart,
+                                Text { text: *entry, type_role: TypeRole::Body, weight: 1.0 }
+                                Text {
+                                    text: "\u{203a}",
+                                    type_role: TypeRole::Body,
+                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                }
+                            }
+                            if index < 3 {
+                                Separator {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn app() -> Element {
+    let window = use_window_size();
+    let measure = if window.is_compact() {
+        None
+    } else {
+        Some(PAGE_MEASURE)
+    };
+
+    let mut destination = use_signal(|| Destination::Shop);
+    let category = use_signal(|| Category::New);
+    let mut open = use_signal(|| Option::<u32>::None);
+    let size = use_signal(|| SIZES[1]);
+    let quantity = use_signal(|| 1_u32);
+    let bag = use_signal(Vec::<BagLine>::new);
+
+    let on_open = EventHandler::new(move |id: u32| {
+        destination.set(Destination::Shop);
+        open.set(Some(id));
+    });
+
+    let showing = open().and_then(catalogue::product);
+    let body = match (destination(), showing) {
+        (Destination::Shop, Some(product)) => detail_screen(
+            product,
+            size,
+            quantity,
+            EventHandler::new(move |()| open.set(None)),
+            add_to_bag(bag, open, size, quantity),
+        ),
+        (Destination::Shop, None) => catalogue_screen(category, bag, on_open),
+        (Destination::Search, _) => search_screen(on_open),
+        (Destination::Bag, _) => bag_screen(bag),
+        (Destination::Account, _) => account_screen(),
+    };
+
+    // A garment's page fills the window, because the picture runs to the edge. Everything
+    // else is a page that scrolls.
+    let scrolls = showing.is_none() || destination() != Destination::Shop;
+
+    rsx! {
+        Navigation {
+            fill_max_width: true,
+            fill_max_height: true,
+            selected_index: destination().index(),
+            for choice in Destination::STRIP {
+                NavigationItem {
+                    key: "{choice.label()}",
+                    text: choice.label(),
+                    icon: choice.icon(),
+                    on_click: move |()| {
+                        destination.set(choice);
+                        if choice != Destination::Shop {
+                            open.set(None);
+                        }
+                    },
+                }
+            }
+            Column {
+                fill_max_width: true,
+                fill_max_height: true,
+                background: Paint::Role(ColorRole::Background),
+                TopAppBar {
+                    fill_max_width: true,
+                    Text { text: "Nimbus", type_role: TypeRole::Title, weight: 1.0 }
+                    Text {
+                        text: "Personal fitness clothes",
+                        type_role: TypeRole::Label,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                }
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    alignment: Alignment::TopCenter,
+                    if scrolls {
+                        ScrollColumn {
+                            width: measure,
+                            fill_max_width: measure.is_none(),
+                            fill_max_height: true,
+                            {body}
+                        }
+                    } else {
+                        Column {
+                            width: measure,
+                            fill_max_width: measure.is_none(),
+                            fill_max_height: true,
+                            {body}
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Putting the open garment in the bag, at the size and count that are showing.
+///
+/// A line that is already there grows rather than repeating, because two lines for the
+/// same garment in the same size is a bag nobody can read, and it makes the total right
+/// for the wrong reason.
+fn add_to_bag(
+    bag: Signal<Vec<BagLine>>,
+    open: Signal<Option<u32>>,
+    size: Signal<&'static str>,
+    quantity: Signal<u32>,
+) -> EventHandler<()> {
+    let mut bag = bag;
+    EventHandler::new(move |()| {
+        let Some(id) = open() else { return };
+        let chosen = size();
+        let count = quantity();
+        let existing = bag
+            .read()
+            .iter()
+            .position(|line| line.product == id && line.size == chosen);
+        match existing {
+            Some(index) => bag.write()[index].quantity += count,
+            None => bag.write().push(BagLine {
+                product: id,
+                size: chosen,
+                quantity: count,
+            }),
+        }
+        let name = catalogue::product(id).map_or("Item", |found| found.name);
+        Message::new(format!("{name} added to the bag"))
+            .with_duration(MessageDuration::Short)
+            .show();
+    })
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new()
+        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .launch(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dioxus_compose::Host;
+    use dioxus_compose::protocol::{
+        HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
+    };
+    use dioxus_compose::schema::{EventPayload, PropertyKind};
+
+    /// The screen, driven the way a Renderer drives it.
+    ///
+    /// Every batch is kept rather than only the last one. A batch is the change since the
+    /// frame before it, so a test that reads one batch is reading what moved, not what is
+    /// on screen, and a screen built over three frames would look almost empty.
+    struct Screen {
+        host: Host,
+        frames: Vec<Vec<u8>>,
+    }
+
+    impl Screen {
+        fn new() -> Self {
+            dioxus_compose::window::reset_window_size();
+            let mut host = Host::new(app);
+            let first = host.rebuild().expect("the first frame failed").to_vec();
+            let mut screen = Self {
+                host,
+                frames: vec![first],
+            };
+            screen.resize(420.0);
+            screen
+        }
+
+        fn resize(&mut self, width_dp: f32) {
+            self.send(HostEvent {
+                node_id: 0,
+                handler_id: 0,
+                payload: EventPayload::WindowSizeChanged {
+                    width_dp,
+                    height_dp: 780.0,
+                    class: WindowSizeClass::from_width_dp(width_dp),
+                },
+            });
+        }
+
+        fn send(&mut self, event: HostEvent<'_>) {
+            let mut bytes = Vec::new();
+            encode_event(&event, &mut bytes).expect("the event did not encode");
+            let (batch, _) = self.host.dispatch_event(&bytes).expect("the event failed");
+            if !batch.is_empty() {
+                self.frames.push(batch.to_vec());
+            }
+        }
+
+        fn mutations(&self) -> Vec<Mutation<'_>> {
+            self.frames
+                .iter()
+                .flat_map(|frame| decode_batch(frame).expect("a batch did not decode"))
+                .collect()
+        }
+
+        fn texts(&self) -> Vec<String> {
+            self.mutations()
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                        ..
+                    } => Some((*text).to_owned()),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        /// Presses whatever carries this label.
+        ///
+        /// The most recently declared one, because a label that has appeared twice over
+        /// the run belongs to whichever screen is showing now, and the older node is
+        /// something the Renderer has already thrown away.
+        fn press(&mut self, label: &str) -> bool {
+            let found = {
+                let mutations = self.mutations();
+                let node = mutations.iter().rev().find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                    } if *text == label => Some(*node_id),
+                    _ => None,
+                });
+                node.and_then(|node| {
+                    mutations.iter().rev().find_map(|mutation| match mutation {
+                        Mutation::SetProp {
+                            node_id,
+                            property: PropertyKind::OnClick,
+                            value: PropertyValue::Integer(handler),
+                        } if *node_id == node => Some((node, *handler as u64)),
+                        _ => None,
+                    })
+                })
+            };
+            let Some((node_id, handler_id)) = found else {
+                return false;
+            };
+            self.send(HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::Clicked,
+            });
+            true
+        }
+
+        /// Whatever text arrived in the last frame, which is what "this screen replaced
+        /// that one" has to be read from.
+        fn latest_texts(&self) -> Vec<String> {
+            let Some(frame) = self.frames.last() else {
+                return Vec::new();
+            };
+            decode_batch(frame)
+                .expect("the batch did not decode")
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                        ..
+                    } => Some((*text).to_owned()),
+                    _ => None,
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    fn the_first_frame_encodes_without_a_protocol_error() {
+        assert!(Host::new(app).rebuild().is_ok());
+    }
+
+    /// Every destination has to encode, not just the one the shop opens on. A widget only
+    /// the bag reaches would otherwise fail for the first person who taps it.
+    #[test]
+    fn fr15_every_destination_encodes() {
+        let mut screen = Screen::new();
+        for choice in Destination::STRIP {
+            assert!(
+                screen.press(choice.label()),
+                "the bar has no destination called {}",
+                choice.label()
+            );
+            assert!(
+                !screen.texts().is_empty(),
+                "{} drew nothing at all",
+                choice.label()
+            );
+        }
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// Opening a garment replaces the catalogue with its page, and going back brings the
+    /// catalogue with it. A detail view that cannot be left is a dead end.
+    #[test]
+    fn fr15_a_garment_opens_and_closes() {
+        let mut screen = Screen::new();
+        assert!(screen.press("View"), "no garment on the catalogue opens");
+        assert!(
+            screen
+                .latest_texts()
+                .iter()
+                .any(|text| text == "Select size"),
+            "opening a garment did not bring up its page"
+        );
+        assert!(
+            screen.press("\u{2190}"),
+            "the garment's page has no way back"
+        );
+        assert!(
+            screen.latest_texts().iter().any(|text| text == "New"),
+            "going back did not bring the catalogue with it"
+        );
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// Adding the same garment in the same size twice is one line that counts two, not two
+    /// lines. A bag that repeats itself adds up to the right number for the wrong reason.
+    #[test]
+    fn fr15_the_bag_grows_a_line_rather_than_repeating_it() {
+        let mut bag = vec![BagLine {
+            product: 1,
+            size: "S",
+            quantity: 1,
+        }];
+        let same = BagLine {
+            product: 1,
+            size: "S",
+            quantity: 2,
+        };
+        match bag
+            .iter()
+            .position(|line| line.product == same.product && line.size == same.size)
+        {
+            Some(index) => bag[index].quantity += same.quantity,
+            None => bag.push(same),
+        }
+        assert_eq!(bag.len(), 1);
+        assert_eq!(bag[0].quantity, 3);
+        assert_eq!(price(total(&bag)), "$285");
+    }
+
+    /// A phone design does not become a desktop design by being put in a wider window.
+    #[test]
+    fn fr20_the_page_stops_widening_past_a_phone() {
+        fn widths(width_dp: f32) -> Vec<f32> {
+            dioxus_compose::window::reset_window_size();
+            let mut host = Host::new(app);
+            host.rebuild().expect("the first frame failed");
+            let mut bytes = Vec::new();
+            encode_event(
+                &HostEvent {
+                    node_id: 0,
+                    handler_id: 0,
+                    payload: EventPayload::WindowSizeChanged {
+                        width_dp,
+                        height_dp: 780.0,
+                        class: WindowSizeClass::from_width_dp(width_dp),
+                    },
+                },
+                &mut bytes,
+            )
+            .expect("the resize did not encode");
+            let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
+            let found = decode_batch(batch)
+                .expect("the batch did not decode")
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::SetModifier {
+                        modifier: dioxus_compose::Modifier::Width(dp),
+                        ..
+                    } => Some(*dp),
+                    _ => None,
+                })
+                .collect();
+            dioxus_compose::window::reset_window_size();
+            found
+        }
+
+        assert!(widths(1180.0).contains(&PAGE_MEASURE));
+        assert!(!widths(420.0).contains(&PAGE_MEASURE));
+    }
+
+    /// The catalogue, in the design system it ships, in both schemes, at all three widths.
+    ///
+    /// The carousel windows its slides, so the recorder answers the range request a real
+    /// Renderer would have made before the first pixel. Without it the strip is an empty
+    /// box and the picture is of a screen with a hole in it.
+    #[test]
+    fn fr14_the_catalogue_is_recorded_in_the_system_it_ships() {
+        sample_frames::record_in("Store", &[DesignSystem::Cupertino], app, |screen| {
+            assert_eq!(
+                screen.fill_lists(4),
+                1,
+                "the catalogue should hold exactly one windowing list, the carousel"
+            );
+        });
+    }
+
+    /// A garment's own page, which is a different picture: the grid is gone, the sizes and
+    /// the stepper are there, and the panel covers the lower part of the tile.
+    #[test]
+    fn fr14_a_garment_page_is_recorded() {
+        sample_frames::record_in("StoreProduct", &[DesignSystem::Cupertino], app, |screen| {
+            screen.fill_lists(4);
+            assert!(screen.press("View"), "no garment on the catalogue opens");
+        });
+    }
+}

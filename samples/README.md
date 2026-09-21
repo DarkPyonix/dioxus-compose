@@ -25,6 +25,7 @@ them name Cupertino.
 | Sample | What it exercises |
 |---|---|
 | `minimal` | A playground: every control the schema has, all nine fills with the ink each carries, the type and corner ladders, and a `Canvas` drawing |
+| `store` | A clothing shop: a `LazyRow` carousel, a category strip, a two-up grid, a product page with sizes and a stepper, and a bag that adds up |
 
 Each one is an ordinary dx project: a `Dioxus.toml`, an `assets/` directory and
 `src/main.rs`, the layout `dx new` produces. That is deliberate, because a sample exists to
