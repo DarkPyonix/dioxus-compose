@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
@@ -167,7 +168,7 @@ fun DioxusContent(
     // notices it change, so a window there keeps its original colours while the rest of
     // the screen switches. The desktop installs an observer that does follow the system;
     // where nobody installs one, Compose's own answer is correct and is used.
-    val observedDark = systemDarkObserver?.invoke() ?: isSystemInDarkTheme()
+    val observedDark = LocalSystemDarkObserver.current?.invoke() ?: isSystemInDarkTheme()
     val systemDark = systemDarkOverride ?: observedDark
     val theme = resolveTheme(host.table.theme, platform, systemDark)
     CompositionLocalProvider(LocalDesignTheme provides theme) {
@@ -203,5 +204,12 @@ var systemDarkOverride: Boolean? = null
  * It lives here rather than in the desktop module because this file is compiled for every
  * target: the iOS renderer symlinks it, and Skiko, which the desktop observer reads, does
  * not exist on Kotlin/Native.
+ *
+ * It is a CompositionLocal rather than a global, and that is not a matter of taste. The
+ * desktop observer polls in a loop that never finishes, which is correct in a window and
+ * fatal under a test clock: a composition with a coroutine forever waiting on a delay never
+ * goes idle, so waitForIdle spins until the test times out. As a global, one composition
+ * installing it silently did that to every composition created afterwards in the same
+ * process, including tests that had nothing to do with it.
  */
-var systemDarkObserver: (@Composable () -> Boolean)? = null
+val LocalSystemDarkObserver = staticCompositionLocalOf<(@Composable () -> Boolean)?> { null }
