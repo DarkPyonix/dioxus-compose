@@ -117,6 +117,13 @@ pub struct Completed {
 ///
 /// `entry` is what the user is typing right now. When it is empty the display shows
 /// `value`, which is the running result.
+/// The memory keys, in the order the reference prints them.
+///
+/// Every desk calculator has had these, and both the Windows and the Deepin reference
+/// give them a row of their own above the keypad. They are a second register beside the
+/// running value: somewhere to put a number while working out the next one.
+pub const MEMORY_KEYS: [&str; 5] = ["MC", "MR", "M+", "M\u{2212}", "MS"];
+
 #[derive(Clone, Debug)]
 pub struct Calculator {
     entry: String,
@@ -129,6 +136,13 @@ pub struct Calculator {
     /// The last finished calculation, waiting to be taken. Untaken, it is simply
     /// overwritten: whoever wanted it had a chance after the key that produced it.
     completed: Option<Completed>,
+    /// The second register, and whether anything was ever put in it.
+    ///
+    /// The flag is not `memory != 0.0`: storing a zero is something a person does on
+    /// purpose, and a recall key that goes dead when you store a zero is a key that
+    /// disagrees with what you just did.
+    memory: f64,
+    memory_set: bool,
 }
 
 impl Default for Calculator {
@@ -147,7 +161,15 @@ impl Calculator {
             repeat: None,
             error: false,
             completed: None,
+            memory: 0.0,
+            memory_set: false,
         }
+    }
+
+    /// Whether the memory holds anything. Recalling and clearing are dead keys until it
+    /// does, which is what the reference greys out.
+    pub fn memory_set(&self) -> bool {
+        self.memory_set
     }
 
     /// What the big line reads.
@@ -212,7 +234,28 @@ impl Calculator {
     /// One key, named by the label printed on it.
     pub fn press(&mut self, label: &str) {
         match label {
-            "C" => *self = Self::new(),
+            "MC" => {
+                self.memory = 0.0;
+                self.memory_set = false;
+            }
+            "MR" => {
+                if self.memory_set {
+                    let memory = self.memory;
+                    self.recall(memory);
+                }
+            }
+            "MS" => self.store(self.shown_value()),
+            "M+" => self.store(self.memory + self.shown_value()),
+            "M\u{2212}" | "M-" => self.store(self.memory - self.shown_value()),
+            "C" => {
+                // Clearing clears the calculation, not the memory. Every one of the
+                // three references keeps the two apart, and a C that emptied the memory
+                // would throw away the number that was put somewhere safe.
+                let (memory, memory_set) = (self.memory, self.memory_set);
+                *self = Self::new();
+                self.memory = memory;
+                self.memory_set = memory_set;
+            }
             "\u{232b}" => self.backspace(),
             "%" => self.percent(),
             "\u{00b1}" => self.flip_sign(),
@@ -227,6 +270,19 @@ impl Calculator {
                 }
             }
         }
+    }
+
+    /// The number the big line is reading, which is what a memory key acts on.
+    fn shown_value(&self) -> f64 {
+        if self.error { 0.0 } else { self.operand() }
+    }
+
+    fn store(&mut self, value: f64) {
+        if self.error || !value.is_finite() {
+            return;
+        }
+        self.memory = value;
+        self.memory_set = true;
     }
 
     fn digit(&mut self, digit: char) {
@@ -411,6 +467,64 @@ mod tests {
         let mut calculator = Calculator::new();
         press_all(&mut calculator, keys);
         calculator.display()
+    }
+
+    /// The memory keys are a second register: something to put a number in while the
+    /// next one is worked out, which is what both the Windows and the Deepin reference
+    /// give a row of their own.
+    #[test]
+    fn fr22_the_memory_keys_store_and_recall() {
+        let mut calculator = Calculator::new();
+        assert!(
+            !calculator.memory_set(),
+            "a new calculator should have nothing in memory"
+        );
+
+        press_all(&mut calculator, "42");
+        calculator.press("MS");
+        assert!(calculator.memory_set());
+
+        press_all(&mut calculator, "c7");
+        calculator.press("M+");
+        press_all(&mut calculator, "c");
+        calculator.press("MR");
+        assert_eq!(
+            calculator.display(),
+            "49",
+            "M+ should add to what is stored"
+        );
+
+        // A recalled number is typed rather than assigned, so it becomes the right-hand
+        // side of a waiting operation instead of replacing the running value.
+        press_all(&mut calculator, "c1+");
+        calculator.press("MR");
+        press_all(&mut calculator, "=");
+        assert_eq!(calculator.display(), "50");
+
+        calculator.press("M\u{2212}");
+        calculator.press("MR");
+        assert_eq!(
+            calculator.display(),
+            "-1",
+            "M- should subtract what is shown"
+        );
+
+        calculator.press("MC");
+        assert!(!calculator.memory_set(), "MC should empty the memory");
+    }
+
+    /// Clearing the calculation is not clearing the memory. All three references keep
+    /// the two apart, and a number put somewhere safe should survive the key that starts
+    /// the next calculation.
+    #[test]
+    fn fr22_clearing_the_entry_leaves_the_memory_alone() {
+        let mut calculator = Calculator::new();
+        press_all(&mut calculator, "8");
+        calculator.press("MS");
+        press_all(&mut calculator, "c");
+        assert!(calculator.memory_set());
+        calculator.press("MR");
+        assert_eq!(calculator.display(), "8");
     }
 
     #[test]

@@ -110,6 +110,37 @@ fn about_panel(total: usize, fill: EventHandler<()>, close: EventHandler<()>) ->
     }
 }
 
+/// The composer: one grouped strip whose field grows with the window, so the field is the
+/// thing you look at and the button is the thing beside it.
+///
+/// Authored once because it is one control. It stands at the head of the list where there
+/// is room for it, and arrives in a sheet where there is not, which is what the reference
+/// does: three of its four shots are an Add Task sheet.
+fn composer(add: EventHandler<String>, draft: Signal<String>) -> Element {
+    let mut draft = draft;
+    rsx! {
+        Surface {
+            fill_max_width: true,
+            Row {
+                fill_max_width: true,
+                space_role: SpaceRole::Sm,
+                alignment: Alignment::CenterStart,
+                TextField {
+                    weight: 1.0,
+                    placeholder: "Add a task, then press Enter",
+                    on_value_change: move |value| draft.set(value),
+                    on_submit: move |value: String| add.call(value),
+                }
+                Button {
+                    text: "Add",
+                    variant: ButtonVariant::Filled,
+                    on_click: move |_| add.call(draft()),
+                }
+            }
+        }
+    }
+}
+
 fn app() -> Element {
     let window = use_window_size();
     // A list of one line items read across 1200dp is a list nobody can scan: the eye has
@@ -132,6 +163,7 @@ fn app() -> Element {
     });
     let mut filter = use_signal(|| Filter::All);
     let mut about_open = use_signal(|| false);
+    let mut compose_open = use_signal(|| false);
 
     // What the top field currently holds. The field is uncontrolled, so this is a copy the
     // field pushes up, not the field's value being driven from here.
@@ -190,6 +222,12 @@ fn app() -> Element {
         tasks.write().swap(from, to);
         store::save(&tasks.read());
     };
+
+    // One way in for a new task, whether the field is on the list or in the sheet.
+    let compose = EventHandler::new(move |title: String| {
+        add(title);
+        compose_open.set(false);
+    });
 
     let keys: Vec<String> = visible
         .iter()
@@ -417,11 +455,39 @@ fn app() -> Element {
             fill_max_height: true,
 
             {list_bar(measure, total - remaining, total, rsx! {
-                Text { text: "Tasks", type_role: TypeRole::Title, weight: 1.0 }
-                Text {
-                    text: "{remaining} of {total} remaining",
-                    type_role: TypeRole::Label,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                // Two lines, the way the reference heads its screens: what you are
+                // looking at, and how it is going. The title used to be the application's
+                // name, which is the one thing on the screen that never changes and so
+                // the one thing least worth the largest type on it.
+                Column {
+                    weight: 1.0,
+                    Text {
+                        text: filter().label(),
+                        type_role: TypeRole::Headline,
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                    // Shortened on a phone, where the long form wraps to a second line
+                    // and pushes the bar's own height out from under the title.
+                    Text {
+                        text: if stacked {
+                            format!("{remaining} left")
+                        } else {
+                            format!("{remaining} of {total} remaining")
+                        },
+                        type_role: TypeRole::Label,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                }
+                // Where the composer is not on the list, the bar is how a task is added.
+                if stacked {
+                    Button {
+                        text: "Add",
+                        variant: ButtonVariant::Filled,
+                        on_click: move |_| compose_open.set(true),
+                    }
                 }
                 // Clearing throws work away, so it says so in the same colour a row's own
                 // Delete uses, and offers the same way back.
@@ -466,30 +532,42 @@ fn app() -> Element {
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Md,
 
-                // The composer: one grouped strip whose field grows with the window, so
-                // the field is the thing you look at and the button is the thing beside it.
-                Surface {
-                    fill_max_width: true,
-                    Row {
-                        fill_max_width: true,
-                        space_role: SpaceRole::Sm,
-                        alignment: Alignment::CenterStart,
-                        TextField {
-                            weight: 1.0,
-                            placeholder: "Add a task, then press Enter",
-                            on_value_change: move |value| draft.set(value),
-                            on_submit: move |value: String| add(value),
-                        }
-                        Button {
-                            text: "Add",
-                            variant: ButtonVariant::Filled,
-                            on_click: move |_| add(draft()),
-                        }
-                    }
+                if !stacked {
+                    {composer(compose, draft)}
                 }
 
                 {list}
             }
+            }
+
+            // The same composer, arriving from an edge, on the windows with no room for
+            // it at the head of the list. Which edge is the Renderer's decision.
+            Sheet {
+                open: compose_open() && stacked,
+                on_dismiss: move |_| compose_open.set(false),
+                fill_max_width: true,
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    Row {
+                        fill_max_width: true,
+                        alignment: Alignment::CenterStart,
+                        Text { text: "Add Task", type_role: TypeRole::Subtitle, weight: 1.0 }
+                        Button {
+                            text: "Close",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| compose_open.set(false),
+                        }
+                    }
+                    Separator {}
+                    // Only where the composer is not already at the head of the list.
+                    // Declaring it in both places would be two fields for one control:
+                    // two things to focus, two drafts, and whichever one you did not type
+                    // in holding the older text.
+                    if stacked {
+                        {composer(compose, draft)}
+                    }
+                }
             }
 
             // What this sample is, and the one control that belongs to the sample rather
@@ -700,6 +778,26 @@ mod tests {
             false
         }
 
+        /// Every live node of one kind.
+        fn nodes_of_kind(&self, kind: WidgetKind) -> Vec<u32> {
+            let mut nodes: Vec<u32> = self
+                .widgets
+                .iter()
+                .filter(|(_, got)| **got == kind)
+                .map(|(node_id, _)| *node_id)
+                .collect();
+            nodes.sort_unstable();
+            nodes
+        }
+
+        /// The nodes of one kind carrying one piece of text.
+        fn nodes_of_kind_with_text(&self, kind: WidgetKind, wanted: &str) -> Vec<u32> {
+            self.nodes_with_text(wanted)
+                .into_iter()
+                .filter(|node_id| self.widgets.get(node_id) == Some(&kind))
+                .collect()
+        }
+
         /// The nodes carrying one piece of text.
         fn nodes_with_text(&self, wanted: &str) -> Vec<u32> {
             self.texts
@@ -781,6 +879,23 @@ mod tests {
                 .expect("no visible row carried an action menu");
             self.click(anchor);
             anchor
+        }
+
+        /// The screen after the Renderer has reported a window of this width.
+        fn at(width_dp: f32) -> Self {
+            dioxus_compose::window::reset_window_size();
+            let mut screen = Self::new();
+            screen.dispatch(HostEvent {
+                node_id: 0,
+                handler_id: 0,
+                payload: EventPayload::WindowSizeChanged {
+                    width_dp,
+                    height_dp: 900.0,
+                    class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+                },
+            });
+            dioxus_compose::window::reset_window_size();
+            screen
         }
 
         /// Presses a node, the way the Renderer reports a press, and returns what the
@@ -1028,14 +1143,58 @@ mod tests {
         );
     }
 
+    /// The reference heads its screens with two lines: what is being looked at, and how
+    /// it is going. The application's name is the one thing on the screen that never
+    /// changes, so it is the one thing least worth the largest type on it.
+    #[test]
+    fn fr22_the_screen_is_headed_by_what_it_is_showing() {
+        let screen = Screen::new();
+        assert!(
+            screen
+                .mock
+                .nodes_of_kind_with_text(WidgetKind::Text, Filter::All.label())
+                .len()
+                == 1,
+            "the screen does not name the filter it is showing"
+        );
+        assert!(
+            screen.mock.nodes_with_text("Tasks").is_empty(),
+            "the screen is still headed by the application's name"
+        );
+    }
+
+    /// Three of the reference's four shots are an Add Task sheet. On a phone the composer
+    /// is behind one, and on a window with room it stands at the head of the list, and it
+    /// is one composer either way.
+    #[test]
+    fn fr22_the_composer_moves_into_a_sheet_on_a_phone() {
+        let narrow = Screen::at(420.0);
+        let fields = narrow.mock.nodes_of_kind(WidgetKind::TextField);
+        assert_eq!(
+            fields.len(),
+            1,
+            "a phone should declare the composer once and nowhere else"
+        );
+        assert!(
+            narrow.mock.is_inside(fields[0], WidgetKind::Sheet),
+            "a phone should reach the composer through a sheet"
+        );
+
+        let wide = Screen::at(1200.0);
+        let fields = wide.mock.nodes_of_kind(WidgetKind::TextField);
+        assert_eq!(fields.len(), 1);
+        assert!(
+            !wide.mock.is_inside(fields[0], WidgetKind::Sheet),
+            "a window with room should stand the composer at the head of the list"
+        );
+    }
+
     /// The only control that invents five thousand tasks is behind the sheet that says
     /// what this sample is. A task list does not have one, and one on the main surface
     /// says this is a demonstration of a list rather than a list.
     #[test]
     fn fr21_the_bulk_fill_is_behind_the_about_sheet_rather_than_on_the_list() {
         let screen = Screen::new();
-        assert_eq!(screen.mock.count_of(WidgetKind::Sheet), 1);
-
         let fill = screen
             .mock
             .nodes_with_text(&format!("Add {BULK_COUNT} tasks"));
@@ -1118,9 +1277,22 @@ mod tests {
         assert_eq!(screen.mock.count_of(WidgetKind::NavigationItem), 3);
         for label in ["All", "Active", "Done"] {
             assert_eq!(
-                screen.mock.nodes_with_text(label).len(),
+                screen
+                    .mock
+                    .nodes_of_kind_with_text(WidgetKind::NavigationItem, label)
+                    .len(),
                 1,
-                "{label} should be one destination and nothing else"
+                "{label} should be one destination"
+            );
+            // The screen heads itself with the name of what it is showing, so the word
+            // is on it twice; what there must not be is a button carrying it, which is
+            // what a filter strip made of buttons would look like on the wire.
+            assert!(
+                screen
+                    .mock
+                    .nodes_of_kind_with_text(WidgetKind::Button, label)
+                    .is_empty(),
+                "{label} is a button as well as a destination"
             );
         }
     }

@@ -28,6 +28,7 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.design.HostPlatform
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.resolveTheme
@@ -215,9 +216,49 @@ class DesignTokenWiringTest {
     fun fr14_2_every_variant_is_distinct_within_a_system() {
         DesignSystem.entries.forEach { system ->
             val theme = resolved(system)
-            val styles = ButtonVariant.entries.map { theme.rules.button(it, theme) }
+            val styles = ButtonVariant.entries
+                .filterNot { it == ButtonVariant.Operator }
+                .map { theme.rules.button(it, theme) }
             assertEquals(styles.size, styles.distinct().size, "$system draws two variants identically")
         }
+    }
+
+    @Test
+    fun fr22_operator_keys_follow_the_calculator_language_of_each_system() {
+        val cupertino = resolved(DesignSystem.Cupertino)
+        val cupertinoOperator = cupertino.rules.button(ButtonVariant.Operator, cupertino)
+        assertEquals(
+            cupertino.rules.button(ButtonVariant.Filled, cupertino),
+            cupertinoOperator,
+        )
+
+        val fluent = resolved(DesignSystem.Fluent)
+        val fluentOperator = fluent.rules.button(ButtonVariant.Operator, fluent)
+        assertEquals(fluent.rules.button(ButtonVariant.Tonal, fluent), fluentOperator)
+        assertNotEquals(fluent.rules.button(ButtonVariant.Filled, fluent).container, fluentOperator.container)
+
+        val deepin = resolved(DesignSystem.Deepin)
+        val deepinOperator = deepin.rules.button(ButtonVariant.Operator, deepin)
+        val deepinNumber = deepin.rules.button(ButtonVariant.Tonal, deepin)
+        assertEquals(deepinNumber.container, deepinOperator.container)
+        assertEquals(deepin.color(ColorRole.Primary), deepinOperator.content)
+        assertNotEquals(deepinNumber.content, deepinOperator.content)
+    }
+
+    @Test
+    fun fr22_liquid_glass_navigation_has_a_translucent_gradient_and_search_pill() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val style = glass.rules.navigation(WindowSizeClass.Expanded, glass)
+        assertTrue(style.container.alpha < 1f, "the drawer hides the page behind it")
+        assertEquals(glass.color(ColorRole.Background), style.pageGradientStart)
+        assertEquals(glass.color(ColorRole.PrimaryContainer), style.pageGradientEnd)
+        assertTrue(style.searchContainer != null, "the search destination has no pill fill")
+
+        val fluent = resolved(DesignSystem.Fluent)
+        val flat = fluent.rules.navigation(WindowSizeClass.Expanded, fluent)
+        assertEquals(null, flat.pageGradientStart)
+        assertEquals(null, flat.pageGradientEnd)
+        assertEquals(null, flat.searchContainer)
     }
 }
 

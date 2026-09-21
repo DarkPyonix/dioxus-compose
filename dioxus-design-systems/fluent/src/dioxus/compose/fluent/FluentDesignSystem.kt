@@ -172,7 +172,7 @@ class FluentDesignSystem private constructor(
             pressedBorder = null,
             ripple = false,
         )
-        ButtonVariant.Tonal -> ButtonStyle(
+        ButtonVariant.Tonal, ButtonVariant.Operator -> ButtonStyle(
             container = palette.background1,
             content = palette.foreground1,
             // A Fluent standard button always carries its stroke. Without it the button

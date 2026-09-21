@@ -7,12 +7,13 @@
 //! ink that stays readable on them. A literal would have been easier and would have kept
 //! its light-mode pink when the reader asked for dark.
 //!
-//! Unified, naming Cupertino: the reference is an iOS design.
+//! Unified, naming Cupertino and dark: the reference's check-in is black, and that is
+//! the screen this opens on. `THEME` says both.
 
 mod mood;
 
 use dioxus_compose::prelude::*;
-use mood::{Mood, SESSIONS, Session, WORRIES, face, week_line};
+use mood::{Mood, SESSIONS, Session, WORRIES, week_line};
 
 /// A phone design in a desktop window is still a phone design.
 const PAGE_MEASURE: f32 = 420.0;
@@ -86,66 +87,75 @@ fn feeling_step(
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            space_role: SpaceRole::Lg,
 
             // The face fills the top of the screen in the tint of the feeling it is
-            // showing, which is the reference's whole idea: the answer is the colour.
+            // showing, which is the reference's whole idea: the answer is the colour. It
+            // runs to the window's edges, so it is outside the inset column below rather
+            // than the first row of it.
             dioxus_compose::Box {
                 fill_max_width: true,
                 height: FACE_SIDE * 1.4,
                 background: Paint::Role(fill),
                 alignment: Alignment::Center,
-                Canvas {
+                Image {
                     width: FACE_SIDE,
                     height: FACE_SIDE,
-                    commands: face(FACE_SIDE, chosen()),
+                    asset_id: asset(AssetKind::Svg, chosen().picture()),
                 }
             }
 
-            // The strip of answers. The chosen one is filled and the rest are plain, so
-            // which colour "filled" means stays the design system's.
-            Row {
-                fill_max_width: true,
-                padding_role: SpaceRole::Md,
-                space_role: SpaceRole::Sm,
-                for option in Mood::STRIP {
-                    Button {
-                        key: "{option.label()}",
-                        text: option.label(),
-                        weight: 1.0,
-                        variant: if option == chosen() {
-                            ButtonVariant::Filled
-                        } else {
-                            ButtonVariant::Tonal
-                        },
-                        on_click: move |_| chosen.set(option),
-                    }
-                }
-            }
-
+            // Everything under the face, inset once and spaced once.
+            //
+            // Each of these used to carry its own padding inside a column that was also
+            // spacing them, so the gap between two of them was the space rung plus two
+            // paddings and the gap between two others was the rung alone. The ladder
+            // answers how far apart two things sit; it cannot do that if half the answer
+            // is added again by each thing.
             Column {
                 fill_max_width: true,
+                weight: 1.0,
                 padding_role: SpaceRole::Md,
-                space_role: SpaceRole::Xs,
-                alignment: Alignment::Center,
-                Text {
-                    text: "How do you feel today?",
-                    type_role: TypeRole::Headline,
-                    text_align: TextAlign::Center,
-                }
-                Text {
-                    text: "{chosen().label()} is what today looks like.",
-                    type_role: TypeRole::Body,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    text_align: TextAlign::Center,
-                }
-            }
+                space_role: SpaceRole::Lg,
 
-            // Only a reminder that the ink is guaranteed to read on the fill: a whole
-            // sentence on the tint, not a word.
-            dioxus_compose::Box {
-                fill_max_width: true,
-                padding_role: SpaceRole::Md,
+                // The strip of answers. The chosen one is filled and the rest are plain,
+                // so which colour "filled" means stays the design system's.
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Sm,
+                    for option in Mood::STRIP {
+                        Button {
+                            key: "{option.label()}",
+                            text: option.label(),
+                            weight: 1.0,
+                            variant: if option == chosen() {
+                                ButtonVariant::Filled
+                            } else {
+                                ButtonVariant::Tonal
+                            },
+                            on_click: move |_| chosen.set(option),
+                        }
+                    }
+                }
+
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Xs,
+                    alignment: Alignment::Center,
+                    Text {
+                        text: "How do you feel today?",
+                        type_role: TypeRole::Headline,
+                        text_align: TextAlign::Center,
+                    }
+                    Text {
+                        text: "{chosen().label()} is what today looks like.",
+                        type_role: TypeRole::Body,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        text_align: TextAlign::Center,
+                    }
+                }
+
+                // Only a reminder that the ink is guaranteed to read on the fill: a whole
+                // sentence on the tint, not a word.
                 dioxus_compose::Box {
                     fill_max_width: true,
                     background: Paint::Role(fill),
@@ -157,25 +167,24 @@ fn feeling_step(
                         color: Paint::Role(ink),
                     }
                 }
-            }
 
-            Spacer { weight: 1.0 }
+                Spacer { weight: 1.0 }
 
-            Row {
-                fill_max_width: true,
-                padding_role: SpaceRole::Md,
-                space_role: SpaceRole::Md,
-                alignment: Alignment::CenterStart,
-                Button {
-                    text: "Skip",
-                    variant: ButtonVariant::Text,
-                    on_click: move |_| on_skip.call(()),
-                }
-                Button {
-                    text: "Next",
-                    weight: 1.0,
-                    variant: ButtonVariant::Filled,
-                    on_click: move |_| on_next.call(()),
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    alignment: Alignment::CenterStart,
+                    Button {
+                        text: "Skip",
+                        variant: ButtonVariant::Text,
+                        on_click: move |_| on_skip.call(()),
+                    }
+                    Button {
+                        text: "Next",
+                        weight: 1.0,
+                        variant: ButtonVariant::Filled,
+                        on_click: move |_| on_next.call(()),
+                    }
                 }
             }
         }
@@ -283,10 +292,10 @@ fn checked_in(chosen: Mood, worries: Vec<&'static str>, again: EventHandler<()>)
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::Center,
-                Canvas {
+                Image {
                     width: FACE_SIDE * 0.6,
                     height: FACE_SIDE * 0.6,
-                    commands: face(FACE_SIDE * 0.6, chosen),
+                    asset_id: asset(AssetKind::Svg, chosen.picture()),
                 }
                 Text {
                     text: "Today felt {chosen.label().to_lowercase()}.",
@@ -495,10 +504,10 @@ fn profile_page(chosen: Mood) -> Element {
                 fill_max_width: true,
                 space_role: SpaceRole::Xs,
                 alignment: Alignment::Center,
-                Canvas {
+                Image {
                     width: 96.0,
                     height: 96.0,
-                    commands: face(96.0, chosen),
+                    asset_id: asset(AssetKind::Svg, chosen.picture()),
                 }
                 Text { text: "Paul Wilson", type_role: TypeRole::Title }
                 Text {
@@ -669,9 +678,27 @@ fn app() -> Element {
     }
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and dark because the check-in, which is the screen this opens
+/// on and the screen the sample exists for, is black under a pastel panel in the
+/// reference, and the worry picker is black throughout. The home and profile screens in
+/// the same sheet are light, so this is the one reference whose halves disagree, and the
+/// screen it opens on wins.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
@@ -683,6 +710,28 @@ mod tests {
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+
+    /// Named for what it defends: the reference is a dark design, and a machine set the
+    /// other way drew this sample light with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Dark);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// The screen, driven the way a Renderer drives it. Every batch is kept, because a
     /// batch is the change since the frame before it rather than what is on screen.
@@ -775,8 +824,8 @@ mod tests {
         assert!(Host::new(app).rebuild().is_ok());
     }
 
-    /// The face on the check-in has to reach the Renderer as a drawing. A `Canvas` with no
-    /// commands is a blank square, which on this screen is most of the screen.
+    /// The face on the check-in has to reach the Renderer as a picture. An `Image` whose
+    /// id names nothing is a blank square, which on this screen is most of the screen.
     #[test]
     fn fr16_the_check_in_draws_a_face() {
         dioxus_compose::window::reset_window_size();
@@ -785,49 +834,71 @@ mod tests {
             .expect("the first frame failed")
             .to_vec();
         let mutations = decode_batch(&batch).expect("the batch did not decode");
-        let canvas = mutations
+        let registered: Vec<u32> = mutations
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::RegisterAsset {
+                    asset_id, bytes, ..
+                } if *bytes == Mood::Calm.picture() => Some(*asset_id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            registered.len(),
+            1,
+            "the face the check-in opens on was not registered"
+        );
+        let image = mutations
             .iter()
             .find_map(|mutation| match mutation {
                 Mutation::Create {
                     node_id,
-                    widget: WidgetKind::Canvas,
+                    widget: WidgetKind::Image,
                 } => Some(*node_id),
                 _ => None,
             })
-            .expect("the check-in has no canvas, so there is no face");
+            .expect("the check-in has no image, so there is no face");
         assert!(
             mutations.iter().any(|mutation| matches!(
                 mutation,
                 Mutation::SetProp {
                     node_id,
-                    property: PropertyKind::Commands,
-                    ..
-                } if *node_id == canvas
+                    property: PropertyKind::Asset,
+                    value: PropertyValue::Integer(id),
+                } if *node_id == image && *id as u32 == registered[0]
             )),
-            "the face carries no draw list, so it is a blank square"
+            "the face draws an id that was never registered"
         );
         dioxus_compose::window::reset_window_size();
     }
 
-    /// Choosing a mood redraws the face rather than only the label under it. A picker
-    /// whose picture does not follow the answer is a picker that looks broken.
+    /// Choosing a mood changes the picture rather than only the label under it. A picker
+    /// whose face does not follow the answer is a picker that looks broken.
     #[test]
     fn fr16_choosing_a_mood_redraws_the_face() {
         let mut screen = Screen::new();
         assert!(screen.press(Mood::Angry.label()), "no way to choose a mood");
         let changed = screen.frames.last().expect("a frame");
+        let mutations = decode_batch(changed).expect("the batch did not decode");
+        let angry = mutations
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::RegisterAsset {
+                    asset_id, bytes, ..
+                } if *bytes == Mood::Angry.picture() => Some(*asset_id),
+                _ => None,
+            })
+            .expect("the angry face was never registered");
         assert!(
-            decode_batch(changed)
-                .expect("the batch did not decode")
-                .iter()
-                .any(|mutation| matches!(
-                    mutation,
-                    Mutation::SetProp {
-                        property: PropertyKind::Commands,
-                        ..
-                    }
-                )),
-            "the mood changed and the drawing did not"
+            mutations.iter().any(|mutation| matches!(
+                mutation,
+                Mutation::SetProp {
+                    property: PropertyKind::Asset,
+                    value: PropertyValue::Integer(id),
+                    ..
+                } if *id as u32 == angry
+            )),
+            "the mood changed and the face did not"
         );
         dioxus_compose::window::reset_window_size();
     }
@@ -874,16 +945,21 @@ mod tests {
     /// The check-in, in the design system it ships, in both schemes, at all three widths.
     #[test]
     fn fr16_the_check_in_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("SelfCare", &[DesignSystem::Cupertino], app, |_| {});
+        sample_frames::record_as(
+            "SelfCare",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |_| {},
+        );
     }
 
     /// The profile, which is the other drawing: a week as a line, on a reading surface
     /// rather than on a tint.
     #[test]
     fn fr16_the_profile_is_recorded() {
-        sample_frames::record_in(
+        sample_frames::record_as(
             "SelfCareProfile",
-            &[DesignSystem::Cupertino],
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
             |screen| {
                 assert!(
@@ -897,9 +973,9 @@ mod tests {
     /// The listening screen, which is where the session cards and the windowing row are.
     #[test]
     fn fr15_the_listening_screen_is_recorded() {
-        sample_frames::record_in(
+        sample_frames::record_as(
             "SelfCareListen",
-            &[DesignSystem::Cupertino],
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
             |screen| {
                 assert!(

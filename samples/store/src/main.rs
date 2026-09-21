@@ -1,15 +1,15 @@
 //! A clothing shop: a catalogue you can browse by category, a product you can size and
 //! count, and a bag that adds up.
 //!
-//! Unified rather than adaptive. The reference is an iOS design and the shop's look is the
-//! shop's, not the platform's, so `Theme::unified(DesignSystem::Cupertino)` is named once
-//! in `main` and the same declaration draws the same screen everywhere.
+//! Unified rather than adaptive. The reference is a light iOS design and the shop's look
+//! is the shop's, not the platform's, so `THEME` names the design system and the colour
+//! scheme once and the same declaration draws the same screen everywhere.
 //!
-//! The one thing the reference has that this cannot is photography. `Image` takes an id
-//! the Host registered and an application only has the tree, so every garment here is a
-//! tile filled with one of the three accent containers. That is a role rather than a
-//! stand-in colour: it follows the reader into dark, and the ink on it is guaranteed to
-//! stay readable, which a pastel literal would not be.
+//! The garments are drawn, not photographed. A photograph of a real garment belongs to
+//! whoever took it, so the shop's stock is a set of original vector drawings in
+//! `assets/`, registered once with `asset` and drawn by id after that. Everything around
+//! a picture is still a role: the card behind it, the ink on the card, the price beside
+//! it, so the only thing on this screen that keeps its own colours is the artwork.
 
 mod catalogue;
 
@@ -26,6 +26,11 @@ const PAGE_MEASURE: f32 = 420.0;
 /// how far apart two things sit rather than how large a picture is.
 const TILE_HEIGHT: f32 = 168.0;
 const CAROUSEL_HEIGHT: f32 = 200.0;
+/// How tall the banner is. Wider than it is tall, the way a picture at the top of a page
+/// is, and short enough that the first shelf is still on screen under it.
+const BANNER_HEIGHT: f32 = 168.0;
+/// How much of a card the garment takes, leaving the rest for what is written under it.
+const PICTURE_SHARE: f32 = 0.7;
 const STRIP_HEIGHT: f32 = 56.0;
 const HERO_HEIGHT: f32 = 300.0;
 
@@ -73,10 +78,15 @@ impl Destination {
     }
 }
 
-/// The picture of a garment, which is a fill and a name because it cannot be a photograph.
+/// A garment on its card: the drawing, with whatever the card has to say written over it.
 ///
 /// `named` is false in the grid, where the cell writes the name and the price underneath
 /// and the tile would otherwise say both twice.
+///
+/// The picture is registered here rather than up front. `asset` returns the same id for
+/// the same bytes and queues nothing the second time, so calling it in the body that draws
+/// the garment is one registration on the first frame however many shelves the garment
+/// appears on, and nothing at all on any frame after that.
 ///
 /// The button is here because a tile cannot be tapped. `Modifier::Clickable` exists on the
 /// wire, but no container widget exposes it, so the only thing in the vocabulary that
@@ -92,6 +102,22 @@ fn tile(product: &Product, height: f32, named: bool, on_open: EventHandler<u32>)
             background: Paint::Role(fill),
             shape_role: ShapeRole::Large,
             alignment: Alignment::BottomStart,
+            // The drawing takes the upper part of the card and the name is written under
+            // it, which is the reference's shape: a photograph with the label sitting on
+            // its lower left. It is a box of its own rather than the card's first child,
+            // because the card aligns what is in it to the bottom left and a picture put
+            // there sits behind the words.
+            dioxus_compose::Box {
+                fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+                Image {
+                    fill_max_width: true,
+                    height: height * PICTURE_SHARE,
+                    padding_role: SpaceRole::Sm,
+                    asset_id: asset(AssetKind::Svg, product.picture),
+                }
+            }
             Column {
                 fill_max_width: true,
                 padding_role: SpaceRole::Md,
@@ -152,14 +178,23 @@ fn grid_cell(product: &Product, on_open: EventHandler<u32>) -> Element {
     }
 }
 
-/// The catalogue: a headline, a carousel, the category strip and a two-up grid.
+/// The catalogue: the banner, a carousel, the category strip and a two-up grid.
 fn catalogue_screen(
     category: Signal<Category>,
+    slide: Signal<usize>,
     bag: Signal<Vec<BagLine>>,
     on_open: EventHandler<u32>,
 ) -> Element {
     let mut category = category;
+    let mut slide = slide;
     let shelf = under(category());
+    // A shelf can be shorter than the slide the last one left behind, so the carousel is
+    // read modulo what is on it rather than indexed straight.
+    let showing = if shelf.is_empty() {
+        0
+    } else {
+        slide() % shelf.len()
+    };
     let rows: Vec<Vec<&'static Product>> = shelf.chunks(2).map(<[_]>::to_vec).collect();
     let in_bag: u32 = bag().iter().map(|line| line.quantity).sum();
 
@@ -191,28 +226,56 @@ fn catalogue_screen(
                 }
             }
 
-            // The whole catalogue across, windowed. A carousel materialises the slides the
-            // Renderer asked for and nothing else, which is the horizontal half of the
-            // same windowing protocol the task list uses down a column.
-            LazyRow {
+            // The banner, which is the one picture on this screen that is a scene rather
+            // than a garment. It sits on a card the design system fills, so the drawing is
+            // the only thing here carrying colours of its own.
+            dioxus_compose::Box {
                 fill_max_width: true,
-                height: CAROUSEL_HEIGHT,
-                item_count: CATALOGUE.len(),
-                key_of: move |position: usize| CATALOGUE[position].id.to_string(),
-                // The gap between slides is the slide's own padding. A windowing list has
-                // no spacing of its own: it materialises the range the Renderer asked for
-                // and puts each item straight beside the last, so anything between two
-                // items has to belong to one of them.
-                item: move |position: usize| {
-                    rsx! {
-                        dioxus_compose::Box {
-                            width: PAGE_MEASURE * 0.62,
-                            fill_max_height: true,
-                            padding_role: SpaceRole::Xs,
-                            {tile(&CATALOGUE[position], CAROUSEL_HEIGHT, true, on_open)}
+                height: BANNER_HEIGHT,
+                background: Paint::Role(ColorRole::SurfaceVariant),
+                shape_role: ShapeRole::Large,
+                alignment: Alignment::Center,
+                Image {
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    asset_id: asset(AssetKind::Svg, catalogue::HERO),
+                }
+            }
+
+            // One slide at a time with a row of dots under it, which is the reference's
+            // carousel. The slide is the Host's rather than a scroll position, because a
+            // scroll position belongs to the Renderer and is never reported back: dots
+            // driven by one would be drawn in the right place and never move.
+            if !shelf.is_empty() {
+                {tile(shelf[showing], CAROUSEL_HEIGHT, true, on_open)}
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Xs,
+                    // Centred across the row, which needs the arrangement rather than the
+                    // alignment: alignment answers where a child sits across the row's
+                    // other axis, so a row of dots set to centre alignment is a row of
+                    // vertically centred dots still starting at the left edge.
+                    arrangement: Arrangement::Center,
+                    alignment: Alignment::Center,
+                    for (position, product) in shelf.iter().enumerate() {
+                        // A bullet in a text button. Nothing in the vocabulary is a dot,
+                        // and a `Button` is the only thing that carries a press, so the
+                        // dot is the smallest button there is rather than a decoration
+                        // that cannot be reached.
+                        Button {
+                            key: "{product.id}",
+                            text: "\u{2022}",
+                            variant: ButtonVariant::Text,
+                            padding_role: SpaceRole::None,
+                            color: Paint::Role(if position == showing {
+                                ColorRole::OnSurface
+                            } else {
+                                ColorRole::OutlineVariant
+                            }),
+                            on_click: move |_| slide.set(position),
                         }
                     }
-                },
+                }
             }
 
             // A strip that runs off the edge, not a segmented control.
@@ -233,13 +296,20 @@ fn catalogue_screen(
                         dioxus_compose::Box {
                             padding_role: SpaceRole::Xs,
                             alignment: Alignment::Center,
+                            // Every category is a label and one of them is the one you
+                            // are looking at, which is what the reference draws: the
+                            // chosen one in the reading ink and the rest in the quieter
+                            // one. Filling the chosen one instead made the row read as
+                            // five actions, four of them in the accent, on a screen whose
+                            // only real action is "Add to bag".
                             Button {
                                 text: choice.label(),
-                                variant: if choice == category() {
-                                    ButtonVariant::Filled
+                                variant: ButtonVariant::Text,
+                                color: Paint::Role(if choice == category() {
+                                    ColorRole::OnSurface
                                 } else {
-                                    ButtonVariant::Text
-                                },
+                                    ColorRole::OnSurfaceVariant
+                                }),
                                 on_click: move |_| category.set(choice),
                             }
                         }
@@ -298,6 +368,16 @@ fn detail_screen(
                 height: HERO_HEIGHT,
                 background: Paint::Role(fill),
                 alignment: Alignment::TopStart,
+                // The garment, full size. The reference's product page is a photograph
+                // running to the window's edges with the panel covering its lower part,
+                // and a page that fills that with a flat colour is the one screen in the
+                // shop that shows you nothing about what you are buying.
+                Image {
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    padding_role: SpaceRole::Lg,
+                    asset_id: asset(AssetKind::Svg, product.picture),
+                }
                 Row {
                     fill_max_width: true,
                     padding_role: SpaceRole::Md,
@@ -635,6 +715,7 @@ fn app() -> Element {
 
     let mut destination = use_signal(|| Destination::Shop);
     let category = use_signal(|| Category::New);
+    let slide = use_signal(|| 0_usize);
     let mut open = use_signal(|| Option::<u32>::None);
     let size = use_signal(|| SIZES[1]);
     let quantity = use_signal(|| 1_u32);
@@ -654,7 +735,7 @@ fn app() -> Element {
             EventHandler::new(move |()| open.set(None)),
             add_to_bag(bag, open, size, quantity),
         ),
-        (Destination::Shop, None) => catalogue_screen(category, bag, on_open),
+        (Destination::Shop, None) => catalogue_screen(category, slide, bag, on_open),
         (Destination::Search, _) => search_screen(on_open),
         (Destination::Bag, _) => bag_screen(bag),
         (Destination::Account, _) => account_screen(),
@@ -755,20 +836,58 @@ fn add_to_bag(
     })
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and light because the reference is a white page with black ink,
+/// grey product cards and one yellow accent.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use dioxus_compose::Host;
     use dioxus_compose::protocol::{
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind};
+
+    /// Named for what it defends: the reference is a light design, and a machine set
+    /// the other way drew this sample dark with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Light);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// The screen, driven the way a Renderer drives it.
     ///
@@ -899,6 +1018,126 @@ mod tests {
         assert!(Host::new(app).rebuild().is_ok());
     }
 
+    /// Every garment reaches the Renderer as a picture, and each drawing crosses once.
+    ///
+    /// Named for what it defends: `Image` was on the wire for a long time with nothing in
+    /// the tree drawing one, and the shelves were flat rectangles the whole time. A shelf
+    /// that shows two of the same garment is still one registration, because the id is
+    /// what a frame carries after the first one.
+    #[test]
+    fn fr16_every_garment_crosses_once_as_a_picture() {
+        let screen = Screen::new();
+        let registered: Vec<&[u8]> = screen
+            .mutations()
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::RegisterAsset { bytes, .. } => Some(*bytes),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            registered.contains(&catalogue::HERO),
+            "the banner was never registered"
+        );
+        for product in under(Category::New) {
+            assert!(
+                registered.contains(&product.picture),
+                "{} is on the shelf with no picture",
+                product.name
+            );
+        }
+        let mut seen = registered.clone();
+        seen.sort_unstable_by_key(|bytes| bytes.as_ptr());
+        seen.dedup_by_key(|bytes| bytes.as_ptr());
+        assert_eq!(
+            seen.len(),
+            registered.len(),
+            "a drawing was registered more than once"
+        );
+    }
+
+    /// Nothing is registered again once the screen is up. A picture that crossed on every
+    /// frame would put a file in the frame budget and would be the whole reason the id
+    /// exists undone.
+    #[test]
+    fn fr16_a_later_frame_carries_no_pictures() {
+        let mut screen = Screen::new();
+        screen.press(Category::Women.label());
+        let last = screen.frames.last().expect("nothing moved").clone();
+        let registered = decode_batch(&last)
+            .expect("the batch did not decode")
+            .into_iter()
+            .filter(|mutation| matches!(mutation, Mutation::RegisterAsset { .. }))
+            .count();
+        assert_eq!(
+            registered, 0,
+            "a drawing already on the shelf was sent again"
+        );
+    }
+
+    /// The carousel shows one slide, and the dot under it moves the carousel.
+    ///
+    /// Named for what it defends: a scroll position belongs to the Renderer and is never
+    /// reported back, so dots driven by one would be drawn in the right place and never
+    /// move. The slide is the Host's, which is what makes the dots mean anything.
+    #[test]
+    fn fr17_a_dot_moves_the_carousel_to_its_slide() {
+        let mut screen = Screen::new();
+        let shelf = under(Category::New);
+        assert!(shelf.len() > 1, "a carousel of one slide proves nothing");
+        assert!(
+            screen.texts().iter().any(|text| text == shelf[0].name),
+            "the carousel is not showing its first slide"
+        );
+
+        let dots: Vec<(u32, u64)> = screen
+            .mutations()
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(text),
+                } if *text == "\u{2022}" => Some(*node_id),
+                _ => None,
+            })
+            .filter_map(|node| {
+                screen
+                    .mutations()
+                    .iter()
+                    .find_map(|mutation| match mutation {
+                        Mutation::SetProp {
+                            node_id,
+                            property: PropertyKind::OnClick,
+                            value: PropertyValue::Integer(handler),
+                        } if *node_id == node => Some((node, *handler as u64)),
+                        _ => None,
+                    })
+            })
+            .collect();
+        assert_eq!(
+            dots.len(),
+            shelf.len(),
+            "a carousel of {} slides has {} dots",
+            shelf.len(),
+            dots.len()
+        );
+
+        let (node_id, handler_id) = dots[1];
+        screen.send(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        });
+        assert!(
+            screen
+                .latest_texts()
+                .iter()
+                .any(|text| text == shelf[1].name),
+            "the second dot did not bring its slide up"
+        );
+    }
+
     /// Every destination has to encode, not just the one the shop opens on. A widget only
     /// the bag reaches would otherwise fail for the first person who taps it.
     #[test]
@@ -1015,28 +1254,38 @@ mod tests {
 
     /// The catalogue, in the design system it ships, in both schemes, at all three widths.
     ///
-    /// The carousel windows its slides, so the recorder answers the range request a real
-    /// Renderer would have made before the first pixel. Without it the strip is an empty
-    /// box and the picture is of a screen with a hole in it.
+    /// The category strip windows its labels, so the recorder answers the range request a
+    /// real Renderer would have made before the first pixel. Without it the strip is an
+    /// empty box and the picture is of a screen with a hole in it.
     #[test]
     fn fr14_the_catalogue_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("Store", &[DesignSystem::Cupertino], app, |screen| {
-            assert_eq!(
-                screen.fill_lists(6),
-                2,
-                "the catalogue should hold two windowing lists, the carousel and the \
-                 category strip, or the picture is of a screen with a hole in it"
-            );
-        });
+        sample_frames::record_as(
+            "Store",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert_eq!(
+                    screen.fill_lists(6),
+                    1,
+                    "the category strip should be the catalogue's one windowing list, or \
+                     the picture is of a screen with a hole in it"
+                );
+            },
+        );
     }
 
     /// A garment's own page, which is a different picture: the grid is gone, the sizes and
     /// the stepper are there, and the panel covers the lower part of the tile.
     #[test]
     fn fr14_a_garment_page_is_recorded() {
-        sample_frames::record_in("StoreProduct", &[DesignSystem::Cupertino], app, |screen| {
-            screen.fill_lists(6);
-            assert!(screen.press("View"), "no garment on the catalogue opens");
-        });
+        sample_frames::record_as(
+            "StoreProduct",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                screen.fill_lists(6);
+                assert!(screen.press("View"), "no garment on the catalogue opens");
+            },
+        );
     }
 }

@@ -191,7 +191,7 @@ class CupertinoDesignSystem private constructor(
      * the pressed container rather than staying put while a wave crosses under it.
      */
     override fun button(variant: ButtonVariant): ButtonStyle = when (variant) {
-        ButtonVariant.Filled -> ButtonStyle(
+        ButtonVariant.Filled, ButtonVariant.Operator -> ButtonStyle(
             container = palette.accent,
             content = palette.onAccent,
             border = null,

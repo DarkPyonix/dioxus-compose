@@ -1,5 +1,9 @@
-//! A working desktop calculator, with the tape every desk calculator that had a printer
-//! used to have.
+//! A working desktop calculator, clone coded from the Windows, macOS and Deepin ones, with
+//! the tape every desk calculator that had a printer used to have.
+//!
+//! The three references are one declaration under three design systems. What they share is
+//! the shape: the number at the foot of a reading area, a row of memory keys, and four
+//! columns of keys along the bottom.
 //!
 //! Written the way an application using this library would be written: `rsx!` and hooks,
 //! no Kotlin and no protocol types.
@@ -17,10 +21,14 @@ mod engine;
 
 use engine::Calculator;
 
-/// The narrow key grid, top to bottom and left to right.
+/// The key grid, top to bottom and left to right.
 ///
-/// On a phone there is one column of keys and nowhere else for the four function keys, so
-/// they share the top row with an operator.
+/// One shape at every width. There used to be a second, wider one, where the function keys
+/// left the grid and stood in a column of their own beside it: a desk calculator, which is
+/// a real instrument but not one any of the three references is. Windows, macOS and Deepin
+/// all keep four columns however wide the window gets, and the wide pad put equals beside
+/// plus, which none of them does either. What changes with the window here is where the
+/// tape is, which is the adaptation this screen actually has.
 const ROWS: [[&str; 4]; 5] = [
     ["C", "\u{232b}", "%", "\u{00f7}"],
     ["7", "8", "9", "\u{00d7}"],
@@ -29,35 +37,18 @@ const ROWS: [[&str; 4]; 5] = [
     ["\u{00b1}", "0", ".", "="],
 ];
 
-/// The wide key grid: digits and operators only.
-///
-/// Once there is width to spend, the functions leave the grid and the pad becomes what a
-/// desk calculator is, four rows of digits with the operators down the side.
-const WIDE_ROWS: [[&str; 4]; 4] = [
-    ["7", "8", "9", "\u{00f7}"],
-    ["4", "5", "6", "\u{00d7}"],
-    ["1", "2", "3", "\u{2212}"],
-    ["\u{00b1}", "0", ".", "+"],
-];
-
-/// The column beside the wide grid: what a calculator does to an entry rather than to a
-/// number, with equals at the foot where the hand ends up.
-const FUNCTION_COLUMN: [&str; 4] = ["C", "\u{232b}", "%", "="];
-
-/// How much of the wide keypad's width the digit grid takes. The functions are one column
-/// beside the grid's four.
-const GRID_SHARE: f32 = 4.0;
-
 /// A keypad is a field of keys, so every key has a surface and the three kinds of key are
 /// told apart by which surface they get.
 ///
-/// The operators and equals are the accent, the digits are the quiet filled key that most
-/// of the pad is made of, and the four function keys are outlined, which is a key with an
-/// edge rather than a key with a fill. A plain text button is not a key at all: it reads as
-/// a label lying on the case.
+/// Equals is the accent action, digits are the quiet filled keys that most of the pad is
+/// made of, and operators use the design system's operator role. That role is an accent
+/// fill on macOS, a neutral key on Windows, and a neutral key with accent ink on Deepin.
+/// The function keys are outlined, which is a key with an edge rather than a key with a
+/// fill. A plain text button is not a key at all: it reads as a label lying on the case.
 fn variant_for(label: &str) -> ButtonVariant {
     match label {
-        "=" | "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Filled,
+        "=" => ButtonVariant::Filled,
+        "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Operator,
         "C" | "\u{232b}" | "%" | "\u{00b1}" => ButtonVariant::Outlined,
         _ => ButtonVariant::Tonal,
     }
@@ -83,70 +74,20 @@ fn color_for(label: &str) -> Option<Paint> {
 }
 
 /// The keypad, in the shape the window has room for.
-fn keypad(wide: bool, press: EventHandler<&'static str>) -> Element {
-    if wide {
-        return rsx! {
-            Row {
-                fill_max_width: true,
-                fill_max_height: true,
-                space_role: SpaceRole::Sm,
-                Column {
-                    weight: GRID_SHARE,
-                    fill_max_height: true,
-                    space_role: SpaceRole::Sm,
-                    for (index , row) in WIDE_ROWS.iter().enumerate() {
-                        Row {
-                            key: "wide-row-{index}",
-                            fill_max_width: true,
-                            weight: 1.0,
-                            space_role: SpaceRole::Sm,
-                            for label in row.iter().copied() {
-                                Button {
-                                    key: "{label}",
-                                    text: label,
-                                    weight: 1.0,
-                                    fill_max_height: true,
-                                    variant: variant_for(label),
-                                    color: color_for(label),
-                                    on_click: move |_| press.call(label),
-                                }
-                            }
-                        }
-                    }
-                }
-                Column {
-                    weight: 1.0,
-                    fill_max_height: true,
-                    space_role: SpaceRole::Sm,
-                    for label in FUNCTION_COLUMN.iter().copied() {
-                        Button {
-                            key: "{label}",
-                            text: label,
-                            weight: 1.0,
-                            fill_max_width: true,
-                            variant: variant_for(label),
-                            color: color_for(label),
-                            on_click: move |_| press.call(label),
-                        }
-                    }
-                }
-            }
-        };
-    }
-    // The narrow pad: every row an equal share of the height, every key an equal share of
-    // its row. Weight is what makes this a grid rather than five lines of differently
-    // sized buttons.
+fn keypad(press: EventHandler<&'static str>) -> Element {
+    // Every row an equal share of the height, every key an equal share of its row. Weight
+    // is what makes this a grid rather than five lines of differently sized buttons.
     rsx! {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            space_role: SpaceRole::Sm,
+            space_role: SpaceRole::Xs,
             for (index , row) in ROWS.iter().enumerate() {
                 Row {
                     key: "row-{index}",
                     fill_max_width: true,
                     weight: 1.0,
-                    space_role: SpaceRole::Sm,
+                    space_role: SpaceRole::Xs,
                     for label in row.iter().copied() {
                         Button {
                             key: "{label}",
@@ -164,27 +105,45 @@ fn keypad(wide: bool, press: EventHandler<&'static str>) -> Element {
     }
 }
 
-/// How large the entered number is set, in sp.
+/// The memory keys, as the row the Windows and Deepin references give them.
 ///
-/// This is the one place in the samples where a size is named rather than a rung, and the
-/// reason is that the ladder is a ladder for documents. Its top rung is a headline over a
-/// page of body text: 34sp in Cupertino, 40 in Fluent, 57 in Material. A calculator is not
-/// a document. The number is the whole instrument and everything else on the screen is
-/// support for entering it, so at any rung of a reading ladder the panel ends up a large
-/// box with a small number pinned inside it.
-///
-/// The alternative was a tenth rung above `Display`. It was rejected because every design
-/// system would then have to publish a size for a rung that only an instrument readout
-/// would ever ask for, and a ladder gains a rung nothing reads. Keeping `TypeRole::Display`
-/// and overriding the size alone means the family, the weight and the letter spacing are
-/// still the design system's, which is the part of the rung that is worth having.
-const READOUT_SP: f32 = 64.0;
+/// A second register beside the running value. They are text keys rather than keys in the
+/// pad, because they do not enter anything: the pad is what a number is typed on, and a
+/// row of quiet labels above it is how both references say "these act on what is already
+/// there".
+fn memory_row(memory_set: bool, press: EventHandler<&'static str>) -> Element {
+    rsx! {
+        Row {
+            fill_max_width: true,
+            space_role: SpaceRole::Xs,
+            alignment: Alignment::CenterStart,
+            for label in engine::MEMORY_KEYS {
+                Button {
+                    key: "{label}",
+                    text: label,
+                    weight: 1.0,
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    // Recalling and clearing act on what is stored, so they are dead keys
+                    // until something is. The reference greys them the same way.
+                    enabled: memory_set || !matches!(label, "MC" | "MR"),
+                    on_click: move |_| press.call(label),
+                }
+            }
+        }
+    }
+}
 
-/// The readout panel. A calculator's display is set into the case rather than printed on
-/// it, so it is a surface of its own.
+/// The readout: what is being worked out, and what it comes to.
+///
+/// Printed on the case rather than set into it. It used to be a filled panel, on the
+/// reasoning that a calculator's display is a component behind glass, and none of the
+/// three references does that: the Windows, macOS and Deepin calculators all set the
+/// number directly on the page with nothing drawn behind it. A panel also fought the
+/// reading area, which is mostly the room above the number.
 fn readout(status: String, display: String) -> Element {
     rsx! {
-        Surface {
+        dioxus_compose::Box {
             fill_max_width: true,
             Column {
                 fill_max_width: true,
@@ -208,8 +167,6 @@ fn readout(status: String, display: String) -> Element {
                     fill_max_width: true,
                     text_align: TextAlign::End,
                     type_role: TypeRole::Display,
-                    font_size: READOUT_SP,
-                    line_height: READOUT_SP,
                     color: Paint::Role(ColorRole::OnSurface),
                     max_lines: 1,
                     overflow: TextOverflow::Ellipsis,
@@ -231,7 +188,7 @@ struct TapeEntry {
 }
 
 /// What the app bar calls the tape, and what the sheet is opened by.
-const TAPE_LABEL: &str = "Tape";
+const TAPE_LABEL: &str = "History";
 
 /// The tape: what has been worked out, newest at the top, each line a key back into the
 /// calculation it came from.
@@ -298,6 +255,15 @@ fn tape(entries: Vec<TapeEntry>, recall: EventHandler<f64>, clear: EventHandler<
     }
 }
 
+/// How the reading area and the keypad share the instrument's height.
+///
+/// All three references put the keypad along the bottom and let the number sit at the
+/// foot of whatever is left above it. The ratio is theirs too: measured off the three
+/// shots it runs from one to two to one to three, and the keys grow with the window in
+/// every one of them rather than stopping at a size.
+const READING_SHARE: f32 = 1.0;
+const KEYPAD_SHARE: f32 = 3.0;
+
 /// How the instrument and the tape share an expanded window.
 ///
 /// The keypad is what the hand is on, so it gets the larger share, and the tape is a
@@ -314,16 +280,16 @@ fn app() -> Element {
 
     let display = calculator.read().display();
     let status = calculator.read().status();
-    // A phone holds one column of keys. Anything wider has room for the functions to leave
-    // the grid and stand in a column of their own.
-    let wide = !window.is_compact();
+    let memory_set = calculator.read().memory_set();
     // A desktop window has room for the tape to stand beside the keypad. Narrower than
     // that it is a sheet, which is the same tape arriving from an edge instead.
     let tape_beside = window.is_expanded();
-    // The keypad stops widening somewhere: keys that grew to fill a desktop window would
-    // be the size of a hand.
-    let pad_width =
-        (!tape_beside && window.is_expanded()).then_some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP);
+    // The keypad stops widening once there is more window than a keypad needs, and centres
+    // in what is left: a key the width of a hand is not easier to press, and no calculator
+    // on any of the three platforms grows one. The condition used to read
+    // `!tape_beside && window.is_expanded()`, which is never true, so the pad had been
+    // growing without limit the whole time.
+    let pad_width = (!window.is_compact()).then_some(WindowSizeClass::MEDIUM_MIN_WIDTH_DP);
 
     // One key press, whichever key it was. The tape is written here rather than in the
     // engine because a tape is a thing the application keeps, not a thing arithmetic has.
@@ -375,7 +341,7 @@ fn app() -> Element {
 
             TopAppBar {
                 fill_max_width: true,
-                Text { text: "Calculator", type_role: TypeRole::Title, weight: 1.0 }
+                Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
                 // Only where the tape is not already on screen. A button that opens what
                 // you are looking at is a button that does nothing.
                 if !tape_beside {
@@ -390,26 +356,39 @@ fn app() -> Element {
             Row {
                 fill_max_width: true,
                 fill_max_height: true,
-                Column {
+                // The instrument: the number, the memory keys and the pad, all on one
+                // measure so their edges agree. The pad used to be the only one of the
+                // three that stopped widening, which put the number to the right of the
+                // keys it belongs to.
+                dioxus_compose::Box {
                     weight: INSTRUMENT_SHARE,
                     fill_max_height: true,
-                    // The bar insets its own contents by the medium step, so the
-                    // instrument under it uses the same one and the two line up.
-                    padding_role: SpaceRole::Md,
-                    space_role: SpaceRole::Md,
+                    alignment: Alignment::TopCenter,
+                    Column {
+                        fill_max_width: pad_width.is_none(),
+                        width: pad_width,
+                        fill_max_height: true,
+                        // The bar insets its own contents by the medium step, so the
+                        // instrument under it uses the same one and the two line up.
+                        padding_role: SpaceRole::Md,
+                        space_role: SpaceRole::Md,
 
-                    {readout(status, display)}
-                    // The pad takes the height the readout leaves, and on a desktop
-                    // window it stops widening and centres instead.
-                    dioxus_compose::Box {
-                        fill_max_width: true,
-                        weight: 1.0,
-                        alignment: Alignment::TopCenter,
-                        Column {
-                            fill_max_width: pad_width.is_none(),
-                            width: pad_width,
-                            fill_max_height: true,
-                            {keypad(wide, EventHandler::new(press))}
+                        // The reading area takes the height the keys leave and the number
+                        // sits at its foot, which is where all three references put it:
+                        // the room above the number is what a long expression grows into
+                        // rather than something that pushes the keys down.
+                        dioxus_compose::Box {
+                            fill_max_width: true,
+                            weight: READING_SHARE,
+                            alignment: Alignment::BottomCenter,
+                            {readout(status, display)}
+                        }
+                        {memory_row(memory_set, EventHandler::new(press))}
+                        dioxus_compose::Box {
+                            fill_max_width: true,
+                            weight: KEYPAD_SHARE,
+                            alignment: Alignment::BottomCenter,
+                            {keypad(EventHandler::new(press))}
                         }
                     }
                 }
@@ -431,7 +410,12 @@ fn app() -> Element {
                 open: tape_open() && !tape_beside,
                 on_dismiss: move |_| tape_open.set(false),
                 fill_max_width: true,
-                {tape(entries(), recall, clear_tape)}
+                // Only where the tape is not already beside the keys. Declaring it in
+                // both places would be two tapes: one list of nodes per finished
+                // calculation, twice, and a scroll position each.
+                if !tape_beside {
+                    {tape(entries(), recall, clear_tape)}
+                }
             }
         }
     }
@@ -465,38 +449,14 @@ mod tests {
     /// keys is how a keypad test starts failing for a reason that has nothing to do with
     /// the keypad.
     fn is_key(label: &str) -> bool {
-        ROWS.iter()
-            .flatten()
-            .chain(WIDE_ROWS.iter().flatten())
-            .chain(FUNCTION_COLUMN.iter())
-            .any(|key| *key == label)
+        ROWS.iter().flatten().any(|key| *key == label)
     }
 
     /// The key labels the screen holds, in the order the keypad declares them, after the
     /// Renderer reports a window of the given width.
     fn keys_at(width_dp: f32) -> Vec<String> {
-        dioxus_compose::window::reset_window_size();
-        let mut host = Host::new(app);
-        let first = host.rebuild().expect("the first frame failed to encode");
-        let mut labels = collect_button_labels(first);
-        let event = HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::WindowSizeChanged {
-                width_dp,
-                height_dp: 800.0,
-                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
-            },
-        };
-        let mut bytes = Vec::new();
-        encode_event(&event, &mut bytes).expect("the resize did not encode");
-        let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
-        let after = collect_button_labels(batch);
-        if !after.is_empty() {
-            labels = after;
-        }
+        let mut labels = Screen::at(width_dp).button_labels();
         labels.retain(|label| is_key(label));
-        dioxus_compose::window::reset_window_size();
         labels
     }
 
@@ -525,25 +485,77 @@ mod tests {
             .collect()
     }
 
+    /// The reference screen reads from the top down: what is being worked out, what it
+    /// comes to, the memory keys, then the pad. This asserts the order the screen is
+    /// declared in, because a memory row under the keypad would be a different screen.
+    #[test]
+    fn fr22_the_memory_row_stands_between_the_reading_area_and_the_keys() {
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        let batch = host.rebuild().expect("the first frame failed to encode");
+        let labels = collect_button_labels(batch);
+        dioxus_compose::window::reset_window_size();
+
+        let memory_at = labels
+            .iter()
+            .position(|label| label == engine::MEMORY_KEYS[0])
+            .expect("the screen has no memory row");
+        assert_eq!(
+            &labels[memory_at..memory_at + engine::MEMORY_KEYS.len()],
+            engine::MEMORY_KEYS,
+            "the memory keys are not the row the reference prints"
+        );
+
+        let first_key = labels
+            .iter()
+            .position(|label| label == ROWS[0][0])
+            .expect("the screen has no keypad");
+        assert!(
+            memory_at < first_key,
+            "the memory row is declared after the keypad, so it is drawn under it"
+        );
+    }
+
     /// A phone keypad and a desk keypad are different keypads, not the same one scaled.
     /// Narrow, the four function keys share the top row with an operator. Wide, they are a
     /// column of their own and the grid is four rows of digits.
     #[test]
-    fn fr20_the_keypad_changes_shape_with_the_window() {
+    fn fr20_the_keypad_is_one_shape_and_the_tape_is_what_moves() {
         let narrow = keys_at(420.0);
         assert_eq!(narrow.first().map(String::as_str), Some("C"));
         assert_eq!(narrow.len(), 20);
 
-        let wide = keys_at(900.0);
-        assert_eq!(wide.first().map(String::as_str), Some("7"));
-        assert_eq!(wide.len(), 20);
-        // The functions come last because they are a column beside the grid rather than
-        // its first row.
-        assert_eq!(
-            wide[16..],
-            ["C", "\u{232b}", "%", "="].map(str::to_owned)[..]
+        // The same twenty keys in the same order. All three references keep four columns
+        // however wide the window is; what a wider window buys is somewhere to put the
+        // tape.
+        assert_eq!(keys_at(900.0), narrow);
+        assert_eq!(keys_at(1200.0), narrow);
+    }
+
+    /// The tape stands beside the keypad where there is room and arrives from an edge
+    /// where there is not. That is what this screen does with a wider window, and it was
+    /// the one adaptation it had that nothing tested.
+    #[test]
+    fn fr20_the_tape_stands_beside_the_keypad_on_a_desktop_window() {
+        let narrow = Screen::at(420.0);
+        assert!(
+            !narrow.stands_outside_a_sheet(WidgetKind::Text, TAPE_LABEL),
+            "a phone should reach the tape through a sheet"
         );
-        assert_ne!(narrow, wide);
+        assert!(
+            narrow.has_button(TAPE_LABEL),
+            "a phone has no way to open the tape"
+        );
+
+        let wide = Screen::at(1200.0);
+        assert!(
+            wide.stands_outside_a_sheet(WidgetKind::Text, TAPE_LABEL),
+            "a desktop window should stand the tape beside the keys"
+        );
+        assert!(
+            !wide.has_button(TAPE_LABEL),
+            "a button that opens what you are already looking at"
+        );
     }
 
     #[test]
@@ -556,6 +568,14 @@ mod tests {
             }
         }
         assert!(!calculator.display().is_empty());
+    }
+
+    #[test]
+    fn fr22_operators_use_the_adaptive_operator_role_and_equals_stays_filled() {
+        for label in ["\u{00f7}", "\u{00d7}", "\u{2212}", "+"] {
+            assert_eq!(variant_for(label), ButtonVariant::Operator);
+        }
+        assert_eq!(variant_for("="), ButtonVariant::Filled);
     }
 
     /// The whole declared tree, checked against the encoder. A widget or an attribute the
@@ -606,6 +626,11 @@ mod tests {
         host: Host,
         /// Node to the label printed on it.
         texts: HashMap<u32, String>,
+        /// What each live node was created as, so a test can ask where something sits.
+        widgets: HashMap<u32, WidgetKind>,
+        /// The buttons in the order they were created, which is the order the screen
+        /// declares them.
+        buttons: Vec<u32>,
         /// Node to the handler its `on_click` was given.
         clicks: HashMap<u32, u64>,
         /// Node to the node it was inserted under, so a removal takes the subtree with it
@@ -623,6 +648,8 @@ mod tests {
             let mut screen = Self {
                 host: Host::new(app),
                 texts: HashMap::new(),
+                widgets: HashMap::new(),
+                buttons: Vec::new(),
                 clicks: HashMap::new(),
                 parents: HashMap::new(),
                 display: 0,
@@ -649,6 +676,12 @@ mod tests {
             let mut display_roles = Vec::new();
             for mutation in decode_batch(batch).expect("the frame did not decode") {
                 match mutation {
+                    Mutation::Create { node_id, widget } => {
+                        self.widgets.insert(node_id, widget);
+                        if widget == WidgetKind::Button {
+                            self.buttons.push(node_id);
+                        }
+                    }
                     Mutation::Insert {
                         parent_id, node_id, ..
                     }
@@ -699,6 +732,67 @@ mod tests {
             self.texts.remove(&node_id);
             self.clicks.remove(&node_id);
             self.parents.remove(&node_id);
+            self.widgets.remove(&node_id);
+            self.buttons.retain(|found| *found != node_id);
+        }
+
+        /// The screen after the Renderer reports a window of this width.
+        ///
+        /// A resize is a diff rather than a fresh screen, so this keeps the tree and
+        /// applies the change to it: reading the resize batch alone would show only what
+        /// moved.
+        fn at(width_dp: f32) -> Self {
+            dioxus_compose::window::reset_window_size();
+            let mut screen = Self::new();
+            screen.dispatch(
+                0,
+                0,
+                EventPayload::WindowSizeChanged {
+                    width_dp,
+                    height_dp: 800.0,
+                    class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+                },
+            );
+            dioxus_compose::window::reset_window_size();
+            screen
+        }
+
+        /// Every button label on screen, in the order the screen declares them.
+        fn button_labels(&self) -> Vec<String> {
+            self.buttons
+                .iter()
+                .filter_map(|node| self.texts.get(node).cloned())
+                .collect()
+        }
+
+        fn has_button(&self, label: &str) -> bool {
+            self.button_labels().iter().any(|found| found == label)
+        }
+
+        /// Whether anything of this kind carrying this text stands on the screen itself
+        /// rather than inside a sheet.
+        ///
+        /// The kind matters: the tape's heading and the button that opens the tape say the
+        /// same word, and a question about where the tape is would otherwise be answered
+        /// by the button in the bar.
+        fn stands_outside_a_sheet(&self, kind: WidgetKind, label: &str) -> bool {
+            self.texts
+                .iter()
+                .filter(|(node, text)| {
+                    text.as_str() == label && self.widgets.get(node) == Some(&kind)
+                })
+                .any(|(node, _)| !self.hangs_from_a_sheet(*node))
+        }
+
+        fn hangs_from_a_sheet(&self, node: u32) -> bool {
+            let mut walk = node;
+            while let Some(parent) = self.parents.get(&walk) {
+                if self.widgets.get(parent) == Some(&WidgetKind::Sheet) {
+                    return true;
+                }
+                walk = *parent;
+            }
+            false
         }
 
         fn dispatch(&mut self, node_id: u32, handler_id: u64, payload: EventPayload<'_>) -> i64 {

@@ -33,6 +33,7 @@
         <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
         <li><a href="design-systems.html" aria-current="page">Design systems</a></li>
         <li><a href="architecture.html">Architecture</a></li>
@@ -108,7 +109,7 @@
         <tbody>
           <tr>
             <td><code>ColorRole</code></td>
-            <td>14 semantic slots: <code>Primary</code>, <code>OnPrimary</code>, <code>Secondary</code>, <code>OnSecondary</code>, <code>Surface</code>, <code>OnSurface</code>, <code>SurfaceVariant</code>, <code>OnSurfaceVariant</code>, <code>Background</code>, <code>OnBackground</code>, <code>Outline</code>, <code>OutlineVariant</code>, <code>Error</code>, <code>OnError</code></td>
+            <td>23 semantic slots: <code>Primary</code>, <code>OnPrimary</code>, <code>Secondary</code>, <code>OnSecondary</code>, <code>Tertiary</code>, <code>OnTertiary</code>, <code>Background</code>, <code>OnBackground</code>, <code>Surface</code>, <code>OnSurface</code>, <code>SurfaceVariant</code>, <code>OnSurfaceVariant</code>, <code>SurfaceContainer</code>, <code>PrimaryContainer</code>, <code>OnPrimaryContainer</code>, <code>SecondaryContainer</code>, <code>OnSecondaryContainer</code>, <code>TertiaryContainer</code>, <code>OnTertiaryContainer</code>, <code>Outline</code>, <code>OutlineVariant</code>, <code>Error</code>, <code>OnError</code></td>
             <td>The design system, per colour scheme</td>
           </tr>
           <tr>
@@ -129,7 +130,7 @@
           <tr>
             <td><code>SpaceRole</code></td>
             <td><code>None</code>, <code>Xs</code>, <code>Sm</code>, <code>Md</code>, <code>Lg</code>, <code>Xl</code>, <code>Xxl</code></td>
-            <td>The design system; density is exactly where the three disagree most</td>
+            <td>The design system; density is exactly where the systems disagree most</td>
           </tr>
           <tr>
             <td><code>Elevation(dp)</code></td>
@@ -174,24 +175,18 @@
           <tr><td>Font families, custom fonts</td><td>Fonts live in the renderer bundle. A name sent from the Host defers "does it exist" to runtime.</td></tr>
           <tr><td>Icon and image widgets</td><td>They need an asset protocol, which is a separate requirement rather than a footnote to this one.</td></tr>
           <tr><td>Animation specs (duration, easing)</td><td>Motion is a design-system rule. A Host-supplied curve turns the system into a shell that only receives values.</td></tr>
-          <tr><td>Blur, HIG vibrancy, ripple configuration</td><td>Platform-specific effects; not an axis the three systems share.</td></tr>
+          <tr><td>Blur, HIG vibrancy, ripple configuration</td><td>Platform-specific effects; not an axis the systems share.</td></tr>
           <tr><td>A token table sent by the Host</td><td>It would reverse the decision that the renderer resolves tokens.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h2 id="systems">Three systems, one widget tree (FR-14)</h2>
+    <h2 id="systems">Seven systems, one widget tree (FR-14)</h2>
     <p>
-      A design system here is a pair: a token table and a set of component rules. Phase one is
-      <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong> and
-      <strong>WinUI/Fluent&nbsp;2</strong>. The same <code>rsx!</code> drawn under a different system
-      is <em>meant</em> to look different; that is the feature, not a bug to file.
-    </p>
-    <p>
-      A second phase adds <strong>GNOME&nbsp;50</strong>, <strong>KDE Breeze</strong> and
-      <strong>Deepin</strong> for the Linux desktop, and it only starts once phase one draws
-      correctly. Treat those three as planned: the token tables do not exist, and the
-      <code>DesignSystem</code> tags are assigned only for the first three.
+      A design system here is a pair: a token table and a set of component rules. There are seven systems implemented:
+      <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong>, <strong>WinUI/Fluent&nbsp;2</strong>,
+      <strong>GNOME</strong>, <strong>Breeze</strong>, <strong>Deepin</strong>, and <strong>Liquid Glass</strong>.
+      The same <code>rsx!</code> drawn under a different system is <em>meant</em> to look different; that is the feature, not a bug to file.
     </p>
     <p>
       Component rules attach to variant properties whose names are design-system-neutral.
@@ -295,7 +290,7 @@
       cross the boundary at runtime. A renderer implementer fills in the rules, not the numbers.
     </p>
     <p>
-      Implementing a design system is then seven tables: the 14 colour roles in both schemes, the 9
+      Implementing a design system is then seven tables: the 23 colour roles in both schemes, the 9
       type roles, the 6 shape roles, the 7 spacing roles, the elevation rendering rule, the 4 button
       variants, and the motion durations and easing. The first four are generated; the last three
       are the renderer's own work. Once those are filled in, no widget code changes.

@@ -6,7 +6,9 @@
 //! draw lists, and every colour in them is a role, so they follow the reader into dark and
 //! come out in each design system's own accent.
 //!
-//! Unified, naming Cupertino: the reference is an iOS design.
+//! Unified, naming Cupertino and light: the reference is a light iOS design, and a
+//! design that flips to dark on a machine set that way is not the design being compared
+//! against. `THEME` says both.
 
 mod charts;
 mod spending;
@@ -25,7 +27,7 @@ const PAGE_MEASURE: f32 = 420.0;
 ///
 /// Numbers, because these are the proportions of a drawing. The space ladder answers how
 /// far apart two things sit, not how large a picture is.
-const DIAL_SIDE: f32 = 260.0;
+const DIAL_SIDE: f32 = 300.0;
 /// The columns beside the dial, and the columns on the costs page.
 ///
 /// Two sizes, because a draw list is in the canvas's own coordinates: the canvas is given
@@ -142,7 +144,57 @@ fn costs_panel(title_role: TypeRole, (width, height): (f32, f32)) -> Element {
     }
 }
 
-/// The overview: the dial, the costs panel and a second reading beside it.
+/// Where the money went, one tile per service, running past the right edge.
+///
+/// On both pages, because a page that says how much was spent this week and never says
+/// what it went on is the top half of the reference with the bottom half missing, and that
+/// missing half is the empty third at the foot of the window.
+fn sources_strip() -> Element {
+    rsx! {
+        LazyRow {
+            fill_max_width: true,
+            height: SOURCE_TILE,
+            item_count: SOURCES.len(),
+            key_of: move |position: usize| SOURCES[position].name.to_owned(),
+            item: move |position: usize| {
+                let source = SOURCES[position];
+                rsx! {
+                    dioxus_compose::Box {
+                        width: SOURCE_TILE,
+                        fill_max_height: true,
+                        padding_role: SpaceRole::Xs,
+                        Column {
+                            fill_max_width: true,
+                            fill_max_height: true,
+                            background: Paint::Role(ColorRole::TertiaryContainer),
+                            shape_role: ShapeRole::Large,
+                            padding_role: SpaceRole::Md,
+                            space_role: SpaceRole::Xs,
+                            Text {
+                                text: source.name,
+                                type_role: TypeRole::Label,
+                                color: Paint::Role(ColorRole::OnTertiaryContainer),
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                            Spacer { weight: 1.0 }
+                            Text {
+                                text: cost(source.cents),
+                                type_role: TypeRole::Title,
+                                color: Paint::Role(ColorRole::OnTertiaryContainer),
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                        }
+                    }
+                }
+            },
+        }
+    }
+}
+
+/// The overview: the dial, the costs panel, a second reading beside it, and what the
+/// money went on.
 fn today_page() -> Element {
     rsx! {
         Column {
@@ -185,6 +237,8 @@ fn today_page() -> Element {
                     }
                 }
             }
+
+            {sources_strip()}
 
             Separator {}
 
@@ -241,46 +295,7 @@ fn costs_page() -> Element {
                 ),
             }
 
-            // Where the money went, one tile per service, running past the right edge.
-            LazyRow {
-                fill_max_width: true,
-                height: SOURCE_TILE,
-                item_count: SOURCES.len(),
-                key_of: move |position: usize| SOURCES[position].name.to_owned(),
-                item: move |position: usize| {
-                    let source = SOURCES[position];
-                    rsx! {
-                        dioxus_compose::Box {
-                            width: SOURCE_TILE,
-                            fill_max_height: true,
-                            padding_role: SpaceRole::Xs,
-                            Column {
-                                fill_max_width: true,
-                                fill_max_height: true,
-                                background: Paint::Role(ColorRole::TertiaryContainer),
-                                shape_role: ShapeRole::Large,
-                                padding_role: SpaceRole::Md,
-                                space_role: SpaceRole::Xs,
-                                Text {
-                                    text: source.name,
-                                    type_role: TypeRole::Label,
-                                    color: Paint::Role(ColorRole::OnTertiaryContainer),
-                                    max_lines: 1,
-                                    overflow: TextOverflow::Ellipsis,
-                                }
-                                Spacer { weight: 1.0 }
-                                Text {
-                                    text: cost(source.cents),
-                                    type_role: TypeRole::Title,
-                                    color: Paint::Role(ColorRole::OnTertiaryContainer),
-                                    max_lines: 1,
-                                    overflow: TextOverflow::Ellipsis,
-                                }
-                            }
-                        }
-                    }
-                },
-            }
+            {sources_strip()}
 
             Spacer { weight: 1.0 }
 
@@ -368,20 +383,59 @@ fn app() -> Element {
     }
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and light because the reference is a near-white page carrying a
+/// white dial card. The sage panel under it is a colour in the design, not a darker
+/// scheme.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use dioxus_compose::Host;
     use dioxus_compose::protocol::{
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+
+    /// Named for what it defends: the reference is a light design, and a machine set
+    /// the other way drew this sample dark with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Light);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     fn first_frame() -> Vec<u8> {
         dioxus_compose::window::reset_window_size();
@@ -509,16 +563,28 @@ mod tests {
     /// The overview, in the design system it ships, in both schemes, at all three widths.
     #[test]
     fn fr16_the_overview_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("Statistics", &[DesignSystem::Cupertino], app, |_| {});
+        sample_frames::record_as(
+            "Statistics",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert_eq!(
+                    screen.fill_lists(5),
+                    1,
+                    "the overview's sources row should be its one windowing list, or the \
+                     picture is of a screen with a hole in it"
+                );
+            },
+        );
     }
 
     /// The costs page, which is the tinted one: a different picture, and the one where a
     /// chart drawn in the wrong ink would be invisible rather than merely wrong.
     #[test]
     fn fr13_the_costs_page_is_recorded() {
-        sample_frames::record_in(
+        sample_frames::record_as(
             "StatisticsCosts",
-            &[DesignSystem::Cupertino],
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
             |screen| {
                 assert!(

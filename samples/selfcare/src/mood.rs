@@ -15,6 +15,16 @@ pub enum Mood {
 impl Mood {
     pub const STRIP: [Mood; 4] = [Mood::Sad, Mood::Calm, Mood::Happy, Mood::Angry];
 
+    /// The drawing of this feeling's face.
+    pub fn picture(self) -> &'static [u8] {
+        FACES[match self {
+            Mood::Sad => 0,
+            Mood::Calm => 1,
+            Mood::Happy => 2,
+            Mood::Angry => 3,
+        }]
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Mood::Sad => "Sad",
@@ -42,92 +52,26 @@ impl Mood {
             Mood::Angry => (ColorRole::Error, ColorRole::OnError),
         }
     }
-
-    /// The strong colour of a mood, and the ink that reads on it.
-    ///
-    /// The face is drawn in this and sits on [`Mood::pair`], so the head is a disc of the
-    /// accent on a quiet wash of the same family. Drawing the head in the same role as the
-    /// ground behind it is what the first attempt did, and the head was drawn full size,
-    /// in the right colour, and could not be seen.
-    pub fn accent(self) -> (ColorRole, ColorRole) {
-        match self {
-            Mood::Sad => (ColorRole::Primary, ColorRole::OnPrimary),
-            Mood::Calm => (ColorRole::Secondary, ColorRole::OnSecondary),
-            Mood::Happy => (ColorRole::Tertiary, ColorRole::OnTertiary),
-            Mood::Angry => (ColorRole::Error, ColorRole::OnError),
-        }
-    }
-
-    /// Where the mouth sits and which way it curves, as a sweep in degrees.
-    ///
-    /// Positive sweeps down from the left, which draws a smile; negative draws a frown. A
-    /// calm face is a flat line, said as a sweep of nothing rather than as a special case
-    /// in the drawing code.
-    fn mouth_sweep(self) -> f32 {
-        match self {
-            Mood::Sad => -120.0,
-            Mood::Calm => 0.0,
-            Mood::Happy => 140.0,
-            Mood::Angry => -100.0,
-        }
-    }
 }
 
-/// A face, drawn into a square of `size`.
+/// The faces, drawn.
 ///
-/// The reference's faces are hand-drawn line art. This is the part of them a draw list can
-/// say: a disc, two eyes and a mouth whose curve is the feeling. Nothing here is a
-/// literal, so the face follows the reader into dark and comes out in the active design
-/// system's own colours.
-pub fn face(size: f32, mood: Mood) -> DrawList {
-    let (fill, ink) = mood.accent();
-    let middle = size / 2.0;
-    let radius = size * 0.44;
-    let eye_y = middle - radius * 0.28;
-    let eye_x = radius * 0.34;
-    let eye_r = size * 0.028;
-    let mouth_r = radius * 0.45;
-    let mouth_y = middle + radius * 0.16;
-    let sweep = mood.mouth_sweep();
-
-    let list = DrawListBuilder::with_capacity(4, 0)
-        .circle(Paint::Role(fill), middle, middle, radius, 0.0)
-        .circle(Paint::Role(ink), middle - eye_x, eye_y, eye_r, 0.0)
-        .circle(Paint::Role(ink), middle + eye_x, eye_y, eye_r, 0.0);
-
-    if sweep == 0.0 {
-        // A flat mouth. An arc of no sweep draws nothing, so the calm face says its line
-        // as a line.
-        list.line(
-            Paint::Role(ink),
-            middle - mouth_r,
-            mouth_y,
-            middle + mouth_r,
-            mouth_y,
-            size * 0.016,
-        )
-        .build()
-    } else {
-        // A smile starts on the left of the circle and sweeps under it; a frown starts on
-        // the right and sweeps back over the top, which is the same arc read the other
-        // way.
-        let start = if sweep > 0.0 {
-            180.0 - (sweep - 180.0) / 2.0
-        } else {
-            180.0 + (180.0 + sweep) / 2.0
-        };
-        list.arc(
-            Paint::Role(ink),
-            middle,
-            mouth_y,
-            mouth_r,
-            start,
-            sweep,
-            size * 0.016,
-        )
-        .build()
-    }
-}
+/// The reference's faces are hand-drawn line art: a loop of hair, a nose that is one
+/// stroke, a mouth that says the whole feeling. A draw list cannot say that. It has
+/// circles, arcs and lines, and what came out of it was a disc with two dots on it, which
+/// is a face the way a rectangle is a garment.
+///
+/// So each face is an original drawing, registered once and drawn by id. Each one carries
+/// its own disc and its own near-black ink, which is what lets it sit on the feeling's
+/// panel in either colour scheme: the disc is light and the lines on it are dark whatever
+/// is behind them, so the face reads on a pale panel and on a dark one without the drawing
+/// having to know which it is.
+pub static FACES: [&[u8]; 4] = [
+    include_bytes!("../assets/face-sad.svg"),
+    include_bytes!("../assets/face-calm.svg"),
+    include_bytes!("../assets/face-happy.svg"),
+    include_bytes!("../assets/face-angry.svg"),
+];
 
 /// What might be behind the feeling. Chosen from, not typed in.
 pub const WORRIES: [&str; 10] = [
@@ -227,6 +171,10 @@ pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> Dr
     // Placed at the slot's middle the whole row sat half a slot to the right and Sunday
     // was drawn past the edge and clipped to its first letter.
     let label_inset = (slot / 2.0 - DAY_HALF_WIDTH).max(0.0);
+    // The rightmost label is the one that can leave the box, and leaving it is not a few
+    // dp out of place: the Renderer clips at the canvas edge, so Sunday came out as "Su".
+    // Its left end is pulled back to where a three letter word still ends inside.
+    let last_label_start = (width - DAY_HALF_WIDTH * 2.0).max(0.0);
     let x_of = |index: usize| index as f32 * slot + slot / 2.0;
     let y_of = |value: f32| plot - value.clamp(0.0, 1.0) * (plot * 0.86) - plot * 0.07;
 
@@ -247,7 +195,7 @@ pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> Dr
             .text_at(
                 Paint::Role(ink),
                 day,
-                index as f32 * slot + label_inset,
+                (index as f32 * slot + label_inset).min(last_label_start),
                 baseline,
                 TypeRole::Caption,
             );
@@ -259,6 +207,23 @@ pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> Dr
 mod tests {
     use super::*;
     use dioxus_compose::DrawCommand;
+
+    /// Four feelings, four faces. Two moods sharing a drawing is a picker where two
+    /// answers look like the same answer, which is what the disc with two dots on it was.
+    #[test]
+    fn fr16_no_two_moods_share_a_face() {
+        for (index, first) in Mood::STRIP.iter().enumerate() {
+            for second in &Mood::STRIP[index + 1..] {
+                assert_ne!(
+                    first.picture().as_ptr(),
+                    second.picture().as_ptr(),
+                    "{} and {} are the same drawing",
+                    first.label(),
+                    second.label()
+                );
+            }
+        }
+    }
 
     /// Four feelings, four fills. Two moods sharing one fill is a picker where two
     /// answers look like the same answer.
@@ -277,55 +242,16 @@ mod tests {
         }
     }
 
-    /// Every face is a disc, two eyes and a mouth, and the mouth is what differs.
-    #[test]
-    fn fr16_every_mood_draws_a_whole_face() {
-        for mood in Mood::STRIP {
-            let commands = face(200.0, mood).decode().expect("a face did not decode");
-            assert_eq!(commands.len(), 4, "{} is not a whole face", mood.label());
-            assert_eq!(
-                commands
-                    .iter()
-                    .filter(|command| matches!(command, DrawCommand::Circle { .. }))
-                    .count(),
-                3,
-                "{} is missing the head or an eye",
-                mood.label()
-            );
-        }
-    }
-
-    /// A calm mouth is a line and every other mouth is an arc. An arc of no sweep draws
-    /// nothing, so without the special case the calm face would have no mouth at all.
-    #[test]
-    fn fr16_a_calm_mouth_is_a_line_and_the_rest_are_arcs() {
-        let calm = face(200.0, Mood::Calm)
-            .decode()
-            .expect("calm did not decode");
-        assert!(
-            calm.iter()
-                .any(|command| matches!(command, DrawCommand::Line { .. })),
-            "the calm face has no mouth"
-        );
-        for mood in [Mood::Sad, Mood::Happy, Mood::Angry] {
-            let drawn = face(200.0, mood).decode().expect("a face did not decode");
-            assert!(
-                drawn
-                    .iter()
-                    .any(|command| matches!(command, DrawCommand::Arc { .. })),
-                "{} has a straight mouth",
-                mood.label()
-            );
-        }
-    }
-
-    /// Every colour in a face and in the week's line is a role.
+    /// Every colour in the week's line is a role. The faces are pictures and carry their
+    /// own, which is what makes them pictures; everything a draw list says is a role.
     #[test]
     fn fr13_nothing_drawn_here_carries_a_literal_colour() {
-        let drawings = [
-            face(200.0, Mood::Happy),
-            week_line(300.0, 160.0, ColorRole::OnSurface, ColorRole::Primary),
-        ];
+        let drawings = [week_line(
+            300.0,
+            160.0,
+            ColorRole::OnSurface,
+            ColorRole::Primary,
+        )];
         for drawing in drawings {
             for command in drawing.decode().expect("a drawing did not decode") {
                 assert!(
@@ -334,6 +260,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The last day stays inside the box. Named for what it defends: a label placed past
+    /// the canvas edge is clipped there rather than merely mispositioned, so Sunday was
+    /// drawn as "Su" and looked like a spelling nobody had noticed.
+    #[test]
+    fn fr16_the_last_day_is_written_inside_the_chart() {
+        let width = 300.0;
+        let commands = week_line(width, 160.0, ColorRole::OnSurface, ColorRole::Primary)
+            .decode()
+            .expect("the week did not decode");
+        let days: Vec<f32> = commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::TextAt { x, .. } => Some(*x),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(days.len(), WEEK.len(), "a day was not written at all");
+        let last = days[days.len() - 1];
+        assert!(
+            last + DAY_HALF_WIDTH * 2.0 <= width,
+            "{} starts at {last} and runs past the chart's {width}",
+            WEEK[WEEK.len() - 1].0
+        );
     }
 
     /// Seven readings make six segments. A line with a segment missing is a chart with a

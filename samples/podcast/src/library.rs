@@ -3,24 +3,40 @@
 use dioxus_compose::prelude::*;
 use dioxus_compose::{DrawList, DrawListBuilder};
 
+/// The covers, drawn.
+///
+/// A podcast cover is a poster: a strong ground, one large mark and nothing else, made to
+/// be recognised at the size of a thumbnail. A draw list cannot say one. Three overlapping
+/// accent shapes was what it could say, and what it drew was a circle next to a square,
+/// three times, which is a show nobody can tell from another show.
+///
+/// These are original drawings, registered once and drawn by id. A cover carries its own
+/// colours, because that is what a cover is: the thing on a shelf that is recognised
+/// before it is read.
+pub static COVERS: [&[u8]; 3] = [
+    include_bytes!("../assets/cover-heavyweight.svg"),
+    include_bytes!("../assets/cover-researcher.svg"),
+    include_bytes!("../assets/cover-sunpath.svg"),
+];
+
 /// One show.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Show {
     pub name: &'static str,
     pub host: &'static str,
     pub followers: u32,
-    /// Which of the three accent families the show's artwork is built from.
+    /// Which of the three accent families the show's chrome is built from.
     pub family: Family,
+    /// The show's cover art.
+    pub cover: &'static [u8],
 }
 
-/// The accent family a piece of artwork is drawn from.
+/// The accent family a show's chrome is drawn from.
 ///
-/// Cover art is a photograph or an illustration in the reference, and neither can be
-/// declared from application code: `Image` takes an id the Host registered and an
-/// application only has the tree. What a draw list can do is build a mark out of the
-/// design system's own accents, which is what these three are for. A show is recognised by
-/// its family and its shape rather than by a picture, and unlike a picture it follows the
-/// reader into dark.
+/// The cover is a picture and carries its own colours; this is everything around it. A
+/// show's row, its follow button and the panel its episode sits on come from one of the
+/// three families, so the screen still follows the reader into dark and still comes out in
+/// each design system's own accents while the artwork stays the artwork.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Family {
     First,
@@ -72,18 +88,21 @@ pub struct Episode {
 pub const SHOWS: [Show; 3] = [
     Show {
         name: "Heavyweight",
+        cover: COVERS[0],
         host: "Andrew Biletski",
         followers: 25_400,
         family: Family::First,
     },
     Show {
         name: "The Researcher",
+        cover: COVERS[1],
         host: "Mira Okafor",
         followers: 12_100,
         family: Family::Second,
     },
     Show {
         name: "Sunpath",
+        cover: COVERS[2],
         host: "Joel Iwu",
         followers: 8_300,
         family: Family::Third,
@@ -249,46 +268,6 @@ pub fn waveform(
     list.build()
 }
 
-/// A show's artwork: overlapping marks built from one accent family.
-///
-/// Three shapes, arranged from the seed, so two shows are told apart by their family and
-/// by where their marks sit. It is not a photograph and does not pretend to be one.
-pub fn artwork(size: f32, seed: u32, family: Family) -> DrawList {
-    let (strong, _, ink) = family.roles();
-    let a = wobble(seed, 1);
-    let b = wobble(seed, 2);
-    DrawListBuilder::with_capacity(4, 0)
-        // The ground is the reading surface rather than the family's own quiet fill. The
-        // player page is filled with that quiet fill, and artwork whose ground matches the
-        // page it sits on is drawn full size, in the right colour, and has no edge: the
-        // cover stops being a cover and becomes two marks floating on the screen.
-        .rect(Paint::Role(ColorRole::Surface), 0.0, 0.0, size, size, 0.0)
-        .circle(
-            Paint::Role(strong),
-            size * (0.28 + a * 0.20),
-            size * (0.30 + b * 0.16),
-            size * 0.30,
-            0.0,
-        )
-        .round_rect(
-            Paint::Role(ink),
-            size * (0.42 + b * 0.16),
-            size * 0.46,
-            size * 0.34,
-            size * 0.40,
-            size * 0.08,
-            0.0,
-        )
-        .circle(
-            Paint::Role(strong),
-            size * 0.22,
-            size * (0.68 + a * 0.10),
-            size * 0.12,
-            0.0,
-        )
-        .build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -388,18 +367,15 @@ mod tests {
     /// Nothing drawn here is a literal colour.
     #[test]
     fn fr13_no_drawing_carries_a_literal_colour() {
-        let drawings = [
-            waveform(
-                300.0,
-                80.0,
-                40,
-                17,
-                0.4,
-                ColorRole::Primary,
-                ColorRole::OutlineVariant,
-            ),
-            artwork(200.0, 17, Family::First),
-        ];
+        let drawings = [waveform(
+            300.0,
+            80.0,
+            40,
+            17,
+            0.4,
+            ColorRole::Primary,
+            ColorRole::OutlineVariant,
+        )];
         for drawing in drawings {
             for command in drawing.decode().expect("a drawing did not decode") {
                 assert!(

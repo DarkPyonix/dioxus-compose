@@ -273,6 +273,17 @@ class BreezeDesignSystem private constructor(
                 pressedBorder = accent,
                 ripple = false,
             )
+            ButtonVariant.Operator -> ButtonStyle(
+                container = standard,
+                content = accent,
+                border = line,
+                borderWidth = 1.dp,
+                shape = ShapeRole.Medium,
+                pressedContainer = standardPressed,
+                pressedContent = accent,
+                pressedBorder = accent,
+                ripple = false,
+            )
             // Hovering or pressing an outlined Breeze button recolours its line to the
             // highlight rather than filling it in.
             ButtonVariant.Outlined -> ButtonStyle(
