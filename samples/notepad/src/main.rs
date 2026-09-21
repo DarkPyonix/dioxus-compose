@@ -37,6 +37,8 @@ fn editor(stamp: u64, contents: String, on_edit: EventHandler<String>) -> Elemen
                 key: "editor-{generation}",
                 "text": "{contents}",
                 multiline: true,
+                fill_max_width: true,
+                fill_max_height: true,
                 placeholder: "Type here, or open a file",
                 onvaluechange: move |event: Event<String>| on_edit.call((*event.data()).clone()),
             }
@@ -45,10 +47,14 @@ fn editor(stamp: u64, contents: String, on_edit: EventHandler<String>) -> Elemen
 }
 
 /// A single-line field whose contents are set once, for the path.
+///
+/// It takes the weight the toolbar gives it, so the path grows with the window instead of
+/// being sized by whatever happens to be typed in it.
 fn path_field(contents: String, on_edit: EventHandler<String>) -> Element {
     rsx! {
         textfield {
             "text": "{contents}",
+            weight: 1.0,
             placeholder: "Path to a file",
             onvaluechange: move |event: Event<String>| on_edit.call((*event.data()).clone()),
         }
@@ -117,16 +123,22 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            spacing: 6.0,
+
+            // The document's actions belong in the bar, not in a line of buttons above the
+            // text. The title takes the weight, which pushes them to the far end.
             TopAppBar {
-                Text { text: "Notepad", type_role: TypeRole::Title }
-            }
-            Row {
                 fill_max_width: true,
-                spacing: 6.0,
-                alignment: Alignment::CenterStart,
-                Text { text: "File", type_role: TypeRole::Label }
-                {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                Text { text: "Notepad", type_role: TypeRole::Title, weight: 1.0 }
+                Button {
+                    text: "New",
+                    variant: ButtonVariant::Text,
+                    enabled: !working,
+                    on_click: move |_| {
+                        text.set(String::new());
+                        stamp += 1;
+                        status.set("New document".to_owned());
+                    },
+                }
                 Button {
                     text: "Open",
                     variant: ButtonVariant::Tonal,
@@ -146,48 +158,75 @@ fn app() -> Element {
                         run_on_worker(Box::new(move || document::save(target, contents)));
                     },
                 }
-                Button {
-                    text: "New",
-                    variant: ButtonVariant::Outlined,
-                    enabled: !working,
-                    on_click: move |_| {
-                        text.set(String::new());
-                        stamp += 1;
-                        status.set("New document".to_owned());
-                    },
-                }
             }
-            Text {
-                text: status(),
-                type_role: TypeRole::Caption,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                max_lines: 1,
-                overflow: TextOverflow::Ellipsis,
-            }
-            // The editor scrolls on its own, so a document longer than the window stays
-            // reachable without the Host knowing where the scroll is.
-            ScrollColumn {
+
+            Column {
                 fill_max_width: true,
                 fill_max_height: true,
-                {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
-            }
-            Row {
-                fill_max_width: true,
-                arrangement: Arrangement::SpaceBetween,
-                Text {
-                    text: "{words} words",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                padding_role: SpaceRole::Lg,
+                space_role: SpaceRole::Md,
+
+                // The location bar: one grouped strip that says which file the actions
+                // above work on.
+                Surface {
+                    fill_max_width: true,
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        Text {
+                            text: "File",
+                            type_role: TypeRole::Label,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                        {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                    }
                 }
-                Text {
-                    text: "{characters} characters",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+
+                // The page. A document is an object you write on, so it is a surface of its
+                // own with the rest of the window as its margin, and it takes every pixel
+                // the toolbar and the status line leave.
+                Surface {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    // The editor scrolls on its own, so a document longer than the window
+                    // stays reachable without the Host knowing where the scroll is.
+                    ScrollColumn {
+                        fill_max_width: true,
+                        fill_max_height: true,
+                        {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
+                    }
                 }
-                Text {
-                    text: "{lines} lines",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+
+                // The status line: what the last file operation did on the left, the
+                // document's measurements on the right.
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    alignment: Alignment::CenterStart,
+                    Text {
+                        text: status(),
+                        weight: 1.0,
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                    Text {
+                        text: "{words} words",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                    Text {
+                        text: "{characters} characters",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                    Text {
+                        text: "{lines} lines",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
                 }
             }
         }

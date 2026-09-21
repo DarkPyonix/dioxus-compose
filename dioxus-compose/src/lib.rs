@@ -68,6 +68,8 @@ pub mod elements {
     macro_rules! modifier_attributes {
         () => {
             pub const weight: AttributeDescription = ("weight", None, false);
+            pub const fill_max_width: AttributeDescription = ("fill_max_width", None, false);
+            pub const fill_max_height: AttributeDescription = ("fill_max_height", None, false);
             pub const width: AttributeDescription = ("width", None, false);
             pub const height: AttributeDescription = ("height", None, false);
             pub const padding: AttributeDescription = ("padding", None, false);
@@ -110,32 +112,10 @@ pub mod elements {
     element!(
         column,
         "Column",
-        [
-            fill_max_width,
-            fill_max_height,
-            arrangement,
-            spacing,
-            space_role,
-            alignment
-        ]
+        [arrangement, spacing, space_role, alignment]
     );
-    element!(
-        row,
-        "Row",
-        [
-            fill_max_width,
-            fill_max_height,
-            arrangement,
-            spacing,
-            space_role,
-            alignment
-        ]
-    );
-    element!(
-        composebox,
-        "Box",
-        [fill_max_width, fill_max_height, item_key, alignment]
-    );
+    element!(row, "Row", [arrangement, spacing, space_role, alignment]);
+    element!(composebox, "Box", [item_key, alignment]);
     // The type role plus one attribute per override axis, so changing one axis is one
     // SetProp and the rest of the text's styling is not resent.
     element!(
@@ -189,11 +169,7 @@ pub mod elements {
     element!(timepicker, "TimePicker", [value, min, max, enabled]);
     element!(dropdown, "Dropdown", [selected_index, enabled]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
-    element!(
-        scrollcolumn,
-        "ScrollColumn",
-        [fill_max_width, fill_max_height]
-    );
+    element!(scrollcolumn, "ScrollColumn", []);
 
     #[doc(hidden)]
     pub mod completions {

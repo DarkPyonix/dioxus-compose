@@ -96,160 +96,220 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            spacing: 8.0,
 
-            Text { text: "Tasks", type_role: TypeRole::Headline }
-
-            Row {
+            // The count belongs beside the title, which is where a list says how much of
+            // itself is left. The title takes the weight and pushes it to the far end.
+            TopAppBar {
                 fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                TextField {
-                    placeholder: "Add a task, then press Enter",
-                    on_value_change: move |value| draft.set(value),
-                    on_submit: move |value: String| add(value),
-                }
-                Button {
-                    text: "Add",
-                    on_click: move |_| add(draft()),
+                Text { text: "Tasks", type_role: TypeRole::Title, weight: 1.0 }
+                Text {
+                    text: "{remaining} of {total} remaining",
+                    type_role: TypeRole::Label,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
                 }
             }
 
-            Row {
+            Column {
                 fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                for choice in Filter::STRIP {
+                fill_max_height: true,
+                padding_role: SpaceRole::Lg,
+                space_role: SpaceRole::Md,
+
+                // The composer: one grouped strip whose field grows with the window, so
+                // the field is the thing you look at and the button is the thing beside it.
+                Surface {
+                    fill_max_width: true,
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        TextField {
+                            weight: 1.0,
+                            placeholder: "Add a task, then press Enter",
+                            on_value_change: move |value| draft.set(value),
+                            on_submit: move |value: String| add(value),
+                        }
+                        Button {
+                            text: "Add",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| add(draft()),
+                        }
+                    }
+                }
+
+                // The filter strip, with the two destructive or bulk actions pushed to the
+                // far end so they are not mistaken for part of the filter.
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Sm,
+                    alignment: Alignment::CenterStart,
+                    for choice in Filter::STRIP {
+                        Button {
+                            key: "{choice.label()}",
+                            text: choice.label(),
+                            variant: if filter() == choice { ButtonVariant::Filled } else { ButtonVariant::Outlined },
+                            on_click: move |_| filter.set(choice),
+                        }
+                    }
+                    Spacer { weight: 1.0 }
                     Button {
-                        key: "{choice.label()}",
-                        text: choice.label(),
-                        variant: if filter() == choice { ButtonVariant::Filled } else { ButtonVariant::Outlined },
-                        on_click: move |_| filter.set(choice),
+                        text: "Clear completed",
+                        variant: ButtonVariant::Text,
+                        on_click: move |_| {
+                            tasks.write().retain(|task| !task.done);
+                            store::save(&tasks.read());
+                        },
+                    }
+                    Button {
+                        text: "Add {BULK_COUNT} tasks",
+                        variant: ButtonVariant::Tonal,
+                        on_click: move |_| {
+                            let start = next_id();
+                            {
+                                let mut list = tasks.write();
+                                list.reserve(BULK_COUNT);
+                                for offset in 0..BULK_COUNT as u64 {
+                                    let id = start + offset;
+                                    list.push(Task {
+                                        id,
+                                        title: format!("Generated task {id}"),
+                                        done: offset % 3 == 0,
+                                    });
+                                }
+                            }
+                            next_id.set(start + BULK_COUNT as u64);
+                            store::save(&tasks.read());
+                        },
                     }
                 }
-                Text { text: "{remaining} of {total} remaining", type_role: TypeRole::Label }
-            }
 
-            Row {
-                fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                Button {
-                    text: "Add {BULK_COUNT} tasks",
-                    variant: ButtonVariant::Tonal,
-                    on_click: move |_| {
-                        let start = next_id();
-                        {
-                            let mut list = tasks.write();
-                            list.reserve(BULK_COUNT);
-                            for offset in 0..BULK_COUNT as u64 {
-                                let id = start + offset;
-                                list.push(Task {
-                                    id,
-                                    title: format!("Generated task {id}"),
-                                    done: offset % 3 == 0,
-                                });
-                            }
+                // An empty list explains itself rather than leaving a blank half window
+                // that could just as well be a screen that failed to draw. It replaces the
+                // list rather than sitting above it, so it gets the whole of the space the
+                // list would have taken.
+                if rows.is_empty() {
+                    dioxus_compose::Box {
+                        fill_max_width: true,
+                        weight: 1.0,
+                        alignment: Alignment::Center,
+                        Text {
+                            text: match filter() {
+                                Filter::All => "No tasks yet. Add one above.",
+                                Filter::Active => "Nothing left to do under this filter.",
+                                Filter::Done => "Nothing has been completed yet.",
+                            },
+                            type_role: TypeRole::Body,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
                         }
-                        next_id.set(start + BULK_COUNT as u64);
-                        store::save(&tasks.read());
-                    },
-                }
-                Button {
-                    text: "Clear completed",
-                    variant: ButtonVariant::Text,
-                    on_click: move |_| {
-                        tasks.write().retain(|task| !task.done);
-                        store::save(&tasks.read());
-                    },
-                }
-            }
-
-            LazyColumn {
-                item_count: rows.len(),
-                key_of: move |position: usize| keys[position].clone(),
-                item: move |position: usize| {
-                    let index = rows[position];
-                    let previous = position.checked_sub(1).map(|above| rows[above]);
-                    let next = rows.get(position + 1).copied();
-                    let task = tasks.read()[index].clone();
-                    let editing_this = editing() == Some(task.id);
-                    rsx! {
-                        Row {
-                            fill_max_width: true,
-                            spacing: 8.0,
-                            alignment: Alignment::CenterStart,
-                            Button {
-                                text: if task.done { "[x]" } else { "[ ]" },
-                                variant: ButtonVariant::Text,
-                                on_click: move |_| {
-                                    tasks.write()[index].done = !task.done;
-                                    store::save(&tasks.read());
-                                },
-                            }
-                            if editing_this {
-                                TextField {
-                                    placeholder: task.title.clone(),
-                                    on_value_change: move |value| edit_draft.set(value),
-                                    on_submit: move |value: String| commit_edit(value),
-                                    on_focus_lost: move |_| commit_edit(edit_draft()),
-                                }
-                                Button {
-                                    text: "Save",
-                                    variant: ButtonVariant::Text,
-                                    on_click: move |_| commit_edit(edit_draft()),
-                                }
-                            } else {
-                                Text {
-                                    text: task.title.clone(),
-                                    color: if task.done {
-                                        Paint::Role(ColorRole::OutlineVariant)
+                    }
+                } else {
+                // Every row is a Surface of its own, which is what separates one task from
+                // the next without a divider the design systems do not all draw.
+                LazyColumn {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    item_count: rows.len(),
+                    key_of: move |position: usize| keys[position].clone(),
+                    item: move |position: usize| {
+                        let index = rows[position];
+                        let previous = position.checked_sub(1).map(|above| rows[above]);
+                        let next = rows.get(position + 1).copied();
+                        let task = tasks.read()[index].clone();
+                        let editing_this = editing() == Some(task.id);
+                        rsx! {
+                            Surface {
+                                fill_max_width: true,
+                                Row {
+                                    fill_max_width: true,
+                                    space_role: SpaceRole::Sm,
+                                    alignment: Alignment::CenterStart,
+                                    // A ballot box reads as something you can tick. The
+                                    // filled variant is the second half of the same
+                                    // statement, so a completed task is legible at a
+                                    // glance rather than by reading the glyph.
+                                    Button {
+                                        text: if task.done { "\u{2611}" } else { "\u{2610}" },
+                                        variant: if task.done {
+                                            ButtonVariant::Tonal
+                                        } else {
+                                            ButtonVariant::Text
+                                        },
+                                        on_click: move |_| {
+                                            tasks.write()[index].done = !task.done;
+                                            store::save(&tasks.read());
+                                        },
+                                    }
+                                    // The title takes the weight, so the actions sit at the
+                                    // far end of every row and line up down the list.
+                                    if editing_this {
+                                        TextField {
+                                            weight: 1.0,
+                                            placeholder: task.title.clone(),
+                                            on_value_change: move |value| edit_draft.set(value),
+                                            on_submit: move |value: String| commit_edit(value),
+                                            on_focus_lost: move |_| commit_edit(edit_draft()),
+                                        }
+                                        Button {
+                                            text: "Save",
+                                            variant: ButtonVariant::Filled,
+                                            on_click: move |_| commit_edit(edit_draft()),
+                                        }
                                     } else {
-                                        Paint::Role(ColorRole::OnSurface)
-                                    },
-                                    max_lines: 1,
-                                    overflow: TextOverflow::Ellipsis,
-                                }
-                                Button {
-                                    text: "Edit",
-                                    variant: ButtonVariant::Text,
-                                    on_click: move |_| {
-                                        edit_draft.set(String::new());
-                                        editing.set(Some(task.id));
-                                    },
-                                }
-                            }
-                            Button {
-                                text: "Up",
-                                variant: ButtonVariant::Text,
-                                enabled: previous.is_some(),
-                                on_click: move |_| {
-                                    if let Some(above) = previous {
-                                        swap_tasks(index, above);
+                                        Text {
+                                            text: task.title.clone(),
+                                            weight: 1.0,
+                                            type_role: TypeRole::Body,
+                                            color: if task.done {
+                                                Paint::Role(ColorRole::OutlineVariant)
+                                            } else {
+                                                Paint::Role(ColorRole::OnSurface)
+                                            },
+                                            max_lines: 1,
+                                            overflow: TextOverflow::Ellipsis,
+                                        }
+                                        Button {
+                                            text: "Edit",
+                                            variant: ButtonVariant::Text,
+                                            on_click: move |_| {
+                                                edit_draft.set(String::new());
+                                                editing.set(Some(task.id));
+                                            },
+                                        }
                                     }
-                                },
-                            }
-                            Button {
-                                text: "Down",
-                                variant: ButtonVariant::Text,
-                                enabled: next.is_some(),
-                                on_click: move |_| {
-                                    if let Some(below) = next {
-                                        swap_tasks(index, below);
+                                    Button {
+                                        text: "\u{2191}",
+                                        variant: ButtonVariant::Text,
+                                        enabled: previous.is_some(),
+                                        on_click: move |_| {
+                                            if let Some(above) = previous {
+                                                swap_tasks(index, above);
+                                            }
+                                        },
                                     }
-                                },
-                            }
-                            Button {
-                                text: "Delete",
-                                variant: ButtonVariant::Text,
-                                on_click: move |_| {
-                                    tasks.write().remove(index);
-                                    store::save(&tasks.read());
-                                },
+                                    Button {
+                                        text: "\u{2193}",
+                                        variant: ButtonVariant::Text,
+                                        enabled: next.is_some(),
+                                        on_click: move |_| {
+                                            if let Some(below) = next {
+                                                swap_tasks(index, below);
+                                            }
+                                        },
+                                    }
+                                    Button {
+                                        text: "Delete",
+                                        variant: ButtonVariant::Text,
+                                        on_click: move |_| {
+                                            tasks.write().remove(index);
+                                            store::save(&tasks.read());
+                                        },
+                                    }
+                                }
                             }
                         }
-                    }
-                },
+                    },
+                }
+                }
             }
         }
     }
@@ -508,9 +568,9 @@ mod tests {
         let mut screen = Screen::new();
         screen.request_range(4_000, WINDOW);
 
-        // A row is a handful of widgets: the row itself, the toggle, the title and four
-        // buttons. The screen's own chrome is a fixed handful on top of that. What matters
-        // is that the total tracks the window and not the list behind it.
+        // A row is a handful of widgets: its surface, the row inside it, the toggle, the
+        // title and four buttons. The screen's own chrome is a fixed handful on top of
+        // that. What matters is that the total tracks the window and not the list behind it.
         const PER_ROW: usize = 8;
         const CHROME: usize = 40;
         let nodes = screen.mock.node_count();

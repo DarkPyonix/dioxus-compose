@@ -40,3 +40,84 @@ fn modifiers_written_in_rsx_reach_the_wire() {
         "elevation missing"
     );
 }
+
+/// Every widget takes the Modifier attributes, and filling the available width is one of
+/// them. It used to be declared only on the layout containers, so a Card could not be made
+/// to span its parent and every grouped design collapsed to the width of its own text.
+fn filling_containers() -> Element {
+    rsx! {
+        Card {
+            fill_max_width: true,
+            padding_role: SpaceRole::Md,
+            Surface {
+                fill_max_width: true,
+                fill_max_height: true,
+                Text { text: "grouped" }
+            }
+        }
+    }
+}
+
+#[test]
+fn fr13_fill_max_is_available_on_every_widget() {
+    let mut host = Host::new(filling_containers);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let mods: Vec<_> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            Mutation::SetModifier { modifier, .. } => Some(format!("{modifier:?}")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        mods.iter()
+            .filter(|m| m.starts_with("FillMaxWidth"))
+            .count(),
+        2,
+        "both the Card and the Surface should fill their width: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|m| m.starts_with("FillMaxHeight")),
+        "the Surface should fill its height: {mods:?}"
+    );
+}
+
+/// A windowed list has to be able to take the space its parent column leaves it, or every
+/// screen with a list in it is laid out around something that sized itself to its own
+/// contents. The two Lazy widgets were the only ones declaring no Modifier props at all.
+fn weighted_list() -> Element {
+    rsx! {
+        Column {
+            fill_max_height: true,
+            LazyColumn {
+                weight: 1.0,
+                fill_max_width: true,
+                item_count: 3,
+                item: move |index: usize| rsx! {
+                    Text { text: "{index}" }
+                },
+            }
+        }
+    }
+}
+
+#[test]
+fn fr13_a_windowed_list_takes_the_modifiers_every_widget_takes() {
+    let mut host = Host::new(weighted_list);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let mods: Vec<_> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            Mutation::SetModifier { modifier, .. } => Some(format!("{modifier:?}")),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        mods.iter().any(|m| m.starts_with("Weight")),
+        "the list should ask its column for a weight: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|m| m.starts_with("FillMaxWidth")),
+        "the list should fill its width: {mods:?}"
+    );
+}
