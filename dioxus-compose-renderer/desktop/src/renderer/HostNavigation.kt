@@ -114,8 +114,14 @@ internal fun HostNavigation(
     // Only the bar is offered. A rail and a drawer are laid out beside the screen and take
     // their width out of it, so handing them to a chrome that sits outside the Compose
     // surface would leave the screen the full window wide with the strip on top of it.
-    val shell = platformNavigationShell
-        ?.takeIf { it.drawsStrip && style.presentation == NavigationPresentation.Bar }
+    //
+    // And only a navigation that is a root of the tree. The platform's chrome belongs to
+    // the window, and there is one of it: a navigation nested inside some part of the
+    // screen would take the window's bar away from whatever owns it, and two of them would
+    // take turns. A nested one keeps the bar drawn here, where it can sit inside the part
+    // of the screen it actually belongs to.
+    val offered = style.presentation == NavigationPresentation.Bar && node.id in table.roots
+    val shell = platformNavigationShell?.takeIf { it.drawsStrip && offered }
 
     // A message is drawn over the whole window, so it has to be told what the bar along
     // the bottom is using or it would cover the destinations.

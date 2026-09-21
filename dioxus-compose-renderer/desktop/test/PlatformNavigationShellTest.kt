@@ -42,6 +42,7 @@ private const val NAVIGATION = 1
 private const val FIRST = 2
 private const val SECOND = 3
 private const val SCREEN = 4
+private const val SURROUND = 5
 private const val FIRST_HANDLER = 91L
 private const val SECOND_HANDLER = 92L
 
@@ -316,5 +317,36 @@ class PlatformNavigationShellTest {
         waitForIdle()
 
         assertEquals(0, shell.dismissals, "the strip stays up while the selection moves")
+    }
+    /**
+     * A navigation that is not a root of the tree keeps the bar drawn here.
+     *
+     * The platform's chrome belongs to the window and there is one of it. A navigation
+     * nested inside part of the screen would take that one bar away from whatever owns it,
+     * and two of them would take turns.
+     */
+    @Test
+    fun fr14_8_a_nested_navigation_keeps_the_drawn_bar() = runComposeUiTest {
+        val shell = RecordingShell()
+        platformNavigationShell = shell
+        val nested = navigationBatch() + listOf(
+            Mutation.Create(SURROUND, WidgetKind.Column),
+            Mutation.Insert(SURROUND, NAVIGATION, 0),
+        )
+        setContent {
+            CompositionLocalProvider(
+                LocalFrameRequests provides frames,
+                LocalDensity provides Density(1f),
+            ) {
+                DioxusContent(
+                    rememberDioxusHost(FakeHostConnection(nested)),
+                    Modifier.requiredSize(500.dp, 800.dp),
+                )
+            }
+        }
+        waitForIdle()
+
+        onNodeWithTag(navigationStripTestTag(NAVIGATION)).assertExists()
+        assertEquals(0, shell.presentations, "the window's bar is not a nested widget's")
     }
 }
