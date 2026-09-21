@@ -127,6 +127,25 @@ class ByteBuffer private constructor(
         return this
     }
 
+    /**
+     * Bulk read from an absolute index, leaving the position alone, which is how the codec
+     * lifts a string's bytes into the buffer it builds `String` from. Absolute because the
+     * position belongs to the record walk, and a string is read from wherever in the arena
+     * its offset points.
+     */
+    fun get(index: Int, destination: ByteArray, destinationOffset: Int, length: Int): ByteBuffer {
+        require(index >= 0 && length >= 0 && index + length <= capacity) {
+            "reading $length bytes at $index passes the end of a $capacity byte buffer"
+        }
+        require(destinationOffset >= 0 && destinationOffset + length <= destination.size) {
+            "$length bytes at $destinationOffset do not fit a ${destination.size} byte array"
+        }
+        for (step in 0 until length) {
+            destination[destinationOffset + step] = byteAt(index + step)
+        }
+        return this
+    }
+
     private fun readBits(index: Int, width: Int): Long {
         var value = 0L
         for (step in 0 until width) {
