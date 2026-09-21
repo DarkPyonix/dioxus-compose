@@ -140,14 +140,20 @@ object LiquidGlass {
     /**
      * The tint of the glass itself, before anything shows through it.
      *
-     * White in light, and in dark a grey lighter than any page the surface can land on
-     * and than any fill that can land on the surface. The tint has to differ from both,
-     * or the material has nothing to say: glass reads as glass because it is lighter than
-     * what is behind it and because the rim catches light, and a tint the colour of the
-     * page cancels the first of those. The dark value was two levels from the secondary
-     * fill grey once, and a tinted button on a bar disappeared into the bar.
+     * The tint has to differ from the page it lands on, or the material has nothing to
+     * say: glass reads as glass because it is a step off what is behind it and because
+     * the rim catches light, and a tint the colour of the page cancels the first of
+     * those. Both values here have been that mistake once. The dark one was two levels
+     * from the secondary fill grey, and a tinted button on a bar disappeared into the
+     * bar; the light one was pure white, and once the page became white a glass card on
+     * it was drawn full size and could not be seen at all.
+     *
+     * So light is the lightest system grey rather than white, which is also what a light
+     * material actually composites to over white content: about thirteen levels off the
+     * page, which is the separation Apple's own panels have. Dark is a grey lighter than
+     * any page the surface can land on and than any fill that can land on the surface.
      */
-    val LIGHT_TINT: Color = Color(0xFFFFFFFF)
+    val LIGHT_TINT: Color = Color(0xFFF2F2F7)
     val DARK_TINT: Color = Color(0xFF3A3A3C)
 
     /**
