@@ -45,6 +45,15 @@ impl Length {
             Self::Detailed => "Detailed",
         }
     }
+
+    /// Where this length sits in `ALL`, which is the position a list of choices reports.
+    pub fn index(self) -> usize {
+        match self {
+            Self::Brief => 0,
+            Self::Normal => 1,
+            Self::Detailed => 2,
+        }
+    }
 }
 
 /// The slowest and fastest the reply is allowed to arrive, in characters a second.

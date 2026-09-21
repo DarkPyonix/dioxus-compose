@@ -23,16 +23,42 @@ pub struct Message {
     pub streaming: bool,
 }
 
+/// A new conversation has nothing in it.
+///
+/// It used to open with one message from the assistant explaining what the screen was,
+/// which put an introduction in the transcript: something the assistant never said, under
+/// its name, that you could scroll back to a week later and read as part of the
+/// conversation. The reference does not do that. An empty conversation is empty, and what
+/// the screen is gets said by the screen, in the middle, until there is something to read.
 fn opening_messages() -> Vec<Message> {
-    vec![Message {
-        id: 1,
-        token: 0,
-        from_user: false,
-        text: "Ask me something. I will answer slowly and at length, on a thread that is \
-not this one. Enter sends; Shift+Enter starts a new line."
-            .to_owned(),
-        streaming: false,
-    }]
+    Vec::new()
+}
+
+/// What stands in the middle of a conversation that has not started.
+///
+/// Not a widget in the scrollback: the list is genuinely empty, and this sits over it. It
+/// leaves as soon as there is a first message, which is why it can say the thing that is
+/// only true before then.
+fn opening_greeting() -> Element {
+    rsx! {
+        Column {
+            padding_role: SpaceRole::Lg,
+            space_role: SpaceRole::Sm,
+            alignment: Alignment::Center,
+            Text {
+                text: "Ask me something",
+                type_role: TypeRole::Headline,
+                text_align: TextAlign::Center,
+            }
+            Text {
+                text: "I answer slowly and at length, on a thread that is not this one. \
+                       Enter sends, Shift+Enter starts a new line.",
+                type_role: TypeRole::Body,
+                text_align: TextAlign::Center,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+        }
+    }
 }
 
 /// The widest a thread is allowed to be, per class.
@@ -259,7 +285,7 @@ fn app() -> Element {
                         turns.peek().begin();
                         messages.set(opening_messages());
                         next_id.set(2);
-                        if previous.len() > 1 {
+                        if !previous.is_empty() {
                             // Spelled out, because this file already has a `Message` and
                             // it is a line of a conversation. The library's is the one
                             // sentence an application says after something happened.
@@ -303,9 +329,16 @@ fn app() -> Element {
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Md,
 
-                LazyColumn {
+                // The scrollback and, while there is nothing in it, what the screen is.
+                // The list is declared either way: a conversation that begins by building
+                // a list is a conversation whose first message arrives a frame late.
+                dioxus_compose::Box {
                     fill_max_width: true,
                     weight: 1.0,
+                    alignment: Alignment::Center,
+                LazyColumn {
+                    fill_max_width: true,
+                    fill_max_height: true,
                     item_count: count,
                     key_of: move |index: usize| keys[index].clone(),
                     item: move |index: usize| {
@@ -384,20 +417,23 @@ fn app() -> Element {
                         }
                     },
                 }
+                if count == 0 {
+                    {opening_greeting()}
+                }
+                }
 
-                // The composer, grouped so it reads as one control at the foot of the
-                // conversation rather than as a field and a button that happen to be
-                // side by side.
+                // The composer, as the reference has it: one rounded bar floating at the
+                // foot of the page, holding everything that belongs to sending a message.
+                // It used to be a field with a button parked beside it inside a square
+                // panel, which is two controls that happen to be adjacent.
                 //
-                // It is drawn with an edge rather than with a fill, because the thread it
-                // sits at the foot of is the reading surface. A filled panel on a reading
-                // surface would either match the page, which is nothing, or match the
-                // incoming bubble, which would make the place you type look like something
-                // the assistant said.
-                Surface {
+                // A `Card` rather than a `Surface`, because floating is the whole
+                // difference between the two: the design system's raised container already
+                // knows what lifting something off a page looks like in that system, and a
+                // shadow depth chosen in this file would only be right in one of them.
+                Card {
                     fill_max_width: true,
-                    border_width: 1.0,
-                    border_color: Paint::Role(ColorRole::Outline),
+                    shape_role: ShapeRole::Full,
                     Row {
                         fill_max_width: true,
                         space_role: SpaceRole::Sm,
@@ -416,9 +452,24 @@ fn app() -> Element {
                             on_value_change: move |value| draft.set(value),
                             on_submit: move |value: String| send(value),
                         }
+                        // What the reference calls the model, which is the one thing
+                        // about an answer you can choose before asking for it. It sits in
+                        // the composer, where that choice is made, as well as in the
+                        // settings, where everything about the assistant is.
+                        Dropdown {
+                            selected_index: settings().length.index(),
+                            on_change: move |index: usize| {
+                                let length = Length::ALL[index.min(Length::ALL.len() - 1)];
+                                settings.set(Settings { length, ..settings() });
+                            },
+                            for length in Length::ALL {
+                                Text { key: "{length.label()}", text: length.label() }
+                            }
+                        }
                         Button {
                             text: "Send",
                             variant: ButtonVariant::Filled,
+                            shape_role: ShapeRole::Full,
                             on_click: move |_| send(draft()),
                         }
                     }
@@ -1082,6 +1133,111 @@ mod tests {
             screen.messages,
             vec![("Conversation cleared".to_owned(), "Undo".to_owned())],
             "clearing should say what it did and offer it back"
+        );
+    }
+
+    /// The reference puts everything that belongs to sending a message inside one rounded
+    /// bar. A field with a button parked next to it is two controls that happen to be
+    /// adjacent, which is what this used to be.
+    #[test]
+    fn fr22_the_composer_is_one_rounded_bar_holding_the_send() {
+        let screen = Screen::new();
+        let batch = decode_batch(&screen.first).expect("the first frame did not decode");
+
+        let mut parents = HashMap::new();
+        for mutation in &batch {
+            if let Mutation::Insert {
+                parent_id, node_id, ..
+            } = mutation
+            {
+                parents.insert(*node_id, *parent_id);
+            }
+        }
+        let row = parents[&screen.composer];
+        let bar = parents[&row];
+
+        let send = *screen
+            .texts
+            .iter()
+            .find(|(_, text)| *text == "Send")
+            .map(|(node_id, _)| node_id)
+            .expect("the screen has nothing labelled Send");
+        assert_eq!(
+            parents[&send], row,
+            "the send button is outside the row the field is in, so the composer is not \
+             one control"
+        );
+
+        let rounded = batch.iter().any(|mutation| {
+            matches!(
+                mutation,
+                Mutation::SetModifier { node_id, modifier: Modifier::ShapeRole(ShapeRole::Full), .. }
+                    if *node_id == bar
+            )
+        });
+        assert!(rounded, "the composer is not the reference's pill");
+    }
+
+    /// Nothing has been said yet, so the middle of the screen says what the screen is.
+    /// It is not a message: an introduction under the assistant's name is something the
+    /// assistant never said, sitting in the transcript for good.
+    #[test]
+    fn fr22_an_empty_conversation_says_what_it_is_in_the_middle() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        let greeting = "Ask me something";
+        assert!(
+            screen.texts.values().any(|text| text == greeting),
+            "an empty conversation does not say what the screen is"
+        );
+        assert!(
+            screen
+                .texts
+                .values()
+                .all(|text| !text.starts_with("You said:")),
+            "an empty conversation already holds a reply"
+        );
+
+        // And it leaves as soon as there is something to read, which is what lets it say
+        // the thing that is only true before then.
+        let node = *screen
+            .texts
+            .iter()
+            .find(|(_, text)| *text == greeting)
+            .map(|(node_id, _)| node_id)
+            .expect("the greeting has no node");
+        let (composer, handler) = (screen.composer, screen.submit_handler);
+        screen.encode(composer, handler, EventPayload::TextSubmitted("hello"));
+        let batch = screen
+            .host
+            .dispatch_event(&screen.event)
+            .expect("the send failed")
+            .0
+            .to_vec();
+        // A removal takes the subtree with it, so what has to be gone is the greeting or
+        // something it hangs from.
+        let mut parents = HashMap::new();
+        for mutation in decode_batch(&screen.first).expect("the first frame did not decode") {
+            if let Mutation::Insert {
+                parent_id, node_id, ..
+            } = mutation
+            {
+                parents.insert(node_id, parent_id);
+            }
+        }
+        let mut chain = vec![node];
+        while let Some(parent) = parents.get(chain.last().expect("the chain is never empty")) {
+            chain.push(*parent);
+        }
+        let removed = decode_batch(&batch)
+            .expect("the send did not decode")
+            .iter()
+            .any(|mutation| {
+                matches!(mutation, Mutation::Remove { node_id } if chain.contains(node_id))
+            });
+        assert!(
+            removed,
+            "the greeting stayed on screen once the conversation had started"
         );
     }
 
