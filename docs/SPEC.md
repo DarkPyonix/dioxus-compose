@@ -225,6 +225,8 @@ Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=
 
 2단계는 1단계가 동작한 뒤에 추가합니다. 14.1의 추상화가 성립하면 각각 `DesignSystem` 변형 1개와 Renderer 측 테이블 1개, 규칙 구현 1개로 끝나야 하며, 이것이 그 추상화의 실제 검증입니다.
 
+2단계 세 시스템은 구현되어 실행 경로 위에 있습니다. 세 개 모두 `DesignSystem` 변형 1개(태그 4, 5, 6 추가, 기존 태그는 그대로), `tokens.rs`의 토큰 테이블 1개, Renderer의 `ComponentRules` 구현 1개로 끝났고 위젯·속성·Modifier·와이어 포맷은 움직이지 않았습니다. 값은 `dioxus-design-systems/`의 Kotlin 구현에서 그대로 옮겨 왔습니다.
+
 #### 14.1 추상화
 - 위젯은 **역할만 내보냅니다**(FR-13의 `ColorRole`, `TypeRole`, `ShapeRole`, `SpaceRole`, 그리고 `ButtonVariant` 같은 컴포넌트 변형).
 - 디자인 시스템은 Renderer 안에 있는 **토큰 테이블 + 컴포넌트 규칙 구현** 한 쌍입니다.
@@ -296,8 +298,8 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 
 - **Linux 데스크톱 환경 판별**: `XDG_CURRENT_DESKTOP`을 먼저 보고, 비어 있으면 `DESKTOP_SESSION`을 봅니다. 값에 `GNOME`이 포함되면 GNOME 50, `KDE`면 Breeze, 그 외와 판별 실패는 Deepin입니다. 판별 결과는 시작 시 한 번만 읽습니다.
 - **Web에 플랫폼 룩은 없습니다.** 브라우저는 자기 디자인 언어를 갖지 않으므로 `adaptive`에서도 선택은 임의입니다. 기본을 Fluent 2로 두되, 앱이 설정으로 Material 3를 고를 수 있습니다. 문서에서는 Web에 대해 `unified`를 명시하는 것을 권장합니다.
-- 2단계 시스템이 구현되기 전까지 Linux는 `fallback` 인자를 씁니다. 구현 완료 시 위 표가 적용됩니다.
-- **GNOME 50 주의**: 버전을 명시한 것은 GNOME의 디자인 언어가 릴리스마다 바뀌기 때문입니다. 구현 전에 해당 릴리스의 HIG를 직접 확인하고, 참조한 문서와 버전을 토큰 테이블 주석에 남깁니다.
+- 위 표가 적용됩니다. `fallback` 인자는 자기 디자인 언어가 없는 플랫폼(판별 불가 포함)이 쓰므로 여전히 필수입니다.
+- **GNOME 50 주의**: 버전을 명시한 것은 GNOME의 디자인 언어가 릴리스마다 바뀌기 때문입니다. 참조한 문서와 버전은 토큰 테이블의 `reference` 문자열에 남아 있습니다.
 - **Deepin 주의**: 토큰값과 스타일 규칙만 참조합니다. 아이콘 세트와 전용 폰트는 별도 라이선스가 걸리므로 가져다 쓰지 않습니다.
 - 명암(`ColorScheme`)은 `Light | Dark | FollowSystem`이고 기본은 `FollowSystem`입니다. 시스템 설정 변화는 Renderer가 먼저 알고 스스로 반영합니다. Host는 관여하지 않습니다(D5).
 

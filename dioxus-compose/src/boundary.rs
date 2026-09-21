@@ -989,7 +989,7 @@ pub fn demo_theme() -> Theme {
 #[cfg(test)]
 mod demo_theme_tests {
     use super::*;
-    use crate::schema::DesignSystem;
+    use crate::schema::{DESIGN_SYSTEM_SCHEMA, DesignSystem};
 
     /// Named for what it defends: a sample that cannot be pointed at a design system
     /// leaves five of the six unseen on any one machine.
@@ -997,8 +997,26 @@ mod demo_theme_tests {
     fn fr14_a_named_design_system_is_unified_and_anything_else_adapts() {
         // SAFETY: the test process is single threaded here and the variable is read only
         // by this function, which is called below.
-        unsafe { std::env::set_var("DXC_DESIGN", "fluent") };
-        assert_eq!(demo_theme(), Theme::unified(DesignSystem::Fluent));
+        for (name, system) in [
+            ("material3", DesignSystem::Material3),
+            ("cupertino", DesignSystem::Cupertino),
+            ("fluent", DesignSystem::Fluent),
+            ("gnome", DesignSystem::Gnome),
+            ("breeze", DesignSystem::Breeze),
+            ("deepin", DesignSystem::Deepin),
+        ] {
+            unsafe { std::env::set_var("DXC_DESIGN", name) };
+            assert_eq!(
+                demo_theme(),
+                Theme::unified(system),
+                "{name} is not selectable"
+            );
+        }
+        assert_eq!(
+            DESIGN_SYSTEM_SCHEMA.len(),
+            6,
+            "a system nobody can select goes unseen"
+        );
 
         unsafe { std::env::set_var("DXC_DESIGN", "nonsense") };
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
