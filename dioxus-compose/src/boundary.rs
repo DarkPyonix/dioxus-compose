@@ -1,8 +1,7 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
 use crate::schema::{
-    AssetKind, ColorScheme, EventPayload, IconRole, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH,
-    Theme,
+    AssetKind, ColorScheme, EventPayload, IconRole, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme,
 };
 use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
