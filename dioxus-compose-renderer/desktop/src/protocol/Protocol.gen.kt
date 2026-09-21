@@ -872,9 +872,7 @@ object Protocol {
         val length = lengthLong.toInt()
         requireRange(available, offset, length, referenceOffset)
         val copy = ByteArray(length)
-        val view = batch.duplicate()
-        view.position(base + offset)
-        view.get(copy)
+        batch.get(base + offset, copy, 0, length)
         return copy
     }
 
