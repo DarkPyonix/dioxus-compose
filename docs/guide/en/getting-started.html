@@ -40,6 +40,7 @@
       </ul>
       <h2>On this page</h2>
       <ul>
+        <li><a href="#install">Adding it to a project</a></li>
         <li><a href="#prerequisites">Prerequisites</a></li>
         <li><a href="#renderer">Build the renderer</a></li>
         <li><a href="#smoke">Smoke-test the library</a></li>
@@ -53,9 +54,54 @@
     <p class="eyebrow">Getting started</p>
     <h1>From a clean checkout to a window on screen</h1>
     <p class="lede">
-      Today this path is macOS only. The renderer is compiled ahead of time into a shared
-      library, and your Rust binary links against it, so the renderer has to be built before
-      any Rust example will run.
+      Using the crate is one line in a <code>Cargo.toml</code>: the build downloads the renderer
+      it needs. Working on the renderer itself is the longer path below, and today that path is
+      macOS only.
+    </p>
+
+    <h2 id="install">Adding it to a project</h2>
+    <p>
+      The renderer is a shared library your binary links against, and it is far too large for
+      crates.io, so it ships as a checksummed artifact on the release for each version. Fetching
+      it is the build script's job, not yours:
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>Cargo.toml</figcaption>
+<pre><code>[dependencies]
+dioxus-compose = "0.0.0"</code></pre>
+    </figure>
+
+    <p>
+      <code>cargo build</code> works out which renderer this target needs, downloads the artifact
+      for the crate's exact version, checks it against the published <code>.sha256</code>, unpacks
+      it into a cache outside <code>target/</code> and links it. The cache is keyed by version and
+      target, so it survives <code>cargo clean</code> and is shared between projects on the
+      machine. Nothing else to set, fetch or run.
+    </p>
+
+    <p>
+      Two variables exist for the cases that need them, and neither is part of installing.
+      <code>DIOXUS_COMPOSE_RENDERER_DIR</code> points at a renderer you already have, and is
+      checked before anything is downloaded, so a renderer you built yourself, a vendored copy or
+      an air-gapped build all work through it. <code>DIOXUS_COMPOSE_CACHE_DIR</code> moves the
+      cache. A build with no network tells you which two files to put where, and putting them
+      there is all it takes.
+    </p>
+
+    <div class="note">
+      <span class="label">Building without a renderer</span>
+      <p>
+        <code>default-features = false</code> gives you the Host with no renderer at all, which is
+        what a headless or documentation build wants. Running a binary built that way prints what
+        is missing and exits non-zero. It does not open no window and return <code>0</code>: a
+        program that drew nothing has to be distinguishable from one that finished its work.
+      </p>
+    </div>
+
+    <p>
+      Everything below is about working on <strong>this repository</strong>, which needs the
+      renderer toolchain as well.
     </p>
 
     <h2 id="prerequisites">Prerequisites</h2>
@@ -143,9 +189,9 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
     </p>
 
     <p>
-      If you keep a renderer somewhere else, a downloaded artifact, a vendored copy, point
-      <code>DIOXUS_COMPOSE_RENDERER_DIR</code> at its <code>lib</code> directory and the Rust build
-      will use that instead of the workspace one (NFR-10).
+      In a checkout of this repository the Rust build prefers the renderer you just built over
+      anything it could download. The full order is <code>DIOXUS_COMPOSE_RENDERER_DIR</code>, then
+      this workspace build, then the cache, then the release for the crate's version (NFR-10).
     </p>
     <p>
       The first build is slow, <code>native-image</code> compiles Compose, Skiko and AWT ahead of
@@ -171,8 +217,8 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
 
     <h2 id="demo">Run the demo</h2>
     <p>
-      The desktop example is behind the <code>native-renderer</code> feature, because that feature
-      is what makes the Rust build link against the library you just produced:
+      The desktop example asks for the <code>native-renderer</code> feature explicitly, which is
+      what an example that needs a window has to do. It is on by default for an ordinary build:
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
@@ -189,11 +235,12 @@ libawt_lwawt.dylib                 <span class="c"># placeholder that libawt loa
     </p>
 
     <div class="note">
-      <span class="label">Without the feature flag</span>
+      <span class="label">The Host without a window</span>
       <p>
-        Building without <code>native-renderer</code> gives you a Host with a no-op renderer:
-        <code>launch</code> returns immediately and no window appears. That build is what the unit
-        tests and benchmarks use, so it is useful, just not something you can look at.
+        The unit tests and the benchmarks drive the Host directly, with no renderer and no window,
+        and the <code>mock-renderer</code> feature is how an embedder asks for the same thing. Those
+        builds are silent by design. A build that simply has no renderer is not: it says so and
+        exits non-zero.
       </p>
     </div>
 

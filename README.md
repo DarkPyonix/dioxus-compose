@@ -296,6 +296,36 @@ The JNI mentioned here is entirely internal to the JDK. The Host ↔ Renderer bo
 
 ## 🚀 Getting started
 
+### Using it in your own project
+
+One line. `cargo build` works out which renderer this target needs, downloads the release
+artifact for the crate's exact version, checks it against the published `.sha256`, unpacks it
+into a cache outside `target/`, and links it.
+
+```toml
+[dependencies]
+dioxus-compose = "0.0.0"
+```
+
+There is no environment variable to set, no artifact to fetch by hand and no script to run. The
+cache is keyed by version and target, so it survives `cargo clean` and is shared between projects
+on the machine.
+
+Two variables exist for the cases that need them, and neither is part of installing:
+
+| Variable | Effect |
+|---|---|
+| `DIOXUS_COMPOSE_RENDERER_DIR` | Use the renderer in this directory. Checked first, and nothing is downloaded when it is set, so a renderer you built yourself, a vendored copy or an air-gapped build all work through it. |
+| `DIOXUS_COMPOSE_CACHE_DIR` | Move the cache off `$HOME/.cache/dioxus-compose` (`%LOCALAPPDATA%\dioxus-compose` on Windows). |
+
+A build with no network says which two files to put where, and putting them there is all it takes.
+`default-features = false` builds with no renderer at all, for a headless or documentation build;
+running a binary built that way prints what is missing and exits non-zero rather than opening no
+window and returning 0.
+
+Everything below this point is about working on **this repository**, which needs the renderer
+toolchain as well.
+
 ### 0. Check your machine
 
 ```bash
@@ -388,10 +418,10 @@ For an unattended run, set `DIOXUS_COMPOSE_AUTOEXIT_MS=6000` to make the window 
 cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
-The build script looks for the renderer inside the workspace, at
-`dioxus-compose-renderer/build/native-image/dist/lib`. To use a renderer from somewhere else, a
-downloaded artifact, a vendored copy, an offline build, point `DIOXUS_COMPOSE_RENDERER_DIR` at it
-(`NFR-10`).
+In a checkout of this repository the build script prefers the renderer you just built, at
+`dioxus-compose-renderer/build/native-image/dist/lib`, over anything it could download. The full
+order is `DIOXUS_COMPOSE_RENDERER_DIR`, then that workspace build, then the cache, then the release
+for the crate's version (`NFR-10`).
 
 ### 7. The JVM dev shell
 

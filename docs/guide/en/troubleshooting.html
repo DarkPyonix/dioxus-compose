@@ -62,16 +62,22 @@
 
     <h2 id="no-library">The linker cannot find the renderer</h2>
     <p>
-      Symptoms: <code>cargo run … --features native-renderer</code> fails with
+      Symptoms: <code>cargo run</code> fails with
       <code>library not found for -ldioxus_compose_renderer</code>, or the binary links but dies at
       startup with a dynamic-loader error naming
       <code>libdioxus_compose_renderer.dylib</code>.
     </p>
     <p>
-      The <code>native-renderer</code> feature makes the Rust build look for the library in a fixed
-      location relative to the workspace:
-      <code>dioxus-compose-renderer/build/native-image/dist/lib</code>, which is also baked in as
-      an rpath. If that directory does not exist or is empty, the renderer has not been built.
+      Outside this repository the build downloads the renderer, so a failure here comes with a
+      message that says what it tried and what to do. Read it: it distinguishes no network from a
+      release that does not carry your target, and the offline case names the two files to place
+      and the directory to place them in.
+    </p>
+    <p>
+      Inside a checkout the build prefers the workspace copy at
+      <code>dioxus-compose-renderer/build/native-image/dist/lib</code> over anything downloadable,
+      and bakes it in as an rpath. If that directory exists but is empty, the renderer has not
+      been built.
     </p>
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
       <figcaption>shell</figcaption>
@@ -90,9 +96,10 @@
 
     <h2 id="no-window">It builds and runs, but no window appears</h2>
     <p>
-      If you built without <code>--features native-renderer</code>, this is expected: the Host
-      falls back to a no-op renderer, <code>launch</code> returns immediately and the process exits.
-      Nothing is broken, that build exists for tests and benchmarks.
+      A binary built with <code>default-features = false</code> no longer does this quietly: it
+      prints what is missing and exits non-zero, so a silent window-less run is not that case. A
+      build with the <code>mock-renderer</code> feature is silent on purpose, because it is asking
+      for a Host with no window.
     </p>
     <p>
       If the feature <em>is</em> on, isolate the halves. Run the smoke test: it links a minimal C
