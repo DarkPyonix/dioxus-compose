@@ -48,7 +48,6 @@ jobs:
           # hand written, which is why it needs Liberica rather than upstream GraalVM.
           - runner: macos-latest
             target: macos-aarch64
-            shell: bash
             build: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
             smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
             dist: dioxus-compose-renderer/build/native-image/dist
@@ -57,15 +56,17 @@ jobs:
           # It cannot prove mouse input, because a hosted runner has no one to click.
           - runner: windows-2022
             target: windows-x64
-            shell: powershell
-            build: .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
-            smoke: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
+            # Through the interpreter rather than a per platform `shell:`, because
+            # `shell` is resolved before the matrix exists and cannot read it.
+            # Windows PowerShell 5.1 on purpose: that is what these scripts were written
+            # and debugged against. -File propagates the script's exit code.
+            build: powershell -NoProfile -ExecutionPolicy Bypass -File dioxus-compose-renderer/desktop/scripts/build-native-windows.ps1
+            smoke: powershell -NoProfile -ExecutionPolicy Bypass -File dioxus-compose-renderer/desktop/scripts/smoke-test-windows.ps1
             dist: dioxus-compose-renderer/build/native-image/dist
           # Same reasoning, under a virtual display. A headless runner cannot judge what
           # was drawn, so rendering quality on Linux stays unverified until a human looks.
           - runner: ubuntu-24.04
             target: linux-x64
-            shell: bash
             # Under a virtual display: a hosted Linux runner has no screen of its own.
             build: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
             smoke: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
@@ -132,7 +133,7 @@ jobs:
           bash dioxus-compose-renderer/desktop/scripts/tests/linux-metadata.test.sh
 
       - name: Build the renderer shared library
-        shell: ${{ matrix.shell }}
+        shell: bash
         run: ${{ matrix.build }}
 
       - name: Accessibility classes are linked in
@@ -153,7 +154,7 @@ jobs:
       - name: Smoke test before shipping
         # Nothing is uploaded that cannot start, render and exit cleanly on its own
         # platform. It cannot prove input: a hosted runner has nobody to click or type.
-        shell: ${{ matrix.shell }}
+        shell: bash
         env:
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
         run: ${{ matrix.smoke }}
