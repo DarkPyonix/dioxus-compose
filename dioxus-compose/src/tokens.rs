@@ -58,7 +58,7 @@ pub struct DesignTokenTable {
     pub reference: &'static str,
     pub default_family: &'static str,
     pub monospace_family: &'static str,
-    pub colors: &'static [ColorToken; 15],
+    pub colors: &'static [ColorToken; 23],
     pub type_scale: &'static [TypeToken; 9],
     pub shapes: &'static [ShapeToken; 6],
     pub spaces: &'static [SpaceToken; 7],
@@ -154,6 +154,17 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
         // `Surface` and `Background` are one value here by design, so the container roles
         // are the only thing that separates a layer from the page.
         SurfaceContainer: 0xf3edf7 / 0x211f26,
+        // The baseline scheme's own third accent and its four container tones. Material 3
+        // is where the container idea comes from, so these are its published values rather
+        // than anything derived here.
+        Tertiary: 0x7d5260 / 0xefb8c8,
+        OnTertiary: 0xffffff / 0x492532,
+        PrimaryContainer: 0xeaddff / 0x4f378b,
+        OnPrimaryContainer: 0x21005d / 0xeaddff,
+        SecondaryContainer: 0xe8def8 / 0x4a4458,
+        OnSecondaryContainer: 0x1d192b / 0xe8def8,
+        TertiaryContainer: 0xffd8e4 / 0x633b48,
+        OnTertiaryContainer: 0x31111d / 0xffd8e4,
     },
     type_scale: type_scale! {
         Display: 57.0 / 400 / 64.0 / 0.0 / false,
@@ -219,6 +230,18 @@ const APPLE_HIG: DesignTokenTable = DesignTokenTable {
         // duplicate: on iOS a panel on the grouped page is the plain reading surface, and
         // what makes it a panel is that the page underneath is not.
         SurfaceContainer: 0xffffff / 0x1c1c1e,
+        // systemPurple, the third of the platform accents after blue and indigo.
+        Tertiary: 0xaf52de / 0xbf5af2,
+        OnTertiary: 0xffffff / 0xffffff,
+        // iOS has no published container tones, so these are the tinted fills the platform
+        // draws by hand: a wash of the accent in light, and a deep, desaturated version of
+        // it in dark, which is what a selected row or a tinted card looks like there.
+        PrimaryContainer: 0xd6e4ff / 0x0a2d52,
+        OnPrimaryContainer: 0x003070 / 0xcfe3ff,
+        SecondaryContainer: 0xe2e0ff / 0x262663,
+        OnSecondaryContainer: 0x2a1b70 / 0xdedcff,
+        TertiaryContainer: 0xf3ddfb / 0x3f1a52,
+        OnTertiaryContainer: 0x3d0b52 / 0xf1d9fa,
     },
     // The large title is bold. Both reference screens set it that way, "Contacts" over a
     // grouped list and "Cupertino" over a search field, and a large title at book weight
@@ -280,6 +303,19 @@ const FLUENT: DesignTokenTable = DesignTokenTable {
         OnError: 0xffffff / 0x000000,
         // The card layer, which Fluent lifts off the solid background base by lightness.
         SurfaceContainer: 0xffffff / 0x2b2b2b,
+        // The shared purple ramp, which is Fluent's accent beside the brand blue.
+        Tertiary: 0x8764b8 / 0xb18cd9,
+        OnTertiary: 0xffffff / 0x22103a,
+        // Fluent's brand tints, which are how it fills a selected or highlighted region:
+        // two steps of the brand ramp in light, and the dark shades of it in dark. The
+        // secondary tint is a step deeper than the primary one rather than a different
+        // hue, because Fluent's second accent is the same blue used more strongly.
+        PrimaryContainer: 0xcfe4fa / 0x0c3b5e,
+        OnPrimaryContainer: 0x0c3b5e / 0xcfe4fa,
+        SecondaryContainer: 0xb4d6fa / 0x123d61,
+        OnSecondaryContainer: 0x0b3350 / 0xb4d6fa,
+        TertiaryContainer: 0xe8dcf7 / 0x3b2159,
+        OnTertiaryContainer: 0x341a5e / 0xe8dcf7,
     },
     type_scale: type_scale! {
         Display: 40.0 / 600 / 52.0 / 0.0 / false,
@@ -347,6 +383,21 @@ const ADWAITA: DesignTokenTable = DesignTokenTable {
         // role that has to be visible on the page by itself cannot be that, so the layer
         // is sidebar_bg_color, the grey Adwaita already uses for a panel beside the view.
         SurfaceContainer: 0xebebeb / 0x303030,
+        // teal 4, the third of the GNOME accent colours after blue and purple. Like the
+        // other two it holds one value across both schemes, which is how libadwaita ships
+        // its accents.
+        Tertiary: 0x2190a4 / 0x2190a4,
+        OnTertiary: 0xffffff / 0xffffff,
+        // Adwaita has no container tones of its own: it tints by drawing the accent at a
+        // low alpha over whatever is behind. That cannot be a role, because a role answers
+        // before anything knows what is behind it, so these are that same tint resolved
+        // against the window colour, one per accent.
+        PrimaryContainer: 0xd4e5fb / 0x1b3c5e,
+        OnPrimaryContainer: 0x0d3b70 / 0xcfe0f7,
+        SecondaryContainer: 0xecd9f1 / 0x44234c,
+        OnSecondaryContainer: 0x45164f / 0xecd9f1,
+        TertiaryContainer: 0xcfe9ed / 0x134249,
+        OnTertiaryContainer: 0x0a3d45 / 0xcfe9ed,
     },
     // libadwaita declares its title classes in points against an 11pt Cantarell body, and
     // they are heavy: the largest title is weight 800, not 700. Those point values are
@@ -423,6 +474,20 @@ const BREEZE: DesignTokenTable = DesignTokenTable {
         // Dark's view really is darker than its window. Either way the panel separates
         // from the page, which is the whole promise of the role.
         SurfaceContainer: 0xfcfcfc / 0x1b1e20,
+        // Breeze "neutral", the amber it uses for a warning state, taken here as the third
+        // accent. Dark ink on it for the same reason the other two carry dark ink: white
+        // on any of these Breeze fills measures under three to one.
+        Tertiary: 0xf67400 / 0xf8a44c,
+        OnTertiary: 0x2b1200 / 0x2b1200,
+        // Plasma tints a selected region with the highlight colour at low alpha over the
+        // view. Resolved against the window colour, once per accent, so the role can answer
+        // without knowing what it is over.
+        PrimaryContainer: 0xd3ecf9 / 0x123b4f,
+        OnPrimaryContainer: 0x0b3b52 / 0xcde6f5,
+        SecondaryContainer: 0xd2ece5 / 0x103a32,
+        OnSecondaryContainer: 0x083b31 / 0xcfe8e0,
+        TertiaryContainer: 0xfae0c4 / 0x4a3113,
+        OnTertiaryContainer: 0x4a2c00 / 0xf8dfc3,
     },
     // Plasma sets its interface in Noto Sans at 10pt, a step smaller than Adwaita's 11pt
     // Cantarell, and its headings are semi bold rather than the near black weights
@@ -499,6 +564,19 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
         // key grey, which is a step lighter than the near black window. Either way the
         // panel separates from the page, which is the promise of the role.
         SurfaceContainer: 0xf1f1f1 / 0x2a2a2a,
+        // The violet of the deepin palette, the one accent here that is neither the brand
+        // blue nor a warm colour.
+        Tertiary: 0x7a5bd6 / 0x9f8ae3,
+        OnTertiary: 0xffffff / 0x1d0f45,
+        // Tints of the three accents, warmed to sit on the warm page rather than against
+        // it. The amber pair is the widest of the three, because the second accent here is
+        // itself a light colour and a wash of it has to stay clear of the page.
+        PrimaryContainer: 0xd3e7ff / 0x0d3355,
+        OnPrimaryContainer: 0x00366e / 0xcfe3fb,
+        SecondaryContainer: 0xfae4c6 / 0x4a3517,
+        OnSecondaryContainer: 0x4a3001 / 0xf8e2c5,
+        TertiaryContainer: 0xe4dcfa / 0x362b5e,
+        OnTertiaryContainer: 0x2c1f63 / 0xe1d9f7,
     },
     // A middle weight ladder. The body sits between Breeze's 13 and Adwaita's 15, and the
     // headings are semi bold with loose line heights, which suits the rounded shapes and
@@ -581,6 +659,17 @@ const LIQUID_GLASS: DesignTokenTable = DesignTokenTable {
         // A panel has to lift off a page that is already white, so this is the lightest
         // system grey rather than another white.
         SurfaceContainer: 0xf2f2f7 / 0x1c1c1e,
+        // Liquid Glass keeps Cupertino's accents, because it is the same platform
+        // palette seen through a different material. What changes is how a surface is
+        // drawn, not which purple Apple uses.
+        Tertiary: 0xaf52de / 0xbf5af2,
+        OnTertiary: 0xffffff / 0xffffff,
+        PrimaryContainer: 0xd6e4ff / 0x0a2d52,
+        OnPrimaryContainer: 0x003070 / 0xcfe3ff,
+        SecondaryContainer: 0xe2e0ff / 0x262663,
+        OnSecondaryContainer: 0x2a1b70 / 0xdedcff,
+        TertiaryContainer: 0xf3ddfb / 0x3f1a52,
+        OnTertiaryContainer: 0x3d0b52 / 0xf1d9fa,
     },
     // Same sizes as the flat language, because Dynamic Type did not move, and heavier at
     // every rung that labels something. A label sitting on a translucent surface competes
@@ -752,6 +841,28 @@ mod tests {
                     scheme,
                     distance
                 );
+                // The accent containers answer the same question for a tinted panel. A
+                // tint nobody can see is a panel that is not there, and these are the
+                // fills a screen made of coloured tiles is built out of.
+                for container in [
+                    ColorRole::PrimaryContainer,
+                    ColorRole::SecondaryContainer,
+                    ColorRole::TertiaryContainer,
+                ] {
+                    let distance = apart(
+                        table.color(container, scheme),
+                        table.color(ColorRole::Background, scheme),
+                    );
+                    assert!(
+                        distance >= 24,
+                        "{:?} {:?}: {:?} and Background are {} apart, so a tinted panel is \
+                         drawn and cannot be seen.",
+                        table.system,
+                        scheme,
+                        container,
+                        distance
+                    );
+                }
             }
         }
     }
@@ -815,10 +926,20 @@ mod tests {
             // The layer role has no ink of its own: it holds the page's reading ink, and
             // that is the promise a caller relies on when filling a panel with it.
             (ColorRole::SurfaceContainer, ColorRole::OnSurface),
+            // The accent containers exist so that a paragraph can land on a tinted panel,
+            // not just a word, so they are held to the reading bound rather than to the
+            // looser bound their accents keep.
+            (ColorRole::PrimaryContainer, ColorRole::OnPrimaryContainer),
+            (
+                ColorRole::SecondaryContainer,
+                ColorRole::OnSecondaryContainer,
+            ),
+            (ColorRole::TertiaryContainer, ColorRole::OnTertiaryContainer),
         ];
         let accent = [
             (ColorRole::Primary, ColorRole::OnPrimary),
             (ColorRole::Secondary, ColorRole::OnSecondary),
+            (ColorRole::Tertiary, ColorRole::OnTertiary),
             (ColorRole::Error, ColorRole::OnError),
         ];
         for table in DESIGN_TOKENS {

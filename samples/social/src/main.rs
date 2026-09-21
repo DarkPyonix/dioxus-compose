@@ -1,0 +1,615 @@
+//! A meditation app: a course of the day, shelves of courses, and sleep stories.
+//!
+//! Every card in the reference carries a drawn illustration, and a drawn illustration is
+//! the one thing in these seven designs that has no route into the tree at all: `Image`
+//! takes an id the Host registered, and an application only has the tree. So each card's
+//! picture is a `Canvas` scene built from the card's own accent family, which at least
+//! follows the reader into dark rather than staying the colour it was drawn.
+//!
+//! Unified, naming Cupertino: the reference is an iOS design.
+
+mod courses;
+
+use courses::{Course, Shelf, course, on, scene, sessions_label};
+use dioxus_compose::prelude::*;
+
+/// A phone design in a desktop window is still a phone design.
+const PAGE_MEASURE: f32 = 420.0;
+
+/// How large each picture is. Numbers, because these are the proportions of a picture.
+const HERO: (f32, f32) = (388.0, 240.0);
+const WIDE: (f32, f32) = (388.0, 180.0);
+const TILE: (f32, f32) = (186.0, 120.0);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Destination {
+    Today,
+    Meditate,
+    Sleep,
+}
+
+impl Destination {
+    const STRIP: [Destination; 3] = [
+        Destination::Today,
+        Destination::Meditate,
+        Destination::Sleep,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Destination::Today => "Today",
+            Destination::Meditate => "Meditate",
+            Destination::Sleep => "Sleep",
+        }
+    }
+
+    fn icon(self) -> IconRole {
+        match self {
+            Destination::Today => IconRole::Home,
+            Destination::Meditate => IconRole::List,
+            Destination::Sleep => IconRole::Inbox,
+        }
+    }
+
+    fn shelf(self) -> Shelf {
+        match self {
+            Destination::Today => Shelf::ForYou,
+            Destination::Meditate => Shelf::Meditate,
+            Destination::Sleep => Shelf::Sleep,
+        }
+    }
+
+    fn index(self) -> usize {
+        Self::STRIP
+            .iter()
+            .position(|found| *found == self)
+            .unwrap_or(0)
+    }
+}
+
+/// A card whose picture fills it, with the title written over the bottom of the picture.
+///
+/// This is the reference's hero shape. The title sits on the scene, so it is set in the
+/// ink the scene's family promises, which is the whole reason a container is a colour with
+/// an ink rather than an accent at low opacity.
+fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> Element {
+    let (_, _, ink) = found.palette.roles();
+    let id = found.id;
+    rsx! {
+        dioxus_compose::Box {
+            fill_max_width: true,
+            height: size.1,
+            shape_role: ShapeRole::Large,
+            alignment: Alignment::BottomStart,
+            Canvas {
+                fill_max_width: true,
+                fill_max_height: true,
+                commands: scene(size.0, size.1, found.seed, found.palette),
+            }
+            Row {
+                fill_max_width: true,
+                padding_role: SpaceRole::Md,
+                space_role: SpaceRole::Sm,
+                alignment: Alignment::CenterStart,
+                Column {
+                    weight: 1.0,
+                    Text {
+                        text: found.title,
+                        type_role: TypeRole::Subtitle,
+                        color: Paint::Role(ink),
+                        max_lines: 2,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                    Text {
+                        text: sessions_label(found),
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ink),
+                    }
+                }
+                Button {
+                    text: "\u{25b6}",
+                    variant: ButtonVariant::Filled,
+                    on_click: move |_| on_open.call(id),
+                }
+            }
+        }
+    }
+}
+
+/// A small card: the picture, then the title under it.
+fn tile_card(found: &Course, on_open: EventHandler<u32>) -> Element {
+    let id = found.id;
+    rsx! {
+        Column {
+            fill_max_width: true,
+            space_role: SpaceRole::Xs,
+            Canvas {
+                fill_max_width: true,
+                height: TILE.1,
+                shape_role: ShapeRole::Medium,
+                commands: scene(TILE.0, TILE.1, found.seed, found.palette),
+            }
+            Text {
+                text: sessions_label(found),
+                type_role: TypeRole::Caption,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            Text {
+                text: found.title,
+                type_role: TypeRole::Body,
+                max_lines: 2,
+                overflow: TextOverflow::Ellipsis,
+            }
+            Button {
+                text: "Start",
+                variant: ButtonVariant::Text,
+                padding_role: SpaceRole::None,
+                on_click: move |_| on_open.call(id),
+            }
+        }
+    }
+}
+
+/// A shelf of small cards, two to a row.
+///
+/// Two, because there is no wrapping row in the vocabulary: a grid is rows of a fixed
+/// count and the code says how many rather than the layout working it out from the width.
+fn grid(items: &[&'static Course], on_open: EventHandler<u32>) -> Element {
+    let rows: Vec<Vec<&'static Course>> = items.chunks(2).map(<[_]>::to_vec).collect();
+    rsx! {
+        Column {
+            fill_max_width: true,
+            space_role: SpaceRole::Md,
+            for (index, row) in rows.iter().enumerate() {
+                Row {
+                    key: "{index}",
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    alignment: Alignment::TopStart,
+                    for found in row.iter().copied() {
+                        dioxus_compose::Box { key: "{found.id}", weight: 1.0,
+                            {tile_card(found, on_open)}
+                        }
+                    }
+                    // An odd shelf leaves a gap rather than letting the last card stretch
+                    // to twice the width of its neighbours, which reads as a different
+                    // kind of card.
+                    if row.len() == 1 {
+                        Spacer { weight: 1.0 }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// The page a destination shows: a hero, then its shelf.
+fn shelf_page(
+    destination: Destination,
+    heading: &'static str,
+    strapline: &'static str,
+    on_open: EventHandler<u32>,
+) -> Element {
+    let items = on(destination.shelf());
+    let (hero, rest) = items.split_first().expect("every shelf has a course on it");
+    rsx! {
+        Column {
+            fill_max_width: true,
+            padding_role: SpaceRole::Md,
+            space_role: SpaceRole::Md,
+
+            Column {
+                fill_max_width: true,
+                space_role: SpaceRole::Xs,
+                Text { text: heading, type_role: TypeRole::Headline }
+                Text {
+                    text: strapline,
+                    type_role: TypeRole::Body,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                }
+            }
+
+            {hero_card(hero, HERO, on_open)}
+
+            Text {
+                text: "Recommended for you",
+                type_role: TypeRole::Label,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            {grid(rest, on_open)}
+
+            // The wide card the reference ends each shelf with: one course, given the
+            // whole width, because a shelf that is all the same size has no shape.
+            Text {
+                text: "Recommended category",
+                type_role: TypeRole::Label,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            {hero_card(items[items.len() - 1], WIDE, on_open)}
+        }
+    }
+}
+
+/// One course opened: its picture, what it is, and its sessions.
+fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
+    let (strong, quiet, ink) = found.palette.roles();
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            background: Paint::Role(quiet),
+
+            dioxus_compose::Box {
+                fill_max_width: true,
+                height: HERO.1,
+                alignment: Alignment::TopStart,
+                Canvas {
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    commands: scene(HERO.0, HERO.1, found.seed, found.palette),
+                }
+                Button {
+                    text: "\u{2190}",
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ink),
+                    on_click: move |_| on_back.call(()),
+                }
+            }
+
+            Column {
+                fill_max_width: true,
+                weight: 1.0,
+                padding_role: SpaceRole::Md,
+                space_role: SpaceRole::Md,
+                Text {
+                    text: found.title,
+                    type_role: TypeRole::Headline,
+                    color: Paint::Role(ink),
+                }
+                Text {
+                    text: sessions_label(found),
+                    type_role: TypeRole::Body,
+                    color: Paint::Role(ink),
+                }
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Sm,
+                    for number in 1..=found.sessions {
+                        Row {
+                            key: "{number}",
+                            fill_max_width: true,
+                            background: Paint::Role(ColorRole::SurfaceContainer),
+                            shape_role: ShapeRole::Medium,
+                            padding_role: SpaceRole::Md,
+                            space_role: SpaceRole::Sm,
+                            alignment: Alignment::CenterStart,
+                            Text {
+                                text: "Session {number}",
+                                type_role: TypeRole::Body,
+                                weight: 1.0,
+                            }
+                            Text {
+                                text: "{found.minutes} min",
+                                type_role: TypeRole::Caption,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            }
+                        }
+                    }
+                }
+                Spacer { weight: 1.0 }
+                Button {
+                    text: "Begin",
+                    fill_max_width: true,
+                    variant: ButtonVariant::Filled,
+                    background: Paint::Role(strong),
+                    on_click: move |_| {
+                        Message::new("Playback is not part of this sample").show();
+                    },
+                }
+            }
+        }
+    }
+}
+
+fn app() -> Element {
+    let window = use_window_size();
+    let measure = if window.is_compact() {
+        None
+    } else {
+        Some(PAGE_MEASURE)
+    };
+
+    let mut destination = use_signal(|| Destination::Today);
+    let mut opened = use_signal(|| Option::<u32>::None);
+    let on_open = EventHandler::new(move |id: u32| opened.set(Some(id)));
+
+    // A course covers everything, including the bar along the bottom. A course whose only
+    // way out is its own back button should not also have three other ways out.
+    if let Some(found) = opened().and_then(course) {
+        return rsx! {
+            dioxus_compose::Box {
+                fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+                Column {
+                    width: measure,
+                    fill_max_width: measure.is_none(),
+                    fill_max_height: true,
+                    {course_page(found, EventHandler::new(move |()| opened.set(None)))}
+                }
+            }
+        };
+    }
+
+    let body = match destination() {
+        Destination::Today => shelf_page(
+            Destination::Today,
+            "Good evening",
+            "Three minutes is enough to start with.",
+            on_open,
+        ),
+        Destination::Meditate => shelf_page(
+            Destination::Meditate,
+            "Meditate",
+            "Meditation for beginners and for people who have been at it a while.",
+            on_open,
+        ),
+        Destination::Sleep => shelf_page(
+            Destination::Sleep,
+            "Sleep stories",
+            "Something to listen to on the way down.",
+            on_open,
+        ),
+    };
+
+    rsx! {
+        Navigation {
+            fill_max_width: true,
+            fill_max_height: true,
+            selected_index: destination().index(),
+            for choice in Destination::STRIP {
+                NavigationItem {
+                    key: "{choice.label()}",
+                    text: choice.label(),
+                    icon: choice.icon(),
+                    on_click: move |()| destination.set(choice),
+                }
+            }
+            Column {
+                fill_max_width: true,
+                fill_max_height: true,
+                background: Paint::Role(ColorRole::Background),
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    alignment: Alignment::TopCenter,
+                    ScrollColumn {
+                        width: measure,
+                        fill_max_width: measure.is_none(),
+                        fill_max_height: true,
+                        {body}
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new()
+        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .launch(app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use courses::COURSES;
+    use dioxus_compose::Host;
+    use dioxus_compose::protocol::{
+        HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
+    };
+    use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+
+    /// The screen, driven the way a Renderer drives it. Every batch is kept, because a
+    /// batch is the change since the frame before it rather than what is on screen.
+    struct Screen {
+        host: Host,
+        frames: Vec<Vec<u8>>,
+    }
+
+    impl Screen {
+        fn new() -> Self {
+            dioxus_compose::window::reset_window_size();
+            let mut host = Host::new(app);
+            let first = host.rebuild().expect("the first frame failed").to_vec();
+            Self {
+                host,
+                frames: vec![first],
+            }
+        }
+
+        fn mutations(&self) -> Vec<Mutation<'_>> {
+            self.frames
+                .iter()
+                .flat_map(|frame| decode_batch(frame).expect("a batch did not decode"))
+                .collect()
+        }
+
+        fn press(&mut self, label: &str) -> bool {
+            let found = {
+                let mutations = self.mutations();
+                let node = mutations.iter().rev().find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                    } if *text == label => Some(*node_id),
+                    _ => None,
+                });
+                node.and_then(|node| {
+                    mutations.iter().rev().find_map(|mutation| match mutation {
+                        Mutation::SetProp {
+                            node_id,
+                            property: PropertyKind::OnClick,
+                            value: PropertyValue::Integer(handler),
+                        } if *node_id == node => Some((node, *handler as u64)),
+                        _ => None,
+                    })
+                })
+            };
+            let Some((node_id, handler_id)) = found else {
+                return false;
+            };
+            let mut bytes = Vec::new();
+            encode_event(
+                &HostEvent {
+                    node_id,
+                    handler_id,
+                    payload: EventPayload::Clicked,
+                },
+                &mut bytes,
+            )
+            .expect("the click did not encode");
+            let (batch, _) = self.host.dispatch_event(&bytes).expect("the click failed");
+            if !batch.is_empty() {
+                self.frames.push(batch.to_vec());
+            }
+            true
+        }
+
+        fn latest_texts(&self) -> Vec<String> {
+            let Some(frame) = self.frames.last() else {
+                return Vec::new();
+            };
+            decode_batch(frame)
+                .expect("the batch did not decode")
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                        ..
+                    } => Some((*text).to_owned()),
+                    _ => None,
+                })
+                .collect()
+        }
+    }
+
+    #[test]
+    fn the_first_frame_encodes_without_a_protocol_error() {
+        assert!(Host::new(app).rebuild().is_ok());
+    }
+
+    /// Every destination has to encode, not just the one the app opens on.
+    #[test]
+    fn fr15_every_destination_encodes() {
+        let mut screen = Screen::new();
+        for choice in Destination::STRIP {
+            assert!(
+                screen.press(choice.label()),
+                "the bar has no destination called {}",
+                choice.label()
+            );
+        }
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// Every card carries its picture. A `Canvas` with no draw list is a blank rectangle,
+    /// and on this screen the pictures are most of what there is.
+    #[test]
+    fn fr16_every_card_carries_its_picture() {
+        dioxus_compose::window::reset_window_size();
+        let batch = Host::new(app)
+            .rebuild()
+            .expect("the first frame failed")
+            .to_vec();
+        let mutations = decode_batch(&batch).expect("the batch did not decode");
+        let canvases: Vec<u32> = mutations
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::Create {
+                    node_id,
+                    widget: WidgetKind::Canvas,
+                } => Some(*node_id),
+                _ => None,
+            })
+            .collect();
+        assert!(!canvases.is_empty(), "the shelf draws nothing at all");
+        for canvas in canvases {
+            assert!(
+                mutations.iter().any(|mutation| matches!(
+                    mutation,
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Commands,
+                        ..
+                    } if *node_id == canvas
+                )),
+                "a card reached the Renderer with no picture on it"
+            );
+        }
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// Opening a course covers the whole screen and its back button returns.
+    #[test]
+    fn fr15_a_course_opens_and_closes() {
+        let mut screen = Screen::new();
+        assert!(screen.press("Start"), "no card on the shelf opens");
+        assert!(
+            screen
+                .latest_texts()
+                .iter()
+                .any(|text| text.starts_with("Session ")),
+            "opening a course did not bring up its sessions"
+        );
+        assert!(screen.press("\u{2190}"), "the course has no way back");
+        assert!(
+            screen
+                .latest_texts()
+                .iter()
+                .any(|text| text == "Good evening"),
+            "closing the course did not bring the shelf back"
+        );
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// A course lists as many sessions as it says it has. A count in a label and a list
+    /// of a different length is the screen contradicting itself.
+    #[test]
+    fn a_course_lists_the_sessions_it_says_it_has() {
+        for found in COURSES {
+            let listed = (1..=found.sessions).count() as u32;
+            assert_eq!(listed, found.sessions, "{} miscounts", found.title);
+        }
+    }
+
+    /// The shelf, in the design system it ships, in both schemes, at all three widths.
+    #[test]
+    fn fr16_the_shelf_is_recorded_in_the_system_it_ships() {
+        sample_frames::record_in("Social", &[DesignSystem::Cupertino], app, |_| {});
+    }
+
+    /// The sleep shelf, which the reference draws on a dark page: a different set of
+    /// pictures and the one place the cards are all the same shape.
+    #[test]
+    fn fr16_the_sleep_shelf_is_recorded() {
+        sample_frames::record_in("SocialSleep", &[DesignSystem::Cupertino], app, |screen| {
+            assert!(
+                screen.press(Destination::Sleep.label()),
+                "the bar has no way to the sleep stories"
+            );
+        });
+    }
+
+    /// One course opened, which is the page where the picture, the tint and the ink on it
+    /// are all from one family and have to agree.
+    #[test]
+    fn fr13_an_opened_course_is_recorded() {
+        sample_frames::record_in("SocialCourse", &[DesignSystem::Cupertino], app, |screen| {
+            assert!(screen.press("Start"), "no card on the shelf opens");
+        });
+    }
+}

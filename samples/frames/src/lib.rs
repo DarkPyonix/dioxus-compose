@@ -231,9 +231,27 @@ pub fn frame_dir() -> Option<PathBuf> {
 /// Unset, which is the normal run, it still builds all thirty-six: a design system or a
 /// width nobody can encode is exactly the failure this is here to catch, and catching it
 /// should not depend on someone having asked for pictures.
-pub fn record(screen: &str, app: fn() -> Element, mut prepare: impl FnMut(&mut Screen)) {
+pub fn record(screen: &str, app: fn() -> Element, prepare: impl FnMut(&mut Screen)) {
+    record_in(screen, &SYSTEMS, app, prepare);
+}
+
+/// The same, for a screen that ships one design system rather than adapting to the host.
+///
+/// An adaptive sample is drawn by whichever system the platform picks, so all six of them
+/// are its real appearance and all six have to be looked at. A unified sample names one,
+/// and the other five are screens it will never show: recording them would be five sixths
+/// of the pictures being of something nobody can reach.
+///
+/// What is still worth checking is that the screen encodes, which `record` does for every
+/// system it is given, so a caller who wants that breadth passes the whole list.
+pub fn record_in(
+    screen: &str,
+    systems: &[DesignSystem],
+    app: fn() -> Element,
+    mut prepare: impl FnMut(&mut Screen),
+) {
     let directory = frame_dir();
-    for system in SYSTEMS {
+    for system in systems.iter().copied() {
         for scheme in SCHEMES {
             for viewport in VIEWPORTS {
                 dioxus_compose::window::reset_window_size();

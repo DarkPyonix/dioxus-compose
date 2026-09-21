@@ -15,7 +15,7 @@ enum class Key { Enter }
 
 enum class WindowSizeClass { Compact, Medium, Expanded }
 
-enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError, SurfaceContainer }
+enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError, SurfaceContainer, Tertiary, OnTertiary, PrimaryContainer, OnPrimaryContainer, SecondaryContainer, OnSecondaryContainer, TertiaryContainer, OnTertiaryContainer }
 
 enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
 
@@ -170,6 +170,14 @@ object DrawCommands {
         13 -> ColorRole.Error
         14 -> ColorRole.OnError
         15 -> ColorRole.SurfaceContainer
+        16 -> ColorRole.Tertiary
+        17 -> ColorRole.OnTertiary
+        18 -> ColorRole.PrimaryContainer
+        19 -> ColorRole.OnPrimaryContainer
+        20 -> ColorRole.SecondaryContainer
+        21 -> ColorRole.OnSecondaryContainer
+        22 -> ColorRole.TertiaryContainer
+        23 -> ColorRole.OnTertiaryContainer
         else -> null
     }
 
@@ -264,7 +272,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 6438133695985342502L
+    const val SCHEMA_HASH: Long = -3929046057968645626L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -683,6 +691,14 @@ object Protocol {
         13 -> ColorRole.Error
         14 -> ColorRole.OnError
         15 -> ColorRole.SurfaceContainer
+        16 -> ColorRole.Tertiary
+        17 -> ColorRole.OnTertiary
+        18 -> ColorRole.PrimaryContainer
+        19 -> ColorRole.OnPrimaryContainer
+        20 -> ColorRole.SecondaryContainer
+        21 -> ColorRole.OnSecondaryContainer
+        22 -> ColorRole.TertiaryContainer
+        23 -> ColorRole.OnTertiaryContainer
         else -> throw ProtocolException("unknown ColorRole tag $tag", offset)
     }
 
@@ -977,6 +993,14 @@ object DesignTokens {
             0xffb3261e.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xfff3edf7.toInt(), // SurfaceContainer
+            0xff7d5260.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffeaddff.toInt(), // PrimaryContainer
+            0xff21005d.toInt(), // OnPrimaryContainer
+            0xffe8def8.toInt(), // SecondaryContainer
+            0xff1d192b.toInt(), // OnSecondaryContainer
+            0xffffd8e4.toInt(), // TertiaryContainer
+            0xff31111d.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xffd0bcff.toInt(), // Primary
@@ -994,6 +1018,14 @@ object DesignTokens {
             0xfff2b8b5.toInt(), // Error
             0xff601410.toInt(), // OnError
             0xff211f26.toInt(), // SurfaceContainer
+            0xffefb8c8.toInt(), // Tertiary
+            0xff492532.toInt(), // OnTertiary
+            0xff4f378b.toInt(), // PrimaryContainer
+            0xffeaddff.toInt(), // OnPrimaryContainer
+            0xff4a4458.toInt(), // SecondaryContainer
+            0xffe8def8.toInt(), // OnSecondaryContainer
+            0xff633b48.toInt(), // TertiaryContainer
+            0xffffd8e4.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(57.0f, 400, 64.0f, 0.0f, false), // Display
@@ -1031,6 +1063,14 @@ object DesignTokens {
             0xffff3b30.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xffffffff.toInt(), // SurfaceContainer
+            0xffaf52de.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd6e4ff.toInt(), // PrimaryContainer
+            0xff003070.toInt(), // OnPrimaryContainer
+            0xffe2e0ff.toInt(), // SecondaryContainer
+            0xff2a1b70.toInt(), // OnSecondaryContainer
+            0xfff3ddfb.toInt(), // TertiaryContainer
+            0xff3d0b52.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff0a84ff.toInt(), // Primary
@@ -1048,6 +1088,14 @@ object DesignTokens {
             0xffff453a.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xff1c1c1e.toInt(), // SurfaceContainer
+            0xffbf5af2.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xff0a2d52.toInt(), // PrimaryContainer
+            0xffcfe3ff.toInt(), // OnPrimaryContainer
+            0xff262663.toInt(), // SecondaryContainer
+            0xffdedcff.toInt(), // OnSecondaryContainer
+            0xff3f1a52.toInt(), // TertiaryContainer
+            0xfff1d9fa.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(34.0f, 700, 41.0f, 0.37f, false), // Display
@@ -1085,6 +1133,14 @@ object DesignTokens {
             0xffc50f1f.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xffffffff.toInt(), // SurfaceContainer
+            0xff8764b8.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffcfe4fa.toInt(), // PrimaryContainer
+            0xff0c3b5e.toInt(), // OnPrimaryContainer
+            0xffb4d6fa.toInt(), // SecondaryContainer
+            0xff0b3350.toInt(), // OnSecondaryContainer
+            0xffe8dcf7.toInt(), // TertiaryContainer
+            0xff341a5e.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff479ef5.toInt(), // Primary
@@ -1102,6 +1158,14 @@ object DesignTokens {
             0xffdc626d.toInt(), // Error
             0xff000000.toInt(), // OnError
             0xff2b2b2b.toInt(), // SurfaceContainer
+            0xffb18cd9.toInt(), // Tertiary
+            0xff22103a.toInt(), // OnTertiary
+            0xff0c3b5e.toInt(), // PrimaryContainer
+            0xffcfe4fa.toInt(), // OnPrimaryContainer
+            0xff123d61.toInt(), // SecondaryContainer
+            0xffb4d6fa.toInt(), // OnSecondaryContainer
+            0xff3b2159.toInt(), // TertiaryContainer
+            0xffe8dcf7.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(40.0f, 600, 52.0f, 0.0f, false), // Display
@@ -1139,6 +1203,14 @@ object DesignTokens {
             0xffe01b24.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xffebebeb.toInt(), // SurfaceContainer
+            0xff2190a4.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd4e5fb.toInt(), // PrimaryContainer
+            0xff0d3b70.toInt(), // OnPrimaryContainer
+            0xffecd9f1.toInt(), // SecondaryContainer
+            0xff45164f.toInt(), // OnSecondaryContainer
+            0xffcfe9ed.toInt(), // TertiaryContainer
+            0xff0a3d45.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff3584e4.toInt(), // Primary
@@ -1156,6 +1228,14 @@ object DesignTokens {
             0xffff7b63.toInt(), // Error
             0xff2a0a06.toInt(), // OnError
             0xff303030.toInt(), // SurfaceContainer
+            0xff2190a4.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xff1b3c5e.toInt(), // PrimaryContainer
+            0xffcfe0f7.toInt(), // OnPrimaryContainer
+            0xff44234c.toInt(), // SecondaryContainer
+            0xffecd9f1.toInt(), // OnSecondaryContainer
+            0xff134249.toInt(), // TertiaryContainer
+            0xffcfe9ed.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(44.0f, 800, 52.0f, -0.5f, false), // Display
@@ -1193,6 +1273,14 @@ object DesignTokens {
             0xffda4453.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xfffcfcfc.toInt(), // SurfaceContainer
+            0xfff67400.toInt(), // Tertiary
+            0xff2b1200.toInt(), // OnTertiary
+            0xffd3ecf9.toInt(), // PrimaryContainer
+            0xff0b3b52.toInt(), // OnPrimaryContainer
+            0xffd2ece5.toInt(), // SecondaryContainer
+            0xff083b31.toInt(), // OnSecondaryContainer
+            0xfffae0c4.toInt(), // TertiaryContainer
+            0xff4a2c00.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff3daee9.toInt(), // Primary
@@ -1210,6 +1298,14 @@ object DesignTokens {
             0xffed8079.toInt(), // Error
             0xff2a0806.toInt(), // OnError
             0xff1b1e20.toInt(), // SurfaceContainer
+            0xfff8a44c.toInt(), // Tertiary
+            0xff2b1200.toInt(), // OnTertiary
+            0xff123b4f.toInt(), // PrimaryContainer
+            0xffcde6f5.toInt(), // OnPrimaryContainer
+            0xff103a32.toInt(), // SecondaryContainer
+            0xffcfe8e0.toInt(), // OnSecondaryContainer
+            0xff4a3113.toInt(), // TertiaryContainer
+            0xfff8dfc3.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(34.0f, 600, 40.0f, 0.0f, false), // Display
@@ -1247,6 +1343,14 @@ object DesignTokens {
             0xffff5736.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xfff1f1f1.toInt(), // SurfaceContainer
+            0xff7a5bd6.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd3e7ff.toInt(), // PrimaryContainer
+            0xff00366e.toInt(), // OnPrimaryContainer
+            0xfffae4c6.toInt(), // SecondaryContainer
+            0xff4a3001.toInt(), // OnSecondaryContainer
+            0xffe4dcfa.toInt(), // TertiaryContainer
+            0xff2c1f63.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff3ba2ff.toInt(), // Primary
@@ -1264,6 +1368,14 @@ object DesignTokens {
             0xffff8a73.toInt(), // Error
             0xff34110a.toInt(), // OnError
             0xff2a2a2a.toInt(), // SurfaceContainer
+            0xff9f8ae3.toInt(), // Tertiary
+            0xff1d0f45.toInt(), // OnTertiary
+            0xff0d3355.toInt(), // PrimaryContainer
+            0xffcfe3fb.toInt(), // OnPrimaryContainer
+            0xff4a3517.toInt(), // SecondaryContainer
+            0xfff8e2c5.toInt(), // OnSecondaryContainer
+            0xff362b5e.toInt(), // TertiaryContainer
+            0xffe1d9f7.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(40.0f, 600, 50.0f, 0.0f, false), // Display
@@ -1301,6 +1413,14 @@ object DesignTokens {
             0xffff3b30.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xfff2f2f7.toInt(), // SurfaceContainer
+            0xffaf52de.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd6e4ff.toInt(), // PrimaryContainer
+            0xff003070.toInt(), // OnPrimaryContainer
+            0xffe2e0ff.toInt(), // SecondaryContainer
+            0xff2a1b70.toInt(), // OnSecondaryContainer
+            0xfff3ddfb.toInt(), // TertiaryContainer
+            0xff3d0b52.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff0a84ff.toInt(), // Primary
@@ -1318,6 +1438,14 @@ object DesignTokens {
             0xffff453a.toInt(), // Error
             0xffffffff.toInt(), // OnError
             0xff1c1c1e.toInt(), // SurfaceContainer
+            0xffbf5af2.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xff0a2d52.toInt(), // PrimaryContainer
+            0xffcfe3ff.toInt(), // OnPrimaryContainer
+            0xff262663.toInt(), // SecondaryContainer
+            0xffdedcff.toInt(), // OnSecondaryContainer
+            0xff3f1a52.toInt(), // TertiaryContainer
+            0xfff1d9fa.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(34.0f, 700, 41.0f, 0.37f, false), // Display

@@ -82,6 +82,14 @@ class CupertinoDesignSystem private constructor(
         // A grouped box on the grouped page is the plain reading surface, and what makes
         // it a panel is that the page underneath it is not.
         ColorRole.SurfaceContainer -> palette.surface
+        ColorRole.Tertiary -> palette.accentTertiary
+        ColorRole.OnTertiary -> palette.onAccentTertiary
+        ColorRole.PrimaryContainer -> palette.accentContainer
+        ColorRole.OnPrimaryContainer -> palette.onAccentContainer
+        ColorRole.SecondaryContainer -> palette.accentSecondaryContainer
+        ColorRole.OnSecondaryContainer -> palette.onAccentSecondaryContainer
+        ColorRole.TertiaryContainer -> palette.accentTertiaryContainer
+        ColorRole.OnTertiaryContainer -> palette.onAccentTertiaryContainer
     }
 
     /**

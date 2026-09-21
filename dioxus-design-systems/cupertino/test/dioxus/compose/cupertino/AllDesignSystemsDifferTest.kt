@@ -120,6 +120,26 @@ class AllDesignSystemsDifferTest {
                     "${system.id} ${if (dark) "dark" else "light"}: a panel and the page " +
                         "it sits on are $apart apart, so the panel is invisible",
                 )
+                // The accent containers answer the same question for a tinted panel. A
+                // tint nobody can see is a panel that is not there, and these are the
+                // fills a screen made of coloured tiles is built out of.
+                for (role in listOf(
+                    ColorRole.PrimaryContainer,
+                    ColorRole.SecondaryContainer,
+                    ColorRole.TertiaryContainer,
+                )) {
+                    val tint = system.color(role)
+                    val tintApart = (
+                        abs(tint.red - page.red) +
+                            abs(tint.green - page.green) +
+                            abs(tint.blue - page.blue)
+                        ) * 255f
+                    assertTrue(
+                        tintApart >= 24f,
+                        "${system.id} ${if (dark) "dark" else "light"}: $role and the page " +
+                            "are $tintApart apart, so a tinted panel is invisible",
+                    )
+                }
             }
         }
     }
@@ -145,10 +165,17 @@ class AllDesignSystemsDifferTest {
             ColorRole.SurfaceVariant to ColorRole.OnSurfaceVariant,
             ColorRole.Background to ColorRole.OnBackground,
             ColorRole.SurfaceContainer to ColorRole.OnSurface,
+            // The accent containers exist so a paragraph can land on a tinted panel, not
+            // just a word, so they are held to the reading bound rather than to the looser
+            // bound their accents keep.
+            ColorRole.PrimaryContainer to ColorRole.OnPrimaryContainer,
+            ColorRole.SecondaryContainer to ColorRole.OnSecondaryContainer,
+            ColorRole.TertiaryContainer to ColorRole.OnTertiaryContainer,
         )
         val accent = listOf(
             ColorRole.Primary to ColorRole.OnPrimary,
             ColorRole.Secondary to ColorRole.OnSecondary,
+            ColorRole.Tertiary to ColorRole.OnTertiary,
             ColorRole.Error to ColorRole.OnError,
         )
         for (dark in listOf(false, true)) {
