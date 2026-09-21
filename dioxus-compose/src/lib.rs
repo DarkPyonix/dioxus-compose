@@ -87,7 +87,10 @@ pub mod prelude {
     pub use dioxus_core;
     pub use dioxus_signals;
 
-    pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
+    // `use_hook` is how a component starts something once and keeps it: a worker thread,
+    // a connection, a subscription. Domain work runs on worker threads, so a consumer who
+    // added only this crate needs it by name.
+    pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom, use_hook};
     pub use dioxus_hooks::*;
     pub use dioxus_signals::*;
 }

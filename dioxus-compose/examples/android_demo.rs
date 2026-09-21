@@ -10,13 +10,20 @@
 //! ```
 
 use dioxus_compose::prelude::*;
-use std::sync::Once;
 use std::thread;
 use std::time::Duration;
+
+/// A hundred appends a second, which is the streaming rate the frame budget is stated at.
+const APPEND_INTERVAL: Duration = Duration::from_millis(10);
+
+/// How long the streamed line grows before it starts over. Long enough to watch, short
+/// enough that the screen does not fill with it.
+const STREAM_LENGTH: usize = 60;
 
 fn app() -> Element {
     let mut messages = use_signal(Vec::<String>::new);
     let mut draft = use_signal(String::new);
+    let streaming = use_streaming_line();
 
     rsx! {
         Column {
@@ -50,31 +57,38 @@ fn app() -> Element {
                     }
                 }
             }
+            Text { text: streaming() }
         }
     }
 }
 
-/// A Host worker thread, doing what every worker does.
+/// A line a worker thread grows a hundred times a second.
 ///
-/// It never calls a boundary function and never touches the UI thread. It asks the Host
-/// for a frame, which reaches Compose through the generated upcall, and the JavaVM
-/// attachment that upcall needs happens once, on the first request, and is never undone.
-fn spawn_frame_requesting_worker() {
-    // The root component runs again on every rebuild, so the worker starts once.
-    static WORKER: Once = Once::new();
-    WORKER.call_once(|| {
-        thread::spawn(|| {
-            loop {
-                thread::sleep(Duration::from_millis(200));
-                dioxus_compose::request_frame_from_worker();
-            }
-        });
+/// The worker is what every Host worker is: it does its work off the UI thread, writes a
+/// signal, and never calls a boundary function. Writing the signal marks the reading scope
+/// dirty and the Host asks for a frame on its own, which on Android means the generated
+/// upcall, the JavaVM attachment it needs, and Compose's frame clock. Typing and pressing
+/// Send have to stay responsive while it runs.
+fn use_streaming_line() -> Signal<String, SyncStorage> {
+    let mut line = use_signal_sync(|| String::from("streaming "));
+    use_hook(move || {
+        thread::Builder::new()
+            .name("android-demo-stream".to_owned())
+            .spawn(move || {
+                loop {
+                    thread::sleep(APPEND_INTERVAL);
+                    let mut text = line.write();
+                    if text.len() >= STREAM_LENGTH {
+                        text.clear();
+                        text.push_str("streaming ");
+                    } else {
+                        text.push('.');
+                    }
+                }
+            })
+            .expect("the streaming thread could not be started");
     });
+    line
 }
 
-fn start() -> Element {
-    spawn_frame_requesting_worker();
-    app()
-}
-
-dioxus_compose::android_main!(start);
+dioxus_compose::android_main!(app);
