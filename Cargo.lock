@@ -699,6 +699,7 @@ version = "0.1.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
+ "sample-frames",
 ]
 
 [[package]]
@@ -707,6 +708,14 @@ version = "0.1.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-frames"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
 ]
 
 [[package]]
@@ -716,6 +725,7 @@ dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
  "futures-channel",
+ "sample-frames",
 ]
 
 [[package]]
@@ -724,6 +734,7 @@ version = "0.1.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
+ "sample-frames",
 ]
 
 [[package]]

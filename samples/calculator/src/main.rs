@@ -457,66 +457,21 @@ mod tests {
             .expect("the calculator tree encodes");
     }
 
-    /// Writes one screen as the batches that build it, each behind its byte length.
-    ///
-    /// A batch is a single envelope and cannot simply be appended to another one, so a
-    /// screen that takes more than one of them has to keep the boundaries. Four little
-    /// endian bytes of length in front of each is enough, and it is what the Renderer's
-    /// screenshot test reads back.
-    fn write_frames(path: &std::path::Path, batches: &[&[u8]]) {
-        let mut bytes = Vec::new();
-        for batch in batches {
-            bytes.extend_from_slice(&(batch.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(batch);
-        }
-        std::fs::write(path, bytes)
-            .unwrap_or_else(|error| panic!("{} cannot be written: {error}", path.display()));
-    }
-
-    /// The calculator's first frame under each of the six design systems, in both schemes.
+    /// The calculator's screen, under every design system, in both schemes, at all three
+    /// window widths.
     ///
     /// A batch that encodes is not the same as a screen someone can read. Material 3
     /// shipped a readout filled with a colour that matched the page behind it, drawn full
     /// size, in the right colour and invisible, and every assertion in this file passed
     /// the whole time. The only thing that settles it is looking.
     ///
-    /// So this writes the frames out when `DXC_FRAME_DIR` is set, as exactly the bytes the
-    /// Renderer decodes, and the Renderer's screenshot test turns each one into a PNG.
-    /// Unset, which is the normal run, it still checks that all twelve encode: a design
-    /// system nobody can render is the failure this whole set of tables exists to avoid.
+    /// So `DXC_FRAME_DIR` writes the frames out, exactly as the Renderer decodes them, and
+    /// the Renderer's screenshot test turns each one into a picture. Unset, which is the
+    /// normal run, this still builds all thirty-six: a width or a design system nobody can
+    /// encode is the failure the tables exist to avoid.
     #[test]
-    fn fr14_the_first_frame_encodes_under_every_design_system() {
-        use dioxus_compose::schema::{ColorScheme, DesignSystem, Theme};
-
-        let directory = std::env::var("DXC_FRAME_DIR").ok();
-        if let Some(directory) = &directory {
-            std::fs::create_dir_all(directory).expect("the frame directory can be created");
-        }
-        for system in [
-            DesignSystem::Material3,
-            DesignSystem::Cupertino,
-            DesignSystem::Fluent,
-            DesignSystem::Gnome,
-            DesignSystem::Breeze,
-            DesignSystem::Deepin,
-        ] {
-            for scheme in [ColorScheme::Light, ColorScheme::Dark] {
-                let theme = Theme::unified(system).with_color_scheme(scheme);
-                let mut host = Host::with_theme(app, theme);
-                let batch = host.rebuild().unwrap_or_else(|error| {
-                    panic!("{system:?} {scheme:?} does not encode: {error:?}")
-                });
-                assert!(
-                    !batch.is_empty(),
-                    "{system:?} {scheme:?} produced an empty first frame, so there is nothing to draw"
-                );
-                if let Some(directory) = &directory {
-                    let path = std::path::Path::new(directory)
-                        .join(format!("Calculator-{system:?}-{scheme:?}.bin"));
-                    write_frames(&path, &[batch]);
-                }
-            }
-        }
+    fn fr14_the_screen_is_recorded_under_every_design_system_and_width() {
+        sample_frames::record("Calculator", app, |_| {});
     }
 
     #[test]

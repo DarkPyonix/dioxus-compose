@@ -3,6 +3,7 @@ members = [
     "dioxus-compose",
     "samples/calculator",
     "samples/chat",
+    "samples/frames",
     "samples/notepad",
     "samples/todo",
 ]

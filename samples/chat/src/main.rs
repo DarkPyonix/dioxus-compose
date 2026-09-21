@@ -500,6 +500,24 @@ mod tests {
         frame
     }
 
+    /// The conversation, under every design system, in both schemes, at all three widths.
+    ///
+    /// A thread is the screen where a fill that is a shade away from the page behind it
+    /// stops being a contrast number and becomes a bubble nobody can see. The scrollback
+    /// windows its rows, so the recorder answers the range request a real Renderer would
+    /// have made before the first pixel.
+    #[test]
+    fn fr14_the_conversation_is_recorded_under_every_design_system_and_width() {
+        sample_frames::record("Chat", app, |screen| {
+            assert_eq!(
+                screen.fill_lists(8),
+                1,
+                "the screen should hold exactly one windowing list, or the picture is of \
+                 something other than the scrollback"
+            );
+        });
+    }
+
     /// Every property this screen sets has to be one the wire can name. A property the
     /// schema does not have fails the whole batch rather than just itself, so a screen that
     /// builds in Rust can still be blank on screen.

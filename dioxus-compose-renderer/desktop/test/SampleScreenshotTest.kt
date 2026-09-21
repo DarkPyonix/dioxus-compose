@@ -2,18 +2,23 @@ package dioxus.compose.test
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asSkiaBitmap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.runDesktopComposeUiTest
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.Protocol
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
+import dioxus.compose.ui.platform.FrameRequestSource
+import dioxus.compose.ui.platform.LocalFrameRequests
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -22,15 +27,16 @@ import org.jetbrains.skia.EncodedImageFormat
 import org.jetbrains.skia.Image
 
 /**
- * Draws a real sample's first frame, once per design system, and writes a PNG beside the
- * frame it came from.
+ * Draws a real sample's screen, once per design system and once per window width, and
+ * writes a PNG beside the recording it came from.
  *
  * The showcase next door is a script of primitives written to exercise the token tables.
  * A sample is an application laid out the way someone would really lay one out, and that
  * is where a token turns out to be wrong in a way no ladder of swatches shows: a readout
  * whose fill matches the page behind it is drawn full size, in the right colour, and
  * cannot be seen. Six systems that nobody has looked at under a real screen is six
- * chances at that.
+ * chances at that, and three widths each is where a layout that is right on a phone and
+ * broken on a desktop stops hiding.
  *
  * The frames are the bytes the Host encoded, written by the samples' own `DXC_FRAME_DIR`
  * runs, so what gets drawn here is what an application would send and not a Kotlin
@@ -38,19 +44,36 @@ import org.jetbrains.skia.Image
  * until something asks for a window, so a file is a sequence of batches, each behind four
  * little endian bytes of its length.
  *
- * Enabled only when `DXC_FRAME_DIR` names a directory holding those frames, because it
+ * The window is not chosen here. The Host laid the screen out for a particular size and
+ * said so in the file's name, so drawing it at any other size would photograph a layout
+ * that never existed. Density is pinned at one, so a dp in the name is a pixel in the
+ * picture.
+ *
+ * Enabled only when `DXC_FRAME_DIR` names a directory holding those recordings, because it
  * reads and writes files.
  */
 @OptIn(ExperimentalTestApi::class)
 class SampleScreenshotTest {
+    private val frameRequests = FrameRequestSource()
+
+    /** The `<width>x<height>` the recorder put at the end of the name, in dp. */
+    private fun windowOf(name: String): Pair<Int, Int> {
+        val size = name.substringAfterLast('-')
+        val (width, height) = size.split('x', limit = 2)
+        return width.toInt() to height.toInt()
+    }
+
     @Test
     fun fr14_sample_screenshots() {
         val directory = System.getenv("DXC_FRAME_DIR")?.let(::File) ?: return
-        val frames = directory.listFiles { file -> file.extension == "bin" }?.sorted().orEmpty()
+        val only = System.getenv("DXC_FRAME_FILTER").orEmpty()
+        val frames = directory.listFiles { file -> file.extension == "bin" }
+            ?.filter { it.name.contains(only) }
+            ?.sorted()
+            .orEmpty()
         check(frames.isNotEmpty()) {
-            "${directory.absolutePath} holds no frames. Record them first with " +
-                "`DXC_FRAME_DIR=${directory.absolutePath} cargo test -p sample-calculator " +
-                "fr14_the_first_frame` and the same for `-p sample-todo fr14_a_filled_list`."
+            "${directory.absolutePath} holds no recordings. Write them first with " +
+                "`DXC_FRAME_DIR=${directory.absolutePath} cargo test --workspace fr14_`."
         }
         frames.forEach { frame ->
             val mutations = mutableListOf<Mutation>()
@@ -65,17 +88,28 @@ class SampleScreenshotTest {
                 file.position(file.position() + length)
             }
             check(mutations.isNotEmpty()) { "${frame.name} decoded to no records" }
-            runComposeUiTest {
+            val (widthDp, heightDp) = windowOf(frame.nameWithoutExtension)
+            // The window is the recording's, not the test harness's default. A root left
+            // at 1024 by 768 silently clips anything wider, and the picture then shows a
+            // layout the Host never laid out.
+            runDesktopComposeUiTest(widthDp, heightDp) {
                 setContent {
-                    // A phone sized window. The calculator lays its keypad out differently
-                    // once the window is wide, and one shape per picture keeps the six
-                    // comparable.
-                    Box(Modifier.size(420.dp, 760.dp)) {
-                        DioxusContent(rememberDioxusHost(FakeHostConnection(mutations)))
+                    CompositionLocalProvider(
+                        LocalFrameRequests provides frameRequests,
+                        LocalDensity provides Density(1f),
+                    ) {
+                        Box(Modifier.size(widthDp.dp, heightDp.dp)) {
+                            DioxusContent(rememberDioxusHost(FakeHostConnection(mutations)))
+                        }
                     }
                 }
                 waitForIdle()
                 val bitmap = onRoot().captureToImage().asSkiaBitmap()
+                check(bitmap.width == widthDp && bitmap.height == heightDp) {
+                    "${frame.name} was drawn ${bitmap.width} by ${bitmap.height} instead of " +
+                        "$widthDp by $heightDp, so the picture is not of the window the Host " +
+                        "was told about"
+                }
                 val data = Image.makeFromBitmap(bitmap).encodeToData(EncodedImageFormat.PNG)
                     ?: error("${frame.name} could not be encoded as a PNG")
                 File(directory, "${frame.nameWithoutExtension}.png").writeBytes(data.bytes)

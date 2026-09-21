@@ -518,6 +518,15 @@ mod tests {
         std::env::temp_dir().join(format!("sample-scratch-{name}-{}.tmp", std::process::id()))
     }
 
+    /// The document, under every design system, in both schemes, at all three widths.
+    ///
+    /// This is the screen where the page, the strip above it and the line below it either
+    /// share an edge or do not, and no assertion about a batch can tell the difference.
+    #[test]
+    fn fr14_the_document_is_recorded_under_every_design_system_and_width() {
+        sample_frames::record("Notepad", app, |_| {});
+    }
+
     #[test]
     fn the_first_frame_encodes_without_a_protocol_error() {
         assert!(Host::new(app).rebuild().is_ok());

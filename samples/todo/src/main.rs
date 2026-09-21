@@ -750,130 +750,47 @@ mod tests {
         }
     }
 
-    /// Writes one screen as the batches that build it, each behind its byte length.
-    ///
-    /// A batch is a single envelope and cannot simply be appended to another one, so a
-    /// screen that takes more than one of them has to keep the boundaries. Four little
-    /// endian bytes of length in front of each is enough, and it is what the Renderer's
-    /// screenshot test reads back.
-    fn write_frames(path: &std::path::Path, batches: &[&[u8]]) {
-        let mut bytes = Vec::new();
-        for batch in batches {
-            bytes.extend_from_slice(&(batch.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(batch);
-        }
-        std::fs::write(path, bytes)
-            .unwrap_or_else(|error| panic!("{} cannot be written: {error}", path.display()));
-    }
-
-    /// A filled list under each of the six design systems, in both schemes.
+    /// A filled list, under every design system, in both schemes, at all three widths.
     ///
     /// The calculator shows a keypad and a readout, which leaves the two things this
     /// screen has and that one does not: rows, and the entry above them. Those are where
     /// a spacing ladder and a separator colour stop being numbers in a table and become
-    /// something a person either can or cannot read, and until a picture of them exists
-    /// under all six nobody has checked.
+    /// something a person either can or cannot read.
     ///
-    /// A `LazyColumn` holds no rows until the Renderer asks for a window, so this takes
-    /// the first frame and then the answer to one range request, which is the pair of
-    /// batches a real Renderer would have applied before the first pixel.
-    ///
-    /// `DXC_FRAME_DIR` writes them out. Unset, which is the normal run, it still checks
-    /// that every system fills the window it was asked for.
+    /// A `LazyColumn` holds no rows until the Renderer asks for a window, so the recorder
+    /// answers that request, which is what a real Renderer would have done before the
+    /// first pixel.
     #[test]
-    fn fr14_a_filled_list_is_produced_under_every_design_system() {
-        use dioxus_compose::schema::{ColorScheme, DesignSystem, Theme};
-
-        const WINDOW_SHOWN: usize = 12;
+    fn fr14_a_filled_list_is_recorded_under_every_design_system_and_width() {
+        const WINDOW_SHOWN: u32 = 12;
 
         saved_list();
-        let directory = std::env::var("DXC_FRAME_DIR").ok();
-        if let Some(directory) = &directory {
-            std::fs::create_dir_all(directory).expect("the frame directory can be created");
-        }
-        for system in [
-            DesignSystem::Material3,
-            DesignSystem::Cupertino,
-            DesignSystem::Fluent,
-            DesignSystem::Gnome,
-            DesignSystem::Breeze,
-            DesignSystem::Deepin,
-        ] {
-            for scheme in [ColorScheme::Light, ColorScheme::Dark] {
-                let theme = Theme::unified(system).with_color_scheme(scheme);
-                let mut host = Host::with_theme(app, theme);
-                let first = host
-                    .rebuild()
-                    .expect("the first frame failed to encode")
-                    .to_vec();
-                let decoded = decode_batch(&first).expect("the first frame did not decode");
-                let list = decoded
-                    .iter()
-                    .find_map(|mutation| match mutation {
-                        Mutation::Create {
-                            node_id,
-                            widget: WidgetKind::LazyColumn,
-                        } => Some(*node_id),
-                        _ => None,
-                    })
-                    .expect("the screen has no LazyColumn");
-                let handler = decoded
-                    .iter()
-                    .find_map(|mutation| match mutation {
+        sample_frames::record("Todo", app, |screen| {
+            let lists = screen.fill_lists(WINDOW_SHOWN);
+            assert_eq!(
+                lists, 1,
+                "the screen should hold exactly one windowing list, or the picture is of \
+                 something other than the task list"
+            );
+            let rows = screen
+                .mutations()
+                .iter()
+                .filter(|mutation| {
+                    matches!(
+                        mutation,
                         Mutation::SetProp {
-                            node_id,
-                            property: PropertyKind::OnRangeRequested,
-                            value: PropertyValue::Integer(id),
-                        } if *node_id == list => Some(*id as u64),
-                        _ => None,
-                    })
-                    .expect("the LazyColumn declared no range handler");
-                drop(decoded);
-
-                let mut event = Vec::new();
-                encode_event(
-                    &HostEvent {
-                        node_id: list,
-                        handler_id: handler,
-                        payload: EventPayload::RangeRequested {
-                            start: 0,
-                            count: WINDOW_SHOWN as u32,
-                        },
-                    },
-                    &mut event,
-                )
-                .expect("the range request did not encode");
-                let (window, _) = host
-                    .dispatch_event(&event)
-                    .expect("the range request failed");
-                let window = window.to_vec();
-
-                let rows = decode_batch(&window)
-                    .expect("the window batch did not decode")
-                    .iter()
-                    .filter(|mutation| {
-                        matches!(
-                            mutation,
-                            Mutation::SetProp {
-                                property: PropertyKind::ItemKey,
-                                ..
-                            }
-                        )
-                    })
-                    .count();
-                assert_eq!(
-                    rows, WINDOW_SHOWN,
-                    "{system:?} {scheme:?} answered a window of {WINDOW_SHOWN} with {rows} rows, \
-                     so the list it draws is not the list it was asked for"
-                );
-
-                if let Some(directory) = &directory {
-                    let path = std::path::Path::new(directory)
-                        .join(format!("Todo-{system:?}-{scheme:?}.bin"));
-                    write_frames(&path, &[&first, &window]);
-                }
-            }
-        }
+                            property: PropertyKind::ItemKey,
+                            ..
+                        }
+                    )
+                })
+                .count();
+            assert_eq!(
+                rows, WINDOW_SHOWN as usize,
+                "a window of {WINDOW_SHOWN} was answered with {rows} rows, so the list drawn \
+                 is not the list that was asked for"
+            );
+        });
     }
 
     /// Every property this screen sets has to be one the wire can name. A property the
