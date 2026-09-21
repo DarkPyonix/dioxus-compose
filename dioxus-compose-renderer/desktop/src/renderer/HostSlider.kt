@@ -34,8 +34,13 @@ internal fun HostSlider(
     theme: ResolvedTheme,
 ) {
     val enabled = node.flag(PropertyKind.Enabled, default = true)
+    // The two ends are another process's idea of a range, so an empty or inverted one is
+    // input rather than an impossible state. Widening it to a single unit gives every
+    // position a distinct meaning again; refusing to draw would take the window down over
+    // one bad property.
     val min = node.number(PropertyKind.Min) ?: 0f
-    val max = node.number(PropertyKind.Max) ?: 1f
+    val requestedMax = node.number(PropertyKind.Max) ?: 1f
+    val max = if (requestedMax > min) requestedMax else min + 1f
     // Zero means continuous, which is also what an absent property means.
     val steps = (node.intProp(PropertyKind.Steps) ?: 0L).toInt().coerceAtLeast(0)
     val fromHost = (node.number(PropertyKind.Value) ?: min).coerceIn(min, max)
@@ -55,10 +60,7 @@ internal fun HostSlider(
 
     theme.rules.controlWidgets.Slider(
         value = current,
-        // An empty or inverted range would make every position mean the same thing, so it
-        // is widened to a single unit rather than handed on to a widget that would divide
-        // by it.
-        range = min..(if (max > min) max else min + 1f),
+        range = min..max,
         steps = steps,
         enabled = enabled,
         onChange = report,

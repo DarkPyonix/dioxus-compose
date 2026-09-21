@@ -94,16 +94,16 @@ internal object Material3ControlWidgets : ControlWidgets {
         range: ClosedFloatingPointRange<Float>,
         steps: Int,
         enabled: Boolean,
-        onChange: ((Float) -> Unit)?,
+        onChange: (Float) -> Unit,
         modifier: Modifier,
         theme: ResolvedTheme,
     ) {
         val primary = theme.color(ColorRole.Primary)
         Slider(
             value = value,
-            onValueChange = onChange ?: {},
+            onValueChange = onChange,
             modifier = modifier,
-            enabled = enabled && onChange != null,
+            enabled = enabled,
             valueRange = range,
             steps = steps,
             colors = SliderDefaults.colors(

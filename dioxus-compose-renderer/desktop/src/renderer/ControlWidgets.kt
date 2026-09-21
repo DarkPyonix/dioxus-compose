@@ -87,6 +87,10 @@ interface ControlWidgets {
      *
      * [steps] counts the stops between those ends, so three stops make five positions in
      * all, and zero is a continuous slider.
+     *
+     * [onChange] is not optional the way a toggle's is. A slider that has been dragged has
+     * moved whether or not the Host asked to hear about it, and the caller is what decides
+     * whether that movement leaves the Renderer.
      */
     @Composable
     fun Slider(
@@ -94,7 +98,7 @@ interface ControlWidgets {
         range: ClosedFloatingPointRange<Float>,
         steps: Int,
         enabled: Boolean,
-        onChange: ((Float) -> Unit)?,
+        onChange: (Float) -> Unit,
         modifier: Modifier,
         theme: ResolvedTheme,
     )
@@ -244,7 +248,7 @@ internal object DrawnControlWidgets : ControlWidgets {
         range: ClosedFloatingPointRange<Float>,
         steps: Int,
         enabled: Boolean,
-        onChange: ((Float) -> Unit)?,
+        onChange: (Float) -> Unit,
         modifier: Modifier,
         theme: ResolvedTheme,
     ) {
@@ -255,7 +259,7 @@ internal object DrawnControlWidgets : ControlWidgets {
         val fraction = if (span == null) 0f else ((value - min) / span).coerceIn(0f, 1f)
         val thumbPx = style.thumbSize
 
-        val interactive = if (!enabled || onChange == null) {
+        val interactive = if (!enabled) {
             modifier
         } else {
             modifier

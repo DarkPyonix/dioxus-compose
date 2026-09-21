@@ -291,6 +291,38 @@ class SelectionControlTest {
         }
     }
 
+    /**
+     * A slider whose ends arrive the wrong way round still draws.
+     *
+     * The Host is another process's idea of a range, so an empty or inverted one is input,
+     * not an impossible state. Refusing to draw it would take the whole window down over a
+     * single bad property, which crash isolation says must not happen.
+     */
+    @Test
+    fun nfr7_a_slider_with_an_inverted_range_does_not_bring_the_window_down() =
+        runComposeUiTest {
+            val connection = FakeHostConnection(
+                listOf(
+                    theme(DesignSystem.Material3),
+                    Mutation.Create(CONTROL, WidgetKind.Slider),
+                    Mutation.SetProp(CONTROL, PropertyKind.Min, PropertyValue.Float(4f)),
+                    Mutation.SetProp(CONTROL, PropertyKind.Max, PropertyValue.Float(0f)),
+                    Mutation.SetProp(CONTROL, PropertyKind.Value, PropertyValue.Float(2f)),
+                    Mutation.SetProp(
+                        CONTROL,
+                        PropertyKind.OnValueChange,
+                        PropertyValue.Integer(HANDLER),
+                    ),
+                ),
+            )
+            setContent { DioxusContent(rememberDioxusHost(connection)) }
+            waitForIdle()
+
+            onNodeWithTag(nodeTestTag(CONTROL)).assertIsDisplayed()
+            onNodeWithTag(nodeTestTag(CONTROL)).performClick()
+            waitForIdle()
+        }
+
     /** A divider carries nothing but its axis, so the two run different ways. */
     @Test
     fun fr15_2_4_a_divider_runs_along_the_axis_it_was_given() {
