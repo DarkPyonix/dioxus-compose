@@ -13,6 +13,21 @@
 # image's JNI tables is not found however plainly the JDK declares it.
 set -euo pipefail
 
+# `! grep ...` cannot fail a script: the shell ignores `set -e` for any command preceded by
+# the `!` reserved word, so every negative assertion written that way is inert and reports
+# success no matter what the file contains. Say it the long way instead.
+absent() {
+    local pattern="$1" file="$2" why="$3"
+    # Comments are stripped first. Half of what these scripts say about a flag is the
+    # paragraph explaining why it is not used any more, and matching that would make the
+    # assertion fire on its own explanation.
+    if sed 's/[[:space:]]*#.*$//' "$file" | grep -q -- "$pattern"; then
+        echo "FAIL: $(basename "$file") still uses '$pattern'." >&2
+        echo "      $why" >&2
+        exit 1
+    fi
+}
+
 scripts_dir="$(cd "$(dirname "$0")/.." && pwd)"
 native_dir="$(cd "$scripts_dir/.." && pwd)"
 
@@ -51,12 +66,15 @@ grep -q -- '-Os' "$linux_build"
 
 # The Windows overlay is a list of sun.awt.windows and sun.java2d.windows classes. Pointing
 # the Linux build at it would register nothing that exists on Linux.
-! grep -q 'windows-metadata' "$linux_build"
+absent 'windows-metadata' "$linux_build" \
+    "That overlay is a list of sun.awt.windows classes, none of which exist on Linux"
 
-# Keep the Windows path as it is: its own two configuration directories, and no preserve,
-# so a change to the Linux toolchain cannot quietly rebuild Windows a different way.
+# Windows keeps its two configuration directories and now preserves java.desktop as well.
+# Curated metadata got that image past Toolkit.getDefaultToolkit and into the next
+# reflective lookup, where Swing asks UIManager for a ComponentUI by name and finds no look
+# and feel class in the image.
 grep -q 'ConfigurationFileDirectories=$MetadataDir,$ResourceMetadataDir' "$windows_build"
-! grep -q 'H:Preserve' "$windows_build"
+grep -q -- '-H:Preserve=module=java.desktop' "$windows_build"
 
 python3 - "$shared_metadata" <<'PY'
 import json
