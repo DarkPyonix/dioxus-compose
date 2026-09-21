@@ -405,9 +405,35 @@ FR-13.8이 코어 속성 태그를 26까지 썼고, FR-11 확장 예제가 27을
 - **고도**: `Surface`와 `Card`는 `Modifier::Elevation`(FR-13.5)을 그대로 받습니다. 값이 없으면 디자인 시스템이 정한 기본 고도를 씁니다.
 - **`LazyRow`**: FR-8의 `item_count`, `item_key`, `on_range_requested`를 그대로 씁니다. 가로 축이라는 것 말고 다른 점이 없어야 하고, 선읽기 버퍼도 같은 이유로 Renderer가 소유합니다.
 
+#### 15.2.4 선택 컨트롤과 표시기(태그 12-17)
+
+`Checkbox=12`, `RadioButton=13`, `Switch=14`, `Slider=15`, `ProgressIndicator=16`, `Divider=17`입니다. 여섯 모두 다른 위젯과 같은 Modifier 11종을 그대로 받습니다.
+
+**새 속성 태그는 다섯입니다.** 15.2.2의 28-39 블록에서 `Image`와 `Icon`이 쓰는 28-31 뒤를 이어 32부터 채웁니다.
+
+| 태그 | 속성 | 값 | 쓰는 위젯 |
+|---|---|---|---|
+| 32 | `Checked` | bool | `Checkbox`, `RadioButton`, `Switch` |
+| 33 | `Steps` | i64 | `Slider`의 양 끝 사이 불연속 지점 개수. 0이면 연속 |
+| 34 | `Determinate` | bool | `ProgressIndicator` |
+| 35 | `Circular` | bool | `ProgressIndicator` |
+| 36 | `Vertical` | bool | `Divider` |
+
+**값과 범위는 새 태그를 따지 않습니다.** `Slider`의 위치와 `ProgressIndicator`의 진행도는 15.2.5가 이미 배정한 `Value`(태그 51)를 쓰고, `Slider`의 양 끝은 `Min`(52)과 `Max`(53)를 씁니다. 같은 개념을 스키마에 두 번 넣지 않는다는 13.1의 규칙이 블록 배정보다 우선합니다. 태그는 하나인데 값의 타입은 위젯이 정합니다. 픽커는 에폭 정수를, 슬라이더는 f32를 담습니다.
+
+`RadioButton`의 선택 여부도 `Checked`를 씁니다. 와이어에서는 "켜져 있는가"라는 bool 하나입니다. `selected`라는 이름은 Compose 관례이므로 rsx 속성 이름으로만 남습니다(PR-7).
+
+변경 핸들러는 기존 `OnValueChange`(태그 6)를 그대로 씁니다.
+
+- **네 컨트롤 모두 15.2.5의 `ValueChanged`(이벤트 태그 16)를 씁니다.** 토글 셋은 새 상태를 0.0 또는 1.0으로 싣고, `Slider`는 값 자체를 싣습니다. bool을 위해 이벤트를 하나 더 만들면 같은 개념("이 컨트롤의 값이 이렇게 되었다")에 이름이 둘 생기고, 컨트롤이 늘 때마다 또 나눠야 합니다.
+- **드래그 중과 누르는 중의 상태는 Renderer가 소유합니다(D5).** 손가락을 따라가는 슬라이더 위치와 토글의 전환 애니메이션이 프레임마다 경계를 넘지 않습니다. `Checked`와 `Value`는 그 상태의 시작값이고 바깥에서 들어온 변경을 전달하는 통로입니다.
+- **역할만 내보냅니다**(FR-14.1). 체크 표시의 모양과 크기, 스위치가 리플을 내는지 눌린 동안 흐려지는지, 트랙과 엄지의 치수, 부정형 표시기가 도는 속도, 구분선의 두께와 색은 전부 디자인 시스템의 규칙입니다. Host가 지정할 속성을 두지 않습니다. Renderer 쪽 확장은 `ComponentRules`에 `controls()` 하나를 더하는 것으로 끝나고, 일곱 번째 디자인 시스템은 여전히 구현 하나입니다.
+- `ProgressIndicator`는 `determinate`가 거짓이면 `Value`를 읽지 않습니다. `circular`는 모양을 고르는 것이지 치수를 정하는 것이 아닙니다.
+- `Divider`는 `vertical`이 정하는 축 말고는 아무것도 싣지 않습니다.
+
 #### 15.2.5 값 변경 이벤트 (`ValueChanged`, 태그 16)
 
-값을 가진 위젯이 하나의 이벤트를 공유합니다. 픽커 3종(DatePicker, TimePicker, Dropdown)과 Slider가 씁니다.
+값을 가진 위젯이 하나의 이벤트를 공유합니다. 픽커 3종(DatePicker, TimePicker, Dropdown), 그리고 15.2.4의 `Checkbox`, `RadioButton`, `Switch`, `Slider`가 씁니다.
 
 ```
 tag 16, 24바이트: node_id: u32, handler_id: u64, value: f64
@@ -416,6 +442,7 @@ tag 16, 24바이트: node_id: u32, handler_id: u64, value: f64
 **`f64` 하나로 통일합니다.** 픽커는 정수(에폭 일수, 자정 기준 분, 선택 위치)를 보내고 Slider는 연속값을 보내는데, `f64`는 2^53까지의 정수를 오차 없이 표현하므로 양쪽이 한 타입에 들어갑니다. 이벤트 종류를 둘로 나누면 같은 개념에 이름이 둘 생기고, 위젯이 늘 때마다 또 나눠야 합니다.
 
 - **사용자 코드는 `f64`를 보지 않습니다.** `DatePicker`의 `on_change`는 `EventHandler<i64>`이고, `Slider`는 `EventHandler<f32>`입니다. 변환은 컴포넌트가 합니다. 와이어 표현이 하나라고 해서 API까지 하나여야 하는 것은 아닙니다.
+- 토글도 같은 이벤트를 씁니다. 꺼짐이 0.0, 켜짐이 1.0입니다. `Checkbox`의 `on_change`는 `EventHandler<bool>`이고, 변환은 컴포넌트가 합니다.
 - 속성 쪽도 같습니다. `PropertyKind::Value`는 하나이고, 값의 해석은 위젯이 정합니다.
 
 #### 15.3 넣지 않는 것
