@@ -484,6 +484,7 @@ define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Fluent = 3,
     Gnome = 4,
     Breeze = 5,
+    Deepin = 6,
 });
 
 // Light and dark selection. `FollowSystem` leaves the choice to the Renderer, which learns

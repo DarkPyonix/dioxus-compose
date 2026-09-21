@@ -66,9 +66,8 @@ private fun linuxDesktop(xdgCurrentDesktop: String?, desktopSession: String?): H
 /**
  * The system `adaptive` picks for a platform.
  *
- * A GNOME session takes Adwaita and a KDE session takes Breeze. The remaining Linux
- * desktops, and any platform without a design language of its own, take the Host's
- * fallback. That is why `Theme::adaptive`
+ * A GNOME session takes Adwaita, a KDE session takes Breeze, and any other Linux session
+ * takes Deepin. A platform with no design language of its own takes the Host's fallback. That is why `Theme::adaptive`
  * makes the fallback a required argument: there is no platform for which adaptive has
  * nothing to choose.
  */
@@ -82,9 +81,10 @@ internal fun adaptiveSystem(platform: HostPlatform, fallback: DesignSystem): Des
         HostPlatform.Web -> DesignSystem.Fluent
         HostPlatform.LinuxGnome -> DesignSystem.Gnome
         HostPlatform.LinuxKde -> DesignSystem.Breeze
-        HostPlatform.LinuxOther,
-        HostPlatform.Unknown,
-        -> fallback
+        // Any other Linux session, and one that cannot be identified at all, takes
+        // Deepin. That is the job it was written for.
+        HostPlatform.LinuxOther -> DesignSystem.Deepin
+        HostPlatform.Unknown -> fallback
     }
 
 /**
@@ -372,6 +372,7 @@ internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {
     DesignSystem.Fluent -> FluentRules
     DesignSystem.Gnome -> GnomeRules
     DesignSystem.Breeze -> BreezeRules
+    DesignSystem.Deepin -> DeepinRules
 }
 
 /**

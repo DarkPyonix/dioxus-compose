@@ -976,3 +976,205 @@ internal object BreezeRules : ComponentRules {
     private const val BORDER_SHADE = 0.22f
     private const val SHADOW_SCALE = 0.75f
 }
+
+/**
+ * Deepin rules, and the look a Linux session that is neither GNOME nor KDE gets.
+ *
+ * Reference: the Deepin Design specification and the DTK control defaults, deepin 23, the
+ * revision the token table cites. Only token values and style rules are taken: Deepin's
+ * icon set and its bundled typeface carry their own licences.
+ *
+ * Depth here is a wide, soft, warm shadow plus a small lightening of the surface itself,
+ * never a border: a hairline would fight the large radii that make the language what it
+ * is.
+ */
+internal object DeepinRules : ComponentRules {
+    override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
+        if (elevation.value <= 0f) return modifier
+        // Spread further than the dp asked for, and lightened, so a card at 8 dp sits
+        // visibly above one at 2 dp even where the shadow itself is hard to see.
+        val lifted = lerp(
+            theme.color(ColorRole.Surface),
+            if (theme.dark) LIFT_DARK else Color.White,
+            (elevation.value / LIFT_FULL_DP).coerceIn(0f, 1f) * MAX_LIFT,
+        )
+        return modifier
+            .shadow(
+                elevation = elevation * SPREAD,
+                shape = shape,
+                clip = false,
+                ambientColor = Color.Black.copy(alpha = AMBIENT_ALPHA),
+                spotColor = Color.Black.copy(alpha = SPOT_ALPHA),
+            )
+            .background(lifted, shape)
+    }
+
+    override fun button(variant: ButtonVariant, theme: ResolvedTheme): ButtonStyle {
+        val accent = theme.color(ColorRole.Primary)
+        val tonal = theme.color(ColorRole.SurfaceVariant)
+        val onTonal = theme.color(ColorRole.OnSurface)
+        val base = ButtonStyle(
+            container = tonal,
+            pressedContainer = lerp(tonal, theme.color(ColorRole.Outline), PRESS_MIX),
+            content = onTonal,
+            pressedContentAlpha = 1f,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            pressedBorderColor = Color.Transparent,
+            topHighlight = null,
+            // A lozenge: 12 dp, which is ShapeRole.Medium in the Deepin table.
+            shape = theme.shape(ShapeRole.Medium),
+            horizontalPadding = theme.space(SpaceRole.Lg),
+            verticalPadding = theme.space(SpaceRole.Sm),
+            minHeight = 36.dp,
+            typeRole = TypeRole.Body,
+            restElevation = 0.dp,
+            pressedElevation = 0.dp,
+        )
+        return when (variant) {
+            // A rounded slab of brand blue with no border at all.
+            ButtonVariant.Filled -> base.copy(
+                container = accent,
+                pressedContainer = lerp(accent, Color.Black, PRESS_SHADE),
+                content = theme.color(ColorRole.OnPrimary),
+            )
+
+            // A warm tinted fill, which is where the palette shows on a control that
+            // carries no accent.
+            ButtonVariant.Tonal -> base
+
+            ButtonVariant.Outlined -> base.copy(
+                container = Color.Transparent,
+                pressedContainer = tonal,
+                borderWidth = 1.dp,
+                borderColor = theme.color(ColorRole.Outline),
+                pressedBorderColor = accent,
+            )
+
+            // A text button keeps the accent for its label, which is the one place the
+            // brand colour appears without a fill behind it.
+            ButtonVariant.Text -> base.copy(
+                container = Color.Transparent,
+                pressedContainer = tonal,
+                content = accent,
+            )
+        }
+    }
+
+    /**
+     * Deepin containers: large radii throughout, depth by shadow, and a title bar that is
+     * part of the rounded window rather than a bar ruled off from it.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Medium),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        return when (role) {
+            ContainerRole.Card -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                elevation = 3.dp,
+            )
+
+            ContainerRole.Surface -> base.copy(shape = theme.shape(ShapeRole.None))
+
+            // Part of the window, not a bar over it: no rule underneath, and the title
+            // sits on the same warm surface as the content.
+            ContainerRole.TopAppBar -> base.copy(
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Sm),
+                typeRole = TypeRole.Subtitle,
+            )
+
+            ContainerRole.Dialog -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                elevation = 12.dp,
+                horizontalPadding = theme.space(SpaceRole.Xl),
+                verticalPadding = theme.space(SpaceRole.Xl),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            ContainerRole.Menu -> base.copy(
+                shape = theme.shape(ShapeRole.Small),
+                elevation = 8.dp,
+                horizontalPadding = theme.space(SpaceRole.Xs),
+                verticalPadding = theme.space(SpaceRole.Xs),
+            )
+
+            ContainerRole.Tooltip -> base.copy(
+                container = theme.color(ColorRole.SurfaceVariant),
+                content = theme.color(ColorRole.OnSurfaceVariant),
+                shape = theme.shape(ShapeRole.ExtraSmall),
+                elevation = 6.dp,
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                typeRole = TypeRole.Caption,
+            )
+        }
+    }
+
+    /**
+     * A pill switcher: the selected view is a fully rounded slab of the accent, which is
+     * the mark Deepin uses where Material underlines and Breeze frames a page tab.
+     */
+    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        shape = theme.shape(ShapeRole.Full),
+        selectedContent = theme.color(ColorRole.OnPrimary),
+        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+        selectedContainer = theme.color(ColorRole.Primary),
+        selectedShape = theme.shape(ShapeRole.Full),
+        indicator = Color.Transparent,
+        indicatorHeight = 0.dp,
+        indicatorShape = theme.shape(ShapeRole.None),
+        indicatorFillsTab = true,
+        horizontalPadding = theme.space(SpaceRole.Lg),
+        verticalPadding = theme.space(SpaceRole.Xs),
+        typeRole = TypeRole.Body,
+    )
+
+    /**
+     * A large, soft icon grid: 24 dp drawn with a heavy rounded stroke and bevelled
+     * joins, to match the rounded shapes rather than fight them.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 24.dp,
+        strokeWidth = 2.25.dp,
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Bevel,
+    )
+
+    /** A calendar flyout, a dial for the time, and a drop down list for a choice. */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.CalendarFlyout,
+        time = TimePresentation.Dial,
+        choice = ChoicePresentation.ExposedMenu,
+    )
+
+    override val motion: Motion = Motion(
+        // The slowest and softest here, to match the rounded shapes.
+        pressMillis = 250,
+        releaseMillis = 200,
+        easing = LinearOutSlowInEasing,
+        tooltipDelayMillis = 600,
+    )
+
+    private const val SCRIM_ALPHA = 0.35f
+    private const val PRESS_MIX = 0.35f
+    private const val PRESS_SHADE = 0.2f
+    private const val AMBIENT_ALPHA = 0.1f
+    private const val SPOT_ALPHA = 0.18f
+    private const val SPREAD = 1.6f
+    private const val LIFT_FULL_DP = 24f
+    private const val MAX_LIFT = 0.08f
+    private val LIFT_DARK = Color(0xFFFFE9D2)
+}

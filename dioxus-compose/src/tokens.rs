@@ -81,7 +81,8 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA, BREEZE];
+pub const DESIGN_TOKENS: &[DesignTokenTable] =
+    &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA, BREEZE, DEEPIN];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -431,6 +432,71 @@ const BREEZE: DesignTokenTable = DesignTokenTable {
         Lg: 12.0,
         Xl: 18.0,
         Xxl: 24.0,
+    },
+};
+
+const DEEPIN: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::Deepin,
+    reference: "Deepin Design specification and the DTK control defaults, deepin 23",
+    default_family: "Noto Sans",
+    monospace_family: "Noto Sans Mono",
+    colors: colors! {
+        // The brand blue, the one colour here that is not warm. Dark lifts off it,
+        // because the brand value goes muddy against a warm dark background.
+        Primary: 0x0081ff / 0x3ba2ff,
+        OnPrimary: 0xffffff / 0x04203a,
+        // Amber rather than purple or teal, which is where the warm palette shows on an
+        // accent.
+        Secondary: 0xf2a13c / 0xffb964,
+        OnSecondary: 0x2b1a05 / 0x33200a,
+        Surface: 0xfffdfa / 0x2b2726,
+        OnSurface: 0x2c2622 / 0xf5efe9,
+        SurfaceVariant: 0xf0e9e0 / 0x3a3533,
+        OnSurfaceVariant: 0x6b5f56 / 0xc4b8ad,
+        Background: 0xfaf7f2 / 0x232020,
+        OnBackground: 0x2c2622 / 0xf5efe9,
+        Outline: 0xd9cdc0 / 0x574f4b,
+        OutlineVariant: 0xece3d9 / 0x383230,
+        Error: 0xe35c4b / 0xff8a73,
+        OnError: 0xffffff / 0x34110a,
+        // A panel lifts off the warm page rather than sinking into it: plain white in
+        // light, and a step warmer and lighter than the window in dark.
+        SurfaceContainer: 0xffffff / 0x302b29,
+    },
+    // A middle weight ladder. The body sits between Breeze's 13 and Adwaita's 15, and the
+    // headings are semi bold with loose line heights, which suits the rounded shapes and
+    // survives on a desktop whose default font is unknown.
+    type_scale: type_scale! {
+        Display: 40.0 / 600 / 50.0 / 0.0 / false,
+        Headline: 30.0 / 600 / 38.0 / 0.0 / false,
+        Title: 22.0 / 500 / 30.0 / 0.0 / false,
+        Subtitle: 18.0 / 500 / 26.0 / 0.0 / false,
+        Body: 14.0 / 400 / 21.0 / 0.0 / false,
+        BodyStrong: 14.0 / 600 / 21.0 / 0.0 / false,
+        Label: 13.0 / 500 / 18.0 / 0.3 / false,
+        Caption: 12.0 / 400 / 17.0 / 0.0 / false,
+        Mono: 13.0 / 400 / 19.0 / 0.0 / true,
+    },
+    // The roundest of the three Linux systems. Deepin's windows are rounded far past
+    // anything GTK or Qt does, and its controls follow at a smaller radius, so even a
+    // button reads as a lozenge next to a Breeze rectangle.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 6.0,
+        Small: 8.0,
+        Medium: 12.0,
+        Large: 18.0,
+        Full: 1000.0,
+    },
+    // Roomy, and on a ten pixel rhythm rather than GNOME's six or Kirigami's four.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 4.0,
+        Sm: 10.0,
+        Md: 16.0,
+        Lg: 20.0,
+        Xl: 30.0,
+        Xxl: 40.0,
     },
 };
 

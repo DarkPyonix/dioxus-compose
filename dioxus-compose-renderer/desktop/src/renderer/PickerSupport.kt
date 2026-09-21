@@ -143,7 +143,10 @@ internal fun PickerField(
             .background(theme.color(ColorRole.Surface), style.shape)
             .border(1.dp, if (enabled) outline else theme.color(ColorRole.OutlineVariant), style.shape)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = theme.space(SpaceRole.Sm), vertical = 6.dp),
+            // Both paddings come from the design system. The vertical one used to be a
+            // fixed 6 dp, which made a field exactly as tall under a dense system as under
+            // a roomy one and left two systems drawing the same control.
+            .padding(horizontal = theme.space(SpaceRole.Sm), vertical = theme.space(SpaceRole.Xs)),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {

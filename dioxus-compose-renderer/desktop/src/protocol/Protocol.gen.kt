@@ -33,7 +33,7 @@ enum class Alignment { TopStart, TopCenter, TopEnd, CenterStart, Center, CenterE
 
 enum class ButtonVariant { Filled, Tonal, Outlined, Text }
 
-enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze }
+enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze, Deepin }
 
 enum class ColorScheme { Light, Dark, FollowSystem }
 
@@ -235,7 +235,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 2802409541881826522L
+    const val SCHEMA_HASH: Long = 6371496679328883797L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -701,6 +701,7 @@ object Protocol {
         3 -> DesignSystem.Fluent
         4 -> DesignSystem.Gnome
         5 -> DesignSystem.Breeze
+        6 -> DesignSystem.Deepin
         else -> throw ProtocolException("unknown DesignSystem tag $tag", offset)
     }
 
@@ -1144,11 +1145,66 @@ object DesignTokens {
         floatArrayOf(0.0f, 2.0f, 4.0f, 8.0f, 12.0f, 18.0f, 24.0f),
     )
 
+    val DEEPIN: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Deepin,
+        "Deepin Design specification and the DTK control defaults, deepin 23",
+        "Noto Sans",
+        "Noto Sans Mono",
+        intArrayOf(
+            0xff0081ff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xfff2a13c.toInt(), // Secondary
+            0xff2b1a05.toInt(), // OnSecondary
+            0xfffffdfa.toInt(), // Surface
+            0xff2c2622.toInt(), // OnSurface
+            0xfff0e9e0.toInt(), // SurfaceVariant
+            0xff6b5f56.toInt(), // OnSurfaceVariant
+            0xfffaf7f2.toInt(), // Background
+            0xff2c2622.toInt(), // OnBackground
+            0xffd9cdc0.toInt(), // Outline
+            0xffece3d9.toInt(), // OutlineVariant
+            0xffe35c4b.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+            0xffffffff.toInt(), // SurfaceContainer
+        ),
+        intArrayOf(
+            0xff3ba2ff.toInt(), // Primary
+            0xff04203a.toInt(), // OnPrimary
+            0xffffb964.toInt(), // Secondary
+            0xff33200a.toInt(), // OnSecondary
+            0xff2b2726.toInt(), // Surface
+            0xfff5efe9.toInt(), // OnSurface
+            0xff3a3533.toInt(), // SurfaceVariant
+            0xffc4b8ad.toInt(), // OnSurfaceVariant
+            0xff232020.toInt(), // Background
+            0xfff5efe9.toInt(), // OnBackground
+            0xff574f4b.toInt(), // Outline
+            0xff383230.toInt(), // OutlineVariant
+            0xffff8a73.toInt(), // Error
+            0xff34110a.toInt(), // OnError
+            0xff302b29.toInt(), // SurfaceContainer
+        ),
+        arrayOf(
+            TypeToken(40.0f, 600, 50.0f, 0.0f, false), // Display
+            TypeToken(30.0f, 600, 38.0f, 0.0f, false), // Headline
+            TypeToken(22.0f, 500, 30.0f, 0.0f, false), // Title
+            TypeToken(18.0f, 500, 26.0f, 0.0f, false), // Subtitle
+            TypeToken(14.0f, 400, 21.0f, 0.0f, false), // Body
+            TypeToken(14.0f, 600, 21.0f, 0.0f, false), // BodyStrong
+            TypeToken(13.0f, 500, 18.0f, 0.3f, false), // Label
+            TypeToken(12.0f, 400, 17.0f, 0.0f, false), // Caption
+            TypeToken(13.0f, 400, 19.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 6.0f, 8.0f, 12.0f, 18.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 10.0f, 16.0f, 20.0f, 30.0f, 40.0f),
+    )
+
     fun of(system: DesignSystem): DesignTokenTable = when (system) {
         DesignSystem.Material3 -> MATERIAL3
         DesignSystem.Cupertino -> CUPERTINO
         DesignSystem.Fluent -> FLUENT
         DesignSystem.Gnome -> GNOME
         DesignSystem.Breeze -> BREEZE
+        DesignSystem.Deepin -> DEEPIN
     }
 }
