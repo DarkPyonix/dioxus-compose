@@ -185,7 +185,10 @@ const APPLE_HIG: DesignTokenTable = DesignTokenTable {
         OnSecondary: 0xffffff / 0xffffff,
         Surface: 0xffffff / 0x1c1c1e,
         OnSurface: 0x000000 / 0xffffff,
-        SurfaceVariant: 0xf2f2f7 / 0x2c2c2e,
+        // The page is the grouped background and the variant is the colour an incoming
+        // message bubble has. They used to carry the same value, so anything filled with
+        // one on a page of the other was drawn, in the right colour, and invisible.
+        SurfaceVariant: 0xe9e9eb / 0x2c2c2e,
         OnSurfaceVariant: 0x3c3c43 / 0xebebf5,
         Background: 0xf2f2f7 / 0x000000,
         OnBackground: 0x000000 / 0xffffff,
@@ -238,9 +241,12 @@ const FLUENT: DesignTokenTable = DesignTokenTable {
         OnSecondary: 0x0f548c / 0xffffff,
         Surface: 0xffffff / 0x292929,
         OnSurface: 0x242424 / 0xffffff,
-        SurfaceVariant: 0xf5f5f5 / 0x333333,
+        // Fluent layers by lightness rather than by outline, and the page it layers on is
+        // the solid background base. The old trio sat within five parts of each other, so
+        // the layering was there in the numbers and not on the screen.
+        SurfaceVariant: 0xeaeaea / 0x333333,
         OnSurfaceVariant: 0x424242 / 0xd6d6d6,
-        Background: 0xfafafa / 0x1f1f1f,
+        Background: 0xf3f3f3 / 0x1f1f1f,
         OnBackground: 0x242424 / 0xffffff,
         Outline: 0xd1d1d1 / 0x666666,
         OutlineVariant: 0xe0e0e0 / 0x3d3d3d,
@@ -339,6 +345,49 @@ mod tests {
             }
             for (index, token) in table.spaces.iter().enumerate() {
                 assert_eq!(token.role as usize, index + 1);
+            }
+        }
+    }
+
+    /// A filled thing has to be visible on the page it sits on.
+    ///
+    /// Cupertino gave `SurfaceVariant` and `Background` the same value, so a chat bubble
+    /// filled with the variant on a page of the background was drawn, with the right
+    /// colour, and was invisible. Layering is the entire reason three roles exist.
+    ///
+    /// `Background` and `Surface` are deliberately not compared. Material 3 gives them the
+    /// same value on purpose and expresses depth through tonal containers and elevation,
+    /// so requiring those to differ would be requiring Material 3 to stop being itself.
+    #[test]
+    fn fr14_surface_variant_is_visible_against_the_page_and_the_surface() {
+        /// Summed channel distance in eight bit terms, which is enough to catch a collapse.
+        fn apart(first: Color, second: Color) -> u32 {
+            (0..3)
+                .map(|channel| {
+                    let shift = channel * 8;
+                    let a = (first.0 >> shift) & 0xff;
+                    let b = (second.0 >> shift) & 0xff;
+                    a.abs_diff(b)
+                })
+                .sum()
+        }
+
+        for table in DESIGN_TOKENS {
+            for scheme in [ColorScheme::Light, ColorScheme::Dark] {
+                let variant = table.color(ColorRole::SurfaceVariant, scheme);
+                for under in [ColorRole::Background, ColorRole::Surface] {
+                    let distance = apart(variant, table.color(under, scheme));
+                    assert!(
+                        distance >= 24,
+                        "{:?} {:?}: SurfaceVariant and {:?} are {} apart, which reads as \
+                         one flat surface. Anything filled with one on a page of the other \
+                         disappears.",
+                        table.system,
+                        scheme,
+                        under,
+                        distance
+                    );
+                }
             }
         }
     }
