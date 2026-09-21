@@ -1073,13 +1073,23 @@ internal object GnomeRules : ComponentRules {
     // The same value Material, Cupertino and Fluent use for a control nobody can press.
     private const val DISABLED_ALPHA = 0.38f
 
+    /**
+     * The knob on a switch and on a slider, which is white in both schemes.
+     *
+     * GTK does not recolour a knob when the switch is thrown or when the session turns
+     * dark: what changes is the track behind it. Taking the knob from the reading surface
+     * instead loses it entirely in a dark session, where the surface is the same near
+     * black the knob would be sitting on.
+     */
+    private val HANDLE = Color(0xFFFFFFFF)
+
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val primary = theme.color(ColorRole.Primary)
         val onPrimary = theme.color(ColorRole.OnPrimary)
         val outline = theme.color(ColorRole.Outline)
-        // Adwaita: a softly rounded box, a wide pill switch, and a thin bar with round
-        // ends. The switch is the widest of the six, which is what makes GNOME read as
-        // GNOME at a glance.
+        // Adwaita: a softly rounded box, a radio button that fills in when it is chosen,
+        // and a wide pill switch carrying a white knob. The switch is the widest of the
+        // six, which is what makes GNOME read as GNOME at a glance.
         return ControlsStyle(
             checkbox = ToggleStyle(
                 size = 18.dp,
@@ -1095,11 +1105,14 @@ internal object GnomeRules : ComponentRules {
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // A chosen radio button fills with the accent and carries a white dot. It does
+            // not keep a pale centre with a coloured dot inside it, which is the Material
+            // answer and reads as the wrong desktop.
             radioButton = ToggleStyle(
                 size = 18.dp,
                 container = Color.Transparent,
-                containerChecked = Color.Transparent,
-                mark = primary,
+                containerChecked = primary,
+                mark = onPrimary,
                 markUnchecked = Color.Transparent,
                 border = outline,
                 borderWidth = 1.dp,
@@ -1109,12 +1122,13 @@ internal object GnomeRules : ComponentRules {
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // 48 by 26 carrying a 22 knob: the GTK switch, and the roomiest of the six.
             switch = ToggleStyle(
                 size = 20.dp,
                 container = theme.color(ColorRole.SurfaceVariant),
                 containerChecked = primary,
-                mark = onPrimary,
-                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
+                mark = HANDLE,
+                markUnchecked = HANDLE,
                 border = outline,
                 borderWidth = 1.dp,
                 shape = theme.shape(ShapeRole.Full),
@@ -1128,7 +1142,7 @@ internal object GnomeRules : ComponentRules {
                 track = theme.color(ColorRole.OutlineVariant),
                 activeTrack = primary,
                 thumbSize = 18.dp,
-                thumb = theme.color(ColorRole.Surface),
+                thumb = HANDLE,
                 thumbBorder = outline,
                 thumbBorderWidth = 1.dp,
                 tick = null,
@@ -1348,13 +1362,26 @@ internal object BreezeRules : ComponentRules {
     // The same value Material, Cupertino and Fluent use for a control nobody can press.
     private const val DISABLED_ALPHA = 0.38f
 
+    /**
+     * The knob on a switch and on a slider.
+     *
+     * Plasma's view white, held here rather than read from the table because the knob does
+     * not follow the scheme: a Breeze switch carries a light knob in a dark session too,
+     * and the ink the table puts on the highlight is for text rather than for a knob.
+     */
+    private val HANDLE = Color(0xFFFCFCFC)
+
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val primary = theme.color(ColorRole.Primary)
         val onPrimary = theme.color(ColorRole.OnPrimary)
         val outline = theme.color(ColorRole.Outline)
-        // Breeze draws a crisp square box and the shortest switch of the six, and its indicators keep
-        // square ends, which is the KDE house style against GNOME next door.
+        // Breeze draws a barely rounded box, a switch a little over two grid units wide,
+        // and indicators with square ends, which is the KDE house style against GNOME next
+        // door.
         return ControlsStyle(
+            // Plasma 6 takes the hard corner off a checkbox without rounding it: two
+            // pixels, which still reads as the square one beside Adwaita's four and
+            // Deepin's six.
             checkbox = ToggleStyle(
                 size = 18.dp,
                 container = Color.Transparent,
@@ -1363,7 +1390,7 @@ internal object BreezeRules : ComponentRules {
                 markUnchecked = Color.Transparent,
                 border = outline,
                 borderWidth = 1.dp,
-                shape = theme.shape(ShapeRole.None),
+                shape = theme.shape(ShapeRole.ExtraSmall),
                 thumbSize = 0.dp,
                 trackWidth = 0.dp,
                 trackHeight = 0.dp,
@@ -1383,18 +1410,23 @@ internal object BreezeRules : ComponentRules {
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // Kirigami measures in grid units, and a Plasma switch is a little over two of
+            // them wide by a little over one tall. That leaves it shorter than the GTK
+            // switch beside it and longer than the Windows toggle, which is where it
+            // really sits; the earlier 36 dp track was written from a description and made
+            // Breeze the most compact of the six, a place WinUI holds.
             switch = ToggleStyle(
-                size = 20.dp,
+                size = 22.dp,
                 container = theme.color(ColorRole.SurfaceVariant),
                 containerChecked = primary,
-                mark = onPrimary,
-                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
+                mark = HANDLE,
+                markUnchecked = HANDLE,
                 border = outline,
                 borderWidth = 1.dp,
                 shape = theme.shape(ShapeRole.Full),
-                thumbSize = 16.dp,
-                trackWidth = 36.dp,
-                trackHeight = 20.dp,
+                thumbSize = 18.dp,
+                trackWidth = 42.dp,
+                trackHeight = 22.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
             slider = SliderStyle(
@@ -1402,7 +1434,7 @@ internal object BreezeRules : ComponentRules {
                 track = theme.color(ColorRole.OutlineVariant),
                 activeTrack = primary,
                 thumbSize = 16.dp,
-                thumb = theme.color(ColorRole.Surface),
+                thumb = HANDLE,
                 thumbBorder = outline,
                 thumbBorderWidth = 1.dp,
                 tick = null,
@@ -1625,48 +1657,55 @@ internal object DeepinRules : ComponentRules {
     // The same value Material, Cupertino and Fluent use for a control nobody can press.
     private const val DISABLED_ALPHA = 0.38f
 
+    /** The knob on a switch: white, and white again in a dark session. */
+    private val HANDLE = Color(0xFFFFFFFF)
+
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val primary = theme.color(ColorRole.Primary)
         val onPrimary = theme.color(ColorRole.OnPrimary)
         val outline = theme.color(ColorRole.Outline)
-        // Deepin rounds everything, including the checkbox, and leans on fill rather
-        // than outline, so its controls read as softer and heavier than the other two.
+        // Deepin rounds everything and leans on fill rather than outline, so its controls
+        // read as softer and heavier than the other two. A checkbox is still a box: a
+        // 20 dp square rounded by 6, which is soft next to Adwaita's 4 and Breeze's 2
+        // without turning into the radio button underneath it.
         return ControlsStyle(
             checkbox = ToggleStyle(
-                size = 18.dp,
+                size = 20.dp,
                 container = Color.Transparent,
                 containerChecked = primary,
                 mark = onPrimary,
                 markUnchecked = Color.Transparent,
                 border = outline,
-                borderWidth = 0.dp,
-                shape = theme.shape(ShapeRole.Small),
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.ExtraSmall),
                 thumbSize = 0.dp,
                 trackWidth = 0.dp,
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
             radioButton = ToggleStyle(
-                size = 18.dp,
+                size = 20.dp,
                 container = Color.Transparent,
                 containerChecked = Color.Transparent,
                 mark = primary,
                 markUnchecked = Color.Transparent,
                 border = outline,
-                borderWidth = 0.dp,
+                borderWidth = 1.dp,
                 shape = theme.shape(ShapeRole.Full),
-                thumbSize = 8.dp,
+                thumbSize = 9.dp,
                 trackWidth = 0.dp,
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // The one control here with no line around it at all. A zero width border is
+            // a hairline rather than nothing, so the colour has to go as well.
             switch = ToggleStyle(
-                size = 20.dp,
+                size = 24.dp,
                 container = theme.color(ColorRole.SurfaceVariant),
                 containerChecked = primary,
-                mark = onPrimary,
-                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
-                border = outline,
+                mark = HANDLE,
+                markUnchecked = HANDLE,
+                border = Color.Transparent,
                 borderWidth = 0.dp,
                 shape = theme.shape(ShapeRole.Full),
                 thumbSize = 20.dp,
@@ -1674,13 +1713,17 @@ internal object DeepinRules : ComponentRules {
                 trackHeight = 24.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // The handle is filled with the accent rather than with the page. Deepin draws
+            // it that way, and it is also the only thing that keeps it on screen: a white
+            // handle with no ring on Deepin's near white page is drawn at the right size
+            // in the right place and cannot be seen.
             slider = SliderStyle(
                 trackHeight = 6.dp,
                 track = theme.color(ColorRole.OutlineVariant),
                 activeTrack = primary,
                 thumbSize = 20.dp,
-                thumb = theme.color(ColorRole.Surface),
-                thumbBorder = outline,
+                thumb = primary,
+                thumbBorder = Color.Transparent,
                 thumbBorderWidth = 0.dp,
                 tick = null,
             ),
