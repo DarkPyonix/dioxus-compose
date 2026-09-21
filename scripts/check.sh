@@ -2,10 +2,10 @@
 # Usage: ./scripts/check.sh [--full] [--no-kotlin]
 #
 # Runs the repository's quality gates: the Rust workspace, then the Kotlin renderer
-# project. The default uses Criterion's quick mode for local and CI presubmit checks;
-# --full runs the full benchmark sample.
+# project, then the design systems project. The default uses Criterion's quick mode for
+# local and CI presubmit checks; --full runs the full benchmark sample.
 #
-# The Kotlin gate runs by default. Skip it with --no-kotlin or DXC_SKIP_KOTLIN=1 when
+# The Kotlin gates run by default. Skip them with --no-kotlin or DXC_SKIP_KOTLIN=1 when
 # the Kotlin Toolchain has not been downloaded yet (the wrapper fetches it on first use).
 
 set -euo pipefail
@@ -45,5 +45,13 @@ if [[ "$skip_kotlin" != "0" ]]; then
 fi
 
 cd "$repo_root/dioxus-compose-renderer"
+./kotlin build
+./kotlin test
+
+# A separate Amper project, and deliberately so: it must never depend on the renderer,
+# which is what lets it be published on its own. Being separate also means it is invisible
+# to every gate above, and a test in it stayed red for several commits because this script
+# ran the renderer's suite and stopped there. CI has always built both.
+cd "$repo_root/dioxus-design-systems"
 ./kotlin build
 ./kotlin test
