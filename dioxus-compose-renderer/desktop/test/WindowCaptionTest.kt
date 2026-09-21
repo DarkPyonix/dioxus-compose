@@ -64,6 +64,12 @@ private val TREE_WITH_A_PICTURE = listOf(
 /** The colour an application names when it holds its own palette rather than a role's. */
 private const val CREAM = 0xfffdf3e7.toInt()
 
+/** A window whose root is a shell that paints itself: `Navigation { Text }`. */
+private val TREE_IN_A_PAINTED_SHELL = listOf(
+    Mutation.Create(ROOT, WidgetKind.Navigation),
+    Mutation.SetModifier(ROOT, 0, ProtocolModifier.Background(Paint.Literal(CREAM))),
+) + label(LABEL, ROOT, 0, "Title")
+
 /** `Column { Text }` with the page painted cream by the application. */
 private val TREE_PAINTED_BY_THE_APPLICATION = listOf(
     Mutation.Create(ROOT, WidgetKind.Column),
@@ -109,6 +115,17 @@ class WindowCaptionTest {
      * background only where it named none. Painting the theme's background regardless
      * leaves a page in the application's colour under a strip in the design system's.
      */
+    /**
+     * A shell that paints itself is the page, not a strip across the top of it. Handing it
+     * the caption put the first line of a sample's text under the window buttons. What its
+     * colour should do is fill the window, which the next test covers.
+     */
+    @Test
+    fun fr19_2_a_painted_shell_does_not_take_the_caption() {
+        val shell = tableOf(TREE_IN_A_PAINTED_SHELL)
+        assertFalse(shell.opensWithABar(shell.roots))
+    }
+
     @Test
     fun fr19_2_the_caption_strip_takes_the_colour_the_root_was_painted() {
         val theme = resolveTheme(theme = null, platform = HostPlatform.MacOs, systemDark = false)

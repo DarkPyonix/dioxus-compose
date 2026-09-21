@@ -19,7 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dioxus.compose.foundation.HostMessages
 import androidx.compose.ui.graphics.Color
-import dioxus.compose.foundation.setsOwnBackground
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.WindowSizeClass
@@ -389,9 +388,12 @@ internal fun NodeTable.opensWithABar(roots: List<Int>): Boolean {
             // colour is the page's, and the page is exactly what should start below the
             // window buttons rather than run under them; what it holds decides instead.
             WidgetKind.Column, WidgetKind.Box -> id = node.children.firstOrNull() ?: return false
-            // Anything else takes the strip only if it fills itself, which is what makes
-            // it a surface running across the top rather than a widget sitting on a page.
-            else -> return node.setsOwnBackground()
+            // Nothing else takes it. A shell that paints itself, a Navigation holding a
+            // whole page for instance, is the page rather than a strip across the top of
+            // it, and handing it the caption puts its first line of text under the window
+            // buttons. What its colour should do is fill the window, which is a separate
+            // question answered by windowFill below.
+            else -> return false
         }
     }
     return false
