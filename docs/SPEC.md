@@ -1249,7 +1249,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
   4. M0 화면이 데스크톱과 같은 Rust 소스로 브라우저에 뜨고, 클릭이 Rust에 도달하며, Rust의 상태 변경이 화면에 반영됩니다.
   5. 생성된 Kotlin 선언, 생성된 forwarder, Rust의 wasm glue가 모두 같은 스키마에서 나옵니다. 손으로 쓴 glue는 없습니다(FR-7).
 
-**검증 (2026-09-22, HeadlessChrome 149 / V8, Apple silicon)**
+**검증 (2026-09-22, Chrome for Testing 149 / V8, Apple silicon)**
 
 `dioxus-compose-renderer/web/test/WebBoundaryTest.kt`가 Kotlin/Wasm 테스트 러너가 이미 띄우는
 브라우저 안에서 경계를 직접 돕니다. 대상은 실물입니다. 생성된 forwarder, 생성된 wasm 심, 생성된
@@ -1275,8 +1275,12 @@ pr6 forwarder cost: 12.15 ns/call across the boundary, 0.44 ns/call in this modu
   `BOUNDARY_SCHEMA`와 그 옆의 메모리 상수에서 나옵니다. `dioxus-compose/tests/web_boundary.rs`가
   체크인된 세 파일이 오늘 생성되는 것과 같은지, forwarder가 인자를 넘기는 것 외에 아무것도 하지
   않는지, 양쪽 인자 개수가 맞는지를 지킵니다.
-- **수용 기준 4 미검증.** 클릭이 Rust에 도달하고 상태 변경이 트리에 반영되는 것까지는 위에서 확인했지만,
-  화면에 그려진 결과는 사람이 페이지를 보아야 합니다. `web/scripts/serve.sh`로 띄웁니다.
+- **수용 기준 4 충족.** `web/scripts/screenshot.sh`가 페이지를 띄워 사진을 찍습니다. 처음 뜬 화면에
+  데스크톱과 같은 트리(`dioxus-compose chat`, `Write a message` 자리표시자, Material 3 `Send` 버튼)가
+  그려지고, 필드에 타이핑한 뒤 버튼을 누르면 Rust 핸들러가 signal에 넣은 문장이 필드 위에 새 `Text`로
+  나타납니다. 필드의 글자가 남는 것은 D5대로 `TextField`가 uncontrolled이기 때문이며 데스크톱과 같습니다.
+  스크립트는 Kotlin 테스트 하네스가 이미 내려받은 Playwright와 브라우저, 툴체인이 들고 있는 Node를
+  빌려 쓰므로 디스플레이도 네이티브 빌드도 필요하지 않습니다.
 - 남은 확인: SpiderMonkey에서 재측정. V8은 이 측정으로 닫혔습니다.
 - CI는 여전히 wasm 테스트를 돌리지 않습니다. 러너가 잘린 skiko 모듈을 받아 브라우저 하네스가 뜨지
   않기 때문이고, 경계 테스트 자체는 이제 의미가 있으므로 그 문제가 풀리면 바로 켤 수 있습니다.
