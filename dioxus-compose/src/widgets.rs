@@ -9,8 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, Paint, ShapeRole, SpaceRole, TextAlign, TextOverflow,
-    TypeRole,
+    Alignment, Arrangement, ButtonVariant, ColorRole, Paint, ShapeRole, SpaceRole, TextAlign,
+    TextOverflow, TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -393,6 +393,11 @@ pub fn Button(
     #[props(into)] text: String,
     #[props(default = true)] enabled: bool,
     #[props(default)] variant: Option<ButtonVariant>,
+    /// The label's colour, for the rare button whose meaning is not the variant's.
+    /// A destructive action is the case that needs it: it is a plain button in every
+    /// design system, and what marks it is that its label is the error colour.
+    #[props(default)]
+    color: Option<Paint>,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
@@ -413,7 +418,28 @@ pub fn Button(
             text,
             enabled,
             variant: role(variant),
+            color: opt_paint(color),
             onclick: move |_| on_click.call(()),
+        }
+    }
+}
+
+/// The thickness of a hairline. One device pixel is thinner than any renderer here can
+/// guarantee, so a separator is one dp: the value every platform's list separator uses.
+const HAIRLINE_DP: f32 = 1.0;
+
+/// A hairline between two rows of a grouped list.
+///
+/// The thickness lives here rather than in application code so a list is written in roles
+/// alone, and the colour is `OutlineVariant`, which is the quiet edge in every design
+/// system's table.
+#[component]
+pub fn Separator(#[props(default)] color: Option<Paint>) -> Element {
+    rsx! {
+        ComposeBox {
+            fill_max_width: true,
+            height: HAIRLINE_DP,
+            background: color.unwrap_or(Paint::Role(ColorRole::OutlineVariant)),
         }
     }
 }

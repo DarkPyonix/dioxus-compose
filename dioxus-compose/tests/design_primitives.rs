@@ -2,7 +2,7 @@
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
-use dioxus_compose::{Host, PropertyKind, WidgetKind};
+use dioxus_compose::{Host, Modifier, PropertyKind, WidgetKind};
 
 fn titled_text() -> Element {
     rsx! {
@@ -104,6 +104,80 @@ fn fr13_layout_roles_and_variant_are_sent_as_tags() {
             .iter()
             .any(|(property, _)| *property == PropertyKind::Spacing)
     );
+}
+
+fn destructive_button() -> Element {
+    rsx! {
+        Button {
+            text: "삭제",
+            variant: ButtonVariant::Text,
+            color: Paint::Role(ColorRole::Error),
+        }
+    }
+}
+
+fn separated_rows() -> Element {
+    rsx! {
+        Column {
+            Text { text: "위" }
+            Separator {}
+            Text { text: "아래" }
+        }
+    }
+}
+
+/// A destructive action is a plain button whose label is the error colour, so a Button
+/// can name a colour role of its own. The role is what crosses; the shade is the design
+/// system's.
+#[test]
+fn fr13_button_label_colour_is_sent_as_a_role() {
+    let props = props_of(destructive_button);
+    assert!(
+        props.contains(&(
+            PropertyKind::Color,
+            PropertyValue::Integer(Paint::Role(ColorRole::Error).to_bits() as i64)
+        )),
+        "the button did not send its label colour: {props:?}"
+    );
+}
+
+/// A Separator is a full-width hairline filled with `OutlineVariant`, so a grouped list
+/// is written in roles alone rather than with a thickness and a colour of its own.
+#[test]
+fn fr13_separator_is_a_hairline_filled_with_the_quiet_edge() {
+    let mut host = Host::new(separated_rows);
+    let batch = host.rebuild().unwrap().to_vec();
+    let mutations = decode_batch(&batch).unwrap();
+    let hairline = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: WidgetKind::Box,
+            } => Some(*node_id),
+            _ => None,
+        })
+        .expect("the separator is drawn as a Box");
+    let modifiers: Vec<_> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                node_id, modifier, ..
+            } if *node_id == hairline => Some(modifier.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        modifiers.contains(&Modifier::Height(1.0)),
+        "the separator is not a hairline: {modifiers:?}"
+    );
+    assert!(
+        modifiers.contains(&Modifier::Background(Paint::Role(
+            ColorRole::OutlineVariant
+        ))),
+        "the separator does not use the quiet edge: {modifiers:?}"
+    );
+    assert!(modifiers.contains(&Modifier::FillMaxWidth));
 }
 
 /// ScrollColumn is a widget of its own, at wire tag 9.
