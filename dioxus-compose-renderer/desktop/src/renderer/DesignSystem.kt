@@ -169,6 +169,18 @@ interface ComponentRules {
     fun tabs(theme: ResolvedTheme): TabsStyle
 
     /**
+     * How the selection controls and the two indicators are drawn.
+     *
+     * One call for the six of them because they are one family: something that holds a
+     * state, something that shows it, and a reaction to being touched. A widget sends
+     * whether it is on, where it sits between two ends, or which way it runs. The size of
+     * the box, the shape of the tick, the dimensions of a track and a thumb, the speed of
+     * an indeterminate sweep and the weight of a rule are all decided here, which is why
+     * the same declaration comes out as a Material checkbox and as a Cupertino one.
+     */
+    fun controls(theme: ResolvedTheme): ControlsStyle
+
+    /**
      * The metrics this system's icon set is drawn to.
      *
      * The Host registers a meaning, never a picture or a system icon name, so the artwork
@@ -264,6 +276,87 @@ data class IconStyle(
     val cap: androidx.compose.ui.graphics.StrokeCap,
     val join: androidx.compose.ui.graphics.StrokeJoin,
 )
+
+/** Which of the three toggles is being drawn. */
+enum class ToggleRole { Checkbox, RadioButton, Switch }
+
+/**
+ * How one toggle is drawn, in both of the states it holds.
+ *
+ * The unchecked and checked colours are separate fields rather than a second call so the
+ * transition between them can be interpolated.
+ */
+data class ToggleStyle(
+    /** The control's own footprint, before anything placed beside it. */
+    val size: Dp,
+    /** The box, circle or track that holds the state. */
+    val container: Color,
+    val containerChecked: Color,
+    /** The tick, the dot or the thumb that shows it. */
+    val mark: Color,
+    val markUnchecked: Color,
+    val border: Color,
+    val borderWidth: Dp,
+    val shape: Shape,
+    /** A switch's travelling thumb. The other two roles leave it at zero. */
+    val thumbSize: Dp,
+    val trackWidth: Dp,
+    val trackHeight: Dp,
+    val disabledAlpha: Float,
+)
+
+/**
+ * How a slider's track, its filled part and its thumb are drawn.
+ *
+ * `tick` is null where the system marks no discrete stops, which is the difference
+ * between a Material slider and a Cupertino one at a glance.
+ */
+data class SliderStyle(
+    val trackHeight: Dp,
+    val track: Color,
+    val activeTrack: Color,
+    val thumbSize: Dp,
+    val thumb: Color,
+    val thumbBorder: Color,
+    val thumbBorderWidth: Dp,
+    val tick: Color?,
+)
+
+/** How progress is shown, as a bar or as a ring. */
+data class ProgressStyle(
+    val thickness: Dp,
+    val track: Color,
+    val indicator: Color,
+    /** Diameter when circular. */
+    val diameter: Dp,
+    val rounded: Boolean,
+    /** One full sweep of the indeterminate animation. */
+    val periodMillis: Int,
+)
+
+/** A rule between two things: thin and full width in some systems, inset in others. */
+data class DividerStyle(
+    val thickness: Dp,
+    val color: Color,
+    /** How far it is held back from the leading edge. */
+    val inset: Dp,
+)
+
+/** Everything the selection controls and the indicators need, answered in one call. */
+data class ControlsStyle(
+    val checkbox: ToggleStyle,
+    val radioButton: ToggleStyle,
+    val switch: ToggleStyle,
+    val slider: SliderStyle,
+    val progress: ProgressStyle,
+    val divider: DividerStyle,
+) {
+    fun toggle(role: ToggleRole): ToggleStyle = when (role) {
+        ToggleRole.Checkbox -> checkbox
+        ToggleRole.RadioButton -> radioButton
+        ToggleRole.Switch -> switch
+    }
+}
 
 /** The way a date is picked. */
 enum class DatePresentation {

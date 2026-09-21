@@ -339,11 +339,31 @@ class NodeTable {
                     widget == WidgetKind.Image || widget == WidgetKind.Icon
 
                 // The pickers carry a value and the ends of the range it may take, in the
-                // widget's own unit. Nothing here says how the value should be picked.
+                // widget's own unit; a slider carries a position between the same two
+                // ends. Nothing here says how the value should be reached.
                 PropertyKind.Value,
                 PropertyKind.Min,
                 PropertyKind.Max,
-                -> widget == WidgetKind.DatePicker || widget == WidgetKind.TimePicker
+                -> widget == WidgetKind.DatePicker ||
+                    widget == WidgetKind.TimePicker ||
+                    widget == WidgetKind.Slider ||
+                    // An indicator's value is how far along it is, and it has no range.
+                    (property == PropertyKind.Value && widget == WidgetKind.ProgressIndicator)
+
+                // One boolean for the three toggles: a selected radio button and a switch
+                // that is on are the same fact.
+                PropertyKind.Checked ->
+                    widget == WidgetKind.Checkbox ||
+                        widget == WidgetKind.RadioButton ||
+                        widget == WidgetKind.Switch
+
+                PropertyKind.Steps -> widget == WidgetKind.Slider
+
+                PropertyKind.Determinate,
+                PropertyKind.Circular,
+                -> widget == WidgetKind.ProgressIndicator
+
+                PropertyKind.Vertical -> widget == WidgetKind.Divider
 
                 // The overlays seed the Renderer's own open state; the tab strip seeds its
                 // own selection. Neither is read back every frame.

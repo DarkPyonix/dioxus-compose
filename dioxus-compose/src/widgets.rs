@@ -1040,3 +1040,262 @@ pub fn Dropdown(
         }
     }
 }
+
+/// A two-state box.
+///
+/// The widget is controlled: it draws exactly what `checked` says and reports what the
+/// user asked for, so the value the Host holds and the box on screen cannot disagree.
+/// What the mark looks like, and whether pressing it ripples or dims, is the design
+/// system's rule.
+#[component]
+pub fn Checkbox(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] checked: bool,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<bool>,
+) -> Element {
+    rsx! {
+        checkbox {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            checked,
+            enabled,
+            onchange: move |event: dioxus_core::Event<f64>| on_change.call(is_on(*event.data())),
+        }
+    }
+}
+
+/// One choice out of several. Which siblings it excludes is the Host's business, so the
+/// widget carries only whether this one is the chosen one.
+///
+/// `selected` is the Compose name for that state and is what the rsx attribute is called.
+/// On the wire it is the same "is this on" boolean the other two toggles send, because a
+/// selected radio button and a switch that is on are one fact.
+#[component]
+pub fn RadioButton(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] selected: bool,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<bool>,
+) -> Element {
+    rsx! {
+        radiobutton {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            checked: selected,
+            enabled,
+            onchange: move |event: dioxus_core::Event<f64>| on_change.call(is_on(*event.data())),
+        }
+    }
+}
+
+/// An on/off control. The same contract as `Checkbox`: the Host owns the value, and the
+/// track, the thumb and the way the change is animated belong to the design system.
+#[component]
+pub fn Switch(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] checked: bool,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<bool>,
+) -> Element {
+    rsx! {
+        switch {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            checked,
+            enabled,
+            onchange: move |event: dioxus_core::Event<f64>| on_change.call(is_on(*event.data())),
+        }
+    }
+}
+
+/// A value picked from a range.
+///
+/// The position a drag is passing through stays in the Renderer, so following a finger
+/// costs no boundary call, and `value` seeds that position and moves it when the change
+/// came from elsewhere. `steps` is the number of stops between the two ends; zero leaves
+/// the slider continuous.
+#[component]
+pub fn Slider(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] value: f32,
+    #[props(default = 0.0)] min: f32,
+    #[props(default = 1.0)] max: f32,
+    #[props(default)] steps: u32,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_change: EventHandler<f32>,
+) -> Element {
+    rsx! {
+        slider {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            value: f64::from(value),
+            min: f64::from(min),
+            max: f64::from(max),
+            steps: i64::from(steps),
+            enabled,
+            onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as f32),
+        }
+    }
+}
+
+/// Work in progress. `determinate` says whether `value` means anything, and `circular`
+/// picks between the two forms every supported design system has.
+///
+/// There is no speed, no easing and no track colour here: how an indeterminate indicator
+/// travels is motion, and motion is the design system's rule.
+#[component]
+pub fn ProgressIndicator(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] value: f32,
+    #[props(default = true)] determinate: bool,
+    #[props(default)] circular: bool,
+) -> Element {
+    rsx! {
+        progressindicator {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            value: f64::from(value),
+            determinate,
+            circular,
+        }
+    }
+}
+
+/// A line between two things. The axis is the only decision the Host makes: the
+/// thickness, the colour and the inset all come from the design system.
+#[component]
+pub fn Divider(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] vertical: bool,
+) -> Element {
+    rsx! {
+        divider {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            vertical,
+        }
+    }
+}
+
+/// A toggle's new state, as it arrives on the wire: off is 0.0 and on is 1.0.
+///
+/// The comparison is against zero rather than against 1.0 so a Renderer that reports a
+/// half-finished transition still reads as on.
+fn is_on(value: f64) -> bool {
+    value != 0.0
+}

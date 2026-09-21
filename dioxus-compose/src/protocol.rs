@@ -193,9 +193,7 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 class,
             }
         }
-        EVENT_CLICK..=EVENT_RANGE_REQUESTED
-        | EVENT_VALUE_CHANGED
-        | EVENT_WINDOW_SIZE_CHANGED => {
+        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
             return Err(ProtocolError::InvalidRecordLength);
         }
         other => return Err(ProtocolError::InvalidTag(other)),

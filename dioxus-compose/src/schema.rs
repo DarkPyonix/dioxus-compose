@@ -67,8 +67,8 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,open,on_dismiss,selected_index,commands,value,min,max;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
@@ -260,6 +260,15 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     ScrollColumn = 9,
     Image = 10,
     Icon = 11,
+    // The selection controls and the indicators. Each one emits a state and a role and
+    // nothing about how it is drawn: the tick, the track, the thumb and the sweep of an
+    // indeterminate bar are the design system's.
+    Checkbox = 12,
+    RadioButton = 13,
+    Switch = 14,
+    Slider = 15,
+    ProgressIndicator = 16,
+    Divider = 17,
     Card = 18,
     Surface = 19,
     Dialog = 20,
@@ -920,6 +929,18 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     // The id of an asset the Host registered. Image and Icon carry nothing else: the
     // bytes were copied into the Renderer's cache once, at registration.
     Asset = 28,
+    // Whether a toggle is on. One boolean for all three of them: a selected radio button
+    // and a switch that is on are the same fact, and the schema names a concept once.
+    Checked = 32,
+    // Discrete stops between a slider's two ends. Zero leaves it continuous.
+    Steps = 33,
+    // Whether a progress indicator knows how far along it is. When it does not, `Value`
+    // is not read at all.
+    Determinate = 34,
+    // Which of the two forms a progress indicator takes. It picks a shape, not a size.
+    Circular = 35,
+    // A divider's axis, which is the only thing a divider carries.
+    Vertical = 36,
     // Whether an overlay is showing. The Renderer owns the state; this seeds it and
     // carries changes that came from outside the Renderer.
     Open = 40,
@@ -927,9 +948,10 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     SelectedIndex = 42,
     // The Canvas drawing command list, a byte blob in the batch arena.
     Commands = 50,
-    // The picker's current value, as an epoch integer in the widget's own unit: days
-    // since 1970-01-01 for a date, minutes since midnight for a time, the chosen position
-    // for a Dropdown.
+    // The control's current value, in the widget's own unit: an epoch day count for a
+    // date, minutes since midnight for a time, the chosen position for a Dropdown, a
+    // position between the ends for a Slider, a fraction for a ProgressIndicator. One tag,
+    // because "this control's value" is one concept whichever widget holds it.
     Value = 51,
     // The ends of the selectable range, in the same unit as `Value`.
     Min = 52,

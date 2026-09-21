@@ -20,11 +20,16 @@ import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.design.ContainerRole
+import dioxus.compose.design.ToggleRole
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.HostButton
 import dioxus.compose.foundation.HostContainerColumn
 import dioxus.compose.foundation.HostDialog
+import dioxus.compose.foundation.HostDivider
+import dioxus.compose.foundation.HostProgressIndicator
+import dioxus.compose.foundation.HostSlider
+import dioxus.compose.foundation.HostToggle
 import dioxus.compose.foundation.HostCanvas
 import dioxus.compose.foundation.HostDatePicker
 import dioxus.compose.foundation.HostDropdown
@@ -160,6 +165,21 @@ fun RenderNode(
         WidgetKind.Tabs -> HostTabs(node, modifier, table, dispatcher, theme)
         WidgetKind.Tooltip -> HostTooltip(node, modifier, table, dispatcher, theme)
         WidgetKind.LazyRow -> HostLazyRow(node, modifier, table, dispatcher)
+
+        // The selection controls and the indicators. Each one is drawn from the state it
+        // was sent: the tick, the track, the thumb, the sweep and the weight of a rule are
+        // the design system's, so the same declaration is a Material control here and a
+        // Cupertino one there.
+        WidgetKind.Checkbox ->
+            HostToggle(ToggleRole.Checkbox, node, modifier, dispatcher, theme)
+
+        WidgetKind.RadioButton ->
+            HostToggle(ToggleRole.RadioButton, node, modifier, dispatcher, theme)
+
+        WidgetKind.Switch -> HostToggle(ToggleRole.Switch, node, modifier, dispatcher, theme)
+        WidgetKind.Slider -> HostSlider(node, modifier, dispatcher, theme)
+        WidgetKind.ProgressIndicator -> HostProgressIndicator(node, modifier, theme)
+        WidgetKind.Divider -> HostDivider(node, modifier, theme)
 
         // A picture is one registered id. The bytes were read when the Host registered
         // them, so what a frame carries is the id and a lookup.
