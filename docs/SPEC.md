@@ -68,13 +68,19 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - 사용자 코드는 `rsx!`와 훅만으로 작성하고, 프로토콜을 직접 다루지 않습니다.
 - 수용 기준: M0 화면을 `rsx!` 컴포넌트로 재작성했을 때 동일하게 동작합니다.
 
-### FR-7 스키마 코드젠 (`Draft`)
+### FR-7 스키마 코드젠 (`Done`)
 위젯, 속성, Modifier, 이벤트 페이로드는 Rust에서 단일 소스로 정의하고 Kotlin 타입과 코덱을 생성합니다.
 - 양쪽 모두 exhaustive match가 적용됩니다(Rust `enum`은 Kotlin `sealed interface`로 생성).
 - 핸드셰이크 때 스키마 해시를 비교해서 불일치하면 초기화를 실패시킵니다.
 - 수용 기준: Rust 스키마에 속성을 추가하고 Kotlin 인터프리터를 갱신하지 않으면 **빌드가 실패**합니다.
 - codegen은 **자기가 컴파일된 크레이트 디렉터리에만 씁니다.** cargo가 실행 시점에 알려 준 크레이트 디렉터리가 그것과 다르면 파일을 하나도 만들지 않고 두 경로를 찍으며 0이 아닌 코드로 끝납니다. 규격과 근거는 §5.4.
 - 수용 기준: `CARGO_MANIFEST_DIR`을 다른 디렉터리로 두고 codegen 바이너리를 실행하면 그 디렉터리는 비어 있는 채로 남고, 종료 코드가 0이 아니며, 메시지에 컴파일된 경로와 실행된 경로가 모두 나옵니다.
+
+근거(2026-09-22):
+- `generated_protocol.rs`의 `fr7_generated_kotlin_matches_schema`가 체크인된 `Protocol.gen.kt`를 생성기 출력과 바이트 단위로 비교합니다. 스키마를 고치고 코드젠을 돌리지 않으면 여기서 빨개집니다. 프로토콜 벡터도 같은 방식으로 `fr7_generated_vectors_match_schema`가 붙잡습니다.
+- `interpreter_exhaustiveness.rs`가 두 번째 고리를 봅니다. 생성기가 내놓는 `WidgetKind`, `PropertyKind`, `Modifier`, `Mutation`의 모든 변형이 인터프리터의 해당 `when`에 이름으로 나와 있어야 합니다. Kotlin의 exhaustive `when`이 원래 하던 일이지만 `else` 한 줄이면 사라지므로, `else`로 바꿔도 빨개지도록 Rust 테스트가 대신 확인합니다. iOS가 같은 파일을 심링크로 쓰는지도 같은 파일이 봅니다.
+- 실제로 확인했습니다: `PropertyKind`에 변형을 하나 더하고 인터프리터를 그대로 두면 `fr7_every_property_in_the_schema_has_an_arm_in_the_interpreter`가 실패하고, `PropertyKind.Progress` 팔을 `else -> false`로 바꿔도 같은 테스트가 실패합니다.
+- 스키마 해시: `boundary_hardening.rs`의 `nfr7_init_with_a_wrong_schema_hash_returns_a_status`가 불일치 핸드셰이크에서 `init`이 실패 상태를 돌려주는지 보고, iOS 쪽은 `ProtocolBufferTest.pr4_handshake_carries_the_schema_hash_the_host_checks`가 Host가 검사하는 그 해시를 핸드셰이크에 싣는지 봅니다.
 
 ### FR-8 LazyColumn 윈도잉 (`Agreed`)
 - Host는 아이템 총 개수와 안정적인 key를 알립니다.
