@@ -6,6 +6,7 @@ members = [
     "samples/frames",
     "samples/minimal",
     "samples/notepad",
+    "samples/podcast",
     "samples/selfcare",
     "samples/statistics",
     "samples/store",

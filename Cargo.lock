@@ -811,6 +811,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sample-podcast"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
 name = "sample-selfcare"
 version = "0.1.0"
 dependencies = [
