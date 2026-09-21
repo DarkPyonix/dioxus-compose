@@ -316,3 +316,91 @@ fn fr1_an_empty_branch_fills_in_under_its_own_parent() {
         "the card's branch was attached somewhere else",
     );
 }
+
+
+/// A Menu whose children are a branch that is not taken, inside a list item.
+///
+/// The empty branch and the loop over nothing both leave a placeholder, and the list
+/// materialises its window on demand, so the same positions are filled in and emptied
+/// again as the window moves.
+fn menu_in_a_list_app() -> Element {
+    rsx! {
+        LazyColumn {
+            item_count: 20,
+            item: move |index: usize| rsx! {
+                Row {
+                    Text { text: "row {index}" }
+                    if index == usize::MAX {
+                        Text { text: "never" }
+                    }
+                    Menu {
+                        expanded: false,
+                        anchor: rsx! { Button { text: "menu" } },
+                        if index == usize::MAX {
+                            Text { text: "never either" }
+                        }
+                        for entry in Vec::<usize>::new() {
+                            Text { text: "{entry}" }
+                        }
+                    }
+                }
+            },
+        }
+    }
+}
+
+#[test]
+fn nfr7_a_menu_of_empty_branches_in_a_list_item_never_loops_the_parent_chain() {
+    let mut host = Host::new(menu_in_a_list_app);
+    let mut parents = HashMap::new();
+    let batch = host.rebuild().unwrap().to_vec();
+    follow(&batch, &mut parents);
+
+    let records = decode_batch(&batch).unwrap();
+    let list = records
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: WidgetKind::LazyColumn,
+            } => Some(*node_id),
+            _ => None,
+        })
+        .expect("the screen has a list");
+    let handler = records
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::OnRangeRequested,
+                value: PropertyValue::Integer(id),
+            } if *node_id == list => Some(*id as u64),
+            _ => None,
+        })
+        .expect("the list asks for its range");
+
+    // Three windows, each one replacing the last, which is what scrolling costs.
+    for (round, start) in [0_u32, 6, 12].into_iter().enumerate() {
+        let mut wire = Vec::new();
+        encode_event(
+            &HostEvent {
+                node_id: list,
+                handler_id: handler,
+                payload: EventPayload::RangeRequested { start, count: 6 },
+            },
+            &mut wire,
+        )
+        .unwrap();
+        let batch = host.dispatch_event(&wire).unwrap().0.to_vec();
+        follow(&batch, &mut parents);
+
+        let nodes: Vec<u32> = parents.keys().copied().collect();
+        for node in nodes {
+            assert!(
+                loops_from(&parents, node).is_none(),
+                "round {round}: the parent chain from {node} loops: {:?}",
+                loops_from(&parents, node),
+            );
+        }
+    }
+}
