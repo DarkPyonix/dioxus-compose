@@ -18,10 +18,60 @@ pub struct Message {
     pub id: u64,
     /// The turn this message belongs to. A stale worker compares it before appending.
     pub token: u64,
+    /// Which conversation said it. One list holds every conversation's messages so the
+    /// worker can keep appending to the last one it was given without knowing that the
+    /// person reading has moved to a different conversation meanwhile.
+    pub conversation: u64,
     pub from_user: bool,
     pub text: String,
     pub streaming: bool,
 }
+
+/// One conversation in the sidebar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Conversation {
+    /// Never reused, so it is the destination's key and what a message belongs to.
+    id: u64,
+    /// What the sidebar calls it. Empty until the first thing is said in it, because
+    /// the reference names a conversation after its opening line.
+    title: String,
+}
+
+impl Conversation {
+    /// What a conversation with nothing in it is called.
+    const UNTITLED: &'static str = "New chat";
+
+    fn label(&self) -> String {
+        if self.title.is_empty() {
+            Self::UNTITLED.to_owned()
+        } else {
+            self.title.clone()
+        }
+    }
+}
+
+/// How many characters of the opening line become the conversation's name.
+///
+/// Long enough to tell two conversations apart and short enough to sit in a rail. The
+/// reference does the same thing with about the same amount of room.
+const TITLE_CHARS: usize = 24;
+
+fn title_from(text: &str) -> String {
+    let mut title: String = text.chars().take(TITLE_CHARS).collect();
+    if text.chars().nth(TITLE_CHARS).is_some() {
+        title.push('\u{2026}');
+    }
+    title
+}
+
+/// How many conversations stand in the destination set.
+///
+/// The reference's sidebar shows recent chats and keeps the rest behind a "show more",
+/// and there is a harder reason than taste: the same declaration is a bar along the
+/// bottom of a phone, and a bar that holds every conversation ever started is a bar with
+/// nothing legible in it. Five is the published ceiling for a bottom bar in the design
+/// system this project takes its size classes from.
+const RECENT_CONVERSATIONS: usize = 5;
 
 /// A new conversation has nothing in it.
 ///
@@ -217,6 +267,17 @@ fn app() -> Element {
     let turns = use_signal(Turns::default);
     let mut settings = use_signal(Settings::default);
     let mut settings_open = use_signal(|| false);
+    // The conversations, newest last, and the one being read. A chat application with one
+    // conversation is a chat application with the part people use missing, and the
+    // reference's sidebar is mostly this list.
+    let mut conversations = use_signal(|| {
+        vec![Conversation {
+            id: 1,
+            title: String::new(),
+        }]
+    });
+    let mut current = use_signal(|| 1_u64);
+    let mut next_conversation = use_signal(|| 2_u64);
 
     let mut send = move |text: String| {
         let text = text.trim().to_owned();
@@ -226,11 +287,13 @@ fn app() -> Element {
         let token = turns.peek().begin();
         let id = next_id();
         next_id.set(id + 2);
+        let conversation = current();
         {
             let mut list = messages.write();
             list.push(Message {
                 id,
                 token,
+                conversation,
                 from_user: true,
                 text: text.clone(),
                 streaming: false,
@@ -240,27 +303,81 @@ fn app() -> Element {
             list.push(Message {
                 id: id + 1,
                 token,
+                conversation,
                 from_user: false,
                 text: String::new(),
                 streaming: true,
             });
         }
+        // A conversation is named after the first thing said in it, which is how the
+        // sidebar tells one from another without asking anybody to name anything.
+        {
+            let mut list = conversations.write();
+            if let Some(entry) = list.iter_mut().find(|entry| entry.id == conversation) {
+                if entry.title.is_empty() {
+                    entry.title = title_from(&text);
+                }
+            }
+        }
         draft.set(String::new());
         assistant::stream_reply(text, token, turns.peek().clone(), settings(), messages);
     };
 
-    let count = messages.read().len();
+    // What is on screen is one conversation's messages. The list holds every
+    // conversation's, so this is the window into it, the same shape the task list uses
+    // for its filters.
+    let thread: Vec<usize> = messages
+        .read()
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message.conversation == current())
+        .map(|(index, _)| index)
+        .collect();
+    let count = thread.len();
     let busy = messages
         .read()
         .last()
-        .is_some_and(|message| message.streaming);
-    let keys: Vec<String> = messages
-        .read()
+        .is_some_and(|message| message.streaming && message.conversation == current());
+    let keys: Vec<String> = thread
         .iter()
-        .map(|message| message.id.to_string())
+        .map(|index| messages.read()[*index].id.to_string())
         .collect();
+    let rows = thread.clone();
+    // Newest first in the sidebar, and only as many as a set of destinations can hold.
+    let recent: Vec<Conversation> = conversations()
+        .iter()
+        .rev()
+        .take(RECENT_CONVERSATIONS)
+        .cloned()
+        .collect();
+    let selected = recent
+        .iter()
+        .position(|entry| entry.id == current())
+        .unwrap_or(0);
 
     rsx! {
+        // The conversations are the destination set, which is the reference's sidebar.
+        // This code never asks how wide the window is for it: the Renderer has measured
+        // the window and draws a bar along the bottom of a phone, a rail beside a tablet
+        // and a sidebar standing open on a desktop, from these same items.
+        Navigation {
+            fill_max_width: true,
+            fill_max_height: true,
+            selected_index: selected,
+            for conversation in recent.iter().cloned() {
+                NavigationItem {
+                    key: "{conversation.id}",
+                    text: conversation.label(),
+                    // A rail is allowed to drop the labels, so a destination that is
+                    // nothing but a title would be a blank strip in one of the three
+                    // presentations.
+                    icon: IconRole::Inbox,
+                    on_click: {
+                        let id = conversation.id;
+                        move |()| current.set(id)
+                    },
+                }
+            }
         Column {
             fill_max_width: true,
             fill_max_height: true,
@@ -272,31 +389,73 @@ fn app() -> Element {
                     variant: ButtonVariant::Text,
                     on_click: move |_| settings_open.set(true),
                 }
+                // Deleting is the one thing here that throws a conversation away, so it
+                // says what it did and offers it back. Starting a new one no longer
+                // destroys anything: the old conversation is still in the sidebar.
+                Button {
+                    text: "Delete",
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ColorRole::Error),
+                    enabled: conversations.read().len() > 1,
+                    on_click: move |_| {
+                        let gone = current();
+                        let entries = conversations();
+                        let Some(at) = entries.iter().position(|entry| entry.id == gone) else {
+                            return;
+                        };
+                        let removed = entries[at].clone();
+                        let lines = messages();
+                        // The worker is already handled: beginning a turn bumps the token,
+                        // and a worker whose token is no longer current stops at its next
+                        // chunk rather than appending to a conversation that has gone.
+                        turns.peek().begin();
+                        conversations.write().remove(at);
+                        messages
+                            .write()
+                            .retain(|message| message.conversation != gone);
+                        // There is always somewhere to be. Deleting the last one leaves an
+                        // empty conversation rather than a screen with no conversation in
+                        // it, which is a state the rest of this screen cannot draw.
+                        if conversations.read().is_empty() {
+                            let id = next_conversation();
+                            next_conversation.set(id + 1);
+                            conversations.write().push(Conversation {
+                                id,
+                                title: String::new(),
+                            });
+                        }
+                        let next = conversations.read()[at.min(conversations.read().len() - 1)].id;
+                        current.set(next);
+                        // Spelled out, because this file already has a `Message` and it is
+                        // a line of a conversation. The library's is the one sentence an
+                        // application says after something happened.
+                        dioxus_compose::Message::new(format!(
+                            "Deleted \u{201c}{}\u{201d}",
+                            removed.label()
+                        ))
+                        .with_action("Undo", move |()| {
+                            conversations.write().insert(at, removed.clone());
+                            messages.set(lines.clone());
+                            current.set(gone);
+                        })
+                        .with_duration(MessageDuration::Long)
+                        .show();
+                    },
+                }
                 Button {
                     text: if crowded { "New" } else { "New conversation" },
                     variant: ButtonVariant::Text,
                     on_click: move |_| {
-                        // Starting again throws a conversation away, so it offers it back
-                        // rather than asking first. The stale worker is already handled:
-                        // beginning a turn bumps the token, and a worker whose token is no
-                        // longer current stops at its next chunk.
-                        let previous = messages();
-                        let previous_id = next_id();
-                        turns.peek().begin();
-                        messages.set(opening_messages());
-                        next_id.set(2);
-                        if !previous.is_empty() {
-                            // Spelled out, because this file already has a `Message` and
-                            // it is a line of a conversation. The library's is the one
-                            // sentence an application says after something happened.
-                            dioxus_compose::Message::new("Conversation cleared")
-                                .with_action("Undo", move |()| {
-                                    messages.set(previous.clone());
-                                    next_id.set(previous_id);
-                                })
-                                .with_duration(MessageDuration::Long)
-                                .show();
-                        }
+                        // Nothing is thrown away: the conversation that was on screen
+                        // stays in the sidebar, which is what the reference does and what
+                        // makes the sidebar worth having.
+                        let id = next_conversation();
+                        next_conversation.set(id + 1);
+                        conversations.write().push(Conversation {
+                            id,
+                            title: String::new(),
+                        });
+                        current.set(id);
                     },
                 }
             })}
@@ -341,14 +500,15 @@ fn app() -> Element {
                     fill_max_height: true,
                     item_count: count,
                     key_of: move |index: usize| keys[index].clone(),
-                    item: move |index: usize| {
+                    item: move |position: usize| {
+                        let index = rows[position];
                         let message = messages.read()[index].clone();
                         // A name over every bubble is a name repeated once per line. The
                         // side and the fill already say who is speaking, so the name is
                         // printed once at the head of a run and the rest of the run is
                         // read as the same speaker still talking.
-                        let starts_a_run = index == 0
-                            || messages.read()[index - 1].from_user != message.from_user;
+                        let starts_a_run = position == 0
+                            || messages.read()[rows[position - 1]].from_user != message.from_user;
                         // Who said it should be readable without reading, so it is the side
                         // the bubble sits on and the colour it is filled with, with the
                         // name left as confirmation rather than as the only clue. Both
@@ -491,6 +651,7 @@ fn app() -> Element {
                 )}
             }
         }
+        }
     }
 }
 
@@ -591,6 +752,8 @@ mod tests {
         change_handler: u64,
         /// The text of every node, as the frames report it.
         texts: HashMap<u32, String>,
+        /// The destination nodes that are still on screen, which is the sidebar.
+        destinations: Vec<u32>,
         /// Every message the screen has said, in order, with its action label.
         messages: Vec<(String, String)>,
         event: Vec<u8>,
@@ -645,6 +808,16 @@ mod tests {
                     _ => None,
                 })
                 .collect();
+            let destinations = first
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::NavigationItem,
+                    } => Some(*node_id),
+                    _ => None,
+                })
+                .collect();
             drop(first);
             Self {
                 host,
@@ -655,6 +828,7 @@ mod tests {
                 submit_handler,
                 change_handler,
                 texts,
+                destinations,
                 messages: Vec::new(),
                 event: Vec::new(),
             }
@@ -701,12 +875,31 @@ mod tests {
                     } => {
                         self.texts.insert(node_id, text.to_owned());
                     }
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::NavigationItem,
+                    } => self.destinations.push(node_id),
+                    Mutation::Remove { node_id } => {
+                        self.destinations.retain(|found| *found != node_id);
+                    }
                     Mutation::ShowMessage { text, action, .. } => {
                         self.messages.push((text.to_owned(), action.to_owned()));
                     }
                     _ => {}
                 }
             }
+        }
+
+        /// What the sidebar is offering, by label. Sorted, because what the destination
+        /// set holds is the claim here and the order it is drawn in is the Renderer's.
+        fn destinations(&self) -> Vec<String> {
+            let mut labels: Vec<String> = self
+                .destinations
+                .iter()
+                .filter_map(|node| self.texts.get(node).cloned())
+                .collect();
+            labels.sort();
+            labels
         }
 
         /// Sends an event and keeps what came back.
@@ -797,9 +990,13 @@ mod tests {
         fn send(&mut self, text: &str) {
             let (node, handler) = (self.composer, self.submit_handler);
             self.encode(node, handler, EventPayload::TextSubmitted(text));
-            self.host
+            let batch = self
+                .host
                 .dispatch_event(&self.event)
-                .expect("the send failed");
+                .expect("the send failed")
+                .0
+                .to_vec();
+            self.absorb(&batch);
         }
 
         fn type_into_composer(&mut self, text: &str) -> usize {
@@ -1117,9 +1314,10 @@ mod tests {
         );
     }
 
-    /// Starting again throws a conversation away, so it offers it back.
+    /// Deleting throws a conversation away, so it offers it back. Starting a new one no
+    /// longer destroys anything, because the old conversation stays in the sidebar.
     #[test]
-    fn fr21_starting_a_new_conversation_offers_the_old_one_back() {
+    fn fr21_deleting_a_conversation_offers_it_back() {
         let mut screen = Screen::new();
         screen.open_window();
         screen.send("tell me about streaming");
@@ -1129,10 +1327,40 @@ mod tests {
         // the screen is laid out for the narrowest one and the button carries its short
         // label.
         screen.press("New");
+        screen.press("Delete");
         assert_eq!(
             screen.messages,
-            vec![("Conversation cleared".to_owned(), "Undo".to_owned())],
-            "clearing should say what it did and offer it back"
+            vec![(
+                "Deleted \u{201c}New chat\u{201d}".to_owned(),
+                "Undo".to_owned()
+            )],
+            "deleting should say what it did and offer it back"
+        );
+    }
+
+    /// The conversations are the destination set, which is what the reference's sidebar
+    /// is. One declaration, and the Renderer draws it as a bar, a rail or a sidebar from
+    /// the width it measured.
+    #[test]
+    fn fr22_the_conversations_are_the_destination_set() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        let before = screen.destinations();
+        assert_eq!(
+            before,
+            vec!["New chat".to_owned()],
+            "a fresh screen should offer the one conversation it has"
+        );
+
+        screen.send("tell me about streaming");
+        screen.settle();
+        screen.press("New");
+        let after = screen.destinations();
+        assert_eq!(
+            after,
+            vec!["New chat".to_owned(), "tell me about streaming".to_owned()],
+            "the conversation that was on screen should still be in the sidebar, named \
+             after its opening line"
         );
     }
 
