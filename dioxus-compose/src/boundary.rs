@@ -227,7 +227,13 @@ impl Host {
         crate::window::reset_window_size();
         // Messages queued against a Host that is going away would otherwise be said by
         // the one replacing it, out of any context that made them make sense.
+        //
+        // The asset table goes with them. The Renderer this Host is about to talk to has
+        // an empty cache, so an id the one before it handed out names nothing, and a
+        // screen built on those ids would draw no pictures while every batch it sent
+        // looked correct.
         crate::message::reset_messages();
+        crate::asset::reset_assets();
         Self {
             app,
             theme,
@@ -418,6 +424,12 @@ impl Host {
     /// what makes "deleted" and the row disappearing one frame rather than two.
     fn flush_messages(&mut self) {
         let renderer = &mut self.renderer;
+        // Registrations first. Not because the Renderer needs them first, it applies the
+        // whole batch before drawing any of it, but because a batch read by a person
+        // debugging one reads in the order the screen was built.
+        crate::asset::drain(|pending| {
+            renderer.register_asset(pending.asset_id, pending.kind, pending.bytes);
+        });
         crate::message::drain(|message| {
             renderer.show_message(
                 message.handler_id,

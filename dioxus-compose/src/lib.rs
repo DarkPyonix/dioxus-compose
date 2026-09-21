@@ -1,5 +1,6 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod asset;
 pub mod boundary;
 /// Generated JNI shims. Compiled only for Android, where the Host is a cdylib that the
 /// Kotlin Activity loads.
@@ -18,6 +19,7 @@ pub mod tokens;
 mod widgets;
 pub mod window;
 
+pub use asset::asset;
 pub use boundary::{
     Host, LaunchBuilder, MutationBatch, RendererApi, demo_theme, demo_theme_for,
     install_renderer_api, launch, request_frame_from_worker,
@@ -80,7 +82,7 @@ pub mod prelude {
         Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
         RangeRequest, Row, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer,
         Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
-        Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, component, launch, rsx,
+        Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
         show_message, use_window_size,
     };
     // The crates `rsx!` expands into references to, under the names it expands into. A
