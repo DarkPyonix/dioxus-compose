@@ -932,27 +932,116 @@ pub fn Tooltip(
 /// Colour goes through `Paint`, so `Paint::Role(ColorRole::Primary)` draws in whatever the
 /// active design system calls primary.
 #[component]
-pub fn Canvas(commands: DrawList) -> Element {
+pub fn Canvas(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    commands: DrawList,
+) -> Element {
     rsx! {
-        canvas { commands }
+        canvas {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            commands,
+        }
     }
 }
 
 /// A registered asset drawn as a picture. The bytes reached the Renderer once, through
 /// `Host::register_asset`, and what crosses per frame is the id.
 #[component]
-pub fn Image(asset_id: u32) -> Element {
+pub fn Image(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    asset_id: u32,
+) -> Element {
     rsx! {
-        image { asset: i64::from(asset_id) }
+        image {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            asset: i64::from(asset_id),
+        }
     }
 }
 
 /// A registered icon, tinted by a role. `Host::register_icon` registers the meaning rather
 /// than a picture, so the same declaration comes out as the icon each design system draws.
 #[component]
-pub fn Icon(asset_id: u32, #[props(default)] color: Option<Paint>) -> Element {
+pub fn Icon(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    asset_id: u32,
+    #[props(default)] color: Option<Paint>,
+) -> Element {
     rsx! {
         icon {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             asset: i64::from(asset_id),
             color: color.map_or(0, |paint| paint.to_bits() as i64),
         }
@@ -970,6 +1059,19 @@ pub fn Icon(asset_id: u32, #[props(default)] color: Option<Paint>) -> Element {
 /// crossing here would turn "follows the platform" into a claim the Renderer cannot keep.
 #[component]
 pub fn DatePicker(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     /// Days since 1970-01-01.
     value: i64,
     #[props(default)] min: Option<i64>,
@@ -979,6 +1081,19 @@ pub fn DatePicker(
 ) -> Element {
     rsx! {
         datepicker {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             value,
             min: min.unwrap_or(i64::MIN),
             max: max.unwrap_or(i64::MAX),
@@ -994,6 +1109,19 @@ pub fn DatePicker(
 /// whether it reads as 12 or 24 hour is the platform's.
 #[component]
 pub fn TimePicker(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     /// Minutes since midnight.
     value: u32,
     #[props(default)] min: Option<u32>,
@@ -1003,6 +1131,19 @@ pub fn TimePicker(
 ) -> Element {
     rsx! {
         timepicker {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             value: i64::from(value),
             min: i64::from(min.unwrap_or(0)),
             max: i64::from(max.unwrap_or(MINUTES_IN_A_DAY - 1)),
@@ -1020,6 +1161,19 @@ const MINUTES_IN_A_DAY: u32 = 24 * 60;
 /// position the user landed on.
 #[component]
 pub fn Dropdown(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] selected_index: usize,
     #[props(default = true)] enabled: bool,
     #[props(default)] on_change: EventHandler<usize>,
@@ -1027,6 +1181,19 @@ pub fn Dropdown(
 ) -> Element {
     rsx! {
         dropdown {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             selected_index: selected_index as i64,
             enabled,
             onchange: move |event: dioxus_core::Event<f64>| {
@@ -1056,6 +1223,8 @@ pub fn Checkbox(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] checked: bool,
     #[props(default = true)] enabled: bool,
     #[props(default)] on_change: EventHandler<bool>,
@@ -1073,6 +1242,8 @@ pub fn Checkbox(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             checked,
             enabled,
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(is_on(*event.data())),
@@ -1099,6 +1270,8 @@ pub fn RadioButton(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] selected: bool,
     #[props(default = true)] enabled: bool,
     #[props(default)] on_change: EventHandler<bool>,
@@ -1116,6 +1289,8 @@ pub fn RadioButton(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             checked: selected,
             enabled,
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(is_on(*event.data())),
@@ -1138,6 +1313,8 @@ pub fn Switch(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] checked: bool,
     #[props(default = true)] enabled: bool,
     #[props(default)] on_change: EventHandler<bool>,
@@ -1155,6 +1332,8 @@ pub fn Switch(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             checked,
             enabled,
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(is_on(*event.data())),
@@ -1181,6 +1360,8 @@ pub fn Slider(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] value: f32,
     #[props(default = 0.0)] min: f32,
     #[props(default = 1.0)] max: f32,
@@ -1201,6 +1382,8 @@ pub fn Slider(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             value: f64::from(value),
             min: f64::from(min),
             max: f64::from(max),
@@ -1229,6 +1412,8 @@ pub fn ProgressIndicator(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] value: f32,
     #[props(default = true)] determinate: bool,
     #[props(default)] circular: bool,
@@ -1246,6 +1431,8 @@ pub fn ProgressIndicator(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             value: f64::from(value),
             determinate,
             circular,
@@ -1268,6 +1455,8 @@ pub fn Divider(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] vertical: bool,
 ) -> Element {
     rsx! {
@@ -1283,6 +1472,8 @@ pub fn Divider(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             vertical,
         }
     }
@@ -1364,6 +1555,19 @@ pub fn Navigation(
 /// system's inbox.
 #[component]
 pub fn NavigationItem(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] text: String,
     #[props(default)] icon: Option<IconRole>,
     #[props(default = true)] enabled: bool,
@@ -1371,6 +1575,19 @@ pub fn NavigationItem(
 ) -> Element {
     rsx! {
         navigationitem {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             text,
             icon: opt_role(icon),
             enabled,
