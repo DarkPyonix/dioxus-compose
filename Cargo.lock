@@ -767,6 +767,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sample-academic"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
 name = "sample-calculator"
 version = "0.1.0"
 dependencies = [

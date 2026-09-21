@@ -29,6 +29,7 @@ them name Cupertino.
 | `statistics` | Charts: a dial and a week of costs drawn with `Canvas`, both painted entirely in roles, on a tinted page |
 | `selfcare` | A mood picker whose answers are colours, faces drawn with `Canvas`, a chip grid, a windowing row of session cards and a week as a line |
 | `podcast` | A player whose waveform is a `Canvas`, cover art built from the accent families, and a full-screen page that covers the navigation bar |
+| `academic` | A grid of subject tiles, a stage strip, open and locked lessons, and the one place the role vocabulary ran out |
 
 Each one is an ordinary dx project: a `Dioxus.toml`, an `assets/` directory and
 `src/main.rs`, the layout `dx new` produces. That is deliberate, because a sample exists to
