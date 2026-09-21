@@ -27,6 +27,7 @@ import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
+import dioxus.compose.ui.paintProp
 import dioxus.compose.ui.textStyle
 import dioxus.compose.ui.variant
 
@@ -99,8 +100,12 @@ internal fun HostButton(
         .defaultMinSize(minHeight = style.minHeight)
         .padding(horizontal = style.horizontalPadding, vertical = style.verticalPadding)
 
+    // The variant decides the label colour, unless the node names one itself. A
+    // destructive action is the case that needs it: it is a plain button in every design
+    // system, and what marks it is that its label is the error colour.
+    val content = node.paintProp(PropertyKind.Color)?.let { theme.color(it) } ?: style.content
     val label = node.textStyle(theme, style.typeRole)
-        .copy(color = style.content.copy(alpha = style.content.alpha * contentAlpha))
+        .copy(color = content.copy(alpha = content.alpha * contentAlpha))
     Box(decorated, contentAlignment = Alignment.Center) {
         BasicText(text = node.text(PropertyKind.Text), style = label)
     }
