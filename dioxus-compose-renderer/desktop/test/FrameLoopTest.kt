@@ -14,12 +14,21 @@ import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
 import dioxus.compose.ui.node.nodeTestTag
+import kotlin.test.BeforeTest
 
 private const val LABEL = 1
 
 /** The frame loop: however many requests a worker makes, one `render_frame` call follows. */
 @OptIn(ExperimentalTestApi::class)
 class FrameLoopTest {
+    @BeforeTest
+    fun resetTheSharedFrameCounter() {
+        // The frame counter is global, because the C entry point that feeds it takes no
+        // host. Tests therefore share it, and a request left behind by one can drive
+        // another's frame loop and keep it from ever going idle.
+        FrameRequests.resetForTest()
+    }
+
     @Test
     fun pr3_frame_request_applies_exactly_one_frame_batch() = runComposeUiTest {
         val connection = FakeHostConnection(
