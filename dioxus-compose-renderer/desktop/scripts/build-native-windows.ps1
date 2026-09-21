@@ -77,12 +77,24 @@ if (-not (Test-Path -LiteralPath $KotlinWrapper -PathType Leaf)) {
         "The checked-in Kotlin Toolchain wrapper is required; no separate Gradle install is used."
     )
 }
-# This is deliberately a Windows-only overlay, not the reference project's whole Compose
-# 1.9 stack bundle. This checkout currently resolves a newer Compose/Skiko stack and carries
-# its own metadata. Importing all reference entries would hide that version difference.
+# This carries the whole verified Compose desktop AWT stack, not just the sun.awt.windows
+# classes. An earlier Windows-only selection kept the entries whose names mention Windows and
+# dropped the rest, which removed the JNI registration of java.awt.Toolkit.getDefaultToolkit.
+# Toolkit.initIDs looks that method up through JNI before any window exists, so the image
+# built and then died at startup with NoSuchMethodError on a method the JDK plainly has.
+# The reference project hit the identical error with no metadata at all and fixed it with
+# this bundle. Entries naming classes this checkout's newer Compose and Skiko no longer have
+# are left unresolved by native-image rather than failing the build.
+#
+# Two directories because native-image documents a configuration directory as holding either
+# reachability-metadata.json or the older split files, not both, and the resource and bundle
+# declarations are still in the older form.
 $ReachabilityMetadata = Join-Path $MetadataDir "reachability-metadata.json"
+$ResourceMetadataDir = Join-Path $MetadataDir "resources"
+$ResourceMetadata = Join-Path $ResourceMetadataDir "resource-config.json"
 $MetadataEvidence = Join-Path $MetadataDir "evidence.json"
 if (-not (Test-Path -LiteralPath $ReachabilityMetadata -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $ResourceMetadata -PathType Leaf) -or
     -not (Test-Path -LiteralPath $MetadataEvidence -PathType Leaf)) {
     Fail "Windows GraalVM 25 reachability metadata is missing from $MetadataDir" @(
         "Do not replace it with an unattended tracing-agent run.",
@@ -255,7 +267,7 @@ $NativeImageArgs = @(
     "-H:IncludeLocales=en,ko",
     "-Os",
     "-H:+UnlockExperimentalVMOptions",
-    "-H:ConfigurationFileDirectories=$MetadataDir",
+    "-H:ConfigurationFileDirectories=$MetadataDir,$ResourceMetadataDir",
     "-H:NativeLinkerOption=$RendererObject",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"
