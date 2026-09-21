@@ -42,7 +42,7 @@ import dioxus.compose.TypeRole
  * carry their own licences and are not used here; the family below is the platform sans.
  *
  * What makes this recognisable next to the other two:
- *  - Larger corner radii. Twelve to eighteen pixels where Breeze uses three.
+ *  - Larger corner radii. Ten to eighteen pixels where Breeze uses three.
  *  - Soft shadows. A raised surface spreads a wide, low opacity shadow and lightens
  *    slightly, so depth is carried by the shadow rather than by a border.
  *  - Plain neutral greys, against the cool blue greys of Breeze and the slightly warm
@@ -170,13 +170,14 @@ class DeepinDesignSystem private constructor(
     /**
      * The roundest of the three. Deepin's windows are rounded far past anything GTK or Qt
      * does, and its controls follow at a smaller radius, so even a button reads as a
-     * lozenge next to a Breeze rectangle.
+     * lozenge next to a Breeze rectangle. The keys in Deepin's own calculator are cut at
+     * about a sixth of their height, which is where the middle rung sits.
      */
     override fun shape(role: ShapeRole): Shape = when (role) {
         ShapeRole.None -> RoundedCornerShape(0.dp)
         ShapeRole.ExtraSmall -> RoundedCornerShape(6.dp)
         ShapeRole.Small -> RoundedCornerShape(8.dp)
-        ShapeRole.Medium -> RoundedCornerShape(12.dp)
+        ShapeRole.Medium -> RoundedCornerShape(10.dp)
         ShapeRole.Large -> RoundedCornerShape(18.dp)
         ShapeRole.Full -> RoundedCornerShape(percent = 50)
     }

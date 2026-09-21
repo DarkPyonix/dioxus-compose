@@ -2097,7 +2097,7 @@ internal object DeepinRules : ComponentRules {
             borderColor = Color.Transparent,
             pressedBorderColor = Color.Transparent,
             topHighlight = null,
-            // A lozenge: 12 dp, which is ShapeRole.Medium in the Deepin table.
+            // A lozenge: 10 dp, which is ShapeRole.Medium in the Deepin table.
             shape = theme.shape(ShapeRole.Medium),
             horizontalPadding = theme.space(SpaceRole.Lg),
             verticalPadding = theme.space(SpaceRole.Sm),

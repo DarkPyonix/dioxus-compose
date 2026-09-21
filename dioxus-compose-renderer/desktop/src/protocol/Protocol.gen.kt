@@ -1022,7 +1022,7 @@ object DesignTokens {
             0xff1c1c1e.toInt(), // SurfaceContainer
         ),
         arrayOf(
-            TypeToken(34.0f, 400, 41.0f, 0.37f, false), // Display
+            TypeToken(34.0f, 700, 41.0f, 0.37f, false), // Display
             TypeToken(28.0f, 400, 34.0f, 0.36f, false), // Headline
             TypeToken(22.0f, 400, 28.0f, 0.35f, false), // Title
             TypeToken(17.0f, 600, 22.0f, -0.41f, false), // Subtitle
@@ -1140,7 +1140,7 @@ object DesignTokens {
             TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
             TypeToken(14.0f, 400, 20.0f, 0.0f, true), // Mono
         ),
-        floatArrayOf(0.0f, 4.0f, 6.0f, 8.0f, 12.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 6.0f, 12.0f, 15.0f, 1000.0f),
         floatArrayOf(0.0f, 3.0f, 6.0f, 12.0f, 18.0f, 24.0f, 36.0f),
     )
 
@@ -1248,7 +1248,7 @@ object DesignTokens {
             TypeToken(12.0f, 400, 17.0f, 0.0f, false), // Caption
             TypeToken(13.0f, 400, 19.0f, 0.0f, true), // Mono
         ),
-        floatArrayOf(0.0f, 6.0f, 8.0f, 12.0f, 18.0f, 1000.0f),
+        floatArrayOf(0.0f, 6.0f, 8.0f, 10.0f, 18.0f, 1000.0f),
         floatArrayOf(0.0f, 4.0f, 10.0f, 16.0f, 20.0f, 30.0f, 40.0f),
     )
 

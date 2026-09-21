@@ -220,8 +220,11 @@ const APPLE_HIG: DesignTokenTable = DesignTokenTable {
         // what makes it a panel is that the page underneath is not.
         SurfaceContainer: 0xffffff / 0x1c1c1e,
     },
+    // The large title is bold. Both reference screens set it that way, "Contacts" over a
+    // grouped list and "Cupertino" over a search field, and a large title at book weight
+    // is the one thing that stops an iOS screen reading as an iOS screen.
     type_scale: type_scale! {
-        Display: 34.0 / 400 / 41.0 / 0.37 / false,
+        Display: 34.0 / 700 / 41.0 / 0.37 / false,
         Headline: 28.0 / 400 / 34.0 / 0.36 / false,
         Title: 22.0 / 400 / 28.0 / 0.35 / false,
         Subtitle: 17.0 / 600 / 22.0 / -0.41 / false,
@@ -360,14 +363,18 @@ const ADWAITA: DesignTokenTable = DesignTokenTable {
         Caption: 12.0 / 400 / 16.0 / 0.0 / false,
         Mono: 14.0 / 400 / 20.0 / 0.0 / true,
     },
-    // Adwaita rounds moderately: 6px on a button or an entry, 12px on a card, a dialog or
-    // a popover. Pills are kept for suggested actions and search entries.
+    // libadwaita's own named radii: six on a button or an entry, twelve on a card or a
+    // popover, fifteen on a window. The middle and top rungs were eight and twelve, which
+    // put a card where a button belongs and a window where a card belongs, and the GNOME
+    // 50 screen in docs/references/design-systems/gnome50/ shows the difference plainly:
+    // the preferences groups are rounded well past the buttons inside them, and the
+    // window is rounder again. Pills are kept for suggested actions and search entries.
     shapes: shapes! {
         None: 0.0,
         ExtraSmall: 4.0,
         Small: 6.0,
-        Medium: 8.0,
-        Large: 12.0,
+        Medium: 12.0,
+        Large: 15.0,
         Full: 1000.0,
     },
     // GNOME lays out on a six pixel grid, and its dialogs are roomy.
@@ -509,12 +516,15 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
     },
     // The roundest of the three Linux systems. Deepin's windows are rounded far past
     // anything GTK or Qt does, and its controls follow at a smaller radius, so even a
-    // button reads as a lozenge next to a Breeze rectangle.
+    // button reads as a lozenge next to a Breeze rectangle. The middle rung is ten rather
+    // than twelve: the keys in the calculator screen are cut at about a sixth of their
+    // height, which is where a Deepin button sits, and twelve was Adwaita's card radius
+    // borrowed for a button.
     shapes: shapes! {
         None: 0.0,
         ExtraSmall: 6.0,
         Small: 8.0,
-        Medium: 12.0,
+        Medium: 10.0,
         Large: 18.0,
         Full: 1000.0,
     },

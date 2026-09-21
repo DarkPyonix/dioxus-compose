@@ -176,15 +176,15 @@ class GnomeDesignSystem private constructor(
     }
 
     /**
-     * Adwaita rounds moderately: 6px on a button or entry, 12px on a card, dialog or
-     * popover. Pills are used for suggested actions and for search entries.
+     * libadwaita's own named radii: 6px on a button or entry, 12px on a card or popover,
+     * 15px on a window. Pills are used for suggested actions and for search entries.
      */
     override fun shape(role: ShapeRole): Shape = when (role) {
         ShapeRole.None -> RoundedCornerShape(0.dp)
         ShapeRole.ExtraSmall -> RoundedCornerShape(4.dp)
         ShapeRole.Small -> RoundedCornerShape(6.dp)
-        ShapeRole.Medium -> RoundedCornerShape(8.dp)
-        ShapeRole.Large -> RoundedCornerShape(12.dp)
+        ShapeRole.Medium -> RoundedCornerShape(12.dp)
+        ShapeRole.Large -> RoundedCornerShape(15.dp)
         ShapeRole.Full -> RoundedCornerShape(percent = 50)
     }
 
