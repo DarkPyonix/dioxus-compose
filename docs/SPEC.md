@@ -227,6 +227,8 @@ Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=
 
 2단계 세 시스템은 구현되어 실행 경로 위에 있습니다. 세 개 모두 `DesignSystem` 변형 1개(태그 4, 5, 6 추가, 기존 태그는 그대로), `tokens.rs`의 토큰 테이블 1개, Renderer의 `ComponentRules` 구현 1개로 끝났고 위젯·속성·Modifier·와이어 포맷은 움직이지 않았습니다. 값은 `dioxus-design-systems/`의 Kotlin 구현에서 그대로 옮겨 왔습니다.
 
+사본이 둘인데 아무것도 비교하지 않으면 조용히 갈라집니다. 실제로 두 행이 갈라졌습니다. GNOME의 어두운 보조 강조색 위 글자색은 한쪽이 흰색, 다른 쪽이 거의 검정이었고, Breeze의 어두운 패널 색은 한쪽이 뷰 색, 다른 쪽이 `SurfaceVariant` 회색이었습니다. 이제 Rust 쪽 테스트가 `tokens.rs`의 테이블과 `dioxus-design-systems/`의 Kotlin 리터럴 테이블을 직접 비교합니다. 색, 반경, 간격이 하나라도 다르면 실패합니다.
+
 #### 14.1 추상화
 - 위젯은 **역할만 내보냅니다**(FR-13의 `ColorRole`, `TypeRole`, `ShapeRole`, `SpaceRole`, 그리고 `ButtonVariant` 같은 컴포넌트 변형).
 - 디자인 시스템은 Renderer 안에 있는 **토큰 테이블 + 컴포넌트 규칙 구현** 한 쌍입니다.
