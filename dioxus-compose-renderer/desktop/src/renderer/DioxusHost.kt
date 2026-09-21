@@ -21,7 +21,9 @@ import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.design.LocalDesignTheme
+import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.resolveTheme
 import dioxus.compose.ui.node.NodeTable
@@ -29,8 +31,8 @@ import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.node.TableError
 import java.lang.InterruptedException
 import java.lang.System
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -156,7 +158,7 @@ fun rememberDioxusHost(connection: HostConnection): DioxusHost {
 fun DioxusContent(
     host: DioxusHost,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
+    caption: WindowCaption = WindowCaption.None,
 ) {
     val frames = LocalFrameRequests.current
     LaunchedEffect(host, frames) {
@@ -198,14 +200,22 @@ fun DioxusContent(
         }
     }
     val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass)
-    CompositionLocalProvider(LocalDesignTheme provides theme) {
+    // A tree that opens with a bar makes that bar the window's caption, so the strip the
+    // window buttons sit in belongs to the bar rather than to the page underneath it.
+    // Otherwise the page keeps it and the content starts below the buttons.
+    val barIsCaption = caption.height > 0.dp && host.table.opensWithABar(host.roots)
+    CompositionLocalProvider(
+        LocalDesignTheme provides theme,
+        LocalReduceTransparency provides reduceTransparency,
+        LocalWindowCaption provides if (barIsCaption) caption else WindowCaption.None,
+    ) {
         // The background fills the whole window and the inset is applied inside it. Putting
         // the inset outside instead leaves the window's own background showing through the
         // strip the title bar used to occupy, which reads as a leftover title bar rather
         // than as content extending underneath one.
         CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
             Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
-                Box(Modifier.padding(contentPadding)) {
+                Box(Modifier.padding(top = if (barIsCaption) 0.dp else caption.height)) {
                     host.roots.forEach { rootId ->
                         androidx.compose.runtime.key(rootId) {
                             RenderNode(rootId, host.table, host)
@@ -247,3 +257,93 @@ var systemDarkOverride: Boolean? = null
  * process, including tests that had nothing to do with it.
  */
 val LocalSystemDarkObserver = staticCompositionLocalOf<(@Composable () -> Boolean)?> { null }
+
+/**
+ * The strip at the top of a window that belongs to the window rather than to the
+ * application: on macOS the transparent title bar the close, minimise and zoom buttons
+ * sit in, and on the platforms where the renderer draws the caption itself, the band it
+ * draws it in.
+ *
+ * Content is allowed to run underneath it, which is the whole point of modern window
+ * chrome, but a widget placed where the buttons are would leave both unusable. So
+ * whatever owns the top of the window steps its own content clear of the strip while
+ * still painting across it.
+ *
+ * The Host never sees these numbers and cannot set them. A safe area is a fact about the
+ * window, not a decision the application makes.
+ */
+@androidx.compose.runtime.Immutable
+data class WindowCaption(
+    /** How tall the strip is. */
+    val height: Dp = 0.dp,
+    /** How much room the system's own window buttons take at the leading edge. */
+    val buttonsWidth: Dp = 0.dp,
+) {
+    companion object {
+        /** No strip to avoid: a system title bar, or a platform without one. */
+        val None = WindowCaption()
+    }
+}
+
+/**
+ * The caption the top app bar has to lay itself out around.
+ *
+ * Zero unless the Host's tree opens with a bar. Anything else keeps the caption on the
+ * page, and a bar buried deeper in the tree is not at the top of the window, so stepping
+ * its content down by the height of a strip it is nowhere near would only push it out of
+ * line with everything beside it.
+ */
+val LocalWindowCaption = staticCompositionLocalOf { WindowCaption.None }
+
+/**
+ * True when the first thing the tree draws is a top app bar.
+ *
+ * Only the leading edge is followed, and only through the layouts that are wrappers
+ * rather than things on screen: an application writes `Column { TopAppBar { } ... }`, and
+ * the column is not something the reader sees. A bar reached any other way is not the top
+ * of the window.
+ */
+internal fun NodeTable.opensWithABar(roots: List<Int>): Boolean {
+    var id = roots.firstOrNull() ?: return false
+    repeat(BAR_SEARCH_DEPTH) {
+        val node = node(id) ?: return false
+        when (node.widget) {
+            WidgetKind.TopAppBar -> return true
+            // A Column stacks its children, so its first child is the top of the window.
+            // A Box stacks them front to back, and a bar drawn first is chrome the rest
+            // of the screen scrolls under, which is the same thing here.
+            WidgetKind.Column, WidgetKind.Box -> id = node.children.firstOrNull() ?: return false
+            else -> return false
+        }
+    }
+    return false
+}
+
+/**
+ * How many wrappers deep the search for that bar goes.
+ *
+ * Deep enough for the layouts an application really writes around a bar, shallow enough
+ * that a tree which simply does not have one costs a handful of lookups per frame rather
+ * than a walk.
+ */
+private const val BAR_SEARCH_DEPTH = 4
+
+/**
+ * Whether the reader has asked the system for reduced transparency.
+ *
+ * Every glass surface draws its opaque fallback instead when this is true, and the blur
+ * pass that fed it disappears with it, so the setting removes the cost as well as the
+ * look.
+ *
+ * It is read once, from `DXC_REDUCE_TRANSPARENCY` in the environment or the
+ * `dioxus.compose.reduceTransparency` system property, either of which counts as set when
+ * it is anything other than "0" or "false". A platform that can query the accessibility
+ * setting directly assigns to this at startup instead; a platform that cannot leaves the
+ * reader with a way to say so, which is better than no way at all.
+ */
+var reduceTransparency: Boolean = run {
+    val raw = System.getenv("DXC_REDUCE_TRANSPARENCY")
+        ?: System.getProperty("dioxus.compose.reduceTransparency")
+        ?: return@run false
+    !raw.equals("0", ignoreCase = true) && !raw.equals("false", ignoreCase = true)
+}

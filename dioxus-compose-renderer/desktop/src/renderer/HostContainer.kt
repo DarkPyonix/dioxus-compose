@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -24,6 +25,7 @@ import dioxus.compose.design.glassSurface
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.runtime.LocalWindowCaption
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.Children
@@ -123,11 +125,20 @@ internal fun HostTopAppBar(
     theme: ResolvedTheme,
 ) {
     val style = theme.rules.container(ContainerRole.TopAppBar, theme)
+    val caption = LocalWindowCaption.current
     Column(modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .containerDecoration(node, style, theme),
+                // The bar is the window's caption where the tree opens with one: at
+                // least as tall as the strip the window buttons sit in, and starting
+                // clear of them. Its content shares that row rather than stacking under
+                // it, because a desktop toolbar sits on the same line as the window
+                // buttons and a bar that began below them would be twice as tall for
+                // nothing.
+                .heightIn(min = caption.height)
+                .containerDecoration(node, style, theme)
+                .padding(start = caption.buttonsWidth),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {

@@ -61,9 +61,10 @@ internal fun runRenderer(
                 rememberDioxusHost(remember { connection() }),
                 Modifier.fillMaxSize(),
                 // Content runs under the caption on purpose, but a widget sitting where
-                // the window buttons are would leave both unusable. The inset goes inside
-                // the content's own background so the window has one continuous surface.
-                contentPadding = windowContentInsets(window, chrome, hasTopAppBar = false),
+                // the window buttons are would leave both unusable. The strip goes inside
+                // the content's own background so the window has one continuous surface,
+                // and a tree that opens with a bar hands it to the bar instead.
+                caption = windowCaption(window, chrome),
             )
         }
     }

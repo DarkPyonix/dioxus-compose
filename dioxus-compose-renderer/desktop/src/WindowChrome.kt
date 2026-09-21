@@ -1,8 +1,8 @@
 package dioxus.compose.ui.platform
 
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dioxus.compose.runtime.WindowCaption
 import java.awt.Window as AwtWindow
 import javax.swing.JRootPane
 import javax.swing.RootPaneContainer
@@ -68,7 +68,8 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
 }
 
 /**
- * How far content must be inset to clear the window buttons and the draggable caption.
+ * The strip this window's own chrome occupies, for whatever draws across the top of it to
+ * lay itself out around.
  *
  * Content is allowed to run underneath the caption, which is the point, but a widget
  * placed where the macOS traffic lights are would leave both unusable. The renderer
@@ -79,18 +80,16 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
  * as the top inset of its frame, and on macOS that is the same strip the traffic lights
  * sit in. Reading it means the value follows the platform instead of drifting from it the
  * next time Apple changes the height, which a constant in this file would not.
+ *
+ * A window that kept its ordinary title bar has no such strip: the system already drew
+ * the bar above the content, and there is nothing to run underneath.
  */
-internal fun windowContentInsets(
-    window: AwtWindow?,
-    chrome: WindowChrome,
-    hasTopAppBar: Boolean,
-): PaddingValues = when {
-    chrome == WindowChrome.System -> PaddingValues(0.dp)
-    // A TopAppBar is the caption, so it lays itself out around the buttons rather than
-    // being pushed below them.
-    hasTopAppBar -> PaddingValues(0.dp)
-    else -> PaddingValues(top = captionHeight(window))
-}
+internal fun windowCaption(window: AwtWindow?, chrome: WindowChrome): WindowCaption =
+    if (chrome == WindowChrome.System) {
+        WindowCaption.None
+    } else {
+        WindowCaption(height = captionHeight(window), buttonsWidth = systemWindowButtonsWidth)
+    }
 
 /**
  * The height of the strip the window buttons occupy.
