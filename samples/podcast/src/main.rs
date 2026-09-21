@@ -146,13 +146,19 @@ fn episode_card(found: &Episode, on_play: EventHandler<u32>) -> Element {
                         type_role: TypeRole::Label,
                         color: Paint::Role(strong),
                     }
+                    // Words rather than marks. A comment bubble and a share arrow are
+                    // icons, and an icon cannot be placed from application code: `Icon`
+                    // takes an id the Host registered, and `IconRole` only reaches the
+                    // tree through a navigation destination. A heart has a character that
+                    // every font carries; the other two do not, and the ones that come
+                    // closest arrive as an empty box on most systems.
                     Text {
-                        text: "\u{1f5ea} {short_count(found.comments)}",
+                        text: "{short_count(found.comments)} replies",
                         type_role: TypeRole::Label,
                         color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
                     Text {
-                        text: "\u{21aa} {short_count(found.shares)}",
+                        text: "{short_count(found.shares)} shares",
                         type_role: TypeRole::Label,
                         color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
@@ -424,7 +430,7 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                 }
                 Spacer { weight: 1.0 }
                 Button {
-                    text: "\u{21aa}",
+                    text: "Share",
                     variant: ButtonVariant::Text,
                     color: Paint::Role(ink),
                     on_click: move |_| {

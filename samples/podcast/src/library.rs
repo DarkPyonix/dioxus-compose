@@ -254,11 +254,15 @@ pub fn waveform(
 /// Three shapes, arranged from the seed, so two shows are told apart by their family and
 /// by where their marks sit. It is not a photograph and does not pretend to be one.
 pub fn artwork(size: f32, seed: u32, family: Family) -> DrawList {
-    let (strong, quiet, ink) = family.roles();
+    let (strong, _, ink) = family.roles();
     let a = wobble(seed, 1);
     let b = wobble(seed, 2);
     DrawListBuilder::with_capacity(4, 0)
-        .rect(Paint::Role(quiet), 0.0, 0.0, size, size, 0.0)
+        // The ground is the reading surface rather than the family's own quiet fill. The
+        // player page is filled with that quiet fill, and artwork whose ground matches the
+        // page it sits on is drawn full size, in the right colour, and has no edge: the
+        // cover stops being a cover and becomes two marks floating on the screen.
+        .rect(Paint::Role(ColorRole::Surface), 0.0, 0.0, size, size, 0.0)
         .circle(
             Paint::Role(strong),
             size * (0.28 + a * 0.20),
