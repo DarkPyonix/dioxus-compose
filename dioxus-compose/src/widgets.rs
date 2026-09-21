@@ -436,7 +436,7 @@ const HAIRLINE_DP: f32 = 1.0;
 #[component]
 pub fn Separator(#[props(default)] color: Option<Paint>) -> Element {
     rsx! {
-        ComposeBox {
+        Spacer {
             fill_max_width: true,
             height: HAIRLINE_DP,
             background: color.unwrap_or(Paint::Role(ColorRole::OutlineVariant)),

@@ -123,6 +123,12 @@ fn app() -> Element {
                     key_of: move |index: usize| keys[index].clone(),
                     item: move |index: usize| {
                         let message = messages.read()[index].clone();
+                        // A name over every bubble is a name repeated once per line. The
+                        // side and the fill already say who is speaking, so the name is
+                        // printed once at the head of a run and the rest of the run is
+                        // read as the same speaker still talking.
+                        let starts_a_run = index == 0
+                            || messages.read()[index - 1].from_user != message.from_user;
                         // Who said it should be readable without reading, so it is the side
                         // the bubble sits on and the colour it is filled with, with the
                         // name left as confirmation rather than as the only clue. Both

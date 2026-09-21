@@ -220,6 +220,7 @@ fn app() -> Element {
                         let next = rows.get(position + 1).copied();
                         let task = tasks.read()[index].clone();
                         let editing_this = editing() == Some(task.id);
+                        let last = position + 1 == rows.len();
                         rsx! {
                             Column {
                                 fill_max_width: true,
@@ -319,6 +320,11 @@ fn app() -> Element {
                                             store::save(&tasks.read());
                                         },
                                     }
+                                }
+                                // The hairline belongs between two rows, so the last row
+                                // does not draw one against the container's edge.
+                                if !last {
+                                    Separator {}
                                 }
                             }
                         }
@@ -585,10 +591,10 @@ mod tests {
         screen.request_range(4_000, WINDOW);
 
         // A row is a handful of widgets: the column holding it, the row itself, the
-        // toggle, the title and four buttons. The screen's own chrome is a fixed handful
-        // on top of that. What matters is that the total tracks the window and not the
-        // list behind it.
-        const PER_ROW: usize = 9;
+        // toggle, the title, four buttons and the hairline under it. The screen's own
+        // chrome is a fixed handful on top of that. What matters is that the total tracks
+        // the window and not the list behind it.
+        const PER_ROW: usize = 10;
         const CHROME: usize = 40;
         let nodes = screen.mock.node_count();
         assert_eq!(screen.mock.live_task_titles().len(), WINDOW);

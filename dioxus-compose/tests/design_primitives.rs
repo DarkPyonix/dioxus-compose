@@ -153,11 +153,11 @@ fn fr13_separator_is_a_hairline_filled_with_the_quiet_edge() {
         .find_map(|mutation| match mutation {
             Mutation::Create {
                 node_id,
-                widget: WidgetKind::Box,
+                widget: WidgetKind::Spacer,
             } => Some(*node_id),
             _ => None,
         })
-        .expect("the separator is drawn as a Box");
+        .expect("the separator is drawn as a Spacer");
     let modifiers: Vec<_> = mutations
         .iter()
         .filter_map(|mutation| match mutation {
