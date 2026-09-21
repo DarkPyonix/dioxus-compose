@@ -27,6 +27,7 @@ import dioxus.compose.foundation.LAZY_COLUMN_BUFFER
 
 private const val ROW = 2
 private const val LIST = 1
+private const val DETAIL = 3
 private const val RANGE_HANDLER = 91L
 private const val ITEM_COUNT = 10_000
 
@@ -84,6 +85,25 @@ private fun lazyListInRow() = listOf(
     Mutation.SetProp(LIST, PropertyKind.ItemCount, PropertyValue.Integer(SHORT_COUNT.toLong())),
     Mutation.SetProp(LIST, PropertyKind.OnRangeRequested, PropertyValue.Integer(RANGE_HANDLER)),
     Mutation.Insert(ROW, LIST, 0),
+)
+
+/**
+ * The list and detail split: two panes sharing the Row's width by weight, the list pane
+ * taking one share of it. A weight in a Row decides a pane's width and says nothing about
+ * its height, which still has to come from the Row.
+ */
+private fun weightedLazyListInRow() = listOf(
+    Mutation.Create(ROW, WidgetKind.Row),
+    Mutation.SetModifier(ROW, 0, ProtocolModifier.FillMaxWidth),
+    Mutation.SetModifier(ROW, 1, ProtocolModifier.FillMaxHeight),
+    Mutation.Create(LIST, WidgetKind.LazyColumn),
+    Mutation.SetModifier(LIST, 0, ProtocolModifier.Weight(1f)),
+    Mutation.SetProp(LIST, PropertyKind.ItemCount, PropertyValue.Integer(SHORT_COUNT.toLong())),
+    Mutation.SetProp(LIST, PropertyKind.OnRangeRequested, PropertyValue.Integer(RANGE_HANDLER)),
+    Mutation.Insert(ROW, LIST, 0),
+    Mutation.Create(DETAIL, WidgetKind.Box),
+    Mutation.SetModifier(DETAIL, 0, ProtocolModifier.Weight(2f)),
+    Mutation.Insert(ROW, DETAIL, 1),
 )
 
 private fun lazyList(itemCount: Int = ITEM_COUNT) = listOf(
@@ -159,6 +179,35 @@ class LazyColumnTest {
         assertTrue(
             taken.value >= offered.value - 0.5f,
             "the list took $taken of the $offered it was offered; it shrank to its items",
+        )
+    }
+
+    /**
+     * The list pane of a list and detail split. Its weight is its share of the Row's width,
+     * so nothing has yet said how tall it is, and it still has to fill the height the Row
+     * offers rather than shrink to the handful of rows the Host has sent so far.
+     */
+    @Test
+    fun fr8_a_weighted_list_in_a_row_fills_the_height_it_is_offered() = runComposeUiTest {
+        val connection = FakeHostConnection(weightedLazyListInRow())
+        var materialised = 0
+        connection.respondWith { event ->
+            if (event is HostEvent.RangeRequested) {
+                val batch = window(event.start, event.count, materialised)
+                materialised = event.count
+                HostResponse(batch)
+            } else {
+                HostResponse()
+            }
+        }
+        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        waitForIdle()
+
+        val offered = onNodeWithTag(nodeTestTag(ROW)).getUnclippedBoundsInRoot().height
+        val taken = onNodeWithTag(nodeTestTag(LIST)).getUnclippedBoundsInRoot().height
+        assertTrue(
+            taken.value >= offered.value - 0.5f,
+            "the list took $taken of the $offered it was offered; its weight is a width",
         )
     }
 

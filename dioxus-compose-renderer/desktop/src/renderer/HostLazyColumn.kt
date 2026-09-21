@@ -29,6 +29,8 @@ import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
+import dioxus.compose.ui.node.StackingAxis
+import dioxus.compose.ui.node.stackingAxis
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 
 /**
@@ -92,7 +94,8 @@ internal fun HostLazyColumn(
     // happens to be materialised. Without this a list beside a detail pane is as tall as
     // the few rows the Host has sent so far, and it can never grow, because the number of
     // rows it asks for is decided by how tall it already is.
-    val sized = if (node.declaresOwnHeight()) modifier else Modifier.fillMaxHeight().then(modifier)
+    val sized =
+        if (node.declaresOwnHeight(table)) modifier else Modifier.fillMaxHeight().then(modifier)
 
     LazyColumn(modifier = sized, state = state) {
         items(
@@ -180,14 +183,21 @@ private fun windowDrawsNothing(state: LazyListState, node: Node, windowStart: In
 /**
  * True when the Host gave this node a height of its own, which then decides the viewport.
  *
- * `Weight` counts: the parent has already fixed the height of a weighted child.
+ * A `Weight` counts only under a parent that stacks its children vertically, where the
+ * weight is a share of the height and the parent has therefore already fixed it. Under a
+ * Row the same weight is a share of the width and says nothing about the height, so a list
+ * pane beside a detail pane still has to fill the height the Row offers it.
  */
-internal fun Node.declaresOwnHeight(): Boolean = modifiers.any { value ->
+internal fun Node.declaresOwnHeight(table: NodeTable): Boolean = modifiers.any { value ->
     value is ProtocolModifier.Height ||
         value is ProtocolModifier.Size ||
         value is ProtocolModifier.FillMaxHeight ||
-        value is ProtocolModifier.Weight
+        (value is ProtocolModifier.Weight && table.stacksVertically(parentId))
 }
+
+/** True when the node hosting a child stacks its children top to bottom. */
+private fun NodeTable.stacksVertically(nodeId: Int): Boolean =
+    stackingAxis(nodeId) == StackingAxis.Vertical
 
 /**
  * The Compose item key for a global index: the Host's `item_key` when it has one.
