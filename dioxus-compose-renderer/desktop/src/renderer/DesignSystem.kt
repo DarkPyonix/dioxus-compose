@@ -133,11 +133,18 @@ class ResolvedTheme(
      */
     val continuousCorners: Boolean get() = system == DesignSystem.Cupertino
 
-    /** One radius in dp, cut the way this system cuts corners. */
-    fun shapeOfRadius(radius: Float): Shape = if (continuousCorners) {
-        if (radius >= FULL_RADIUS) CapsuleShape else ContinuousCornerShape(radius.dp)
-    } else {
-        roundedShape(radius)
+    /**
+     * One radius in dp, cut the way this system cuts corners.
+     *
+     * `Full` is a true pill in every system, including this one. A continuous corner
+     * taken to its largest radius is not a capsule: the superellipse keeps its flattened
+     * flanks and the end reads as a squircle, which is what a Liquid Glass button is not.
+     * Apple's capsules are semicircular at the ends.
+     */
+    fun shapeOfRadius(radius: Float): Shape = when {
+        radius >= FULL_RADIUS -> roundedShape(radius)
+        continuousCorners -> ContinuousCornerShape(radius.dp)
+        else -> roundedShape(radius)
     }
 
     /** Four radii in dp, cut the way this system cuts corners. */

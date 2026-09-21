@@ -166,9 +166,17 @@ class DesignTokenWiringTest {
         val h = hig.rules.button(variant, hig)
         val f = fluent.rules.button(variant, fluent)
 
-        // Shape: Material is a pill, HIG and Fluent are rounded rectangles of their own radius.
-        assertNotEquals(m.shape, h.shape)
+        // Shape: Material 3 and the Apple system both draw a pill, and they have since
+        // iOS 26 made the capsule the button; Fluent draws a small rounded rectangle.
+        // Shape is therefore no longer what tells the first two apart, which is why the
+        // assertions below reach for the things that do.
+        assertEquals(m.shape, h.shape)
         assertNotEquals(h.shape, f.shape)
+
+        // Size and density: a HIG button is shorter and more tightly padded than a
+        // Material one, which is visible the moment they sit side by side.
+        assertTrue(h.minHeight < m.minHeight, "a HIG button is not shorter than a Material one")
+        assertTrue(h.horizontalPadding < m.horizontalPadding)
 
         // Weight: the label rung differs, so the same text is not set the same way.
         assertNotEquals(

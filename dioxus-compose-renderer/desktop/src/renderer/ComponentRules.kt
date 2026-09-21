@@ -274,13 +274,11 @@ internal object LiquidGlassRules : ComponentRules {
     ): SurfaceMaterial = if (isGlass(role, theme.sizeClass)) {
         LiquidGlass.material(
             dark = theme.dark,
-            // A menu or a tooltip is small and sits over anything, so it has to win
-            // against a busy backdrop. A bar or a card covers a known surface and can
-            // afford to let more of it through.
-            prominence = when (role) {
-                ContainerRole.Menu, ContainerRole.Tooltip, ContainerRole.Dialog -> GlassProminence.Regular
-                else -> GlassProminence.Clear
-            },
+            // Regular throughout. Every container role here carries text or controls,
+            // and that is exactly what Regular is for: the clear recipe is meant for a
+            // surface floating over media where the content underneath is the point, and
+            // none of these are that. Using it for bars and cards made them invisible.
+            prominence = GlassProminence.Regular,
             backdrop = container,
             content = content,
         )
@@ -314,9 +312,9 @@ internal object LiquidGlassRules : ComponentRules {
             borderColor = Color.Transparent,
             pressedBorderColor = Color.Transparent,
             topHighlight = null,
-            // Since iOS 26 a button is a capsule, and the capsule is a continuous curve
-            // rather than a half circle glued onto two straight lines.
-            shape = CapsuleShape,
+            // Since iOS 26 a button is a capsule at every size, not a rounded
+            // rectangle that becomes one when it happens to be short.
+            shape = theme.shape(ShapeRole.Full),
             horizontalPadding = theme.space(SpaceRole.Md),
             verticalPadding = theme.space(SpaceRole.Sm),
             minHeight = 34.dp,
