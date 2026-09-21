@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Writing UI · dioxus-compose guide</title>
-<meta name="description" content="rsx!, the widget set, modifiers, event handlers, event consumption, and the uncontrolled TextField.">
+<meta name="description" content="rsx!, the shape of the widget set, modifier attributes, event handlers, event consumption, and the uncontrolled TextField.">
 <link rel="alternate" hreflang="en" href="writing-ui.html">
 <link rel="alternate" hreflang="ko" href="../ko/writing-ui.html">
 <link rel="alternate" hreflang="x-default" href="writing-ui.html">
@@ -94,42 +94,50 @@
 
     <p>
       <code>launch</code> is shorthand for <code>LaunchBuilder::new().launch(app)</code>. The
-      builder carries one setting today, the loop mode:
+      builder carries two settings, the loop mode and the theme:
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
       <figcaption>rust</figcaption>
 <pre><code><span class="ty">LaunchBuilder</span>::<span class="f">new</span>()
     .<span class="f">with_mode</span>(<span class="ty">LoopMode</span>::Renderer)  <span class="c">// desktop and iOS: Rust main drives the renderer</span>
+    .<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::Material3))
     .<span class="f">launch</span>(app);</code></pre>
     </figure>
 
     <p>
       <code>LoopMode::Renderer</code> is the default and the only mode that runs today.
       <code>LoopMode::Platform</code>, where Android or the browser owns the loop and calls into
-      the Host, is defined in the protocol but has no implementation yet.
+      the Host, is defined in the protocol and has no implementation yet. Saying nothing about the
+      theme gives you <code>Theme::adaptive(DesignSystem::Material3)</code>: the host platform's
+      look, with Material 3 where the platform has none of its own. See
+      <a href="design-systems.html">Design systems</a>.
     </p>
 
     <h2 id="widgets">The widget set</h2>
     <p>
-      The schema is closed on purpose. The renderer interprets exactly these eight widgets; a type
-      it does not recognise produces a <code>ProtocolError</code> event rather than a crash.
-      Adding a widget means extending the Rust schema, the Kotlin interpreter and the codegen
-      together.
+      The schema is closed on purpose. The renderer interprets exactly the widgets below; a kind it
+      does not recognise produces a <code>ProtocolError</code> event rather than a crash. Adding a
+      widget means extending the Rust schema, the Kotlin interpreter and the codegen together.
+    </p>
+    <p>
+      This is the shape of the vocabulary. Every composable, with its props, its defaults and a
+      runnable example, is in the <a href="composables.html">composable reference</a>.
     </p>
 
     <div class="tablewrap">
       <table>
-        <thead><tr><th scope="col">Widget</th><th scope="col">Properties</th><th scope="col">Notes</th></tr></thead>
+        <thead><tr><th scope="col">Group</th><th scope="col">Composables</th></tr></thead>
         <tbody>
-          <tr><td><code>Column</code></td><td><code>fill_max_width</code>, <code>fill_max_height</code>, children</td><td>Vertical stack.</td></tr>
-          <tr><td><code>Row</code></td><td><code>fill_max_width</code>, <code>fill_max_height</code>, children</td><td>Horizontal stack.</td></tr>
-          <tr><td><code>Box</code></td><td><code>fill_max_width</code>, <code>fill_max_height</code>, children</td><td>Overlay container. See the naming caveat below.</td></tr>
-          <tr><td><code>Text</code></td><td><code>text</code></td><td>Takes anything that converts into <code>String</code>.</td></tr>
-          <tr><td><code>TextField</code></td><td><code>placeholder</code>, <code>enabled</code>, <code>multiline</code></td><td>Uncontrolled. Has no <code>value</code> property, by design.</td></tr>
-          <tr><td><code>Button</code></td><td><code>text</code>, <code>enabled</code></td><td><code>enabled</code> defaults to <code>true</code>.</td></tr>
-          <tr><td><code>Spacer</code></td><td><code>width</code>, <code>height</code></td><td>Both <code>f32</code>, both default to <code>0.0</code>.</td></tr>
-          <tr><td><code>LazyColumn</code></td><td><code>item_count</code>, <code>buffer</code>, <code>key_of</code>, <code>item</code></td><td>A windowed list. Host side works; the renderer still draws it as a <code>Column</code>. See <a href="lists-and-streaming.html#windowing">Lists &amp; streaming</a>.</td></tr>
+          <tr><td>Layout</td><td><code>Column</code>, <code>Row</code>, <code>Box</code>, <code>ScrollColumn</code>, <code>Spacer</code></td></tr>
+          <tr><td>Text and input</td><td><code>Text</code>, <code>TextField</code></td></tr>
+          <tr><td>Controls</td><td><code>Button</code>, <code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code>, <code>ProgressIndicator</code></td></tr>
+          <tr><td>Containers</td><td><code>Card</code>, <code>Surface</code>, <code>TopAppBar</code>, <code>Divider</code>, <code>Separator</code>, <code>Tooltip</code></td></tr>
+          <tr><td>Lists</td><td><code>LazyColumn</code>, <code>LazyRow</code></td></tr>
+          <tr><td>Navigation</td><td><code>Navigation</code>, <code>NavigationItem</code>, <code>Tabs</code></td></tr>
+          <tr><td>Overlays</td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code>, plus <code>show_message</code> and <code>Message</code>, which are not part of the tree</td></tr>
+          <tr><td>Pictures</td><td><code>Image</code>, <code>Icon</code>, <code>Canvas</code></td></tr>
+          <tr><td>Extension example</td><td><code>LinearProgressIndicator</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -156,22 +164,45 @@
 
     <h2 id="modifiers">Modifiers</h2>
     <p>
-      Modifiers are serialised as a list of values, for example
-      <code>[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]</code>, and the
-      renderer rebuilds them into a Compose <code>Modifier</code> chain. The variants that exist on
-      the wire today are <code>Empty</code>, <code>Padding</code>, <code>FillMaxWidth</code>,
-      <code>FillMaxHeight</code>, <code>Width</code>, <code>Height</code>, <code>Size</code>,
-      <code>Background</code> and <code>Clickable</code>.
+      In Compose a <code>Modifier</code> applies to any composable, and the same is true here.
+      Every widget takes the same thirteen attributes, so the set that applies to a
+      <code>Card</code> and to a <code>Text</code> is one set: <code>weight</code>,
+      <code>fill_max_width</code>, <code>fill_max_height</code>, <code>width</code>,
+      <code>height</code>, <code>padding</code>, <code>padding_role</code>,
+      <code>background</code>, <code>shape_role</code>, <code>corner_radius</code>,
+      <code>border_width</code>, <code>border_color</code> and <code>elevation</code>.
+    </p>
+
+    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
+      <figcaption>rust</figcaption>
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">Card</span> {
+        <span class="at">fill_max_width</span>: <span class="k">true</span>,
+        <span class="at">padding_role</span>: <span class="ty">SpaceRole</span>::Md,
+        <span class="at">shape_role</span>: <span class="ty">ShapeRole</span>::Large,
+        <span class="at">background</span>: <span class="ty">Paint</span>::<span class="ty">Role</span>(<span class="ty">ColorRole</span>::SurfaceContainer),
+        <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"in a panel"</span> }
+    }
+}</code></pre>
+    </figure>
+
+    <p>
+      They are serialised as a list of values, for example
+      <code>[PaddingRole(Md), FillMaxWidth, Background(paint)]</code>, and the renderer rebuilds
+      them into a Compose <code>Modifier</code> chain. An attribute you did not write sends nothing
+      at all rather than a zero, because no padding and a padding of zero look the same on screen
+      but only one of them should cost a mutation.
     </p>
 
     <div class="note">
-      <span class="label">What you can actually write today</span>
+      <span class="label">Role or number</span>
       <p>
-        Only <code>fill_max_width</code> and <code>fill_max_height</code> are exposed as
-        <code>rsx!</code> attributes, on <code>Column</code>, <code>Row</code> and <code>Box</code>.
-        Padding, explicit sizes, background colour and <code>Clickable</code> exist in the protocol
-        and the renderer, but there is no attribute that emits them yet. Treat the remaining
-        variants as the shape the API is growing into, not as something you can call.
+        <code>padding_role</code> and <code>shape_role</code> take the design system's answer;
+        <code>padding</code> and <code>corner_radius</code> take yours. Each pair shares one slot,
+        so set one or the other. Prefer the role: density and corner radius differ per design
+        system, and a number pins your layout to whichever one you had open at the time. The full
+        table, with types and defaults, is in the
+        <a href="composables.html#modifiers">composable reference</a>.
       </p>
     </div>
 
@@ -186,12 +217,14 @@
       <table>
         <thead><tr><th scope="col">Handler</th><th scope="col">Payload</th><th scope="col">On</th></tr></thead>
         <tbody>
-          <tr><td><code>on_click</code></td><td><code>()</code></td><td><code>Button</code></td></tr>
+          <tr><td><code>on_click</code></td><td><code>()</code></td><td><code>Button</code>, <code>NavigationItem</code></td></tr>
           <tr><td><code>on_value_change</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
-          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code>, handled inside the component; you pass <code>item</code> and <code>key_of</code> instead</td></tr>
+          <tr><td><code>on_change</code></td><td><code>bool</code>, <code>f32</code>, <code>usize</code>, <code>i64</code> or <code>u32</code></td><td><code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code></td></tr>
+          <tr><td><code>on_dismiss</code></td><td><code>()</code></td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code></td></tr>
+          <tr><td>range requests</td><td><code>RangeRequest</code></td><td><code>LazyColumn</code> and <code>LazyRow</code>, handled inside the component; you pass <code>item</code> and <code>key_of</code> instead</td></tr>
         </tbody>
       </table>
     </div>
@@ -288,6 +321,8 @@
           <tr><td>Scroll position</td><td>Kotlin</td><td>UI-local; it would be a frame behind if Rust owned it.</td></tr>
           <tr><td>Focus</td><td>Kotlin</td><td>Same reason, and the platform already owns focus.</td></tr>
           <tr><td>Animation progress</td><td>Kotlin</td><td>Runs on the Compose frame clock.</td></tr>
+          <tr><td>Whether a dialog, menu, dropdown or sheet is open</td><td>Kotlin</td><td>The boolean you pass seeds it; the renderer owns the enter and the exit so the animation never round-trips.</td></tr>
+          <tr><td>The position a slider drag is passing through</td><td>Kotlin</td><td>Following a finger should not cost a boundary call.</td></tr>
         </tbody>
       </table>
     </div>
@@ -303,7 +338,7 @@
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
     <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>Guide last reviewed against the repository on 2026-09-20</span>
+    <span>Guide last reviewed against the repository on 2026-09-22</span>
   </div>
 </footer>
 
