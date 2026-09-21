@@ -74,7 +74,7 @@ internal fun HostDropdown(
             selected = index
             val handlerId = node.handler(PropertyKind.OnValueChange)
             if (handlerId != null) {
-                dispatcher.dispatch(HostEvent.ValueChanged(node.id, handlerId, index.toLong()))
+                dispatcher.dispatch(HostEvent.ValueChanged(node.id, handlerId, index.toDouble()))
             }
         }
     }

@@ -248,8 +248,9 @@ pub mod events {
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
-    // A picker reports the value the user landed on, as the epoch integer the widget
-    // speaks. It shares the wire property with the text field's value change, because
-    // both are "this control's value is now this".
-    event!(onchange, i64);
+    // A control reports the value the user landed on, as one f64. A picker reads it as
+    // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
+    // the wire property with the text field's value change, because both are "this
+    // control's value is now this".
+    event!(onchange, f64);
 }

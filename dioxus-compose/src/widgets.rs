@@ -987,7 +987,7 @@ pub fn DatePicker(
             min: min.unwrap_or(i64::MIN),
             max: max.unwrap_or(i64::MAX),
             enabled,
-            onchange: move |event: dioxus_core::Event<i64>| on_change.call(*event.data()),
+            onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as i64),
         }
     }
 }
@@ -1011,8 +1011,8 @@ pub fn TimePicker(
             min: i64::from(min.unwrap_or(0)),
             max: i64::from(max.unwrap_or(MINUTES_IN_A_DAY - 1)),
             enabled,
-            onchange: move |event: dioxus_core::Event<i64>| {
-                on_change.call((*event.data()).clamp(0, i64::from(MINUTES_IN_A_DAY - 1)) as u32)
+            onchange: move |event: dioxus_core::Event<f64>| {
+                on_change.call((*event.data() as i64).clamp(0, i64::from(MINUTES_IN_A_DAY - 1)) as u32)
             },
         }
     }
@@ -1033,8 +1033,8 @@ pub fn Dropdown(
         dropdown {
             selected_index: selected_index as i64,
             enabled,
-            onchange: move |event: dioxus_core::Event<i64>| {
-                on_change.call((*event.data()).max(0) as usize)
+            onchange: move |event: dioxus_core::Event<f64>| {
+                on_change.call((*event.data() as i64).max(0) as usize)
             },
             {children}
         }

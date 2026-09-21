@@ -227,7 +227,7 @@ sealed interface HostEvent {
     data class ProtocolError(override val nodeId: Int, override val handlerId: Long, val code: Int, val message: String) : HostEvent
     data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent
     data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
-    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Long) : HostEvent
+    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Double) : HostEvent
     data class WindowSizeChanged(override val nodeId: Int, override val handlerId: Long, val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass) : HostEvent
 }
 
@@ -235,7 +235,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 7851656791429325612L
+    const val SCHEMA_HASH: Long = 3678880414460730180L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -451,7 +451,7 @@ object Protocol {
                 is HostEvent.ProtocolError -> 5
                 is HostEvent.KeyDown -> 6
                 is HostEvent.RangeRequested -> 7
-                is HostEvent.ValueChanged -> 8
+                is HostEvent.ValueChanged -> 16
                 is HostEvent.WindowSizeChanged -> 17
             }
             out.putShort(tag.toShort())
@@ -481,7 +481,7 @@ object Protocol {
                     out.putInt(event.start)
                     out.putInt(event.count)
                 }
-                is HostEvent.ValueChanged -> out.putLong(event.value)
+                is HostEvent.ValueChanged -> out.putDouble(event.value)
                 is HostEvent.WindowSizeChanged -> {
                     out.putFloat(event.widthDp)
                     out.putFloat(event.heightDp)

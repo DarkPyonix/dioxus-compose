@@ -51,7 +51,9 @@ pub enum EventPayloadType {
     ProtocolError,
     KeyDown,
     Range,
-    Integer,
+    /// One `f64`. Every value-carrying widget shares it, so the same concept has one
+    /// name on the wire whether the value counts days or slides between two ends.
+    Double,
     WindowSize,
 }
 
@@ -182,7 +184,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::ProtocolError => 2,
                 EventPayloadType::KeyDown => 3,
                 EventPayloadType::Range => 4,
-                EventPayloadType::Integer => 5,
+                EventPayloadType::Double => 5,
                 EventPayloadType::WindowSize => 6,
             }],
         );
@@ -956,9 +958,13 @@ pub enum EventPayload<'a> {
         start: u32,
         count: u32,
     },
-    /// A picker's new value, in the widget's own epoch unit. The Renderer decided how the
-    /// user picked it, so nothing about calendars, wheels or clocks crosses here.
-    ValueChanged(i64),
+    /// A control's new value, in the widget's own unit: an epoch count for a picker, a
+    /// position for a slider, 0.0 or 1.0 for a toggle. The Renderer decided how the user
+    /// reached it, so nothing about calendars, wheels, tracks or thumbs crosses here.
+    ///
+    /// One `f64` holds all of them: integers up to 2^53 survive it exactly, so splitting
+    /// the event in two would only give the same concept two names.
+    ValueChanged(f64),
     /// The window moved into a different size class. The Renderer measures the root
     /// content and sends this only when the class changes, never on every layout pass.
     WindowSizeChanged {
@@ -1006,8 +1012,9 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
     },
     EventSchema {
         name: "ValueChanged",
-        tag: 8,
-        payload: EventPayloadType::Integer,
+        // Tags 8 to 15 are reserved for the pointer gesture events.
+        tag: 16,
+        payload: EventPayloadType::Double,
     },
     EventSchema {
         name: "WindowSizeChanged",
