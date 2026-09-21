@@ -633,6 +633,31 @@ fn nfr10_a_renderer_the_variable_points_at_is_named_after_where_it_sits() {
     assert_eq!(install_name(&library), library.to_string_lossy());
 }
 
+/// A directory reached through a relative path is spelled absolutely before it becomes a
+/// name.
+///
+/// `DIOXUS_COMPOSE_RENDERER_DIR` is routinely set to a path relative to the build, which
+/// is what the sample release workflow does. The name written into the library is the name
+/// every application that links it looks it up by, and a relative one would be resolved
+/// against whatever directory that application happens to be started from.
+#[test]
+fn nfr10_a_renderer_reached_by_a_relative_path_is_named_absolutely() {
+    let resolved = renderer_dir::absolute(Path::new("dist/lib"));
+    assert!(
+        resolved.is_absolute(),
+        "{} would be resolved against the working directory of whatever runs the program",
+        resolved.display()
+    );
+    assert!(resolved.ends_with("dist/lib"));
+
+    let already = Path::new("/somewhere/lib");
+    assert_eq!(
+        renderer_dir::absolute(already),
+        already,
+        "an absolute path is left exactly as it was spelled, symbolic links and all"
+    );
+}
+
 /// A renderer that already carries the right name is not touched.
 ///
 /// Every build runs through this step. Rewriting sixty megabytes each time would be a

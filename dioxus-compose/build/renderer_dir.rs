@@ -552,6 +552,12 @@ fn drop_soname(library: &Path, crate_version: &str, target: &str) -> Result<(), 
 /// the one a consumer downloads is. Two different loading paths meant the one people use
 /// every day was not the one that was broken.
 fn finish(lib_dir: PathBuf, request: &Request, source: RendererSource) -> Result<Renderer, String> {
+    // Whatever was found, from here on it is an absolute path. The name written into the
+    // library is the name every application that links it will look it up by, and a
+    // relative one would be resolved against whatever directory that application happens
+    // to be started from. `DIOXUS_COMPOSE_RENDERER_DIR` is often set to a path relative to
+    // the build, which is how this would otherwise happen.
+    let lib_dir = absolute(&lib_dir);
     let artifact_version = read_artifact_version(&lib_dir);
     if let Some(found) = artifact_version.as_deref() {
         if found != request.crate_version {
@@ -578,6 +584,29 @@ fn finish(lib_dir: PathBuf, request: &Request, source: RendererSource) -> Result
         artifact_version,
         source,
     })
+}
+
+/// The same directory, spelled absolutely.
+///
+/// The name written into the library is the name every application that links it will
+/// look it up by, so it has to mean the same thing from any working directory.
+/// `DIOXUS_COMPOSE_RENDERER_DIR` is routinely set to a path relative to the build, which
+/// is how a relative name would otherwise be baked in.
+///
+/// Symbolic links are left alone rather than resolved. A renderer reached through a link
+/// is a deliberate arrangement, the directory it points at holds the same companion
+/// libraries either way, and resolving would replace the path someone chose with one they
+/// did not.
+pub fn absolute(dir: &Path) -> PathBuf {
+    if dir.is_absolute() {
+        return dir.to_path_buf();
+    }
+    match std::env::current_dir() {
+        Ok(working) => working.join(dir),
+        // Nowhere to resolve against. A build that would have worked keeps working, and
+        // the name is no worse than it was before this step existed.
+        Err(_) => dir.to_path_buf(),
+    }
 }
 
 /// Accept either the unpacked artifact root or the directory holding the library. Both are
