@@ -134,8 +134,6 @@ fn skills_page(on_open: EventHandler<&'static str>) -> Element {
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Md,
 
-            Text { text: "Skills to pump", type_role: TypeRole::Display }
-
             Column {
                 fill_max_width: true,
                 space_role: SpaceRole::Md,
