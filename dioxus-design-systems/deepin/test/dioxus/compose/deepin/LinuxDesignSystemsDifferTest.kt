@@ -46,9 +46,15 @@ class LinuxDesignSystemsDifferTest {
         val chosen = ColorRole.entries.filterNot { it in forcedByContrast }
         for (scheme in listOf(light, dark)) {
             forEachPair(scheme) { a, b ->
-                val shared = chosen.count { a.color(it) == b.color(it) }
+                val shared = ColorRole.entries.count { a.color(it) == b.color(it) }
+                // Three, not zero. The roles that legitimately collide are the inks that
+                // go on an accent fill, and white is the right answer for several of them
+                // in more than one system: Adwaita puts white on all three of its accents
+                // and on its destructive red, and deepin puts white on its brand blue and
+                // its violet. Two systems that agreed on a fill would be one theme; two
+                // that agree on which fills take white ink are not.
                 assertTrue(
-                    shared <= 2,
+                    shared <= 3,
                     "${a.id} and ${b.id} give the same answer for $shared of the " +
                         "${chosen.size} colour roles they actually choose, so they would " +
                         "look like one theme",

@@ -1,0 +1,363 @@
+//! How the day felt, what is worrying you, and the faces that stand for both.
+
+use dioxus_compose::prelude::*;
+use dioxus_compose::{DrawList, DrawListBuilder};
+
+/// The four answers to "how do you feel today".
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Mood {
+    Sad,
+    Calm,
+    Happy,
+    Angry,
+}
+
+impl Mood {
+    pub const STRIP: [Mood; 4] = [Mood::Sad, Mood::Calm, Mood::Happy, Mood::Angry];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Mood::Sad => "Sad",
+            Mood::Calm => "Calm",
+            Mood::Happy => "Happy",
+            Mood::Angry => "Angry",
+        }
+    }
+
+    /// The fill a mood is drawn in, and the ink that reads on it.
+    ///
+    /// Roles, not literals. The reference's pink and mint are one app's brand; what
+    /// survives into a design system is that four feelings need four fills that are
+    /// relatives of one another, are quiet enough to hold a drawn face, and each come with
+    /// an ink that stays readable. That is the accent containers, plus the one fill the
+    /// vocabulary already had for something going wrong.
+    pub fn pair(self) -> (ColorRole, ColorRole) {
+        match self {
+            Mood::Sad => (ColorRole::PrimaryContainer, ColorRole::OnPrimaryContainer),
+            Mood::Calm => (
+                ColorRole::SecondaryContainer,
+                ColorRole::OnSecondaryContainer,
+            ),
+            Mood::Happy => (ColorRole::TertiaryContainer, ColorRole::OnTertiaryContainer),
+            Mood::Angry => (ColorRole::Error, ColorRole::OnError),
+        }
+    }
+
+    /// The strong colour of a mood, and the ink that reads on it.
+    ///
+    /// The face is drawn in this and sits on [`Mood::pair`], so the head is a disc of the
+    /// accent on a quiet wash of the same family. Drawing the head in the same role as the
+    /// ground behind it is what the first attempt did, and the head was drawn full size,
+    /// in the right colour, and could not be seen.
+    pub fn accent(self) -> (ColorRole, ColorRole) {
+        match self {
+            Mood::Sad => (ColorRole::Primary, ColorRole::OnPrimary),
+            Mood::Calm => (ColorRole::Secondary, ColorRole::OnSecondary),
+            Mood::Happy => (ColorRole::Tertiary, ColorRole::OnTertiary),
+            Mood::Angry => (ColorRole::Error, ColorRole::OnError),
+        }
+    }
+
+    /// Where the mouth sits and which way it curves, as a sweep in degrees.
+    ///
+    /// Positive sweeps down from the left, which draws a smile; negative draws a frown. A
+    /// calm face is a flat line, said as a sweep of nothing rather than as a special case
+    /// in the drawing code.
+    fn mouth_sweep(self) -> f32 {
+        match self {
+            Mood::Sad => -120.0,
+            Mood::Calm => 0.0,
+            Mood::Happy => 140.0,
+            Mood::Angry => -100.0,
+        }
+    }
+}
+
+/// A face, drawn into a square of `size`.
+///
+/// The reference's faces are hand-drawn line art. This is the part of them a draw list can
+/// say: a disc, two eyes and a mouth whose curve is the feeling. Nothing here is a
+/// literal, so the face follows the reader into dark and comes out in the active design
+/// system's own colours.
+pub fn face(size: f32, mood: Mood) -> DrawList {
+    let (fill, ink) = mood.accent();
+    let middle = size / 2.0;
+    let radius = size * 0.44;
+    let eye_y = middle - radius * 0.28;
+    let eye_x = radius * 0.34;
+    let eye_r = size * 0.028;
+    let mouth_r = radius * 0.45;
+    let mouth_y = middle + radius * 0.16;
+    let sweep = mood.mouth_sweep();
+
+    let list = DrawListBuilder::with_capacity(4, 0)
+        .circle(Paint::Role(fill), middle, middle, radius, 0.0)
+        .circle(Paint::Role(ink), middle - eye_x, eye_y, eye_r, 0.0)
+        .circle(Paint::Role(ink), middle + eye_x, eye_y, eye_r, 0.0);
+
+    if sweep == 0.0 {
+        // A flat mouth. An arc of no sweep draws nothing, so the calm face says its line
+        // as a line.
+        list.line(
+            Paint::Role(ink),
+            middle - mouth_r,
+            mouth_y,
+            middle + mouth_r,
+            mouth_y,
+            size * 0.016,
+        )
+        .build()
+    } else {
+        // A smile starts on the left of the circle and sweeps under it; a frown starts on
+        // the right and sweeps back over the top, which is the same arc read the other
+        // way.
+        let start = if sweep > 0.0 {
+            180.0 - (sweep - 180.0) / 2.0
+        } else {
+            180.0 + (180.0 + sweep) / 2.0
+        };
+        list.arc(
+            Paint::Role(ink),
+            middle,
+            mouth_y,
+            mouth_r,
+            start,
+            sweep,
+            size * 0.016,
+        )
+        .build()
+    }
+}
+
+/// What might be behind the feeling. Chosen from, not typed in.
+pub const WORRIES: [&str; 10] = [
+    "Sleepiness",
+    "Sadness",
+    "Anxiety",
+    "Stress",
+    "Loneliness",
+    "Insomnia",
+    "Anger",
+    "Apathy",
+    "Envy",
+    "Other",
+];
+
+/// A guided session.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Session {
+    pub title: &'static str,
+    pub minutes: u32,
+    pub when: &'static str,
+    /// Which of the three tints the session's card takes.
+    pub mood: Mood,
+}
+
+pub const SESSIONS: [Session; 6] = [
+    Session {
+        title: "Emotional balance",
+        minutes: 15,
+        when: "Anytime",
+        mood: Mood::Calm,
+    },
+    Session {
+        title: "Calm relaxation",
+        minutes: 12,
+        when: "Evening",
+        mood: Mood::Sad,
+    },
+    Session {
+        title: "Morning gratitude",
+        minutes: 5,
+        when: "Morning",
+        mood: Mood::Happy,
+    },
+    Session {
+        title: "Serenity before sleep",
+        minutes: 10,
+        when: "Evening",
+        mood: Mood::Calm,
+    },
+    Session {
+        title: "Letting go of anger",
+        minutes: 8,
+        when: "Anytime",
+        mood: Mood::Sad,
+    },
+    Session {
+        title: "Breathing room",
+        minutes: 3,
+        when: "Anytime",
+        mood: Mood::Happy,
+    },
+];
+
+/// Half of what a three letter day comes to at the caption rung, in dp.
+///
+/// A guess, and it has to be: the Host has no font and the draw list carries no measured
+/// width. It is only used to inset a label so the row reads as centred, so being a few dp
+/// out costs nothing, while not doing it at all put Sunday off the end of the chart.
+const DAY_HALF_WIDTH: f32 = 11.0;
+
+/// The week's readings, nought to one, for the line on the profile.
+pub const WEEK: [(&str, f32); 7] = [
+    ("Mon", 0.35),
+    ("Tue", 0.5),
+    ("Wed", 0.42),
+    ("Thu", 0.7),
+    ("Fri", 0.62),
+    ("Sat", 0.86),
+    ("Sun", 0.78),
+];
+
+/// The week as a line, with a day written under each reading.
+///
+/// A polyline would be one record, and a polyline's points live in a registered asset that
+/// application code has no way to register, so the line is drawn as segments. Seven
+/// readings is six of them.
+pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> DrawList {
+    let label_band = height * 0.22;
+    let plot = height - label_band;
+    let baseline = plot + label_band * 0.62;
+    let slot = width / WEEK.len() as f32;
+    // A `TextAt` is placed by the left end of its string, and a draw list has no way to
+    // measure a string: there is no font here, only a rung of the ladder that the Renderer
+    // resolves. So the day is inset by half of what three caption letters come to, which
+    // centres it closely enough and, more importantly, keeps the last day inside the box.
+    // Placed at the slot's middle the whole row sat half a slot to the right and Sunday
+    // was drawn past the edge and clipped to its first letter.
+    let label_inset = (slot / 2.0 - DAY_HALF_WIDTH).max(0.0);
+    let x_of = |index: usize| index as f32 * slot + slot / 2.0;
+    let y_of = |value: f32| plot - value.clamp(0.0, 1.0) * (plot * 0.86) - plot * 0.07;
+
+    let mut list = DrawListBuilder::with_capacity(WEEK.len() * 3, WEEK.len() * 4);
+    for index in 1..WEEK.len() {
+        list = list.line(
+            Paint::Role(ink),
+            x_of(index - 1),
+            y_of(WEEK[index - 1].1),
+            x_of(index),
+            y_of(WEEK[index].1),
+            2.0,
+        );
+    }
+    for (index, (day, value)) in WEEK.iter().enumerate() {
+        list = list
+            .circle(Paint::Role(mark), x_of(index), y_of(*value), 3.0, 0.0)
+            .text_at(
+                Paint::Role(ink),
+                day,
+                index as f32 * slot + label_inset,
+                baseline,
+                TypeRole::Caption,
+            );
+    }
+    list.build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dioxus_compose::DrawCommand;
+
+    /// Four feelings, four fills. Two moods sharing one fill is a picker where two
+    /// answers look like the same answer.
+    #[test]
+    fn fr13_no_two_moods_share_a_fill() {
+        for (index, first) in Mood::STRIP.iter().enumerate() {
+            for second in &Mood::STRIP[index + 1..] {
+                assert_ne!(
+                    first.pair().0,
+                    second.pair().0,
+                    "{} and {} are drawn in one colour",
+                    first.label(),
+                    second.label()
+                );
+            }
+        }
+    }
+
+    /// Every face is a disc, two eyes and a mouth, and the mouth is what differs.
+    #[test]
+    fn fr16_every_mood_draws_a_whole_face() {
+        for mood in Mood::STRIP {
+            let commands = face(200.0, mood).decode().expect("a face did not decode");
+            assert_eq!(commands.len(), 4, "{} is not a whole face", mood.label());
+            assert_eq!(
+                commands
+                    .iter()
+                    .filter(|command| matches!(command, DrawCommand::Circle { .. }))
+                    .count(),
+                3,
+                "{} is missing the head or an eye",
+                mood.label()
+            );
+        }
+    }
+
+    /// A calm mouth is a line and every other mouth is an arc. An arc of no sweep draws
+    /// nothing, so without the special case the calm face would have no mouth at all.
+    #[test]
+    fn fr16_a_calm_mouth_is_a_line_and_the_rest_are_arcs() {
+        let calm = face(200.0, Mood::Calm)
+            .decode()
+            .expect("calm did not decode");
+        assert!(
+            calm.iter()
+                .any(|command| matches!(command, DrawCommand::Line { .. })),
+            "the calm face has no mouth"
+        );
+        for mood in [Mood::Sad, Mood::Happy, Mood::Angry] {
+            let drawn = face(200.0, mood).decode().expect("a face did not decode");
+            assert!(
+                drawn
+                    .iter()
+                    .any(|command| matches!(command, DrawCommand::Arc { .. })),
+                "{} has a straight mouth",
+                mood.label()
+            );
+        }
+    }
+
+    /// Every colour in a face and in the week's line is a role.
+    #[test]
+    fn fr13_nothing_drawn_here_carries_a_literal_colour() {
+        let drawings = [
+            face(200.0, Mood::Happy),
+            week_line(300.0, 160.0, ColorRole::OnSurface, ColorRole::Primary),
+        ];
+        for drawing in drawings {
+            for command in drawing.decode().expect("a drawing did not decode") {
+                assert!(
+                    matches!(command.paint(), Paint::Role(_)),
+                    "{command:?} is painted with something other than a role"
+                );
+            }
+        }
+    }
+
+    /// Seven readings make six segments. A line with a segment missing is a chart with a
+    /// gap in it that reads as missing data.
+    #[test]
+    fn fr16_the_week_joins_every_reading_to_the_next() {
+        let commands = week_line(300.0, 160.0, ColorRole::OnSurface, ColorRole::Primary)
+            .decode()
+            .expect("the week did not decode");
+        assert_eq!(
+            commands
+                .iter()
+                .filter(|command| matches!(command, DrawCommand::Line { .. }))
+                .count(),
+            WEEK.len() - 1
+        );
+    }
+
+    /// Every session is one a person can finish, and says when it suits.
+    #[test]
+    fn every_session_has_a_length_and_a_time_of_day() {
+        for session in SESSIONS {
+            assert!(session.minutes > 0, "{} takes no time", session.title);
+            assert!(!session.when.is_empty(), "{} suits no time", session.title);
+        }
+    }
+}

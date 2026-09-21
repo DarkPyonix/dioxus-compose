@@ -72,8 +72,7 @@ class SampleScreenshotTest {
             .orEmpty()
         check(frames.isNotEmpty()) {
             "${directory.absolutePath} holds no recordings. Write them first with " +
-                "`DXC_FRAME_DIR=${directory.absolutePath} cargo test --workspace " +
-                "is_recorded_under_every_design_system`."
+                "`DXC_FRAME_DIR=${directory.absolutePath} cargo test --workspace is_recorded`."
         }
         frames.forEach { frame ->
             val mutations = mutableListOf<Mutation>()

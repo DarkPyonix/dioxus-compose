@@ -70,6 +70,14 @@ class FluentDesignSystem private constructor(
         ColorRole.OnError -> palette.onDanger
         // A card sits on the solid background base, one layer lighter than the canvas.
         ColorRole.SurfaceContainer -> palette.background1
+        ColorRole.Tertiary -> palette.accentTertiary
+        ColorRole.OnTertiary -> palette.onAccentTertiary
+        ColorRole.PrimaryContainer -> palette.accentContainer
+        ColorRole.OnPrimaryContainer -> palette.onAccentContainer
+        ColorRole.SecondaryContainer -> palette.accentSecondaryContainer
+        ColorRole.OnSecondaryContainer -> palette.onAccentSecondaryContainer
+        ColorRole.TertiaryContainer -> palette.accentTertiaryContainer
+        ColorRole.OnTertiaryContainer -> palette.onAccentTertiaryContainer
     }
 
     /**

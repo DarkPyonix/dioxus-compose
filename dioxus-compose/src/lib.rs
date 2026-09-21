@@ -23,7 +23,11 @@ pub use boundary::{
     request_frame_from_worker,
 };
 pub use dioxus_core::{Element, VirtualDom};
-pub use dioxus_core_macro::{component, rsx};
+// `Props` goes out with `component` because `#[component]` expands into a
+// `#[derive(Props)]`. Without it an application that writes a component of its own fails
+// to compile on a macro it never typed, and the fix is to add `dioxus-core-macro` as a
+// second dependency, which defeats the promise that one dependency is enough.
+pub use dioxus_core_macro::{Props, component, rsx};
 pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
@@ -73,11 +77,11 @@ pub mod prelude {
         ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
         DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
         LazyColumn, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
-        Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, RadioButton, RangeRequest,
-        Row, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, Surface, Switch,
-        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker, Tooltip, TopAppBar,
-        TypeRole, WindowSize, WindowSizeClass, component, launch, rsx, show_message,
-        use_window_size,
+        Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
+        RangeRequest, Row, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer,
+        Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
+        Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, component, launch, rsx,
+        show_message, use_window_size,
     };
     // The crates `rsx!` expands into references to, under the names it expands into. A
     // consumer who added only `dioxus-compose` does not have `dioxus_core` or
