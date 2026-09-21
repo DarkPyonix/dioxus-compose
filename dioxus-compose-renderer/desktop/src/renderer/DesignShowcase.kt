@@ -29,6 +29,19 @@ import java.lang.System
  * Fluent pixels depending only on the `SetTheme` at the front.
  */
 fun designShowcaseHost(theme: Theme): FakeHostConnection {
+    val connection = FakeHostConnection(designShowcaseRecords(theme))
+    connection.respondWith { HostResponse(result = 1) }
+    return connection
+}
+
+/**
+ * The records the showcase is built from.
+ *
+ * Separate from [designShowcaseHost] so a test can ask what the showcase contains without
+ * rendering it, which is how "every widget appears here" stays a checkable claim rather
+ * than something someone has to notice going missing.
+ */
+fun designShowcaseRecords(theme: Theme): List<Mutation> {
     val records = mutableListOf<Mutation>(Mutation.SetTheme(theme))
     var nextId = 1
     fun id(): Int = nextId++
@@ -111,6 +124,89 @@ fun designShowcaseHost(theme: Theme): FakeHostConnection {
         records += Mutation.Insert(weights, node, index)
     }
 
+    // The selection controls, both states side by side, so a design system's own answer to
+    // a tick, a dot and a track can be compared against the other two by looking.
+    text(root, slot++, "selection controls", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+    listOf(
+        WidgetKind.Checkbox,
+        WidgetKind.RadioButton,
+        WidgetKind.Switch,
+    ).forEach { widget ->
+        val row = id()
+        records += Mutation.Create(row, WidgetKind.Row)
+        records += Mutation.SetProp(row, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Md.ordinal + 1L))
+        records += Mutation.Insert(root, row, slot++)
+        listOf(false, true).forEachIndexed { index, checked ->
+            val node = id()
+            records += Mutation.Create(node, widget)
+            records += Mutation.SetProp(node, PropertyKind.Checked, PropertyValue.Bool(checked))
+            // A handler makes it operable, so the showcase can be clicked rather than only
+            // looked at. The Host holds the value, so nothing here moves on its own.
+            records += Mutation.SetProp(node, PropertyKind.OnValueChange, PropertyValue.Integer(1L))
+            records += Mutation.Insert(row, node, index)
+        }
+    }
+
+    // A slider with stops and one without, which is where a system that marks its stops
+    // parts company with one that does not.
+    listOf(0L, 4L).forEach { steps ->
+        val node = id()
+        records += Mutation.Create(node, WidgetKind.Slider)
+        records += Mutation.SetProp(node, PropertyKind.Min, PropertyValue.Float(0f))
+        records += Mutation.SetProp(node, PropertyKind.Max, PropertyValue.Float(1f))
+        records += Mutation.SetProp(node, PropertyKind.Value, PropertyValue.Float(0.4f))
+        records += Mutation.SetProp(node, PropertyKind.Steps, PropertyValue.Integer(steps))
+        records += Mutation.SetProp(node, PropertyKind.OnValueChange, PropertyValue.Integer(1L))
+        records += Mutation.SetModifier(node, 0, ProtocolModifier.FillMaxWidth)
+        records += Mutation.Insert(root, node, slot++)
+    }
+
+    // The four indicators: bar and ring, each determinate and indeterminate. The two
+    // indeterminate ones are the only things in this window that move on their own, and how
+    // fast they move is the design system's motion rule.
+    fun indicator(parent: Int, index: Int, circular: Boolean, determinate: Boolean) {
+        val node = id()
+        records += Mutation.Create(node, WidgetKind.ProgressIndicator)
+        records += Mutation.SetProp(node, PropertyKind.Circular, PropertyValue.Bool(circular))
+        records += Mutation.SetProp(node, PropertyKind.Determinate, PropertyValue.Bool(determinate))
+        records += Mutation.SetProp(node, PropertyKind.Value, PropertyValue.Float(0.6f))
+        records += Mutation.Insert(parent, node, index)
+    }
+
+    // The bars take the width they are given, so they get a row each rather than sharing
+    // one and coming out too short to read.
+    listOf(true, false).forEach { determinate ->
+        indicator(root, slot++, circular = false, determinate = determinate)
+    }
+
+    // The rings are sized by the design system, so they sit side by side.
+    val rings = id()
+    records += Mutation.Create(rings, WidgetKind.Row)
+    records += Mutation.SetProp(rings, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Lg.ordinal + 1L))
+    records += Mutation.Insert(root, rings, slot++)
+    listOf(true, false).forEachIndexed { index, determinate ->
+        indicator(rings, index, circular = true, determinate = determinate)
+    }
+
+    // A horizontal rule, then a vertical one standing between two blocks, since a divider
+    // only shows its axis next to something.
+    val rule = id()
+    records += Mutation.Create(rule, WidgetKind.Divider)
+    records += Mutation.Insert(root, rule, slot++)
+
+    val split = id()
+    records += Mutation.Create(split, WidgetKind.Row)
+    records += Mutation.SetModifier(split, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetModifier(split, 1, ProtocolModifier.Height(32f))
+    records += Mutation.SetProp(split, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Md.ordinal + 1L))
+    records += Mutation.Insert(root, split, slot++)
+    text(split, 0, "left", TypeRole.Body)
+    val standing = id()
+    records += Mutation.Create(standing, WidgetKind.Divider)
+    records += Mutation.SetProp(standing, PropertyKind.Vertical, PropertyValue.Bool(true))
+    records += Mutation.Insert(split, standing, 1)
+    text(split, 2, "right", TypeRole.Body)
+
     // A bordered shape role, and a field, so text input is visible in the same window.
     val field = id()
     records += Mutation.Create(field, WidgetKind.TextField)
@@ -121,9 +217,7 @@ fun designShowcaseHost(theme: Theme): FakeHostConnection {
     records += Mutation.SetModifier(field, 3, ProtocolModifier.PaddingRole(SpaceRole.Sm))
     records += Mutation.Insert(root, field, slot++)
 
-    val connection = FakeHostConnection(records)
-    connection.respondWith { HostResponse(result = 1) }
-    return connection
+    return records
 }
 
 private fun roleBits(role: ColorRole): Long = (1L shl 32) or (role.ordinal + 1L)

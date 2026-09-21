@@ -84,7 +84,7 @@ internal fun rememberPickerValue(
             current = next
             val handlerId = node.handler(PropertyKind.OnValueChange)
             if (handlerId != null) {
-                dispatcher.dispatch(HostEvent.ValueChanged(node.id, handlerId, next))
+                dispatcher.dispatch(HostEvent.ValueChanged(node.id, handlerId, next.toDouble()))
             }
         }
     }

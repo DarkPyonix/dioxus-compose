@@ -187,6 +187,95 @@ internal object Material3Rules : ComponentRules {
     )
 
     /**
+     * Material draws its own controls: `androidx.compose.material3` is already here, and a
+     * hand-written copy of a filled box with a tick would only be a worse one.
+     */
+    override val controlWidgets: ControlWidgets get() = Material3ControlWidgets
+
+    /**
+     * Material's controls: a filled box with a tick, a ring with a dot, and a wide track
+     * whose thumb travels across it. The unchecked states are outlined rather than
+     * filled, which is what makes a checked one read as a deliberate choice.
+     *
+     * The colours here are what [Material3ControlWidgets] hands the library, and the
+     * divider is drawn from them directly. The dimensions are the library's own.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val outline = theme.color(ColorRole.Outline)
+        val primary = theme.color(ColorRole.Primary)
+        return ControlsStyle(
+            checkbox = ToggleStyle(
+                size = 18.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 2.dp,
+                shape = theme.shape(ShapeRole.ExtraSmall),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = Color.Transparent,
+                mark = primary,
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 2.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 10.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // Material's switch is the widest of the three: a 52 by 32 track carrying a
+            // thumb that nearly fills its height.
+            switch = ToggleStyle(
+                size = 32.dp,
+                container = theme.color(ColorRole.SurfaceVariant),
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = outline,
+                border = outline,
+                borderWidth = 2.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 24.dp,
+                trackWidth = 52.dp,
+                trackHeight = 32.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 4.dp,
+                track = theme.color(ColorRole.SurfaceVariant),
+                activeTrack = primary,
+                thumbSize = 20.dp,
+                thumb = primary,
+                thumbBorder = Color.Transparent,
+                thumbBorderWidth = 0.dp,
+                // Material marks the stops of a stepped slider on the track itself.
+                tick = theme.color(ColorRole.OnPrimary),
+            ),
+            progress = ProgressStyle(
+                thickness = 4.dp,
+                track = theme.color(ColorRole.SurfaceVariant),
+                indicator = primary,
+                diameter = 40.dp,
+                rounded = true,
+                periodMillis = 1_200,
+            ),
+            divider = DividerStyle(
+                thickness = 1.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 0.dp,
+            ),
+        )
+    }
+
+    /**
      * Material Symbols metrics: a 24 dp grid, a 2 dp stem and flat ends.
      *
      * Every role is drawn to the same weight, which is what makes a row of them line up.
@@ -213,6 +302,7 @@ internal object Material3Rules : ComponentRules {
     )
 
     private const val SCRIM_ALPHA = 0.32f
+    private const val DISABLED_ALPHA = 0.38f
     private const val STATE_LAYER_ALPHA = 0.12f
     private const val TONE_FULL_DP = 24f
     private const val MAX_TONE = 0.14f
@@ -373,6 +463,88 @@ internal object CupertinoRules : ComponentRules {
     )
 
     /**
+     * HIG controls: the checkmark sits in a filled circle rather than a square, the
+     * switch is a tall capsule with a pale thumb that nearly fills it, and a slider shows
+     * no tick marks, because a stepped iOS slider still reads as continuous.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val primary = theme.color(ColorRole.Primary)
+        val surface = theme.color(ColorRole.Surface)
+        return ControlsStyle(
+            // A circle, not a box, which is the clearest difference from Material here.
+            checkbox = ToggleStyle(
+                size = 22.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = theme.color(ColorRole.Outline),
+                borderWidth = 1.5.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 22.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = theme.color(ColorRole.Outline),
+                borderWidth = 1.5.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 8.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // 51 by 31, the proportions Apple's switch has always had.
+            switch = ToggleStyle(
+                size = 31.dp,
+                container = theme.color(ColorRole.SurfaceVariant),
+                containerChecked = primary,
+                mark = surface,
+                markUnchecked = surface,
+                border = Color.Transparent,
+                borderWidth = 0.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 27.dp,
+                trackWidth = 51.dp,
+                trackHeight = 31.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 4.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                activeTrack = primary,
+                // A large pale thumb that sits over the track rather than in it.
+                thumbSize = 28.dp,
+                thumb = surface,
+                thumbBorder = theme.color(ColorRole.OutlineVariant),
+                thumbBorderWidth = 0.5.dp,
+                tick = null,
+            ),
+            progress = ProgressStyle(
+                thickness = 3.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                indicator = primary,
+                diameter = 20.dp,
+                rounded = true,
+                periodMillis = 1_000,
+            ),
+            // A hairline held back from the leading edge, the way a grouped list rules
+            // between its rows.
+            divider = DividerStyle(
+                thickness = 0.5.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 16.dp,
+            ),
+        )
+    }
+
+    /**
      * SF Symbols metrics: a lighter stroke on a 22 dp grid, with rounded ends and joins.
      * The rounded terminal is the single thing that reads most as Apple's icon set.
      */
@@ -399,6 +571,7 @@ internal object CupertinoRules : ComponentRules {
     )
 
     private const val SCRIM_ALPHA = 0.4f
+    private const val DISABLED_ALPHA = 0.38f
     private const val PRESSED_ALPHA = 0.6f
     private const val AMBIENT_ALPHA = 0.08f
     private const val SPOT_ALPHA = 0.12f
@@ -566,6 +739,87 @@ internal object FluentRules : ComponentRules {
     )
 
     /**
+     * Fluent controls: everything is stroked. A checkbox is a 20 dp box with a hairline,
+     * a radio button is a ring the dot sits inside, the toggle is short and narrow, and
+     * the slider's thumb is a ring rather than a disc.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val outline = theme.color(ColorRole.Outline)
+        val primary = theme.color(ColorRole.Primary)
+        val onPrimary = theme.color(ColorRole.OnPrimary)
+        return ControlsStyle(
+            checkbox = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = onPrimary,
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.Small),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = Color.Transparent,
+                mark = primary,
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 10.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // 40 by 20 with a small thumb: the shortest toggle of the three.
+            switch = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = onPrimary,
+                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
+                border = outline,
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 12.dp,
+                trackWidth = 40.dp,
+                trackHeight = 20.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 4.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                activeTrack = primary,
+                // The ring: a surface-filled thumb with a thick accent stroke.
+                thumbSize = 20.dp,
+                thumb = theme.color(ColorRole.Surface),
+                thumbBorder = primary,
+                thumbBorderWidth = 4.dp,
+                tick = null,
+            ),
+            progress = ProgressStyle(
+                thickness = 3.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                indicator = primary,
+                diameter = 32.dp,
+                // Fluent's bars end square, which is part of why they read as crisper.
+                rounded = false,
+                periodMillis = 800,
+            ),
+            divider = DividerStyle(
+                thickness = 1.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 0.dp,
+            ),
+        )
+    }
+
+    /**
      * Fluent icon metrics: a 20 dp grid, a 1.5 dp stroke and square ends, which is what
      * keeps a command bar's icons reading as one set with its text.
      */
@@ -592,5 +846,6 @@ internal object FluentRules : ComponentRules {
     )
 
     private const val SCRIM_ALPHA = 0.3f
+    private const val DISABLED_ALPHA = 0.38f
     private const val PRESS_SHADE = 0.12f
 }

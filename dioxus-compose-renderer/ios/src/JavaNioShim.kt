@@ -187,6 +187,12 @@ class ByteBuffer private constructor(
         return this
     }
 
+    /** Writes the IEEE 754 bit pattern, which is what the protocol carries for a double. */
+    fun putDouble(value: Double): ByteBuffer {
+        writeBits(value.toRawBits(), 8)
+        return this
+    }
+
     private fun requireSpace(bytes: Int) {
         if (remaining() < bytes) {
             throw IndexOutOfBoundsException("buffer overflow: $bytes bytes into ${remaining()}")

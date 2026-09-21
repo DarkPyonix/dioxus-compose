@@ -27,9 +27,10 @@ pub use schema::{
     ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
-    Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
-    KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Separator, Spacer,
-    Surface, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
+    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyRow, Menu, ProgressIndicator, RadioButton,
+    RangeRequest, Row, ScrollColumn, Separator, Slider, Spacer, Surface, Switch, Tabs, Text,
+    TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{WindowSize, use_window_size, window_size};
 
@@ -39,13 +40,14 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Color, ColorRole,
-        ColorScheme, Column, DatePicker, DesignSystem, Dialog, DrawCommand, DrawList, Dropdown,
-        Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
-        LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
-        Separator, ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField,
-        TextOverflow, Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass,
-        component, launch, rsx, use_window_size,
+        Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Checkbox, Color,
+        ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
+        DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        LazyColumn, LazyRow, LinearProgressIndicator, LoopMode, Menu, Modifier, Paint,
+        ProgressIndicator, RadioButton, RangeRequest, Row, ScrollColumn, Separator, ShapeRole,
+        Slider, SpaceRole, Spacer, Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow,
+        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, component,
+        launch, rsx, use_window_size,
     };
     // The crates `rsx!` expands into references to, under the names it expands into. A
     // consumer who added only `dioxus-compose` does not have `dioxus_core` or
@@ -160,6 +162,25 @@ pub mod elements {
     element!(image, "Image", [asset]);
     // An Icon takes a tint as well, through the same Paint attribute Text uses.
     element!(icon, "Icon", [asset, color]);
+    // Widget tags 12 to 17. A toggle is controlled: `checked` is the whole of what it
+    // draws, so the box on screen and the value the Host holds can never disagree.
+    element!(checkbox, "Checkbox", [checked, enabled]);
+    element!(radiobutton, "RadioButton", [checked, enabled]);
+    element!(switch, "Switch", [checked, enabled]);
+    // The position a drag is passing through is the Renderer's, like scroll and focus, so
+    // following a finger costs no boundary call. `value` seeds it and carries a change
+    // that came from somewhere else.
+    element!(slider, "Slider", [value, min, max, steps, enabled]);
+    // `determinate` says whether `value` means anything and `circular` picks the form. How
+    // fast an indeterminate indicator travels is motion, and motion is the design system's.
+    element!(
+        progressindicator,
+        "ProgressIndicator",
+        [value, determinate, circular]
+    );
+    // The thickness, the colour and the inset come from the design system. The axis is the
+    // only decision left to make.
+    element!(divider, "Divider", [vertical]);
     // Widget tags 18 to 25. Each one emits roles and children only: how a card, a bar or a
     // popup is drawn belongs to the design system, not to the Host that declared it.
     element!(card, "Card", []);
@@ -199,6 +220,12 @@ pub mod elements {
             spacer {},
             lazycolumn {},
             scrollcolumn {},
+            checkbox {},
+            radiobutton {},
+            switch {},
+            slider {},
+            progressindicator {},
+            divider {},
             card {},
             surface {},
             dialog {},
@@ -256,8 +283,9 @@ pub mod events {
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
-    // A picker reports the value the user landed on, as the epoch integer the widget
-    // speaks. It shares the wire property with the text field's value change, because
-    // both are "this control's value is now this".
-    event!(onchange, i64);
+    // A control reports the value the user landed on, as one f64. A picker reads it as
+    // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
+    // the wire property with the text field's value change, because both are "this
+    // control's value is now this".
+    event!(onchange, f64);
 }

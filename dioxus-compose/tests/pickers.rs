@@ -113,7 +113,7 @@ fn fr15_date_picker_reports_the_picked_day() {
         &HostEvent {
             node_id: node,
             handler_id: handler,
-            payload: EventPayload::ValueChanged(20_400),
+            payload: EventPayload::ValueChanged(20_400.0),
         },
         &mut encoded,
     )
@@ -180,7 +180,7 @@ fn fr15_dropdown_carries_its_options_as_children() {
         &HostEvent {
             node_id: node,
             handler_id: handler,
-            payload: EventPayload::ValueChanged(1),
+            payload: EventPayload::ValueChanged(1.0),
         },
         &mut encoded,
     )

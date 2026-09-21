@@ -127,9 +127,9 @@ const EVENT_FOCUS_LOST: u16 = 4;
 const EVENT_PROTOCOL_ERROR: u16 = 5;
 const EVENT_KEY_DOWN: u16 = 6;
 const EVENT_RANGE_REQUESTED: u16 = 7;
-const EVENT_VALUE_CHANGED: u16 = 8;
-// Tags 9 to 15 are reserved for pointer gestures, and 16 is where the picker's value
-// change belongs, so the window size report continues from 17.
+// Tags 8 to 15 are reserved for the pointer gesture events, so this one starts at 16
+// and the window size report continues from 17.
+const EVENT_VALUE_CHANGED: u16 = 16;
 const EVENT_WINDOW_SIZE_CHANGED: u16 = 17;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
@@ -179,7 +179,7 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
             count: read_u32(bytes, 20)?,
         },
         EVENT_VALUE_CHANGED if record_len == 24 => {
-            crate::schema::EventPayload::ValueChanged(read_u64(bytes, 16)? as i64)
+            crate::schema::EventPayload::ValueChanged(f64::from_bits(read_u64(bytes, 16)?))
         }
         EVENT_WINDOW_SIZE_CHANGED if record_len == 28 => {
             let raw_class = read_u32(bytes, 24)?;
@@ -193,7 +193,7 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 class,
             }
         }
-        EVENT_CLICK..=EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
+        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
             return Err(ProtocolError::InvalidRecordLength);
         }
         other => return Err(ProtocolError::InvalidTag(other)),
@@ -234,7 +234,7 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.extend_from_slice(&24_u16.to_le_bytes());
         output.extend_from_slice(&event.node_id.to_le_bytes());
         output.extend_from_slice(&event.handler_id.to_le_bytes());
-        output.extend_from_slice(&(value as u64).to_le_bytes());
+        output.extend_from_slice(&value.to_bits().to_le_bytes());
         return Ok(());
     }
     if let crate::schema::EventPayload::WindowSizeChanged {
