@@ -341,12 +341,20 @@ fn app() -> Element {
 
             TopAppBar {
                 fill_max_width: true,
+                Button {
+                    text: "\u{2630}",
+                    variant: ButtonVariant::Text,
+                    on_click: move |_| {},
+                }
                 Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
-                // Only where the tape is not already on screen. A button that opens what
-                // you are looking at is a button that does nothing.
+                Button {
+                    text: "\u{25a1}",
+                    variant: ButtonVariant::Text,
+                    on_click: move |_| {},
+                }
                 if !tape_beside {
                     Button {
-                        text: TAPE_LABEL,
+                        text: "\u{23f2}",
                         variant: ButtonVariant::Text,
                         on_click: move |_| tape_open.set(true),
                     }

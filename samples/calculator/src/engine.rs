@@ -122,7 +122,7 @@ pub struct Completed {
 /// Every desk calculator has had these, and both the Windows and the Deepin reference
 /// give them a row of their own above the keypad. They are a second register beside the
 /// running value: somewhere to put a number while working out the next one.
-pub const MEMORY_KEYS: [&str; 5] = ["MC", "MR", "M+", "M\u{2212}", "MS"];
+pub const MEMORY_KEYS: [&str; 6] = ["MC", "MR", "M+", "M\u{2212}", "MS", "M\u{25be}"];
 
 #[derive(Clone, Debug)]
 pub struct Calculator {
