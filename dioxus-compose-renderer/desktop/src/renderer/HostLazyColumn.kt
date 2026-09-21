@@ -21,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
@@ -120,12 +121,30 @@ internal fun HostLazyColumn(
     if (handlerId != null) {
         LaunchedEffect(state, handlerId, itemCount, dispatcher) {
             snapshotFlow {
-                requestedRange(
-                    firstVisible = state.firstVisibleItemIndex,
-                    visibleCount = state.layoutInfo.visibleItemsInfo.size,
-                    itemCount = itemCount,
-                )
+                // A window on screen whose items all measure nothing is kept as it is.
+                // Such items take up none of the viewport, so the slots around them are
+                // estimated ones again and the viewport lands somewhere else entirely;
+                // answering that with another window moves it again, and the two windows
+                // replace each other for as long as the list is on screen while nothing
+                // is ever drawn. An item that measures nothing costs nothing, including
+                // the request that would have followed it.
+                if (windowDrawsNothing(state, node, windowStart)) {
+                    null
+                } else {
+                    requestedRange(
+                        firstVisible = state.firstVisibleItemIndex,
+                        // Only the slots that take up room are counted, for the same
+                        // reason: a viewport full of items that measure nothing reports
+                        // every one of them as visible and would ask for a window the
+                        // size of the whole collection.
+                        visibleCount = state.layoutInfo.visibleItemsInfo.count { it.size > 0 },
+                        itemCount = itemCount,
+                    )
+                }
             }
+                // Dropped before the comparison, so a frame that asks for nothing does not
+                // make the next frame's identical range look like a change.
+                .filterNotNull()
                 // A scroll that stays inside the window costs no boundary call (section 5.1).
                 .distinctUntilChanged()
                 .collect { (start, count) ->
@@ -140,6 +159,22 @@ internal fun HostLazyColumn(
                 }
         }
     }
+}
+
+/**
+ * True when the items the Host has materialised are on screen and none of them takes up
+ * any room.
+ *
+ * `windowStart` is the global index of the node's first child, so a visible slot is one of
+ * those items exactly while its index falls inside the window. A window that has scrolled
+ * off the screen is not a window of empty items, and the list still has to ask for the one
+ * it has scrolled to.
+ */
+private fun windowDrawsNothing(state: LazyListState, node: Node, windowStart: Int): Boolean {
+    if (node.children.isEmpty()) return false
+    val window = windowStart until windowStart + node.children.size
+    val onScreen = state.layoutInfo.visibleItemsInfo.filter { item -> item.index in window }
+    return onScreen.isNotEmpty() && onScreen.none { item -> item.size > 0 }
 }
 
 /**

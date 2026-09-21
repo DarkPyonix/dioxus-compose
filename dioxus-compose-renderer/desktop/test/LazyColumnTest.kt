@@ -1,6 +1,7 @@
 package dioxus.compose.test
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.unit.height
@@ -32,6 +33,12 @@ private const val ITEM_COUNT = 10_000
 /** A list short enough that its items do not by themselves reach the bottom of the window. */
 private const val SHORT_COUNT = 3
 
+/**
+ * Short enough that a list which walks its whole collection finishes walking rather than
+ * running until the test times out, so the failure is a readable count and not a hang.
+ */
+private const val EMPTY_ITEM_COUNT = 200
+
 /** First node id of the materialised window; two nodes per item (Box wrapper plus Text). */
 private const val FIRST_ITEM_NODE = 100
 
@@ -39,7 +46,12 @@ private const val FIRST_ITEM_NODE = 100
  * What the Host answers to a `RangeRequested`: exactly `count` items starting at `start`,
  * replacing whatever window was materialised before.
  */
-private fun window(start: Int, count: Int, previousCount: Int): List<Mutation> = buildList {
+private fun window(
+    start: Int,
+    count: Int,
+    previousCount: Int,
+    empty: Boolean = false,
+): List<Mutation> = buildList {
     for (offset in 0 until previousCount) {
         add(Mutation.Remove(FIRST_ITEM_NODE + offset * 2))
     }
@@ -49,8 +61,12 @@ private fun window(start: Int, count: Int, previousCount: Int): List<Mutation> =
         val index = start + offset
         add(Mutation.Create(box, WidgetKind.Box))
         add(Mutation.SetProp(box, PropertyKind.ItemKey, PropertyValue.Text("key-$index")))
-        add(Mutation.Create(text, WidgetKind.Text))
-        add(Mutation.SetProp(text, PropertyKind.Text, PropertyValue.Text("message $index")))
+        if (empty) {
+            add(Mutation.Create(text, WidgetKind.Box))
+        } else {
+            add(Mutation.Create(text, WidgetKind.Text))
+            add(Mutation.SetProp(text, PropertyKind.Text, PropertyValue.Text("message $index")))
+        }
         add(Mutation.Insert(box, text, 0))
         add(Mutation.Insert(LIST, box, offset))
     }
@@ -70,10 +86,10 @@ private fun lazyListInRow() = listOf(
     Mutation.Insert(ROW, LIST, 0),
 )
 
-private fun lazyList() = listOf(
+private fun lazyList(itemCount: Int = ITEM_COUNT) = listOf(
     Mutation.Create(LIST, WidgetKind.LazyColumn),
     Mutation.SetModifier(LIST, 0, ProtocolModifier.Size(200f, 200f)),
-    Mutation.SetProp(LIST, PropertyKind.ItemCount, PropertyValue.Integer(ITEM_COUNT.toLong())),
+    Mutation.SetProp(LIST, PropertyKind.ItemCount, PropertyValue.Integer(itemCount.toLong())),
     Mutation.SetProp(LIST, PropertyKind.OnRangeRequested, PropertyValue.Integer(RANGE_HANDLER)),
 )
 
@@ -144,6 +160,41 @@ class LazyColumnTest {
             taken.value >= offered.value - 0.5f,
             "the list took $taken of the $offered it was offered; it shrank to its items",
         )
+    }
+
+    /**
+     * An item that measures nothing is a gap in the list, not the end of it. A zero size
+     * child used to leave the whole list blank even though the nodes existed and the range
+     * had been asked for.
+     */
+    @Test
+    fun fr8_an_item_that_measures_nothing_does_not_stop_the_list_drawing() = runComposeUiTest {
+        val connection = FakeHostConnection(lazyList(EMPTY_ITEM_COUNT))
+        var materialised = 0
+        connection.respondWith { event ->
+            if (event is HostEvent.RangeRequested) {
+                val batch = window(event.start, event.count, materialised, empty = true)
+                materialised = event.count
+                HostResponse(batch)
+            } else {
+                HostResponse()
+            }
+        }
+        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        waitForIdle()
+
+        val requests = connection.events.filterIsInstance<HostEvent.RangeRequested>()
+        assertTrue(requests.isNotEmpty(), "the Renderer must ask for a range: ${connection.events}")
+        assertTrue(
+            requests.last().count < EMPTY_ITEM_COUNT / 2,
+            "empty items made the list ask for ${requests.last().count} of $EMPTY_ITEM_COUNT",
+        )
+        assertTrue(
+            requests.size < 40,
+            "the list asked ${requests.size} times over; it never settled on a window: " +
+                requests.map { it.start to it.count },
+        )
+        onNodeWithTag(nodeTestTag(LIST)).assertIsDisplayed()
     }
 
     /** The first materialised child is the item at the requested `start`. */
