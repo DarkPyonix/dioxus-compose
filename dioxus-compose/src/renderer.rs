@@ -18,10 +18,34 @@ struct Handler {
     name: &'static str,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PathTarget {
     Node(u32),
-    Slot { parent: u32, index: u32 },
+    /// A template's dynamic child: the node it hangs under, and the marker standing in
+    /// its place until its content arrives.
+    Slot {
+        parent: u32,
+        marker: u32,
+    },
+}
+
+/// One position among a parent's children.
+///
+/// The Renderer counts only the nodes it drew, so the index an Insert carries is the
+/// number of drawn siblings that come first. A placeholder and a template's unfilled
+/// dynamic child are both positions nothing is drawn for, and keeping them here is what
+/// lets the content that arrives later take the position it was promised rather than the
+/// end of the list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    /// A node the Renderer drew.
+    Node(u32),
+    /// A Dioxus placeholder, named by the element it was created for. Placeholders all
+    /// carry node id 0, so the element is the only thing that tells two of them apart.
+    Hole(usize),
+    /// A template's dynamic child, from the moment the template is built until the
+    /// content of that child arrives.
+    Pending(u32),
 }
 
 #[derive(Debug)]
@@ -51,15 +75,26 @@ pub struct ComposeRenderer {
     next_handler_id: u64,
     nodes: Vec<Option<u32>>,
     handlers: Vec<Handler>,
-    parents: HashMap<u32, (u32, u32)>,
-    /// Where each placeholder stands, keyed by its element rather than by a node id.
+    /// Which parent each drawn node hangs under.
+    parents: HashMap<u32, u32>,
+    /// Which parent each placeholder stands under, keyed by its element rather than by a
+    /// node id.
     ///
-    /// Placeholders all share node id 0, so keeping their positions in `parents` made
-    /// every one of them overwrite the last: a branch that filled in was then attached to
-    /// whichever other placeholder had been inserted most recently, which put a subtree
-    /// under a stranger and, when that stranger was its own descendant, left the parent
-    /// chain with no root.
-    placeholders: HashMap<usize, (u32, u32)>,
+    /// Placeholders all share node id 0, so keying them by node id made every one of them
+    /// overwrite the last: a branch that filled in was then attached to whichever other
+    /// placeholder had been seen most recently, which put a subtree under a stranger and,
+    /// when that stranger was its own descendant, left the parent chain with no root.
+    placeholders: HashMap<usize, u32>,
+    /// What stands under each parent, in order.
+    ///
+    /// An index is read off this list rather than remembered from the Insert that put a
+    /// node there. Removing a sibling moves everything after it, so a remembered index is
+    /// only right until the next removal: a menu whose entries came and went handed the
+    /// next set of entries the position the old last entry had held, and they piled up
+    /// past the end of the list instead of taking its place.
+    children: HashMap<u32, Vec<Slot>>,
+    /// The next marker to stand in a template's dynamic child.
+    next_marker: u32,
     /// Which design properties a node has actually been given, one bit per tag.
     design_props: HashMap<u32, u32>,
     /// A border arrives as a width and a colour in separate attributes; this holds
@@ -96,6 +131,8 @@ impl ComposeRenderer {
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
             placeholders: HashMap::with_capacity(16),
+            children: HashMap::with_capacity(256),
+            next_marker: 1,
             design_props: HashMap::with_capacity(64),
             pending_borders: HashMap::with_capacity(16),
             modifier_slots: HashMap::with_capacity(64),
@@ -426,17 +463,19 @@ impl ComposeRenderer {
                     path.push(index as u8);
                     match child {
                         TemplateNode::Dynamic { .. } => {
+                            let marker = self.reserve_slot(node_id);
                             paths.insert(
                                 path.clone(),
                                 PathTarget::Slot {
                                     parent: node_id,
-                                    index: index as u32,
+                                    marker,
                                 },
                             );
                         }
                         _ => {
                             if let Some(child_id) = self.build_template_node(child, path, paths) {
-                                self.insert_node(node_id, child_id, index as u32, None);
+                                let end = self.end_of(node_id);
+                                self.insert_node(node_id, child_id, end, None);
                             }
                         }
                     }
@@ -520,29 +559,128 @@ impl ComposeRenderer {
         });
     }
 
-    fn insert_stack(&mut self, parent: u32, index: u32, count: usize) {
-        let start = self.stack.len().saturating_sub(count);
-        let nodes: Vec<_> = self.stack.drain(start..).collect();
-        for (offset, node) in nodes.into_iter().enumerate() {
-            self.insert_node(
-                parent,
-                node.node_id,
-                index.saturating_add(offset as u32),
-                node.element,
-            );
+    /// One past the last position under `parent`.
+    fn end_of(&self, parent: u32) -> usize {
+        self.children.get(&parent).map_or(0, Vec::len)
+    }
+
+    /// Stands a marker in a template's dynamic child until its content arrives, and says
+    /// which marker it was.
+    fn reserve_slot(&mut self, parent: u32) -> u32 {
+        let marker = self.next_marker;
+        self.next_marker = self.next_marker.checked_add(1).unwrap_or(1);
+        self.children
+            .entry(parent)
+            .or_default()
+            .push(Slot::Pending(marker));
+        marker
+    }
+
+    /// Where the given slot stands: the parent it hangs under and its position in that
+    /// parent's list.
+    fn locate(&self, slot: Slot) -> Option<(u32, usize)> {
+        let parent = match slot {
+            Slot::Node(node_id) => *self.parents.get(&node_id)?,
+            Slot::Hole(element) => *self.placeholders.get(&element)?,
+            Slot::Pending(_) => return None,
+        };
+        let position = self
+            .children
+            .get(&parent)?
+            .iter()
+            .position(|standing| *standing == slot)?;
+        Some((parent, position))
+    }
+
+    /// How many drawn nodes stand before `position` under `parent`, which is the index
+    /// the Renderer understands.
+    fn drawn_before(&self, parent: u32, position: usize) -> u32 {
+        self.children.get(&parent).map_or(0, |list| {
+            list.iter()
+                .take(position)
+                .filter(|slot| matches!(slot, Slot::Node(_)))
+                .count() as u32
+        })
+    }
+
+    /// Takes the slot out of wherever it stands, and says where that was.
+    fn detach(&mut self, slot: Slot) -> Option<(u32, usize)> {
+        let (parent, position) = self.locate(slot)?;
+        if let Some(list) = self.children.get_mut(&parent) {
+            list.remove(position);
+        }
+        Some((parent, position))
+    }
+
+    /// Puts the slot under `parent` at `position`, and says which position it took.
+    fn attach(&mut self, parent: u32, slot: Slot, position: usize) -> usize {
+        let mut position = position;
+        if let Some((from, was_at)) = self.detach(slot) {
+            if from == parent && was_at < position {
+                position -= 1;
+            }
+        }
+        let list = self.children.entry(parent).or_default();
+        let position = position.min(list.len());
+        list.insert(position, slot);
+        match slot {
+            Slot::Node(node_id) => {
+                self.parents.insert(node_id, parent);
+            }
+            Slot::Hole(element) => {
+                self.placeholders.insert(element, parent);
+            }
+            Slot::Pending(_) => {}
+        }
+        position
+    }
+
+    /// Forgets a node and everything under it, as the Renderer does when it is removed.
+    /// The caller has already taken the node out of its parent's list.
+    fn forget(&mut self, node_id: u32) {
+        self.parents.remove(&node_id);
+        for slot in self.children.remove(&node_id).unwrap_or_default() {
+            match slot {
+                Slot::Node(child) => self.forget(child),
+                Slot::Hole(element) => {
+                    self.placeholders.remove(&element);
+                }
+                Slot::Pending(_) => {}
+            }
         }
     }
 
-    fn insert_node(&mut self, parent: u32, node_id: u32, index: u32, element: Option<ElementId>) {
-        if node_id == PLACEHOLDER_NODE {
-            // Nothing is drawn, so nothing is sent. The position is remembered under the
-            // element, and the Insert for whatever fills this branch later carries it.
-            if let Some(element) = element {
-                self.placeholders.insert(element.0, (parent, index));
-            }
-            return;
+    fn insert_stack(&mut self, parent: u32, position: usize, count: usize) {
+        let start = self.stack.len().saturating_sub(count);
+        let nodes: Vec<_> = self.stack.drain(start..).collect();
+        let mut at = position;
+        for node in nodes {
+            at = self.insert_node(parent, node.node_id, at, node.element) + 1;
         }
-        let mutation = if self.parents.contains_key(&node_id) {
+    }
+
+    /// Puts one entry under `parent` at `position` and tells the Renderer about it,
+    /// unless nothing is drawn for it. Says which position it took.
+    fn insert_node(
+        &mut self,
+        parent: u32,
+        node_id: u32,
+        position: usize,
+        element: Option<ElementId>,
+    ) -> usize {
+        if node_id == PLACEHOLDER_NODE {
+            // Nothing is drawn for a placeholder, so nothing is sent. It still holds its
+            // position here, so the branch that fills it in takes that position rather
+            // than the end of the list.
+            let Some(element) = element else {
+                return position;
+            };
+            return self.attach(parent, Slot::Hole(element.0), position);
+        }
+        let moving = self.parents.contains_key(&node_id);
+        let at = self.attach(parent, Slot::Node(node_id), position);
+        let index = self.drawn_before(parent, at);
+        self.write(if moving {
             Mutation::Move {
                 parent_id: parent,
                 node_id,
@@ -554,16 +692,15 @@ impl ComposeRenderer {
                 node_id,
                 index,
             }
-        };
-        self.write(mutation);
-        self.parents.insert(node_id, (parent, index));
+        });
+        at
     }
 
     /// Where the given element stands: its own position, or its placeholder's.
-    fn slot_of(&self, id: ElementId) -> Option<(u32, u32)> {
+    fn slot_of(&self, id: ElementId) -> Option<(u32, usize)> {
         match self.node(id) {
-            Some(PLACEHOLDER_NODE) | None => self.placeholders.get(&id.0).copied(),
-            Some(node_id) => self.parents.get(&node_id).copied(),
+            Some(PLACEHOLDER_NODE) | None => self.locate(Slot::Hole(id.0)),
+            Some(node_id) => self.locate(Slot::Node(node_id)),
         }
     }
 }
@@ -571,7 +708,8 @@ impl ComposeRenderer {
 impl WriteMutations for ComposeRenderer {
     fn append_children(&mut self, id: ElementId, m: usize) {
         if let Some(parent) = self.node(id) {
-            self.insert_stack(parent, u32::MAX, m);
+            let end = self.end_of(parent);
+            self.insert_stack(parent, end, m);
         }
     }
 
@@ -630,13 +768,17 @@ impl WriteMutations for ComposeRenderer {
         if let Some(node_id) = self.node(id) {
             let target = self.slot_of(id);
             if node_id == PLACEHOLDER_NODE {
+                self.detach(Slot::Hole(id.0));
                 self.placeholders.remove(&id.0);
             } else {
-                self.parents.remove(&node_id);
+                self.detach(Slot::Node(node_id));
                 self.write(Mutation::Remove { node_id });
+                self.forget(node_id);
             }
-            if let Some((parent, index)) = target {
-                self.insert_stack(parent, index, m);
+            // The slot has just been taken out, so what replaces it goes in at the
+            // position it held.
+            if let Some((parent, position)) = target {
+                self.insert_stack(parent, position, m);
                 return;
             }
         }
@@ -651,23 +793,30 @@ impl WriteMutations for ComposeRenderer {
             .get(parent_position)
             .and_then(|loaded| loaded.paths.get(path))
             .copied();
-        if let Some(PathTarget::Slot { parent, index }) = target {
-            let children: Vec<_> = self.stack.drain(parent_position + 1..).collect();
-            for (offset, child) in children.into_iter().enumerate() {
-                self.insert_node(parent, child.node_id, index + offset as u32, child.element);
+        if let Some(PathTarget::Slot { parent, marker }) = target {
+            let Some(position) = self
+                .children
+                .get(&parent)
+                .and_then(|list| list.iter().position(|slot| *slot == Slot::Pending(marker)))
+            else {
+                return;
+            };
+            if let Some(list) = self.children.get_mut(&parent) {
+                list.remove(position);
             }
+            self.insert_stack(parent, position, m);
         }
     }
 
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
-        if let Some((parent, index)) = self.slot_of(id) {
-            self.insert_stack(parent, index.saturating_add(1), m);
+        if let Some((parent, position)) = self.slot_of(id) {
+            self.insert_stack(parent, position + 1, m);
         }
     }
 
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
-        if let Some((parent, index)) = self.slot_of(id) {
-            self.insert_stack(parent, index, m);
+        if let Some((parent, position)) = self.slot_of(id) {
+            self.insert_stack(parent, position, m);
         }
     }
 
@@ -743,11 +892,13 @@ impl WriteMutations for ComposeRenderer {
     }
 
     fn remove_node(&mut self, id: ElementId) {
+        self.detach(Slot::Hole(id.0));
         self.placeholders.remove(&id.0);
         if let Some(node_id) = self.node(id) {
             if node_id != PLACEHOLDER_NODE {
+                self.detach(Slot::Node(node_id));
                 self.write(Mutation::Remove { node_id });
-                self.parents.remove(&node_id);
+                self.forget(node_id);
             }
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
