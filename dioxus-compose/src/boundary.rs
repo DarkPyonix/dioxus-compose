@@ -977,7 +977,12 @@ pub fn demo_theme() -> Theme {
     use crate::schema::DesignSystem;
     match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
         Ok("material3") => Theme::unified(DesignSystem::Material3),
-        Ok("cupertino") => Theme::unified(DesignSystem::Cupertino),
+        // The Apple slot answers to the language it draws as well as to its own name,
+        // because "Liquid Glass" is what a reader will have in mind when they go looking
+        // for it.
+        Ok("cupertino") | Ok("apple") | Ok("liquid-glass") | Ok("liquidglass") => {
+            Theme::unified(DesignSystem::Cupertino)
+        }
         Ok("fluent") => Theme::unified(DesignSystem::Fluent),
         _ => Theme::adaptive(DesignSystem::Material3),
     }
@@ -996,6 +1001,12 @@ mod demo_theme_tests {
         // by this function, which is called below.
         unsafe { std::env::set_var("DXC_DESIGN", "fluent") };
         assert_eq!(demo_theme(), Theme::unified(DesignSystem::Fluent));
+
+        // The Apple system answers to its slot name and to the language it draws.
+        for name in ["cupertino", "apple", "liquid-glass", "liquidglass"] {
+            unsafe { std::env::set_var("DXC_DESIGN", name) };
+            assert_eq!(demo_theme(), Theme::unified(DesignSystem::Cupertino));
+        }
 
         unsafe { std::env::set_var("DXC_DESIGN", "nonsense") };
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
