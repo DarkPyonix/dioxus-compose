@@ -25,12 +25,48 @@ them name Cupertino.
 | Sample | What it exercises |
 |---|---|
 | `minimal` | A playground: every control the schema has, all nine fills with the ink each carries, the type and corner ladders, and a `Canvas` drawing |
-| `store` | A clothing shop: a `LazyRow` carousel, a category strip, a two-up grid, a product page with sizes and a stepper, and a bag that adds up |
+| `store` | A clothing shop: a carousel with page dots, a category strip, a two-up grid, a product page with sizes and a stepper, and a bag that adds up |
 | `statistics` | Charts: a dial and a week of costs drawn with `Canvas`, both painted entirely in roles, on a tinted page |
-| `selfcare` | A mood picker whose answers are colours, faces drawn with `Canvas`, a chip grid, a windowing row of session cards and a week as a line |
-| `podcast` | A player whose waveform is a `Canvas`, cover art built from the accent families, and a full-screen page that covers the navigation bar |
+| `selfcare` | A mood picker whose answers are colours, a drawn face per feeling, a chip grid, a windowing row of session cards and a week as a line |
+| `podcast` | A player whose waveform is a `Canvas`, a cover per show, and a full-screen page that covers the navigation bar |
 | `academic` | A grid of subject tiles, a stage strip, open and locked lessons, and the one place the role vocabulary ran out |
-| `social` | A meditation app whose every card carries a drawn scene, three shelves, and a course page that covers the navigation bar |
+| `social` | A meditation app whose every card carries an illustration, three shelves, and a course page that covers the navigation bar |
+
+Each of them names its colour scheme as well as its design system, because the design each
+is a rebuild of is a light one or a dark one and a screen that flips with the machine it is
+running on is not that design. `DXC_DESIGN` and `DXC_SCHEME` override the half they name,
+so any of them can be looked at in any of the seven systems in either scheme.
+
+## The pictures
+
+Five of the unified samples carry artwork, in each one's `assets/` directory: the shop's
+eight garments and its banner, the check-in's four faces, the podcast's three covers, the
+meditation app's three scenes and the drum school's four subject marks. Twenty-two files,
+about eighty kilobytes in total.
+
+**All of them are original drawings made for this repository**, hand-written SVG rather
+than exported from a tool, which is why they are a few hundred bytes each and why they are
+legible as source. Nothing here is taken from the references: the reference designs are
+photography and commissioned illustration, and neither is something a repository can carry.
+Where the reference has a photograph, the sample draws the same subject instead, and says
+so where it matters.
+
+The samples with no artwork have none because their references have none. `minimal` is a
+component sheet, and `statistics` is charts and typography, apart from two service logos
+this deliberately does not copy.
+
+An application registers a picture by drawing it:
+
+```rust
+static HERO: &[u8] = include_bytes!("../assets/hero.svg");
+
+rsx! { Image { asset_id: asset(AssetKind::Svg, HERO), height: 240.0 } }
+```
+
+The bytes cross the boundary once. Everything after that is the id, so drawing the same
+picture on every frame costs a lookup. A drawing has to say its `viewBox`, or it has no
+size to be scaled from and is drawn at one user unit to the pixel in the corner of whatever
+box it was given.
 
 Each one is an ordinary dx project: a `Dioxus.toml`, an `assets/` directory and
 `src/main.rs`, the layout `dx new` produces. That is deliberate, because a sample exists to
