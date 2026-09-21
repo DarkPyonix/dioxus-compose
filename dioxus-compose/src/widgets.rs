@@ -342,6 +342,9 @@ pub fn TextField(
     #[props(into, default)] placeholder: String,
     #[props(default = true)] enabled: bool,
     #[props(default)] multiline: bool,
+    /// The rung of the type ladder the field's own text is set in. A field holding a file
+    /// path or a snippet of code wants the monospace rung; prose does not.
+    #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] on_value_change: EventHandler<String>,
     #[props(default)] on_submit: EventHandler<String>,
     #[props(default)] on_focus_lost: EventHandler<()>,
@@ -365,6 +368,7 @@ pub fn TextField(
             placeholder,
             enabled,
             multiline,
+            type_role: role(type_role),
             onvaluechange: move |event| on_value_change.call((*event.data()).clone()),
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),

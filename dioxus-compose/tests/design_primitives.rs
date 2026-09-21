@@ -106,6 +106,26 @@ fn fr13_layout_roles_and_variant_are_sent_as_tags() {
     );
 }
 
+fn monospaced_field() -> Element {
+    rsx! {
+        TextField { placeholder: "경로", type_role: TypeRole::Mono }
+    }
+}
+
+/// A field holding a file path is set in the monospace rung, so the rung is a property of
+/// the field like it is of a Text.
+#[test]
+fn fr13_text_field_takes_a_type_role() {
+    let props = props_of(monospaced_field);
+    assert!(
+        props.contains(&(
+            PropertyKind::TypeRole,
+            PropertyValue::Integer(TypeRole::Mono as i64)
+        )),
+        "the field did not send its rung: {props:?}"
+    );
+}
+
 fn destructive_button() -> Element {
     rsx! {
         Button {

@@ -137,7 +137,11 @@ pub mod elements {
             overflow
         ]
     );
-    element!(textfield, "TextField", [placeholder, enabled, multiline]);
+    element!(
+        textfield,
+        "TextField",
+        [placeholder, enabled, multiline, type_role]
+    );
     element!(button, "Button", [text, enabled, variant, color]);
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.

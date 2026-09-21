@@ -55,6 +55,9 @@ fn path_field(contents: String, on_edit: EventHandler<String>) -> Element {
         textfield {
             "text": "{contents}",
             weight: 1.0,
+            // A path is a machine string, so it is set in the monospace rung: the
+            // separators line up and it stops competing with the document's own text.
+            type_role: i64::from(u16::from(TypeRole::Mono)),
             placeholder: "Path to a file",
             onvaluechange: move |event: Event<String>| on_edit.call((*event.data()).clone()),
         }
