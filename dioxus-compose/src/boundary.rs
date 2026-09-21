@@ -980,6 +980,7 @@ pub fn demo_theme() -> Theme {
         Ok("cupertino") => Theme::unified(DesignSystem::Cupertino),
         Ok("fluent") => Theme::unified(DesignSystem::Fluent),
         Ok("gnome") => Theme::unified(DesignSystem::Gnome),
+        Ok("breeze") => Theme::unified(DesignSystem::Breeze),
         _ => Theme::adaptive(DesignSystem::Material3),
     }
 }

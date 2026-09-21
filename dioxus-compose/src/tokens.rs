@@ -81,7 +81,7 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA];
+pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA, BREEZE];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -361,6 +361,76 @@ const ADWAITA: DesignTokenTable = DesignTokenTable {
         Lg: 18.0,
         Xl: 24.0,
         Xxl: 36.0,
+    },
+};
+
+const BREEZE: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::Breeze,
+    reference: "KDE Breeze colour schemes and the KDE Human Interface Guidelines, Plasma 6",
+    default_family: "Noto Sans",
+    monospace_family: "Hack",
+    colors: colors! {
+        // Plasma blue, the default highlight in both schemes.
+        Primary: 0x3daee9 / 0x3daee9,
+        // Breeze puts white on the highlight, which measures under three to one against
+        // this blue. Dark ink keeps the same blue and stays readable at small sizes.
+        OnPrimary: 0x06222e / 0x06222e,
+        // The Breeze "positive" teal, its second accent. Dark ink again, for the same
+        // reason: white on this green is about two to one.
+        Secondary: 0x16a085 / 0x1abc9c,
+        OnSecondary: 0x03201b / 0x03201b,
+        // View background: the white of a list or an entry.
+        Surface: 0xfcfcfc / 0x1b1e20,
+        OnSurface: 0x232629 / 0xfcfcfc,
+        // A step deeper than the window, in Breeze's own grey.
+        SurfaceVariant: 0xe1e3e5 / 0x31363b,
+        OnSurfaceVariant: 0x4d5052 / 0xbdc3c7,
+        // Window background, a touch cooler and darker than the view.
+        Background: 0xeff0f1 / 0x232629,
+        OnBackground: 0x232629 / 0xfcfcfc,
+        Outline: 0xbdc3c7 / 0x4d5155,
+        OutlineVariant: 0xd8dbdd / 0x3f4449,
+        // Breeze "negative".
+        Error: 0xda4453 / 0xed8079,
+        OnError: 0xffffff / 0x2a0806,
+        // A framed panel in Plasma is the view colour sitting on the window, which is a
+        // step lighter in light and a step lighter again in dark.
+        SurfaceContainer: 0xfcfcfc / 0x31363b,
+    },
+    // Plasma sets its interface in Noto Sans at 10pt, a step smaller than Adwaita's 11pt
+    // Cantarell, and its headings are semi bold rather than the near black weights
+    // libadwaita uses. Smaller and lighter at every rung, with tighter line heights to
+    // match the denser spacing.
+    type_scale: type_scale! {
+        Display: 34.0 / 600 / 40.0 / 0.0 / false,
+        Headline: 26.0 / 600 / 32.0 / 0.0 / false,
+        Title: 19.0 / 600 / 24.0 / 0.0 / false,
+        Subtitle: 16.0 / 500 / 21.0 / 0.0 / false,
+        Body: 13.0 / 400 / 19.0 / 0.0 / false,
+        BodyStrong: 13.0 / 600 / 19.0 / 0.0 / false,
+        Label: 12.0 / 500 / 16.0 / 0.2 / false,
+        Caption: 11.0 / 400 / 15.0 / 0.0 / false,
+        Mono: 12.0 / 400 / 17.0 / 0.0 / true,
+    },
+    // Breeze barely rounds. Frames and buttons are a two to four pixel radius and the
+    // largest containers stop at six, which is where the language gets its drafted look.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 2.0,
+        Small: 3.0,
+        Medium: 4.0,
+        Large: 6.0,
+        Full: 1000.0,
+    },
+    // Kirigami's ladder: small spacing 4, large spacing 8, grid unit 18.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 2.0,
+        Sm: 4.0,
+        Md: 8.0,
+        Lg: 12.0,
+        Xl: 18.0,
+        Xxl: 24.0,
     },
 };
 

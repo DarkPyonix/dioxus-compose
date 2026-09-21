@@ -784,3 +784,195 @@ internal object GnomeRules : ComponentRules {
     private const val PRESS_SHADE = 0.16f
     private const val SHADOW_SCALE = 0.5f
 }
+
+/**
+ * KDE Breeze rules, the Plasma design language.
+ *
+ * Reference: the Breeze colour schemes shipped with Plasma, the KDE Human Interface
+ * Guidelines and Kirigami's unit scale, Plasma 6, the revision the token table cites.
+ *
+ * Breeze draws with thin, precise strokes: every frame is a hairline, a raised layer is
+ * marked by a line before it is marked by a shadow, and an outlined control recolours its
+ * line on press rather than filling in.
+ */
+internal object BreezeRules : ComponentRules {
+    override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
+        if (elevation.value <= 0f) return modifier
+        return modifier
+            .shadow(elevation * SHADOW_SCALE, shape, clip = false)
+            .border(1.dp, theme.color(ColorRole.Outline), shape)
+    }
+
+    override fun button(variant: ButtonVariant, theme: ResolvedTheme): ButtonStyle {
+        val accent = theme.color(ColorRole.Primary)
+        val line = theme.color(ColorRole.Outline)
+        val standard = theme.color(ColorRole.Surface)
+        val onStandard = theme.color(ColorRole.OnSurface)
+        val base = ButtonStyle(
+            container = standard,
+            pressedContainer = lerp(standard, onStandard, PRESS_MIX),
+            content = onStandard,
+            pressedContentAlpha = 1f,
+            borderWidth = 1.dp,
+            borderColor = line,
+            pressedBorderColor = accent,
+            topHighlight = null,
+            // Breeze rounds a control at 4 dp, which is ShapeRole.Medium in its table.
+            shape = theme.shape(ShapeRole.Medium),
+            horizontalPadding = theme.space(SpaceRole.Lg),
+            verticalPadding = theme.space(SpaceRole.Sm),
+            minHeight = 30.dp,
+            typeRole = TypeRole.Body,
+            restElevation = 0.dp,
+            pressedElevation = 0.dp,
+        )
+        return when (variant) {
+            // Even the accent button is a filled rectangle inside a darker line.
+            ButtonVariant.Filled -> base.copy(
+                container = accent,
+                pressedContainer = lerp(accent, Color.Black, PRESS_SHADE),
+                content = theme.color(ColorRole.OnPrimary),
+                borderColor = lerp(accent, Color.Black, BORDER_SHADE),
+                pressedBorderColor = lerp(accent, Color.Black, BORDER_SHADE),
+            )
+
+            // The standard button: a light fill inside a hairline.
+            ButtonVariant.Tonal -> base
+
+            // Hovering or pressing an outlined Breeze button recolours its line rather
+            // than filling it in.
+            ButtonVariant.Outlined -> base.copy(
+                container = Color.Transparent,
+                pressedContainer = Color.Transparent,
+            )
+
+            ButtonVariant.Text -> base.copy(
+                container = Color.Transparent,
+                pressedContainer = Color.Transparent,
+                borderWidth = 0.dp,
+                borderColor = Color.Transparent,
+                pressedBorderColor = Color.Transparent,
+            )
+        }
+    }
+
+    /**
+     * Breeze containers: everything is framed. A card is a view inside a single pixel
+     * line, a toolbar is ruled off from the content, and a menu is a framed list.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val line = theme.color(ColorRole.Outline)
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Medium),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        return when (role) {
+            ContainerRole.Card -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                borderWidth = 1.dp,
+                borderColor = line,
+            )
+
+            ContainerRole.Surface -> base.copy(shape = theme.shape(ShapeRole.None))
+
+            // A Plasma toolbar: the window grey, tight, ruled off below.
+            ContainerRole.TopAppBar -> base.copy(
+                container = theme.color(ColorRole.Background),
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Sm),
+                separator = line,
+                typeRole = TypeRole.Subtitle,
+            )
+
+            ContainerRole.Dialog -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                elevation = 6.dp,
+                borderWidth = 1.dp,
+                borderColor = line,
+                horizontalPadding = theme.space(SpaceRole.Xl),
+                verticalPadding = theme.space(SpaceRole.Lg),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            ContainerRole.Menu -> base.copy(
+                shape = theme.shape(ShapeRole.Small),
+                elevation = 4.dp,
+                borderWidth = 1.dp,
+                borderColor = line,
+                horizontalPadding = 0.dp,
+                verticalPadding = theme.space(SpaceRole.Xs),
+            )
+
+            ContainerRole.Tooltip -> base.copy(
+                shape = theme.shape(ShapeRole.ExtraSmall),
+                borderWidth = 1.dp,
+                borderColor = line,
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                typeRole = TypeRole.Caption,
+            )
+        }
+    }
+
+    /**
+     * A Plasma tab bar: the selected tab is a framed page tab sitting on the toolbar,
+     * with a thin highlight line along its top edge.
+     */
+    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
+        container = theme.color(ColorRole.Background),
+        shape = theme.shape(ShapeRole.None),
+        selectedContent = theme.color(ColorRole.OnSurface),
+        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+        selectedContainer = theme.color(ColorRole.Surface),
+        selectedShape = theme.shape(ShapeRole.ExtraSmall),
+        indicator = theme.color(ColorRole.Primary),
+        indicatorHeight = 2.dp,
+        indicatorShape = theme.shape(ShapeRole.None),
+        indicatorFillsTab = true,
+        horizontalPadding = theme.space(SpaceRole.Lg),
+        verticalPadding = theme.space(SpaceRole.Xs),
+        typeRole = TypeRole.Body,
+    )
+
+    /**
+     * Breeze icon metrics: a 22 dp grid drawn with a thin, even stroke and mitred joins,
+     * which is what gives the set its drafted look next to Adwaita's solid symbolics.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 22.dp,
+        strokeWidth = 1.25.dp,
+        cap = StrokeCap.Butt,
+        join = StrokeJoin.Miter,
+    )
+
+    /** A calendar grid, a stepped time field, and a drop down list for a choice. */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.CalendarGrid,
+        time = TimePresentation.Stepper,
+        choice = ChoicePresentation.ExposedMenu,
+    )
+
+    override val motion: Motion = Motion(
+        // Plasma's transitions are quick and nearly linear: a Breeze control is meant to
+        // feel mechanical, so the release is shorter than the press.
+        pressMillis = 100,
+        releaseMillis = 80,
+        easing = LinearEasing,
+        tooltipDelayMillis = 700,
+    )
+
+    private const val SCRIM_ALPHA = 0.5f
+    private const val PRESS_MIX = 0.12f
+    private const val PRESS_SHADE = 0.1f
+    private const val BORDER_SHADE = 0.22f
+    private const val SHADOW_SCALE = 0.75f
+}
