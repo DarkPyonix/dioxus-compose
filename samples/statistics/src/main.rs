@@ -20,6 +20,18 @@ use spending::{
     dearest, peak,
 };
 
+mod palette {
+    use dioxus_compose::prelude::Color;
+    pub const PAGE: Color = Color::rgb(0xF2F2F0);
+    pub const CARD: Color = Color::rgb(0xFFFFFF);
+    pub const INK: Color = Color::rgb(0x000000);
+    pub const SAGE: Color = Color::rgb(0xB0C1AE);
+    pub const POWDER: Color = Color::rgb(0xAFC3DC);
+    pub const ORANGE: Color = Color::rgb(0xF58220);
+    pub const GREY: Color = Color::rgb(0x999999);
+    pub const LIGHT_GREY: Color = Color::rgb(0xEEEEEE);
+}
+
 /// A phone design in a desktop window is still a phone design.
 const PAGE_MEASURE: f32 = 420.0;
 
@@ -84,10 +96,11 @@ fn week_bars() -> Vec<Bar> {
 /// ladder's own metrics and the ellipsis behaviour that goes with a widget.
 fn dial_card() -> Element {
     rsx! {
-        Surface {
+        dioxus_compose::Box {
             fill_max_width: true,
             shape_role: ShapeRole::Large,
             padding_role: SpaceRole::Lg,
+            background: Paint::Literal(palette::CARD),
             dioxus_compose::Box {
                 fill_max_width: true,
                 alignment: Alignment::Center,
@@ -97,17 +110,17 @@ fn dial_card() -> Element {
                     commands: charts::dial(
                         DIAL_SIDE,
                         MOBILE_SHARE as f32 / 100.0,
-                        ColorRole::OutlineVariant,
-                        ColorRole::Tertiary,
+                        Paint::Literal(palette::GREY),
+                        Paint::Literal(palette::ORANGE),
                     ),
                 }
                 Column {
                     alignment: Alignment::Center,
-                    Text { text: "{MOBILE_SHARE}%", type_role: TypeRole::Display }
+                    Text { text: "{MOBILE_SHARE}%", type_role: TypeRole::Display, color: Paint::Literal(palette::INK) }
                     Text {
                         text: "Mobile",
                         type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        color: Paint::Literal(palette::GREY),
                     }
                 }
             }
@@ -126,19 +139,19 @@ fn costs_panel(title_role: TypeRole, (width, height): (f32, f32)) -> Element {
     rsx! {
         Column {
             fill_max_width: true,
-            background: Paint::Role(ColorRole::SecondaryContainer),
+            background: Paint::Literal(palette::SAGE),
             shape_role: ShapeRole::Large,
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Sm,
             Text {
                 text: "Popular costs",
                 type_role: title_role,
-                color: Paint::Role(ColorRole::OnSecondaryContainer),
+                color: Paint::Literal(palette::INK),
             }
             Canvas {
                 width,
                 height,
-                commands: charts::week(width, height, &bars, ColorRole::OnSecondaryContainer),
+                commands: charts::week(width, height, &bars),
             }
         }
     }
@@ -166,14 +179,20 @@ fn sources_strip() -> Element {
                         Column {
                             fill_max_width: true,
                             fill_max_height: true,
-                            background: Paint::Role(ColorRole::TertiaryContainer),
+                            background: Paint::Literal(palette::SAGE),
                             shape_role: ShapeRole::Large,
                             padding_role: SpaceRole::Md,
                             space_role: SpaceRole::Xs,
+                            dioxus_compose::Box {
+                                width: 32.0,
+                                height: 32.0,
+                                corner_radius: 16.0,
+                                background: Paint::Literal(palette::INK),
+                            }
                             Text {
                                 text: source.name,
                                 type_role: TypeRole::Label,
-                                color: Paint::Role(ColorRole::OnTertiaryContainer),
+                                color: Paint::Literal(palette::INK),
                                 max_lines: 1,
                                 overflow: TextOverflow::Ellipsis,
                             }
@@ -181,7 +200,7 @@ fn sources_strip() -> Element {
                             Text {
                                 text: cost(source.cents),
                                 type_role: TypeRole::Title,
-                                color: Paint::Role(ColorRole::OnTertiaryContainer),
+                                color: Paint::Literal(palette::INK),
                                 max_lines: 1,
                                 overflow: TextOverflow::Ellipsis,
                             }
@@ -212,28 +231,33 @@ fn today_page() -> Element {
                 Column {
                     weight: 1.0,
                     space_role: SpaceRole::Sm,
-                    Surface {
+                    dioxus_compose::Box {
                         fill_max_width: true,
                         shape_role: ShapeRole::Large,
                         padding_role: SpaceRole::Md,
-                        Text { text: "{RETURNING_SHARE}%", type_role: TypeRole::Title }
+                        background: Paint::Literal(palette::CARD),
+                        Text { text: "{RETURNING_SHARE}%", type_role: TypeRole::Title, color: Paint::Literal(palette::INK) }
                     }
-                    // The third accent, used as a fill rather than as a mark. The
-                    // reference puts a plain block of colour here and that is all it is:
-                    // a second reading that has not been written yet.
-                    dioxus_compose::Box {
+                    Row {
                         fill_max_width: true,
-                        height: 64.0,
-                        background: Paint::Role(ColorRole::TertiaryContainer),
-                        shape_role: ShapeRole::Large,
-                    }
-                    Button {
-                        text: "+",
-                        fill_max_width: true,
-                        variant: ButtonVariant::Tonal,
-                        on_click: move |_| {
-                            Message::new("Adding a source is not part of this sample").show();
-                        },
+                        space_role: SpaceRole::Sm,
+                        dioxus_compose::Box {
+                            weight: 1.0,
+                            height: 64.0,
+                            background: Paint::Literal(palette::POWDER),
+                            shape_role: ShapeRole::Large,
+                        }
+                        Button {
+                            text: "+",
+                            width: 64.0,
+                            height: 64.0,
+                            corner_radius: 32.0,
+                            background: Paint::Literal(palette::GREY),
+                            color: Paint::Literal(palette::INK),
+                            on_click: move |_| {
+                                Message::new("Adding a source is not part of this sample").show();
+                            },
+                        }
                     }
                 }
             }
@@ -246,22 +270,29 @@ fn today_page() -> Element {
                 fill_max_width: true,
                 space_role: SpaceRole::Md,
                 alignment: Alignment::CenterStart,
-                Text { text: "Today", type_role: TypeRole::BodyStrong }
-                Text {
-                    text: "{TODAY}",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                Text { text: "<", type_role: TypeRole::BodyStrong, color: Paint::Literal(palette::INK) }
+                Row {
+                    alignment: Alignment::TopStart,
+                    Text { text: "Today ", type_role: TypeRole::BodyStrong, color: Paint::Literal(palette::INK) }
+                    Text {
+                        text: "{TODAY}",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Literal(palette::INK),
+                    }
                 }
                 Spacer { weight: 1.0 }
-                Text {
-                    text: "Yesterday",
-                    type_role: TypeRole::Body,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                }
-                Text {
-                    text: "{YESTERDAY}",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                Row {
+                    alignment: Alignment::TopStart,
+                    Text {
+                        text: "Yesterday ",
+                        type_role: TypeRole::Body,
+                        color: Paint::Literal(palette::GREY),
+                    }
+                    Text {
+                        text: "{YESTERDAY}",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Literal(palette::GREY),
+                    }
                 }
             }
         }
@@ -274,14 +305,14 @@ fn costs_page() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            background: Paint::Role(ColorRole::SecondaryContainer),
+            background: Paint::Literal(palette::SAGE),
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Md,
 
             Text {
                 text: "Popular costs",
                 type_role: TypeRole::Headline,
-                color: Paint::Role(ColorRole::OnSecondaryContainer),
+                color: Paint::Literal(palette::INK),
             }
 
             Canvas {
@@ -291,7 +322,6 @@ fn costs_page() -> Element {
                     PAGE_CHART.0,
                     PAGE_CHART.1,
                     &week_bars(),
-                    ColorRole::OnSecondaryContainer,
                 ),
             }
 
@@ -304,15 +334,15 @@ fn costs_page() -> Element {
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::CenterStart,
                 Text {
-                    text: "All time",
+                    text: "All Time: ",
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ColorRole::OnSecondaryContainer),
+                    color: Paint::Literal(palette::INK),
                     weight: 1.0,
                 }
                 Text {
                     text: cost(ALL_TIME_CENTS),
                     type_role: TypeRole::Headline,
-                    color: Paint::Role(ColorRole::OnSecondaryContainer),
+                    color: Paint::Literal(palette::INK),
                 }
             }
         }
@@ -332,15 +362,17 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            background: Paint::Role(ColorRole::Background),
+            background: Paint::Literal(palette::PAGE),
 
             TopAppBar {
                 fill_max_width: true,
-                Text { text: "Product statistics", type_role: TypeRole::Title, weight: 1.0 }
-                Text {
-                    text: "{amount(ALL_TIME_CENTS)} all time",
-                    type_role: TypeRole::Label,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                Text { text: "Product\nStatistics", type_role: TypeRole::Title, weight: 1.0, color: Paint::Literal(palette::INK) }
+                Button {
+                    text: ">",
+                    variant: ButtonVariant::Text,
+                    on_click: move |_| {
+                        page.set(if page() == Page::Today { Page::Costs } else { Page::Today });
+                    }
                 }
             }
 
@@ -352,22 +384,6 @@ fn app() -> Element {
                     width: measure,
                     fill_max_width: measure.is_none(),
                     fill_max_height: true,
-                    dioxus_compose::Box {
-                        fill_max_width: true,
-                        padding_role: SpaceRole::Md,
-                        Tabs {
-                            fill_max_width: true,
-                            selected_index: page().index(),
-                            for choice in Page::STRIP {
-                                Button {
-                                    key: "{choice.label()}",
-                                    text: choice.label(),
-                                    variant: ButtonVariant::Text,
-                                    on_click: move |_| page.set(choice),
-                                }
-                            }
-                        }
-                    }
                     match page() {
                         Page::Today => rsx! {
                             ScrollColumn { fill_max_width: true, fill_max_height: true, {today_page()} }
@@ -471,43 +487,42 @@ mod tests {
         dioxus_compose::window::reset_window_size();
         let mut host = Host::new(app);
         let first = host.rebuild().expect("the first frame failed").to_vec();
-        for page in Page::STRIP {
-            let mutations = decode_batch(&first).expect("the batch did not decode");
-            let node = mutations
-                .iter()
-                .find_map(|mutation| match mutation {
-                    Mutation::SetProp {
-                        node_id,
-                        property: PropertyKind::Text,
-                        value: PropertyValue::String(text),
-                    } if *text == page.label() => Some(*node_id),
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("no segment called {}", page.label()));
-            let handler = mutations
-                .iter()
-                .find_map(|mutation| match mutation {
-                    Mutation::SetProp {
-                        node_id,
-                        property: PropertyKind::OnClick,
-                        value: PropertyValue::Integer(handler),
-                    } if *node_id == node => Some(*handler as u64),
-                    _ => None,
-                })
-                .unwrap_or_else(|| panic!("{} cannot be pressed", page.label()));
-            let mut bytes = Vec::new();
-            encode_event(
-                &HostEvent {
-                    node_id: node,
-                    handler_id: handler,
-                    payload: EventPayload::Clicked,
-                },
-                &mut bytes,
-            )
-            .expect("the click did not encode");
-            host.dispatch_event(&bytes)
-                .unwrap_or_else(|error| panic!("{} failed: {error:?}", page.label()));
-        }
+        
+        let mutations = decode_batch(&first).expect("the batch did not decode");
+        let node = mutations
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(text),
+                } if *text == ">" => Some(*node_id),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no button >"));
+        let handler = mutations
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::OnClick,
+                    value: PropertyValue::Integer(handler),
+                } if *node_id == node => Some(*handler as u64),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("> cannot be pressed"));
+        let mut bytes = Vec::new();
+        encode_event(
+            &HostEvent {
+                node_id: node,
+                handler_id: handler,
+                payload: EventPayload::Clicked,
+            },
+            &mut bytes,
+        )
+        .expect("the click did not encode");
+        host.dispatch_event(&bytes)
+            .unwrap_or_else(|error| panic!("click failed: {error:?}"));
         dioxus_compose::window::reset_window_size();
     }
 
@@ -588,7 +603,7 @@ mod tests {
             app,
             |screen| {
                 assert!(
-                    screen.press(Page::Costs.label()),
+                    screen.press(">"),
                     "the screen has no way to reach the costs page"
                 );
                 screen.fill_lists(5);

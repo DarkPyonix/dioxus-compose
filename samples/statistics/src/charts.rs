@@ -43,7 +43,7 @@ const SWEEP_INSET: f32 = 0.055;
 ///
 /// Angles are measured from the right and go clockwise, which is how the arc command reads
 /// them, so a dial that starts at the top starts a quarter turn back from zero.
-pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> DrawList {
+pub fn dial(size: f32, fraction: f32, ink: Paint, marker: Paint) -> DrawList {
     let middle = size / 2.0;
     let outer = middle * 0.94;
     let inner = outer * (1.0 - TICK_LENGTH);
@@ -56,7 +56,7 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             (step as f32 / TICKS as f32) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
         let (sin, cos) = angle.sin_cos();
         list = list.line(
-            Paint::Role(ink),
+            ink,
             middle + cos * inner,
             middle + sin * inner,
             middle + cos * outer,
@@ -64,26 +64,19 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             2.0,
         );
     }
-    let sweep = inner - size * SWEEP_INSET;
-    // A sweep of nothing draws nothing, so a reading of zero is the ring alone rather than
-    // an arc command the Renderer has to decide what to do with.
-    if fraction > 0.0 {
-        list = list.arc(
-            Paint::Role(marker),
-            middle,
-            middle,
-            sweep,
-            -90.0,
-            fraction * 360.0,
-            size * SWEEP_WIDTH,
-        );
-    }
+    list = list.circle(
+        Paint::Literal(crate::palette::LIGHT_GREY),
+        middle,
+        middle,
+        inner - size * 0.02,
+        0.0,
+    );
     let angle = fraction * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
     let (sin, cos) = angle.sin_cos();
     // The marker sits on the ring rather than on the arc, which is where the reference
-    // puts it: the arc says how far round, the mark says exactly where.
+    // puts it: the mark says exactly where.
     list.circle(
-        Paint::Role(marker),
+        marker,
         middle + cos * reading,
         middle + sin * reading,
         size * 0.028,
@@ -121,44 +114,81 @@ pub struct Bar {
 /// for "the ink, quieter": the vocabulary has fills and it has inks, and half of an ink is
 /// a literal. An outline is the same distinction said in stroke width, which every design
 /// system can draw and no design system has to invent a colour for.
-pub fn week(width: f32, height: f32, bars: &[Bar], ink: ColorRole) -> DrawList {
+pub fn week(width: f32, height: f32, bars: &[Bar]) -> DrawList {
     if bars.is_empty() {
         return DrawListBuilder::with_capacity(0, 0).build();
     }
-    // The label sits under the columns, so the columns get what is left. The baseline is
-    // set three quarters of the way down that band rather than at the bottom of it,
-    // because a baseline at the bottom puts the descenders outside the box and the row of
-    // days comes out with its tails shaved off.
     let label_band = height * 0.22;
     let plot = height - label_band;
     let baseline = plot + label_band * 0.62;
     let slot = width / bars.len() as f32;
-    // A `TextAt` is placed by the left end of its string, and a draw list has no way to
-    // measure a string: there is no font here, only a rung of the ladder the Renderer
-    // resolves. The day is inset by half of what three caption letters come to, which
-    // centres it under its column closely enough and keeps the last one inside the box.
     let label_inset = (slot / 2.0 - DAY_HALF_WIDTH).max(0.0);
     let bar_width = slot * 0.46;
     let radius = bar_width / 2.0;
 
-    let mut list = DrawListBuilder::with_capacity(bars.len() * 2, bars.len() * 4);
+    let mut list = DrawListBuilder::with_capacity(bars.len() * 4, bars.len() * 6);
     for (index, bar) in bars.iter().enumerate() {
         let column = bar.height.clamp(0.0, 1.0) * plot;
-        // Never shorter than a full round cap, or a quiet day is drawn as a sliver that
-        // reads as a rendering fault rather than as a small number.
         let column = column.max(bar_width);
         let x = index as f32 * slot + (slot - bar_width) / 2.0;
-        list = list.round_rect(
-            Paint::Role(ink),
-            x,
-            plot - column,
-            bar_width,
-            column,
-            radius,
-            if bar.filled { 0.0 } else { 2.0 },
-        );
+        
+        if bar.filled {
+            list = list.round_rect(
+                Paint::Literal(crate::palette::INK),
+                x,
+                plot - column,
+                bar_width,
+                column,
+                radius,
+                0.0,
+            );
+        } else {
+            // Outline
+            list = list.round_rect(
+                Paint::Literal(crate::palette::GREY),
+                x,
+                plot - column,
+                bar_width,
+                column,
+                radius,
+                1.0,
+            );
+            // Hatched lines
+            let step = 6.0;
+            let mut y = plot - column;
+            while y < plot + bar_width {
+                let mut y1 = y;
+                let mut y2 = y - bar_width;
+                let mut x1 = x;
+                let mut x2 = x + bar_width;
+                
+                if y2 < plot - column {
+                    let diff = (plot - column) - y2;
+                    y2 += diff;
+                    x2 -= diff;
+                }
+                if y1 > plot {
+                    let diff = y1 - plot;
+                    y1 -= diff;
+                    x1 += diff;
+                }
+                
+                if x1 < x2 {
+                    list = list.line(
+                        Paint::Literal(crate::palette::GREY),
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                        1.0,
+                    );
+                }
+                y += step;
+            }
+        }
+        
         list = list.text_at(
-            Paint::Role(ink),
+            Paint::Literal(if bar.filled { crate::palette::INK } else { crate::palette::GREY }),
             bar.day,
             index as f32 * slot + label_inset,
             baseline,
