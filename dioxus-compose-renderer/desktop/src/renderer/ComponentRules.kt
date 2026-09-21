@@ -3001,7 +3001,7 @@ internal object LiquidGlassRules : ComponentRules {
         }
         return NavigationStyle(
             presentation = presentation,
-            container = theme.color(ColorRole.SurfaceContainer),
+            container = theme.color(ColorRole.SurfaceContainer).copy(alpha = NAVIGATION_ALPHA),
             content = theme.color(ColorRole.OnSurfaceVariant),
             selectedContent = theme.color(ColorRole.Primary),
             indicator = tintedFill(theme.dark, TONAL_ALPHA),
@@ -3016,6 +3016,9 @@ internal object LiquidGlassRules : ComponentRules {
             itemPadding = theme.space(SpaceRole.Xs),
             labelInRail = true,
             typeRole = TypeRole.Caption,
+            pageGradientStart = theme.color(ColorRole.Background),
+            pageGradientEnd = theme.color(ColorRole.PrimaryContainer),
+            searchContainer = tintedFill(theme.dark, TONAL_ALPHA),
         )
     }
 
@@ -3090,6 +3093,7 @@ internal object LiquidGlassRules : ComponentRules {
     /** How far a tinted button moves what is under it, resting and pressed. */
     private const val TONAL_ALPHA = 0.08f
     private const val TONAL_PRESSED_ALPHA = 0.16f
+    private const val NAVIGATION_ALPHA = 0.72f
 
     /**
      * The glass caption. Three coloured discs at the leading edge, exactly as the flat

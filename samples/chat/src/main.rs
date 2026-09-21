@@ -272,6 +272,8 @@ fn app() -> Element {
     let mut settings = use_signal(Settings::default);
     let mut settings_open = use_signal(|| false);
     let mut length_open = use_signal(|| false);
+    let mut search_open = use_signal(|| false);
+    let mut search_query = use_signal(String::new);
     // The conversations, newest last, and the one being read. A chat application with one
     // conversation is a chat application with the part people use missing, and the
     // reference's sidebar is mostly this list.
@@ -349,16 +351,19 @@ fn app() -> Element {
         .collect();
     let rows = thread.clone();
     // Newest first in the sidebar, and only as many as a set of destinations can hold.
+    let query = search_query().to_lowercase();
     let recent: Vec<Conversation> = conversations()
         .iter()
         .rev()
+        .filter(|entry| query.is_empty() || entry.label().to_lowercase().contains(&query))
         .take(RECENT_CONVERSATIONS)
         .cloned()
         .collect();
+    let show_search = window.is_expanded();
     let selected = recent
         .iter()
         .position(|entry| entry.id == current())
-        .unwrap_or(0);
+        .map_or(0, |index| index + usize::from(show_search));
 
     rsx! {
         // The conversations are the destination set, which is the reference's sidebar.
@@ -369,6 +374,13 @@ fn app() -> Element {
             fill_max_width: true,
             fill_max_height: true,
             selected_index: selected,
+            if show_search {
+                NavigationItem {
+                    text: "Search",
+                    icon: IconRole::Search,
+                    on_click: move |()| search_open.set(true),
+                }
+            }
             for conversation in recent.iter().cloned() {
                 NavigationItem {
                     key: "{conversation.id}",
@@ -700,6 +712,39 @@ fn app() -> Element {
                     EventHandler::new(move |next| settings.set(next)),
                     EventHandler::new(move |()| settings_open.set(false)),
                 )}
+            }
+
+            Sheet {
+                open: search_open(),
+                on_dismiss: move |_| search_open.set(false),
+                fill_max_width: true,
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    Row {
+                        fill_max_width: true,
+                        alignment: Alignment::CenterStart,
+                        Text { text: "Search conversations", type_role: TypeRole::Subtitle, weight: 1.0 }
+                        Button {
+                            text: "Done",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| search_open.set(false),
+                        }
+                    }
+                    TextField {
+                        fill_max_width: true,
+                        placeholder: "Search conversations",
+                        on_value_change: move |value| search_query.set(value),
+                    }
+                    if !search_query().is_empty() {
+                        Button {
+                            text: "Clear search",
+                            fill_max_width: true,
+                            variant: ButtonVariant::Text,
+                            on_click: move |_| search_query.set(String::new()),
+                        }
+                    }
+                }
             }
         }
         }
@@ -1413,6 +1458,77 @@ mod tests {
             "the conversation that was on screen should still be in the sidebar, named \
              after its opening line"
         );
+    }
+
+    #[test]
+    fn fr22_the_desktop_search_destination_opens_the_filter_sheet() {
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        host.rebuild().expect("the first frame failed to encode");
+
+        let resize = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp: 1_000.0,
+                height_dp: 700.0,
+                class: WindowSizeClass::Expanded,
+            },
+        };
+        let mut event = Vec::new();
+        encode_event(&resize, &mut event).expect("the resize did not encode");
+        let (batch, _) = host.dispatch_event(&event).expect("the resize failed");
+        let mutations = decode_batch(batch).expect("the resize batch did not decode");
+        let search = mutations
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String("Search"),
+                } => Some(*node_id),
+                _ => None,
+            })
+            .expect("the expanded destination set has no search action");
+        let handler = mutations
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::OnClick,
+                    value: PropertyValue::Integer(handler),
+                } if *node_id == search => Some(*handler as u64),
+                _ => None,
+            })
+            .expect("the search action cannot be pressed");
+
+        encode_event(
+            &HostEvent {
+                node_id: search,
+                handler_id: handler,
+                payload: EventPayload::Clicked,
+            },
+            &mut event,
+        )
+        .expect("the search click did not encode");
+        let (batch, _) = host
+            .dispatch_event(&event)
+            .expect("the search click failed");
+        assert!(
+            decode_batch(batch)
+                .expect("the search frame did not decode")
+                .iter()
+                .any(|mutation| matches!(
+                    mutation,
+                    Mutation::SetProp {
+                        property: PropertyKind::Open,
+                        value: PropertyValue::Bool(true),
+                        ..
+                    }
+                )),
+            "pressing Search did not open its sheet"
+        );
+        dioxus_compose::window::reset_window_size();
     }
 
     /// The reference puts everything that belongs to sending a message inside one rounded

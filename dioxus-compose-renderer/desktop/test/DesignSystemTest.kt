@@ -28,6 +28,7 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.design.HostPlatform
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.resolveTheme
@@ -242,6 +243,22 @@ class DesignTokenWiringTest {
         assertEquals(deepinNumber.container, deepinOperator.container)
         assertEquals(deepin.color(ColorRole.Primary), deepinOperator.content)
         assertNotEquals(deepinNumber.content, deepinOperator.content)
+    }
+
+    @Test
+    fun fr22_liquid_glass_navigation_has_a_translucent_gradient_and_search_pill() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val style = glass.rules.navigation(WindowSizeClass.Expanded, glass)
+        assertTrue(style.container.alpha < 1f, "the drawer hides the page behind it")
+        assertEquals(glass.color(ColorRole.Background), style.pageGradientStart)
+        assertEquals(glass.color(ColorRole.PrimaryContainer), style.pageGradientEnd)
+        assertTrue(style.searchContainer != null, "the search destination has no pill fill")
+
+        val fluent = resolved(DesignSystem.Fluent)
+        val flat = fluent.rules.navigation(WindowSizeClass.Expanded, fluent)
+        assertEquals(null, flat.pageGradientStart)
+        assertEquals(null, flat.pageGradientEnd)
+        assertEquals(null, flat.searchContainer)
     }
 }
 
