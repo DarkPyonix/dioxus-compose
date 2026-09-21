@@ -274,7 +274,7 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
 private fun roleBits(role: ColorRole): Long = (1L shl 32) or (role.ordinal + 1L)
 
 private fun systemName(theme: Theme): String = when (theme.designSystem) {
-    DesignSystem.Material3 -> "Material 3"
+    DesignSystem.Material3 -> "Material 3 Expressive"
     DesignSystem.Cupertino -> "Cupertino"
     DesignSystem.Fluent -> "WinUI Fluent 2"
     DesignSystem.Gnome -> "GNOME 50 Adwaita"
@@ -286,13 +286,14 @@ private fun systemName(theme: Theme): String = when (theme.designSystem) {
 /**
  * Opens the showcase for one design system.
  *
- * `DXC_DESIGN_SYSTEM` is `material3`, `hig`, `fluent`, `gnome`, `breeze` or `deepin`, `DXC_COLOR_SCHEME` is `light`,
- * `dark` or `system`, and `DXC_ADAPTIVE=1` makes the Host send an adaptive theme with the
- * chosen system as the mandatory fallback.
+ * `DXC_DESIGN_SYSTEM` is `material3`, `cupertino`, `liquidglass`, `fluent`, `gnome`,
+ * `breeze` or `deepin`, `DXC_COLOR_SCHEME` is `light`, `dark` or `system`, and
+ * `DXC_ADAPTIVE=1` makes the Host send an adaptive theme with the chosen system as the
+ * mandatory fallback.
  */
 fun main() = application {
     val system = when (System.getenv("DXC_DESIGN_SYSTEM")?.lowercase()) {
-        "hig", "apple", "applehig" -> DesignSystem.Cupertino
+        "hig", "apple", "applehig", "cupertino" -> DesignSystem.Cupertino
         "fluent", "winui" -> DesignSystem.Fluent
         "gnome", "adwaita" -> DesignSystem.Gnome
         "breeze", "kde", "plasma" -> DesignSystem.Breeze
