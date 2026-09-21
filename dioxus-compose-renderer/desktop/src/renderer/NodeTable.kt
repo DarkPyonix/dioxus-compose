@@ -391,8 +391,13 @@ class NodeTable {
                 -> widget == WidgetKind.Text ||
                     widget == WidgetKind.Button ||
                     widget == WidgetKind.TextField ||
-                    // An icon takes a tint through the same Paint attribute text does.
-                    (property == PropertyKind.Color && widget == WidgetKind.Icon)
+                    // An icon takes a tint through the same Paint attribute text does, and
+                    // so does a destination: its icon and label are properties rather than
+                    // a child tree, so there is no Text node underneath to colour instead.
+                    (
+                        property == PropertyKind.Color &&
+                            (widget == WidgetKind.Icon || widget == WidgetKind.NavigationItem)
+                        )
 
                 PropertyKind.Arrangement,
                 PropertyKind.Spacing,

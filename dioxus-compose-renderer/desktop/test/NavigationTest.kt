@@ -38,6 +38,8 @@ import dioxus.compose.ui.platform.FrameRequestSource
 import dioxus.compose.ui.platform.LocalFrameRequests
 import kotlin.math.abs
 import dioxus.compose.ui.node.NodeTable
+import androidx.compose.ui.graphics.toAwtImage
+import androidx.compose.ui.test.captureToImage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -254,6 +256,61 @@ class NavigationTest {
         waitForIdle()
         onNodeWithTag(nodeTestTag(FIRST)).assertIsDisplayed()
         onNodeWithTag(nodeTestTag(FIRST)).assertIsNotSelected()
+    }
+
+    /**
+     * A destination drawn in the colour the application named.
+     *
+     * The design system owns what selected looks like, which is right for an adaptive
+     * application. A unified one has a reference to match, and the drum school's bar is
+     * white icons on black with no accent: asking the active system put its own accent on
+     * the selected one, so the sample could not say what its picture says.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun fr14_a_destination_is_drawn_in_the_colour_the_host_named() = runComposeUiTest {
+        // A colour no design system holds, so finding it proves it came from the Host.
+        val named = 0xffff00ff.toInt()
+        val batch = listOf(
+            Mutation.Create(NAVIGATION, WidgetKind.Navigation),
+            Mutation.Create(FIRST, WidgetKind.NavigationItem),
+            Mutation.SetProp(
+                FIRST,
+                PropertyKind.Icon,
+                PropertyValue.Integer(IconRole.Home.ordinal + 1L),
+            ),
+            // A colour slot carries Paint bits: the top word says which kind, 2 being a
+            // literal, and the bottom word is the value.
+            Mutation.SetProp(
+                FIRST,
+                PropertyKind.Color,
+                PropertyValue.Integer((2L shl 32) or (named.toLong() and 0xffffffffL)),
+            ),
+            Mutation.Insert(NAVIGATION, FIRST, 0),
+            Mutation.Create(SCREEN, WidgetKind.Text),
+            Mutation.SetProp(SCREEN, PropertyKind.Text, PropertyValue.Text("the screen")),
+            Mutation.Insert(NAVIGATION, SCREEN, 1),
+        )
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(FakeHostConnection(batch)))
+            }
+        }
+        val picture = onNodeWithTag(nodeTestTag(FIRST)).captureToImage().toAwtImage()
+        var found = false
+        for (x in 0 until picture.width) {
+            for (y in 0 until picture.height) {
+                if (picture.getRGB(x, y) and 0x00ffffff == named and 0x00ffffff) {
+                    found = true
+                }
+            }
+        }
+        assertTrue(
+            found,
+            "the destination was drawn without the colour the application named, so the " +
+                "design system's accent is the only one it can wear and a unified sample " +
+                "cannot match a reference whose bar has no accent in it",
+        )
     }
 
 }
