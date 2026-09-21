@@ -10,6 +10,7 @@ pub mod renderer;
 pub mod schema;
 pub mod tokens;
 mod widgets;
+pub mod window;
 
 pub use boundary::{
     Host, LaunchBuilder, MutationBatch, RendererApi, install_renderer_api, launch,
@@ -23,13 +24,14 @@ pub use extensions::LinearProgressIndicator;
 pub use schema::{
     Alignment, Arrangement, AssetKind, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
     EventPayload, IconRole, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection,
-    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
+    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
     Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
     KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs,
     Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
+pub use window::{WindowSize, use_window_size, window_size};
 
 pub mod prelude {
     pub use crate as dioxus_elements;
@@ -42,7 +44,8 @@ pub mod prelude {
         Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
         LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
         ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
-        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, component, launch, rsx,
+        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, component,
+        launch, rsx, use_window_size,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;

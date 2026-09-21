@@ -7,7 +7,7 @@ use crate::schema::{
     Color, ColorRole, ColorScheme, DesignSystem, EVENT_SCHEMA, EventPayloadType, FieldSchema,
     FieldSlot, FieldType, KEY_SCHEMA, Key, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PROTOCOL_VERSION,
     Paint, PropertyKind, ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme,
-    WIDGET_SCHEMA, WidgetKind,
+    WIDGET_SCHEMA, WINDOW_SIZE_CLASS_SCHEMA, WidgetKind,
 };
 use crate::tokens::DESIGN_TOKENS;
 use crate::{EventPayload, Modifier};
@@ -35,6 +35,7 @@ pub fn generate_kotlin() -> String {
     write_enum(&mut output, "WidgetKind", WIDGET_SCHEMA);
     write_enum(&mut output, "PropertyKind", PROPERTY_SCHEMA);
     write_enum(&mut output, "Key", KEY_SCHEMA);
+    write_enum(&mut output, "WindowSizeClass", WINDOW_SIZE_CLASS_SCHEMA);
     for role in ROLE_ENUM_SCHEMA {
         write_enum(&mut output, role.name, role.variants);
     }
@@ -147,6 +148,11 @@ data class Theme(
             }
             EventPayloadType::Range => output.push_str(", val start: Int, val count: Int"),
             EventPayloadType::Integer => output.push_str(", val value: Long"),
+            EventPayloadType::WindowSize => {
+                output.push_str(
+                    ", val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass",
+                );
+            }
         }
         output.push_str(") : HostEvent\n");
     }
@@ -380,7 +386,10 @@ object Protocol {
                 )
                 .unwrap();
             }
-            EventPayloadType::KeyDown | EventPayloadType::Range | EventPayloadType::Integer => {
+            EventPayloadType::KeyDown
+            | EventPayloadType::Range
+            | EventPayloadType::Integer
+            | EventPayloadType::WindowSize => {
                 writeln!(
                     output,
                     "                is HostEvent.{} -> null",
@@ -403,6 +412,7 @@ object Protocol {
             EventPayloadType::KeyDown => 20,
             EventPayloadType::Range => 24,
             EventPayloadType::Integer => 24,
+            EventPayloadType::WindowSize => 28,
         };
         writeln!(
             output,
@@ -497,6 +507,15 @@ object Protocol {
                 )
                 .unwrap();
             }
+            EventPayloadType::WindowSize => {
+                writeln!(output, "                is HostEvent.{} -> {{", event.name).unwrap();
+                output.push_str("                    out.putFloat(event.widthDp)\n");
+                output.push_str("                    out.putFloat(event.heightDp)\n");
+                output.push_str(
+                    "                    out.putInt(windowSizeClassTag(event.sizeClass))\n",
+                );
+                output.push_str("                }\n");
+            }
         }
     }
     output.push_str(
@@ -567,6 +586,18 @@ object Protocol {
     );
     for variant in KEY_SCHEMA {
         writeln!(output, "        Key.{} -> {}", variant.name, variant.tag).unwrap();
+    }
+    output.push_str("    }\n\n");
+    output.push_str(
+        "    private fun windowSizeClassTag(sizeClass: WindowSizeClass): Int = when (sizeClass) {\n",
+    );
+    for variant in WINDOW_SIZE_CLASS_SCHEMA {
+        writeln!(
+            output,
+            "        WindowSizeClass.{} -> {}",
+            variant.name, variant.tag
+        )
+        .unwrap();
     }
     output.push_str("    }\n\n");
     for role in ROLE_ENUM_SCHEMA {
@@ -1112,6 +1143,15 @@ pub fn generate_event_vector() -> Result<Vec<u8>, ProtocolError> {
             handler_id: 17,
             payload: EventPayload::ValueChanged(-19_723),
         },
+        HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp: 840.0,
+                height_dp: 600.0,
+                class: crate::schema::WindowSizeClass::Expanded,
+            },
+        },
     ];
     let mut output = Vec::new();
     let mut encoded = Vec::new();
@@ -1137,7 +1177,7 @@ pub fn generate_vector_description() -> String {
   }},
   "events": {{
     "file": "events.bin",
-    "description": "Eight independently decodable event records concatenated in schema order",
+    "description": "Nine independently decodable event records concatenated in schema order",
     "records": [
       {{ "type": "Clicked", "offset": 0, "length": 16, "nodeId": 7, "handlerId": 11 }},
       {{ "type": "TextChanged", "offset": 16, "length": 30, "nodeId": 8, "handlerId": 12, "text": "한글" }},
@@ -1146,7 +1186,8 @@ pub fn generate_vector_description() -> String {
       {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }},
       {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }},
       {{ "type": "RangeRequested", "offset": 145, "length": 24, "nodeId": 10, "handlerId": 16, "start": 100, "count": 20 }},
-      {{ "type": "ValueChanged", "offset": 169, "length": 24, "nodeId": 11, "handlerId": 17, "value": -19723 }}
+      {{ "type": "ValueChanged", "offset": 169, "length": 24, "nodeId": 11, "handlerId": 17, "value": -19723 }},
+      {{ "type": "WindowSizeChanged", "offset": 193, "length": 28, "nodeId": 0, "handlerId": 0, "widthDp": 840.0, "heightDp": 600.0, "sizeClass": "Expanded" }}
     ]
   }}
 }}

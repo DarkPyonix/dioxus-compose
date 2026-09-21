@@ -177,6 +177,21 @@ impl Host {
     }
 
     pub fn dispatch(&mut self, event: HostEvent<'_>) -> Result<(&[u8], i64), ProtocolError> {
+        // The window's size belongs to no node and no handler: the Renderer measures the
+        // root content and reports it. It takes the same synchronous path as every other
+        // event, so the batch it produces is applied in the frame that asked for it.
+        if let EventPayload::WindowSizeChanged {
+            width_dp,
+            height_dp,
+            class,
+        } = event.payload
+        {
+            crate::window::publish(crate::window::WindowSize::new(width_dp, height_dp, class));
+            self.renderer.begin_frame();
+            self.dom.render_immediate(&mut self.renderer);
+            self.arm_scheduler_wake();
+            return Ok((self.renderer.finish_frame()?, 0));
+        }
         let Some((element, node_id, name)) = self.renderer.handler(event.handler_id) else {
             return Err(ProtocolError::InvalidValueKind(0));
         };
@@ -209,6 +224,7 @@ impl Host {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
             EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
+            EventPayload::WindowSizeChanged { .. } => unreachable!("handled above"),
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);

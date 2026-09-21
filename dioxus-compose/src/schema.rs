@@ -52,6 +52,7 @@ pub enum EventPayloadType {
     KeyDown,
     Range,
     Integer,
+    WindowSize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -68,7 +69,8 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,open,on_dismiss,selected_index,commands,value,min,max;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged;",
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
+    "windowsizeclasses=Compact,Medium,Expanded;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset"
 );
 
@@ -98,6 +100,7 @@ const fn schema_hash() -> u64 {
     hash = hash_enum_schema(hash, WIDGET_SCHEMA);
     hash = hash_enum_schema(hash, PROPERTY_SCHEMA);
     hash = hash_enum_schema(hash, KEY_SCHEMA);
+    hash = hash_enum_schema(hash, WINDOW_SIZE_CLASS_SCHEMA);
     let mut role_index = 0;
     while role_index < ROLE_ENUM_SCHEMA.len() {
         hash = hash_bytes(hash, ROLE_ENUM_SCHEMA[role_index].name.as_bytes());
@@ -180,6 +183,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::KeyDown => 3,
                 EventPayloadType::Range => 4,
                 EventPayloadType::Integer => 5,
+                EventPayloadType::WindowSize => 6,
             }],
         );
         index += 1;
@@ -287,6 +291,33 @@ pub struct Selection {
 define_wire_enum!(KEY_SCHEMA, Key {
     Enter = 1,
 });
+
+define_wire_enum!(WINDOW_SIZE_CLASS_SCHEMA, WindowSizeClass {
+    Compact = 0,
+    Medium = 1,
+    Expanded = 2,
+});
+
+impl WindowSizeClass {
+    /// The width in dp at which `Medium` begins, and the width at which `Expanded` does.
+    ///
+    /// These are the Material 3 window size class boundaries. Using different numbers
+    /// would make the Compose components adapt at one width and the Rust layout branch at
+    /// another, and that mismatch is visible on screen.
+    pub const MEDIUM_MIN_WIDTH_DP: f32 = 600.0;
+    pub const EXPANDED_MIN_WIDTH_DP: f32 = 840.0;
+
+    /// The class a window of this width belongs to. Height does not take part.
+    pub fn from_width_dp(width_dp: f32) -> Self {
+        if width_dp >= Self::EXPANDED_MIN_WIDTH_DP {
+            Self::Expanded
+        } else if width_dp >= Self::MEDIUM_MIN_WIDTH_DP {
+            Self::Medium
+        } else {
+            Self::Compact
+        }
+    }
+}
 
 /// A role enum that codegen mirrors into Kotlin.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -919,6 +950,13 @@ pub enum EventPayload<'a> {
     /// A picker's new value, in the widget's own epoch unit. The Renderer decided how the
     /// user picked it, so nothing about calendars, wheels or clocks crosses here.
     ValueChanged(i64),
+    /// The window moved into a different size class. The Renderer measures the root
+    /// content and sends this only when the class changes, never on every layout pass.
+    WindowSizeChanged {
+        width_dp: f32,
+        height_dp: f32,
+        class: WindowSizeClass,
+    },
 }
 
 pub const EVENT_SCHEMA: &[EventSchema] = &[
@@ -961,5 +999,10 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "ValueChanged",
         tag: 8,
         payload: EventPayloadType::Integer,
+    },
+    EventSchema {
+        name: "WindowSizeChanged",
+        tag: 17,
+        payload: EventPayloadType::WindowSize,
     },
 ];
