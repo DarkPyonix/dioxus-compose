@@ -37,6 +37,7 @@ import dioxus.compose.ui.node.nodeTestTag
 import dioxus.compose.ui.platform.FrameRequestSource
 import dioxus.compose.ui.platform.LocalFrameRequests
 import kotlin.math.abs
+import dioxus.compose.ui.node.NodeTable
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -254,4 +255,5 @@ class NavigationTest {
         onNodeWithTag(nodeTestTag(FIRST)).assertIsDisplayed()
         onNodeWithTag(nodeTestTag(FIRST)).assertIsNotSelected()
     }
+
 }

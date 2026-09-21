@@ -397,3 +397,39 @@ fn fr21_a_sheet_seeds_its_open_state_and_reports_one_dismissal() {
         PropertyValue::Bool(false),
     )));
 }
+
+/// A destination drawn in the colour the application named.
+///
+/// The design system decides what selected looks like where nobody says otherwise, which
+/// is what an adaptive application wants. A unified one has a reference to match, and not
+/// every reference has an accent in its bar: the drum school's is white icons on black,
+/// and asking the active system instead put its own accent on the selected one. Without a
+/// colour to send, the sample had no way to say what its picture says.
+#[test]
+fn fr14_a_destination_carries_the_colour_it_was_given() {
+    fn app() -> Element {
+        rsx! {
+            Navigation {
+                selected_index: 0_usize,
+                NavigationItem {
+                    text: "Skills",
+                    icon: IconRole::List,
+                    color: Paint::Literal(Color::rgb(0xff_ffff)),
+                    on_click: move |()| {},
+                }
+                Text { text: "the screen" }
+            }
+        }
+    }
+
+    let mut host = Host::new(app);
+    let mutations = records(host.rebuild().expect("the first tree encodes"));
+    let painted = mutations
+        .iter()
+        .any(|record| matches!(record, Record::Prop(_, PropertyKind::Color, _)));
+    assert!(
+        painted,
+        "the destination sent no colour, so the renderer has nothing to use in place of \
+         the design system's accent and a unified sample cannot match its reference"
+    );
+}

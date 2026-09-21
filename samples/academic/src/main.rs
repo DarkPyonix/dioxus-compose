@@ -395,6 +395,9 @@ fn app() -> Element {
             for choice in Destination::STRIP {
                 NavigationItem {
                     key: "{choice.label()}",
+                    // The reference's bar has no accent in it: every icon is white and
+                    // the selected one is marked by nothing but being the one you are on.
+                    color: Paint::Literal(palette::TEXT),
                     text: "",
                     icon: choice.icon(),
                     on_click: move |()| destination.set(choice),

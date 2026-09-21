@@ -299,7 +299,11 @@ pub mod elements {
     // A destination's label and icon are properties, not a child tree. A child tree would
     // fix the arrangement, and the three presentations exist because it differs: a bar
     // stacks the label under the icon, a drawer sets it beside.
-    element!(navigationitem, "NavigationItem", [text, icon, enabled]);
+    element!(
+        navigationitem,
+        "NavigationItem",
+        [text, icon, color, enabled]
+    );
     // Like a Dialog on the wire: `open` seeds the Renderer's own state and `on_dismiss`
     // says once that the user asked to close it. Which edge it enters from is the
     // Renderer's, because it is the side that knows how wide the window is.

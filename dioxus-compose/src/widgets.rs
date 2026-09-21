@@ -1579,6 +1579,14 @@ pub fn NavigationItem(
     #[props(default)] fill_max_height: bool,
     #[props(default)] text: String,
     #[props(default)] icon: Option<IconRole>,
+    /// The colour of this destination's icon and label, in both states.
+    ///
+    /// The design system decides what selected looks like where this is not set, which is
+    /// what an adaptive application wants. A unified one names it, because its reference
+    /// may have no accent in the bar at all and a system asked the question answers with
+    /// its own.
+    #[props(default)]
+    color: Option<Paint>,
     #[props(default = true)] enabled: bool,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
@@ -1599,6 +1607,7 @@ pub fn NavigationItem(
             fill_max_height,
             text,
             icon: opt_role(icon),
+            color: opt_paint(color),
             enabled,
             onclick: move |_| on_click.call(()),
         }

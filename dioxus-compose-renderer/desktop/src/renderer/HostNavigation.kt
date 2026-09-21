@@ -47,6 +47,7 @@ import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.runtime.LocalWindowSizeClass
 import dioxus.compose.ui.node.Node
+import dioxus.compose.ui.paintProp
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.node.nodeTestTag
@@ -287,7 +288,16 @@ internal fun Destination(
     val search = role == IconRole.Search &&
         presentation == NavigationPresentation.Drawer &&
         style.searchContainer != null
-    val tint = if (selected && !search) style.selectedContent else style.content
+    // The design system decides what "selected" looks like, unless the node names a
+    // colour itself. A unified sample is what needs the exception: its reference bar is
+    // white icons on black with no accent anywhere, and asking the active system instead
+    // puts its own accent on the selected one.
+    //
+    // The named colour is used for both states. A destination that says what colour it is
+    // is saying it about itself, not about half of itself, and a sample wanting the two
+    // states apart says so by giving each destination its own colour.
+    val named = node.paintProp(PropertyKind.Color)?.let { theme.color(it) }
+    val tint = named ?: if (selected && !search) style.selectedContent else style.content
     val showLabel = label.isNotEmpty() &&
         (presentation != NavigationPresentation.Rail || style.labelInRail)
     val pill = selected && !search && style.indicatorKind == NavigationIndicator.Pill

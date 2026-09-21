@@ -9,8 +9,8 @@ mod renderer_dir {
 }
 
 use renderer_dir::{
-    CACHE_DIR_ENV, FetchError, RENDERER_DIR_ENV, RendererSource, Request, acquire_renderer,
-    RendererLinkage, artifact_target, default_cache_root, renderer_linkage,
+    CACHE_DIR_ENV, FetchError, RENDERER_DIR_ENV, RendererLinkage, RendererSource, Request,
+    acquire_renderer, artifact_target, default_cache_root, renderer_linkage,
 };
 
 /// docs.rs builds with the network switched off. Linking a renderer is not what building
