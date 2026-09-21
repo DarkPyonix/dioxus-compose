@@ -504,20 +504,19 @@ fn app() -> Element {
                         overflow: TextOverflow::Ellipsis,
                     }
 
-                    // The page. A document is an object you write on, so it is a surface of
-                    // its own, and it takes what the toolbar and the status line leave. Its
-                    // width is the column's, which is what makes the file strip above it and
-                    // the status line below it line up with its edges.
-                    Surface {
+                    // The page: the field itself, taking everything the title above it
+                    // and the status line below it leave.
+                    //
+                    // It used to be a field inside a scrolling column inside a surface.
+                    // Height cannot reach a field through a scrolling column, because what
+                    // a scroll offers its content is unbounded, so the editor came out one
+                    // line tall at the top of a page-sized panel: a text editor you could
+                    // not see your document in. The field scrolls itself once it is taller
+                    // than the window, which is the behaviour the column was there for.
+                    dioxus_compose::Box {
                         fill_max_width: true,
                         weight: 1.0,
-                        // The editor scrolls on its own, so a document longer than the window
-                        // stays reachable without the Host knowing where the scroll is.
-                        ScrollColumn {
-                            fill_max_width: true,
-                            fill_max_height: true,
-                            {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
-                        }
+                        {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
                     }
 
                     // The status line is not part of the page, so a rule separates them.
