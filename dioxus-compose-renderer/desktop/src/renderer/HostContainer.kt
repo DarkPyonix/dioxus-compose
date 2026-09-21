@@ -25,6 +25,7 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
+import dioxus.compose.ui.node.Children
 import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.resolvedShape
 import dioxus.compose.ui.weightOf
@@ -93,7 +94,7 @@ internal fun HostContainerColumn(
 ) {
     val style = theme.rules.container(role, theme)
     Column(modifier.containerDecoration(node, style, theme)) {
-        node.children.forEach { childId -> key(childId) { RenderNode(childId, table, dispatcher) } }
+        Children(node, table, dispatcher)
     }
 }
 

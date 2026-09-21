@@ -66,6 +66,7 @@ data class TableError(val code: Int, val message: String) {
         const val UNKNOWN_ASSET = 5
         const val UNSUPPORTED_ASSET = 6
         const val UNREADABLE_ASSET = 7
+        const val CYCLIC_INSERT = 8
     }
 }
 
@@ -189,6 +190,17 @@ class NodeTable {
             fail(TableError.UNKNOWN_NODE, "Insert into unknown parent $parentId")
             return
         }
+        // A node cannot be placed under itself or under one of its own descendants: the
+        // parent chain would then have no root, and anything that follows it, drawing the
+        // tree or walking up from a node, recurses until the stack runs out. The tree the
+        // Renderer already has is left exactly as it was.
+        if (nodeId == parentId || isDescendant(parentId, nodeId)) {
+            fail(
+                TableError.CYCLIC_INSERT,
+                "Insert of node $nodeId under $parentId would make $nodeId its own ancestor",
+            )
+            return
+        }
         detach(nodeId)
         val siblings = childrenOf(parentId) ?: return
         // `index` is unsigned on the wire; u32::MAX means "append".
@@ -250,6 +262,23 @@ class NodeTable {
             selectionEnd = mutation.selectionEnd,
             revision = revision,
         )
+    }
+
+    /**
+     * True when [nodeId] is [candidate] itself or sits below it, found by walking up from
+     * [nodeId] rather than down, so the cost is the depth of the tree and not its size.
+     *
+     * The walk is bounded by the number of nodes, so even a chain that already loops ends
+     * the walk instead of running forever.
+     */
+    private fun isDescendant(nodeId: Int, candidate: Int): Boolean {
+        var current = nodeId
+        var steps = nodes.size
+        while (current != ROOT_ID && steps-- > 0) {
+            if (current == candidate) return true
+            current = nodes[current]?.parentId ?: return false
+        }
+        return false
     }
 
     private fun detach(nodeId: Int) {

@@ -27,12 +27,22 @@ enum PathTarget {
 #[derive(Debug)]
 struct StackNode {
     node_id: u32,
+    /// The element this entry was created for, when it is a placeholder.
+    ///
+    /// A placeholder is not a node in the Compose tree, so every one of them carries node
+    /// id 0. Two placeholders on screen at once still stand in two different places, and
+    /// the element is what tells them apart.
+    element: Option<ElementId>,
     paths: HashMap<Vec<u8>, PathTarget>,
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
 const MODIFIER_SLOTS: usize = 11;
+
+/// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
+/// takes no slot in the Compose tree.
+const PLACEHOLDER_NODE: u32 = 0;
 
 /// `dioxus-core` mutation sink that writes the Compose wire protocol directly.
 pub struct ComposeRenderer {
@@ -42,6 +52,14 @@ pub struct ComposeRenderer {
     nodes: Vec<Option<u32>>,
     handlers: Vec<Handler>,
     parents: HashMap<u32, (u32, u32)>,
+    /// Where each placeholder stands, keyed by its element rather than by a node id.
+    ///
+    /// Placeholders all share node id 0, so keeping their positions in `parents` made
+    /// every one of them overwrite the last: a branch that filled in was then attached to
+    /// whichever other placeholder had been inserted most recently, which put a subtree
+    /// under a stranger and, when that stranger was its own descendant, left the parent
+    /// chain with no root.
+    placeholders: HashMap<usize, (u32, u32)>,
     /// Which design properties a node has actually been given, one bit per tag.
     design_props: HashMap<u32, u32>,
     /// A border arrives as a width and a colour in separate attributes; this holds
@@ -77,6 +95,7 @@ impl ComposeRenderer {
             nodes: Vec::with_capacity(256),
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
+            placeholders: HashMap::with_capacity(16),
             design_props: HashMap::with_capacity(64),
             pending_borders: HashMap::with_capacity(16),
             modifier_slots: HashMap::with_capacity(64),
@@ -392,7 +411,7 @@ impl ComposeRenderer {
                         }
                         _ => {
                             if let Some(child_id) = self.build_template_node(child, path, paths) {
-                                self.insert_node(node_id, child_id, index as u32);
+                                self.insert_node(node_id, child_id, index as u32, None);
                             }
                         }
                     }
@@ -480,11 +499,24 @@ impl ComposeRenderer {
         let start = self.stack.len().saturating_sub(count);
         let nodes: Vec<_> = self.stack.drain(start..).collect();
         for (offset, node) in nodes.into_iter().enumerate() {
-            self.insert_node(parent, node.node_id, index.saturating_add(offset as u32));
+            self.insert_node(
+                parent,
+                node.node_id,
+                index.saturating_add(offset as u32),
+                node.element,
+            );
         }
     }
 
-    fn insert_node(&mut self, parent: u32, node_id: u32, index: u32) {
+    fn insert_node(&mut self, parent: u32, node_id: u32, index: u32, element: Option<ElementId>) {
+        if node_id == PLACEHOLDER_NODE {
+            // Nothing is drawn, so nothing is sent. The position is remembered under the
+            // element, and the Insert for whatever fills this branch later carries it.
+            if let Some(element) = element {
+                self.placeholders.insert(element.0, (parent, index));
+            }
+            return;
+        }
         let mutation = if self.parents.contains_key(&node_id) {
             Mutation::Move {
                 parent_id: parent,
@@ -500,6 +532,14 @@ impl ComposeRenderer {
         };
         self.write(mutation);
         self.parents.insert(node_id, (parent, index));
+    }
+
+    /// Where the given element stands: its own position, or its placeholder's.
+    fn slot_of(&self, id: ElementId) -> Option<(u32, u32)> {
+        match self.node(id) {
+            Some(PLACEHOLDER_NODE) | None => self.placeholders.get(&id.0).copied(),
+            Some(node_id) => self.parents.get(&node_id).copied(),
+        }
     }
 }
 
@@ -524,9 +564,10 @@ impl WriteMutations for ComposeRenderer {
     fn create_placeholder(&mut self, id: ElementId) {
         // A Dioxus placeholder is not materialized in the Compose tree. It is
         // represented by its eventual insertion position.
-        self.map_node(id, 0);
+        self.map_node(id, PLACEHOLDER_NODE);
         self.stack.push(StackNode {
-            node_id: 0,
+            node_id: PLACEHOLDER_NODE,
+            element: Some(id),
             paths: HashMap::new(),
         });
     }
@@ -541,6 +582,7 @@ impl WriteMutations for ComposeRenderer {
         });
         self.stack.push(StackNode {
             node_id,
+            element: None,
             paths: HashMap::new(),
         });
     }
@@ -553,6 +595,7 @@ impl WriteMutations for ComposeRenderer {
             self.map_node(id, root);
             self.stack.push(StackNode {
                 node_id: root,
+                element: None,
                 paths,
             });
         }
@@ -560,8 +603,13 @@ impl WriteMutations for ComposeRenderer {
 
     fn replace_node_with(&mut self, id: ElementId, m: usize) {
         if let Some(node_id) = self.node(id) {
-            let target = self.parents.remove(&node_id);
-            self.write(Mutation::Remove { node_id });
+            let target = self.slot_of(id);
+            if node_id == PLACEHOLDER_NODE {
+                self.placeholders.remove(&id.0);
+            } else {
+                self.parents.remove(&node_id);
+                self.write(Mutation::Remove { node_id });
+            }
             if let Some((parent, index)) = target {
                 self.insert_stack(parent, index, m);
                 return;
@@ -581,24 +629,20 @@ impl WriteMutations for ComposeRenderer {
         if let Some(PathTarget::Slot { parent, index }) = target {
             let children: Vec<_> = self.stack.drain(parent_position + 1..).collect();
             for (offset, child) in children.into_iter().enumerate() {
-                self.insert_node(parent, child.node_id, index + offset as u32);
+                self.insert_node(parent, child.node_id, index + offset as u32, child.element);
             }
         }
     }
 
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
-        if let Some(anchor) = self.node(id) {
-            if let Some((parent, index)) = self.parents.get(&anchor).copied() {
-                self.insert_stack(parent, index.saturating_add(1), m);
-            }
+        if let Some((parent, index)) = self.slot_of(id) {
+            self.insert_stack(parent, index.saturating_add(1), m);
         }
     }
 
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
-        if let Some(anchor) = self.node(id) {
-            if let Some((parent, index)) = self.parents.get(&anchor).copied() {
-                self.insert_stack(parent, index, m);
-            }
+        if let Some((parent, index)) = self.slot_of(id) {
+            self.insert_stack(parent, index, m);
         }
     }
 
@@ -674,9 +718,12 @@ impl WriteMutations for ComposeRenderer {
     }
 
     fn remove_node(&mut self, id: ElementId) {
+        self.placeholders.remove(&id.0);
         if let Some(node_id) = self.node(id) {
-            self.write(Mutation::Remove { node_id });
-            self.parents.remove(&node_id);
+            if node_id != PLACEHOLDER_NODE {
+                self.write(Mutation::Remove { node_id });
+                self.parents.remove(&node_id);
+            }
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
             *slot = None;
@@ -688,6 +735,7 @@ impl WriteMutations for ComposeRenderer {
         if let Some(node_id) = self.node(id) {
             self.stack.push(StackNode {
                 node_id,
+                element: Some(id),
                 paths: HashMap::new(),
             });
         }

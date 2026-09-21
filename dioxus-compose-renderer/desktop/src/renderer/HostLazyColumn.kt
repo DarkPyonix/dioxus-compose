@@ -1,6 +1,7 @@
 package dioxus.compose.foundation
 
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -20,6 +21,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
@@ -27,6 +29,9 @@ import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
+import dioxus.compose.ui.node.StackingAxis
+import dioxus.compose.ui.node.stackingAxis
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 
 /**
  * How many items are asked for beyond the visible range on each side.
@@ -84,7 +89,15 @@ internal fun HostLazyColumn(
     // would stop being windowed at all.
     var gapHeight by remember(node.id) { mutableStateOf(ESTIMATED_ITEM_HEIGHT) }
 
-    LazyColumn(modifier = modifier, state = state) {
+    // A scrolling list is a viewport, not a stack of items: told nothing about its height
+    // it fills the height it is offered instead of shrinking to the window of items that
+    // happens to be materialised. Without this a list beside a detail pane is as tall as
+    // the few rows the Host has sent so far, and it can never grow, because the number of
+    // rows it asks for is decided by how tall it already is.
+    val sized =
+        if (node.declaresOwnHeight(table)) modifier else Modifier.fillMaxHeight().then(modifier)
+
+    LazyColumn(modifier = sized, state = state) {
         items(
             count = itemCount,
             key = { index -> lazyItemKey(table, children, index - windowStart, index) },
@@ -111,12 +124,30 @@ internal fun HostLazyColumn(
     if (handlerId != null) {
         LaunchedEffect(state, handlerId, itemCount, dispatcher) {
             snapshotFlow {
-                requestedRange(
-                    firstVisible = state.firstVisibleItemIndex,
-                    visibleCount = state.layoutInfo.visibleItemsInfo.size,
-                    itemCount = itemCount,
-                )
+                // A window on screen whose items all measure nothing is kept as it is.
+                // Such items take up none of the viewport, so the slots around them are
+                // estimated ones again and the viewport lands somewhere else entirely;
+                // answering that with another window moves it again, and the two windows
+                // replace each other for as long as the list is on screen while nothing
+                // is ever drawn. An item that measures nothing costs nothing, including
+                // the request that would have followed it.
+                if (windowDrawsNothing(state, node, windowStart)) {
+                    null
+                } else {
+                    requestedRange(
+                        firstVisible = state.firstVisibleItemIndex,
+                        // Only the slots that take up room are counted, for the same
+                        // reason: a viewport full of items that measure nothing reports
+                        // every one of them as visible and would ask for a window the
+                        // size of the whole collection.
+                        visibleCount = state.layoutInfo.visibleItemsInfo.count { it.size > 0 },
+                        itemCount = itemCount,
+                    )
+                }
             }
+                // Dropped before the comparison, so a frame that asks for nothing does not
+                // make the next frame's identical range look like a change.
+                .filterNotNull()
                 // A scroll that stays inside the window costs no boundary call (section 5.1).
                 .distinctUntilChanged()
                 .collect { (start, count) ->
@@ -132,6 +163,41 @@ internal fun HostLazyColumn(
         }
     }
 }
+
+/**
+ * True when the items the Host has materialised are on screen and none of them takes up
+ * any room.
+ *
+ * `windowStart` is the global index of the node's first child, so a visible slot is one of
+ * those items exactly while its index falls inside the window. A window that has scrolled
+ * off the screen is not a window of empty items, and the list still has to ask for the one
+ * it has scrolled to.
+ */
+private fun windowDrawsNothing(state: LazyListState, node: Node, windowStart: Int): Boolean {
+    if (node.children.isEmpty()) return false
+    val window = windowStart until windowStart + node.children.size
+    val onScreen = state.layoutInfo.visibleItemsInfo.filter { item -> item.index in window }
+    return onScreen.isNotEmpty() && onScreen.none { item -> item.size > 0 }
+}
+
+/**
+ * True when the Host gave this node a height of its own, which then decides the viewport.
+ *
+ * A `Weight` counts only under a parent that stacks its children vertically, where the
+ * weight is a share of the height and the parent has therefore already fixed it. Under a
+ * Row the same weight is a share of the width and says nothing about the height, so a list
+ * pane beside a detail pane still has to fill the height the Row offers it.
+ */
+internal fun Node.declaresOwnHeight(table: NodeTable): Boolean = modifiers.any { value ->
+    value is ProtocolModifier.Height ||
+        value is ProtocolModifier.Size ||
+        value is ProtocolModifier.FillMaxHeight ||
+        (value is ProtocolModifier.Weight && table.stacksVertically(parentId))
+}
+
+/** True when the node hosting a child stacks its children top to bottom. */
+private fun NodeTable.stacksVertically(nodeId: Int): Boolean =
+    stackingAxis(nodeId) == StackingAxis.Vertical
 
 /**
  * The Compose item key for a global index: the Host's `item_key` when it has one.

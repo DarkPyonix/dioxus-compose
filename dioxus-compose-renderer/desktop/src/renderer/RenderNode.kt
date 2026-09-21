@@ -176,11 +176,41 @@ fun RenderNode(
 }
 
 /**
+ * The axis a widget stacks its children along, which is the axis a child's `Weight` is a
+ * share of: a weight under a Column is a share of the height, a weight under a Row a share
+ * of the width.
+ */
+internal enum class StackingAxis { Vertical, Horizontal, None }
+
+/**
+ * How the node that hosts a child lays its children out, so a child can tell whether a
+ * `Weight` of its own has already decided one of its sizes.
+ *
+ * Only the layouts that really apply a weight are named here. Anything else, a Box or a
+ * widget that draws its children without a weight scope, leaves a weighted child both of
+ * its axes free.
+ */
+internal fun NodeTable.stackingAxis(nodeId: Int): StackingAxis = when (node(nodeId)?.widget) {
+    WidgetKind.Column,
+    WidgetKind.ScrollColumn,
+    WidgetKind.Card,
+    WidgetKind.Surface,
+    -> StackingAxis.Vertical
+
+    WidgetKind.Row,
+    WidgetKind.TopAppBar,
+    -> StackingAxis.Horizontal
+
+    else -> StackingAxis.None
+}
+
+/**
  * Children of a Column: weight is applied here because `Modifier.weight` exists only inside
- * `ColumnScope`.
+ * `ColumnScope`. Every layout that stacks its children vertically draws them through this,
+ * so a weighted child is given its share wherever it is hosted and not only under a Column.
  */
 @Composable
-private fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
+internal fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
     // `key` keeps each child's state attached to its Host node id across Move mutations.
     node.children.forEach { childId -> key(childId) { WeightedChild(childId, table, dispatcher) } }
 }
