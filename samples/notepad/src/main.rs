@@ -206,6 +206,7 @@ fn app() -> Element {
     // A desktop window has room for the list to stand beside the document. Narrower than
     // that it is a sheet, which is the same list arriving from an edge instead.
     let list_beside = window.is_expanded();
+    let crowded = window.is_compact();
 
     // The worker's result comes back here, on the UI thread, and the signal writes happen
     // where every other signal write in the app happens.
@@ -338,7 +339,21 @@ fn app() -> Element {
             // The document's actions belong in the bar, not in a line of buttons above the
             // text.
             {document_bar(page_width, working, rsx! {
-                Text { text: "Notepad", type_role: TypeRole::Title, weight: 1.0 }
+                // The application's name, on the windows with room for it. On a phone the
+                // four actions need the whole bar, and the page already says what document
+                // this is, which is the thing a title is for. Left in, the name was
+                // squeezed to one letter per line.
+                if crowded {
+                    dioxus_compose::Box { weight: 1.0 }
+                } else {
+                    Text {
+                        text: "Notepad",
+                        type_role: TypeRole::Title,
+                        weight: 1.0,
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                }
                 // Whether there is anything to lose, said where the actions that could
                 // lose it are. Not the error colour: unsaved work is an ordinary state of
                 // a document being written, not a fault.
