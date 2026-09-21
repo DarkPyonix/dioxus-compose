@@ -121,7 +121,32 @@ class ResolvedTheme(
     fun radius(role: ShapeRole): Dp = tokens.radius(role).dp
 
     /** `Full` is stored as a very large radius, which is a pill at any height. */
-    fun shape(role: ShapeRole): Shape = roundedShape(tokens.radius(role))
+    fun shape(role: ShapeRole): Shape = shapeOfRadius(tokens.radius(role))
+
+    /**
+     * True where this system's corners are continuous rather than circular.
+     *
+     * A circular corner joins the straight edge at a point where curvature jumps from
+     * zero to 1/r, and the eye reads that jump as a pinch. Apple's corners do not have
+     * it; every other system here draws a plain arc, and giving them a superellipse would
+     * be a mistake rather than a refinement.
+     */
+    val continuousCorners: Boolean get() = system == DesignSystem.Cupertino
+
+    /** One radius in dp, cut the way this system cuts corners. */
+    fun shapeOfRadius(radius: Float): Shape = if (continuousCorners) {
+        if (radius >= FULL_RADIUS) CapsuleShape else ContinuousCornerShape(radius.dp)
+    } else {
+        roundedShape(radius)
+    }
+
+    /** Four radii in dp, cut the way this system cuts corners. */
+    fun shapeOfRadii(topStart: Float, topEnd: Float, bottomEnd: Float, bottomStart: Float): Shape =
+        if (continuousCorners) {
+            ContinuousCornerShape(topStart.dp, topEnd.dp, bottomEnd.dp, bottomStart.dp)
+        } else {
+            RoundedCornerShape(topStart.dp, topEnd.dp, bottomEnd.dp, bottomStart.dp)
+        }
 
     fun type(role: TypeRole): TypeToken = tokens.type(role)
 
@@ -129,7 +154,7 @@ class ResolvedTheme(
         internal fun roundedShape(radius: Float): Shape =
             if (radius >= FULL_RADIUS) RoundedCornerShape(percent = 50) else RoundedCornerShape(radius.dp)
 
-        private const val FULL_RADIUS = 1000.0f
+        internal const val FULL_RADIUS = 1000.0f
     }
 }
 

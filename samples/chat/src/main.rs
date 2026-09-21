@@ -238,6 +238,12 @@ fn app() -> Element {
                 // conversation rather than as a field and a button that happen to be
                 // side by side.
                 //
+                // A capsule, because every current chat application draws it as one and
+                // because the thing it sits over is a scrolling thread: a rectangle at
+                // the foot of a list reads as the end of the list, and a capsule reads as
+                // something floating in front of it. The role is `Full` rather than a
+                // radius, so it is still the design system that decides how round that is.
+                //
                 // It is drawn with an edge rather than with a fill, because the thread it
                 // sits at the foot of is the reading surface. A filled panel on a reading
                 // surface would either match the page, which is nothing, or match the
@@ -245,6 +251,7 @@ fn app() -> Element {
                 // the assistant said.
                 Surface {
                     fill_max_width: true,
+                    shape_role: ShapeRole::Full,
                     border_width: 1.0,
                     border_color: Paint::Role(ColorRole::Outline),
                     Row {

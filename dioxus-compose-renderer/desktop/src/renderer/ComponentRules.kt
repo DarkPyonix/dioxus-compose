@@ -288,12 +288,6 @@ internal object LiquidGlassRules : ComponentRules {
         SurfaceMaterial.Opaque(container)
     }
 
-    /** A continuous corner at the radius this system's table gives [role]. */
-    private fun continuous(role: ShapeRole, theme: ResolvedTheme): Shape {
-        val radius = theme.radius(role)
-        return if (radius.value >= CAPSULE_RADIUS) CapsuleShape else ContinuousCornerShape(radius)
-    }
-
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
         if (elevation.value <= 0f) return modifier
         // One soft shadow spread over roughly twice the requested height, at a low alpha.
@@ -367,7 +361,7 @@ internal object LiquidGlassRules : ComponentRules {
         val base = ContainerStyle(
             container = theme.color(ColorRole.Surface),
             content = theme.color(ColorRole.OnSurface),
-            shape = continuous(ShapeRole.Medium, theme),
+            shape = theme.shape(ShapeRole.Medium),
             elevation = 0.dp,
             borderWidth = 0.dp,
             borderColor = Color.Transparent,
@@ -382,7 +376,7 @@ internal object LiquidGlassRules : ComponentRules {
             // corner.
             ContainerRole.Card -> base.copy(
                 container = theme.color(ColorRole.SurfaceVariant),
-                shape = continuous(ShapeRole.Large, theme),
+                shape = theme.shape(ShapeRole.Large),
             )
 
             // A `Surface` is a panel: a layer raised off the page, holding the page's own
@@ -395,7 +389,7 @@ internal object LiquidGlassRules : ComponentRules {
             // A toolbar. Glass at every size, because this is the piece macOS 26 makes
             // glass over opaque content.
             ContainerRole.TopAppBar -> base.copy(
-                shape = continuous(ShapeRole.None, theme),
+                shape = theme.shape(ShapeRole.None),
                 verticalPadding = theme.space(SpaceRole.Sm),
                 separator = theme.color(ColorRole.OutlineVariant),
                 typeRole = TypeRole.BodyStrong,
@@ -403,14 +397,14 @@ internal object LiquidGlassRules : ComponentRules {
 
             // An alert: centred, heavily rounded, over a dimmed screen.
             ContainerRole.Dialog -> base.copy(
-                shape = continuous(ShapeRole.Large, theme),
+                shape = theme.shape(ShapeRole.Large),
                 horizontalPadding = theme.space(SpaceRole.Lg),
                 verticalPadding = theme.space(SpaceRole.Lg),
                 scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
             )
 
             ContainerRole.Menu -> base.copy(
-                shape = continuous(ShapeRole.Medium, theme),
+                shape = theme.shape(ShapeRole.Medium),
                 elevation = 2.dp,
                 horizontalPadding = 0.dp,
                 verticalPadding = theme.space(SpaceRole.Xs),
@@ -418,7 +412,7 @@ internal object LiquidGlassRules : ComponentRules {
 
             // A help tag: a light chip, not an inverted one.
             ContainerRole.Tooltip -> base.copy(
-                shape = continuous(ShapeRole.Small, theme),
+                shape = theme.shape(ShapeRole.Small),
                 horizontalPadding = theme.space(SpaceRole.Sm),
                 verticalPadding = theme.space(SpaceRole.Xs),
                 typeRole = TypeRole.Caption,
@@ -447,7 +441,7 @@ internal object LiquidGlassRules : ComponentRules {
             selectedShape = ContinuousCornerShape(concentricRadius(track, inset)),
             indicator = Color.Transparent,
             indicatorHeight = 0.dp,
-            indicatorShape = continuous(ShapeRole.None, theme),
+            indicatorShape = theme.shape(ShapeRole.None),
             indicatorFillsTab = true,
             horizontalPadding = theme.space(SpaceRole.Md),
             verticalPadding = inset,
@@ -486,9 +480,6 @@ internal object LiquidGlassRules : ComponentRules {
     private const val AMBIENT_ALPHA = 0.08f
     private const val SPOT_ALPHA = 0.12f
     private const val SPREAD = 2f
-
-    /** The radius at which the table means "a pill", not a corner of that size. */
-    private const val CAPSULE_RADIUS = 1000.0f
 }
 
 /**
