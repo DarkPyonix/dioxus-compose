@@ -10,7 +10,7 @@
 
 mod assistant;
 
-use assistant::Turns;
+use assistant::{Length, Settings, Turns};
 use dioxus_compose::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,9 +50,138 @@ fn thread_width(window: &WindowSize) -> Option<f32> {
     }
 }
 
+/// The bar across the top of the window, with its contents held to the thread's measure.
+///
+/// A bar spans the window because it belongs to the window. Its contents belong to the
+/// conversation, and a title that starts at the window's edge while the thread it names
+/// starts two hundred dp further in is a window whose two halves disagree about where the
+/// left side is. So the bar fills, and the row inside it is the same width as the thread
+/// and carries the same inset.
+///
+/// `measure` is `None` on a window with nothing to spare, where the row fills the bar and
+/// the bar's own inset is already the thread's.
+fn thread_bar(measure: Option<f32>, busy: bool, children: Element) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            TopAppBar {
+                fill_max_width: true,
+                dioxus_compose::Box {
+                    weight: 1.0,
+                    alignment: Alignment::Center,
+                    Row {
+                        width: measure,
+                        fill_max_width: measure.is_none(),
+                        padding_role: measure.map(|_| SpaceRole::Md),
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        {children}
+                    }
+                }
+            }
+            // A reply arriving is work in progress, and a line under the bar is what every
+            // one of these systems uses to say so. It replaced a word in the corner that
+            // said "assistant is replying": the word was correct and nobody looks at the
+            // corner while they are reading the middle. Indeterminate, because the
+            // assistant does not know how long its answer is going to be either.
+            if busy {
+                ProgressIndicator { determinate: false }
+            }
+        }
+    }
+}
+
+/// The assistant's settings, as a panel that can stand on its own.
+///
+/// Everything here changes what the worker does with the next reply, which is the
+/// difference between a settings screen and a picture of one.
+fn settings_panel(
+    settings: Settings,
+    change: EventHandler<Settings>,
+    close: EventHandler<()>,
+) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            space_role: SpaceRole::Md,
+            Row {
+                fill_max_width: true,
+                alignment: Alignment::CenterStart,
+                Text { text: "Assistant", type_role: TypeRole::Subtitle, weight: 1.0 }
+                Button {
+                    text: "Done",
+                    variant: ButtonVariant::Filled,
+                    on_click: move |_| close.call(()),
+                }
+            }
+            Separator {}
+
+            // One of three, which is what a radio group is for. A dropdown would hide two
+            // of them behind a tap for no gain at this size.
+            Text {
+                text: "Reply length",
+                type_role: TypeRole::Label,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            for length in Length::ALL {
+                Row {
+                    key: "{length.label()}",
+                    fill_max_width: true,
+                    space_role: SpaceRole::Sm,
+                    alignment: Alignment::CenterStart,
+                    RadioButton {
+                        selected: settings.length == length,
+                        on_change: move |_| change.call(Settings { length, ..settings }),
+                    }
+                    Text { text: length.label(), type_role: TypeRole::Body }
+                }
+            }
+
+            Separator {}
+            Row {
+                fill_max_width: true,
+                space_role: SpaceRole::Sm,
+                alignment: Alignment::CenterStart,
+                Column {
+                    weight: 1.0,
+                    Text { text: "Type the reply out", type_role: TypeRole::Body }
+                    Text {
+                        text: "Off, and the whole answer lands at once.",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                }
+                Switch {
+                    checked: settings.streaming,
+                    on_change: move |streaming| {
+                        change.call(Settings { streaming, ..settings })
+                    },
+                }
+            }
+
+            // The speed only means anything while the reply is being typed out, so it is
+            // disabled rather than hidden: a control that vanishes takes the explanation
+            // of what the switch above it does with it.
+            Text {
+                text: "{settings.speed as u32} characters a second",
+                type_role: TypeRole::Label,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+            Slider {
+                value: settings.speed,
+                min: assistant::SLOWEST,
+                max: assistant::FASTEST,
+                enabled: settings.streaming,
+                on_change: move |speed| change.call(Settings { speed, ..settings }),
+            }
+        }
+    }
+}
+
 fn app() -> Element {
     let window = use_window_size();
     let measure = thread_width(&window);
+    let crowded = window.is_compact();
     // Shared with the assistant thread, so it is a sync signal rather than the usual one.
     // Writing it from the worker marks this scope dirty through a channel the scheduler
     // owns, and the Host asks for the frame.
@@ -60,6 +189,8 @@ fn app() -> Element {
     let mut next_id = use_signal(|| 2_u64);
     let mut draft = use_signal(String::new);
     let turns = use_signal(Turns::default);
+    let mut settings = use_signal(Settings::default);
+    let mut settings_open = use_signal(|| false);
 
     let mut send = move |text: String| {
         let text = text.trim().to_owned();
@@ -89,7 +220,7 @@ fn app() -> Element {
             });
         }
         draft.set(String::new());
-        assistant::stream_reply(text, token, turns.peek().clone(), messages);
+        assistant::stream_reply(text, token, turns.peek().clone(), settings(), messages);
     };
 
     let count = messages.read().len();
@@ -108,24 +239,41 @@ fn app() -> Element {
             fill_max_width: true,
             fill_max_height: true,
 
-            TopAppBar {
-                fill_max_width: true,
+            {thread_bar(measure, busy, rsx! {
                 Text { text: "Chat", type_role: TypeRole::Title, weight: 1.0 }
-                Text {
-                    text: if busy { "assistant is replying" } else { "ready" },
-                    type_role: TypeRole::Label,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                Button {
+                    text: "Assistant",
+                    variant: ButtonVariant::Text,
+                    on_click: move |_| settings_open.set(true),
                 }
                 Button {
-                    text: "New conversation",
+                    text: if crowded { "New" } else { "New conversation" },
                     variant: ButtonVariant::Text,
                     on_click: move |_| {
+                        // Starting again throws a conversation away, so it offers it back
+                        // rather than asking first. The stale worker is already handled:
+                        // beginning a turn bumps the token, and a worker whose token is no
+                        // longer current stops at its next chunk.
+                        let previous = messages();
+                        let previous_id = next_id();
                         turns.peek().begin();
                         messages.set(opening_messages());
                         next_id.set(2);
+                        if previous.len() > 1 {
+                            // Spelled out, because this file already has a `Message` and
+                            // it is a line of a conversation. The library's is the one
+                            // sentence an application says after something happened.
+                            dioxus_compose::Message::new("Conversation cleared")
+                                .with_action("Undo", move |()| {
+                                    messages.set(previous.clone());
+                                    next_id.set(previous_id);
+                                })
+                                .with_duration(MessageDuration::Long)
+                                .show();
+                        }
                     },
                 }
-            }
+            })}
 
             // On a narrow window the thread is the window. On anything wider it is a
             // column of its own, centred, with the page showing either side of it.
@@ -149,7 +297,10 @@ fn app() -> Element {
                 width: measure,
                 fill_max_height: true,
                 background: Paint::Role(ColorRole::Surface),
-                padding_role: SpaceRole::Lg,
+                // The medium step, because that is what the bar insets its own contents
+                // by. Anything else and the title and the thread under it start at two
+                // different places.
+                padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Md,
 
                 LazyColumn {
@@ -274,6 +425,20 @@ fn app() -> Element {
                 }
             }
             }
+
+            // The settings arrive from an edge rather than taking the screen: what they
+            // change is the conversation behind them, and covering it to change it would
+            // hide the thing being changed. Which edge is the Renderer's decision.
+            Sheet {
+                open: settings_open(),
+                on_dismiss: move |_| settings_open.set(false),
+                fill_max_width: true,
+                {settings_panel(
+                    settings(),
+                    EventHandler::new(move |next| settings.set(next)),
+                    EventHandler::new(move |()| settings_open.set(false)),
+                )}
+            }
         }
     }
 }
@@ -297,7 +462,7 @@ mod tests {
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
     use std::alloc::{GlobalAlloc, Layout, System};
     use std::cell::Cell;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
     use std::time::Duration;
 
     /// A click or a keystroke in a steady state screen changes one node. Anything above
@@ -365,19 +530,29 @@ mod tests {
     /// The real chat screen, driven the way the Renderer drives it.
     struct Screen {
         host: Host,
+        /// The first frame, kept so a control the screen declared once can still be found
+        /// after other frames have gone by.
+        first: Vec<u8>,
         scrollback: u32,
         range_handler: u64,
         composer: u32,
         submit_handler: u64,
         change_handler: u64,
+        /// The text of every node, as the frames report it.
+        texts: HashMap<u32, String>,
+        /// Every message the screen has said, in order, with its action label.
+        messages: Vec<(String, String)>,
         event: Vec<u8>,
     }
 
     impl Screen {
         fn new() -> Self {
             let mut host = Host::new(app);
-            let first = decode_batch(host.rebuild().expect("the first frame failed to encode"))
-                .expect("the first frame did not decode");
+            let bytes = host
+                .rebuild()
+                .expect("the first frame failed to encode")
+                .to_vec();
+            let first = decode_batch(&bytes).expect("the first frame did not decode");
             let node_of = |widget: WidgetKind| {
                 first
                     .iter()
@@ -408,16 +583,135 @@ mod tests {
             let range_handler = handler_of(scrollback, PropertyKind::OnRangeRequested);
             let submit_handler = handler_of(composer, PropertyKind::OnSubmit);
             let change_handler = handler_of(composer, PropertyKind::OnValueChange);
+            let texts = first
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                    } => Some((*node_id, (*text).to_owned())),
+                    _ => None,
+                })
+                .collect();
             drop(first);
             Self {
                 host,
+                first: bytes,
                 scrollback,
                 range_handler,
                 composer,
                 submit_handler,
                 change_handler,
+                texts,
+                messages: Vec::new(),
                 event: Vec::new(),
             }
+        }
+
+        /// Every node the screen created as this widget, in declaration order.
+        fn nodes_of(&self, widget: WidgetKind) -> Vec<u32> {
+            decode_batch(&self.first)
+                .expect("the first frame did not decode")
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::Create {
+                        node_id,
+                        widget: found,
+                    } if *found == widget => Some(*node_id),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn handler_of(&self, node: u32, property: PropertyKind) -> u64 {
+            decode_batch(&self.first)
+                .expect("the first frame did not decode")
+                .iter()
+                .find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: found,
+                        value: PropertyValue::Integer(id),
+                    } if *node_id == node && *found == property => Some(*id as u64),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("node {node} declared no {property:?} handler"))
+        }
+
+        /// Applies a batch, keeping what the screen is showing and what it has said.
+        fn absorb(&mut self, batch: &[u8]) {
+            for mutation in decode_batch(batch).expect("a frame did not decode") {
+                match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Text,
+                        value: PropertyValue::String(text),
+                    } => {
+                        self.texts.insert(node_id, text.to_owned());
+                    }
+                    Mutation::ShowMessage { text, action, .. } => {
+                        self.messages.push((text.to_owned(), action.to_owned()));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        /// Sends an event and keeps what came back.
+        fn dispatch(&mut self, node_id: u32, handler_id: u64, payload: EventPayload<'_>) {
+            self.encode(node_id, handler_id, payload);
+            let batch = self
+                .host
+                .dispatch_event(&self.event)
+                .expect("the event failed")
+                .0
+                .to_vec();
+            self.absorb(&batch);
+        }
+
+        /// Presses what a person would read as this label.
+        fn press(&mut self, label: &str) {
+            let node_id = *self
+                .texts
+                .iter()
+                .find(|(_, text)| *text == label)
+                .map(|(node_id, _)| node_id)
+                .unwrap_or_else(|| panic!("the screen has nothing labelled {label}"));
+            let handler = self.handler_of(node_id, PropertyKind::OnClick);
+            self.dispatch(node_id, handler, EventPayload::Clicked);
+        }
+
+        /// Polls frames until the assistant has stopped typing, the way the Renderer does
+        /// after the Host asks for one.
+        fn settle(&mut self) -> String {
+            for _ in 0..600 {
+                std::thread::sleep(Duration::from_millis(5));
+                let batch = self
+                    .host
+                    .render_frame(0)
+                    .expect("a frame failed to encode")
+                    .to_vec();
+                self.absorb(&batch);
+                let reply = self.reply();
+                // The caret is on a message that is still arriving.
+                if !reply.is_empty() && !reply.ends_with('\u{2589}') {
+                    return reply;
+                }
+            }
+            panic!("the reply never finished arriving: {:?}", self.reply());
+        }
+
+        /// The last thing the assistant said, as the screen shows it.
+        fn reply(&self) -> String {
+            self.texts
+                .iter()
+                .filter(|(_, text)| {
+                    text.starts_with("You said:") || text.contains("Streaming works")
+                })
+                .max_by_key(|(node_id, _)| **node_id)
+                .map(|(_, text)| text.clone())
+                .unwrap_or_default()
         }
 
         fn encode(&mut self, node_id: u32, handler_id: u64, payload: EventPayload<'_>) {
@@ -514,6 +808,23 @@ mod tests {
                 1,
                 "the screen should hold exactly one windowing list, or the picture is of \
                  something other than the scrollback"
+            );
+        });
+    }
+
+    /// The same screen with the assistant's settings open.
+    ///
+    /// A second recording rather than a flag on the first, because a sheet covers what it
+    /// is over: one picture cannot be of both. This one holds a radio group, a switch and
+    /// a slider, which is three of the newest widgets in the vocabulary and the place a
+    /// design system that has not drawn them yet would show it.
+    #[test]
+    fn fr21_the_settings_sheet_is_recorded_under_every_design_system_and_width() {
+        sample_frames::record("ChatSettings", app, |screen| {
+            screen.fill_lists(8);
+            assert!(
+                screen.press("Assistant"),
+                "the screen has no way to open the assistant's settings"
             );
         });
     }
@@ -697,6 +1008,80 @@ mod tests {
         assert!(widths_at(700.0).contains(&dioxus_compose::WindowSizeClass::MEDIUM_MIN_WIDTH_DP));
         assert!(
             widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+        );
+    }
+
+    /// The bar's contents and the thread are held to the same measure, so the title starts
+    /// where the conversation starts.
+    ///
+    /// A window has one left edge for the conversation in it. The bar used to span the
+    /// window while the thread was centred, so on a desktop window the title began a
+    /// hundred and seventy dp to the left of the thread it named. Two nodes carrying the
+    /// measure is what that agreement looks like on the wire: one is the row inside the
+    /// bar, the other is the thread.
+    #[test]
+    fn fr20_the_bar_holds_its_contents_to_the_same_measure_as_the_thread() {
+        for (width, measure) in [
+            (700.0, dioxus_compose::WindowSizeClass::MEDIUM_MIN_WIDTH_DP),
+            (
+                1200.0,
+                dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP,
+            ),
+        ] {
+            let widths = widths_at(width);
+            assert_eq!(
+                widths.iter().filter(|found| **found == measure).count(),
+                2,
+                "at {width}dp the bar and the thread should both be {measure}: {widths:?}"
+            );
+        }
+    }
+
+    /// The assistant's settings reach the worker. A reply length that changed nothing
+    /// about the reply would be a control wired to a signal and nothing else.
+    #[test]
+    fn fr21_the_reply_length_setting_changes_what_the_assistant_says() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        screen.send("tell me about streaming");
+        let normal = screen.settle();
+
+        // The radio buttons are the only ones on the screen and they are declared in the
+        // order the lengths are listed, so the first of them is Brief.
+        let mut screen = Screen::new();
+        screen.open_window();
+        let brief_button = screen.nodes_of(WidgetKind::RadioButton)[0];
+        let handler = screen.handler_of(brief_button, PropertyKind::OnValueChange);
+        screen.dispatch(brief_button, handler, EventPayload::ValueChanged(1.0));
+        screen.send("tell me about streaming");
+        let brief = screen.settle();
+
+        assert!(
+            brief.len() < normal.len(),
+            "the brief reply is not shorter: {brief:?} against {normal:?}"
+        );
+        assert!(
+            normal.starts_with(&brief),
+            "the brief reply should be the opening of the full one: {brief:?}"
+        );
+    }
+
+    /// Starting again throws a conversation away, so it offers it back.
+    #[test]
+    fn fr21_starting_a_new_conversation_offers_the_old_one_back() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        screen.send("tell me about streaming");
+        screen.settle();
+
+        // "New" rather than "New conversation": nothing has reported a window size, so
+        // the screen is laid out for the narrowest one and the button carries its short
+        // label.
+        screen.press("New");
+        assert_eq!(
+            screen.messages,
+            vec![("Conversation cleared".to_owned(), "Undo".to_owned())],
+            "clearing should say what it did and offer it back"
         );
     }
 
