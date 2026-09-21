@@ -2,12 +2,9 @@ package dioxus.compose.ui.node
 
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
 import dioxus.compose.protocol.AssetKind
 import dioxus.compose.protocol.IconRole
 import java.lang.InterruptedException
-import org.jetbrains.skia.Data
-import org.jetbrains.skia.svg.SVGDOM
 
 /**
  * What one registered asset became once the Renderer read it.
@@ -21,8 +18,8 @@ sealed interface Asset {
     /** A decoded PNG or JPEG. */
     class Raster(val bitmap: ImageBitmap) : Asset
 
-    /** A parsed SVG document, drawn at whatever size the modifier chain gives it. */
-    class Vector(val document: SVGDOM) : Asset
+    /** A parsed vector document, drawn at whatever size the modifier chain gives it. */
+    class Vector(val document: VectorDocument) : Asset
 
     /**
      * One meaning out of the closed set, with no artwork attached.
@@ -75,14 +72,23 @@ class AssetCache {
             )
         }
         if (asset == null) {
-            return TableError(
-                TableError.UNREADABLE_ASSET,
-                "asset $assetId does not name one of the icons this renderer draws",
-            )
+            val reason = if (kind == AssetKind.VectorIcon) {
+                "does not name one of the icons this renderer draws"
+            } else {
+                "could not be read as $kind by this platform's graphics"
+            }
+            return TableError(TableError.UNREADABLE_ASSET, "asset $assetId $reason")
         }
         entries[assetId] = asset
         return null
     }
+
+    /**
+     * Forgets every registration, for a Renderer that is throwing its tree away and asking
+     * the Host to send the whole of it again. The ids in the new batch are the Host's to
+     * assign from nothing, so keeping the old entries would leave pictures nobody names.
+     */
+    internal fun clear() = entries.clear()
 
     internal fun release(assetId: Int): TableError? {
         if (entries.remove(assetId) == null) {
@@ -95,10 +101,9 @@ class AssetCache {
     }
 
     private fun decode(kind: AssetKind, bytes: ByteArray): Asset? = when (kind) {
-        AssetKind.Png, AssetKind.Jpeg ->
-            Asset.Raster(org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap())
+        AssetKind.Png, AssetKind.Jpeg -> decodeRasterAsset(bytes)?.let(Asset::Raster)
 
-        AssetKind.Svg -> Asset.Vector(SVGDOM(Data.makeFromBytes(bytes)))
+        AssetKind.Svg -> decodeVectorAsset(bytes)?.let(Asset::Vector)
 
         // A vector icon registers a meaning, so its bytes are the role tag and nothing
         // else. There is no artwork on the wire and no icon name to look up at run time.

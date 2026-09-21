@@ -100,7 +100,7 @@ dioxus-compose는 Compose의 런타임 비용을 빼고 렌더러만 가져옵�
 | 🪟 Windows 데스크톱 | 스크립트 없음 | `NFR-4`의 대상이지만 `build-native.sh`는 현재 macOS 외에서 실행을 거부합니다 |
 | 🐧 Linux 데스크톱 | 스크립트 없음 | 위와 같음. 다만 **Rust 워크스페이스와 JVM 개발 셸은 동작**합니다. CI가 `ubuntu-latest`에서 Rust 게이트를 돌립니다 |
 | 📱 iOS | 설계만, 미구현 | Kotlin/Native `-produce static` + `@CName` 심볼 (마일스톤 M5) |
-| 🤖 Android | 설계만, 미구현 | Kotlin 호스트 + 생성된 JNI 심, `PR-5` (마일스톤 M6) |
+| 🤖 Android | 빌드됨, 실행 미확인 | Kotlin Activity가 프로세스와 루프를 소유하고 Rust는 cdylib이며, 양쪽 JNI 심은 스키마에서 생성됩니다. 앱과 라이브러리 모두 `arm64-v8a`로 빌드되지만 아직 기기나 에뮬레이터에서 실행해 보지 않았고, 그것이 `PR-5`가 요구하는 부분입니다 (마일스톤 M6) |
 | 🌐 Web (wasm) | 설계만, 실현 가능성 미확정 | Rust wasm ↔ Kotlin/Wasm 직결, JS 브리지 없음, `PR-6` (마일스톤 M7, 열린 질문 **Q3**) |
 
 ### 양쪽의 진도 차이

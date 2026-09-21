@@ -58,6 +58,10 @@ static RENDERER_API: OnceLock<RendererApi> = OnceLock::new();
 static FRAME_REQUESTED: AtomicBool = AtomicBool::new(false);
 static EVENT_DISPATCH_ACTIVE: AtomicBool = AtomicBool::new(false);
 static DEFERRED_FRAME_REQUEST: AtomicBool = AtomicBool::new(false);
+/// Set between a stop and the start that follows it. While it is set a worker's frame
+/// request is remembered but not delivered, so a process that is not on screen is never
+/// asked to draw.
+static LIFECYCLE_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
 pub fn install_renderer_api(api: RendererApi) -> Result<(), RendererApi> {
     RENDERER_API.set(api)
@@ -136,12 +140,22 @@ fn renderer_api() -> RendererApi {
 }
 
 /// Coalesced wake used internally by the Dioxus scheduler waker.
+///
+/// The flag spans the moment of delivery, not the wait for the frame that answers it. The
+/// Renderer folds requests into its own frame clock, so however many arrive between two
+/// frames it draws once; holding the flag until the frame came back would instead mean
+/// that one request the Renderer was not yet listening for silenced every later one. That
+/// happens on a cold start, where the first composition can be seconds after the first
+/// worker request, and it leaves the application frozen with nothing to unfreeze it.
 pub fn request_frame_from_worker() {
     if !FRAME_REQUESTED.swap(true, Ordering::AcqRel) {
-        if EVENT_DISPATCH_ACTIVE.load(Ordering::Acquire) {
+        if LIFECYCLE_SUPPRESSED.load(Ordering::Acquire)
+            || EVENT_DISPATCH_ACTIVE.load(Ordering::Acquire)
+        {
             DEFERRED_FRAME_REQUEST.store(true, Ordering::Release);
         } else {
             (renderer_api().request_frame)();
+            FRAME_REQUESTED.store(false, Ordering::Release);
         }
     }
 }
@@ -158,8 +172,12 @@ impl EventDispatchGuard {
 impl Drop for EventDispatchGuard {
     fn drop(&mut self) {
         EVENT_DISPATCH_ACTIVE.store(false, Ordering::Release);
+        if LIFECYCLE_SUPPRESSED.load(Ordering::Acquire) {
+            return;
+        }
         if DEFERRED_FRAME_REQUEST.swap(false, Ordering::AcqRel) {
             (renderer_api().request_frame)();
+            FRAME_REQUESTED.store(false, Ordering::Release);
         }
     }
 }
@@ -184,6 +202,9 @@ struct PendingAppend {
 }
 
 pub struct Host {
+    /// Kept so the tree can be built again from nothing when the Renderer asks for a
+    /// resync, which is the one thing a diff against a lost node table cannot answer.
+    app: fn() -> Element,
     theme: Theme,
     dom: VirtualDom,
     renderer: ComposeRenderer,
@@ -208,6 +229,7 @@ impl Host {
         // the one replacing it, out of any context that made them make sense.
         crate::message::reset_messages();
         Self {
+            app,
             theme,
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
@@ -233,7 +255,47 @@ impl Host {
         self.dispatch(event)
     }
 
+    /// The batch arena, reported to the Renderer on every boundary call.
+    pub fn arena(&self) -> (*const u8, usize) {
+        self.renderer.arena()
+    }
+
+    /// Answers with the whole tree, for a Renderer that no longer has a node table.
+    ///
+    /// The Host keeps no shadow of what it has already sent, so the only way to produce a
+    /// full-tree batch is to build the application again, and that resets component state.
+    /// A Renderer that keeps its node table across a configuration change never needs
+    /// this call, which is what the Android host does.
+    pub fn resync(&mut self) -> Result<(&[u8], i64), ProtocolError> {
+        *self = Self::with_theme(self.app, self.theme);
+        Ok((self.rebuild()?, 0))
+    }
+
+    /// Suppresses timers and animations while the UI is off screen, and releases the
+    /// request that arrived while it was, so nothing is lost by stopping.
+    fn set_lifecycle_running(&mut self, running: bool) -> Result<(&[u8], i64), ProtocolError> {
+        LIFECYCLE_SUPPRESSED.store(!running, Ordering::Release);
+        if running {
+            if DEFERRED_FRAME_REQUEST.swap(false, Ordering::AcqRel) {
+                (renderer_api().request_frame)();
+            }
+            FRAME_REQUESTED.store(false, Ordering::Release);
+        }
+        // An empty batch, not a frame: starting again is the Renderer's cue to draw, and
+        // it asks for that frame itself.
+        self.renderer.begin_frame();
+        Ok((self.renderer.finish_frame()?, 0))
+    }
+
     pub fn dispatch(&mut self, event: HostEvent<'_>) -> Result<(&[u8], i64), ProtocolError> {
+        // These three address the Host itself: no node, no handler, and an answer before
+        // anything is looked up.
+        match event.payload {
+            EventPayload::Resync => return self.resync(),
+            EventPayload::LifecycleStart => return self.set_lifecycle_running(true),
+            EventPayload::LifecycleStop => return self.set_lifecycle_running(false),
+            _ => {}
+        }
         // The window's size belongs to no node and no handler: the Renderer measures the
         // root content and reports it. It takes the same synchronous path as every other
         // event, so the batch it produces is applied in the frame that asked for it.
@@ -301,7 +363,10 @@ impl Host {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
             EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
-            EventPayload::WindowSizeChanged { .. } => unreachable!("handled above"),
+            EventPayload::WindowSizeChanged { .. }
+            | EventPayload::Resync
+            | EventPayload::LifecycleStart
+            | EventPayload::LifecycleStop => unreachable!("handled above"),
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
@@ -728,6 +793,18 @@ pub unsafe extern "C" fn dioxus_compose_host_release_batch(batch: *mut MutationB
             unsafe { batch.write(MutationBatch::default()) };
         }
     }));
+}
+
+/// The UI thread's batch arena.
+///
+/// Not a boundary entry point: it is crate-internal, and the generated Android shims use
+/// it to tell the Renderer where the arena is so it can map it once instead of per call.
+pub fn current_arena() -> (*const u8, usize) {
+    HOST.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map_or((std::ptr::null(), 0), Host::arena)
+    })
 }
 
 #[unsafe(no_mangle)]

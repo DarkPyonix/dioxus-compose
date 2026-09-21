@@ -104,6 +104,12 @@ impl ComposeRenderer {
         }
     }
 
+    /// The batch arena, so a runtime that reads Host memory through a mapped view can be
+    /// handed one.
+    pub fn arena(&self) -> (*const u8, usize) {
+        self.encoder.arena()
+    }
+
     pub fn begin_frame(&mut self) {
         self.encoder.clear();
         self.error = None;

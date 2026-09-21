@@ -43,6 +43,14 @@ enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, 
 
 enum class MessageDuration { Short, Long }
 
+enum class LoopMode(val wire: Byte) {
+    /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
+    Renderer(0),
+
+    /** The platform owns the process and the loop. Android, iOS and the web. */
+    Platform(1),
+}
+
 sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
 
@@ -247,13 +255,16 @@ sealed interface HostEvent {
     data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
     data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Double) : HostEvent
     data class WindowSizeChanged(override val nodeId: Int, override val handlerId: Long, val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass) : HostEvent
+    data class Resync(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class LifecycleStart(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class LifecycleStop(override val nodeId: Int, override val handlerId: Long) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 5308217990812269556L
+    const val SCHEMA_HASH: Long = 1289893768534500949L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -455,6 +466,9 @@ object Protocol {
                 is HostEvent.RangeRequested -> null
                 is HostEvent.ValueChanged -> null
                 is HostEvent.WindowSizeChanged -> null
+                is HostEvent.Resync -> null
+                is HostEvent.LifecycleStart -> null
+                is HostEvent.LifecycleStop -> null
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -466,6 +480,9 @@ object Protocol {
                 is HostEvent.RangeRequested -> 24
                 is HostEvent.ValueChanged -> 24
                 is HostEvent.WindowSizeChanged -> 28
+                is HostEvent.Resync -> 16
+                is HostEvent.LifecycleStart -> 16
+                is HostEvent.LifecycleStop -> 16
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -481,6 +498,9 @@ object Protocol {
                 is HostEvent.RangeRequested -> 7
                 is HostEvent.ValueChanged -> 16
                 is HostEvent.WindowSizeChanged -> 17
+                is HostEvent.Resync -> 18
+                is HostEvent.LifecycleStart -> 19
+                is HostEvent.LifecycleStop -> 20
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -515,6 +535,9 @@ object Protocol {
                     out.putFloat(event.heightDp)
                     out.putInt(windowSizeClassTag(event.sizeClass))
                 }
+                is HostEvent.Resync -> Unit
+                is HostEvent.LifecycleStart -> Unit
+                is HostEvent.LifecycleStop -> Unit
             }
             if (text != null) out.put(text)
             return out.position() - start
@@ -523,8 +546,13 @@ object Protocol {
         }
     }
 
-    /** Handshake payload the Renderer sends to dioxus_compose_host_init. */
-    fun handshake(out: ByteBuffer): Int {
+    /**
+     * Handshake payload the Renderer sends to dioxus_compose_host_init.
+     *
+     * `loopMode` says who owns the frame loop: the Renderer on desktop, the platform on
+     * Android, iOS and the web.
+     */
+    fun handshake(out: ByteBuffer, loopMode: LoopMode = LoopMode.Renderer): Int {
         val start = out.position()
         if (out.remaining() < 12) {
             throw ProtocolException("handshake output buffer is too small", 0)
@@ -534,7 +562,7 @@ object Protocol {
         try {
             out.putLong(SCHEMA_HASH)
             out.putShort(PROTOCOL_VERSION.toShort())
-            out.put(0.toByte()) // LoopMode.Renderer
+            out.put(loopMode.wire)
             out.put(0.toByte()) // Reserved for alignment.
             return out.position() - start
         } finally {
