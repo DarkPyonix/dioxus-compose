@@ -204,6 +204,74 @@ impl Screen {
         true
     }
 
+    /// Presses the control placed beside this label.
+    ///
+    /// A card whose face is a picture has no button carrying its words: what takes the
+    /// press is a `Button` with no label, sitting over the picture, and the name is a
+    /// `Text` beside it. So the label is looked up, and the press is whatever under the
+    /// container that label was placed in answers a click.
+    pub fn press_beside(&mut self, label: &str) -> bool {
+        let found = {
+            let mutations = self.mutations();
+            let named = mutations.iter().rev().find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(text),
+                } if *text == label => Some(*node_id),
+                _ => None,
+            });
+            named.and_then(|named| {
+                let parents: Vec<(u32, u32)> = mutations
+                    .iter()
+                    .filter_map(|mutation| match mutation {
+                        Mutation::Insert {
+                            parent_id, node_id, ..
+                        } => Some((*node_id, *parent_id)),
+                        _ => None,
+                    })
+                    .collect();
+                let handler = |node: u32| {
+                    mutations.iter().rev().find_map(|mutation| match mutation {
+                        Mutation::SetProp {
+                            node_id,
+                            property: PropertyKind::OnClick,
+                            value: PropertyValue::Integer(id),
+                        } if *node_id == node => Some(*id as u64),
+                        _ => None,
+                    })
+                };
+                let parent = parents
+                    .iter()
+                    .rev()
+                    .find_map(|(child, owner)| (*child == named).then_some(*owner))?;
+                let mut family = vec![parent];
+                while let Some(next) = family.pop() {
+                    if next != named {
+                        if let Some(id) = handler(next) {
+                            return Some((next, id));
+                        }
+                    }
+                    family.extend(
+                        parents
+                            .iter()
+                            .filter_map(|(child, owner)| (*owner == next).then_some(*child)),
+                    );
+                }
+                None
+            })
+        };
+        let Some((node_id, handler_id)) = found else {
+            return false;
+        };
+        self.dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        });
+        true
+    }
+
     /// The recording, as the Renderer's screenshot test reads it: each batch behind four
     /// little endian bytes of its length, because a batch is a single envelope and cannot
     /// simply be appended to another one.
