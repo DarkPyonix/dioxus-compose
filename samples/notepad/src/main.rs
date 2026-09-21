@@ -35,7 +35,12 @@ fn starting_path() -> PathBuf {
 /// `stamp` changes only when the text is replaced from outside the field, and the change of
 /// key rebuilds the field so it picks the new contents up. Ordinary typing leaves `stamp`
 /// alone, so the caret and the IME composition are never disturbed.
-fn editor(stamp: u64, contents: String, on_edit: EventHandler<String>) -> Element {
+fn editor(
+    stamp: u64,
+    contents: String,
+    type_role: TypeRole,
+    on_edit: EventHandler<String>,
+) -> Element {
     rsx! {
         for generation in [stamp] {
             textfield {
@@ -44,6 +49,7 @@ fn editor(stamp: u64, contents: String, on_edit: EventHandler<String>) -> Elemen
                 multiline: true,
                 fill_max_width: true,
                 fill_max_height: true,
+                type_role: i64::from(u16::from(type_role)),
                 placeholder: "Type here, or open a file",
                 onvaluechange: move |event: Event<String>| on_edit.call((*event.data()).clone()),
             }
@@ -208,6 +214,8 @@ fn app() -> Element {
     let mut current = use_signal(|| 1_u64);
     let mut next_document = use_signal(|| 2_u64);
     let mut list_open = use_signal(|| false);
+    let mut format_open = use_signal(|| false);
+    let mut document_type = use_signal(|| TypeRole::Body);
     // A desktop window has room for the list to stand beside the document. Narrower than
     // that it is a sheet, which is the same list arriving from an edge instead.
     let list_beside = window.is_expanded();
@@ -392,6 +400,11 @@ fn app() -> Element {
                     on_click: move |_| file_open.set(true),
                 }
                 Button {
+                    text: "Format",
+                    variant: ButtonVariant::Text,
+                    on_click: move |_| format_open.set(true),
+                }
+                Button {
                     text: "Save",
                     variant: ButtonVariant::Filled,
                     enabled: !working,
@@ -450,6 +463,79 @@ fn app() -> Element {
                                 let target = PathBuf::from(path());
                                 run_on_worker(Box::new(move || document::open(target)));
                             },
+                        }
+                    }
+                }
+            }
+
+            // The iOS reference keeps document formatting in a sheet rather than adding
+            // another permanent strip around the page. These choices affect the editor's
+            // type role directly, so every design system supplies its own face, size and
+            // weight for the selected document style.
+            Sheet {
+                open: format_open(),
+                on_dismiss: move |_| format_open.set(false),
+                fill_max_width: true,
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    Row {
+                        fill_max_width: true,
+                        alignment: Alignment::CenterStart,
+                        Text { text: "Formatting", type_role: TypeRole::Subtitle, weight: 1.0 }
+                        Button {
+                            text: "Done",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| format_open.set(false),
+                        }
+                    }
+                    Separator {}
+                    Text {
+                        text: "Document style",
+                        type_role: TypeRole::Label,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        Button {
+                            text: "Heading",
+                            weight: 1.0,
+                            variant: if document_type() == TypeRole::Headline {
+                                ButtonVariant::Tonal
+                            } else {
+                                ButtonVariant::Text
+                            },
+                            on_click: move |_| document_type.set(TypeRole::Headline),
+                        }
+                        Button {
+                            text: "Body",
+                            weight: 1.0,
+                            variant: if document_type() == TypeRole::Body {
+                                ButtonVariant::Tonal
+                            } else {
+                                ButtonVariant::Text
+                            },
+                            on_click: move |_| document_type.set(TypeRole::Body),
+                        }
+                        Button {
+                            text: "Monospaced",
+                            weight: 1.0,
+                            variant: if document_type() == TypeRole::Mono {
+                                ButtonVariant::Tonal
+                            } else {
+                                ButtonVariant::Text
+                            },
+                            on_click: move |_| document_type.set(TypeRole::Mono),
+                        }
+                    }
+                    Surface {
+                        fill_max_width: true,
+                        shape_role: ShapeRole::Large,
+                        padding_role: SpaceRole::Md,
+                        Text {
+                            text: "The quick brown fox jumps over the lazy dog.",
+                            type_role: document_type(),
                         }
                     }
                 }
@@ -536,7 +622,12 @@ fn app() -> Element {
                     dioxus_compose::Box {
                         fill_max_width: true,
                         weight: 1.0,
-                        {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
+                        {editor(
+                            stamp(),
+                            text(),
+                            document_type(),
+                            EventHandler::new(move |value| text.set(value)),
+                        )}
                     }
 
                     // The status line is not part of the page, so a rule separates them.
@@ -610,6 +701,7 @@ mod tests {
         fields: Vec<u32>,
         /// Node to the handler its `onvaluechange` was given.
         changes: HashMap<u32, u64>,
+        type_roles: HashMap<u32, i64>,
         /// Button label to its node and click handler.
         buttons: HashMap<String, (u32, u64)>,
         texts: HashMap<u32, String>,
@@ -628,6 +720,7 @@ mod tests {
                 host: Host::new(app),
                 fields: Vec::new(),
                 changes: HashMap::new(),
+                type_roles: HashMap::new(),
                 buttons: HashMap::new(),
                 texts: HashMap::new(),
                 parents: HashMap::new(),
@@ -672,6 +765,9 @@ mod tests {
                         }
                         (PropertyKind::OnValueChange, PropertyValue::Integer(id)) => {
                             changes.insert(*node_id, *id as u64);
+                        }
+                        (PropertyKind::TypeRole, PropertyValue::Integer(role)) => {
+                            editor.type_roles.insert(*node_id, *role);
                         }
                         _ => {}
                     },
@@ -776,6 +872,13 @@ mod tests {
                         value: PropertyValue::Integer(id),
                     } => {
                         self.changes.insert(node_id, id as u64);
+                    }
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::TypeRole,
+                        value: PropertyValue::Integer(role),
+                    } => {
+                        self.type_roles.insert(node_id, role);
                     }
                     _ => {}
                 }
@@ -1116,6 +1219,25 @@ mod tests {
         assert!(
             editor.descends_from(open, sheet),
             "Open is not in the sheet the path field is in"
+        );
+    }
+
+    /// Formatting stays off the page until it is requested, and choosing a style changes
+    /// the role sent for the document field rather than painting a look into the sample.
+    #[test]
+    fn fr22_the_format_sheet_changes_the_document_type_role() {
+        let mut editor = Editor::new();
+        let heading = editor.buttons["Heading"].0;
+        assert!(
+            editor.in_a_sheet(heading),
+            "the document style controls are not in a sheet"
+        );
+
+        editor.click("Heading");
+        assert_eq!(
+            editor.type_roles.get(&editor.document_field()),
+            Some(&i64::from(u16::from(TypeRole::Headline))),
+            "the selected style did not reach the document field"
         );
     }
 
