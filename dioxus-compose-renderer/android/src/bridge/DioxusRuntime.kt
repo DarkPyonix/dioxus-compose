@@ -25,7 +25,19 @@ object DioxusRuntime {
     private var host: DioxusHost? = null
 
     init {
-        System.loadLibrary(LIBRARY)
+        try {
+            System.loadLibrary(LIBRARY)
+        } catch (missing: UnsatisfiedLinkError) {
+            // The default message names the library and the directories it looked in,
+            // which leaves the reader with a file name and no way to get the file. What
+            // produces it is one script, so the message says so.
+            throw UnsatisfiedLinkError(
+                "lib$LIBRARY.so is not in this APK, so there is no Host to draw with. " +
+                    "Build it with android/scripts/build-host.sh, which writes it into " +
+                    "android/jniLibs/<abi>/ where the APK picks it up. " +
+                    "(${missing.message})",
+            )
+        }
     }
 
     /** The Host, started on first use and kept until the process ends. */

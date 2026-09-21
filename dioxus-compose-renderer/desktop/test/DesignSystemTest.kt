@@ -126,6 +126,19 @@ class ThemeResolutionTest {
         assertEquals(HostPlatform.MacOs, detectHostPlatform("Mac OS X", null, null, null))
         assertEquals(HostPlatform.Windows, detectHostPlatform("Windows 11", null, null, null))
     }
+
+    /**
+     * Android reports its operating system as Linux, so the runtime's vendor is what tells
+     * the two apart. Reading the operating system first would put a phone on the Linux
+     * branch and hand it whatever desktop the environment claimed.
+     */
+    @Test
+    fun fr14_3_android_is_recognised_by_its_runtime_rather_than_its_operating_system() {
+        assertEquals(
+            HostPlatform.Android,
+            detectHostPlatform("Linux", "The Android Project", null, null),
+        )
+    }
 }
 
 class DesignTokenWiringTest {
