@@ -22,9 +22,11 @@ on:
   # times an hour and running the matrix on each push is noise rather than signal. Every
   # release reaches main as a pull request, so the gate still runs before anything is
   # published, which is the moment that matters.
+  # The pull request only. `release` reaches `main` through a pull request that a human
+  # merges, so that run is the gate, and it finishes before main moves. Running again on
+  # the push afterwards tested the identical tree and doubled every number on the actions
+  # page for nothing.
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
   workflow_dispatch:
 
