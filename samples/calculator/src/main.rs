@@ -1,5 +1,9 @@
-//! A working desktop calculator, with the tape every desk calculator that had a printer
-//! used to have.
+//! A working desktop calculator, clone coded from the Windows, macOS and Deepin ones, with
+//! the tape every desk calculator that had a printer used to have.
+//!
+//! The three references are one declaration under three design systems. What they share is
+//! the shape: the number at the foot of a reading area, a row of memory keys, and four
+//! columns of keys along the bottom.
 //!
 //! Written the way an application using this library would be written: `rsx!` and hooks,
 //! no Kotlin and no protocol types.
