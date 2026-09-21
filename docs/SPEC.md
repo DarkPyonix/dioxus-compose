@@ -210,8 +210,12 @@ Property 태그(기존 `OnRangeRequested=12` 뒤에 덧붙입니다): `TypeRole=
 
 - **파괴적 동작**: 삭제 버튼은 세 시스템 모두에서 "평범한 버튼인데 라벨만 경고색"입니다. `ButtonVariant`를 하나 더 늘리는 대신, `Button`이 이미 있는 `Color`(태그 18) 속성을 받습니다. 노드가 색을 지정하면 그 값이 variant가 정한 라벨 색을 덮고, 지정하지 않으면 지금까지와 같습니다. 보내는 것은 여전히 `Paint::Role(ColorRole::Error)`이므로 실제 색조는 디자인 시스템이 정합니다.
   - 수용 기준: `fr13_button_label_colour_is_sent_as_a_role`.
-- **구분선**: 묶인 목록은 행과 행 사이를 1dp 하이라인으로 나눕니다(HIG의 그룹 목록, Material의 Divider, Fluent의 층 스트로크). 두께는 역할로 표현할 수 없는 상수이므로 애플리케이션 코드가 아니라 라이브러리의 `Separator`가 들고 있습니다. 색은 `OutlineVariant`이고, 그리는 것은 `Box` 하나라서 위젯 태그가 늘지 않습니다.
-  - 수용 기준: `fr13_separator_is_a_hairline_filled_with_the_quiet_edge`.
+- **구분선**: 묶인 목록은 행과 행 사이를 하이라인으로 나눕니다(HIG의 그룹 목록, Material의 Divider, Fluent의 층 스트로크). 애플리케이션 코드가 두께와 색을 들지 않는다는 것이 이 항목의 요점이고, 그 부분은 그대로입니다. 이름도 `Separator` 그대로입니다.
+
+  **2026-09-21 정정**: 이 항목은 원래 "두께는 역할로 표현할 수 없는 상수이므로 라이브러리가 1dp를 들고, `Box` 하나로 그려서 위젯 태그를 늘리지 않는다"고 적혀 있었습니다. 15.2.4가 `Divider`를 태그 17로 넣으면서 그 근거가 둘 다 없어졌습니다. 태그는 이미 늘었고, 두께가 상수라는 전제도 틀렸습니다. Material의 divider와 Fluent의 층 스트로크와 HIG의 그룹 구분선은 두께도 색도 들여쓰기도 서로 다르며, 그것을 정하는 것이 디자인 시스템이 하는 일입니다(FR-14.1). 1dp를 라이브러리에 박아 두면 세 시스템 중 둘이 틀린 굵기로 그려집니다.
+
+  따라서 `Separator`는 `Divider` 하나를 렌더링합니다. 같은 개념에 이름이 둘 있는 상태를 남기지 않되, 애플리케이션 코드가 이미 쓰고 있는 이름은 유지합니다.
+  - 수용 기준: `fr13_separator_is_one_divider_so_the_design_system_sets_its_weight`.
 
 ### FR-14 디자인 시스템과 테마 모드 (`Agreed`)
 디자인 시스템은 **토큰 집합 + 컴포넌트 스타일 규칙**의 한 쌍입니다. 속성을 모아 놓은 것이 아닙니다.

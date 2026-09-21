@@ -9,8 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, ColorRole, Paint, ShapeRole, SpaceRole, TextAlign,
-    TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonVariant, Paint, ShapeRole, SpaceRole, TextAlign, TextOverflow,
+    TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -429,23 +429,19 @@ pub fn Button(
     }
 }
 
-/// The thickness of a hairline. One device pixel is thinner than any renderer here can
-/// guarantee, so a separator is one dp: the value every platform's list separator uses.
-const HAIRLINE_DP: f32 = 1.0;
-
 /// A hairline between two rows of a grouped list.
 ///
-/// The thickness lives here rather than in application code so a list is written in roles
-/// alone, and the colour is `OutlineVariant`, which is the quiet edge in every design
-/// system's table.
+/// One [`Divider`] under the name application code already uses. Nothing about the weight,
+/// the colour or the inset is decided here: a Material rule, a Fluent layer stroke and an
+/// Apple grouped-list separator are three different lines, and which one gets drawn is the
+/// active design system's answer rather than a constant this library holds.
+///
+/// `color` overrides that answer for the rare case where a list rules itself in something
+/// other than the quiet edge. Leaving it unset is the usual thing to do.
 #[component]
 pub fn Separator(#[props(default)] color: Option<Paint>) -> Element {
     rsx! {
-        Spacer {
-            fill_max_width: true,
-            height: HAIRLINE_DP,
-            background: color.unwrap_or(Paint::Role(ColorRole::OutlineVariant)),
-        }
+        Divider { background: color }
     }
 }
 
