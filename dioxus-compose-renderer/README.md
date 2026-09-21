@@ -16,7 +16,8 @@ on first use, so nothing has to be installed separately.
 | `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
 | `ios` | **The renderer for iOS.** The same interpreter sources (`ios/src/shared/` symlinks `desktop/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
 | `staticlib` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
-| `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
+| `android` | **The renderer for Android.** The same interpreter sources (`android/src/shared/` symlinks `desktop/src/`), plus the Android half of the boundary under `android/src/bridge/`: the generated JNI declarations, a `HostConnection` that reads the Host's arena through a direct `ByteBuffer`, and Android's own picture decoding. |
+| `web` | A platform target from the project template. Designed but not implemented; see `docs/SPEC.md` PR-6. |
 
 The generated protocol bindings live in `desktop/src/protocol/Protocol.gen.kt`. They are
 produced from the Rust schema by `cargo run -p dioxus-compose --bin codegen`, edit the Rust
@@ -62,6 +63,23 @@ main thread, where `UIApplicationMain` installs the run loop, and it never retur
 
 The smoke test links `desktop/c/smoke_host.c`, the same stand-in Host the desktop smoke test
 uses, so a passing run on both platforms is evidence that the C ABI really is one ABI.
+
+## Android
+
+On Android the host relationship is inverted: a Kotlin Activity owns the process and the
+frame loop, and the Rust Host is a cdylib it loads. The two sides meet at JNI, and both
+halves of that boundary are generated from the Rust schema, so the symbol names and the
+argument order cannot drift apart.
+
+```bash
+./android/scripts/build-host.sh             # the Rust Host as libandroid_demo.so, arm64-v8a
+./android/scripts/build-host.sh --debug x86_64   # for an Intel emulator
+./kotlin build -p android                   # the APK
+```
+
+The library goes into `android/jniLibs/<abi>/`, which the APK picks up. It is built against
+the module's `minSdk`, because a library compiled for a newer API level will not load on an
+older device.
 
 See the root [README](../README.md) for prerequisites and the
 [guide](http://darkpyonix.dev/dioxus-compose/) for everything else.

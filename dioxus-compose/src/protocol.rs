@@ -146,6 +146,9 @@ const EVENT_RANGE_REQUESTED: u16 = 7;
 // and the window size report continues from 17.
 const EVENT_VALUE_CHANGED: u16 = 16;
 const EVENT_WINDOW_SIZE_CHANGED: u16 = 17;
+const EVENT_RESYNC: u16 = 18;
+const EVENT_LIFECYCLE_START: u16 = 19;
+const EVENT_LIFECYCLE_STOP: u16 = 20;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -208,7 +211,10 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 class,
             }
         }
-        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
+        EVENT_RESYNC if record_len == 16 => crate::schema::EventPayload::Resync,
+        EVENT_LIFECYCLE_START if record_len == 16 => crate::schema::EventPayload::LifecycleStart,
+        EVENT_LIFECYCLE_STOP if record_len == 16 => crate::schema::EventPayload::LifecycleStop,
+        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED..=EVENT_LIFECYCLE_STOP => {
             return Err(ProtocolError::InvalidRecordLength);
         }
         other => return Err(ProtocolError::InvalidTag(other)),
@@ -285,6 +291,9 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
             (EVENT_TEXT_SUBMITTED, 24, Some(*value), None)
         }
         crate::schema::EventPayload::FocusLost => (EVENT_FOCUS_LOST, 16, None, None),
+        crate::schema::EventPayload::Resync => (EVENT_RESYNC, 16, None, None),
+        crate::schema::EventPayload::LifecycleStart => (EVENT_LIFECYCLE_START, 16, None, None),
+        crate::schema::EventPayload::LifecycleStop => (EVENT_LIFECYCLE_STOP, 16, None, None),
         crate::schema::EventPayload::ProtocolError { code, message } => {
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
@@ -528,6 +537,16 @@ impl BatchEncoder {
             self.arena[position..position + 4].copy_from_slice(&absolute.to_le_bytes());
         }
         Ok(&self.arena)
+    }
+
+    /// Where the arena a finished batch lives in starts, and how much of it is mapped.
+    ///
+    /// A runtime that cannot read the Host's memory directly wraps this range once and
+    /// keeps the view: every batch is a prefix of the arena, so it is read where it lies
+    /// and no byte is copied out. Growing the arena moves it, which is why the address is
+    /// reported again on every call rather than once at startup.
+    pub fn arena(&self) -> (*const u8, usize) {
+        (self.arena.as_ptr(), self.arena.capacity())
     }
 
     pub fn capacity(&self) -> usize {

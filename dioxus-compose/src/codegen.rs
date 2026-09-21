@@ -4,10 +4,11 @@ use crate::protocol::{
     BatchEncoder, HostEvent, Mutation, PropertyValue, ProtocolError, encode_event,
 };
 use crate::schema::{
-    Color, ColorRole, ColorScheme, DesignSystem, EVENT_SCHEMA, EventPayloadType, FieldSchema,
-    FieldSlot, FieldType, KEY_SCHEMA, Key, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PROTOCOL_VERSION,
-    Paint, PropertyKind, ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme,
-    WIDGET_SCHEMA, WINDOW_SIZE_CLASS_SCHEMA, WidgetKind,
+    ANDROID_BRIDGE_CLASS, BOUNDARY_SCHEMA, BoundaryOp, BoundaryParam, Color, ColorRole,
+    ColorScheme, DesignSystem, EVENT_SCHEMA, EventPayloadType, FieldSchema, FieldSlot, FieldType,
+    KEY_SCHEMA, Key, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PROTOCOL_VERSION, Paint, PropertyKind,
+    ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme, WIDGET_SCHEMA,
+    WINDOW_SIZE_CLASS_SCHEMA, WidgetKind,
 };
 use crate::tokens::DESIGN_TOKENS;
 use crate::{EventPayload, Modifier};
@@ -39,6 +40,20 @@ pub fn generate_kotlin() -> String {
     for role in ROLE_ENUM_SCHEMA {
         write_enum(&mut output, role.name, role.variants);
     }
+
+    // Who owns the frame loop. The value is one byte of the handshake, so the two sides
+    // have to agree on it before anything else is said.
+    output.push_str(
+        r#"enum class LoopMode(val wire: Byte) {
+    /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
+    Renderer(0),
+
+    /** The platform owns the process and the loop. Android, iOS and the web. */
+    Platform(1),
+}
+
+"#,
+    );
 
     // Colour crosses the boundary only as a Paint, so there is exactly one representation
     // of colour in the schema.
@@ -553,8 +568,13 @@ object Protocol {
         }
     }
 
-    /** Handshake payload the Renderer sends to dioxus_compose_host_init. */
-    fun handshake(out: ByteBuffer): Int {
+    /**
+     * Handshake payload the Renderer sends to dioxus_compose_host_init.
+     *
+     * `loopMode` says who owns the frame loop: the Renderer on desktop, the platform on
+     * Android, iOS and the web.
+     */
+    fun handshake(out: ByteBuffer, loopMode: LoopMode = LoopMode.Renderer): Int {
         val start = out.position()
         if (out.remaining() < 12) {
             throw ProtocolException("handshake output buffer is too small", 0)
@@ -564,7 +584,7 @@ object Protocol {
         try {
             out.putLong(SCHEMA_HASH)
             out.putShort(PROTOCOL_VERSION.toShort())
-            out.put(0.toByte()) // LoopMode.Renderer
+            out.put(loopMode.wire)
             out.put(0.toByte()) // Reserved for alignment.
             return out.position() - start
         } finally {
@@ -1427,4 +1447,542 @@ fn lower_first(name: &str) -> String {
         Some(first) => first.to_lowercase().chain(characters).collect(),
         None => String::new(),
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// Android bindings.
+//
+// The JNI shims and the Kotlin `external fun` declarations are two renderings of
+// `BOUNDARY_SCHEMA`. Writing either by hand is forbidden, and generating both from one
+// table is what keeps the symbol names, the argument order and the `out` layout identical
+// on the two sides.
+// ---------------------------------------------------------------------------------------
+
+/// Generated Rust, compiled into the cdylib only when the target is Android.
+pub const JNI_RUST_RELATIVE_PATH: &str = "src/boundary_jni.gen.rs";
+/// Generated Kotlin. The Kotlin Toolchain compiles the module's `src` tree by convention.
+pub const ANDROID_BRIDGE_RELATIVE_PATH: &str =
+    "../dioxus-compose-renderer/android/src/bridge/HostBridge.gen.kt";
+pub const ANDROID_FAST_NATIVE_RELATIVE_PATH: &str =
+    "../dioxus-compose-renderer/android/src/bridge/FastNative.gen.kt";
+
+const ANDROID_KOTLIN_PACKAGE: &str = "dioxus.compose.ui.platform";
+
+/// `out` slots, in order. The Kotlin side reads them by the same generated constants.
+const OUT_SLOTS: &[(&str, &str)] = &[
+    ("BatchOffset", "the batch's start inside the arena"),
+    ("BatchLength", "the batch's length in bytes"),
+    ("Result", "the handler's synchronous result"),
+    (
+        "ArenaAddress",
+        "the arena's base address, which moves when it grows",
+    ),
+    ("ArenaCapacity", "the arena's capacity in bytes"),
+];
+
+fn jni_symbol(op_name: &str) -> String {
+    // JNI mangles `.` to `_`. No name here contains `_` or a non-ASCII character, so the
+    // escaping forms (`_1`, `_0`) never arise.
+    format!(
+        "Java_{}_native{}",
+        ANDROID_BRIDGE_CLASS.replace('/', "_"),
+        op_name
+    )
+}
+
+fn kotlin_native_name(op_name: &str) -> String {
+    format!("native{op_name}")
+}
+
+/// Emits the Rust half of the Android boundary: one `extern "system"` shim per operation,
+/// `JNI_OnLoad`, and the upcall a worker thread makes to ask for a frame.
+pub fn generate_jni_rust() -> String {
+    let mut output = String::new();
+    output.push_str("// Generated by `cargo run -p dioxus-compose --bin codegen`. DO NOT EDIT.\n");
+    output.push_str(
+        r#"//! JNI shims for the Android boundary.
+//!
+//! Kotlin owns the process and the frame loop, so every call here starts on the Renderer
+//! UI thread and returns on the same call stack. Nothing is copied: a call reports where
+//! its batch sits inside the Host's arena, and the Renderer reads the arena through a
+//! direct byte buffer it made once.
+
+#![allow(non_snake_case)]
+
+use crate::boundary::{
+    MutationBatch, RendererApi, STATUS_OK, STATUS_PROTOCOL_ERROR, current_arena,
+    install_renderer_api,
+};
+use jni::JNIEnv;
+use jni::JavaVM;
+use jni::objects::{GlobalRef, JByteBuffer, JClass, JLongArray, JStaticMethodID};
+use jni::signature::{Primitive, ReturnType};
+use jni::sys::jobject;
+use jni::sys::{JNI_ERR, JNI_VERSION_1_6, jint, jlong};
+use std::ffi::c_int;
+use std::os::raw::c_void;
+use std::sync::OnceLock;
+
+unsafe extern "C" {
+    /// Defined by the application's cdylib through `dioxus_compose::android_main!`. It
+    /// registers the root component before the Renderer's first init call.
+    fn dioxus_compose_android_main();
+}
+
+"#,
+    );
+
+    writeln!(
+        output,
+        "/// The number of `out` slots a batch-returning call writes."
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "pub const OUT_SLOTS: usize = {};\n",
+        OUT_SLOTS.len()
+    )
+    .unwrap();
+
+    output.push_str(
+        r#"struct FrameRequestUpcall {
+    class: GlobalRef,
+    method: JStaticMethodID,
+}
+
+static VM: OnceLock<JavaVM> = OnceLock::new();
+static UPCALL: OnceLock<FrameRequestUpcall> = OnceLock::new();
+
+/// The Activity owns the loop, so the Host never runs one.
+extern "C" fn platform_run() -> c_int {
+    STATUS_OK as c_int
+}
+
+/// Called from a Host worker thread, never from the UI thread.
+///
+/// The worker attaches to the JavaVM once and stays attached for the life of the process:
+/// attaching and detaching around every call would cost more than the frame it asks for.
+extern "C" fn request_frame() {
+    let (Some(vm), Some(upcall)) = (VM.get(), UPCALL.get()) else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let class = <&JClass>::from(upcall.class.as_obj());
+    // SAFETY: the method id was resolved on this class for the signature `()V`, and the
+    // argument list matches it.
+    let result = unsafe {
+        env.call_static_method_unchecked(
+            class,
+            upcall.method,
+            ReturnType::Primitive(Primitive::Void),
+            &[],
+        )
+    };
+    if result.is_err() {
+        // A failed upcall is not worth aborting the process for. Clearing the pending
+        // exception leaves the VM usable.
+        let _ = env.exception_clear();
+    }
+}
+
+/// Resolves a direct byte buffer to the address the Host may read `length` bytes from.
+fn direct_address(env: &JNIEnv<'_>, buffer: &JByteBuffer<'_>, length: jint) -> Option<*const u8> {
+    if length < 0 {
+        return None;
+    }
+    let address = env.get_direct_buffer_address(buffer).ok()?;
+    let capacity = env.get_direct_buffer_capacity(buffer).ok()?;
+    if capacity < length as usize {
+        return None;
+    }
+    Some(address.cast_const())
+}
+
+/// Reports where the batch sits, without copying a byte of it.
+fn report(env: &mut JNIEnv<'_>, out: &JLongArray<'_>, batch: &MutationBatch) {
+    let (base, capacity) = current_arena();
+    let offset = if batch.ptr.is_null() || base.is_null() {
+        0
+    } else {
+        (batch.ptr as usize).wrapping_sub(base as usize)
+    };
+    let values: [jlong; OUT_SLOTS] = [
+        offset as jlong,
+        jlong::from(batch.len),
+        batch.result,
+        base as usize as jlong,
+        capacity as jlong,
+    ];
+    let _ = env.set_long_array_region(out, 0, &values);
+}
+
+"#,
+    );
+
+    for op in BOUNDARY_SCHEMA {
+        write!(output, "{}", jni_shim(op)).unwrap();
+    }
+
+    output.push_str(
+        r#"/// Hands the Renderer a view of the Host's arena, not a copy of it.
+///
+/// Not a boundary operation: it exposes no Host behaviour, it only tells the JVM where
+/// memory it may already read lives. The Renderer asks for it once, and again whenever a
+/// call reports a different arena address, which is what happens when the arena grows and
+/// moves.
+#[unsafe(no_mangle)]
+pub extern "system" fn ARENA_SYMBOL(mut env: JNIEnv<'_>, _class: JClass<'_>) -> jobject {
+    let (base, capacity) = current_arena();
+    if base.is_null() || capacity == 0 {
+        return std::ptr::null_mut();
+    }
+    // SAFETY: the arena belongs to this thread's Host and stays where it is until it
+    // grows, and every call reports the address so the Renderer can notice that.
+    match unsafe { env.new_direct_byte_buffer(base.cast_mut(), capacity) } {
+        Ok(buffer) => buffer.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// An empty call, so the cost of the transition itself can be measured.
+#[unsafe(no_mangle)]
+pub extern "system" fn "#,
+    );
+    write!(output, "{}", jni_symbol("Noop")).unwrap();
+    output.push_str(
+        r#"(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) -> jint {
+    STATUS_OK
+}
+
+/// The same call again, reached through the annotation that skips the transition.
+#[unsafe(no_mangle)]
+pub extern "system" fn "#,
+    );
+    write!(output, "{}", jni_symbol("NoopFast")).unwrap();
+    output.push_str(
+        r#"(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) -> jint {
+    STATUS_OK
+}
+
+/// Runs on `System.loadLibrary`, before any boundary call.
+///
+/// # Safety
+/// The JavaVM calls this with its own `JavaVM` pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn JNI_OnLoad(vm: *mut jni::sys::JavaVM, _reserved: *mut c_void) -> jint {
+    // SAFETY: the pointer comes from the JavaVM itself.
+    let Ok(vm) = (unsafe { JavaVM::from_raw(vm) }) else {
+        return JNI_ERR;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return JNI_ERR;
+    };
+    // The class is resolved here, on a Java-created thread, and kept as a global
+    // reference. A Host worker thread's class loader cannot see application classes, so
+    // looking it up later would fail.
+    let Ok(class) = env.find_class(BRIDGE_CLASS) else {
+        return JNI_ERR;
+    };
+    let Ok(method) = env.get_static_method_id(&class, "onFrameRequested", "()V") else {
+        return JNI_ERR;
+    };
+    let Ok(global) = env.new_global_ref(&class) else {
+        return JNI_ERR;
+    };
+    let _ = UPCALL.set(FrameRequestUpcall {
+        class: global,
+        method,
+    });
+    let _ = VM.set(vm);
+    let _ = install_renderer_api(RendererApi {
+        run: platform_run,
+        request_frame,
+    });
+    // SAFETY: the application's cdylib defines this symbol.
+    unsafe { dioxus_compose_android_main() };
+    JNI_VERSION_1_6
+}
+"#,
+    );
+    writeln!(
+        output,
+        "\nconst BRIDGE_CLASS: &str = \"{ANDROID_BRIDGE_CLASS}\";"
+    )
+    .unwrap();
+    // The arena view's symbol is derived like every other one, so it is substituted here
+    // rather than spelled out in the template above.
+    rustfmt(output.replace("ARENA_SYMBOL", &jni_symbol("ArenaBuffer")))
+}
+
+/// Formats generated Rust the way `cargo fmt` would, so the checked-in file is already
+/// what the formatter wants and the staleness test compares like with like.
+///
+/// A missing or failing `rustfmt` leaves the source as written: the file still compiles,
+/// and `cargo fmt --check` is what reports the difference.
+fn rustfmt(source: String) -> String {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+
+    let Ok(mut child) = Command::new("rustfmt")
+        .args(["--edition", "2024", "--emit", "stdout", "--quiet"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+    else {
+        return source;
+    };
+    let Some(mut stdin) = child.stdin.take() else {
+        return source;
+    };
+    let written = stdin.write_all(source.as_bytes());
+    drop(stdin);
+    let Ok(output) = child.wait_with_output() else {
+        return source;
+    };
+    if written.is_err() || !output.status.success() {
+        return source;
+    }
+    String::from_utf8(output.stdout).unwrap_or(source)
+}
+
+fn jni_shim(op: &BoundaryOp) -> String {
+    let mut output = String::new();
+    writeln!(output, "/// `{}`, which calls `{}`.", op.name, op.symbol).unwrap();
+    output.push_str("#[unsafe(no_mangle)]\npub extern \"system\" fn ");
+    write!(output, "{}", jni_symbol(op.name)).unwrap();
+    output.push_str("(\n");
+    if op.returns_batch {
+        output.push_str("    mut env: JNIEnv<'_>,\n");
+    } else {
+        output.push_str("    _env: JNIEnv<'_>,\n");
+    }
+    output.push_str("    _class: JClass<'_>,\n");
+    for param in op.params {
+        match param {
+            BoundaryParam::Bytes { name } => {
+                writeln!(output, "    {name}: JByteBuffer<'_>,").unwrap();
+                writeln!(output, "    {name}_length: jint,").unwrap();
+            }
+            BoundaryParam::Nanos { name } => {
+                writeln!(output, "    {}: jlong,", snake_case(name)).unwrap();
+            }
+        }
+    }
+    if op.returns_batch {
+        output.push_str("    out: JLongArray<'_>,\n");
+    }
+    output.push_str(") -> jint {\n");
+
+    let mut arguments = Vec::new();
+    for param in op.params {
+        match param {
+            BoundaryParam::Bytes { name } => {
+                writeln!(
+                    output,
+                    "    let Some(address) = direct_address(&env, &{name}, {name}_length) else {{"
+                )
+                .unwrap();
+                output.push_str("        return STATUS_PROTOCOL_ERROR;\n    };\n");
+                arguments.push("address".to_owned());
+                arguments.push(format!("{name}_length as u32"));
+            }
+            BoundaryParam::Nanos { name } => {
+                arguments.push(format!("{} as u64", snake_case(name)));
+            }
+        }
+    }
+    if op.returns_batch || op.name == "ReleaseBatch" {
+        output.push_str("    let mut batch = MutationBatch::default();\n");
+        arguments.push("&raw mut batch".to_owned());
+    }
+    let call = format!("crate::boundary::{}({})", op.symbol, arguments.join(", "));
+    if op.symbol == "dioxus_compose_host_shutdown" {
+        writeln!(output, "    {call};").unwrap();
+        output.push_str("    STATUS_OK\n}\n\n");
+        return output;
+    }
+    output.push_str(
+        "    // SAFETY: every pointer above addresses the number of readable bytes the\n\
+         \x20   // boundary contract promises, and the batch is local to this call.\n",
+    );
+    let statement = if op.returns_batch {
+        format!("    let status = unsafe {{ {call} }};")
+    } else {
+        format!("    unsafe {{ {call} }};")
+    };
+    // rustfmt breaks an unsafe block that does not fit on one line, so the generator
+    // writes the broken form itself and the generated file needs no reformatting.
+    if statement.len() > 100 {
+        if op.returns_batch {
+            output.push_str("    let status = unsafe {\n");
+        } else {
+            output.push_str("    unsafe {\n");
+        }
+        writeln!(output, "        {call}").unwrap();
+        output.push_str("    };\n");
+    } else {
+        output.push_str(&statement);
+        output.push('\n');
+    }
+    if op.returns_batch {
+        output.push_str("    report(&mut env, &out, &batch);\n    status\n}\n\n");
+    } else {
+        output.push_str("    STATUS_OK\n}\n\n");
+    }
+    output
+}
+
+fn snake_case(name: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in name.char_indices() {
+        if character.is_ascii_uppercase() {
+            if index != 0 {
+                output.push('_');
+            }
+            output.push(character.to_ascii_lowercase());
+        } else {
+            output.push(character);
+        }
+    }
+    output
+}
+
+/// Emits the Kotlin half: the `external fun` declarations, the `out` slot indices and the
+/// upcall a Host worker thread makes to ask for a frame.
+pub fn generate_android_bridge_kotlin() -> String {
+    let mut output = String::new();
+    output.push_str("// Generated by `cargo run -p dioxus-compose --bin codegen`. DO NOT EDIT.\n");
+    output.push_str("@file:JvmName(\"HostBridge\")\n\n");
+    writeln!(output, "package {ANDROID_KOTLIN_PACKAGE}\n").unwrap();
+    output.push_str("import android.util.Log\n");
+    output.push_str("import dalvik.annotation.optimization.FastNative\n");
+    output.push_str("import java.nio.ByteBuffer\n\n");
+    output.push_str(
+        r#"// The Android boundary.
+//
+// Every declaration below is generated from the Rust boundary schema, so it cannot drift
+// from the shims that implement it. A batch-returning call writes the slots below into the
+// caller's reusable LongArray and copies nothing: the batch itself stays in the Host's
+// arena, which the caller reads through one direct ByteBuffer.
+
+"#,
+    );
+    for (index, (name, description)) in OUT_SLOTS.iter().enumerate() {
+        writeln!(output, "/** Slot {index}: {description}. */").unwrap();
+        writeln!(
+            output,
+            "const val OUT_{}: Int = {index}",
+            screaming_snake_case(name)
+        )
+        .unwrap();
+    }
+    writeln!(
+        output,
+        "\n/** The size of the `out` array a batch-returning call expects. */"
+    )
+    .unwrap();
+    writeln!(output, "const val OUT_SLOTS: Int = {}\n", OUT_SLOTS.len()).unwrap();
+
+    for op in BOUNDARY_SCHEMA {
+        writeln!(output, "/** `{}`, which calls `{}`. */", op.name, op.symbol).unwrap();
+        if op.fast {
+            output.push_str("@FastNative\n");
+        }
+        write!(output, "external fun {}(", kotlin_native_name(op.name)).unwrap();
+        let mut parameters = Vec::new();
+        for param in op.params {
+            match param {
+                BoundaryParam::Bytes { name } => {
+                    parameters.push(format!("{name}: ByteBuffer"));
+                    parameters.push(format!("{name}Length: Int"));
+                }
+                BoundaryParam::Nanos { name } => parameters.push(format!("{name}: Long")),
+            }
+        }
+        if op.returns_batch {
+            parameters.push("out: LongArray".to_owned());
+        }
+        writeln!(output, "{}): Int\n", parameters.join(", ")).unwrap();
+    }
+
+    output.push_str(
+        r#"/**
+ * A view of the Host's batch arena.
+ *
+ * Null before the Host exists. Ask again whenever `OUT_ARENA_ADDRESS` changes: a grown
+ * arena is a new allocation, and the old view points at freed memory.
+ */
+external fun nativeArenaBuffer(): ByteBuffer?
+
+/** An empty call, for measuring the cost of the transition on its own. */
+external fun nativeNoop(): Int
+
+/** The same call through the annotation that skips the thread state transition. */
+@FastNative
+external fun nativeNoopFast(): Int
+
+/**
+ * Called from a Host worker thread through JNI.
+ *
+ * It must stay cheap and thread-safe: it only bumps a counter the UI thread observes
+ * inside its frame clock, so any number of requests between two frames become one frame.
+ */
+fun onFrameRequested() {
+    // Evidence that domain work stays off the UI thread, off by default. Turn it on with
+    // `adb shell setprop log.tag.dxc-frame VERBOSE`: the thread named in the line is the
+    // Host worker that asked, and it is never the UI thread.
+    if (Log.isLoggable(FRAME_TAG, Log.VERBOSE)) {
+        Log.v(FRAME_TAG, "frame requested by ${Thread.currentThread().name}")
+    }
+    FrameRequests.request()
+}
+
+private const val FRAME_TAG = "dxc-frame"
+"#,
+    );
+    output
+}
+
+/// The `@FastNative` annotation is not in `android.jar`: the runtime reads it off the dex
+/// by name.
+pub fn generate_fast_native_kotlin() -> String {
+    String::from(
+        r#"// Generated by `cargo run -p dioxus-compose --bin codegen`. DO NOT EDIT.
+package dalvik.annotation.optimization
+
+/**
+ * The runtime's marker for a native method that needs no thread state transition.
+ *
+ * The runtime carries it, but `android.jar` does not declare it, so the only way to apply
+ * it from application code is to declare it. It is matched by type descriptor, and a
+ * runtime that does not know it ignores it, which is why an unannotated call still works.
+ *
+ * A method carrying it must not run long: the thread stays in the runnable state, so the
+ * garbage collector cannot suspend it while the call is in flight. Only calls that cannot
+ * run the VirtualDom carry it.
+ */
+@Retention(AnnotationRetention.BINARY)
+@Target(AnnotationTarget.FUNCTION)
+annotation class FastNative
+"#,
+    )
+}
+
+fn screaming_snake_case(name: &str) -> String {
+    let mut output = String::new();
+    for (index, character) in name.char_indices() {
+        if character.is_ascii_uppercase() && index != 0 {
+            output.push('_');
+        }
+        output.push(character.to_ascii_uppercase());
+    }
+    output
 }

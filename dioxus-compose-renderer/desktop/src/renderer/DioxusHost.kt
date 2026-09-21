@@ -73,6 +73,24 @@ class DioxusHost(private val connection: HostConnection) : EventDispatcher {
         return result != 0L
     }
 
+    /**
+     * Throws the interpreted tree away and asks the Host for the whole of it again.
+     *
+     * For a Renderer that cannot keep its node table across whatever just happened to it.
+     * It costs the application's state, because the Host keeps no shadow of the tree it
+     * has already sent and answers by building the application from nothing, so a Renderer
+     * that can keep its table should keep it instead. The Android host does.
+     */
+    fun resync() {
+        table.clear()
+        applyTransaction { apply ->
+            connection.dispatchEvent(
+                HostEvent.Resync(nodeId = NodeTable.ROOT_ID, handlerId = 0),
+                apply,
+            )
+        }
+    }
+
     /** Called once per frame after a Host worker asked for one. */
     fun renderFrame(frameTimeNanos: Long) {
         applyTransaction { apply -> connection.renderFrame(frameTimeNanos, apply) }

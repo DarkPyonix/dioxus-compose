@@ -1,7 +1,9 @@
 use dioxus_compose::codegen::{
-    EVENT_VECTOR_RELATIVE_PATH, GENERATED_RELATIVE_PATH, MUTATION_VECTOR_RELATIVE_PATH,
-    VECTOR_DESCRIPTION_RELATIVE_PATH, generate_event_vector, generate_kotlin,
-    generate_mutation_vector, generate_vector_description,
+    ANDROID_BRIDGE_RELATIVE_PATH, ANDROID_FAST_NATIVE_RELATIVE_PATH, EVENT_VECTOR_RELATIVE_PATH,
+    GENERATED_RELATIVE_PATH, JNI_RUST_RELATIVE_PATH, MUTATION_VECTOR_RELATIVE_PATH,
+    VECTOR_DESCRIPTION_RELATIVE_PATH, generate_android_bridge_kotlin, generate_event_vector,
+    generate_fast_native_kotlin, generate_jni_rust, generate_kotlin, generate_mutation_vector,
+    generate_vector_description,
 };
 use std::path::{Path, PathBuf};
 
@@ -32,6 +34,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     write(
         manifest_dir.join(VECTOR_DESCRIPTION_RELATIVE_PATH),
         generate_vector_description().as_bytes(),
+    )?;
+    // Both halves of the Android boundary come from the same schema.
+    write(
+        manifest_dir.join(JNI_RUST_RELATIVE_PATH),
+        generate_jni_rust().as_bytes(),
+    )?;
+    write(
+        manifest_dir.join(ANDROID_BRIDGE_RELATIVE_PATH),
+        generate_android_bridge_kotlin().as_bytes(),
+    )?;
+    write(
+        manifest_dir.join(ANDROID_FAST_NATIVE_RELATIVE_PATH),
+        generate_fast_native_kotlin().as_bytes(),
     )?;
     Ok(())
 }
