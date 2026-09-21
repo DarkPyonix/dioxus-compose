@@ -1,8 +1,12 @@
-//! An LLM chat interface with no network.
+//! An LLM chat interface with no network, clone coded from Google Gemini.
 //!
-//! A scrollback of messages, a multiline composer where Enter sends and Shift+Enter starts
-//! a new line, and an assistant whose reply arrives a few characters at a time from a
-//! worker thread while the user keeps scrolling and typing.
+//! Conversations down the side, a scrollback of messages, a composer where Enter sends and
+//! Shift+Enter starts a new line, and an assistant whose reply arrives a few characters at
+//! a time from a worker thread while the user keeps scrolling and typing.
+//!
+//! The conversations are a destination set rather than a list this code lays out, so the
+//! Renderer draws them as a bar along the bottom of a phone, a rail beside a tablet and the
+//! reference's sidebar on a desktop, from one declaration.
 //!
 //! The scrollback is a `LazyColumn` so a long conversation costs widgets in proportion to
 //! what is on screen. Each message carries an id that never changes and that id is its key,

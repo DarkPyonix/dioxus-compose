@@ -1,8 +1,13 @@
-//! A working text editor.
+//! A working text editor, clone coded from the iOS and Windows memo applications.
 //!
 //! Written the way an application using this library would be written: `rsx!` and hooks,
 //! no Kotlin and no protocol types. Reading and writing files happens on a worker thread
 //! and comes back as a signal update, so the UI thread never waits on a disk.
+//!
+//! Several documents can be open at once. The one being written lives in the signals the
+//! editor reads, and the rest wait on a shelf, so choosing a document is a swap rather
+//! than a different code path through the whole screen. The list of them stands beside the
+//! page on a desktop window and arrives in a sheet on anything narrower.
 
 use std::path::PathBuf;
 
