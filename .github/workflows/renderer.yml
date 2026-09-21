@@ -48,6 +48,7 @@ jobs:
           # hand written, which is why it needs Liberica rather than upstream GraalVM.
           - runner: macos-latest
             target: macos-aarch64
+            shell: bash
             build: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
             smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
             dist: dioxus-compose-renderer/build/native-image/dist
@@ -56,6 +57,7 @@ jobs:
           # It cannot prove mouse input, because a hosted runner has no one to click.
           - runner: windows-2022
             target: windows-x64
+            shell: powershell
             build: .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
             smoke: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
             dist: dioxus-compose-renderer/build/native-image/dist
@@ -63,8 +65,10 @@ jobs:
           # was drawn, so rendering quality on Linux stays unverified until a human looks.
           - runner: ubuntu-24.04
             target: linux-x64
-            build: ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
-            smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
+            shell: bash
+            # Under a virtual display: a hosted Linux runner has no screen of its own.
+            build: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+            smoke: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
             dist: dioxus-compose-renderer/build/native-image-linux/dist
     steps:
       - uses: actions/checkout@v4
@@ -128,9 +132,8 @@ jobs:
           bash dioxus-compose-renderer/desktop/scripts/tests/linux-metadata.test.sh
 
       - name: Build the renderer shared library
-        shell: ${{ runner.os == 'Windows' && 'powershell' || 'bash' }}
-        # Linux draws through a virtual display; the other two have one of their own.
-        run: ${{ runner.os == 'Linux' && format('xvfb-run -a {0}', matrix.build) || matrix.build }}
+        shell: ${{ matrix.shell }}
+        run: ${{ matrix.build }}
 
       - name: Accessibility classes are linked in
         # They are reached only by name from AppKit, so the link is free to drop them, and
@@ -150,10 +153,10 @@ jobs:
       - name: Smoke test before shipping
         # Nothing is uploaded that cannot start, render and exit cleanly on its own
         # platform. It cannot prove input: a hosted runner has nobody to click or type.
-        shell: ${{ runner.os == 'Windows' && 'powershell' || 'bash' }}
+        shell: ${{ matrix.shell }}
         env:
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
-        run: ${{ runner.os == 'Linux' && format('xvfb-run -a {0}', matrix.smoke) || matrix.smoke }}
+        run: ${{ matrix.smoke }}
 
       - name: Report the distribution size
         shell: bash
