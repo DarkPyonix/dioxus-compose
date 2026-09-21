@@ -124,6 +124,23 @@ class NodeTable {
         return drained
     }
 
+    /**
+     * Throws the whole interpreted tree away.
+     *
+     * For a Renderer that is about to ask the Host to send all of it again: the Host
+     * answers a resync by building the application from nothing, so the ids in that batch
+     * start over and anything kept from before would collide with them.
+     */
+    fun clear() {
+        nodes.clear()
+        rootChildren.clear()
+        errors.clear()
+        assets.clear()
+        messages.clear()
+        theme = null
+        revision = 0
+    }
+
     fun apply(mutation: Mutation) {
         when (mutation) {
             is Mutation.Create -> create(mutation)

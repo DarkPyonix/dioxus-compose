@@ -56,7 +56,7 @@ object DioxusRuntime {
      * state, because the Host keeps no shadow of the tree it already sent.
      */
     fun resync() {
-        host?.dispatch(HostEvent.Resync(NO_NODE, NO_HANDLER))
+        host?.resync()
     }
 
     /** True once the Host exists, so a recreated Activity can tell the two cases apart. */

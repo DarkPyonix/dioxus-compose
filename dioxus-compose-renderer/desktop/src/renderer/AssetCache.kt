@@ -83,6 +83,13 @@ class AssetCache {
         return null
     }
 
+    /**
+     * Forgets every registration, for a Renderer that is throwing its tree away and asking
+     * the Host to send the whole of it again. The ids in the new batch are the Host's to
+     * assign from nothing, so keeping the old entries would leave pictures nobody names.
+     */
+    internal fun clear() = entries.clear()
+
     internal fun release(assetId: Int): TableError? {
         if (entries.remove(assetId) == null) {
             return TableError(
