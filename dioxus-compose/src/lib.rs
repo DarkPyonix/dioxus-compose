@@ -47,6 +47,14 @@ pub mod prelude {
         TextOverflow, Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass,
         component, launch, rsx, use_window_size,
     };
+    // The crates `rsx!` expands into references to, under the names it expands into. A
+    // consumer who added only `dioxus-compose` does not have `dioxus_core` or
+    // `dioxus_signals` in their dependency graph by name, so without these the macro
+    // fails to resolve them and the crate cannot be used at all with one dependency,
+    // which is the whole promise.
+    pub use dioxus_core;
+    pub use dioxus_signals;
+
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
     pub use dioxus_signals::*;

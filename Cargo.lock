@@ -698,9 +698,7 @@ name = "sample-calculator"
 version = "0.1.0"
 dependencies = [
  "dioxus-compose",
- "dioxus-core",
  "dioxus-hooks",
- "dioxus-signals",
 ]
 
 [[package]]
@@ -708,9 +706,7 @@ name = "sample-chat"
 version = "0.1.0"
 dependencies = [
  "dioxus-compose",
- "dioxus-core",
  "dioxus-hooks",
- "dioxus-signals",
 ]
 
 [[package]]
@@ -718,9 +714,7 @@ name = "sample-notepad"
 version = "0.1.0"
 dependencies = [
  "dioxus-compose",
- "dioxus-core",
  "dioxus-hooks",
- "dioxus-signals",
  "futures-channel",
 ]
 
@@ -729,9 +723,7 @@ name = "sample-todo"
 version = "0.1.0"
 dependencies = [
  "dioxus-compose",
- "dioxus-core",
  "dioxus-hooks",
- "dioxus-signals",
 ]
 
 [[package]]

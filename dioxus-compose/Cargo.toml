@@ -27,7 +27,15 @@ path = "src/bin/codegen.rs"
 bench = false
 
 [features]
-default = []
+# The renderer is what draws, so it is on by default. Adding this crate to a Cargo.toml is
+# meant to be the whole setup: the build script finds a renderer for the target or
+# downloads the release artifact for this exact version, checksum first. Turn it off with
+# `default-features = false` for a headless or documentation build, and know that the
+# resulting binary says so on standard error and exits non-zero rather than opening no
+# window and returning 0.
+default = ["native-renderer"]
+# Drives the boundary with no renderer at all, for tests and for embedding the Host in
+# something that draws for itself. Suppresses the renderer download.
 mock-renderer = []
 native-renderer = []
 

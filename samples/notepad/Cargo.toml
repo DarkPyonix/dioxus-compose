@@ -8,11 +8,6 @@ publish = false
 
 [dependencies]
 dioxus-compose = { path = "../../dioxus-compose" }
-# rsx! expands to paths that name these crates directly, so a consumer has to depend on
-# them even though it never writes their names. That is a wart in our public API rather
-# than something a sample should be teaching, and it is tracked as such.
-dioxus-core.workspace = true
-dioxus-signals.workspace = true
 dioxus-hooks.workspace = true
 # A worker thread has to hand its result back to the UI thread, and the library offers no
 # channel for that, so the sample brings its own.

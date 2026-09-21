@@ -35,6 +35,13 @@ fi
 cargo fmt --all -- --check
 cargo clippy --workspace -- -D warnings
 cargo test --workspace
+# The renderer is a default feature, so the run above never builds the crate the way a
+# headless or documentation build gets it. That build has to compile, and the tests that
+# assert it does not quietly pretend to have a renderer only exist in it.
+cargo test -p dioxus-compose --no-default-features
+# What docs.rs does: the feature is on and there is no network to fetch a renderer with.
+# The documentation still has to build.
+DOCS_RS=1 cargo check -p dioxus-compose --all-features
 # --benches restricts the run to Criterion bench targets. Without it cargo also runs the
 # lib's default test harness in bench mode, and that harness rejects Criterion's flags.
 cargo bench --workspace --benches -- "${bench_args[@]}"

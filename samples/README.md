@@ -24,13 +24,19 @@ cd samples/calculator
 dx serve
 ```
 
-Building with cargo directly works too, and is what CI does, but the renderer has to be
-found. The path must be absolute: a build script runs with the package directory as its
-working directory, not the workspace root.
+Building with cargo directly works too:
+
+```
+cargo run -p sample-calculator
+```
+
+That downloads the released renderer for the crate's version on first use. To run against a
+renderer you have just built instead, name it. The path must be absolute: a build script runs
+with the package directory as its working directory, not the workspace root.
 
 ```
 DIOXUS_COMPOSE_RENDERER_DIR=$PWD/dioxus-compose-renderer/build/native-image/dist/lib \
-  cargo run -p sample-calculator --features dioxus-compose/native-renderer
+  cargo run -p sample-calculator
 ```
 
 Pushing a `sample-v*` tag builds all of them for every desktop platform and attaches the

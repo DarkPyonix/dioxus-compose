@@ -292,6 +292,35 @@ JavaFX 호스트가 쓰는 것과 같은 방식입니다. AWT가 자기 루프�
 
 ## 🚀 시작하기
 
+### 내 프로젝트에서 쓰기
+
+한 줄이면 끝입니다. `cargo build`가 이 타깃에 필요한 렌더러를 알아내고, 크레이트 버전에
+정확히 맞는 릴리스 아티팩트를 내려받고, 게시된 `.sha256`으로 검증하고, `target/` 밖의
+캐시에 풀어서 링크합니다.
+
+```toml
+[dependencies]
+dioxus-compose = "0.0.0"
+```
+
+설정할 환경 변수도, 손으로 내려받을 파일도, 실행할 스크립트도 없습니다. 캐시는 버전과
+타깃으로 키가 잡혀 있어서 `cargo clean`을 견디고 같은 기계의 프로젝트끼리 한 벌을
+공유합니다.
+
+필요한 경우를 위한 변수가 둘 있고, 둘 다 설치에 필요하지는 않습니다.
+
+| 변수 | 효과 |
+|---|---|
+| `DIOXUS_COMPOSE_RENDERER_DIR` | 이 디렉터리의 렌더러를 씁니다. 가장 먼저 확인하고, 설정돼 있으면 아무것도 내려받지 않습니다. 직접 빌드한 렌더러, 벤더링한 사본, 망 분리 빌드가 모두 이것 하나로 해결됩니다. |
+| `DIOXUS_COMPOSE_CACHE_DIR` | 캐시를 `$HOME/.cache/dioxus-compose`(Windows는 `%LOCALAPPDATA%\dioxus-compose`)에서 옮깁니다. |
+
+네트워크가 없는 빌드는 어떤 파일 둘을 어디에 두면 되는지 말하고, 그 자리에 두면 그것으로
+끝입니다. `default-features = false`는 렌더러 없이 빌드합니다(헤드리스, 문서 빌드). 그렇게
+만든 바이너리를 실행하면 무엇이 없는지 말하고 0이 아닌 상태로 끝납니다. 창을 열지 않은 채
+0을 반환하지 않습니다.
+
+아래는 전부 **이 저장소에서 작업할 때** 필요한 내용이며, 렌더러 툴체인까지 갖춰야 합니다.
+
 ### 0. 개발 환경 점검
 
 ```bash
@@ -383,10 +412,10 @@ cd dioxus-compose-renderer
 cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
-빌드 스크립트는 워크스페이스의
-`dioxus-compose-renderer/build/native-image/dist/lib`에서 렌더러를 찾습니다. 다른 곳에 있는
-렌더러를 쓰려면(내려받은 아티팩트, 벤더링한 복사본, 오프라인 빌드)
-`DIOXUS_COMPOSE_RENDERER_DIR`로 가리키세요(`NFR-10`).
+이 저장소의 체크아웃에서는 빌드 스크립트가 방금 빌드한 워크스페이스의
+`dioxus-compose-renderer/build/native-image/dist/lib`를 내려받기보다 먼저 씁니다. 전체 순서는
+`DIOXUS_COMPOSE_RENDERER_DIR`, 워크스페이스 빌드 결과물, 캐시, 크레이트 버전의 릴리스
+순입니다(`NFR-10`).
 
 ### 7. JVM 개발 셸
 
