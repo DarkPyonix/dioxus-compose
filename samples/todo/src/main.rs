@@ -202,9 +202,10 @@ fn app() -> Element {
                                 // row is four permanently drawn controls per task, twenty
                                 // thousand of them once this list is filled, and a row
                                 // whose actions outweigh the task they act on. An overflow
-                                // menu is the idiom all three design systems share for
+                                // menu is the idiom every design system shares for
                                 // this: Material calls it the overflow menu, Cupertino the
-                                // ellipsis menu, Fluent a command flyout. The other two
+                                // ellipsis menu, Fluent a command flyout, and the three
+                                // desktop Linux languages a hamburger. The other two
                                 // answers are hover reveal and swipe, and neither is
                                 // available: pointer enter and exit are not events the
                                 // protocol carries, and a swipe is not a gesture the

@@ -58,7 +58,7 @@ fn variant_for(label: &str) -> ButtonVariant {
 /// Whether a key carries content rather than a command.
 ///
 /// The digits and the decimal point are the number being entered, and a number is content.
-/// A tonal button is a secondary *action* in all three design systems, so its label is the
+/// A tonal button is a secondary *action* in every design system, so its label is the
 /// accent colour: left alone, a keypad prints its digits in the link colour. The digits
 /// therefore name their own ink and the command keys keep the tint, which leaves one
 /// meaning on the pad reading as accent, something that acts on the number.

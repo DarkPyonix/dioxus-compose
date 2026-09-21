@@ -209,8 +209,8 @@ fn fr15_no_property_lets_the_host_choose_how_a_picker_is_operated() {
     assert!(
         named.is_empty(),
         "a picker property named how the user picks, or how the value is formatted: {named:?}. \
-         The three design systems are operated differently, and a Host that can ask for one \
-         of them turns the other two into imitations of it.",
+         The design systems are operated differently, and a Host that can ask for one \
+         of them turns the rest into imitations of it.",
     );
 }
 
