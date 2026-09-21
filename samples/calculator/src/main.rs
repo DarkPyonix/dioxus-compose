@@ -368,35 +368,38 @@ fn app() -> Element {
             Row {
                 fill_max_width: true,
                 fill_max_height: true,
-                Column {
+                // The instrument: the number, the memory keys and the pad, all on one
+                // measure so their edges agree. The pad used to be the only one of the
+                // three that stopped widening, which put the number to the right of the
+                // keys it belongs to.
+                dioxus_compose::Box {
                     weight: INSTRUMENT_SHARE,
                     fill_max_height: true,
-                    // The bar insets its own contents by the medium step, so the
-                    // instrument under it uses the same one and the two line up.
-                    padding_role: SpaceRole::Md,
-                    space_role: SpaceRole::Md,
+                    alignment: Alignment::TopCenter,
+                    Column {
+                        fill_max_width: pad_width.is_none(),
+                        width: pad_width,
+                        fill_max_height: true,
+                        // The bar insets its own contents by the medium step, so the
+                        // instrument under it uses the same one and the two line up.
+                        padding_role: SpaceRole::Md,
+                        space_role: SpaceRole::Md,
 
-                    // The reading area takes the height the keys leave and the number
-                    // sits at its foot, which is where all three references put it: the
-                    // room above the number is what a long expression grows into rather
-                    // than something that pushes the keys down.
-                    dioxus_compose::Box {
-                        fill_max_width: true,
-                        weight: READING_SHARE,
-                        alignment: Alignment::BottomCenter,
-                        {readout(status, display)}
-                    }
-                    {memory_row(memory_set, EventHandler::new(press))}
-                    // The pad is along the bottom, and on a desktop window it stops
-                    // widening and centres instead.
-                    dioxus_compose::Box {
-                        fill_max_width: true,
-                        weight: KEYPAD_SHARE,
-                        alignment: Alignment::BottomCenter,
-                        Column {
-                            fill_max_width: pad_width.is_none(),
-                            width: pad_width,
-                            fill_max_height: true,
+                        // The reading area takes the height the keys leave and the number
+                        // sits at its foot, which is where all three references put it:
+                        // the room above the number is what a long expression grows into
+                        // rather than something that pushes the keys down.
+                        dioxus_compose::Box {
+                            fill_max_width: true,
+                            weight: READING_SHARE,
+                            alignment: Alignment::BottomCenter,
+                            {readout(status, display)}
+                        }
+                        {memory_row(memory_set, EventHandler::new(press))}
+                        dioxus_compose::Box {
+                            fill_max_width: true,
+                            weight: KEYPAD_SHARE,
+                            alignment: Alignment::BottomCenter,
                             {keypad(EventHandler::new(press))}
                         }
                     }
