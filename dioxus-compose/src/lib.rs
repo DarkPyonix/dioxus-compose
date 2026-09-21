@@ -5,6 +5,7 @@ pub mod boundary;
 pub mod codegen;
 pub mod drawing;
 mod extensions;
+pub mod message;
 pub mod protocol;
 pub mod renderer;
 pub mod schema;
@@ -21,16 +22,18 @@ pub use dioxus_core_macro::{component, rsx};
 pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
+pub use message::{Message, show_message};
 pub use schema::{
     Alignment, Arrangement, AssetKind, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
-    EventPayload, IconRole, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection,
-    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind, WindowSizeClass,
+    EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint, PropertyKind,
+    SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole,
+    WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
     Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
-    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyRow, Menu, ProgressIndicator, RadioButton,
-    RangeRequest, Row, ScrollColumn, Separator, Slider, Spacer, Surface, Switch, Tabs, Text,
-    TextField, TimePicker, Tooltip, TopAppBar,
+    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyRow, Menu, Navigation, NavigationItem,
+    ProgressIndicator, RadioButton, RangeRequest, Row, ScrollColumn, Separator, Sheet, Slider,
+    Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{WindowSize, use_window_size, window_size};
 
@@ -43,11 +46,12 @@ pub mod prelude {
         Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Checkbox, Color,
         ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
         DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
-        LazyColumn, LazyRow, LinearProgressIndicator, LoopMode, Menu, Modifier, Paint,
-        ProgressIndicator, RadioButton, RangeRequest, Row, ScrollColumn, Separator, ShapeRole,
-        Slider, SpaceRole, Spacer, Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow,
-        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, component,
-        launch, rsx, use_window_size,
+        LazyColumn, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
+        Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, RadioButton, RangeRequest,
+        Row, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, Surface, Switch,
+        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker, Tooltip, TopAppBar,
+        TypeRole, WindowSize, WindowSizeClass, component, launch, rsx, show_message,
+        use_window_size,
     };
     // The crates `rsx!` expands into references to, under the names it expands into. A
     // consumer who added only `dioxus-compose` does not have `dioxus_core` or
@@ -206,6 +210,18 @@ pub mod elements {
     element!(dropdown, "Dropdown", [selected_index, enabled]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
     element!(scrollcolumn, "ScrollColumn", []);
+    // Widget tags 30 to 32. `Navigation` carries the selection and nothing about whether
+    // it is a bar, a rail or a drawer: the Renderer has measured the window and chooses.
+    // The destinations are the `NavigationItem` children and the rest is the screen.
+    element!(navigation, "Navigation", [selected_index]);
+    // A destination's label and icon are properties, not a child tree. A child tree would
+    // fix the arrangement, and the three presentations exist because it differs: a bar
+    // stacks the label under the icon, a drawer sets it beside.
+    element!(navigationitem, "NavigationItem", [text, icon, enabled]);
+    // Like a Dialog on the wire: `open` seeds the Renderer's own state and `on_dismiss`
+    // says once that the user asked to close it. Which edge it enters from is the
+    // Renderer's, because it is the side that knows how wide the window is.
+    element!(sheet, "Sheet", [open]);
 
     #[doc(hidden)]
     pub mod completions {
@@ -240,6 +256,9 @@ pub mod elements {
             datepicker {},
             timepicker {},
             dropdown {},
+            navigation {},
+            navigationitem {},
+            sheet {},
         }
     }
 }

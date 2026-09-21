@@ -392,7 +392,7 @@ M0의 위젯 9개는 데모를 굴리는 데 필요했던 만큼이지 설계된
 - **타임존과 로케일은 Renderer가 소유합니다(D5).** 표시 형식, 주 시작 요일, 12/24시간제는 플랫폼 설정을 따릅니다. Host가 형식 문자열을 보내는 경로는 두지 않습니다. 보내면 플랫폼을 따라간다는 말이 거짓이 됩니다.
 - 범위 제한은 `min`과 `max`로 같은 단위로 보냅니다.
 
-여기까지가 1.0의 코어 어휘 29개입니다.
+여기까지가 15.2의 어휘 29개이고, FR-21이 탐색과 시트로 32개까지 넓힙니다.
 
 #### 15.2.2 속성 태그 블록
 
@@ -403,6 +403,7 @@ FR-13.8이 코어 속성 태그를 26까지 썼고, FR-11 확장 예제가 27을
 | 10-17 (`Image` ~ `Divider`) | 28-39 |
 | 18-25 (`Card` ~ `Tooltip`) | 40-49 |
 | 26-29 (`Canvas` ~ `Dropdown`) | 50-59 |
+| 30-32 (`Navigation` ~ `Sheet`) | 60-69 (FR-21) |
 
 #### 15.2.3 컨테이너, 오버레이, 탭(태그 18-25)
 
@@ -475,8 +476,8 @@ tag 16, 24바이트: node_id: u32, handler_id: u64, value: f64
 
 | 제외 | 이유 |
 |---|---|
-| `Chip`, `FAB`, `NavigationRail`, `BottomSheet` | Material 고유 어휘. Cupertino 대응물 없음. FR-11 확장으로 |
-| `NavigationBar` | 모바일 고유. Android와 iOS에만 있고 데스크톱 세 시스템에 공통 개념이 없습니다 |
+| `Chip`, `FAB` | Material 고유 어휘. Cupertino 대응물 없음. FR-11 확장으로 |
+| ~~`NavigationBar`, `NavigationRail`, `BottomSheet`~~ | **철회했습니다.** 위젯 이름이 아니라 개념을 기준으로 다시 따져 보니 여섯 시스템 모두에 있습니다. FR-21이 코어 어휘로 편입합니다 |
 | `Grid` | 지연 그리드는 FR-8과 다른 윈도잉 프로토콜이 필요합니다. 별도 요구사항으로 분리 |
 | `RichText`, 마크다운 | 위젯이 아니라 `Text`의 스팬 모델 문제입니다. 별도 요구사항으로 분리합니다 |
 | 드래그 앤 드롭(파일), 리사이즈 핸들 | 플랫폼 파일 프로토콜이 따로 필요합니다. 1.0 이후. 포인터 드래그 자체는 FR-18에 있습니다 |
@@ -720,6 +721,117 @@ if window.class == WindowSizeClass::Expanded { /* 사이드바 */ }
 4. 28바이트 고정 레코드가 Rust와 Kotlin 양쪽에서 같은 바이트로 인코딩되고 디코딩됩니다(프로토콜 벡터).
 5. `use_window_size()`를 쓴 컴포넌트가 클래스 전환에서 다시 렌더링되고, 그렇지 않은 형제는 다시 렌더링되지 않습니다.
 6. 알 수 없는 `size_class` 값은 `ProtocolError`가 되고 프로세스가 죽지 않습니다.
+
+### FR-21 탐색, 시트, 일시 메시지 (`Agreed`)
+
+FR-15.2의 코어 어휘 29개로는 애플리케이션이 세 가지를 말할 수 없습니다. 화면을 목적지로 나누는 것(탐색), 화면 위에 임시로 무언가를 덮는 것(시트), 그리고 "했습니다"라고 알리는 것(일시 메시지)입니다. 셋 다 없어서는 안 되는 부류이고, 셋 다 FR-15.3에서 한 번 제외됐거나 아예 논의되지 않았습니다.
+
+특히 탐색은 FR-20이 만든 창 크기 클래스가 존재하는 이유 그 자체입니다. FR-20은 Host에게 `use_window_size()`를 줬지만, 그 값으로 만들 수 있는 것을 하나도 주지 않았습니다.
+
+#### 21.1 FR-15.3의 제외를 되짚습니다
+
+FR-15.3은 `NavigationBar`를 "모바일 고유. Android와 iOS에만 있고 데스크톱 세 시스템에 공통 개념이 없습니다"라며, `BottomSheet`를 "Material 고유 어휘"라며 제외했습니다. 두 판단 모두 **위젯 이름을 기준으로 삼았기 때문에** 틀렸습니다.
+
+공통인지 따져야 할 대상은 `NavigationBar`라는 컴포넌트가 아니라 **"목적지 집합 중 하나가 선택되어 있다"는 개념**입니다. 그 개념은 여섯 시스템 모두에 있습니다.
+
+| 시스템 | 좁은 창 | 중간 창 | 넓은 창 |
+|---|---|---|---|
+| Material 3 | `NavigationBar` | `NavigationRail` | `PermanentNavigationDrawer` |
+| Apple | 탭 바(iOS) | 탭 바 또는 사이드바 | 사이드바(`NSSplitViewController`) |
+| Fluent 2 | `NavigationView` minimal | `NavigationView` compact | `NavigationView` expanded |
+| GNOME | `AdwViewSwitcherBar` | `AdwNavigationSplitView` 접힘 | `AdwNavigationSplitView` 펼침 |
+| KDE Breeze | Kirigami 하단 액션 | 좁은 사이드바 | `KPageView` 사이드바 |
+| Deepin | 하단 탭 | 사이드바 | 사이드바 |
+
+Fluent의 `NavigationView`가 결정적입니다. 한 컴포넌트가 폭에 따라 세 가지 표시 모드를 스스로 고릅니다. "데스크톱에 공통 개념이 없다"가 아니라, 데스크톱 시스템들은 **이미 그것을 폭에 따라 달라지는 하나의 개념으로 취급하고 있었습니다.**
+
+시트도 같습니다. Material의 bottom sheet, Apple의 `UISheetPresentationController`, Fluent의 `Sheet`/`TeachingTip`, GNOME의 `AdwBottomSheet`, Kirigami의 `OverlayDrawer`. 화면 가장자리에서 밀려 들어오는 임시 표면은 여섯 시스템 모두의 어휘입니다.
+
+따라서 FR-15.3의 해당 두 줄을 철회하고, 여기서 코어 어휘로 편입합니다. 나머지 제외 항목(`Chip`, `FAB`, `Grid`, `RichText`)은 그대로 둡니다.
+
+#### 21.2 탐색은 위젯 셋이 아니라 개념 하나입니다
+
+**Host는 `Navigation` 하나만 선언하고, 막대/레일/서랍 중 무엇으로 그릴지는 Renderer가 고릅니다.**
+
+대안은 Host가 고르는 것, 즉 `use_window_size()`를 읽어 `NavigationBar`, `NavigationRail`, `Drawer` 세 위젯 중 하나를 `rsx!`에서 분기하는 방식입니다. 채택하지 않는 이유는 셋입니다.
+
+1. **Renderer가 이미 폭을 압니다.** Host가 고르려면 폭이 경계를 한 번 올라갔다가 그 결과로 만들어진 트리가 다시 내려와야 합니다. 클래스가 바뀔 때마다 VirtualDom 전체가 돌고, 목적지 노드들이 전부 지워졌다가 다시 만들어집니다. Renderer가 고르면 같은 노드가 배치만 바꿉니다.
+2. **경계가 좁아야 합니다(PR-2).** 세 위젯은 위젯 태그 셋, 속성 셋, Renderer 분기 셋입니다. 하나면 전부 하나입니다.
+3. **이것이 이 프로젝트의 주장 그 자체입니다.** "선언 하나가 폰에서도 데스크톱에서도 그 플랫폼답게 나온다." 그 주장을 가장 잘 보여줄 자리에서 Host에게 분기를 시키면, 주장은 남지만 근거가 사라집니다.
+
+세 표현 사이의 대응은 **디자인 시스템의 규칙**이지 고정값이 아닙니다(FR-14.1). Renderer의 `ComponentRules`가 크기 클래스를 받아 표현을 답합니다. 기본 대응은 `Compact→막대`, `Medium→레일`, `Expanded→서랍`이고, 어떤 시스템이 다르게 답해도 위젯 코드는 바뀌지 않습니다.
+
+**목적지는 데이터여야 합니다.** `Tabs`처럼 자식을 그대로 그리게 하면 안 됩니다. `Column { Icon, Text }`를 자식으로 받으면 Host가 이미 "아이콘 위에 라벨"이라는 배치를 정해 버린 것이고, 레일이 라벨을 작게 줄이거나 서랍이 아이콘 옆에 라벨을 놓는 결정을 Renderer가 할 수 없게 됩니다. 그래서 목적지는 라벨과 아이콘을 **속성으로** 싣는 전용 위젯 `NavigationItem`입니다.
+
+- **자식 규약**: `Navigation`의 자식 중 `NavigationItem`인 것이 목적지이고, 나머지 자식이 그 화면의 내용입니다. 인덱스로 나누지 않는 이유는, 목적지 수가 조건에 따라 달라지는 순간 Host가 두 목록의 순서를 손으로 맞춰야 하기 때문입니다.
+- **선택은 Renderer의 상태입니다(D5).** `SelectedIndex`(태그 42)가 초깃값과 바깥에서 들어온 변경을 주고, 목적지를 고르면 Renderer가 선택을 옮긴 뒤 그 목적지 자신의 `OnClick` 핸들러로 `Clicked`를 보냅니다. `Tabs`와 같은 규약이고 새 이벤트 태그가 없습니다.
+- **서랍이 열려 있는지, 레일이 접혀 있는지는 Renderer의 상태입니다.** Host 속성이 없습니다. 창이 넓으면 서랍은 항상 보이고, 그 사실은 Host가 알 필요가 없습니다.
+
+#### 21.3 시트
+
+`Sheet`는 `Dialog`와 같은 오버레이이고, 같은 두 속성을 씁니다: `Open`(태그 40)이 Renderer의 열림 상태를 seed하고, `OnDismiss`(태그 41)가 사용자가 닫으려 했다는 사실을 한 번 알립니다. 자식이 내용입니다.
+
+- **끌린 거리, 스냅 위치, 애니메이션은 경계를 넘지 않습니다(D5).** 사용자가 시트를 절반쯤 끌어내리는 동안 Rust는 아무것도 듣지 않습니다. 끝까지 내려가서 닫히면 그때 `OnDismiss` 한 번입니다.
+- **어느 가장자리에서 들어오는지는 Renderer가 정합니다.** 좁은 창에서는 아래에서, 넓은 창에서는 옆에서 들어오는 것이 여섯 시스템의 공통 관행입니다. 탐색과 같은 이유로 이 선택도 `ComponentRules`가 크기 클래스를 받아 답합니다. Host에 `bottom: bool` 같은 속성을 두지 않습니다.
+
+#### 21.4 일시 메시지는 노드가 아닙니다
+
+Snackbar를 위젯 태그로 만들면 Host가 **자기 소멸 타이머를 모델링해야 합니다.** "지금부터 4초 동안 열림"이라는 상태를 Rust가 들고, 4초 뒤에 워커가 신호를 보내 프레임을 돌려서 노드를 지워야 합니다. 4초짜리 애니메이션을 위해 VirtualDom이 도는 셈이고, D5가 스크롤 위치와 IME 조합을 Renderer에 둔 것과 정확히 같은 이유로 틀렸습니다.
+
+메시지는 **수명을 가진 사건**이지 트리의 일부가 아닙니다. 그래서 새 **Mutation 태그 12 `ShowMessage`** 하나를 더합니다. Host는 "이 말을 전하라"고 한 번 말하고 잊습니다.
+
+```
+tag 12, 32바이트: handler_id: u64, text: (offset, len), action: (offset, len), duration: u16, reserved: u16
+```
+
+- `handler_id`는 동작 라벨을 눌렀을 때 보낼 핸들러 id입니다. 동작이 없으면 0이고, 그때 `action`은 빈 문자열입니다. 누르면 기존 `Clicked`(이벤트 태그 1)를 `node_id = 0`으로 보냅니다. 메시지에는 노드가 없기 때문입니다.
+- `duration`은 `Short=1`, `Long=2`인 닫힌 열거형입니다. 실제 밀리초는 디자인 시스템이 정합니다. 반드시 확인을 받아야 하는 메시지는 일시 메시지가 아니라 `Dialog`이므로 "무기한"은 두지 않습니다.
+- **연달아 온 메시지는 줄을 섭니다.** 한 번에 하나만 보이고, 보이는 것이 수명을 다하면 다음 것이 나타납니다. 나중 것이 앞의 것을 지우면 사용자가 방금 한 일에 대한 응답을 못 보게 되고, 둘을 겹쳐 쌓으면 화면이 가려집니다. 줄은 유한하며(8개) 넘치면 **가장 오래 기다린 것부터 버립니다.** 밀려 버려지는 쪽이 이미 사용자가 잊은 조작에 대한 응답이기 때문입니다.
+- 큐도, 스레드 홉도 아닙니다. `ShowMessage`는 다른 모든 레코드와 같은 배치를 타고 같은 호출 안에서 적용됩니다(PR-1).
+
+#### 21.5 와이어 추가분
+
+위젯 태그(FR-15.2의 29 뒤에 덧붙입니다):
+
+| 태그 | 위젯 | 여섯 시스템 대응 |
+|---|---|---|
+| 30 | `Navigation` | 21.1의 표. 표현은 Renderer가 고릅니다 |
+| 31 | `NavigationItem` | 목적지 하나. 라벨과 아이콘을 속성으로 싣습니다 |
+| 32 | `Sheet` | 가장자리에서 들어오는 임시 표면 |
+
+속성 태그: 위젯 태그 30-32의 블록은 **60-69**입니다(FR-15.2.2의 다음 블록).
+
+| 태그 | 속성 | 값 |
+|---|---|---|
+| 60 | `Icon` | `IconRole` 태그(u32). 0은 "보내지 않음" |
+
+나머지는 전부 기존 태그를 씁니다. `Navigation`은 `SelectedIndex`(42), `NavigationItem`은 `Text`(1), `Enabled`(3), `OnClick`(5), `Sheet`는 `Open`(40)과 `OnDismiss`(41)입니다.
+
+`IconRole`에 탐색이 필요로 하는 의미 셋을 덧붙입니다: `Home=9`, `List=10`, `Inbox=11`. 기존 8개와 같은 규칙으로, Host는 의미만 보내고 그림은 Renderer가 시스템별로 그립니다.
+
+#### 21.6 디자인 시스템은 하나씩 늘어나야 합니다
+
+세 부류 모두 `ComponentRules`에 답을 하나씩 더합니다: `navigation(WindowSizeClass)`, `sheet(WindowSizeClass)`, `message()`.
+
+**셋 다 기본 구현을 가집니다.** 기본값은 그 시스템의 토큰 표(색, 모서리, 간격)에서 유도되므로, 아무것도 재정의하지 않은 시스템도 남의 색이 아니라 자기 색으로 나옵니다. 재정의하지 않으면 안 되는 것은 없고, 시스템은 의견이 있는 것만 답합니다. 일곱 번째 디자인 시스템이 들어올 때 이 세 멤버 때문에 컴파일이 깨지지 않는 것이 요점입니다(FR-14.2).
+
+#### 21.7 수용 기준
+
+1. 같은 `Navigation` 선언이 폭 500dp에서 하단 막대로, 700dp에서 레일로, 1100dp에서 서랍으로 그려집니다. 세 폭의 스크린샷으로 확인합니다.
+2. 창을 넓혀 표현이 바뀌는 동안 `Navigation`의 자식 노드가 새로 만들어지지 않습니다(`Create` 레코드가 나오지 않습니다).
+3. 목적지를 고르면 그 목적지의 `OnClick` 핸들러로 `Clicked` 이벤트가 **정확히 한 번** 갑니다. 선택 표시는 Host 배치 없이 바뀝니다.
+4. `Sheet`를 끌어 닫으면 `OnDismiss`가 한 번 가고, 끄는 동안에는 아무 이벤트도 가지 않습니다.
+5. `ShowMessage` 두 개가 한 배치에 오면 첫 번째만 보이고, 그 수명이 끝난 뒤에 두 번째가 보입니다.
+6. 메시지의 동작 라벨을 누르면 `node_id = 0`으로 `Clicked`가 갑니다.
+7. 32바이트 `ShowMessage` 레코드가 Rust와 Kotlin 양쪽에서 같은 바이트로 인코딩되고 디코딩됩니다(PR-4 벡터).
+8. 세 위젯이 여섯 디자인 시스템 전부에서 렌더링되고, 새 디자인 시스템은 `ComponentRules` 구현 하나로 끝납니다.
+
+#### 21.8 지금까지 확인된 것
+
+1번부터 7번까지 통과했습니다. 1번은 `fr21_one_declaration_is_a_bar_a_rail_and_a_drawer`가 500dp/700dp/1100dp에서 막대/레일/서랍의 치수를 재고, 같은 폭에서 찍은 스크린샷 아홉 장(디자인 시스템 3 × 폭 3)을 눈으로 확인했습니다. 2번은 `fr21_navigation_is_one_declaration_and_a_resize_creates_nothing`, 3번은 Host와 Renderer 양쪽, 4번은 `fr21_dragging_a_sheet_shut_reports_one_dismissal_and_nothing_during_the_drag`, 5번은 `fr21_two_messages_in_one_batch_are_shown_one_at_a_time_in_order`, 6번은 양쪽, 7번은 갱신된 `mutations.bin` 벡터와 `fr21_the_message_record_in_the_vector_decodes_to_the_same_values`입니다.
+
+**8번은 아직입니다.** Renderer의 `ComponentRules` 구현은 현재 셋(Material 3, Cupertino, Fluent)이고, GNOME/Breeze/Deepin은 다른 작업에서 들어오는 중입니다. 세 멤버 전부 토큰 표에서 유도한 기본 구현을 가지므로 그 셋이 합류할 때 컴파일이 깨지지 않고 각자의 색으로 나오지만, "여섯 시스템 전부"는 그 작업이 합쳐진 뒤에 확인해야 합니다. 그때까지 이 요구사항은 `Done`이 아닙니다.
+
 
 ### FR-11 스키마 확장 (서드파티 위젯) (`Agreed`)
 스키마에 없는 Compose 컴포넌트는 **E1 확장 스키마 패키지**로 추가합니다. 확장은 런타임 플러그인이 아니라 Host와 Renderer의 소스 빌드에 함께 들어가는 한 쌍입니다. Rust 쪽 선언이 위젯 태그, 속성 태그, 타입이 붙은 Dioxus 컴포넌트를 소유하고, Kotlin 쪽 구현이 그 태그와 속성을 실제 `@Composable` 호출로 해석합니다.

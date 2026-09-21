@@ -87,4 +87,54 @@ fun iconGeometry(role: IconRole): IconGeometry = when (role) {
             IconDot(Offset(0.80f, 0.50f), 0.08f, filled = true),
         ),
     )
+
+    // A pitched roof over a wall, which is the house every icon set draws for "where this
+    // application starts".
+    IconRole.Home -> IconGeometry(
+        strokes = listOf(
+            listOf(Offset(0.12f, 0.48f), Offset(0.50f, 0.16f), Offset(0.88f, 0.48f)),
+            listOf(
+                Offset(0.22f, 0.44f),
+                Offset(0.22f, 0.84f),
+                Offset(0.78f, 0.84f),
+                Offset(0.78f, 0.44f),
+            ),
+        ),
+        dots = emptyList(),
+    )
+
+    // Three rules with a bullet against each: a list of things, not a paragraph.
+    IconRole.List -> IconGeometry(
+        strokes = listOf(
+            listOf(Offset(0.38f, 0.26f), Offset(0.86f, 0.26f)),
+            listOf(Offset(0.38f, 0.50f), Offset(0.86f, 0.50f)),
+            listOf(Offset(0.38f, 0.74f), Offset(0.86f, 0.74f)),
+        ),
+        dots = listOf(
+            IconDot(Offset(0.18f, 0.26f), 0.06f, filled = true),
+            IconDot(Offset(0.18f, 0.50f), 0.06f, filled = true),
+            IconDot(Offset(0.18f, 0.74f), 0.06f, filled = true),
+        ),
+    )
+
+    // A tray: the open box with a lip that things arrive in.
+    IconRole.Inbox -> IconGeometry(
+        strokes = listOf(
+            listOf(
+                Offset(0.12f, 0.24f),
+                Offset(0.12f, 0.80f),
+                Offset(0.88f, 0.80f),
+                Offset(0.88f, 0.24f),
+            ),
+            listOf(
+                Offset(0.12f, 0.56f),
+                Offset(0.32f, 0.56f),
+                Offset(0.40f, 0.70f),
+                Offset(0.60f, 0.70f),
+                Offset(0.68f, 0.56f),
+                Offset(0.88f, 0.56f),
+            ),
+        ),
+        dots = emptyList(),
+    )
 }

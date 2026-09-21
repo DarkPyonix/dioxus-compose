@@ -21,6 +21,7 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.TypeToken
+import dioxus.compose.protocol.WindowSizeClass
 import java.lang.System
 
 /**
@@ -210,7 +211,194 @@ interface ComponentRules {
 
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
+
+    // The three answers below have defaults, and that is the point of them. A design
+    // system implements what it has an opinion about; what it says nothing about is
+    // derived from its own token table, so it still comes out in its own colours rather
+    // than in someone else's. A seventh design system is one more implementation of this
+    // interface, and it does not stop compiling when the vocabulary grows again.
+
+    /**
+     * How a set of destinations is presented at this width, and what it is drawn with.
+     *
+     * The width decides between a bar across the bottom, a rail down the side and a
+     * drawer standing open, because that is the correspondence every one of these design
+     * systems already makes. The Host declared one navigation and said nothing about
+     * which of the three it wanted.
+     */
+    fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.Primary),
+            indicator = Color.Transparent,
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.None,
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 64.dp,
+            railWidth = 80.dp,
+            drawerWidth = 240.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Label,
+        )
+
+    /**
+     * Which edge a sheet enters from at this width, and what it is drawn with.
+     *
+     * Up from the bottom where the window is narrow, in from the side where it is wide:
+     * the same convention in all of these systems, and the same reason as the navigation
+     * presentation. The Host has no property that could ask for one of them.
+     */
+    fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 6.dp,
+        scrim = Color.Black.copy(alpha = 0.32f),
+        handle = theme.color(ColorRole.OutlineVariant),
+        widthFraction = 0.4f,
+        heightFraction = 0.5f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /**
+     * How a transient message is drawn, and how long each of the two durations lasts.
+     *
+     * The milliseconds are here rather than on the wire because they are a rule of the
+     * design language: Material's four and ten seconds are not Apple's, and a Host that
+     * sent a number would be overruling whichever system it ended up under.
+     */
+    fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.OnSurface),
+        content = theme.color(ColorRole.Surface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Small),
+        elevation = 3.dp,
+        placement = MessagePlacement.BottomCenter,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 10_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
+    )
 }
+
+/**
+ * What marks the selected destination.
+ *
+ * The three systems disagree, visibly: Material puts a filled pill behind the icon, Fluent
+ * draws a short bar along the leading edge of the row, and a Cupertino tab bar marks the
+ * selection with colour alone. A widget that only knew "selected" could not produce any of
+ * the three on purpose.
+ */
+enum class NavigationIndicator { Pill, LeadingEdgeBar, None }
+
+/** Which of its three shapes a set of destinations has taken. */
+enum class NavigationPresentation {
+    /** A bar across the bottom of the window, destinations side by side. */
+    Bar,
+
+    /** A narrow column down the leading edge. */
+    Rail,
+
+    /** A wide column down the leading edge, labels beside their icons. */
+    Drawer,
+}
+
+/**
+ * How one presentation of a set of destinations is drawn.
+ *
+ * All three presentations are described by one style, because they are one concept: what
+ * changes between them is where the strip sits and how much room a destination gets, not
+ * what a destination is.
+ */
+data class NavigationStyle(
+    val presentation: NavigationPresentation,
+    val container: Color,
+    val content: Color,
+    val selectedContent: Color,
+    /** What is drawn behind or beside the selected destination. */
+    val indicator: Color,
+    val indicatorShape: Shape,
+    val indicatorKind: NavigationIndicator,
+    /** The hairline between the destinations and the screen, null where there is none. */
+    val separator: Color?,
+    val barHeight: Dp,
+    val railWidth: Dp,
+    val drawerWidth: Dp,
+    val itemSpacing: Dp,
+    val itemPadding: Dp,
+    /** Whether a rail, which is narrow, still writes the label under the icon. */
+    val labelInRail: Boolean,
+    val typeRole: TypeRole,
+)
+
+/** The edge a sheet comes in from. */
+enum class SheetEdge { Bottom, End }
+
+/**
+ * How a sheet is drawn, and where it comes from.
+ *
+ * Nothing here is sent by the Host, including the edge: the Renderer measured the window,
+ * so the Renderer decides.
+ */
+data class SheetStyle(
+    val edge: SheetEdge,
+    val container: Color,
+    val content: Color,
+    val shape: Shape,
+    val elevation: Dp,
+    val scrim: Color,
+    /** The grab handle a sheet draws along its dragging edge, null where none is drawn. */
+    val handle: Color?,
+    /** How much of the window a sheet entering from the side takes. */
+    val widthFraction: Float,
+    /** How much of the window a sheet entering from the bottom takes. */
+    val heightFraction: Float,
+    val padding: Dp,
+    val borderWidth: Dp,
+    val borderColor: Color,
+)
+
+/** Where a transient message appears. */
+enum class MessagePlacement { BottomStart, BottomCenter, TopEnd }
+
+/**
+ * How a transient message is drawn and how long it stays.
+ *
+ * The durations are part of this because they are part of the design language, and because
+ * the alternative is the Host holding a timer for an animation it cannot see.
+ */
+data class MessageStyle(
+    val container: Color,
+    val content: Color,
+    val actionContent: Color,
+    val shape: Shape,
+    val elevation: Dp,
+    val placement: MessagePlacement,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    /** How far the message sits from the window's edges. */
+    val inset: Dp,
+    val shortMillis: Int,
+    val longMillis: Int,
+    val borderWidth: Dp,
+    val borderColor: Color,
+    val typeRole: TypeRole,
+)
 
 /** The design system's state transition timing. */
 data class Motion(

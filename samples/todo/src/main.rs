@@ -262,6 +262,12 @@ fn app() -> Element {
                                             }
                                         },
                                     }
+                                    // Deleting is the one action here that throws work
+                                    // away without asking first, so it says what it did
+                                    // and offers the task back. The message is not a
+                                    // widget this code places: it is handed over once and
+                                    // the Renderer decides where it goes and how long it
+                                    // stays, which is why nothing here holds a timer.
                                     Button {
                                         text: "Delete",
                                         variant: ButtonVariant::Text,
@@ -269,8 +275,17 @@ fn app() -> Element {
                                         color: Paint::Role(ColorRole::Error),
                                         on_click: move |_| {
                                             menu_open.set(None);
-                                            tasks.write().remove(index);
+                                            let removed = tasks.write().remove(index);
                                             store::save(&tasks.read());
+                                            let title = removed.title.clone();
+                                            Message::new(format!("Deleted \u{201c}{title}\u{201d}"))
+                                                .with_action("Undo", move |()| {
+                                                    let at = index.min(tasks.read().len());
+                                                    tasks.write().insert(at, removed.clone());
+                                                    store::save(&tasks.read());
+                                                })
+                                                .with_duration(MessageDuration::Long)
+                                                .show();
                                         },
                                     }
                                 }
@@ -290,6 +305,22 @@ fn app() -> Element {
     };
 
     rsx! {
+        // The three filters are three destinations, and one declaration is all of them.
+        // This code never asks how wide the window is: the Renderer has measured it and
+        // draws a bar along the bottom of a phone, a rail beside a tablet and a drawer
+        // standing open on a desktop, from these same three items.
+        Navigation {
+            fill_max_width: true,
+            fill_max_height: true,
+            selected_index: filter().index(),
+            for choice in Filter::STRIP {
+                NavigationItem {
+                    key: "{choice.label()}",
+                    text: choice.label(),
+                    icon: choice.icon(),
+                    on_click: move |()| filter.set(choice),
+                }
+            }
         Column {
             fill_max_width: true,
             fill_max_height: true,
@@ -303,6 +334,17 @@ fn app() -> Element {
                     text: "{remaining} of {total} remaining",
                     type_role: TypeRole::Label,
                     color: Paint::Role(ColorRole::OnSurfaceVariant),
+                }
+                // Clearing throws work away, so it says so in the same colour a row's own
+                // Delete uses. It sits beside the count because it is about the count.
+                Button {
+                    text: if stacked { "Clear" } else { "Clear completed" },
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ColorRole::Error),
+                    on_click: move |_| {
+                        tasks.write().retain(|task| !task.done);
+                        store::save(&tasks.read());
+                    },
                 }
             }
 
@@ -336,34 +378,6 @@ fn app() -> Element {
                             variant: ButtonVariant::Filled,
                             on_click: move |_| add(draft()),
                         }
-                    }
-                }
-
-                // The filter strip, with the two destructive or bulk actions pushed to the
-                // far end so they are not mistaken for part of the filter.
-                Row {
-                    fill_max_width: true,
-                    space_role: SpaceRole::Sm,
-                    alignment: Alignment::CenterStart,
-                    for choice in Filter::STRIP {
-                        Button {
-                            key: "{choice.label()}",
-                            text: choice.label(),
-                            variant: if filter() == choice { ButtonVariant::Filled } else { ButtonVariant::Outlined },
-                            on_click: move |_| filter.set(choice),
-                        }
-                    }
-                    Spacer { weight: 1.0 }
-                    // Clearing throws work away, so it says so in the same colour the
-                    // row's own Delete uses.
-                    Button {
-                        text: if stacked { "Clear" } else { "Clear completed" },
-                        variant: ButtonVariant::Text,
-                        color: Paint::Role(ColorRole::Error),
-                        on_click: move |_| {
-                            tasks.write().retain(|task| !task.done);
-                            store::save(&tasks.read());
-                        },
                     }
                 }
 
@@ -422,6 +436,7 @@ fn app() -> Element {
                 }
             }
             }
+        }
         }
     }
 }
@@ -490,6 +505,8 @@ mod tests {
         item_keys: HashMap<u32, String>,
         parents: HashMap<u32, u32>,
         item_count: Option<i64>,
+        /// The click handler each node declared, so a test can press what it found.
+        click_handlers: HashMap<u32, u64>,
     }
 
     impl MockRenderer {
@@ -521,6 +538,9 @@ mod tests {
                         }
                         (PropertyKind::ItemCount, PropertyValue::Integer(value)) => {
                             self.item_count = Some(*value);
+                        }
+                        (PropertyKind::OnClick, PropertyValue::Integer(value)) => {
+                            self.click_handlers.insert(*node_id, *value as u64);
                         }
                         _ => {}
                     },
@@ -603,6 +623,16 @@ mod tests {
         }
     }
 
+    /// A record copied out of a batch so the batch can be dropped.
+    #[derive(Debug)]
+    enum OwnedRecord {
+        Message {
+            handler_id: u64,
+            text: String,
+            action: String,
+        },
+    }
+
     /// The real screen, driven the way the Renderer drives it.
     struct Screen {
         host: Host,
@@ -649,6 +679,46 @@ mod tests {
                 handler,
                 event: Vec::new(),
             }
+        }
+
+        /// Presses a node, the way the Renderer reports a press, and returns what the
+        /// Host said in reply.
+        fn click(&mut self, node_id: u32) -> Vec<OwnedRecord> {
+            let handler_id = *self
+                .mock
+                .click_handlers
+                .get(&node_id)
+                .unwrap_or_else(|| panic!("node {node_id} has no click handler"));
+            self.dispatch(HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::Clicked,
+            })
+        }
+
+        /// Sends one event and applies the batch that comes back.
+        fn dispatch(&mut self, event: HostEvent<'_>) -> Vec<OwnedRecord> {
+            encode_event(&event, &mut self.event).expect("the event did not encode");
+            let bytes = self.event.clone();
+            let (batch, _) = self.host.dispatch_event(&bytes).expect("the event failed");
+            let decoded = decode_batch(batch).expect("the batch did not decode");
+            self.mock.apply(&decoded);
+            decoded
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::ShowMessage {
+                        handler_id,
+                        text,
+                        action,
+                        ..
+                    } => Some(OwnedRecord::Message {
+                        handler_id: *handler_id,
+                        text: (*text).to_owned(),
+                        action: (*action).to_owned(),
+                    }),
+                    _ => None,
+                })
+                .collect()
         }
 
         /// Scrolling: the Renderer asks for a window and the Host answers with a batch.
@@ -830,6 +900,67 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The three filters are three destinations, and this screen never asks how wide the
+    /// window is to draw them. Which of the three shapes they take is the Renderer's,
+    /// which is what the Renderer's own tests check at each width.
+    #[test]
+    fn fr21_the_filters_are_a_destination_set_rather_than_a_row_of_buttons() {
+        let screen = Screen::new();
+        assert_eq!(screen.mock.count_of(WidgetKind::Navigation), 1);
+        assert_eq!(screen.mock.count_of(WidgetKind::NavigationItem), 3);
+        for label in ["All", "Active", "Done"] {
+            assert_eq!(
+                screen.mock.nodes_with_text(label).len(),
+                1,
+                "{label} should be one destination and nothing else"
+            );
+        }
+    }
+
+    /// Deleting throws work away without asking first, so it says what it did and offers
+    /// the task back. The message is not a widget this screen placed: no node is created
+    /// for it, and nothing here holds a timer for taking it away again.
+    #[test]
+    fn fr21_deleting_a_task_says_so_and_offers_it_back() {
+        let mut screen = Screen::new();
+        screen.request_range(0, WINDOW);
+        let before = screen.mock.node_count();
+        let delete = screen
+            .mock
+            .nodes_with_text("Delete")
+            .into_iter()
+            .min()
+            .expect("no row offered a Delete");
+
+        let said = screen.click(delete);
+        assert_eq!(screen.mock.item_count, Some(SAVED_TASKS as i64 - 1));
+        let [
+            OwnedRecord::Message {
+                handler_id,
+                text,
+                action,
+            },
+        ] = said.as_slice()
+        else {
+            panic!("deleting said {said:?} rather than one message");
+        };
+        assert!(text.starts_with("Deleted"), "{text}");
+        assert_eq!(action, "Undo");
+        assert!(
+            screen.mock.node_count() <= before,
+            "saying something cost widgets: {before} nodes became {}",
+            screen.mock.node_count(),
+        );
+
+        // The action names no node, because the message owns none.
+        screen.dispatch(HostEvent {
+            node_id: 0,
+            handler_id: *handler_id,
+            payload: EventPayload::Clicked,
+        });
+        assert_eq!(screen.mock.item_count, Some(SAVED_TASKS as i64));
     }
 
     /// costs widgets in proportion to the twenty. This is the test that fails the day

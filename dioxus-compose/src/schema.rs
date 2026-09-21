@@ -67,13 +67,13 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
     "windowsizeclasses=Compact,Medium,Expanded;",
-    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset"
+    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset,ShowMessage"
 );
 
 const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
@@ -282,6 +282,16 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     DatePicker = 27,
     TimePicker = 28,
     Dropdown = 29,
+    // One declaration, three presentations. The Renderer picks a bottom bar, a rail or a
+    // permanent drawer from the width it has already measured, so the same tree looks
+    // native on a phone and on a desktop without the Host branching on the size class.
+    Navigation = 30,
+    // One destination. Its label and its icon are properties rather than children,
+    // because a child tree would fix the arrangement the presentations need to differ in.
+    NavigationItem = 31,
+    // A temporary surface that slides in from an edge of the screen. Which edge is the
+    // Renderer's decision, for the same reason the navigation presentation is.
+    Sheet = 32,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -485,6 +495,19 @@ define_wire_enum!(ICON_ROLE_SCHEMA, IconRole {
     Check = 6,
     Settings = 7,
     More = 8,
+    // The meanings a set of destinations needs before any other: where the application
+    // starts, the list it is mostly about, and what has arrived.
+    Home = 9,
+    List = 10,
+    Inbox = 11,
+});
+
+// How long a transient message stays on screen. Closed, and deliberately short: a message
+// that has to be acknowledged is a `Dialog`, so there is no indefinite duration. What the
+// two names mean in milliseconds is the design system's decision.
+define_wire_enum!(MESSAGE_DURATION_SCHEMA, MessageDuration {
+    Short = 1,
+    Long = 2,
 });
 
 // The design systems of phase one. Later ones append variants here and nowhere else: a new
@@ -556,6 +579,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
         name: "IconRole",
         variants: ICON_ROLE_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "MessageDuration",
+        variants: MESSAGE_DURATION_SCHEMA,
     },
 ];
 
@@ -956,6 +983,9 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     // The ends of the selectable range, in the same unit as `Value`.
     Min = 52,
     Max = 53,
+    // The meaning of the icon a destination carries, as an `IconRole` tag. Tag 0 is "not
+    // sent", so a destination without an icon is label only.
+    Icon = 60,
 });
 
 #[derive(Clone, Debug, PartialEq)]

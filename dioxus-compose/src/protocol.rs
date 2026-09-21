@@ -1,8 +1,8 @@
 //! Fixed-layout little-endian boundary protocol.
 
 use crate::schema::{
-    AssetKind, ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole,
-    SpaceRole, Theme, WidgetKind,
+    AssetKind, ColorScheme, DesignSystem, Key, MessageDuration, Modifier, Paint, PropertyKind,
+    Selection, ShapeRole, SpaceRole, Theme, WidgetKind,
 };
 use core::fmt;
 
@@ -18,6 +18,7 @@ const TAG_APPEND_TEXT: u16 = 8;
 const TAG_SET_THEME: u16 = 9;
 const TAG_REGISTER_ASSET: u16 = 10;
 const TAG_RELEASE_ASSET: u16 = 11;
+const TAG_SHOW_MESSAGE: u16 = 12;
 const ENVELOPE_LEN: usize = 12;
 /// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
 const MIN_RECORD_LEN: usize = 8;
@@ -94,6 +95,19 @@ pub enum Mutation<'a> {
     ReleaseAsset {
         asset_id: u32,
     },
+    /// Says a sentence to the user once. It is not a node, because the Host would then
+    /// have to hold "showing until four seconds from now" and run a render to take it
+    /// away again. How long it stays, where it sits and what happens when a second one
+    /// arrives while the first is up are all the Renderer's.
+    ///
+    /// `handler_id` is what the action label reports when it is pressed, or 0 when the
+    /// message has no action, in which case `action` is empty too.
+    ShowMessage {
+        handler_id: u64,
+        text: &'a str,
+        action: &'a str,
+        duration: MessageDuration,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,6 +122,7 @@ pub enum ProtocolError {
     InvalidModifier(u16),
     InvalidTheme(u16),
     InvalidAssetKind(u16),
+    InvalidMessageDuration(u16),
     InvalidStringRange,
     InvalidUtf8,
     LengthOverflow,
@@ -461,6 +476,19 @@ impl BatchEncoder {
                 self.begin_record(TAG_RELEASE_ASSET, 4);
                 self.put_u32(*asset_id);
             }
+            Mutation::ShowMessage {
+                handler_id,
+                text,
+                action,
+                duration,
+            } => {
+                self.begin_record(TAG_SHOW_MESSAGE, 28);
+                self.put_u64(*handler_id);
+                self.put_string_ref(text)?;
+                self.put_string_ref(action)?;
+                self.put_u16(*duration as u16);
+                self.put_u16(0);
+            }
             Mutation::SetTheme(theme) => {
                 self.begin_record(TAG_SET_THEME, 8);
                 self.put_u16(theme.design_system as u16);
@@ -666,7 +694,17 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
             TAG_RELEASE_ASSET if len == 8 => Mutation::ReleaseAsset {
                 asset_id: read_u32(bytes, payload)?,
             },
-            TAG_CREATE..=TAG_RELEASE_ASSET => {
+            TAG_SHOW_MESSAGE if len == 32 => {
+                let raw_duration = read_u16(bytes, payload + 24)?;
+                Mutation::ShowMessage {
+                    handler_id: read_u64(bytes, payload)?,
+                    text: read_string(bytes, payload + 8, records_len)?,
+                    action: read_string(bytes, payload + 16, records_len)?,
+                    duration: MessageDuration::try_from(raw_duration)
+                        .map_err(|()| ProtocolError::InvalidMessageDuration(raw_duration))?,
+                }
+            }
+            TAG_CREATE..=TAG_SHOW_MESSAGE => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),

@@ -166,6 +166,25 @@ impl ComposeRenderer {
         self.write(Mutation::ReleaseAsset { asset_id });
     }
 
+    /// Writes one transient message into the batch.
+    ///
+    /// It names no node, because a message is not in the tree: it is a sentence with a
+    /// lifetime, and that lifetime belongs to the Renderer.
+    pub fn show_message(
+        &mut self,
+        handler_id: u64,
+        text: &str,
+        action: &str,
+        duration: crate::schema::MessageDuration,
+    ) {
+        self.write(Mutation::ShowMessage {
+            handler_id,
+            text,
+            action,
+            duration,
+        });
+    }
+
     /// Append the streamed tail to a Text node without resending its whole value.
     pub fn append_text_node(&mut self, node_id: u32, text: &str) {
         self.write(Mutation::AppendText { node_id, text });

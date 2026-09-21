@@ -103,6 +103,23 @@ internal fun HostIcon(
     }
 }
 
+/**
+ * One icon, drawn from its meaning in this design system's set.
+ *
+ * Used where the meaning is a property rather than a registered asset, which is how a
+ * navigation destination carries its icon: there is no picture to register, only a role.
+ */
+@Composable
+internal fun RoleIcon(
+    role: IconRole,
+    tint: Color,
+    theme: ResolvedTheme,
+    modifier: Modifier = Modifier,
+) {
+    val style = theme.rules.icon(role, theme)
+    Canvas(modifier.size(style.size)) { drawRole(role, style, tint) }
+}
+
 /** Only one role is needed to ask the design system what an icon's optical size is. */
 private val fallbackRole = IconRole.Back
 
@@ -162,7 +179,10 @@ private fun DrawScope.drawVector(asset: Asset.Vector) {
  * The unit box the geometry is written in is scaled to the whole drawing area, and the
  * stroke is inset by half its width so a shape that touches the edge is not clipped in half.
  */
-private fun DrawScope.drawSymbol(asset: Asset.Symbol, style: IconStyle, tint: Color) {
+private fun DrawScope.drawSymbol(asset: Asset.Symbol, style: IconStyle, tint: Color) =
+    drawRole(asset.role, style, tint)
+
+private fun DrawScope.drawRole(role: IconRole, style: IconStyle, tint: Color) {
     val stroke = style.strokeWidth.toPx()
     val inset = stroke / 2f
     val box = Size(size.width - stroke, size.height - stroke)
@@ -170,7 +190,7 @@ private fun DrawScope.drawSymbol(asset: Asset.Symbol, style: IconStyle, tint: Co
     fun at(point: Offset) =
         Offset(inset + point.x * box.width, inset + point.y * box.height)
 
-    val geometry = iconGeometry(asset.role)
+    val geometry = iconGeometry(role)
     val outline = Stroke(width = stroke, cap = style.cap, join = style.join)
     geometry.strokes.forEach { points ->
         points.zipWithNext { from, to ->
