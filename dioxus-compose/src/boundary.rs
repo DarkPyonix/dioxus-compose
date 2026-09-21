@@ -136,12 +136,20 @@ fn renderer_api() -> RendererApi {
 }
 
 /// Coalesced wake used internally by the Dioxus scheduler waker.
+///
+/// The flag spans the moment of delivery, not the wait for the frame that answers it. The
+/// Renderer folds requests into its own frame clock, so however many arrive between two
+/// frames it draws once; holding the flag until the frame came back would instead mean
+/// that one request the Renderer was not yet listening for silenced every later one. That
+/// happens on a cold start, where the first composition can be seconds after the first
+/// worker request, and it leaves the application frozen with nothing to unfreeze it.
 pub fn request_frame_from_worker() {
     if !FRAME_REQUESTED.swap(true, Ordering::AcqRel) {
         if EVENT_DISPATCH_ACTIVE.load(Ordering::Acquire) {
             DEFERRED_FRAME_REQUEST.store(true, Ordering::Release);
         } else {
             (renderer_api().request_frame)();
+            FRAME_REQUESTED.store(false, Ordering::Release);
         }
     }
 }
@@ -160,6 +168,7 @@ impl Drop for EventDispatchGuard {
         EVENT_DISPATCH_ACTIVE.store(false, Ordering::Release);
         if DEFERRED_FRAME_REQUEST.swap(false, Ordering::AcqRel) {
             (renderer_api().request_frame)();
+            FRAME_REQUESTED.store(false, Ordering::Release);
         }
     }
 }
