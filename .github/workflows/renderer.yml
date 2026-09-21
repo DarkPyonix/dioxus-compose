@@ -1,0 +1,201 @@
+# Builds the renderer for every desktop platform, checks it, and stages it.
+#
+# One definition, called from two places. `native-renderer.yml` calls it to find out
+# whether the renderer still builds and runs; `release.yml` calls it with a version to
+# produce the checksummed tarballs a release ships.
+#
+# It is shared because keeping two copies did not work. The two workflows each carried
+# their own platform list, they drifted, and the release quietly built macOS alone for long
+# enough that publishing would have left every Windows and Linux user with a crates.io
+# version that could never be made to work. The same drift left the release skipping checks
+# the verification workflow ran, so a renderer whose accessibility classes had been stripped
+# could have shipped. A platform or a check added here reaches both, which is the point.
+#
+# iOS is not here. It is Kotlin/Native rather than native-image, shares none of these steps,
+# and is not shipped as a release artifact today. It stays in `native-renderer.yml`.
+
+name: Renderer
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Commit, branch or tag to build. Defaults to the calling workflow.'
+        required: false
+        type: string
+      version:
+        description: >
+          When set, the distribution is packaged as dioxus-compose-renderer-<version>-<target>
+          with a checksum and uploaded for a release job. When unset, the staged directory is
+          uploaded for inspection only.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      # Every platform reports, so one failure does not hide the state of the others.
+      fail-fast: false
+      matrix:
+        include:
+          # macOS is the primary platform and the only one whose AWT workarounds are
+          # hand written, which is why it needs Liberica rather than upstream GraalVM.
+          - runner: macos-latest
+            target: macos-aarch64
+            build: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
+            smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
+            dist: dioxus-compose-renderer/build/native-image/dist
+          # Nobody working on this project owns a Windows machine, so this job is the
+          # Windows verification. It proves build, start, render, clean close and exit 0.
+          # It cannot prove mouse input, because a hosted runner has no one to click.
+          - runner: windows-2022
+            target: windows-x64
+            build: .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
+            smoke: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
+            dist: dioxus-compose-renderer/build/native-image/dist
+          # Same reasoning, under a virtual display. A headless runner cannot judge what
+          # was drawn, so rendering quality on Linux stays unverified until a human looks.
+          - runner: ubuntu-24.04
+            target: linux-x64
+            build: ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+            smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
+            dist: dioxus-compose-renderer/build/native-image-linux/dist
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - name: Cache Liberica NIK
+        # Keyed on the installer script: bumping the pinned version in it invalidates the
+        # cache, which is exactly when a fresh download is wanted.
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/dioxus-compose/nik
+          key: nik-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-nik.sh') }}
+
+      - name: Install Liberica NIK 25 Full
+        # macOS only: upstream GraalVM has no AWT there, and Liberica does. A no-op when
+        # the cache was restored; otherwise downloads and checksum verifies the archive.
+        if: runner.os == 'macOS'
+        run: ./scripts/install-nik.sh --github-env
+
+      - name: Install upstream GraalVM for JDK 25
+        # Upstream supports AWT on Windows and Linux, so neither needs Liberica.
+        if: runner.os != 'macOS'
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: ${{ runner.os == 'Windows' && 'graalvm' || 'graalvm-community' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install the Linux AWT, Skia, font and virtual display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
+            libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
+            fonts-noto-cjk xvfb xauth dbus-x11
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.cache/JetBrains/Kotlin
+            ~/AppData/Local/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-renderer-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-renderer-${{ runner.os }}-
+
+      - name: Script and metadata contract tests
+        # Static checks against the build scripts, run before the build because the
+        # failures they describe cost a full native-image compilation to observe.
+        # They read text, so they run anywhere; each covers a platform it is named for.
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          bash dioxus-compose-renderer/desktop/scripts/windows-build-contract.test.sh
+          bash dioxus-compose-renderer/desktop/scripts/tests/linux-build.test.sh
+          bash dioxus-compose-renderer/desktop/scripts/tests/linux-metadata.test.sh
+
+      - name: Build the renderer shared library
+        shell: ${{ runner.os == 'Windows' && 'powershell' || 'bash' }}
+        # Linux draws through a virtual display; the other two have one of their own.
+        run: ${{ runner.os == 'Linux' && format('xvfb-run -a {0}', matrix.build) || matrix.build }}
+
+      - name: Accessibility classes are linked in
+        # They are reached only by name from AppKit, so the link is free to drop them, and
+        # the only symptom is that turning VoiceOver on aborts the process. This ran on the
+        # verification path alone for a while, which meant a release could ship a renderer
+        # that dies the moment a screen reader touches it.
+        if: runner.os == 'macOS'
+        run: ./dioxus-compose-renderer/desktop/scripts/tests/accessibility-link.test.sh
+
+      - name: Inspect the staged dynamic dependencies
+        # A library that resolves against the build host's JDK works here and nowhere else.
+        if: runner.os == 'Linux'
+        run: |
+          find ${{ matrix.dist }}/lib -maxdepth 1 -type f -print | sort
+          ldd ${{ matrix.dist }}/lib/*.so
+
+      - name: Smoke test before shipping
+        # Nothing is uploaded that cannot start, render and exit cleanly on its own
+        # platform. It cannot prove input: a hosted runner has nobody to click or type.
+        shell: ${{ runner.os == 'Windows' && 'powershell' || 'bash' }}
+        env:
+          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
+        run: ${{ runner.os == 'Linux' && format('xvfb-run -a {0}', matrix.smoke) || matrix.smoke }}
+
+      - name: Report the distribution size
+        shell: bash
+        run: du -sh ${{ matrix.dist }}/lib
+
+      - name: Package the distribution with a checksum
+        id: package
+        if: inputs.version != ''
+        # bash on every runner, Windows included, so one script packages all three.
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          name="dioxus-compose-renderer-${VERSION}-${TARGET}"
+          # dist/ holds the renderer, Skia and the AWT libraries, plus include/. Linux
+          # stages its own directory, and Windows keeps the DLLs in bin/ so the loader
+          # finds them together.
+          tar -czf "${name}.tar.gz" -C "${{ matrix.dist }}" .
+          if command -v shasum >/dev/null; then
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
+          cat "${name}.tar.gz.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release artifact
+        if: inputs.version != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          retention-days: 7
+
+      - name: Upload the staged renderer for inspection
+        if: inputs.version == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dioxus-compose-renderer-${{ matrix.target }}
+          path: ${{ matrix.dist }}/
+          retention-days: 7
