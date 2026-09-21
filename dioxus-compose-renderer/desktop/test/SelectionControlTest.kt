@@ -31,6 +31,7 @@ import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
+import dioxus.compose.tooling.designShowcaseRecords
 import dioxus.compose.ui.node.nodeTestTag
 
 private const val CONTROL = 1
@@ -264,6 +265,30 @@ class SelectionControlTest {
         val changes = connection.events.filterIsInstance<HostEvent.ValueChanged>()
         assertEquals(1, changes.size)
         assertEquals(2.0, changes.single().value, "the middle of a 0 to 4 range with three stops")
+    }
+
+    /**
+     * All six appear in the showcase, which is where the three systems are compared by eye.
+     *
+     * A control nobody can look at is a control whose design system rule nobody checks, and
+     * the only way that stays true is if something fails when one goes missing.
+     */
+    @Test
+    fun fr15_4_the_showcase_draws_every_selection_control() {
+        val drawn = designShowcaseRecords(theme(DesignSystem.Material3).theme)
+            .filterIsInstance<Mutation.Create>()
+            .map { it.widget }
+            .toSet()
+        listOf(
+            WidgetKind.Checkbox,
+            WidgetKind.RadioButton,
+            WidgetKind.Switch,
+            WidgetKind.Slider,
+            WidgetKind.ProgressIndicator,
+            WidgetKind.Divider,
+        ).forEach { widget ->
+            assertTrue(widget in drawn, "the showcase does not draw $widget")
+        }
     }
 
     /** A divider carries nothing but its axis, so the two run different ways. */
