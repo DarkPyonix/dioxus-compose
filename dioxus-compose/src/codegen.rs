@@ -2365,7 +2365,35 @@ pub fn generate_web_loader_js() -> String {
     writeln!(output, "const RUST_REGION_BASE = {WEB_RUST_REGION_BASE};\n").unwrap();
 
     output.push_str(
-        r#"let compiled = null;
+        r#"/**
+ * The import namespaces wasm-bindgen leaves behind, and what they resolve to.
+ *
+ * `dioxus-core` depends on `subsecond`, which depends on `js-sys` and `web-sys`, so the
+ * Host's module carries wasm-bindgen's placeholder imports whether or not any of it is
+ * reachable. A browser will not instantiate a module with an import nobody supplied, used
+ * or not, so they have to be answered. Nothing on the boundary goes near them, and their
+ * names carry a per-version hash, so the answer is a namespace that reports whatever is
+ * asked of it rather than a list that would go stale.
+ *
+ * Running the `wasm-bindgen` tool over the module would rewrite these into real glue, at
+ * the cost of that tool owning the instantiation this file owns.
+ */
+const unbound = (namespace) =>
+  new Proxy(
+    {},
+    {
+      get: (_, name) => () => {
+        throw new Error(
+          `dioxus-compose: the Host called ${namespace}.${String(name)}, which is a ` +
+            'wasm-bindgen import this page does not provide. Nothing on the boundary ' +
+            'uses one, so a call here means the Host reached JavaScript through a ' +
+            'dependency rather than through the boundary.',
+        );
+      },
+    },
+  );
+
+let compiled = null;
 try {
   compiled = await WebAssembly.compileStreaming(
     fetch(new URL(HOST_WASM, import.meta.url)),
@@ -2406,6 +2434,9 @@ try {
     )
     .unwrap();
     output.push_str("      env: { memory },\n");
+    output.push_str("      __wbindgen_placeholder__: unbound('__wbindgen_placeholder__'),\n");
+    output
+        .push_str("      __wbindgen_externref_xform__: unbound('__wbindgen_externref_xform__'),\n");
     writeln!(output, "      {WEB_RENDERER_IMPORT_MODULE}: {{").unwrap();
     output.push_str(
         "        // The exported function object itself, not a closure around it: bound this\n\
@@ -2464,14 +2495,9 @@ use crate::boundary::{
 use crate::schema::{
     WEB_BATCH_BYTES, WEB_EVENT_BUFFER_BYTES, WEB_EVENT_BUFFER_OFFSET, WEB_RUST_REGION_BASE,
 };
+use crate::{Element, LaunchBuilder, LoopMode};
 use std::ffi::c_int;
 use std::mem::{offset_of, size_of};
-
-unsafe extern "C" {
-    /// Defined by the application's cdylib through `dioxus_compose::web_main!`. It
-    /// registers the root component before the Renderer's first init call.
-    fn dioxus_compose_web_main();
-}
 
 "#,
     );
@@ -2576,17 +2602,26 @@ fn lent(address: u32) -> bool {
         r#"/// Starts the Host and reports where the block it lends the Renderer sits.
 ///
 /// A page has no library loader, so this is where the work `JNI_OnLoad` does on Android
-/// goes: install the renderer API, then let the application register its root component.
-/// Zero means the block is not somewhere the Renderer may read, and the Renderer makes no
-/// boundary call at all in that case.
-#[unsafe(no_mangle)]
-pub extern "C" fn {WEB_START_SYMBOL}() -> u32 {{
+/// goes: install the renderer API, then register the root component. Zero means the block
+/// is not somewhere the Renderer may read, and the Renderer makes no boundary call at all
+/// in that case.
+///
+/// The application exports this as `{WEB_START_SYMBOL}` through
+/// `dioxus_compose::web_main!`, and the export lives there rather than here because a wasm
+/// module cannot be linked with an undefined symbol the way an ELF shared library can: an
+/// import nobody satisfies stops the module from being instantiated, so this crate's own
+/// module must not name a function only an application can define.
+pub fn web_start(app: fn() -> Element) -> u32 {{
     let _ = install_renderer_api(RendererApi {{
         run: platform_run,
         request_frame,
     }});
-    // SAFETY: the application's cdylib defines this symbol.
-    unsafe {{ dioxus_compose_web_main() }};
+    let status = LaunchBuilder::new()
+        .with_mode(LoopMode::Platform)
+        .try_launch(app);
+    if status != STATUS_OK {{
+        return 0;
+    }}
     let address = (&raw const BLOCK) as usize as u32;
     if lent(address) {{ address }} else {{ 0 }}
 }}"#

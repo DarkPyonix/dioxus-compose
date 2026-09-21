@@ -16,14 +16,9 @@ use crate::boundary::{
 use crate::schema::{
     WEB_BATCH_BYTES, WEB_EVENT_BUFFER_BYTES, WEB_EVENT_BUFFER_OFFSET, WEB_RUST_REGION_BASE,
 };
+use crate::{Element, LaunchBuilder, LoopMode};
 use std::ffi::c_int;
 use std::mem::{offset_of, size_of};
-
-unsafe extern "C" {
-    /// Defined by the application's cdylib through `dioxus_compose::web_main!`. It
-    /// registers the root component before the Renderer's first init call.
-    fn dioxus_compose_web_main();
-}
 
 #[link(wasm_import_module = "dioxus_compose_renderer")]
 unsafe extern "C" {
@@ -181,17 +176,26 @@ pub extern "C" fn dioxus_compose_host_web_shutdown() -> i32 {
 /// Starts the Host and reports where the block it lends the Renderer sits.
 ///
 /// A page has no library loader, so this is where the work `JNI_OnLoad` does on Android
-/// goes: install the renderer API, then let the application register its root component.
-/// Zero means the block is not somewhere the Renderer may read, and the Renderer makes no
-/// boundary call at all in that case.
-#[unsafe(no_mangle)]
-pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+/// goes: install the renderer API, then register the root component. Zero means the block
+/// is not somewhere the Renderer may read, and the Renderer makes no boundary call at all
+/// in that case.
+///
+/// The application exports this as `dioxus_compose_host_web_start` through
+/// `dioxus_compose::web_main!`, and the export lives there rather than here because a wasm
+/// module cannot be linked with an undefined symbol the way an ELF shared library can: an
+/// import nobody satisfies stops the module from being instantiated, so this crate's own
+/// module must not name a function only an application can define.
+pub fn web_start(app: fn() -> Element) -> u32 {
     let _ = install_renderer_api(RendererApi {
         run: platform_run,
         request_frame,
     });
-    // SAFETY: the application's cdylib defines this symbol.
-    unsafe { dioxus_compose_web_main() };
+    let status = LaunchBuilder::new()
+        .with_mode(LoopMode::Platform)
+        .try_launch(app);
+    if status != STATUS_OK {
+        return 0;
+    }
     let address = (&raw const BLOCK) as usize as u32;
     if lent(address) { address } else { 0 }
 }

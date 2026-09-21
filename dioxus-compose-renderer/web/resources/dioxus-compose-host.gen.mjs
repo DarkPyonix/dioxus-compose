@@ -25,6 +25,34 @@ const WASM_PAGE_BYTES = 65536;
 /** The first address that belongs to the Host. Its own block has to be above it. */
 const RUST_REGION_BASE = 4194304;
 
+/**
+ * The import namespaces wasm-bindgen leaves behind, and what they resolve to.
+ *
+ * `dioxus-core` depends on `subsecond`, which depends on `js-sys` and `web-sys`, so the
+ * Host's module carries wasm-bindgen's placeholder imports whether or not any of it is
+ * reachable. A browser will not instantiate a module with an import nobody supplied, used
+ * or not, so they have to be answered. Nothing on the boundary goes near them, and their
+ * names carry a per-version hash, so the answer is a namespace that reports whatever is
+ * asked of it rather than a list that would go stale.
+ *
+ * Running the `wasm-bindgen` tool over the module would rewrite these into real glue, at
+ * the cost of that tool owning the instantiation this file owns.
+ */
+const unbound = (namespace) =>
+  new Proxy(
+    {},
+    {
+      get: (_, name) => () => {
+        throw new Error(
+          `dioxus-compose: the Host called ${namespace}.${String(name)}, which is a ` +
+            'wasm-bindgen import this page does not provide. Nothing on the boundary ' +
+            'uses one, so a call here means the Host reached JavaScript through a ' +
+            'dependency rather than through the boundary.',
+        );
+      },
+    },
+  );
+
 let compiled = null;
 try {
   compiled = await WebAssembly.compileStreaming(
@@ -57,6 +85,8 @@ globalThis.__dioxusComposeHostLoader = {
     if (pages < MEMORY_MIN_PAGES) memory.grow(MEMORY_MIN_PAGES - pages);
     const host = new WebAssembly.Instance(compiled, {
       env: { memory },
+      __wbindgen_placeholder__: unbound('__wbindgen_placeholder__'),
+      __wbindgen_externref_xform__: unbound('__wbindgen_externref_xform__'),
       dioxus_compose_renderer: {
         // The exported function object itself, not a closure around it: bound this
         // way the engine builds no JavaScript frame for the call.

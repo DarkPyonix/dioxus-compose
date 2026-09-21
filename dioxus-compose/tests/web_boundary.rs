@@ -76,9 +76,18 @@ fn pr6_generated_web_bindings_match_the_boundary_schema() {
             op.name
         );
     }
+    // The work is generated; the export is in `web_main!`, because a wasm module cannot
+    // be linked with an undefined symbol the way an ELF shared library can, so this
+    // crate's own module must not name a function only an application can define.
     assert!(
-        rust.contains(&format!("pub extern \"C\" fn {WEB_START_SYMBOL}()")),
-        "the extra export a page needs in place of a library loader is missing"
+        rust.contains("pub fn web_start(app: fn() -> Element) -> u32 {"),
+        "the extra entry point a page needs in place of a library loader is missing"
+    );
+    assert!(
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs")).contains(&format!(
+            "pub extern \"C\" fn {WEB_START_SYMBOL}() -> u32 {{"
+        )),
+        "`web_main!` has to export it under the name the page calls"
     );
     assert!(
         loader.contains(&format!("host.{WEB_START_SYMBOL}()")),
@@ -323,6 +332,25 @@ fn pr6_the_page_grows_the_memory_to_what_the_host_declares() {
     assert!(
         u64::from(WEB_MEMORY_MIN_PAGES) * 65536 > u64::from(WEB_RUST_REGION_BASE),
         "{WEB_MEMORY_MIN_PAGES} pages do not reach the Host's region at {WEB_RUST_REGION_BASE}"
+    );
+}
+
+/// A browser will not instantiate a module with an import nobody supplied, used or not,
+/// and `dioxus-core` brings wasm-bindgen's placeholders in through `subsecond`. So they are
+/// answered, and answered by something that cannot go stale: the names carry a per-version
+/// hash.
+#[test]
+fn pr6_the_page_answers_the_imports_the_host_carries() {
+    let loader = generate_web_loader_js();
+    for namespace in ["__wbindgen_placeholder__", "__wbindgen_externref_xform__"] {
+        assert!(
+            loader.contains(&format!("{namespace}: unbound('{namespace}')")),
+            "the page has to answer {namespace} or the Host will not instantiate"
+        );
+    }
+    assert!(
+        loader.contains("throw new Error("),
+        "and reaching one of them has to be reported rather than ignored"
     );
 }
 
