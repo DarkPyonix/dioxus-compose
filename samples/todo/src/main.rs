@@ -457,7 +457,7 @@ mod tests {
     fn saved_list() {
         static PREPARED: OnceLock<()> = OnceLock::new();
         PREPARED.get_or_init(|| {
-            let path = std::env::temp_dir().join("sample-todo-window-test.tsv");
+            let path = scratch("todo-window");
             let saved: String = (0..SAVED_TASKS)
                 .map(|id| format!("{id}\t0\tGenerated task {id}\n"))
                 .collect();
@@ -682,6 +682,15 @@ mod tests {
     /// Every property this screen sets has to be one the wire can name. A property the
     /// schema does not have fails the whole batch rather than just itself, so a screen that
     /// builds in Rust can still be blank on screen.
+    /// A path no other run of these tests can touch.
+    ///
+    /// Fixed names in the system temp directory meant two checkouts testing at once wrote
+    /// and deleted each other's files, and whichever lost the race failed for a reason
+    /// that had nothing to do with the code. The process id is what keeps them apart.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("sample-scratch-{name}-{}.tmp", std::process::id()))
+    }
+
     #[test]
     fn the_first_frame_encodes_without_a_protocol_error() {
         saved_list();

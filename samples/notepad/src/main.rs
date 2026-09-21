@@ -509,6 +509,15 @@ mod tests {
     /// Every property this screen sets has to be one the wire can name. A property the
     /// schema does not have fails the whole batch rather than just itself, so a screen that
     /// builds in Rust can still be blank on screen.
+    /// A path no other run of these tests can touch.
+    ///
+    /// Fixed names in the system temp directory meant two checkouts testing at once wrote
+    /// and deleted each other's files, and whichever lost the race failed for a reason
+    /// that had nothing to do with the code. The process id is what keeps them apart.
+    fn scratch(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("sample-scratch-{name}-{}.tmp", std::process::id()))
+    }
+
     #[test]
     fn the_first_frame_encodes_without_a_protocol_error() {
         assert!(Host::new(app).rebuild().is_ok());
@@ -519,7 +528,7 @@ mod tests {
     /// every step between them is somewhere the two can be confused.
     #[test]
     fn fr6_a_document_round_trips_through_editing_and_saving_with_korean_intact() {
-        let path = std::env::temp_dir().join("sample-notepad-round-trip.txt");
+        let path = scratch("notepad-round-trip");
         let _ = std::fs::remove_file(&path);
 
         let mut editor = Editor::new();
@@ -649,7 +658,7 @@ mod tests {
     /// silently emptied document.
     #[test]
     fn fr6_opening_a_missing_file_reports_why() {
-        let path = std::env::temp_dir().join("sample-notepad-absent-file.txt");
+        let path = scratch("notepad-absent");
         let _ = std::fs::remove_file(&path);
 
         let mut editor = Editor::new();
