@@ -6,9 +6,9 @@ import dioxus.compose.protocol.IconRole
 import platform.Foundation.NSSelectorFromString
 import platform.UIKit.UIColor
 import platform.UIKit.UIImage
+import platform.UIKit.UINavigationController
 import platform.UIKit.UITabBarController
 import platform.UIKit.UITabBarControllerDelegateProtocol
-import platform.UIKit.UINavigationController
 import platform.UIKit.UITabBarItem
 import platform.UIKit.UITabBarMinimizeBehaviorAutomatic
 import platform.UIKit.UIViewAutoresizingFlexibleHeight
@@ -63,9 +63,9 @@ private fun symbolName(role: IconRole?): String? = when (role) {
  * and not a grey strip is that the system can see what is behind it, and what is behind it
  * is the Compose surface.
  *
- * The tabs themselves hold nothing. Each is an empty, transparent, untouchable view
- * controller whose only job is to carry a `UITabBarItem`, because a `UITabBarController`
- * will not show a bar without one view controller per item.
+ * The tabs themselves hold nothing of the application. Each is a `UINavigationController`
+ * over an empty transparent screen, so the destination's label names the tab at the bottom
+ * and titles the bar at the top, and both bars are the system's to draw.
  */
 internal class IosNavigationShell(
     private val tabs: UITabBarController,
@@ -117,7 +117,7 @@ internal class IosNavigationShell(
         selection.onSelect = {}
         tabs.setViewControllers(emptyList<UIViewController>(), animated = false)
         tabs.tabBar.hidden = true
-        measuredStrip = ASSUMED_TAB_BAR_HEIGHT
+        measuredStrip = 0f
         measuredTitle = 0f
     }
 
