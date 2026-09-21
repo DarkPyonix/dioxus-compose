@@ -12,6 +12,12 @@
 #   - the renderer ships as a checksummed tarball on the GitHub Release for
 #     this tag, one per platform, fetched at build or install time.
 #
+# Every platform the project claims has to be in the matrix below, and the crate
+# publish waits for all of them. A crate version on crates.io can be yanked but
+# never replaced, and its build script points at the release artifact for its own
+# version, so publishing while a platform is missing would leave anyone on that
+# platform with a version that can never be made to work.
+#
 # Pushing a version tag also publishes the crate to crates.io. That needs a
 # CARGO_REGISTRY_TOKEN secret, and the job refuses to run if the tag and the
 # version in Cargo.toml disagree, because publishing cannot be undone: a
@@ -39,73 +45,14 @@ permissions:
   contents: read
 
 jobs:
+  # The same definition the verification workflow uses, so a platform or a check cannot
+  # exist on one path and not the other. `version` is what turns the staged directory into
+  # the checksummed tarball this release attaches.
   renderer:
-    name: Build the renderer (${{ matrix.target }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Only macOS arm64 is scripted today (SPEC PR-8, INTENT D9-macOS).
-          # Windows, Linux, and iOS (NFR-4) join this matrix when their build
-          # scripts exist; the packaging steps below are already generic.
-          - runner: macos-latest
-            target: macos-aarch64
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref }}
-
-      - name: Cache Liberica NIK
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/dioxus-compose/nik
-          key: nik-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-nik.sh') }}
-
-      - name: Install Liberica NIK 25 Full
-        run: ./scripts/install-nik.sh --github-env
-
-      - name: Cache the Kotlin toolchain and Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/JetBrains/Kotlin
-            ~/.m2/repository
-          key: kotlin-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
-          restore-keys: |
-            kotlin-${{ runner.os }}-
-
-      - name: Build the renderer shared library
-        run: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
-
-      - name: Smoke test before shipping (SPEC PR-8)
-        env:
-          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
-        run: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
-
-      - name: Package the distribution with a checksum
-        id: package
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          set -euo pipefail
-          version="${{ inputs.tag || github.ref_name }}"
-          name="dioxus-compose-renderer-${version}-${TARGET}"
-          # dist/ holds lib/ (renderer, Skia, the AWT shims) and include/.
-          tar -czf "${name}.tar.gz" -C dioxus-compose-renderer/build/native-image/dist .
-          shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
-          cat "${name}.tar.gz.sha256"
-          echo "name=${name}" >> "$GITHUB_OUTPUT"
-
-      - name: Upload for the release job
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.package.outputs.name }}
-          path: |
-            ${{ steps.package.outputs.name }}.tar.gz
-            ${{ steps.package.outputs.name }}.tar.gz.sha256
-          retention-days: 7
+    uses: ./.github/workflows/renderer.yml
+    with:
+      ref: ${{ inputs.tag || github.ref }}
+      version: ${{ inputs.tag || github.ref_name }}
 
   release:
     name: Draft the GitHub Release
