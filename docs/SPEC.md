@@ -1068,7 +1068,7 @@ dioxus_compose_host_dispatch_event: click 1
 - Android: Host 워커 스레드는 `request_frame`을 부르기 위해 JavaVM에 **1회 영구 attach**합니다. 호출마다 attach하는 것은 금지합니다. `@FastNative`/`@CriticalNative`는 짧은 호출에만 허용합니다.
 - 프레임 예산은 NFR-9를 따릅니다.
 
-### PR-4 배치 버퍼와 인코딩 (`Agreed`)
+### PR-4 배치 버퍼와 인코딩 (`Done`)
 원칙: **같은 프로세스 안이므로 직렬화, 복사, 경계 호출 횟수를 최소화합니다.** 버퍼는 큐가 아니라 **한 번의 호출에서 Mutation 여러 개를 넘기는 인자**입니다.
 
 - `#[repr(C)] struct MutationBatch { ptr: *const u8, len: u32, result: i64 }`
@@ -1086,11 +1086,14 @@ dioxus_compose_host_dispatch_event: click 1
   - Web: 공유 linear memory(PR-6)
 - 수용 기준: 텍스트 하나를 바꾸는 이벤트 처리에서 경계 호출 2회(`dispatch_event`, `release_batch`), 힙 할당은 Compose `String` 생성 1회 이하
 
-수용 기준 점검(2026-09-22):
+수용 기준 점검(2026-09-22, 디코더 수정 후 재측정):
 - **경계 호출 2회: 충족.** `boundary_call_cost.rs`가 C export를 그대로 불러 확인합니다. `dispatch_event`가 돌아온 시점에 diff와 핸들러 반환값이 이미 out 인자에 들어 있고(`pr4_a_text_change_costs_two_boundary_calls`), 바로 뒤에 부른 `render_frame`은 레코드를 하나도 싣지 않으며(`pr4_nothing_is_left_for_a_third_call`), 연속한 키 입력 세 번이 같은 arena에 쓰입니다(`pr4_the_batch_buffer_is_an_argument_and_not_a_queue`). 세 번째 호출이 필요해지면 셋 중 하나가 실패합니다. Host 인코딩 쪽 정상 상태 할당 0회는 `nfr9_boundary_encoding_does_not_allocate`가 지킵니다.
-- **Renderer의 힙 할당: 미충족.** `BoundaryCostTest`로 JVM 개발 셸에서 실측했습니다(2026-09-22). 텍스트 한 번 바뀔 때 글자당 2.99바이트, 16글자짜리 레코드 하나에 352바이트입니다. arena 크기와는 무관하므로(64KB arena에서도 312바이트) 제자리 읽기 자체는 지켜지지만, 문자열은 `String` 하나가 아니라 세 벌입니다. 생성된 디코더가 `CharsetDecoder`로 `CharBuffer`(글자당 2바이트)를 만든 뒤 `String`으로 다시 옮기고, 문자열마다 디코더 하나와 버퍼 뷰 둘을 새로 만들기 때문입니다.
-- 그 경로를 고른 이유는 있습니다. `String(bytes, UTF-8)`은 잘못된 UTF-8을 조용히 치환하는데 프로토콜은 그것을 `ProtocolError`로 보고해야 합니다(`nfr7_non_utf8_string_payload_is_a_protocol_error`). 충족시키려면 검증을 제자리에서 따로 돌리고(할당 없음) 재사용 버퍼를 거쳐 `String`을 한 번만 만들어야 합니다. 코드젠이 내놓는 디코더를 고치는 일이고, 그때까지 `BYTES_PER_CHARACTER_CEILING`이 네 번째 복사가 조용히 들어오는 것을 막습니다.
-- 그래서 상태는 `Agreed`입니다. 설계와 구현은 자리를 잡았고 양쪽 플랫폼이 같은 벡터를 해석하지만, 수용 기준의 한쪽이 실측으로 미달이므로 `Done`이 아닙니다.
+- **Renderer의 힙 할당: 충족.** `BoundaryCostTest`로 JVM 개발 셸에서 실측했습니다. 텍스트 한 번 바뀔 때 글자당 **1.00바이트**, 16글자짜리 레코드 하나에 **96바이트**입니다(고치기 전: 글자당 2.99바이트, 326바이트). arena 크기와도 무관합니다(작은 arena 104바이트, 64KB arena 104바이트).
+  - 비용의 내역까지 측정합니다(`pr4_a_text_change_allocates_the_string_and_nothing_else_made_of_it`). 19글자 변경 하나가 104바이트인데, 그중 **40바이트**는 문자열이 없는 같은 모양의 레코드(`SetProp(Bool)`)도 똑같이 내는 `Mutation`과 `PropertyValue` 값이고, 남는 **64바이트**는 같은 텍스트로 `String`을 하나 만드는 비용과 바이트까지 일치합니다(같은 테스트에서 직접 만들어 재어 비교합니다). 즉 텍스트에서 비롯되는 할당은 Compose에 넘기는 `String` 하나뿐이고, 남는 40바이트는 텍스트의 사본이 아니라 인터프리터가 받는 레코드 값입니다.
+- 어떻게 고쳤는지: 검증과 생성을 나눴습니다. 둘을 한 번에 하는 방법은 둘 다 쓸 수 없기 때문입니다. `String(bytes, UTF-8)`은 잘못된 UTF-8을 조용히 U+FFFD로 치환하는데 프로토콜은 그것을 `ProtocolError`로 보고해야 하고(`nfr7_non_utf8_string_payload_is_a_protocol_error`), `CharsetDecoder`는 보고는 하지만 텍스트를 `char`로(글자당 2바이트) 한 번 조립한 뒤 `String`으로 다시 옮기며 문자열마다 디코더 하나와 버퍼 뷰 둘을 새로 만듭니다. 그래서 생성된 디코더는 이제 `requireUtf8`로 arena를 제자리에서 훑고(할당 0), 통과한 바이트만 디코더가 들고 키우는 버퍼를 거쳐 `String`을 한 번 만듭니다.
+  - 남는 위험은 손으로 쓴 검증기가 플랫폼과 다른 판단을 하는 것입니다. `ProtocolStringTest`가 malformed 18가지(과잉 인코딩, surrogate 반쪽, U+10FFFF 초과, 잘린 시퀀스)를 플랫폼 디코더와 나란히 세워 두어 두 판단이 갈라지면 그 자리에서 드러납니다.
+  - `BYTES_PER_CHARACTER_CEILING`은 3.2에서 **1.05**로 내렸습니다. 이제 네 번째 복사가 아니라 두 번째 복사를 막습니다.
+- 두 기준이 모두 실측으로 충족되어 상태는 `Done`입니다. 할당 수치는 JVM 개발 셸에서 재었고(native image가 컴파일되는 바이트코드와 같은 것), iOS는 같은 생성 파일을 `java.nio` 심으로 컴파일해 같은 디코더를 씁니다.
 
 ### PR-5 Android (`Agreed`)
 - 호스트 관계: Kotlin Activity가 프로세스와 루프를 소유합니다(`LoopMode::Platform`). Rust는 cdylib입니다. VirtualDom은 PR-3에 따라 UI 스레드에서 돕니다.
