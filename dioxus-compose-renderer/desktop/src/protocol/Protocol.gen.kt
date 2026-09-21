@@ -989,6 +989,11 @@ object Protocol {
      * A frame's strings go through it one after another, so a stream of keystrokes costs
      * nothing here once it is big enough. It doubles rather than fitting exactly, because
      * text that grows a character at a time would otherwise reallocate on every keystroke.
+     *
+     * One buffer is enough, and it needs no lock, because a batch is decoded on the
+     * Renderer's UI thread and on no other: the Host's worker threads update signals and
+     * ask for a frame, they never call across the boundary themselves. Two threads
+     * decoding at once would hand each other half a string.
      */
     private var stringScratch = ByteArray(256)
 
