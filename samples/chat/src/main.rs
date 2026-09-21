@@ -267,6 +267,7 @@ fn app() -> Element {
     let turns = use_signal(Turns::default);
     let mut settings = use_signal(Settings::default);
     let mut settings_open = use_signal(|| false);
+    let mut length_open = use_signal(|| false);
     // The conversations, newest last, and the one being read. A chat application with one
     // conversation is a chat application with the part people use missing, and the
     // reference's sidebar is mostly this list.
@@ -616,14 +617,33 @@ fn app() -> Element {
                         // about an answer you can choose before asking for it. It sits in
                         // the composer, where that choice is made, as well as in the
                         // settings, where everything about the assistant is.
-                        Dropdown {
-                            selected_index: settings().length.index(),
-                            on_change: move |index: usize| {
-                                let length = Length::ALL[index.min(Length::ALL.len() - 1)];
-                                settings.set(Settings { length, ..settings() });
+                        //
+                        // A menu behind its own label rather than a `Dropdown`: a picker
+                        // is a wheel in one of these design systems, and a wheel is the
+                        // right shape for a form and the wrong one for a strip you type
+                        // in, where it would be taller than the composer it sits in.
+                        Menu {
+                            expanded: length_open(),
+                            on_dismiss: move |_| length_open.set(false),
+                            anchor: rsx! {
+                                Button {
+                                    text: settings().length.label(),
+                                    variant: ButtonVariant::Text,
+                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                    on_click: move |_| length_open.set(true),
+                                }
                             },
                             for length in Length::ALL {
-                                Text { key: "{length.label()}", text: length.label() }
+                                Button {
+                                    key: "{length.label()}",
+                                    text: length.label(),
+                                    variant: ButtonVariant::Text,
+                                    fill_max_width: true,
+                                    on_click: move |_| {
+                                        length_open.set(false);
+                                        settings.set(Settings { length, ..settings() });
+                                    },
+                                }
                             }
                         }
                         Button {
