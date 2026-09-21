@@ -467,10 +467,18 @@ fn app() -> Element {
                         max_lines: 1,
                         overflow: TextOverflow::Ellipsis,
                     }
+                    // Shortened on a phone, where the long form wraps to a second line
+                    // and pushes the bar's own height out from under the title.
                     Text {
-                        text: "{remaining} of {total} remaining",
+                        text: if stacked {
+                            format!("{remaining} left")
+                        } else {
+                            format!("{remaining} of {total} remaining")
+                        },
                         type_role: TypeRole::Label,
                         color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
                     }
                 }
                 // Where the composer is not on the list, the bar is how a task is added.
