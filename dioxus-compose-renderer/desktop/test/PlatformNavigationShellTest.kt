@@ -126,7 +126,7 @@ class PlatformNavigationShellTest {
      * drawing exactly the bar they drew before it.
      */
     @Test
-    fun fr14_8_nothing_changes_while_no_shell_is_installed() = runComposeUiTest {
+    fun fr14_9_nothing_changes_while_no_shell_is_installed() = runComposeUiTest {
         assertNull(platformNavigationShell, "no shell may be installed by default")
         setContent {
             CompositionLocalProvider(
@@ -147,7 +147,7 @@ class PlatformNavigationShellTest {
 
     /** With a shell installed the strip is gone from the composition and the screen is not. */
     @Test
-    fun fr14_8_an_installed_shell_takes_the_strip_and_leaves_the_screen() = runComposeUiTest {
+    fun fr14_9_an_installed_shell_takes_the_strip_and_leaves_the_screen() = runComposeUiTest {
         val shell = RecordingShell()
         platformNavigationShell = shell
         setContent {
@@ -181,7 +181,7 @@ class PlatformNavigationShellTest {
      * what reaches the Host is indistinguishable from a tap on the Compose bar.
      */
     @Test
-    fun fr14_8_choosing_on_the_shell_clicks_that_destination_once() = runComposeUiTest {
+    fun fr14_9_choosing_on_the_shell_clicks_that_destination_once() = runComposeUiTest {
         val shell = RecordingShell()
         platformNavigationShell = shell
         val connection = FakeHostConnection(navigationBatch())
@@ -205,7 +205,7 @@ class PlatformNavigationShellTest {
 
     /** A selection the Host sends reaches the platform's strip. */
     @Test
-    fun fr14_8_a_selection_from_the_host_reaches_the_shell() = runComposeUiTest {
+    fun fr14_9_a_selection_from_the_host_reaches_the_shell() = runComposeUiTest {
         val shell = RecordingShell()
         platformNavigationShell = shell
         val connection = FakeHostConnection(navigationBatch())
@@ -240,7 +240,7 @@ class PlatformNavigationShellTest {
      * frame later. What the assertion is about is where they end up.
      */
     @Test
-    fun fr14_8_the_shell_is_offered_the_bar_and_not_the_rail_or_the_drawer() = runComposeUiTest {
+    fun fr14_9_the_shell_is_offered_the_bar_and_not_the_rail_or_the_drawer() = runComposeUiTest {
         val shell = RecordingShell()
         platformNavigationShell = shell
         var width by mutableStateOf(1100.dp)
@@ -273,7 +273,7 @@ class PlatformNavigationShellTest {
 
     /** A shell that says it will not draw the strip is the same as none at all. */
     @Test
-    fun fr14_8_a_shell_that_declines_leaves_the_drawn_bar_alone() = runComposeUiTest {
+    fun fr14_9_a_shell_that_declines_leaves_the_drawn_bar_alone() = runComposeUiTest {
         val shell = RecordingShell(drawsStrip = false)
         platformNavigationShell = shell
         setContent {
@@ -301,7 +301,7 @@ class PlatformNavigationShellTest {
      * tap, which is a rebuilt tab bar for what is meant to be a change of one index.
      */
     @Test
-    fun fr14_8_moving_the_selection_does_not_take_the_strip_down() = runComposeUiTest {
+    fun fr14_9_moving_the_selection_does_not_take_the_strip_down() = runComposeUiTest {
         val shell = RecordingShell()
         platformNavigationShell = shell
         setContent {
@@ -326,7 +326,7 @@ class PlatformNavigationShellTest {
      * and two of them would take turns.
      */
     @Test
-    fun fr14_8_a_nested_navigation_keeps_the_drawn_bar() = runComposeUiTest {
+    fun fr14_9_a_nested_navigation_keeps_the_drawn_bar() = runComposeUiTest {
         val shell = RecordingShell()
         platformNavigationShell = shell
         val nested = navigationBatch() + listOf(

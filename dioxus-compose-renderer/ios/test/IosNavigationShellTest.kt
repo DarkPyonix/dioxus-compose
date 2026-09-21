@@ -39,7 +39,7 @@ class IosNavigationShellTest {
     }
 
     @Test
-    fun fr14_8_one_tab_is_built_for_each_destination_and_carries_its_label() {
+    fun fr14_9_one_tab_is_built_for_each_destination_and_carries_its_label() {
         shell.present(destinations(), selected = 0) {}
 
         val built = tabs.viewControllers.orEmpty().filterIsInstance<UINavigationController>()
@@ -55,7 +55,7 @@ class IosNavigationShellTest {
      * drawing them, and an iOS application does name a screen in both places.
      */
     @Test
-    fun fr14_8_each_tab_is_a_navigation_controller_titled_with_its_label() {
+    fun fr14_9_each_tab_is_a_navigation_controller_titled_with_its_label() {
         shell.present(destinations(), selected = 0) {}
 
         val built = tabs.viewControllers.orEmpty().filterIsInstance<UINavigationController>()
@@ -74,7 +74,7 @@ class IosNavigationShellTest {
      * lost. The number itself is the system's, and it differs by device.
      */
     @Test
-    fun fr14_8_the_title_bar_is_measured_and_the_screen_clears_it() {
+    fun fr14_9_the_title_bar_is_measured_and_the_screen_clears_it() {
         assertEquals(0f, shell.titleHeight, "nothing is padded away before a bar exists")
 
         shell.present(destinations(), selected = 0) {}
@@ -88,7 +88,7 @@ class IosNavigationShellTest {
 
     /** A role that has a symbol gets one, and the tab is built either way. */
     @Test
-    fun fr14_8_a_destination_without_an_icon_still_becomes_a_tab() {
+    fun fr14_9_a_destination_without_an_icon_still_becomes_a_tab() {
         shell.present(
             listOf(ShellDestination(nodeId = 2, label = "Plain", icon = null, enabled = true)),
             selected = 0,
@@ -106,7 +106,7 @@ class IosNavigationShellTest {
 
     /** What the Host selected is what the bar shows. */
     @Test
-    fun fr14_8_a_selection_from_the_host_moves_the_system_bar() {
+    fun fr14_9_a_selection_from_the_host_moves_the_system_bar() {
         shell.present(destinations(), selected = 0) {}
         assertEquals(0, tabs.selectedIndex.toInt())
 
@@ -121,7 +121,7 @@ class IosNavigationShellTest {
      * that animation is most of what the bar is.
      */
     @Test
-    fun fr14_8_moving_the_selection_keeps_the_same_tabs() {
+    fun fr14_9_moving_the_selection_keeps_the_same_tabs() {
         shell.present(destinations(), selected = 0) {}
         val first = tabs.viewControllers.orEmpty().filterIsInstance<UIViewController>()
 
@@ -143,7 +143,7 @@ class IosNavigationShellTest {
      * as a click.
      */
     @Test
-    fun fr14_8_a_choice_on_the_system_bar_reports_its_index() {
+    fun fr14_9_a_choice_on_the_system_bar_reports_its_index() {
         var chosen = -1
         shell.present(destinations(), selected = 0) { chosen = it }
 
@@ -156,7 +156,7 @@ class IosNavigationShellTest {
 
     /** Nothing is left standing when the last navigation leaves the tree. */
     @Test
-    fun fr14_8_dismissing_takes_the_bar_down() {
+    fun fr14_9_dismissing_takes_the_bar_down() {
         shell.present(destinations(), selected = 0) {}
         shell.dismiss()
 
@@ -173,7 +173,7 @@ class IosNavigationShellTest {
      * therefore never disturbs the composition.
      */
     @Test
-    fun fr14_8_the_content_is_installed_under_the_bar_and_stays_there() {
+    fun fr14_9_the_content_is_installed_under_the_bar_and_stays_there() {
         val content = UIViewController(nibName = null, bundle = null)
         val installed = installNativeNavigationShell(content)
 
@@ -199,7 +199,7 @@ class IosNavigationShellTest {
      * is what the renderer does with that answer and there is only one machine.
      */
     @Test
-    fun fr14_8_without_system_glass_the_window_holds_only_the_compose_controller() {
+    fun fr14_9_without_system_glass_the_window_holds_only_the_compose_controller() {
         val content = UIViewController(nibName = null, bundle = null)
 
         val root = rendererRootViewController(content, glass = false)
@@ -210,7 +210,7 @@ class IosNavigationShellTest {
 
     /** With system glass the window holds the container, and the interpreter can find it. */
     @Test
-    fun fr14_8_with_system_glass_the_window_holds_the_container() {
+    fun fr14_9_with_system_glass_the_window_holds_the_container() {
         val content = UIViewController(nibName = null, bundle = null)
 
         val root = rendererRootViewController(content, glass = true)

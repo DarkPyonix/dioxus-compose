@@ -19,7 +19,7 @@ class LiquidGlassAvailabilityTest {
         get() = NSProcessInfo.processInfo.operatingSystemVersion.useContents { majorVersion }
 
     @Test
-    fun fr14_8_the_gate_answers_for_the_major_version_this_is_running_on() {
+    fun fr14_9_the_gate_answers_for_the_major_version_this_is_running_on() {
         assertEquals(
             major >= LIQUID_GLASS_IOS_MAJOR.toLong(),
             systemDrawsLiquidGlass(),
@@ -28,7 +28,7 @@ class LiquidGlassAvailabilityTest {
     }
 
     @Test
-    fun fr14_8_the_gate_compares_and_does_not_always_answer_the_same_thing() {
+    fun fr14_9_the_gate_compares_and_does_not_always_answer_the_same_thing() {
         assertTrue(systemIsAtLeast(1), "every iOS is at least 1")
         assertFalse(systemIsAtLeast(999), "no iOS is 999")
     }
@@ -41,7 +41,7 @@ class LiquidGlassAvailabilityTest {
      * or withholds it from the first one that can.
      */
     @Test
-    fun fr14_8_the_threshold_is_the_first_ios_that_draws_glass() {
+    fun fr14_9_the_threshold_is_the_first_ios_that_draws_glass() {
         assertEquals(26, LIQUID_GLASS_IOS_MAJOR)
         assertTrue(systemIsAtLeast(LIQUID_GLASS_IOS_MAJOR - 1) || !systemDrawsLiquidGlass())
     }

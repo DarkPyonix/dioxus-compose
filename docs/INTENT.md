@@ -218,7 +218,7 @@ macOS 26과 iOS 26은 같은 재질을 쓰지만 같은 방식으로 쓰지 않�
 - **설정만으로 막지 않고 코드로도 막습니다.** codegen은 자기가 컴파일된 크레이트 디렉터리와 cargo가 실행 시점에 알려 준 크레이트 디렉터리가 다르면 아무것도 쓰지 않고 두 경로를 찍으며 실패합니다. 설정이 다시 어긋나도 남의 트리에 쓰는 대신 멈춥니다.
 - **초록의 신뢰성도 같은 문제입니다.** 오염되는 것은 쓰기만이 아닙니다. 다른 워크트리에서 컴파일된 테스트 바이너리는 그 워크트리의 벡터 파일과 픽스처를 읽습니다. 그렇게 얻은 통과는 이 워크트리에 대한 사실이 아닙니다.
 
-### D14. iOS의 Liquid Glass는 시스템에게 받아 온다. UIKit을 Kotlin이 직접 몬다
+### D15. iOS의 Liquid Glass는 시스템에게 받아 온다. UIKit을 Kotlin이 직접 몬다
 
 FR-14.1-2가 이미 기록했듯 Liquid Glass는 Compose가 그릴 수 있는 효과가 아닙니다. 시스템이 네이티브 탭 바, 네이티브 내비게이션 바, 네이티브 툴바에만 입히고, Compose 표면 안에서 부르는 API는 없습니다. 그러므로 iOS에서 진짜 유리를 얻는 방법은 하나뿐입니다. **그 크롬을 우리가 그리지 말고, 시스템의 것을 가져다 쓰는 것입니다.**
 
@@ -279,8 +279,8 @@ JetBrains의 안내([ios-liquid-glass](https://kotlinlang.org/docs/multiplatform
 | iOS에 네이티브 SwiftUI 셸을 두기 | JetBrains가 1순위로 권하지만 Swift 소스와 Xcode 타깃이 소비자 앱마다 하나씩 생깁니다. "`Cargo.toml` 한 줄"(D10)이 깨지고, 탭과 화면 제목이 Rust가 아니라 Swift에 적히게 됩니다(C4) |
 | iOS 26 판정을 `UIDevice.systemVersion` 문자열 비교로 | `"26.0"`, `"26"`, 베타 표기를 우리가 숫자로 쪼개게 됩니다. `NSProcessInfo.isOperatingSystemAtLeastVersion`이 같은 비교를 이미 하고 있습니다 |
 | iOS 26 판정을 `respondsToSelector:`만으로 | 고르는 대상이 메서드가 아니라 셸 전체입니다. 시스템이 `UITabBar`에 유리를 입히는 동작은 셀렉터가 아니라서 탐침으로 물을 수 없습니다 |
-| macOS에서 AWT 클라이언트 속성으로 vibrancy 켜기 | `sun.lwawt.macosx.CPlatformWindow`가 읽는 여덟 개 속성에 재질 관련 항목이 없습니다. `brushMetalLook`, `fullWindowContent`, `transparentTitleBar` 등 창틀에 관한 것뿐입니다 (D14) |
-| macOS에서 `NSVisualEffectView`를 직접 붙이기 | 데스크톱 렌더러는 native-image로 빌드하는 JVM 코드라 Objective-C 상호 운용이 없습니다. 손으로 쓴 네이티브 글루가 되고 C3에 걸립니다 (D14) |
+| macOS에서 AWT 클라이언트 속성으로 vibrancy 켜기 | `sun.lwawt.macosx.CPlatformWindow`가 읽는 여덟 개 속성에 재질 관련 항목이 없습니다. `brushMetalLook`, `fullWindowContent`, `transparentTitleBar` 등 창틀에 관한 것뿐입니다 (D15) |
+| macOS에서 `NSVisualEffectView`를 직접 붙이기 | 데스크톱 렌더러는 native-image로 빌드하는 JVM 코드라 Objective-C 상호 운용이 없습니다. 손으로 쓴 네이티브 글루가 되고 C3에 걸립니다 (D15) |
 
 ## 5. 알려진 비용
 
