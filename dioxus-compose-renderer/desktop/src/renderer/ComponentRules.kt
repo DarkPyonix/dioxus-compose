@@ -691,7 +691,13 @@ internal object GnomeRules : ComponentRules {
                 borderColor = hairline,
             )
 
-            ContainerRole.Surface -> base.copy(shape = theme.shape(ShapeRole.None))
+            // A panel is a layer raised off the page holding the page's own reading ink,
+            // which is `SurfaceContainer`. `Surface` is the base reading colour and is too
+            // close to the page in some systems to be seen against it.
+            ContainerRole.Surface -> base.copy(
+                container = theme.color(ColorRole.SurfaceContainer),
+                shape = theme.shape(ShapeRole.None),
+            )
 
             // A header bar: the chrome grey, flat, with a rule under it.
             ContainerRole.TopAppBar -> base.copy(
@@ -882,7 +888,13 @@ internal object BreezeRules : ComponentRules {
                 borderColor = line,
             )
 
-            ContainerRole.Surface -> base.copy(shape = theme.shape(ShapeRole.None))
+            // A panel is a layer raised off the page holding the page's own reading ink,
+            // which is `SurfaceContainer`. `Surface` is the base reading colour and is too
+            // close to the page in some systems to be seen against it.
+            ContainerRole.Surface -> base.copy(
+                container = theme.color(ColorRole.SurfaceContainer),
+                shape = theme.shape(ShapeRole.None),
+            )
 
             // A Plasma toolbar: the window grey, tight, ruled off below.
             ContainerRole.TopAppBar -> base.copy(
@@ -1085,7 +1097,13 @@ internal object DeepinRules : ComponentRules {
                 elevation = 3.dp,
             )
 
-            ContainerRole.Surface -> base.copy(shape = theme.shape(ShapeRole.None))
+            // A panel is a layer raised off the page holding the page's own reading ink,
+            // which is `SurfaceContainer`. `Surface` is the base reading colour and is too
+            // close to the page in some systems to be seen against it.
+            ContainerRole.Surface -> base.copy(
+                container = theme.color(ColorRole.SurfaceContainer),
+                shape = theme.shape(ShapeRole.None),
+            )
 
             // Part of the window, not a bar over it: no rule underneath, and the title
             // sits on the same warm surface as the content.
