@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import dioxus.compose.protocol.ColorRole
-import dioxus.compose.ui.platform.FrameRequests
+import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.design.LocalDesignTheme
@@ -151,9 +151,10 @@ fun DioxusContent(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    LaunchedEffect(host) {
-        var applied = FrameRequests.counter.value
-        FrameRequests.counter.collect { requested ->
+    val frames = LocalFrameRequests.current
+    LaunchedEffect(host, frames) {
+        var applied = frames.counter.value
+        frames.counter.collect { requested ->
             if (requested == applied) return@collect
             applied = requested
             withFrameNanos { frameTimeNanos -> host.renderFrame(frameTimeNanos) }

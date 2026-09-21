@@ -211,7 +211,12 @@ jobs:
   # it evidence for PR-2: one unmodified host, two renderers, one ABI.
   ios:
     name: iOS build and simulator smoke test
-    runs-on: macos-15
+    # macos-26, not macos-latest. Compose Multiplatform's iOS artifacts carry
+    # precompiled Objective-C objects built against the iOS 26 SDK, and one of them
+    # references UIViewLayoutRegion, a class that does not exist in the iOS 18 SDK on the
+    # macos-15 image. Linking the smoke host there fails with an undefined symbol even
+    # though both archives built cleanly.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
