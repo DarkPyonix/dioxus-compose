@@ -46,11 +46,25 @@ internal fun Node.setsOwnElevation(): Boolean =
     modifiers.any { it is ProtocolModifier.Elevation }
 
 /**
+ * True when the Host filled this container itself, which then replaces the design
+ * system's fill rather than sitting behind it.
+ *
+ * A background in the Modifier chain is drawn before the container style's fill, so the
+ * style's fill covers it and the only part that survives is whatever falls outside the
+ * style's shape. An application that asked for a panel in the reading ink got a ring of
+ * that ink around a panel in the usual colour, with its text set in the surface colour
+ * and therefore invisible.
+ */
+internal fun Node.setsOwnBackground(): Boolean =
+    modifiers.any { it is ProtocolModifier.Background }
+
+/**
  * Background, corner, stroke, resting height and inner padding for a container role.
  *
  * The node's own modifiers have already been applied to [modifier], so anything the Host
- * set wins: its `Background` paints over this one, and its `Elevation` replaces the resting
- * height instead of adding to it.
+ * set wins: its `Background` replaces this one and its `Elevation` replaces the resting
+ * height instead of adding to it. Everything it did not set still comes from the design
+ * system, so a recoloured panel keeps that system's corner, stroke and inner padding.
  */
 @Composable
 internal fun Modifier.containerDecoration(
@@ -66,7 +80,13 @@ internal fun Modifier.containerDecoration(
     }
     return raised
         .clip(shape)
-        .background(style.container, shape)
+        .then(
+            if (node.setsOwnBackground()) {
+                Modifier
+            } else {
+                Modifier.background(style.container, shape)
+            },
+        )
         .then(
             if (style.borderWidth.value > 0f) {
                 Modifier.border(style.borderWidth, style.borderColor, shape)

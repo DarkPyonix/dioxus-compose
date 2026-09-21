@@ -19,10 +19,16 @@ pub enum Group {
 impl Group {
     pub const STRIP: [Group; 3] = [Group::Controls, Group::Surfaces, Group::Colour];
 
+    /// Six letters each, deliberately.
+    ///
+    /// A segmented control gives every segment the same width and a button inside one
+    /// carries its own horizontal padding, so on a phone an eight letter label breaks
+    /// across two lines and the strip grows a second row. These are the shortest words
+    /// that still name the group.
     pub fn label(self) -> &'static str {
         match self {
-            Group::Controls => "Controls",
-            Group::Surfaces => "Surfaces",
+            Group::Controls => "Parts",
+            Group::Surfaces => "Panels",
             Group::Colour => "Colour",
         }
     }
