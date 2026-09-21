@@ -368,8 +368,12 @@ fn app() -> Element {
                 fill_max_width: true,
                 Text { text: "Product\nStatistics", type_role: TypeRole::Title, weight: 1.0, color: Paint::Literal(palette::INK) }
                 Button {
+                    // The reference marks this with a chevron in the page's own ink. A
+                    // text button left to itself wears the design system's accent, which
+                    // is the one colour this design does not have.
                     text: ">",
                     variant: ButtonVariant::Text,
+                    color: Paint::Literal(palette::INK),
                     on_click: move |_| {
                         page.set(if page() == Page::Today { Page::Costs } else { Page::Today });
                     }
