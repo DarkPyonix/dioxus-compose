@@ -119,6 +119,12 @@ jobs:
           restore-keys: |
             kotlin-${{ runner.os }}-
 
+      - name: Windows build contract
+        # A static check of the Windows script, metadata and staging rules. It runs here
+        # because it is pure text and JSON, and because the Windows job itself only reaches
+        # its assertions after a ninety minute build.
+        run: bash dioxus-compose-renderer/desktop/scripts/windows-build-contract.test.sh
+
       - name: Build the renderer shared library
         # Stages build/native-image/dist/lib with the renderer, Skia, and the
         # libjawt / libawt_lwawt shims described in SPEC PR-8.
