@@ -20,6 +20,54 @@ build that does not emit `libawt.so`, `libawt_headless.so`, `libawt_xawt.so`,
 `libfontmanager.so`, `libjava.so`, and `libjvm.so`. Liberica NIK is not expected to be
 needed. That expectation is untested.
 
+## How the AWT classes reach the JNI tables
+
+Staging the AWT libraries and registering `awt_xawt` decides which native libraries load. It
+puts nothing in the image's JNI tables. `libawt`'s `JNI_OnLoad` runs first and resolves
+`java/awt/GraphicsEnvironment` with `FindClass`, to ask `isHeadless` which toolkit to load,
+so a build with no registration for that class dies during `java.awt.Toolkit.loadLibraries`
+with `NoClassDefFoundError` on a class the JDK plainly declares. That is the Linux twin of
+the Windows `NoSuchMethodError: java.awt.Toolkit.getDefaultToolkit`, and it has the same
+cause: a JNI lookup against a class the image never registered.
+
+The build passes `-H:Preserve=module=java.desktop` rather than a hand-written list of X11
+classes.
+
+- Native Image's own non-headless `java.desktop` integration test, the only AWT image
+  upstream runs, is built with exactly that flag and no metadata files:
+  `java_desktop_integration_task` in
+  <https://github.com/oracle/graal/blob/master/substratevm/mx.substratevm/mx_substratevm.py>.
+  The test itself only runs on Linux, and skips elsewhere:
+  <https://github.com/oracle/graal/blob/master/substratevm/src/com.oracle.svm.test/src/com/oracle/svm/integrationtest/NonHeadlessJavaDesktopTest.java>.
+- `-H:Preserve` was introduced in GraalVM for JDK 25 and is documented at
+  <https://docs.oracle.com/en/graalvm/jdk/25/docs/reference-manual/native-image/overview/Options/>.
+  Its own help text says that for what it selects "it is not necessary to provide
+  reachability metadata", and warns about build time and image size, which is what the
+  existing `-Os` is for. The Linux job prints the staged size after every build.
+- Preserved classes are registered for JNI, not only for reflection:
+  `PreserveOptionsSupport.registerPreservedClasses` calls `RuntimeJNIAccessSupport.register`
+  for each preserved class and its declared members when JNI is enabled, and `java.desktop`
+  is listed in `JDK_MODULES_TO_PRESERVE`:
+  <https://github.com/oracle/graal/blob/release/graal-vm/25.0/substratevm/src/com.oracle.svm.hosted/src/com/oracle/svm/hosted/image/PreserveOptionsSupport.java>.
+
+Nothing outside `java.desktop` is preserved, and nothing needs to be. The Compose, Skiko and
+Skia registrations are shared by all three desktop platforms and already ship as classpath
+metadata in `desktop/resources/META-INF/native-image/dioxus.compose/dioxus-compose-renderer`,
+which `native-image` reads on every platform without a configuration-directory argument. The
+Windows overlay in `scripts/windows-metadata` exists because the Windows toolkit classes are
+Windows-only; pointing Linux at it would register nothing that exists there.
+
+Linux needs no Skiko overlay of its own. On macOS `MetalRedrawer.onOcclusionStateChanged` and
+on Windows `Direct3DRedrawer.isAdapterSupported` are called from native code and are
+registered for JNI. `javap` on `skiko-awt-0.144.6` shows `LinuxOpenGLRedrawer` and
+`LinuxSoftwareRedrawer` declaring no such callback: their only native boundary is
+`private final native long createDevice(...)` and friends, which is Java calling out, not
+native calling in. `tests/linux-metadata.test.sh` fails if a Linux redrawer registration ever
+appears, because that would mean this paragraph is stale.
+
+All of this is reasoning from upstream sources and from class files. None of it has been run
+on Linux.
+
 ## Why Linux ships two libraries where macOS ships one
 
 On macOS the C shim (`c/renderer_entry.c`) is handed to `native-image` as
@@ -168,8 +216,10 @@ results recorded.
 
 ## Most likely first failure
 
-The first expected failure is missing or incomplete Linux reachability metadata, not the C
-link. A window may render but ignore mouse or keyboard input, exactly as the Windows reference
-did before an interaction-rich agent run. The next likely failures are JAWT resolution from
+The first two failures were the C link (the version script, fixed above) and then AWT's JNI
+registration (`NoClassDefFoundError: java/awt/GraphicsEnvironment`, addressed by preserving
+`java.desktop`). The next expected failure is still metadata, but on the input side: a window
+may render and ignore mouse or keyboard input, exactly as the Windows reference did before an
+interaction-rich agent run. `-H:Preserve` covers the JDK half of that, not Compose's own. The next likely failures are JAWT resolution from
 `<java.home>/lib/libjawt.so`, then a missing system library reported by `ldd`, especially
 fontconfig, FreeType, or GL.
