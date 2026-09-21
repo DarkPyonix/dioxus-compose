@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import dioxus.compose.foundation.ChromeInsets
 import dioxus.compose.foundation.MessageQueue
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.PropertyKind
@@ -94,6 +95,14 @@ class NodeTable {
      * lifetime rather than a position, and that lifetime is owned here.
      */
     val messages: MessageQueue = MessageQueue()
+
+    /**
+     * What the screen's own chrome is using along the window's edges.
+     *
+     * Only a message reads it, and only so that it does not cover the destinations it is
+     * drawn over. It is not part of the tree and never crosses the boundary.
+     */
+    val insets: ChromeInsets = ChromeInsets()
 
     private var revision = 0L
 

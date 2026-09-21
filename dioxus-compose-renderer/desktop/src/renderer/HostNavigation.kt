@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -52,8 +53,13 @@ import dioxus.compose.ui.textStyle
 /** How thick the bar Fluent draws along the leading edge of the selected row is. */
 private val LEADING_BAR_THICKNESS = 3.dp
 
-/** How long that bar is, as a fraction of the row it marks. */
-private const val LEADING_BAR_EXTENT = 0.6f
+/**
+ * How long that bar is.
+ *
+ * A fixed length rather than a fraction of the row: the rows sit in a scrolling column,
+ * so the height they are offered is unbounded and a fraction of it comes out as nothing.
+ */
+private val LEADING_BAR_EXTENT = 20.dp
 
 /** How faint a destination that cannot be chosen is drawn. */
 private const val DISABLED_ALPHA = 0.38f
@@ -97,6 +103,14 @@ internal fun HostNavigation(
         if (handlerId != null) {
             dispatcher.dispatch(HostEvent.Clicked(childId, handlerId))
         }
+    }
+
+    // A message is drawn over the whole window, so it has to be told what the bar along
+    // the bottom is using or it would cover the destinations.
+    val barHeight = if (style.presentation == NavigationPresentation.Bar) style.barHeight else 0.dp
+    DisposableEffect(table, barHeight) {
+        table.insets.bottom = barHeight
+        onDispose { table.insets.bottom = 0.dp }
     }
 
     when (style.presentation) {
@@ -298,7 +312,7 @@ private fun BoxScope.LeadingBar(
         Box(
             Modifier
                 .align(Alignment.TopCenter)
-                .fillMaxWidth(LEADING_BAR_EXTENT)
+                .width(LEADING_BAR_EXTENT)
                 .height(LEADING_BAR_THICKNESS)
                 .clip(style.indicatorShape)
                 .background(style.indicator),
@@ -308,7 +322,7 @@ private fun BoxScope.LeadingBar(
             Modifier
                 .align(Alignment.CenterStart)
                 .width(LEADING_BAR_THICKNESS)
-                .fillMaxHeight(LEADING_BAR_EXTENT)
+                .height(LEADING_BAR_EXTENT)
                 .clip(style.indicatorShape)
                 .background(style.indicator),
         )

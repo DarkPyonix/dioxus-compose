@@ -212,7 +212,7 @@ fun DioxusContent(
                 }
                 // Over the content rather than in it: a message is not part of the tree,
                 // and it covers whatever it has to for as long as it is up.
-                HostMessages(host.table.messages, host, theme)
+                HostMessages(host.table.messages, host.table.insets, host, theme)
             }
         }
     }

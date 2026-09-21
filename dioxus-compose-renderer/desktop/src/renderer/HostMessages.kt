@@ -11,12 +11,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import dioxus.compose.design.MessagePlacement
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.composeLetterSpacing
@@ -88,6 +93,18 @@ class MessageQueue {
 }
 
 /**
+ * How much of the window's bottom edge the screen's own chrome is using.
+ *
+ * A message is drawn over everything, because it is not in the tree, and a message drawn
+ * over the destinations would hide the thing the user needs next. The navigation says how
+ * tall its bar is while it is drawing one, and the message keeps clear of it.
+ */
+class ChromeInsets {
+    var bottom: Dp by mutableStateOf(0.dp)
+        internal set
+}
+
+/**
  * Draws the message at the front of the queue, for as long as this design system says.
  *
  * The timer lives here, which is the reason a message is a record rather than a node: the
@@ -97,6 +114,7 @@ class MessageQueue {
 @Composable
 internal fun HostMessages(
     queue: MessageQueue,
+    insets: ChromeInsets,
     dispatcher: EventDispatcher,
     theme: ResolvedTheme,
 ) {
@@ -121,7 +139,20 @@ internal fun HostMessages(
     } else {
         Modifier
     }
-    Box(Modifier.fillMaxSize().padding(style.inset), contentAlignment = alignment) {
+    val bottomInset = if (style.placement == MessagePlacement.TopEnd) {
+        style.inset
+    } else {
+        style.inset + insets.bottom
+    }
+    Box(
+        Modifier.fillMaxSize().padding(
+            start = style.inset,
+            top = style.inset,
+            end = style.inset,
+            bottom = bottomInset,
+        ),
+        contentAlignment = alignment,
+    ) {
         Row(
             Modifier
                 .clip(style.shape)
