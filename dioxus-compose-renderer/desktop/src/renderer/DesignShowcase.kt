@@ -65,7 +65,10 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
     records += Mutation.Create(root, WidgetKind.ScrollColumn)
     records += Mutation.SetModifier(root, 0, ProtocolModifier.FillMaxWidth)
     records += Mutation.SetModifier(root, 1, ProtocolModifier.FillMaxHeight)
-    records += Mutation.SetModifier(root, 2, ProtocolModifier.Background(Paint.Role(ColorRole.Surface)))
+    // The window colour rather than the reading surface. A panel is the thing that has to
+    // lift off the page, and painting the page with the same role a panel uses hides
+    // whichever systems set the two alike.
+    records += Mutation.SetModifier(root, 2, ProtocolModifier.Background(Paint.Role(ColorRole.Background)))
     records += Mutation.SetModifier(root, 3, ProtocolModifier.PaddingRole(SpaceRole.Lg))
     records += Mutation.SetProp(root, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Md.ordinal + 1L))
 
@@ -207,15 +210,63 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
     records += Mutation.Insert(split, standing, 1)
     text(split, 2, "right", TypeRole.Body)
 
-    // A bordered shape role, and a field, so text input is visible in the same window.
+    // A field, with nothing on it but the width. The frame around it is the design
+    // system's: the corner, the fill, the line and the room inside all come from the same
+    // place the button's container does, so a hand drawn border here would be a second
+    // frame around the first.
     val field = id()
     records += Mutation.Create(field, WidgetKind.TextField)
     records += Mutation.SetProp(field, PropertyKind.Placeholder, PropertyValue.Text("type here"))
     records += Mutation.SetModifier(field, 0, ProtocolModifier.FillMaxWidth)
-    records += Mutation.SetModifier(field, 1, ProtocolModifier.ShapeRole(ShapeRole.Small))
-    records += Mutation.SetModifier(field, 2, ProtocolModifier.Border(1f, Paint.Role(ColorRole.Outline)))
-    records += Mutation.SetModifier(field, 3, ProtocolModifier.PaddingRole(SpaceRole.Sm))
     records += Mutation.Insert(root, field, slot++)
+
+    // The containers. A bar, a card, a panel of rows and a tab strip are where the six
+    // systems disagree about the things a screen is actually made of: whether a layer is
+    // marked by a line, by a tone or by a shadow, and what a selected tab looks like. None
+    // of it was in this window before, so none of it had been looked at.
+    text(root, slot++, "containers", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+
+    val bar = id()
+    records += Mutation.Create(bar, WidgetKind.TopAppBar)
+    records += Mutation.SetModifier(bar, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, bar, slot++)
+    text(bar, 0, "Inbox", TypeRole.Title)
+
+    val grouped = id()
+    records += Mutation.Create(grouped, WidgetKind.Card)
+    records += Mutation.SetModifier(grouped, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, grouped, slot++)
+    text(grouped, 0, "Card", TypeRole.BodyStrong)
+    text(grouped, 1, "A grouped box, raised however this system raises one.", TypeRole.Body)
+
+    // A panel of rows, ruled between: the shape almost every list on a real screen has,
+    // and where a divider's thickness and inset finally mean something.
+    val panel = id()
+    records += Mutation.Create(panel, WidgetKind.Surface)
+    records += Mutation.SetModifier(panel, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, panel, slot++)
+    var row = 0
+    listOf("First row", "Second row", "Third row").forEachIndexed { index, line ->
+        if (index > 0) {
+            val rule = id()
+            records += Mutation.Create(rule, WidgetKind.Divider)
+            records += Mutation.Insert(panel, rule, row++)
+        }
+        text(panel, row++, line, TypeRole.Body)
+    }
+
+    val tabs = id()
+    records += Mutation.Create(tabs, WidgetKind.Tabs)
+    records += Mutation.SetModifier(tabs, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetProp(tabs, PropertyKind.SelectedIndex, PropertyValue.Integer(1))
+    records += Mutation.Insert(root, tabs, slot++)
+    listOf("All", "Unread", "Flagged").forEachIndexed { index, label ->
+        val tab = id()
+        records += Mutation.Create(tab, WidgetKind.Text)
+        records += Mutation.SetProp(tab, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(tab, PropertyKind.OnClick, PropertyValue.Integer(1L))
+        records += Mutation.Insert(tabs, tab, index)
+    }
 
     return records
 }
@@ -258,4 +309,108 @@ fun main() = application {
         val connection = remember { designShowcaseHost(theme) }
         DioxusContent(rememberDioxusHost(connection))
     }
+}
+
+/**
+ * A screen with one overlay standing open on it.
+ *
+ * Separate from the showcase next door because a dialog and a menu are drawn over the
+ * window rather than in it: put either one in that scroll and it covers everything under
+ * it. They need their own picture, and until they had one they were the part of these six
+ * systems nobody had ever looked at.
+ */
+fun overlayShowcaseHost(theme: Theme, dialog: Boolean): FakeHostConnection {
+    val connection = FakeHostConnection(overlayShowcaseRecords(theme, dialog))
+    connection.respondWith { HostResponse(result = 1) }
+    return connection
+}
+
+/** The records [overlayShowcaseHost] is built from. */
+fun overlayShowcaseRecords(theme: Theme, dialog: Boolean): List<Mutation> {
+    val records = mutableListOf<Mutation>(Mutation.SetTheme(theme))
+    var nextId = 1
+    fun id(): Int = nextId++
+
+    fun text(parent: Int, index: Int, value: String, role: TypeRole) {
+        val node = id()
+        records += Mutation.Create(node, WidgetKind.Text)
+        records += Mutation.SetProp(node, PropertyKind.Text, PropertyValue.Text(value))
+        records += Mutation.SetProp(node, PropertyKind.TypeRole, PropertyValue.Integer(role.ordinal + 1L))
+        records += Mutation.SetProp(
+            node,
+            PropertyKind.Color,
+            PropertyValue.Integer(roleBits(ColorRole.OnSurface)),
+        )
+        records += Mutation.Insert(parent, node, index)
+    }
+
+    // The page underneath, so the scrim has something to dim and the overlay has something
+    // to be raised off.
+    val root = id()
+    records += Mutation.Create(root, WidgetKind.Column)
+    records += Mutation.SetModifier(root, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetModifier(root, 1, ProtocolModifier.FillMaxHeight)
+    records += Mutation.SetModifier(root, 2, ProtocolModifier.Background(Paint.Role(ColorRole.Background)))
+    records += Mutation.SetModifier(root, 3, ProtocolModifier.PaddingRole(SpaceRole.Lg))
+    records += Mutation.SetProp(root, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Md.ordinal + 1L))
+    text(root, 0, systemName(theme), TypeRole.Title)
+    text(root, 1, "The page the overlay is drawn over.", TypeRole.Body)
+
+    if (dialog) {
+        val modal = id()
+        records += Mutation.Create(modal, WidgetKind.Dialog)
+        records += Mutation.SetProp(modal, PropertyKind.Open, PropertyValue.Bool(true))
+        records += Mutation.Insert(root, modal, 2)
+        text(modal, 0, "Discard changes?", TypeRole.Subtitle)
+        text(modal, 1, "The note has not been saved.", TypeRole.Body)
+        val actions = id()
+        records += Mutation.Create(actions, WidgetKind.Row)
+        records += Mutation.SetProp(actions, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
+        records += Mutation.Insert(modal, actions, 2)
+        listOf("Cancel" to ButtonVariant.Text, "Discard" to ButtonVariant.Filled)
+            .forEachIndexed { index, (label, variant) ->
+                val button = id()
+                records += Mutation.Create(button, WidgetKind.Button)
+                records += Mutation.SetProp(button, PropertyKind.Text, PropertyValue.Text(label))
+                records += Mutation.SetProp(button, PropertyKind.Variant, PropertyValue.Integer(variant.ordinal + 1L))
+                records += Mutation.SetProp(button, PropertyKind.OnClick, PropertyValue.Integer(1L))
+                records += Mutation.Insert(actions, button, index)
+            }
+        return records
+    }
+
+    val menu = id()
+    records += Mutation.Create(menu, WidgetKind.Menu)
+    records += Mutation.SetProp(menu, PropertyKind.Open, PropertyValue.Bool(true))
+    records += Mutation.Insert(root, menu, 2)
+    // Child 0 is the anchor the popup hangs off; the rest are the entries.
+    val anchor = id()
+    records += Mutation.Create(anchor, WidgetKind.Button)
+    records += Mutation.SetProp(anchor, PropertyKind.Text, PropertyValue.Text("Options"))
+    records += Mutation.SetProp(anchor, PropertyKind.Variant, PropertyValue.Integer(ButtonVariant.Tonal.ordinal + 1L))
+    records += Mutation.SetProp(anchor, PropertyKind.OnClick, PropertyValue.Integer(1L))
+    records += Mutation.Insert(menu, anchor, 0)
+    // Plain text rather than flat buttons. What this picture is for is the popup itself:
+    // its corner, its line, how far it is raised and how much room it gives a row. Text
+    // buttons would paint every entry in whatever colour each system gives a flat button,
+    // and on one of them that is the accent, so the panel would be the hardest thing in
+    // the picture to see.
+    listOf("Rename", "Duplicate", "Delete").forEachIndexed { index, label ->
+        val entry = id()
+        records += Mutation.Create(entry, WidgetKind.Text)
+        records += Mutation.SetProp(entry, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(
+            entry,
+            PropertyKind.TypeRole,
+            PropertyValue.Integer(TypeRole.Body.ordinal + 1L),
+        )
+        records += Mutation.SetProp(
+            entry,
+            PropertyKind.Color,
+            PropertyValue.Integer(roleBits(ColorRole.OnSurface)),
+        )
+        records += Mutation.SetModifier(entry, 0, ProtocolModifier.PaddingRole(SpaceRole.Sm))
+        records += Mutation.Insert(menu, entry, index + 1)
+    }
+    return records
 }

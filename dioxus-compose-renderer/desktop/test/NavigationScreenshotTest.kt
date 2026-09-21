@@ -40,7 +40,10 @@ class NavigationScreenshotTest {
         val directory = System.getenv("DXC_SCREENSHOT_DIR") ?: return
         File(directory).mkdirs()
         val widths = listOf("compact" to 500, "medium" to 700, "expanded" to 1100)
-        listOf(DesignSystem.Material3, DesignSystem.Cupertino, DesignSystem.Fluent).forEach { system ->
+        // Every system, not the three that were here when this was written. A design
+        // system left out of the one place its navigation can be looked at is a design
+        // system nobody looks at, which is how three of them came to share one strip.
+        DesignSystem.entries.forEach { system ->
             widths.forEach { (name, widthDp) ->
                 runComposeUiTest {
                     setContent {

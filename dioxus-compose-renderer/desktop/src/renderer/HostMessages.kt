@@ -132,6 +132,7 @@ internal fun HostMessages(
     val alignment = when (style.placement) {
         MessagePlacement.BottomStart -> Alignment.BottomStart
         MessagePlacement.BottomCenter -> Alignment.BottomCenter
+        MessagePlacement.TopCenter -> Alignment.TopCenter
         MessagePlacement.TopEnd -> Alignment.TopEnd
     }
     val outline = if (style.borderWidth.value > 0f) {
@@ -139,11 +140,9 @@ internal fun HostMessages(
     } else {
         Modifier
     }
-    val bottomInset = if (style.placement == MessagePlacement.TopEnd) {
-        style.inset
-    } else {
-        style.inset + insets.bottom
-    }
+    // A message along the bottom edge keeps clear of whatever chrome is already there;
+    // one along the top has nothing to keep clear of.
+    val bottomInset = if (style.placement.atTop) style.inset else style.inset + insets.bottom
     Box(
         Modifier.fillMaxSize().padding(
             start = style.inset,

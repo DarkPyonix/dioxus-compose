@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import dioxus.compose.design.NavigationExtent
 import dioxus.compose.design.NavigationIndicator
 import dioxus.compose.design.NavigationPresentation
 import dioxus.compose.design.NavigationStyle
@@ -237,8 +238,7 @@ internal fun Destination(
         // destination never changes how much room it takes and the strip does not shift.
         if (pill) {
             Box(
-                Modifier
-                    .indicatorSize(presentation)
+                indicatorSize(presentation, style.indicatorExtent)
                     .clip(style.indicatorShape)
                     .background(style.indicator),
             )
@@ -294,13 +294,23 @@ private fun DestinationLabel(
     )
 }
 
-/** A drawer's pill spans the row; a bar's or a rail's sits behind the icon and label. */
-private fun Modifier.indicatorSize(presentation: NavigationPresentation): Modifier =
-    if (presentation == NavigationPresentation.Drawer) {
-        this.fillMaxWidth().height(40.dp)
-    } else {
-        this.size(56.dp, 34.dp)
-    }
+/**
+ * How big the mark behind the selected destination is.
+ *
+ * A system that covers the whole destination is matched to it rather than given a size,
+ * so the fill reaches the label the design system coloured to read on it. The systems
+ * that mark the icon alone keep a fixed mark: a drawer's spans the row, a bar's or a
+ * rail's sits behind the icon with the label under it.
+ */
+@Composable
+private fun BoxScope.indicatorSize(
+    presentation: NavigationPresentation,
+    extent: NavigationExtent,
+): Modifier = when {
+    extent == NavigationExtent.Destination -> Modifier.matchParentSize()
+    presentation == NavigationPresentation.Drawer -> Modifier.fillMaxWidth().height(40.dp)
+    else -> Modifier.size(56.dp, 34.dp)
+}
 
 /** Fluent's mark: a short bar along the edge the row starts at. */
 @Composable

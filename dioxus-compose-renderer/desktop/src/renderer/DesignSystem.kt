@@ -210,6 +210,15 @@ interface ComponentRules {
      */
     val pickers: PickerRules
 
+    /**
+     * The frame around a text field.
+     *
+     * A field with nothing around it is the same field in all six systems, and it was:
+     * no fill, no line, no inner room, no focus mark. Which of those a system draws, and
+     * what changes when the caret goes in, is decided here.
+     */
+    fun field(theme: ResolvedTheme): FieldStyle
+
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
 
@@ -307,6 +316,17 @@ interface ComponentRules {
  */
 enum class NavigationIndicator { Pill, LeadingEdgeBar, None }
 
+/**
+ * How much of a destination the mark covers.
+ *
+ * Material's pill sits behind the icon and the label hangs below it, outside the fill.
+ * A Plasma sidebar row, a Deepin lozenge and an Adwaita view switcher button all cover
+ * the whole destination and write the label on the fill. The two are not interchangeable:
+ * a label coloured to read on the mark, drawn beside a mark that does not reach it, comes
+ * out white on white.
+ */
+enum class NavigationExtent { Icon, Destination }
+
 /** Which of its three shapes a set of destinations has taken. */
 enum class NavigationPresentation {
     /** A bar across the bottom of the window, destinations side by side. */
@@ -335,6 +355,8 @@ data class NavigationStyle(
     val indicator: Color,
     val indicatorShape: Shape,
     val indicatorKind: NavigationIndicator,
+    /** Whether that mark covers the icon alone or the whole destination. */
+    val indicatorExtent: NavigationExtent = NavigationExtent.Icon,
     /** The hairline between the destinations and the screen, null where there is none. */
     val separator: Color?,
     val barHeight: Dp,
@@ -374,8 +396,20 @@ data class SheetStyle(
     val borderColor: Color,
 )
 
-/** Where a transient message appears. */
-enum class MessagePlacement { BottomStart, BottomCenter, TopEnd }
+/**
+ * Where a transient message appears.
+ *
+ * Four rather than one, because this is a place the systems genuinely disagree: Material
+ * puts a snackbar low and to the leading side, GNOME centres a toast along the bottom
+ * edge, Windows and Apple slide a banner in from the top corner, and Deepin drops a
+ * lozenge in at the top middle. A widget that could only be told "show a message" would
+ * have to pick one of the four for everybody.
+ */
+enum class MessagePlacement { BottomStart, BottomCenter, TopCenter, TopEnd;
+
+    /** True where the message sits along the window's top edge. */
+    val atTop: Boolean get() = this == TopCenter || this == TopEnd
+}
 
 /**
  * How a transient message is drawn and how long it stays.
@@ -408,6 +442,47 @@ data class Motion(
     val easing: androidx.compose.animation.core.Easing,
     /** How long a pointer rests on something before its explanation appears. */
     val tooltipDelayMillis: Int = 500,
+)
+
+/**
+ * A line along a field's bottom edge, which is what Material and Fluent thicken when the
+ * caret goes in.
+ *
+ * Null on the systems that mark focus with the box instead. Separate from the box because
+ * Fluent draws both: a grey rectangle that stays grey, and a bottom line that goes accent.
+ */
+data class FieldUnderline(
+    val color: Color,
+    val focusedColor: Color,
+    val width: Dp,
+    val focusedWidth: Dp,
+)
+
+/**
+ * The frame around a text field, resting and with the caret in it.
+ *
+ * Nothing here is sent by the Host. A field is one of the places these six languages
+ * diverge most visibly, and a screen that painted its own fill and line would be deciding
+ * for whichever system it ended up under.
+ *
+ * Focus is Renderer state, so the second half of every pair is reached without a boundary
+ * call and the Host never learns that the caret moved.
+ */
+data class FieldStyle(
+    val container: Color,
+    val containerFocused: Color,
+    /** The box around the field. A zero width is no box, not a hairline. */
+    val border: Color,
+    val borderFocused: Color,
+    val borderWidth: Dp,
+    val borderWidthFocused: Dp,
+    val underline: FieldUnderline?,
+    val shape: Shape,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    val cursor: Color,
+    /** How tall an empty single line field is before anything is typed into it. */
+    val minHeight: Dp,
 )
 
 /**
@@ -627,6 +702,15 @@ data class ButtonStyle(
     val typeRole: TypeRole,
     val restElevation: Dp,
     val pressedElevation: Dp,
+    /**
+     * How much of the button is left when it is disabled.
+     *
+     * One number for the whole control rather than a disabled colour per variant: four
+     * more colours is four more answers every design system owes, and a seventh system
+     * would owe them too. Fading the drawn button says the same thing in every system's
+     * own palette, because it is that system's palette being faded.
+     */
+    val disabledAlpha: Float,
 )
 
 /**

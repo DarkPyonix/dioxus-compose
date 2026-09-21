@@ -65,6 +65,7 @@ internal object Material3Rules : ComponentRules {
             typeRole = TypeRole.Label,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             ButtonVariant.Filled -> base.copy(
@@ -277,6 +278,34 @@ internal object Material3Rules : ComponentRules {
     }
 
     /**
+     * A filled field with a rule under it, and nothing down the sides.
+     *
+     * The rule is the whole of Material's frame: it darkens and doubles in width when the
+     * caret goes in, and the box it sits under never gets a line at all. Tall, because a
+     * filled Material field leaves room above the text for a label whether or not one is
+     * there.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.SurfaceVariant),
+        border = Color.Transparent,
+        borderFocused = Color.Transparent,
+        borderWidth = 0.dp,
+        borderWidthFocused = 0.dp,
+        underline = FieldUnderline(
+            color = theme.color(ColorRole.OnSurfaceVariant),
+            focusedColor = theme.color(ColorRole.Primary),
+            width = 1.dp,
+            focusedWidth = 2.dp,
+        ),
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 56.dp,
+    )
+
+    /**
      * Material Symbols metrics: a 24 dp grid, a 2 dp stem and flat ends.
      *
      * Every role is drawn to the same weight, which is what makes a row of them line up.
@@ -418,6 +447,7 @@ internal object CupertinoRules : ComponentRules {
             // Apple's buttons never cast a shadow, pressed or not.
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             ButtonVariant.Filled -> base.copy(
@@ -613,6 +643,30 @@ internal object CupertinoRules : ComponentRules {
     }
 
     /**
+     * A rounded box with a hairline, and the focus ring macOS puts around whatever the
+     * caret is in.
+     *
+     * The ring is the accent at three times the resting width rather than a recoloured
+     * hairline, because on Apple's desktop it reads as something laid around the field
+     * rather than as the field's own edge changing colour. Short: a HIG field is the
+     * least tall of the six.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.Surface),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 1.dp,
+        borderWidthFocused = 3.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Small),
+        horizontalPadding = theme.space(SpaceRole.Sm),
+        verticalPadding = theme.space(SpaceRole.Xs),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 30.dp,
+    )
+
+    /**
      * SF Symbols metrics: a lighter stroke on a 22 dp grid, with rounded ends and joins.
      * The rounded terminal is the single thing that reads most as Apple's icon set.
      */
@@ -661,6 +715,9 @@ internal object CupertinoRules : ComponentRules {
             indicator = if (bar) Color.Transparent else theme.color(ColorRole.SurfaceVariant),
             indicatorShape = theme.shape(ShapeRole.Medium),
             indicatorKind = if (bar) NavigationIndicator.None else NavigationIndicator.Pill,
+            // An Apple sidebar fills the whole row it marks, label included. A tab bar
+            // marks nothing, so this says nothing about the bar.
+            indicatorExtent = NavigationExtent.Destination,
             // A tab bar and a sidebar are both divided from the content by a hairline.
             separator = theme.color(ColorRole.OutlineVariant),
             barHeight = 50.dp,
@@ -757,6 +814,7 @@ internal object FluentRules : ComponentRules {
             typeRole = TypeRole.BodyStrong,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // Accent button.
@@ -962,6 +1020,33 @@ internal object FluentRules : ComponentRules {
     }
 
     /**
+     * A grey rectangle that stays grey, with a bottom line that goes accent.
+     *
+     * Both, which is the thing that makes a WinUI field a WinUI field: the box marks where
+     * you may type and the line underneath marks that you are typing. A system with one
+     * field colour for the two states would have to pick one of them.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.Surface),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Outline),
+        borderWidth = 1.dp,
+        borderWidthFocused = 1.dp,
+        underline = FieldUnderline(
+            color = theme.color(ColorRole.Outline),
+            focusedColor = theme.color(ColorRole.Primary),
+            width = 1.dp,
+            focusedWidth = 2.dp,
+        ),
+        shape = theme.shape(ShapeRole.Medium),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 32.dp,
+    )
+
+    /**
      * Fluent icon metrics: a 20 dp grid, a 1.5 dp stroke and square ends, which is what
      * keeps a command bar's icons reading as one set with its text.
      */
@@ -1073,13 +1158,23 @@ internal object GnomeRules : ComponentRules {
     // The same value Material, Cupertino and Fluent use for a control nobody can press.
     private const val DISABLED_ALPHA = 0.38f
 
+    /**
+     * The knob on a switch and on a slider, which is white in both schemes.
+     *
+     * GTK does not recolour a knob when the switch is thrown or when the session turns
+     * dark: what changes is the track behind it. Taking the knob from the reading surface
+     * instead loses it entirely in a dark session, where the surface is the same near
+     * black the knob would be sitting on.
+     */
+    private val HANDLE = Color(0xFFFFFFFF)
+
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val primary = theme.color(ColorRole.Primary)
         val onPrimary = theme.color(ColorRole.OnPrimary)
         val outline = theme.color(ColorRole.Outline)
-        // Adwaita: a softly rounded box, a wide pill switch, and a thin bar with round
-        // ends. The switch is the widest of the six, which is what makes GNOME read as
-        // GNOME at a glance.
+        // Adwaita: a softly rounded box, a radio button that fills in when it is chosen,
+        // and a wide pill switch carrying a white knob. The switch is the widest of the
+        // six, which is what makes GNOME read as GNOME at a glance.
         return ControlsStyle(
             checkbox = ToggleStyle(
                 size = 18.dp,
@@ -1095,11 +1190,14 @@ internal object GnomeRules : ComponentRules {
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // A chosen radio button fills with the accent and carries a white dot. It does
+            // not keep a pale centre with a coloured dot inside it, which is the Material
+            // answer and reads as the wrong desktop.
             radioButton = ToggleStyle(
                 size = 18.dp,
                 container = Color.Transparent,
-                containerChecked = Color.Transparent,
-                mark = primary,
+                containerChecked = primary,
+                mark = onPrimary,
                 markUnchecked = Color.Transparent,
                 border = outline,
                 borderWidth = 1.dp,
@@ -1109,12 +1207,13 @@ internal object GnomeRules : ComponentRules {
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // 48 by 26 carrying a 22 knob: the GTK switch, and the roomiest of the six.
             switch = ToggleStyle(
                 size = 20.dp,
                 container = theme.color(ColorRole.SurfaceVariant),
                 containerChecked = primary,
-                mark = onPrimary,
-                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
+                mark = HANDLE,
+                markUnchecked = HANDLE,
                 border = outline,
                 borderWidth = 1.dp,
                 shape = theme.shape(ShapeRole.Full),
@@ -1128,7 +1227,7 @@ internal object GnomeRules : ComponentRules {
                 track = theme.color(ColorRole.OutlineVariant),
                 activeTrack = primary,
                 thumbSize = 18.dp,
-                thumb = theme.color(ColorRole.Surface),
+                thumb = HANDLE,
                 thumbBorder = outline,
                 thumbBorderWidth = 1.dp,
                 tick = null,
@@ -1141,9 +1240,13 @@ internal object GnomeRules : ComponentRules {
                 rounded = true,
                 periodMillis = 1000,
             ),
+            // The border grey rather than the fainter one. A boxed list is the place
+            // Adwaita rules between rows, and the layer it sits on is a step off white
+            // already: the faint rule is within five parts of that layer, so the rows run
+            // together with nothing between them.
             divider = DividerStyle(
                 thickness = 1.dp,
-                color = theme.color(ColorRole.OutlineVariant),
+                color = outline,
                 inset = 0.dp,
             ),
         )
@@ -1180,6 +1283,7 @@ internal object GnomeRules : ComponentRules {
             typeRole = TypeRole.BodyStrong,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // The suggested action, and the only place the accent appears.
@@ -1303,6 +1407,28 @@ internal object GnomeRules : ComponentRules {
     )
 
     /**
+     * A GTK entry: the chrome grey filled in, rounded at six, with the accent taking over
+     * the line when the caret goes in.
+     *
+     * No rule underneath. Adwaita marks the focused entry all the way round, which is the
+     * clearest difference from the Material field beside it.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.SurfaceVariant),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 1.dp,
+        borderWidthFocused = 2.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Small),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 34.dp,
+    )
+
+    /**
      * Adwaita icon metrics: a 16 dp symbolic grid drawn with a heavier stem and rounded
      * ends, which is what makes a GNOME icon read as solid rather than outlined.
      */
@@ -1328,10 +1454,98 @@ internal object GnomeRules : ComponentRules {
         tooltipDelayMillis = 500,
     )
 
+    /**
+     * A view switcher across the bottom of a narrow window, a sidebar down the side of a
+     * wide one.
+     *
+     * The mark is a tint of the accent behind the selected view, rounded at the corner GTK
+     * rounds a button. It is not a capsule and it is not opaque: a solid pill behind a
+     * sidebar row is the Material answer, and Adwaita does not draw one anywhere.
+     *
+     * The strip is the header bar grey with a rule between it and the view, which is how
+     * GNOME separates chrome from content everywhere else.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceVariant),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.Primary),
+            indicator = theme.color(ColorRole.Primary).copy(alpha = SELECTED_TINT),
+            indicatorShape = theme.shape(ShapeRole.Medium),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 60.dp,
+            railWidth = 68.dp,
+            drawerWidth = 240.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+
+    /**
+     * A bottom sheet with a grab handle, rounded at the corner Adwaita rounds a window.
+     *
+     * Barely raised and lined instead: everywhere else here a layer is separated from what
+     * it covers by a hairline rather than by a shadow, and a sheet is no exception.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.Surface),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 2.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.34f,
+        heightFraction = 0.52f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+    )
+
+    /**
+     * A toast: a dark capsule centred along the bottom edge.
+     *
+     * Dark in a light session and dark again in a dark one, because GTK draws a toast in
+     * the overlay colours it uses for anything laid over content, and those do not follow
+     * the scheme. Fully rounded, which is the shape nothing else in Adwaita has, and five
+     * seconds, which is what a toast is given when nobody names a time.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = OVERLAY,
+        content = ON_OVERLAY,
+        actionContent = ON_OVERLAY,
+        shape = theme.shape(ShapeRole.Full),
+        elevation = 3.dp,
+        placement = MessagePlacement.BottomCenter,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 5_000,
+        longMillis = 10_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.45f
     private const val PRESS_MIX = 0.1f
     private const val PRESS_SHADE = 0.16f
     private const val SHADOW_SCALE = 0.5f
+
+    /** How much of the accent stands behind the selected destination. */
+    private const val SELECTED_TINT = 0.25f
+
+    /** The overlay grey GTK lays over content, and the white it writes on it. */
+    private val OVERLAY = Color(0xFF383838)
+    private val ON_OVERLAY = Color(0xFFFFFFFF)
 }
 
 /**
@@ -1348,13 +1562,26 @@ internal object BreezeRules : ComponentRules {
     // The same value Material, Cupertino and Fluent use for a control nobody can press.
     private const val DISABLED_ALPHA = 0.38f
 
+    /**
+     * The knob on a switch and on a slider.
+     *
+     * Plasma's view white, held here rather than read from the table because the knob does
+     * not follow the scheme: a Breeze switch carries a light knob in a dark session too,
+     * and the ink the table puts on the highlight is for text rather than for a knob.
+     */
+    private val HANDLE = Color(0xFFFCFCFC)
+
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val primary = theme.color(ColorRole.Primary)
         val onPrimary = theme.color(ColorRole.OnPrimary)
         val outline = theme.color(ColorRole.Outline)
-        // Breeze draws a crisp square box and the shortest switch of the six, and its indicators keep
-        // square ends, which is the KDE house style against GNOME next door.
+        // Breeze draws a barely rounded box, a switch a little over two grid units wide,
+        // and indicators with square ends, which is the KDE house style against GNOME next
+        // door.
         return ControlsStyle(
+            // Plasma 6 takes the hard corner off a checkbox without rounding it: two
+            // pixels, which still reads as the square one beside Adwaita's four and
+            // Deepin's six.
             checkbox = ToggleStyle(
                 size = 18.dp,
                 container = Color.Transparent,
@@ -1363,7 +1590,7 @@ internal object BreezeRules : ComponentRules {
                 markUnchecked = Color.Transparent,
                 border = outline,
                 borderWidth = 1.dp,
-                shape = theme.shape(ShapeRole.None),
+                shape = theme.shape(ShapeRole.ExtraSmall),
                 thumbSize = 0.dp,
                 trackWidth = 0.dp,
                 trackHeight = 0.dp,
@@ -1383,18 +1610,23 @@ internal object BreezeRules : ComponentRules {
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // Kirigami measures in grid units, and a Plasma switch is a little over two of
+            // them wide by a little over one tall. That leaves it shorter than the GTK
+            // switch beside it and longer than the Windows toggle, which is where it
+            // really sits; the earlier 36 dp track was written from a description and made
+            // Breeze the most compact of the six, a place WinUI holds.
             switch = ToggleStyle(
-                size = 20.dp,
+                size = 22.dp,
                 container = theme.color(ColorRole.SurfaceVariant),
                 containerChecked = primary,
-                mark = onPrimary,
-                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
+                mark = HANDLE,
+                markUnchecked = HANDLE,
                 border = outline,
                 borderWidth = 1.dp,
                 shape = theme.shape(ShapeRole.Full),
-                thumbSize = 16.dp,
-                trackWidth = 36.dp,
-                trackHeight = 20.dp,
+                thumbSize = 18.dp,
+                trackWidth = 42.dp,
+                trackHeight = 22.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
             slider = SliderStyle(
@@ -1402,7 +1634,7 @@ internal object BreezeRules : ComponentRules {
                 track = theme.color(ColorRole.OutlineVariant),
                 activeTrack = primary,
                 thumbSize = 16.dp,
-                thumb = theme.color(ColorRole.Surface),
+                thumb = HANDLE,
                 thumbBorder = outline,
                 thumbBorderWidth = 1.dp,
                 tick = null,
@@ -1452,6 +1684,7 @@ internal object BreezeRules : ComponentRules {
             typeRole = TypeRole.Body,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // Even the accent button is a filled rectangle inside a darker line.
@@ -1577,6 +1810,29 @@ internal object BreezeRules : ComponentRules {
     )
 
     /**
+     * A framed view: the white of a list inside a hairline that is recoloured rather than
+     * thickened when the caret goes in.
+     *
+     * The same thing a Breeze outlined button does when it is pressed, and the same reason:
+     * a line that grows moves everything beside it by a pixel, and Plasma does not.
+     * Shortest of the six after the HIG field, because Kirigami packs tightly.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.Surface),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 1.dp,
+        borderWidthFocused = 1.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Medium),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 28.dp,
+    )
+
+    /**
      * Breeze icon metrics: a 22 dp grid drawn with a thin, even stroke and mitred joins,
      * which is what gives the set its drafted look next to Adwaita's solid symbolics.
      */
@@ -1603,6 +1859,90 @@ internal object BreezeRules : ComponentRules {
         tooltipDelayMillis = 700,
     )
 
+    /**
+     * A Kirigami page stack: a dense strip of destinations, and the selected one filled
+     * solid with the highlight.
+     *
+     * That solid fill is the one place Plasma spends its accent on a large area, and it is
+     * what a selected row in a KDE sidebar, a file manager list and a settings tree all
+     * look like. The strip is the window grey rather than the view white, and it is ruled
+     * off, because Breeze marks every edge.
+     *
+     * Everything here is tighter than the other five: Kirigami's grid unit is smaller than
+     * GNOME's six pixel step, and a Plasma sidebar fits more rows in the same height.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.Background),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnPrimary),
+            indicator = theme.color(ColorRole.Primary),
+            indicatorShape = theme.shape(ShapeRole.ExtraSmall),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = theme.color(ColorRole.Outline),
+            barHeight = 48.dp,
+            railWidth = 56.dp,
+            drawerWidth = 220.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+
+    /**
+     * An overlay drawer: a framed panel, barely rounded, that covers less of the window
+     * than the others do.
+     *
+     * No grab handle inside it. Plasma puts the thing you pull on outside the drawer, on
+     * the edge it comes from, so a bar drawn along the sheet's own edge would be a second
+     * handle for a gesture this one does not offer.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.Surface),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 4.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = null,
+        widthFraction = 0.32f,
+        heightFraction = 0.45f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.Outline),
+    )
+
+    /**
+     * A framed chip along the bottom edge, centred.
+     *
+     * Breeze marks a layer with a line before it marks it with anything else, and a
+     * message is a layer: this is the same frame a menu, a tooltip and a card get, rather
+     * than the inverted surface Material uses or the dark overlay GNOME lays over content.
+     * The two timings are Kirigami's own short and long.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Small),
+        elevation = 4.dp,
+        placement = MessagePlacement.BottomCenter,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 7_000,
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.Outline),
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.5f
     private const val PRESS_MIX = 0.12f
     private const val PRESS_SHADE = 0.1f
@@ -1625,48 +1965,55 @@ internal object DeepinRules : ComponentRules {
     // The same value Material, Cupertino and Fluent use for a control nobody can press.
     private const val DISABLED_ALPHA = 0.38f
 
+    /** The knob on a switch: white, and white again in a dark session. */
+    private val HANDLE = Color(0xFFFFFFFF)
+
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val primary = theme.color(ColorRole.Primary)
         val onPrimary = theme.color(ColorRole.OnPrimary)
         val outline = theme.color(ColorRole.Outline)
-        // Deepin rounds everything, including the checkbox, and leans on fill rather
-        // than outline, so its controls read as softer and heavier than the other two.
+        // Deepin rounds everything and leans on fill rather than outline, so its controls
+        // read as softer and heavier than the other two. A checkbox is still a box: a
+        // 20 dp square rounded by 6, which is soft next to Adwaita's 4 and Breeze's 2
+        // without turning into the radio button underneath it.
         return ControlsStyle(
             checkbox = ToggleStyle(
-                size = 18.dp,
+                size = 20.dp,
                 container = Color.Transparent,
                 containerChecked = primary,
                 mark = onPrimary,
                 markUnchecked = Color.Transparent,
                 border = outline,
-                borderWidth = 0.dp,
-                shape = theme.shape(ShapeRole.Small),
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.ExtraSmall),
                 thumbSize = 0.dp,
                 trackWidth = 0.dp,
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
             radioButton = ToggleStyle(
-                size = 18.dp,
+                size = 20.dp,
                 container = Color.Transparent,
                 containerChecked = Color.Transparent,
                 mark = primary,
                 markUnchecked = Color.Transparent,
                 border = outline,
-                borderWidth = 0.dp,
+                borderWidth = 1.dp,
                 shape = theme.shape(ShapeRole.Full),
-                thumbSize = 8.dp,
+                thumbSize = 9.dp,
                 trackWidth = 0.dp,
                 trackHeight = 0.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // The one control here with no line around it at all. A zero width border is
+            // a hairline rather than nothing, so the colour has to go as well.
             switch = ToggleStyle(
-                size = 20.dp,
+                size = 24.dp,
                 container = theme.color(ColorRole.SurfaceVariant),
                 containerChecked = primary,
-                mark = onPrimary,
-                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
-                border = outline,
+                mark = HANDLE,
+                markUnchecked = HANDLE,
+                border = Color.Transparent,
                 borderWidth = 0.dp,
                 shape = theme.shape(ShapeRole.Full),
                 thumbSize = 20.dp,
@@ -1674,13 +2021,17 @@ internal object DeepinRules : ComponentRules {
                 trackHeight = 24.dp,
                 disabledAlpha = DISABLED_ALPHA,
             ),
+            // The handle is filled with the accent rather than with the page. Deepin draws
+            // it that way, and it is also the only thing that keeps it on screen: a white
+            // handle with no ring on Deepin's near white page is drawn at the right size
+            // in the right place and cannot be seen.
             slider = SliderStyle(
                 trackHeight = 6.dp,
                 track = theme.color(ColorRole.OutlineVariant),
                 activeTrack = primary,
                 thumbSize = 20.dp,
-                thumb = theme.color(ColorRole.Surface),
-                thumbBorder = outline,
+                thumb = primary,
+                thumbBorder = Color.Transparent,
                 thumbBorderWidth = 0.dp,
                 tick = null,
             ),
@@ -1692,9 +2043,13 @@ internal object DeepinRules : ComponentRules {
                 rounded = true,
                 periodMillis = 1100,
             ),
+            // The warm outline rather than the fainter one, for the same reason GNOME
+            // takes the stronger of its two: Deepin's panel in a dark session is a step
+            // lighter than its reading surface, and the faint line is within eight parts
+            // of it, so a list of rows comes out as one unbroken block.
             divider = DividerStyle(
                 thickness = 1.dp,
-                color = theme.color(ColorRole.OutlineVariant),
+                color = outline,
                 inset = 0.dp,
             ),
         )
@@ -1741,6 +2096,7 @@ internal object DeepinRules : ComponentRules {
             typeRole = TypeRole.Body,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // A rounded slab of brand blue with no border at all.
@@ -1860,6 +2216,29 @@ internal object DeepinRules : ComponentRules {
     )
 
     /**
+     * A warm filled lozenge with no line on it at all until the caret goes in.
+     *
+     * Depth and fill rather than outline, the same way everything else here works: at rest
+     * the field is a tinted shape on the page, and focusing it lightens the fill to the
+     * reading surface and draws the accent round it. The largest corner and the most inner
+     * room of the six.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = Color.Transparent,
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 0.dp,
+        borderWidthFocused = 2.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Medium),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 36.dp,
+    )
+
+    /**
      * A large, soft icon grid: 24 dp drawn with a heavy rounded stroke and bevelled
      * joins, to match the rounded shapes rather than fight them.
      */
@@ -1883,6 +2262,88 @@ internal object DeepinRules : ComponentRules {
         releaseMillis = 200,
         easing = LinearOutSlowInEasing,
         tooltipDelayMillis = 600,
+    )
+
+    /**
+     * A sidebar of large rounded rows, with the selected one filled with the brand blue.
+     *
+     * Deepin's mark is the only fully rounded one of the six: the same lozenge its buttons
+     * and its view switcher are, carried behind a destination. The strip is the panel
+     * white and it is not ruled off from the screen, which is the same decision the title
+     * bar makes: a Deepin window is one rounded surface rather than bars stacked on
+     * content.
+     *
+     * The rows are the tallest and the sidebar is the narrowest, because the labels sit
+     * beside icons drawn on a 24 dp grid and the whole language is roomy vertically.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnPrimary),
+            indicator = theme.color(ColorRole.Primary),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = null,
+            barHeight = 68.dp,
+            railWidth = 72.dp,
+            drawerWidth = 200.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Body,
+        )
+
+    /**
+     * A sheet with the largest corner and the deepest shadow here, and no line anywhere.
+     *
+     * Depth is how this language separates layers, so the sheet is lifted rather than
+     * framed, and it covers more of the window than the others because its padding is
+     * already the roomiest of the six.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 12.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.44f,
+        heightFraction = 0.58f,
+        padding = theme.space(SpaceRole.Xl),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /**
+     * A floating message: a lozenge that drops in at the top of the window, centred.
+     *
+     * The only one of the six that comes from the top middle. Deepin puts a desktop
+     * notification in the corner and an application's own "done that" at the top of its
+     * window, over the title bar, so this is the second of those and not a corner toast.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Full),
+        elevation = 6.dp,
+        placement = MessagePlacement.TopCenter,
+        horizontalPadding = theme.space(SpaceRole.Lg),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 8_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
     )
 
     private const val SCRIM_ALPHA = 0.35f

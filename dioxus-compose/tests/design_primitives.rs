@@ -180,12 +180,18 @@ fn fr13_separator_is_one_divider_so_the_design_system_sets_its_weight() {
         })
         .expect("the separator is drawn as a Divider");
 
+    // `Empty` is not a decision. A widget declares every modifier attribute and the unset
+    // ones clear their slot, which is what stops an attribute that shares a slot with its
+    // partner from being left behind by the previous frame. What would break the promise
+    // here is a modifier that actually names a thickness or a colour.
     let modifiers: Vec<_> = mutations
         .iter()
         .filter_map(|mutation| match mutation {
             Mutation::SetModifier {
                 node_id, modifier, ..
-            } if *node_id == divider => Some(modifier.clone()),
+            } if *node_id == divider && !matches!(modifier, Modifier::Empty) => {
+                Some(modifier.clone())
+            }
             _ => None,
         })
         .collect();

@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
@@ -85,8 +86,13 @@ internal fun HostButton(
         ) { dispatcher.dispatch(HostEvent.Clicked(node.id, handlerId)) }
     }
 
+    // A button that cannot be pressed has to look it. Without this the only way to find
+    // out was to press it, because refusing the click was all `enabled` did. The whole
+    // control fades rather than each variant naming a disabled colour, so a design system
+    // owes one number instead of four and the faded colours are still its own.
+    val available = if (enabled) Modifier else Modifier.alpha(style.disabledAlpha)
     val decorated = theme.rules
-        .elevation(clickable, elevation, style.shape, theme)
+        .elevation(clickable.then(available), elevation, style.shape, theme)
         .clip(style.shape)
         .background(container, style.shape)
         .then(
