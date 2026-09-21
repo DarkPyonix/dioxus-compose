@@ -73,8 +73,9 @@ class DeepinDesignSystem private constructor(
         ColorRole.Outline -> Color(0xFFD9CDC0)
         ColorRole.OutlineVariant -> Color(0xFFECE3D9)
         ColorRole.Error -> Color(0xFFE35C4B)
-        // The view layer, raised off the window background.
-        ColorRole.SurfaceContainer -> Color(0xFFFFFDFA)
+        // Plain white. The near white view colour is three parts off the warm page, so a
+        // panel made of it was drawn full size and could not be seen against the page.
+        ColorRole.SurfaceContainer -> Color(0xFFFFFFFF)
         ColorRole.OnError -> Color(0xFFFFFFFF)
     }
 
@@ -93,7 +94,8 @@ class DeepinDesignSystem private constructor(
         ColorRole.Outline -> Color(0xFF574F4B)
         ColorRole.OutlineVariant -> Color(0xFF383230)
         ColorRole.Error -> Color(0xFFFF8A73)
-        ColorRole.SurfaceContainer -> Color(0xFF2B2726)
+        // Warmer and lighter than the window, so the panel lifts rather than sinks.
+        ColorRole.SurfaceContainer -> Color(0xFF302B29)
         ColorRole.OnError -> Color(0xFF34110A)
     }
 

@@ -50,7 +50,7 @@ fn fr14_generated_kotlin_carries_the_roles_and_token_tables() {
         "enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }",
         "enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }",
         "enum class ButtonVariant { Filled, Tonal, Outlined, Text }",
-        "enum class DesignSystem { Material3, Cupertino, Fluent }",
+        "enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze, Deepin }",
         "enum class ColorScheme { Light, Dark, FollowSystem }",
     ] {
         assert!(generated.contains(role), "missing {role}");

@@ -81,7 +81,8 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT];
+pub const DESIGN_TOKENS: &[DesignTokenTable] =
+    &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA, BREEZE, DEEPIN];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -291,6 +292,217 @@ const FLUENT: DesignTokenTable = DesignTokenTable {
         Lg: 12.0,
         Xl: 20.0,
         Xxl: 32.0,
+    },
+};
+
+const ADWAITA: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::Gnome,
+    reference: "GNOME Human Interface Guidelines and the libadwaita named colours, GNOME 50",
+    default_family: "Cantarell",
+    monospace_family: "Source Code Pro",
+    colors: colors! {
+        // accent_bg_color, blue 3 in the GNOME palette.
+        Primary: 0x3584e4 / 0x3584e4,
+        OnPrimary: 0xffffff / 0xffffff,
+        // purple 3, the rare second accent. Never a second button colour.
+        Secondary: 0x9141ac / 0xc061cb,
+        // White in both schemes, which is what libadwaita puts on every accent fill but
+        // yellow. On the lighter purple 2 of the dark scheme that measures 3.6:1, which
+        // carries a short control label but would not carry body text. Nothing puts body
+        // text on the second accent.
+        OnSecondary: 0xffffff / 0xffffff,
+        // view_bg_color: the white of a list or a text view.
+        Surface: 0xffffff / 0x1e1e1e,
+        OnSurface: 0x2e3436 / 0xffffff,
+        // headerbar_bg_color: the slightly darker grey of chrome.
+        SurfaceVariant: 0xebebeb / 0x303030,
+        OnSurfaceVariant: 0x5e5c64 / 0xc0bfbc,
+        // window_bg_color.
+        Background: 0xfafafa / 0x242424,
+        OnBackground: 0x2e3436 / 0xffffff,
+        Outline: 0xcdc7c2 / 0x52514f,
+        OutlineVariant: 0xe6e3e1 / 0x3a3a3a,
+        // red 3 in light. Dark takes red 1, because the darker destructive red loses too
+        // much contrast against a dark window.
+        Error: 0xe01b24 / 0xff7b63,
+        OnError: 0xffffff / 0x2a0a06,
+        // An Adwaita card in light is white with a hairline around it, and white against
+        // window_bg_color is five parts of grey: the border is what you actually see. A
+        // role that has to be visible on the page by itself cannot be that, so the layer
+        // is sidebar_bg_color, the grey Adwaita already uses for a panel beside the view.
+        SurfaceContainer: 0xebebeb / 0x303030,
+    },
+    // libadwaita declares its title classes in points against an 11pt Cantarell body, and
+    // they are heavy: the largest title is weight 800, not 700. Those point values are
+    // carried over to sp here, which is why the body is 15 and not the 14 a Material scale
+    // would use.
+    type_scale: type_scale! {
+        Display: 44.0 / 800 / 52.0 / -0.5 / false,
+        Headline: 32.0 / 800 / 40.0 / -0.25 / false,
+        Title: 24.0 / 700 / 32.0 / 0.0 / false,
+        Subtitle: 20.0 / 700 / 28.0 / 0.0 / false,
+        Body: 15.0 / 400 / 22.0 / 0.0 / false,
+        BodyStrong: 15.0 / 700 / 22.0 / 0.0 / false,
+        Label: 13.0 / 700 / 18.0 / 0.1 / false,
+        Caption: 12.0 / 400 / 16.0 / 0.0 / false,
+        Mono: 14.0 / 400 / 20.0 / 0.0 / true,
+    },
+    // Adwaita rounds moderately: 6px on a button or an entry, 12px on a card, a dialog or
+    // a popover. Pills are kept for suggested actions and search entries.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 4.0,
+        Small: 6.0,
+        Medium: 8.0,
+        Large: 12.0,
+        Full: 1000.0,
+    },
+    // GNOME lays out on a six pixel grid, and its dialogs are roomy.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 3.0,
+        Sm: 6.0,
+        Md: 12.0,
+        Lg: 18.0,
+        Xl: 24.0,
+        Xxl: 36.0,
+    },
+};
+
+const BREEZE: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::Breeze,
+    reference: "KDE Breeze colour schemes and the KDE Human Interface Guidelines, Plasma 6",
+    default_family: "Noto Sans",
+    monospace_family: "Hack",
+    colors: colors! {
+        // Plasma blue, the default highlight in both schemes.
+        Primary: 0x3daee9 / 0x3daee9,
+        // Breeze puts white on the highlight, which measures under three to one against
+        // this blue. Dark ink keeps the same blue and stays readable at small sizes.
+        OnPrimary: 0x06222e / 0x06222e,
+        // The Breeze "positive" teal, its second accent. Dark ink again, for the same
+        // reason: white on this green is about two to one.
+        Secondary: 0x16a085 / 0x1abc9c,
+        OnSecondary: 0x03201b / 0x03201b,
+        // View background: the white of a list or an entry.
+        Surface: 0xfcfcfc / 0x1b1e20,
+        OnSurface: 0x232629 / 0xfcfcfc,
+        // A step deeper than the window, in Breeze's own grey.
+        SurfaceVariant: 0xe1e3e5 / 0x31363b,
+        OnSurfaceVariant: 0x4d5052 / 0xbdc3c7,
+        // Window background, a touch cooler and darker than the view.
+        Background: 0xeff0f1 / 0x232629,
+        OnBackground: 0x232629 / 0xfcfcfc,
+        Outline: 0xbdc3c7 / 0x4d5155,
+        OutlineVariant: 0xd8dbdd / 0x3f4449,
+        // Breeze "negative".
+        Error: 0xda4453 / 0xed8079,
+        OnError: 0xffffff / 0x2a0806,
+        // A framed panel in Plasma is the view colour sitting on the window: a step
+        // lighter than the window in light, and a step darker in dark, because Breeze
+        // Dark's view really is darker than its window. Either way the panel separates
+        // from the page, which is the whole promise of the role.
+        SurfaceContainer: 0xfcfcfc / 0x1b1e20,
+    },
+    // Plasma sets its interface in Noto Sans at 10pt, a step smaller than Adwaita's 11pt
+    // Cantarell, and its headings are semi bold rather than the near black weights
+    // libadwaita uses. Smaller and lighter at every rung, with tighter line heights to
+    // match the denser spacing.
+    type_scale: type_scale! {
+        Display: 34.0 / 600 / 40.0 / 0.0 / false,
+        Headline: 26.0 / 600 / 32.0 / 0.0 / false,
+        Title: 19.0 / 600 / 24.0 / 0.0 / false,
+        Subtitle: 16.0 / 500 / 21.0 / 0.0 / false,
+        Body: 13.0 / 400 / 19.0 / 0.0 / false,
+        BodyStrong: 13.0 / 600 / 19.0 / 0.0 / false,
+        Label: 12.0 / 500 / 16.0 / 0.2 / false,
+        Caption: 11.0 / 400 / 15.0 / 0.0 / false,
+        Mono: 12.0 / 400 / 17.0 / 0.0 / true,
+    },
+    // Breeze barely rounds. Frames and buttons are a two to four pixel radius and the
+    // largest containers stop at six, which is where the language gets its drafted look.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 2.0,
+        Small: 3.0,
+        Medium: 4.0,
+        Large: 6.0,
+        Full: 1000.0,
+    },
+    // Kirigami's ladder: small spacing 4, large spacing 8, grid unit 18.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 2.0,
+        Sm: 4.0,
+        Md: 8.0,
+        Lg: 12.0,
+        Xl: 18.0,
+        Xxl: 24.0,
+    },
+};
+
+const DEEPIN: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::Deepin,
+    reference: "Deepin Design specification and the DTK control defaults, deepin 23",
+    default_family: "Noto Sans",
+    monospace_family: "Noto Sans Mono",
+    colors: colors! {
+        // The brand blue, the one colour here that is not warm. Dark lifts off it,
+        // because the brand value goes muddy against a warm dark background.
+        Primary: 0x0081ff / 0x3ba2ff,
+        OnPrimary: 0xffffff / 0x04203a,
+        // Amber rather than purple or teal, which is where the warm palette shows on an
+        // accent.
+        Secondary: 0xf2a13c / 0xffb964,
+        OnSecondary: 0x2b1a05 / 0x33200a,
+        Surface: 0xfffdfa / 0x2b2726,
+        OnSurface: 0x2c2622 / 0xf5efe9,
+        SurfaceVariant: 0xf0e9e0 / 0x3a3533,
+        OnSurfaceVariant: 0x6b5f56 / 0xc4b8ad,
+        Background: 0xfaf7f2 / 0x232020,
+        OnBackground: 0x2c2622 / 0xf5efe9,
+        Outline: 0xd9cdc0 / 0x574f4b,
+        OutlineVariant: 0xece3d9 / 0x383230,
+        Error: 0xe35c4b / 0xff8a73,
+        OnError: 0xffffff / 0x34110a,
+        // A panel lifts off the warm page rather than sinking into it: plain white in
+        // light, and a step warmer and lighter than the window in dark.
+        SurfaceContainer: 0xffffff / 0x302b29,
+    },
+    // A middle weight ladder. The body sits between Breeze's 13 and Adwaita's 15, and the
+    // headings are semi bold with loose line heights, which suits the rounded shapes and
+    // survives on a desktop whose default font is unknown.
+    type_scale: type_scale! {
+        Display: 40.0 / 600 / 50.0 / 0.0 / false,
+        Headline: 30.0 / 600 / 38.0 / 0.0 / false,
+        Title: 22.0 / 500 / 30.0 / 0.0 / false,
+        Subtitle: 18.0 / 500 / 26.0 / 0.0 / false,
+        Body: 14.0 / 400 / 21.0 / 0.0 / false,
+        BodyStrong: 14.0 / 600 / 21.0 / 0.0 / false,
+        Label: 13.0 / 500 / 18.0 / 0.3 / false,
+        Caption: 12.0 / 400 / 17.0 / 0.0 / false,
+        Mono: 13.0 / 400 / 19.0 / 0.0 / true,
+    },
+    // The roundest of the three Linux systems. Deepin's windows are rounded far past
+    // anything GTK or Qt does, and its controls follow at a smaller radius, so even a
+    // button reads as a lozenge next to a Breeze rectangle.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 6.0,
+        Small: 8.0,
+        Medium: 12.0,
+        Large: 18.0,
+        Full: 1000.0,
+    },
+    // Roomy, and on a ten pixel rhythm rather than GNOME's six or Kirigami's four.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 4.0,
+        Sm: 10.0,
+        Md: 16.0,
+        Lg: 20.0,
+        Xl: 30.0,
+        Xxl: 40.0,
     },
 };
 
@@ -508,6 +720,40 @@ mod tests {
                         table.system
                     );
                 }
+            }
+        }
+    }
+
+    /// No two design systems answer a whole ladder with the same values.
+    ///
+    /// A design system that agrees with another one on every colour, every type rung,
+    /// every radius or every spacing step is that other system wearing a different name,
+    /// and a caller who selected it would see no change at all. Checking each ladder
+    /// separately is what catches a table that was copied and then edited in one place.
+    #[test]
+    fn fr14_no_two_design_systems_answer_a_whole_ladder_identically() {
+        for (index, first) in DESIGN_TOKENS.iter().enumerate() {
+            for second in &DESIGN_TOKENS[index + 1..] {
+                assert_ne!(
+                    first.colors, second.colors,
+                    "{:?} and {:?} have the same palette",
+                    first.system, second.system
+                );
+                assert_ne!(
+                    first.type_scale, second.type_scale,
+                    "{:?} and {:?} have the same type scale",
+                    first.system, second.system
+                );
+                assert_ne!(
+                    first.shapes, second.shapes,
+                    "{:?} and {:?} round everything the same way",
+                    first.system, second.system
+                );
+                assert_ne!(
+                    first.spaces, second.spaces,
+                    "{:?} and {:?} have the same spacing ladder",
+                    first.system, second.system
+                );
             }
         }
     }
