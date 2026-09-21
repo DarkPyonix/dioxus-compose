@@ -145,7 +145,15 @@ fn app() -> Element {
                             // message and the next is padding on the row that holds it.
                             dioxus_compose::Box {
                                 fill_max_width: true,
-                                padding_role: SpaceRole::Xs,
+                                // Consecutive messages from one speaker sit close
+                                // together and a change of speaker gets more air, which is
+                                // what makes a conversation read as turns rather than as
+                                // an evenly spaced column of boxes.
+                                padding_role: if starts_a_run {
+                                    SpaceRole::Sm
+                                } else {
+                                    SpaceRole::Xs
+                                },
                                 alignment: if message.from_user {
                                     Alignment::CenterEnd
                                 } else {
@@ -158,10 +166,12 @@ fn app() -> Element {
                                     } else {
                                         Alignment::CenterStart
                                     },
-                                    Text {
-                                        text: if message.from_user { "You" } else { "Assistant" },
-                                        type_role: TypeRole::Label,
-                                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                    if starts_a_run {
+                                        Text {
+                                            text: if message.from_user { "You" } else { "Assistant" },
+                                            type_role: TypeRole::Caption,
+                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                        }
                                     }
                                     // The bubble sizes to its text, so a short reply is a
                                     // short bubble. Its corner is the design system's
