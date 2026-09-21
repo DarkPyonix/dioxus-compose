@@ -231,12 +231,38 @@ pub fn ComposeBox(
 /// Renderer's, like focus and animation state, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollColumn(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
 ) -> Element {
     rsx! {
-        scrollcolumn { fill_max_width, fill_max_height, {children} }
+        scrollcolumn {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            {children}
+        }
     }
 }
 
@@ -256,6 +282,8 @@ pub fn Text(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(into)] text: String,
     #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] font_size: Option<f32>,
@@ -280,6 +308,8 @@ pub fn Text(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             text,
             type_role: role(type_role),
             font_size: dp(font_size),
@@ -307,6 +337,8 @@ pub fn TextField(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(into, default)] placeholder: String,
     #[props(default = true)] enabled: bool,
     #[props(default)] multiline: bool,
@@ -328,6 +360,8 @@ pub fn TextField(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             placeholder,
             enabled,
             multiline,
@@ -354,6 +388,8 @@ pub fn Button(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(into)] text: String,
     #[props(default = true)] enabled: bool,
     #[props(default)] variant: Option<ButtonVariant>,
@@ -372,6 +408,8 @@ pub fn Button(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             text,
             enabled,
             variant: role(variant),
@@ -393,6 +431,8 @@ pub fn Spacer(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
 ) -> Element {
     rsx! {
         spacer {
@@ -407,6 +447,8 @@ pub fn Spacer(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
         }
     }
 }
@@ -442,6 +484,19 @@ impl RangeRequest {
 /// scrolling back re-materialises an identical subtree.
 #[component]
 pub fn LazyColumn(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     item_count: usize,
     #[props(default)] key_of: Option<Callback<usize, String>>,
     item: Callback<usize, Element>,
@@ -452,6 +507,19 @@ pub fn LazyColumn(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazycolumn {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             item_count: item_count as i64,
             onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
                 let requested = event.data();
@@ -486,6 +554,8 @@ pub fn Card(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     children: Element,
 ) -> Element {
     rsx! {
@@ -501,6 +571,8 @@ pub fn Card(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             {children}
         }
     }
@@ -521,6 +593,8 @@ pub fn Surface(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     children: Element,
 ) -> Element {
     rsx! {
@@ -536,6 +610,8 @@ pub fn Surface(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             {children}
         }
     }
@@ -558,6 +634,8 @@ pub fn Dialog(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] open: bool,
     #[props(default)] on_dismiss: EventHandler<()>,
     children: Element,
@@ -575,6 +653,8 @@ pub fn Dialog(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             open,
             ondismiss: move |_| on_dismiss.call(()),
             {children}
@@ -601,6 +681,8 @@ pub fn Menu(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] expanded: bool,
     #[props(default)] on_dismiss: EventHandler<()>,
     anchor: Element,
@@ -619,6 +701,8 @@ pub fn Menu(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             open: expanded,
             ondismiss: move |_| on_dismiss.call(()),
             {anchor}
@@ -645,6 +729,8 @@ pub fn Tabs(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(default)] selected_index: usize,
     children: Element,
 ) -> Element {
@@ -661,6 +747,8 @@ pub fn Tabs(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             selected_index: selected_index as i64,
             {children}
         }
@@ -682,6 +770,8 @@ pub fn TopAppBar(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     children: Element,
 ) -> Element {
     rsx! {
@@ -697,6 +787,8 @@ pub fn TopAppBar(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             {children}
         }
     }
@@ -707,6 +799,19 @@ pub fn TopAppBar(
 /// read-ahead buffer belongs to the Renderer because the scroll position does.
 #[component]
 pub fn LazyRow(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     item_count: usize,
     #[props(default)] key_of: Option<Callback<usize, String>>,
     item: Callback<usize, Element>,
@@ -717,6 +822,19 @@ pub fn LazyRow(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazyrow {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             item_count: item_count as i64,
             onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
                 let requested = event.data();
@@ -751,6 +869,8 @@ pub fn Tooltip(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     #[props(into)] text: String,
     children: Element,
 ) -> Element {
@@ -767,6 +887,8 @@ pub fn Tooltip(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             text,
             {children}
         }
