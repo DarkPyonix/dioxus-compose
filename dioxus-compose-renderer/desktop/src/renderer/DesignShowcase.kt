@@ -280,6 +280,7 @@ private fun systemName(theme: Theme): String = when (theme.designSystem) {
     DesignSystem.Gnome -> "GNOME 50 Adwaita"
     DesignSystem.Breeze -> "KDE Breeze"
     DesignSystem.Deepin -> "Deepin"
+    DesignSystem.LiquidGlass -> "Liquid Glass"
 }
 
 /**
@@ -296,6 +297,7 @@ fun main() = application {
         "gnome", "adwaita" -> DesignSystem.Gnome
         "breeze", "kde", "plasma" -> DesignSystem.Breeze
         "deepin", "dtk" -> DesignSystem.Deepin
+        "liquidglass", "liquid-glass", "glass" -> DesignSystem.LiquidGlass
         else -> DesignSystem.Material3
     }
     val scheme = when (System.getenv("DXC_COLOR_SCHEME")?.lowercase()) {

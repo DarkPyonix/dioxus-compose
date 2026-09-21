@@ -107,21 +107,23 @@ class DesignSystemDifferenceTest {
     /**
      * A checkbox is drawn as a box, except in the one system that draws a circle.
      *
-     * Cupertino is named rather than skipped. A round checkbox is Apple's own answer and
-     * the difference from its radio button is the mark inside, not the outline. Everywhere
-     * else a corner that grows past a third of the control stops reading as a box at all,
-     * and a reader is left with two circles that differ only in what is drawn inside them.
+     * The two Apple systems are named rather than skipped. A round checkbox is Apple's own
+     * answer in both of its languages, and the difference from its radio button is the
+     * mark inside, not the outline. Everywhere else a corner that grows past a third of
+     * the control stops reading as a box at all, and a reader is left with two circles
+     * that differ only in what is drawn inside them.
      */
     @Test
     fun fr14_1_a_checkbox_is_a_box_except_where_the_system_draws_a_circle() {
+        val round = setOf(DesignSystem.Cupertino, DesignSystem.LiquidGlass)
         DesignSystem.entries.forEach { system ->
             val theme = resolved(system, dark = false)
             val checkbox = theme.rules.controls(theme).checkbox
             val radius = cornerRadius(checkbox.shape, checkbox.size)
-            if (system == DesignSystem.Cupertino) {
+            if (system in round) {
                 assertTrue(
                     radius >= checkbox.size.value / 2f - 0.5f,
-                    "Cupertino's checkbox is a circle: ${checkbox.size} rounded at $radius",
+                    "$system's checkbox is a circle: ${checkbox.size} rounded at $radius",
                 )
             } else {
                 assertTrue(

@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import dioxus.compose.design.ContainerRole
 import dioxus.compose.design.ContainerStyle
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.design.glassSurface
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.runtime.EventDispatcher
@@ -64,9 +65,17 @@ internal fun Modifier.containerDecoration(
     } else {
         theme.rules.elevation(this, style.elevation, shape, theme)
     }
-    return raised
-        .clip(shape)
-        .background(style.container, shape)
+    val material = style.material
+    val filled = if (material == null) {
+        raised.clip(shape).background(style.container, shape)
+    } else {
+        // A glass surface paints its own fill and its own lit edge, because the two are
+        // one effect: the tint is what lets the backdrop through and the edge is what
+        // gives the sheet thickness. Clipping still happens first so a child cannot spill
+        // past the corner.
+        raised.clip(shape).glassSurface(material, shape)
+    }
+    return filled
         .then(
             if (style.borderWidth.value > 0f) {
                 Modifier.border(style.borderWidth, style.borderColor, shape)

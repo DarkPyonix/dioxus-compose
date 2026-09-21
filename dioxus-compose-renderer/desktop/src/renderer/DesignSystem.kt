@@ -98,8 +98,18 @@ class ResolvedTheme(
     val tokens: DesignTokenTable,
     val rules: ComponentRules,
     val dark: Boolean,
+    /**
+     * The class of window this theme is being resolved for.
+     *
+     * A design system is allowed to answer differently at different widths, and Apple's
+     * does: macOS 26 puts glass on chrome over opaque document content, while a phone
+     * sized window carries it much further. Nothing on the wire says this; the Renderer
+     * already measures the window for `WindowSizeChanged`, and this is the same reading.
+     */
+    val sizeClass: WindowSizeClass = WindowSizeClass.Compact,
 ) {
-    fun color(role: ColorRole): Color = Color(tokens.color(role, dark))
+    fun color(role: ColorRole): Color =
+        rules.color(role, dark, sizeClass) ?: Color(tokens.color(role, dark))
 
     /** A literal paints itself, a role goes through the table. */
     fun color(paint: Paint): Color = when (paint) {
@@ -112,7 +122,40 @@ class ResolvedTheme(
     fun radius(role: ShapeRole): Dp = tokens.radius(role).dp
 
     /** `Full` is stored as a very large radius, which is a pill at any height. */
-    fun shape(role: ShapeRole): Shape = roundedShape(tokens.radius(role))
+    fun shape(role: ShapeRole): Shape = shapeOfRadius(tokens.radius(role))
+
+    /**
+     * True where this system's corners are continuous rather than circular.
+     *
+     * A circular corner joins the straight edge at a point where curvature jumps from
+     * zero to 1/r, and the eye reads that jump as a pinch. Apple's corners do not have
+     * it; every other system here draws a plain arc, and giving them a superellipse would
+     * be a mistake rather than a refinement.
+     */
+    val continuousCorners: Boolean
+        get() = system == DesignSystem.LiquidGlass || system == DesignSystem.Cupertino
+
+    /**
+     * One radius in dp, cut the way this system cuts corners.
+     *
+     * `Full` is a true pill in every system, including this one. A continuous corner
+     * taken to its largest radius is not a capsule: the superellipse keeps its flattened
+     * flanks and the end reads as a squircle, which is what an Apple button is not.
+     * Apple's capsules are semicircular at the ends.
+     */
+    fun shapeOfRadius(radius: Float): Shape = when {
+        radius >= FULL_RADIUS -> roundedShape(radius)
+        continuousCorners -> ContinuousCornerShape(radius.dp)
+        else -> roundedShape(radius)
+    }
+
+    /** Four radii in dp, cut the way this system cuts corners. */
+    fun shapeOfRadii(topStart: Float, topEnd: Float, bottomEnd: Float, bottomStart: Float): Shape =
+        if (continuousCorners) {
+            ContinuousCornerShape(topStart.dp, topEnd.dp, bottomEnd.dp, bottomStart.dp)
+        } else {
+            RoundedCornerShape(topStart.dp, topEnd.dp, bottomEnd.dp, bottomStart.dp)
+        }
 
     fun type(role: TypeRole): TypeToken = tokens.type(role)
 
@@ -120,7 +163,7 @@ class ResolvedTheme(
         internal fun roundedShape(radius: Float): Shape =
             if (radius >= FULL_RADIUS) RoundedCornerShape(percent = 50) else RoundedCornerShape(radius.dp)
 
-        private const val FULL_RADIUS = 1000.0f
+        internal const val FULL_RADIUS = 1000.0f
     }
 }
 
@@ -146,6 +189,22 @@ val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace els
  * format changes.
  */
 interface ComponentRules {
+    /**
+     * A colour this system answers differently in a window of this class, or null to take
+     * the generated table's value.
+     *
+     * Null for almost everything, because a design system has one palette. Apple is the
+     * exception and only in one place: its page is a different colour on a phone and in a
+     * desktop window, and both values are part of the same design language. The table can
+     * carry one value per role, so the choice between two of Apple's own has to be made
+     * here.
+     *
+     * This is not a way for a system to redecorate at will. A role answered here is one
+     * the platform vendor specifies twice; anything else belongs in the table, where the
+     * Host's own colour resolution can see it.
+     */
+    fun color(role: ColorRole, dark: Boolean, sizeClass: WindowSizeClass): Color? = null
+
     /** How `Modifier::Elevation(dp)` is drawn. The Host sends a dp value and nothing else. */
     fun elevation(
         modifier: androidx.compose.ui.Modifier,
@@ -510,6 +569,18 @@ data class ContainerStyle(
     val separator: Color?,
     val scrim: Color,
     val typeRole: TypeRole,
+    /**
+     * What the container is made of, when the design system has an opinion beyond a flat
+     * colour.
+     *
+     * Null means [container] is painted straight on, which is what Material 3, Fluent and
+     * the Linux systems mean by a surface. Liquid Glass answers with glass for the roles
+     * that are glass in the window it is drawing into, and with [SurfaceMaterial.Opaque]
+     * for the rest; a role that is glass here draws the translucent tint and the lit edge
+     * instead of [container], and falls back to the stored opaque colour when the reader
+     * has asked for reduced transparency.
+     */
+    val material: SurfaceMaterial? = null,
 )
 
 /**
@@ -679,7 +750,20 @@ data class PickerRules(
     val date: DatePresentation,
     val time: TimePresentation,
     val choice: ChoicePresentation,
+    /**
+     * How tall one row of a wheel is.
+     *
+     * A wheel shows the chosen value between its neighbours, so this is what decides how
+     * much of a window the control takes and how far a finger has to travel for one step.
+     * It belongs to the design system for the same reason a button's minimum height does:
+     * a roomy language spins a roomy wheel, and one number shared by every system means
+     * two systems that both spin a wheel spin an identical one.
+     */
+    val wheelRowHeight: Dp = DEFAULT_WHEEL_ROW_HEIGHT,
 )
+
+/** The row height a system takes when it has no opinion about how roomy a wheel is. */
+val DEFAULT_WHEEL_ROW_HEIGHT: Dp = 32.dp
 
 /**
  * How one button variant is drawn. The pressed values are separate fields rather than a
@@ -727,6 +811,7 @@ fun resolveTheme(
     theme: Theme?,
     platform: HostPlatform,
     systemDark: Boolean,
+    sizeClass: WindowSizeClass = WindowSizeClass.Compact,
 ): ResolvedTheme {
     val system = when {
         theme == null -> adaptiveSystem(platform, DesignSystem.Material3)
@@ -738,7 +823,7 @@ fun resolveTheme(
         ColorScheme.Dark -> true
         ColorScheme.FollowSystem -> systemDark
     }
-    return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark)
+    return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark, sizeClass)
 }
 
 internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {
@@ -748,6 +833,7 @@ internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {
     DesignSystem.Gnome -> GnomeRules
     DesignSystem.Breeze -> BreezeRules
     DesignSystem.Deepin -> DeepinRules
+    DesignSystem.LiquidGlass -> LiquidGlassRules
 }
 
 /**

@@ -176,31 +176,33 @@ fun DioxusContent(
     // where nobody installs one, Compose's own answer is correct and is used.
     val observedDark = LocalSystemDarkObserver.current?.invoke() ?: isSystemInDarkTheme()
     val systemDark = systemDarkOverride ?: observedDark
-    val theme = resolveTheme(host.table.theme, platform, systemDark)
+    // The window's size is measured here, where the root content is, and reported to
+    // the Host only when it crosses a size class boundary. onSizeChanged already fires
+    // only when the measured size differs, and the reporter drops everything that does
+    // not change the class, so a drag across one class costs no boundary calls.
+    val reporter = remember(host) { WindowSizeReporter() }
+    val density = LocalDensity.current
+    // The same measurement answers three questions. The Host is told when the class
+    // changes so a component can choose what to put on the screen; the widgets that
+    // change shape with the window read it from the CompositionLocal, because they are
+    // drawn on this side and a round trip to ask would cost a boundary call, a
+    // VirtualDom pass and a rebuilt subtree for a layout this side can already reach;
+    // and the design system is resolved against it, because a system is allowed to
+    // answer differently in a desktop window than on a phone.
+    var sizeClass by remember(host) { mutableStateOf(WindowSizeClass.Compact) }
+    val measured = Modifier.onSizeChanged { size ->
+        with(density) {
+            val widthDp = size.width.toDp().value
+            sizeClass = windowSizeClassOf(widthDp)
+            reporter.report(widthDp, size.height.toDp().value, host)
+        }
+    }
+    val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass)
     CompositionLocalProvider(LocalDesignTheme provides theme) {
         // The background fills the whole window and the inset is applied inside it. Putting
         // the inset outside instead leaves the window's own background showing through the
         // strip the title bar used to occupy, which reads as a leftover title bar rather
         // than as content extending underneath one.
-        // The window's size is measured here, where the root content is, and reported to
-        // the Host only when it crosses a size class boundary. onSizeChanged already fires
-        // only when the measured size differs, and the reporter drops everything that does
-        // not change the class, so a drag across one class costs no boundary calls.
-        val reporter = remember(host) { WindowSizeReporter() }
-        val density = LocalDensity.current
-        // The same measurement answers two questions. The Host is told when the class
-        // changes so a component can choose what to put on the screen; the widgets that
-        // change shape with the window read it from the CompositionLocal, because they are
-        // drawn on this side and a round trip to ask would cost a boundary call, a
-        // VirtualDom pass and a rebuilt subtree for a layout this side can already reach.
-        var sizeClass by remember(host) { mutableStateOf(WindowSizeClass.Compact) }
-        val measured = Modifier.onSizeChanged { size ->
-            with(density) {
-                val widthDp = size.width.toDp().value
-                sizeClass = windowSizeClassOf(widthDp)
-                reporter.report(widthDp, size.height.toDp().value, host)
-            }
-        }
         CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
             Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
                 Box(Modifier.padding(contentPadding)) {

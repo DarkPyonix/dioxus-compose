@@ -72,11 +72,13 @@ internal fun List<ProtocolModifier>.toComposeModifier(
 internal fun List<ProtocolModifier>.resolvedShape(theme: ResolvedTheme): Shape {
     for (index in indices.reversed()) {
         when (val value = this[index]) {
-            is ProtocolModifier.Shape -> return androidx.compose.foundation.shape.RoundedCornerShape(
-                topStart = value.topStart.dp,
-                topEnd = value.topEnd.dp,
-                bottomEnd = value.bottomEnd.dp,
-                bottomStart = value.bottomStart.dp,
+            // A radius the Host named is still cut the way the running design system cuts
+            // corners. The Host asked for a size, not for an arc.
+            is ProtocolModifier.Shape -> return theme.shapeOfRadii(
+                topStart = value.topStart,
+                topEnd = value.topEnd,
+                bottomEnd = value.bottomEnd,
+                bottomStart = value.bottomStart,
             )
 
             is ProtocolModifier.ShapeRole -> return theme.shape(value.role)

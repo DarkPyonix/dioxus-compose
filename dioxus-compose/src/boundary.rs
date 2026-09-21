@@ -1092,6 +1092,9 @@ pub fn demo_theme() -> Theme {
         Ok("gnome") => Theme::unified(DesignSystem::Gnome),
         Ok("breeze") => Theme::unified(DesignSystem::Breeze),
         Ok("deepin") => Theme::unified(DesignSystem::Deepin),
+        // Spelled both ways, because the name is two words everywhere it is written down
+        // and nobody remembers which one a shell variable wants.
+        Ok("liquidglass") | Ok("liquid-glass") => Theme::unified(DesignSystem::LiquidGlass),
         _ => Theme::adaptive(DesignSystem::Material3),
     }
 }
@@ -1114,6 +1117,8 @@ mod demo_theme_tests {
             ("gnome", DesignSystem::Gnome),
             ("breeze", DesignSystem::Breeze),
             ("deepin", DesignSystem::Deepin),
+            ("liquidglass", DesignSystem::LiquidGlass),
+            ("liquid-glass", DesignSystem::LiquidGlass),
         ] {
             unsafe { std::env::set_var("DXC_DESIGN", name) };
             assert_eq!(
@@ -1124,7 +1129,7 @@ mod demo_theme_tests {
         }
         assert_eq!(
             DESIGN_SYSTEM_SCHEMA.len(),
-            6,
+            7,
             "a system nobody can select goes unseen"
         );
 

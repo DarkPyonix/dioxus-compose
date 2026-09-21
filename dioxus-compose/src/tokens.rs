@@ -81,8 +81,15 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] =
-    &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA, BREEZE, DEEPIN];
+pub const DESIGN_TOKENS: &[DesignTokenTable] = &[
+    MATERIAL3,
+    APPLE_HIG,
+    FLUENT,
+    ADWAITA,
+    BREEZE,
+    DEEPIN,
+    LIQUID_GLASS,
+];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -503,6 +510,91 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
         Lg: 20.0,
         Xl: 30.0,
         Xxl: 40.0,
+    },
+};
+
+/// Apple's current language, the one macOS 26 and iOS 26 draw.
+///
+/// It shares a palette with `APPLE_HIG` above, because the system colours did not change:
+/// what changed is what a surface is made of, how deep a corner is cut, and how far a
+/// control is allowed to float. Two of those three are rules rather than tokens, so the
+/// visible difference in this table is the shape ladder.
+const LIQUID_GLASS: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::LiquidGlass,
+    reference: "Apple Human Interface Guidelines, Liquid Glass, system colors and Dynamic Type, 2026",
+    default_family: "SF Pro",
+    monospace_family: "SF Mono",
+    colors: colors! {
+        Primary: 0x007aff / 0x0a84ff,
+        OnPrimary: 0xffffff / 0xffffff,
+        Secondary: 0x5856d6 / 0x5e5ce6,
+        OnSecondary: 0xffffff / 0xffffff,
+        Surface: 0xffffff / 0x1c1c1e,
+        OnSurface: 0x000000 / 0xffffff,
+        // The secondary fill, which is what a glass surface tints towards when the blur
+        // is unavailable and what a grouped row sits on.
+        SurfaceVariant: 0xe9e9eb / 0x2c2c2e,
+        OnSurfaceVariant: 0x3c3c43 / 0xebebf5,
+        // The page is the document, not a grey well for it to sit in. That is the sharpest
+        // difference from the flat language beside it, where a grouped page is grey and
+        // the white rectangles on it are what a reader looks at: here the separation
+        // comes from the material a panel is made of, so the page underneath can be the
+        // reading surface itself.
+        //
+        // The dark page is pure black, which is right on a phone and wrong in a desktop
+        // window. A window is the other value Apple specifies for this one role, and the
+        // component rules choose between the two by window size. No other role is
+        // specified twice, so no other role is chosen anywhere but here.
+        Background: 0xffffff / 0x000000,
+        OnBackground: 0x000000 / 0xffffff,
+        Outline: 0xc6c6c8 / 0x38383a,
+        OutlineVariant: 0xe5e5ea / 0x48484a,
+        Error: 0xff3b30 / 0xff453a,
+        OnError: 0xffffff / 0xffffff,
+        // A panel has to lift off a page that is already white, so this is the lightest
+        // system grey rather than another white.
+        SurfaceContainer: 0xf2f2f7 / 0x1c1c1e,
+    },
+    // Same sizes as the flat language, because Dynamic Type did not move, and heavier at
+    // every rung that labels something. A label sitting on a translucent surface competes
+    // with whatever shows through it, and every control label in the reference screens is
+    // set semibold for that reason: the buttons in an alert, the segments of a picker, the
+    // section heads of a formatting sheet.
+    type_scale: type_scale! {
+        Display: 34.0 / 700 / 41.0 / 0.37 / false,
+        Headline: 28.0 / 700 / 34.0 / 0.36 / false,
+        Title: 22.0 / 700 / 28.0 / 0.35 / false,
+        Subtitle: 17.0 / 600 / 22.0 / -0.41 / false,
+        Body: 17.0 / 400 / 22.0 / -0.41 / false,
+        BodyStrong: 17.0 / 600 / 22.0 / -0.41 / false,
+        Label: 15.0 / 600 / 20.0 / -0.24 / false,
+        Caption: 12.0 / 500 / 16.0 / 0.0 / false,
+        Mono: 15.0 / 400 / 20.0 / 0.0 / true,
+    },
+    // Deeper than the flat language, and continuous rather than circular. A surface that
+    // catches light along its rim needs a corner long enough for the rim to travel round
+    // it; a ten dp arc pinches that highlight into a point. The Renderer draws these as a
+    // superellipse, which is the other half of the same decision.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 6.0,
+        Small: 10.0,
+        Medium: 16.0,
+        Large: 22.0,
+        Full: 1000.0,
+    },
+    // Roomier than the flat language at every step above the smallest. Two reasons, both
+    // visible in the reference: a twenty two dp corner needs more room inside it before
+    // text stops crowding the curve, and these surfaces float with a margin around them
+    // instead of running to the window edge, so the margin is a spacing step as well.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 4.0,
+        Sm: 10.0,
+        Md: 18.0,
+        Lg: 24.0,
+        Xl: 36.0,
+        Xxl: 48.0,
     },
 };
 

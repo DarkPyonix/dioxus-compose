@@ -512,6 +512,12 @@ define_wire_enum!(MESSAGE_DURATION_SCHEMA, MessageDuration {
 
 // The design systems of phase one. Later ones append variants here and nowhere else: a new
 // design system is one variant plus one token table and rule implementation in the Renderer.
+//
+// `LiquidGlass` is the language macOS 26 and iOS 26 draw, and it sits beside `Cupertino`
+// rather than replacing it: one draws grouped inset lists on a grey page, the other draws
+// translucent floating capsules, and an application that wants one does not want the
+// other. Tags are append only, so it lands after the Linux three even though it belongs
+// next to `Cupertino` in any list a reader would write.
 define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Material3 = 1,
     Cupertino = 2,
@@ -519,6 +525,7 @@ define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Gnome = 4,
     Breeze = 5,
     Deepin = 6,
+    LiquidGlass = 7,
 });
 
 // Light and dark selection. `FollowSystem` leaves the choice to the Renderer, which learns
