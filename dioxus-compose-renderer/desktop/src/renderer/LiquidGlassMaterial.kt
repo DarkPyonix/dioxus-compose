@@ -1,9 +1,56 @@
-package dioxus.compose.liquidglass
+package dioxus.compose.design
 
+// A copy of GlassMaterial.kt from the liquid-glass module of the dioxus-design-systems
+// project, with the package changed and SurfaceMaterial taken from this module rather
+// than from that project's core. That project is published on its own and must never
+// depend on the renderer, so the material exists twice deliberately. Copies run in one
+// direction: change the design systems file first, then bring the change here.
+
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dioxus.compose.SurfaceMaterial
+
+/**
+ * What a surface is made of.
+ *
+ * Most surfaces are a flat colour. Apple's are not: since iOS 26 and macOS 26 they
+ * translucently tint what is behind them and catch light along their edges.
+ *
+ * This mirrors the type of the same name in the design systems project's core module.
+ * The two are kept identical by hand because that project must stay publishable without
+ * the renderer, and the renderer must stay buildable without it.
+ */
+@Immutable
+sealed interface SurfaceMaterial {
+
+    /** A flat fill. What Material 3, Fluent and the Linux systems use. */
+    @Immutable
+    data class Opaque(val color: Color) : SurfaceMaterial
+
+    /**
+     * A translucent, edge-lit surface: Liquid Glass.
+     *
+     * The blur applies to content this application drew. Sampling the system background
+     * behind the window is not something a Compose surface can do, so this describes a
+     * real effect over app content rather than a claim about the desktop behind it.
+     */
+    @Immutable
+    data class Glass(
+        val tint: Color,
+        val tintAlpha: Float,
+        val blurRadius: Dp,
+        /** The bright edge where light would catch the top of the surface. */
+        val highlight: Color,
+        /** The darker edge along the bottom, which gives the surface thickness. */
+        val shade: Color,
+        /**
+         * The opaque colour to use instead when blur is unavailable or the reader asked
+         * for reduced transparency. It has to meet contrast on its own.
+         */
+        val fallback: Color,
+    ) : SurfaceMaterial
+}
 
 /**
  * How much the material asserts itself over what is behind it.

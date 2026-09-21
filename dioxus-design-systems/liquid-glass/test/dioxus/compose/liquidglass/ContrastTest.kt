@@ -102,4 +102,29 @@ class ContrastTest {
     fun fr14_ensure_contrast_returns_an_opaque_colour_so_it_can_be_trusted_as_a_fallback() {
         assertEquals(1f, ensureContrast(Color(0x80777777), Color.Black, 4.5f).alpha)
     }
+
+    /**
+     * A surface exactly the colour of its own text, and one a shade the wrong side of it.
+     *
+     * Neither has an away direction that can be read off which colour is lighter: the
+     * first has none at all, and the second has one that runs out of room. Deducing the
+     * direction returned white for a white surface carrying white text, which is not a
+     * fallback, it is the failure the fallback exists to prevent.
+     */
+    @Test
+    fun fr14_a_surface_the_colour_of_its_own_text_still_reaches_the_ratio() {
+        listOf(
+            Color.White to Color.White,
+            Color.Black to Color.Black,
+            Color(0xFFFAFAFA) to Color(0xFFF4F4F4),
+            Color(0xFF050505) to Color(0xFF0B0B0B),
+        ).forEach { (surface, content) ->
+            val fixed = ensureContrast(surface, content, 4.5f)
+            assertTrue(
+                contrastRatio(fixed, content) >= 4.5f,
+                "a $surface surface carrying $content text fell back to $fixed, which reads " +
+                    "at ${contrastRatio(fixed, content)}",
+            )
+        }
+    }
 }

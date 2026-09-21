@@ -81,8 +81,15 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] =
-    &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA, BREEZE, DEEPIN];
+pub const DESIGN_TOKENS: &[DesignTokenTable] = &[
+    MATERIAL3,
+    APPLE_HIG,
+    FLUENT,
+    ADWAITA,
+    BREEZE,
+    DEEPIN,
+    LIQUID_GLASS,
+];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -125,7 +132,7 @@ macro_rules! spaces {
 
 const MATERIAL3: DesignTokenTable = DesignTokenTable {
     system: DesignSystem::Material3,
-    reference: "Material 3 baseline scheme and type scale, m3.material.io, 2024 baseline",
+    reference: "Material 3 Expressive shape, colour and type scales, m3.material.io, 2025",
     default_family: "Roboto",
     monospace_family: "Roboto Mono",
     colors: colors! {
@@ -159,12 +166,18 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
         Caption: 12.0 / 400 / 16.0 / 0.4 / false,
         Mono: 14.0 / 400 / 20.0 / 0.0 / true,
     },
+    // The expressive ladder, which is the baseline one shifted up a rung at every step
+    // above the smallest. This is the loudest thing about the reference screens: a card
+    // there is cut at twenty eight rather than sixteen, a sheet is rounder still, and the
+    // buttons and the chips and the selected destination are all capsules. The baseline
+    // ladder drew the same layout with corners half the size, which reads as the previous
+    // version of Material rather than as this one.
     shapes: shapes! {
         None: 0.0,
         ExtraSmall: 4.0,
-        Small: 8.0,
-        Medium: 12.0,
-        Large: 16.0,
+        Small: 12.0,
+        Medium: 16.0,
+        Large: 28.0,
         Full: 1000.0,
     },
     spaces: spaces! {
@@ -207,8 +220,11 @@ const APPLE_HIG: DesignTokenTable = DesignTokenTable {
         // what makes it a panel is that the page underneath is not.
         SurfaceContainer: 0xffffff / 0x1c1c1e,
     },
+    // The large title is bold. Both reference screens set it that way, "Contacts" over a
+    // grouped list and "Cupertino" over a search field, and a large title at book weight
+    // is the one thing that stops an iOS screen reading as an iOS screen.
     type_scale: type_scale! {
-        Display: 34.0 / 400 / 41.0 / 0.37 / false,
+        Display: 34.0 / 700 / 41.0 / 0.37 / false,
         Headline: 28.0 / 400 / 34.0 / 0.36 / false,
         Title: 22.0 / 400 / 28.0 / 0.35 / false,
         Subtitle: 17.0 / 600 / 22.0 / -0.41 / false,
@@ -347,14 +363,18 @@ const ADWAITA: DesignTokenTable = DesignTokenTable {
         Caption: 12.0 / 400 / 16.0 / 0.0 / false,
         Mono: 14.0 / 400 / 20.0 / 0.0 / true,
     },
-    // Adwaita rounds moderately: 6px on a button or an entry, 12px on a card, a dialog or
-    // a popover. Pills are kept for suggested actions and search entries.
+    // libadwaita's own named radii: six on a button or an entry, twelve on a card or a
+    // popover, fifteen on a window. The middle and top rungs were eight and twelve, which
+    // put a card where a button belongs and a window where a card belongs, and the GNOME
+    // 50 screen in docs/references/design-systems/gnome50/ shows the difference plainly:
+    // the preferences groups are rounded well past the buttons inside them, and the
+    // window is rounder again. Pills are kept for suggested actions and search entries.
     shapes: shapes! {
         None: 0.0,
         ExtraSmall: 4.0,
         Small: 6.0,
-        Medium: 8.0,
-        Large: 12.0,
+        Medium: 12.0,
+        Large: 15.0,
         Full: 1000.0,
     },
     // GNOME lays out on a six pixel grid, and its dialogs are roomy.
@@ -446,28 +466,39 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
     reference: "Deepin Design specification and the DTK control defaults, deepin 23",
     default_family: "Noto Sans",
     monospace_family: "Noto Sans Mono",
+    // Neutral greys, not warm ones. The palette here was written from memory once and
+    // described itself as warm, with a trace of brown through every neutral. Deepin's own
+    // screens are not: its system monitor is a white list on a light grey window with a
+    // plain grey search field, and its calculator is a near black window of dark grey
+    // keys. Nothing in either is warm, and the warmth was the most visible thing about
+    // this system, so it was the most visible thing that was wrong.
     colors: colors! {
-        // The brand blue, the one colour here that is not warm. Dark lifts off it,
-        // because the brand value goes muddy against a warm dark background.
+        // The brand blue.
         Primary: 0x0081ff / 0x3ba2ff,
         OnPrimary: 0xffffff / 0x04203a,
-        // Amber rather than purple or teal, which is where the warm palette shows on an
-        // accent.
+        // The amber that sits beside the blue in Deepin's own readouts, where a second
+        // series is drawn in it.
         Secondary: 0xf2a13c / 0xffb964,
         OnSecondary: 0x2b1a05 / 0x33200a,
-        Surface: 0xfffdfa / 0x2b2726,
-        OnSurface: 0x2c2622 / 0xf5efe9,
-        SurfaceVariant: 0xf0e9e0 / 0x3a3533,
-        OnSurfaceVariant: 0x6b5f56 / 0xc4b8ad,
-        Background: 0xfaf7f2 / 0x232020,
-        OnBackground: 0x2c2622 / 0xf5efe9,
-        Outline: 0xd9cdc0 / 0x574f4b,
-        OutlineVariant: 0xece3d9 / 0x383230,
-        Error: 0xe35c4b / 0xff8a73,
+        // The reading surface: a white list in light, a dark grey key in dark.
+        Surface: 0xffffff / 0x2a2a2a,
+        OnSurface: 0x202020 / 0xf0f0f0,
+        // The fill of a search field, and of the alternate row in a list.
+        SurfaceVariant: 0xe6e6e6 / 0x3a3a3a,
+        OnSurfaceVariant: 0x5a5a5a / 0xb4b4b4,
+        // The window, which is the reading surface itself in light: a Deepin window is
+        // white and what separates from it is the grey well beside the content, not a
+        // white card on a grey page.
+        Background: 0xffffff / 0x1a1a1a,
+        OnBackground: 0x202020 / 0xf0f0f0,
+        Outline: 0xcdcdcd / 0x4d4d4d,
+        OutlineVariant: 0xe0e0e0 / 0x333333,
+        Error: 0xff5736 / 0xff8a73,
         OnError: 0xffffff / 0x34110a,
-        // A panel lifts off the warm page rather than sinking into it: plain white in
-        // light, and a step warmer and lighter than the window in dark.
-        SurfaceContainer: 0xffffff / 0x302b29,
+        // The panel: the grey of a sidebar sunk into the white window, and in dark the
+        // key grey, which is a step lighter than the near black window. Either way the
+        // panel separates from the page, which is the promise of the role.
+        SurfaceContainer: 0xf1f1f1 / 0x2a2a2a,
     },
     // A middle weight ladder. The body sits between Breeze's 13 and Adwaita's 15, and the
     // headings are semi bold with loose line heights, which suits the rounded shapes and
@@ -485,12 +516,15 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
     },
     // The roundest of the three Linux systems. Deepin's windows are rounded far past
     // anything GTK or Qt does, and its controls follow at a smaller radius, so even a
-    // button reads as a lozenge next to a Breeze rectangle.
+    // button reads as a lozenge next to a Breeze rectangle. The middle rung is ten rather
+    // than twelve: the keys in the calculator screen are cut at about a sixth of their
+    // height, which is where a Deepin button sits, and twelve was Adwaita's card radius
+    // borrowed for a button.
     shapes: shapes! {
         None: 0.0,
         ExtraSmall: 6.0,
         Small: 8.0,
-        Medium: 12.0,
+        Medium: 10.0,
         Large: 18.0,
         Full: 1000.0,
     },
@@ -503,6 +537,91 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
         Lg: 20.0,
         Xl: 30.0,
         Xxl: 40.0,
+    },
+};
+
+/// Apple's current language, the one macOS 26 and iOS 26 draw.
+///
+/// It shares a palette with `APPLE_HIG` above, because the system colours did not change:
+/// what changed is what a surface is made of, how deep a corner is cut, and how far a
+/// control is allowed to float. Two of those three are rules rather than tokens, so the
+/// visible difference in this table is the shape ladder.
+const LIQUID_GLASS: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::LiquidGlass,
+    reference: "Apple Human Interface Guidelines, Liquid Glass, system colors and Dynamic Type, 2026",
+    default_family: "SF Pro",
+    monospace_family: "SF Mono",
+    colors: colors! {
+        Primary: 0x007aff / 0x0a84ff,
+        OnPrimary: 0xffffff / 0xffffff,
+        Secondary: 0x5856d6 / 0x5e5ce6,
+        OnSecondary: 0xffffff / 0xffffff,
+        Surface: 0xffffff / 0x1c1c1e,
+        OnSurface: 0x000000 / 0xffffff,
+        // The secondary fill, which is what a glass surface tints towards when the blur
+        // is unavailable and what a grouped row sits on.
+        SurfaceVariant: 0xe9e9eb / 0x2c2c2e,
+        OnSurfaceVariant: 0x3c3c43 / 0xebebf5,
+        // The page is the document, not a grey well for it to sit in. That is the sharpest
+        // difference from the flat language beside it, where a grouped page is grey and
+        // the white rectangles on it are what a reader looks at: here the separation
+        // comes from the material a panel is made of, so the page underneath can be the
+        // reading surface itself.
+        //
+        // The dark page is pure black, which is right on a phone and wrong in a desktop
+        // window. A window is the other value Apple specifies for this one role, and the
+        // component rules choose between the two by window size. No other role is
+        // specified twice, so no other role is chosen anywhere but here.
+        Background: 0xffffff / 0x000000,
+        OnBackground: 0x000000 / 0xffffff,
+        Outline: 0xc6c6c8 / 0x38383a,
+        OutlineVariant: 0xe5e5ea / 0x48484a,
+        Error: 0xff3b30 / 0xff453a,
+        OnError: 0xffffff / 0xffffff,
+        // A panel has to lift off a page that is already white, so this is the lightest
+        // system grey rather than another white.
+        SurfaceContainer: 0xf2f2f7 / 0x1c1c1e,
+    },
+    // Same sizes as the flat language, because Dynamic Type did not move, and heavier at
+    // every rung that labels something. A label sitting on a translucent surface competes
+    // with whatever shows through it, and every control label in the reference screens is
+    // set semibold for that reason: the buttons in an alert, the segments of a picker, the
+    // section heads of a formatting sheet.
+    type_scale: type_scale! {
+        Display: 34.0 / 700 / 41.0 / 0.37 / false,
+        Headline: 28.0 / 700 / 34.0 / 0.36 / false,
+        Title: 22.0 / 700 / 28.0 / 0.35 / false,
+        Subtitle: 17.0 / 600 / 22.0 / -0.41 / false,
+        Body: 17.0 / 400 / 22.0 / -0.41 / false,
+        BodyStrong: 17.0 / 600 / 22.0 / -0.41 / false,
+        Label: 15.0 / 600 / 20.0 / -0.24 / false,
+        Caption: 12.0 / 500 / 16.0 / 0.0 / false,
+        Mono: 15.0 / 400 / 20.0 / 0.0 / true,
+    },
+    // Deeper than the flat language, and continuous rather than circular. A surface that
+    // catches light along its rim needs a corner long enough for the rim to travel round
+    // it; a ten dp arc pinches that highlight into a point. The Renderer draws these as a
+    // superellipse, which is the other half of the same decision.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 6.0,
+        Small: 10.0,
+        Medium: 16.0,
+        Large: 22.0,
+        Full: 1000.0,
+    },
+    // Roomier than the flat language at every step above the smallest. Two reasons, both
+    // visible in the reference: a twenty two dp corner needs more room inside it before
+    // text stops crowding the curve, and these surfaces float with a margin around them
+    // instead of running to the window edge, so the margin is a spacing step as well.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 4.0,
+        Sm: 10.0,
+        Md: 18.0,
+        Lg: 24.0,
+        Xl: 36.0,
+        Xxl: 48.0,
     },
 };
 

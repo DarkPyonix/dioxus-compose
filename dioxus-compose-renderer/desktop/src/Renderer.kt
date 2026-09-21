@@ -1,18 +1,25 @@
 package dioxus.compose.ui.platform
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.delay
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.HostConnection
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.runtime.LocalSystemDarkObserver
+import dioxus.compose.runtime.LocalWindowActions
 
 /**
  * Runs the renderer's Compose application on the calling thread until its window closes.
@@ -56,15 +63,31 @@ internal fun runRenderer(
         // test clock cannot survive.
         CompositionLocalProvider(
             LocalSystemDarkObserver provides { rememberSystemDark().value },
+            // Only where we draw the caption ourselves. macOS keeps the system's own
+            // traffic lights, and a second set drawn beside them would be two sets of
+            // buttons on one window.
+            LocalWindowActions provides windowActions(window, chrome),
         ) {
-            DioxusContent(
-                rememberDioxusHost(remember { connection() }),
-                Modifier.fillMaxSize(),
-                // Content runs under the caption on purpose, but a widget sitting where
-                // the window buttons are would leave both unusable. The inset goes inside
-                // the content's own background so the window has one continuous surface.
-                contentPadding = windowContentInsets(window, chrome, hasTopAppBar = false),
-            )
+            val caption = windowCaption(window, chrome)
+            Box(Modifier.fillMaxSize()) {
+                // A strip across the top of the window that moves it when dragged, drawn
+                // before the content rather than over it. Compose hit-tests front to
+                // back, so a widget in the caption gets the press and the strip only sees
+                // the empty room around it, which is what "drag the caption" has to mean.
+                if (caption.height > 0.dp) {
+                    WindowDraggableArea(Modifier.fillMaxWidth().height(caption.height)) {}
+                }
+                DioxusContent(
+                    rememberDioxusHost(remember { connection() }),
+                    Modifier.fillMaxSize(),
+                    // Content runs under the caption on purpose, but a widget sitting
+                    // where the window buttons are would leave both unusable. The strip
+                    // goes inside the content's own background so the window has one
+                    // continuous surface, and a tree that opens with a bar hands it to
+                    // the bar instead.
+                    caption = caption,
+                )
+            }
         }
     }
 }

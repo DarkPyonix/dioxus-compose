@@ -30,15 +30,28 @@ class LinuxDesignSystemsDifferTest {
         assertEquals(3, dark.map { it.id }.toSet().size)
     }
 
+    /**
+     * The roles whose value is settled by contrast rather than chosen by the language.
+     *
+     * The ink on an accent fill, on a second accent and on an error fill is white in
+     * almost every light palette, because those three fills are saturated and white is
+     * what reads on them. Three systems agreeing there is arithmetic, not convergence, and
+     * counting it crowds out the roles where agreement really would mean one theme with
+     * three names.
+     */
+    private val forcedByContrast = setOf(ColorRole.OnPrimary, ColorRole.OnSecondary, ColorRole.OnError)
+
     @Test
     fun fr14_no_two_linux_systems_share_a_palette() {
+        val chosen = ColorRole.entries.filterNot { it in forcedByContrast }
         for (scheme in listOf(light, dark)) {
             forEachPair(scheme) { a, b ->
-                val shared = ColorRole.entries.count { a.color(it) == b.color(it) }
+                val shared = chosen.count { a.color(it) == b.color(it) }
                 assertTrue(
                     shared <= 2,
                     "${a.id} and ${b.id} give the same answer for $shared of the " +
-                        "${ColorRole.entries.size} colour roles, so they would look like one theme",
+                        "${chosen.size} colour roles they actually choose, so they would " +
+                        "look like one theme",
                 )
             }
         }

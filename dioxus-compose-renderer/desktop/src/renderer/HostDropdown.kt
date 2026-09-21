@@ -228,20 +228,20 @@ private fun ChildWheel(
     val state = rememberLazyListState()
     LaunchedEffect(shown) { state.scrollToItem(shown.coerceAtLeast(0)) }
     Box(
-        Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * WHEEL_VISIBLE_ROWS),
+        Modifier.fillMaxWidth().height(theme.wheelRowHeight * WHEEL_VISIBLE_ROWS),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(WHEEL_ROW_HEIGHT)
+                .height(theme.wheelRowHeight)
                 .background(theme.color(ColorRole.SurfaceVariant)),
         )
         LazyColumn(
             state = state,
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(
-                vertical = WHEEL_ROW_HEIGHT * ((WHEEL_VISIBLE_ROWS - 1) / 2),
+                vertical = theme.wheelRowHeight * ((WHEEL_VISIBLE_ROWS - 1) / 2),
             ),
         ) {
             items(options.size) { index ->
@@ -250,7 +250,7 @@ private fun ChildWheel(
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .height(WHEEL_ROW_HEIGHT)
+                            .height(theme.wheelRowHeight)
                             .clickable(enabled = enabled) { onChoose(index) },
                         contentAlignment = Alignment.Center,
                     ) {

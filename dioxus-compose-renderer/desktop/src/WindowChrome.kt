@@ -1,9 +1,12 @@
 package dioxus.compose.ui.platform
 
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dioxus.compose.runtime.WindowActions
+import dioxus.compose.runtime.WindowCaption
+import java.awt.Frame
 import java.awt.Window as AwtWindow
+import java.awt.event.WindowEvent
 import javax.swing.JRootPane
 import javax.swing.RootPaneContainer
 
@@ -68,7 +71,8 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
 }
 
 /**
- * How far content must be inset to clear the window buttons and the draggable caption.
+ * The strip this window's own chrome occupies, for whatever draws across the top of it to
+ * lay itself out around.
  *
  * Content is allowed to run underneath the caption, which is the point, but a widget
  * placed where the macOS traffic lights are would leave both unusable. The renderer
@@ -79,17 +83,42 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
  * as the top inset of its frame, and on macOS that is the same strip the traffic lights
  * sit in. Reading it means the value follows the platform instead of drifting from it the
  * next time Apple changes the height, which a constant in this file would not.
+ *
+ * A window that kept its ordinary title bar has no such strip: the system already drew
+ * the bar above the content, and there is nothing to run underneath.
  */
-internal fun windowContentInsets(
-    window: AwtWindow?,
-    chrome: WindowChrome,
-    hasTopAppBar: Boolean,
-): PaddingValues = when {
-    chrome == WindowChrome.System -> PaddingValues(0.dp)
-    // A TopAppBar is the caption, so it lays itself out around the buttons rather than
-    // being pushed below them.
-    hasTopAppBar -> PaddingValues(0.dp)
-    else -> PaddingValues(top = captionHeight(window))
+internal fun windowCaption(window: AwtWindow?, chrome: WindowChrome): WindowCaption =
+    if (chrome == WindowChrome.System) {
+        WindowCaption.None
+    } else {
+        WindowCaption(height = captionHeight(window), buttonsWidth = systemWindowButtonsWidth)
+    }
+
+/**
+ * What this window's three caption buttons do, or null where the platform draws its own.
+ *
+ * Null is the whole point of returning null: on macOS the system owns these buttons, and
+ * the renderer draws nothing rather than drawing a second set beside them. Null also
+ * covers a window that kept its ordinary title bar, where the buttons are already there.
+ *
+ * Maximise toggles rather than only maximising, because an undecorated window has no
+ * other way back: the button that made the window full size has to be the button that
+ * undoes it.
+ */
+internal fun windowActions(window: AwtWindow?, chrome: WindowChrome): WindowActions? {
+    if (chrome == WindowChrome.System || platformDrawsWindowButtons) return null
+    val frame = window as? Frame ?: return null
+    return WindowActions(
+        minimise = { frame.extendedState = frame.extendedState or Frame.ICONIFIED },
+        maximise = {
+            frame.extendedState = if (frame.extendedState and Frame.MAXIMIZED_BOTH != 0) {
+                Frame.NORMAL
+            } else {
+                Frame.MAXIMIZED_BOTH
+            }
+        },
+        close = { frame.dispatchEvent(WindowEvent(frame, WindowEvent.WINDOW_CLOSING)) },
+    )
 }
 
 /**
