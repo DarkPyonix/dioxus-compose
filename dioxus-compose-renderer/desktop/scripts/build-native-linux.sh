@@ -49,8 +49,16 @@ for runtime_file in "$LIBRARY_NAME.so" libawt.so libawt_headless.so libawt_xawt.
 done
 
 for exported_symbol in dioxus_compose_renderer_run dioxus_compose_renderer_request_frame; do
-    nm -D "$lib/$LIBRARY_NAME.so" | grep -Eq " [TW] ${exported_symbol}$" || die \
-        "$LIBRARY_NAME.so does not export $exported_symbol" \
+    nm -D "$lib/$LIBRARY_NAME.so" | grep -Eq " [TW] ${exported_symbol}$" && continue
+    # Say which of the two failure modes this is. The symbol can be missing entirely, which
+    # means the C shim was not linked in, or it can be present but local, which means the
+    # shared-library link hid it. The remedies have nothing in common, so print the evidence
+    # rather than leaving the next reader to rebuild for twenty minutes to see it.
+    echo "-- dynamic symbol table (dioxus_*)" >&2
+    nm -D "$lib/$LIBRARY_NAME.so" | grep dioxus_ >&2 || echo "   (none)" >&2
+    echo "-- full symbol table (dioxus_compose_renderer_*)" >&2
+    nm "$lib/$LIBRARY_NAME.so" 2>/dev/null | grep dioxus_compose_renderer_ >&2 || echo "   (none)" >&2
+    die "$LIBRARY_NAME.so does not export $exported_symbol" \
         "Keep $BUILD_DIR and inspect the Native Image linker command."
 done
 
