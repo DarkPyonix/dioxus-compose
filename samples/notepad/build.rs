@@ -1,69 +1,94 @@
-//! Link arguments the sample binary needs when it is built against the native renderer.
+//! Point this binary at the renderer the library resolved.
 //!
-//! `dioxus-compose`'s own build script emits these, but link arguments do not propagate
-//! from a dependency to the binary that depends on it, so every application that links the
-//! renderer has to repeat them. The renderer is loaded by the dynamic linker at start up
-//! and then looks the Host's exported functions back up in this executable, which is why
-//! both the search path and the dynamic export are needed here.
+//! Cargo does not pass a dependency's link arguments on to the binary that uses it, so the
+//! rpath `dioxus-compose` emits for itself does not reach here. Without repeating it the
+//! program links and then dies at start up with "Library not loaded".
+//!
+//! The resolution rules are the library's, included rather than copied, so a sample can
+//! never look somewhere the crate does not.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-const RENDERER_DIR_ENV: &str = "DIOXUS_COMPOSE_RENDERER_DIR";
+#[allow(dead_code)]
+mod renderer_dir {
+    include!("../../dioxus-compose/build/renderer_dir.rs");
+}
 
 fn main() {
-    println!("cargo:rerun-if-env-changed={RENDERER_DIR_ENV}");
+    println!(
+        "cargo:rerun-if-env-changed={}",
+        renderer_dir::RENDERER_DIR_ENV
+    );
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
     if !matches!(target_os.as_str(), "macos" | "windows" | "linux") {
         return;
     }
-    if target_os != "windows" {
-        // The renderer resolves dioxus_compose_host_* out of this executable. Windows
-        // cannot do that, so its renderer forwards through stubs instead, and there is no
-        // flag to pass here.
-        // GNU ld spells this `--export-dynamic`. Passing the macOS spelling to it is not a
-        // harmless no-op: `-export_dynamic` parses as `-e xport_dynamic`, which sets the
-        // entry point to a symbol that does not exist, so the link succeeds with a warning
-        // and the program jumps into the middle of its own text and dies on the first
-        // instruction.
-        let export_dynamic = if cfg_target_os() == "macos" {
-            "-Wl,-export_dynamic"
-        } else {
-            "-Wl,--export-dynamic"
-        };
-        println!("cargo:rustc-link-arg={export_dynamic}");
-    }
 
-    let Some(configured) = std::env::var_os(RENDERER_DIR_ENV).map(PathBuf::from) else {
+    let Some(directory) = renderer_lib_dir(&target_os) else {
+        // The library's own build script is where the explanation of how to get a renderer
+        // lives. Staying quiet here leaves that one message to do the explaining.
         return;
     };
-    let library = match target_os.as_str() {
-        "windows" => "libdioxus_compose_renderer.dll",
-        "macos" => "libdioxus_compose_renderer.dylib",
-        _ => "libdioxus_compose_renderer.so",
-    };
-    let directory = if configured.join(library).exists() {
-        configured
-    } else if configured.join("lib").join(library).exists() {
-        configured.join("lib")
-    // Windows stages the renderer in bin, beside the AWT and Skia DLLs the loader has to
-    // find together.
-    } else if configured.join("bin").join(library).exists() {
-        configured.join("bin")
-    } else {
-        // Nothing to point at. The dioxus-compose build script is the place that explains
-        // how to get the renderer, so stay quiet and let it do that.
-        return;
-    };
+
     if target_os == "windows" {
         // Windows has no rpath. The loader searches the executable's own directory and
-        // PATH, so the renderer's files have to sit beside the program or be on PATH,
-        // which is what the release packaging arranges.
+        // PATH, so the renderer's files have to sit beside the program or be on PATH.
         return;
     }
+
     println!("cargo:rustc-link-arg=-Wl,-rpath,{}", directory.display());
+    // The renderer resolves the Host's exported entry points out of this executable. GNU
+    // ld spells this `--export-dynamic`. Passing the macOS spelling to it is not a
+    // harmless no-op: `-export_dynamic` parses as `-e xport_dynamic`, which sets the entry
+    // point to a symbol that does not exist, so the link succeeds with a warning and the
+    // program jumps into the middle of its own text and dies on its first instruction.
+    let export_dynamic = if target_os == "macos" {
+        "-Wl,-export_dynamic"
+    } else {
+        "-Wl,--export-dynamic"
+    };
+    println!("cargo:rustc-link-arg={export_dynamic}");
 }
 
-/// The target this build is for, which decides which linker spelling is correct.
-fn cfg_target_os() -> String {
-    std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default()
+/// The same three places the library looks, in the same order.
+fn renderer_lib_dir(target_os: &str) -> Option<PathBuf> {
+    let library = renderer_dir::renderer_lib_file(target_os);
+
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(configured) = std::env::var_os(renderer_dir::RENDERER_DIR_ENV) {
+        roots.push(PathBuf::from(configured));
+    }
+    let manifest = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR")?);
+    roots.push(manifest.join("../../dioxus-compose-renderer/build/native-image/dist"));
+    roots.push(manifest.join("../../dioxus-compose-renderer/build/native-image-linux/dist"));
+
+    let cache_root = renderer_dir::default_cache_root(
+        std::env::var_os("HOME").map(PathBuf::from).as_deref(),
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .as_deref(),
+        cfg!(windows),
+    );
+    if let Some(cache_root) = cache_root {
+        let version = std::env::var("CARGO_PKG_VERSION").ok()?;
+        let arch = std::env::var("CARGO_CFG_TARGET_ARCH").ok()?;
+        let target = renderer_dir::artifact_target(target_os, &arch);
+        roots.push(renderer_dir::cached_renderer_dir(
+            &cache_root,
+            &version,
+            &target,
+        ));
+    }
+
+    roots
+        .into_iter()
+        .find_map(|root| first_dir_holding(&root, library))
+}
+
+/// The renderer sits in `lib/` on the platforms that use an rpath and in `bin/` on the one
+/// that does not, and straight in the root when someone points at a staged directory.
+fn first_dir_holding(root: &Path, library: &str) -> Option<PathBuf> {
+    [root.to_path_buf(), root.join("lib"), root.join("bin")]
+        .into_iter()
+        .find(|dir| dir.join(library).exists())
 }
