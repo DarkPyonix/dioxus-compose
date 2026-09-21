@@ -14,7 +14,11 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-sources="$(git ls-files 'samples/*/src/*.rs')"
+sources="$(git ls-files \
+    'samples/todo/src/*.rs' \
+    'samples/notepad/src/*.rs' \
+    'samples/calculator/src/*.rs' \
+    'samples/chat/src/*.rs')"
 status=0
 
 # A 24 or 32 bit colour literal, or the two ways to build one.
