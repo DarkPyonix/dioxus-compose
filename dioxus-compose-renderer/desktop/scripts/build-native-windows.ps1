@@ -268,6 +268,14 @@ $NativeImageArgs = @(
     "-Os",
     "-H:+UnlockExperimentalVMOptions",
     "-H:ConfigurationFileDirectories=$MetadataDir,$ResourceMetadataDir",
+    # The JDK half of the desktop stack, registered wholesale for reflection and JNI.
+    # Curated metadata got the image past Toolkit.getDefaultToolkit and straight into the
+    # next reflective lookup: Swing asks UIManager for a ComponentUI by class name, and a
+    # look and feel class nobody references is not in the image, so a window cannot build
+    # its own root pane. Chasing that one class at a time costs a CI run each. This is the
+    # recipe Native Image uses for its own non-headless desktop image, and it registers
+    # for JNI as well as reflection, so it covers both failures at once.
+    "-H:Preserve=module=java.desktop",
     "-H:NativeLinkerOption=$RendererObject",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"

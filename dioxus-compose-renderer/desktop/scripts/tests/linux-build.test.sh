@@ -3,6 +3,21 @@
 # the build and smoke test themselves require Linux.
 set -euo pipefail
 
+# `! grep ...` cannot fail a script: the shell ignores `set -e` for any command preceded by
+# the `!` reserved word, so every negative assertion written that way is inert and reports
+# success no matter what the file contains. Say it the long way instead.
+absent() {
+    local pattern="$1" file="$2" why="$3"
+    # Comments are stripped first. Half of what these scripts say about a flag is the
+    # paragraph explaining why it is not used any more, and matching that would make the
+    # assertion fire on its own explanation.
+    if sed 's/[[:space:]]*#.*$//' "$file" | grep -q -- "$pattern"; then
+        echo "FAIL: $(basename "$file") still uses '$pattern'." >&2
+        echo "      $why" >&2
+        exit 1
+    fi
+}
+
 scripts_dir="$(cd "$(dirname "$0")/.." && pwd)"
 native_dir="$(cd "$scripts_dir/.." && pwd)"
 
@@ -28,8 +43,10 @@ grep -q 'libskiko-linux-' "$build"
 # hand the shim object to native-image, and it must fail the build if either name is missing.
 grep -q 'cc -shared .*renderer_entry\.o' "$build"
 grep -q -- '-Wl,-soname,' "$build"
-! grep -q 'NativeLinkerOption=\$obj' "$build"
-! grep -q 'export-dynamic-symbol' "$build"
+absent 'NativeLinkerOption=$obj' "$build" \
+    "The C shim is linked in a second step now, because native-image's generated version script marks anything it did not produce as local and then strips it."
+absent 'export-dynamic-symbol' "$build" \
+    "That flag chooses among symbols the version script left global, so it cannot rescue a symbol the script made local"
 for entry_point in dioxus_compose_renderer_run dioxus_compose_renderer_request_frame; do
     grep -q "$entry_point" "$build"
     grep -q "$entry_point" "$native_dir/c/renderer_entry.c"
