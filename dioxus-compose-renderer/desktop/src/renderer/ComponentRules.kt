@@ -2043,7 +2043,7 @@ internal object DeepinRules : ComponentRules {
                 rounded = true,
                 periodMillis = 1100,
             ),
-            // The warm outline rather than the fainter one, for the same reason GNOME
+            // The stronger outline rather than the fainter one, for the same reason GNOME
             // takes the stronger of its two: Deepin's panel in a dark session is a step
             // lighter than its reading surface, and the faint line is within eight parts
             // of it, so a list of rows comes out as one unbroken block.
@@ -2106,8 +2106,7 @@ internal object DeepinRules : ComponentRules {
                 content = theme.color(ColorRole.OnPrimary),
             )
 
-            // A warm tinted fill, which is where the palette shows on a control that
-            // carries no accent.
+            // A plain grey fill, a step off whatever it sits on.
             ButtonVariant.Tonal -> base
 
             ButtonVariant.Outlined -> base.copy(
@@ -2354,7 +2353,7 @@ internal object DeepinRules : ComponentRules {
     private const val SPREAD = 1.6f
     private const val LIFT_FULL_DP = 24f
     private const val MAX_LIFT = 0.08f
-    private val LIFT_DARK = Color(0xFFFFE9D2)
+    private val LIFT_DARK = Color(0xFFFFFFFF)
 }
 
 /**

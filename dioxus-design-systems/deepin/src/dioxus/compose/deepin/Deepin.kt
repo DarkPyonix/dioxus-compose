@@ -29,8 +29,8 @@ import dioxus.compose.TypeRole
  * when the session cannot be identified at all. That is the job it really has, so it is
  * written to look deliberate on a desktop nobody here has seen rather than to match
  * screenshots of Deepin pixel for pixel. Where Deepin's own values would only make sense
- * beside Deepin's window manager, the value here is the one that carries: rounded, soft
- * and warm, which reads as a finished product on any compositor.
+ * beside Deepin's window manager, the value here is the one that carries: rounded and
+ * soft, which reads as a finished product on any compositor.
  *
  * Sources:
  *  - The Deepin Design specification and the DTK widget defaults, for the brand blue, the
@@ -45,9 +45,9 @@ import dioxus.compose.TypeRole
  *  - Larger corner radii. Twelve to eighteen pixels where Breeze uses three.
  *  - Soft shadows. A raised surface spreads a wide, low opacity shadow and lightens
  *    slightly, so depth is carried by the shadow rather than by a border.
- *  - A warmer palette. The neutrals are warm greys with a trace of brown in them, against
- *    the cool blue greys of Breeze and the pure greys of Adwaita, and the second accent is
- *    amber rather than purple or teal.
+ *  - Plain neutral greys, against the cool blue greys of Breeze and the slightly warm
+ *    off whites of Adwaita, with a brand blue that is bluer than either and a second
+ *    accent in amber rather than purple or teal.
  */
 @Immutable
 class DeepinDesignSystem private constructor(
@@ -59,43 +59,48 @@ class DeepinDesignSystem private constructor(
     override fun color(role: ColorRole): Color = if (isDark) darkColor(role) else lightColor(role)
 
     private fun lightColor(role: ColorRole): Color = when (role) {
-        // Deepin's brand blue, the one colour here that is not warm.
+        // Deepin's brand blue.
         ColorRole.Primary -> Color(0xFF0081FF)
         ColorRole.OnPrimary -> Color(0xFFFFFFFF)
+        // The amber that sits beside the blue in Deepin's own readouts.
         ColorRole.Secondary -> Color(0xFFF2A13C)
         ColorRole.OnSecondary -> Color(0xFF2B1A05)
-        ColorRole.Surface -> Color(0xFFFFFDFA)
-        ColorRole.OnSurface -> Color(0xFF2C2622)
-        ColorRole.SurfaceVariant -> Color(0xFFF0E9E0)
-        ColorRole.OnSurfaceVariant -> Color(0xFF6B5F56)
-        ColorRole.Background -> Color(0xFFFAF7F2)
-        ColorRole.OnBackground -> Color(0xFF2C2622)
-        ColorRole.Outline -> Color(0xFFD9CDC0)
-        ColorRole.OutlineVariant -> Color(0xFFECE3D9)
-        ColorRole.Error -> Color(0xFFE35C4B)
-        // Plain white. The near white view colour is three parts off the warm page, so a
-        // panel made of it was drawn full size and could not be seen against the page.
-        ColorRole.SurfaceContainer -> Color(0xFFFFFFFF)
+        // The reading surface: the white of a list.
+        ColorRole.Surface -> Color(0xFFFFFFFF)
+        ColorRole.OnSurface -> Color(0xFF202020)
+        // The fill of a search field, and of the alternate row in a list.
+        ColorRole.SurfaceVariant -> Color(0xFFE6E6E6)
+        ColorRole.OnSurfaceVariant -> Color(0xFF5A5A5A)
+        // The window, which is the reading surface itself: a Deepin window is white and
+        // what separates from it is the grey well beside the content.
+        ColorRole.Background -> Color(0xFFFFFFFF)
+        ColorRole.OnBackground -> Color(0xFF202020)
+        ColorRole.Outline -> Color(0xFFCDCDCD)
+        ColorRole.OutlineVariant -> Color(0xFFE0E0E0)
+        ColorRole.Error -> Color(0xFFFF5736)
+        // The grey of a sidebar sunk into the white window.
+        ColorRole.SurfaceContainer -> Color(0xFFF1F1F1)
         ColorRole.OnError -> Color(0xFFFFFFFF)
     }
 
     private fun darkColor(role: ColorRole): Color = when (role) {
-        // Lifted off the brand blue, which goes muddy against a warm dark background.
+        // Lifted off the brand blue, which goes muddy against a dark window.
         ColorRole.Primary -> Color(0xFF3BA2FF)
         ColorRole.OnPrimary -> Color(0xFF04203A)
         ColorRole.Secondary -> Color(0xFFFFB964)
         ColorRole.OnSecondary -> Color(0xFF33200A)
-        ColorRole.Surface -> Color(0xFF2B2726)
-        ColorRole.OnSurface -> Color(0xFFF5EFE9)
-        ColorRole.SurfaceVariant -> Color(0xFF3A3533)
-        ColorRole.OnSurfaceVariant -> Color(0xFFC4B8AD)
-        ColorRole.Background -> Color(0xFF232020)
-        ColorRole.OnBackground -> Color(0xFFF5EFE9)
-        ColorRole.Outline -> Color(0xFF574F4B)
-        ColorRole.OutlineVariant -> Color(0xFF383230)
+        // The grey of a key on the near black window.
+        ColorRole.Surface -> Color(0xFF2A2A2A)
+        ColorRole.OnSurface -> Color(0xFFF0F0F0)
+        ColorRole.SurfaceVariant -> Color(0xFF3A3A3A)
+        ColorRole.OnSurfaceVariant -> Color(0xFFB4B4B4)
+        ColorRole.Background -> Color(0xFF1A1A1A)
+        ColorRole.OnBackground -> Color(0xFFF0F0F0)
+        ColorRole.Outline -> Color(0xFF4D4D4D)
+        ColorRole.OutlineVariant -> Color(0xFF333333)
         ColorRole.Error -> Color(0xFFFF8A73)
-        // Warmer and lighter than the window, so the panel lifts rather than sinks.
-        ColorRole.SurfaceContainer -> Color(0xFF302B29)
+        // Lighter than the window, so the panel lifts rather than sinks.
+        ColorRole.SurfaceContainer -> Color(0xFF2A2A2A)
         ColorRole.OnError -> Color(0xFF34110A)
     }
 
@@ -188,14 +193,14 @@ class DeepinDesignSystem private constructor(
     }
 
     /**
-     * Depth here is a wide, soft, warm shadow, spread further than the dp asked for, plus
+     * Depth here is a wide, soft shadow, spread further than the dp asked for, plus
      * a small lightening of the surface itself so a raised layer separates even where a
      * shadow is hard to see. No border: a hairline would fight the large radii.
      */
     override fun elevation(elevation: Dp, base: Color): ElevationStyle = ElevationStyle(
         surface = lift(base, elevation),
         shadowElevation = elevation * 1.6f,
-        shadowColor = if (isDark) Color(0x99000000) else Color(0x2E4A3B2E),
+        shadowColor = if (isDark) Color(0x99000000) else Color(0x2E2E2E2E),
     )
 
     /**
@@ -205,7 +210,7 @@ class DeepinDesignSystem private constructor(
      */
     private fun lift(base: Color, elevation: Dp): Color {
         val amount = (elevation.value / 24f).coerceIn(0f, 1f) * 0.08f
-        val towards = if (isDark) Color(0xFFFFE9D2) else Color(0xFFFFFFFF)
+        val towards = Color(0xFFFFFFFF)
         return Color(
             red = base.red + (towards.red - base.red) * amount,
             green = base.green + (towards.green - base.green) * amount,
@@ -216,14 +221,14 @@ class DeepinDesignSystem private constructor(
 
     /**
      * A filled button is a rounded slab of brand blue with no border. The tonal one is a
-     * warm tinted fill, which is where the palette shows even on a control that carries no
-     * accent, and the outlined one keeps a soft warm line.
+     * plain grey fill, a step off whatever it sits on, and the outlined one keeps a soft
+     * grey line.
      */
     override fun button(variant: ButtonVariant): ButtonStyle {
         val accent = color(ColorRole.Primary)
         val onAccent = color(ColorRole.OnPrimary)
-        val tonal = if (isDark) Color(0xFF3F3835) else Color(0xFFF4E9DC)
-        val tonalPressed = if (isDark) Color(0xFF4E4541) else Color(0xFFE8D9C6)
+        val tonal = if (isDark) Color(0xFF3A3A3A) else Color(0xFFE6E6E6)
+        val tonalPressed = if (isDark) Color(0xFF474747) else Color(0xFFD5D5D5)
         val onTonal = color(ColorRole.OnSurface)
         return when (variant) {
             ButtonVariant.Filled -> ButtonStyle(

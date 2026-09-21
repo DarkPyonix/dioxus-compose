@@ -453,28 +453,39 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
     reference: "Deepin Design specification and the DTK control defaults, deepin 23",
     default_family: "Noto Sans",
     monospace_family: "Noto Sans Mono",
+    // Neutral greys, not warm ones. The palette here was written from memory once and
+    // described itself as warm, with a trace of brown through every neutral. Deepin's own
+    // screens are not: its system monitor is a white list on a light grey window with a
+    // plain grey search field, and its calculator is a near black window of dark grey
+    // keys. Nothing in either is warm, and the warmth was the most visible thing about
+    // this system, so it was the most visible thing that was wrong.
     colors: colors! {
-        // The brand blue, the one colour here that is not warm. Dark lifts off it,
-        // because the brand value goes muddy against a warm dark background.
+        // The brand blue.
         Primary: 0x0081ff / 0x3ba2ff,
         OnPrimary: 0xffffff / 0x04203a,
-        // Amber rather than purple or teal, which is where the warm palette shows on an
-        // accent.
+        // The amber that sits beside the blue in Deepin's own readouts, where a second
+        // series is drawn in it.
         Secondary: 0xf2a13c / 0xffb964,
         OnSecondary: 0x2b1a05 / 0x33200a,
-        Surface: 0xfffdfa / 0x2b2726,
-        OnSurface: 0x2c2622 / 0xf5efe9,
-        SurfaceVariant: 0xf0e9e0 / 0x3a3533,
-        OnSurfaceVariant: 0x6b5f56 / 0xc4b8ad,
-        Background: 0xfaf7f2 / 0x232020,
-        OnBackground: 0x2c2622 / 0xf5efe9,
-        Outline: 0xd9cdc0 / 0x574f4b,
-        OutlineVariant: 0xece3d9 / 0x383230,
-        Error: 0xe35c4b / 0xff8a73,
+        // The reading surface: a white list in light, a dark grey key in dark.
+        Surface: 0xffffff / 0x2a2a2a,
+        OnSurface: 0x202020 / 0xf0f0f0,
+        // The fill of a search field, and of the alternate row in a list.
+        SurfaceVariant: 0xe6e6e6 / 0x3a3a3a,
+        OnSurfaceVariant: 0x5a5a5a / 0xb4b4b4,
+        // The window, which is the reading surface itself in light: a Deepin window is
+        // white and what separates from it is the grey well beside the content, not a
+        // white card on a grey page.
+        Background: 0xffffff / 0x1a1a1a,
+        OnBackground: 0x202020 / 0xf0f0f0,
+        Outline: 0xcdcdcd / 0x4d4d4d,
+        OutlineVariant: 0xe0e0e0 / 0x333333,
+        Error: 0xff5736 / 0xff8a73,
         OnError: 0xffffff / 0x34110a,
-        // A panel lifts off the warm page rather than sinking into it: plain white in
-        // light, and a step warmer and lighter than the window in dark.
-        SurfaceContainer: 0xffffff / 0x302b29,
+        // The panel: the grey of a sidebar sunk into the white window, and in dark the
+        // key grey, which is a step lighter than the near black window. Either way the
+        // panel separates from the page, which is the promise of the role.
+        SurfaceContainer: 0xf1f1f1 / 0x2a2a2a,
     },
     // A middle weight ladder. The body sits between Breeze's 13 and Adwaita's 15, and the
     // headings are semi bold with loose line heights, which suits the rounded shapes and
