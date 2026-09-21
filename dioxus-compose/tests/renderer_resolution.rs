@@ -14,6 +14,7 @@ mod renderer_dir {
     include!("../build/renderer_dir.rs");
 }
 
+use renderer_dir::elf;
 use renderer_dir::sha256::{Sha256, checksum_from_sha256_file, sha256_file, sha256_hex};
 use renderer_dir::{
     CACHE_DIR_ENV, Fetch, FetchError, PUBLISHED_TARGETS, RENDERER_DIR_ENV, Renderer,
@@ -575,6 +576,239 @@ fn nfr11_the_unpacked_macos_renderer_is_named_after_where_it_will_live() {
     );
 }
 
+/// The same naming happens to a renderer that was never downloaded.
+///
+/// A checkout of this repository builds its own renderer and the build script finds it in
+/// the workspace, which is the path everyone working here uses every day. Naming only the
+/// unpacked artifact would leave that path loading the renderer by an rpath no consumer
+/// has, and an rpath is exactly what hid this failure for as long as it did.
+#[cfg(target_os = "macos")]
+#[test]
+fn nfr11_a_renderer_built_in_the_workspace_is_named_after_where_it_sits() {
+    let temp = TempDir::new("workspace-name");
+    let lib_dir = temp.path().join("dist/lib");
+    let library = macos_renderer(&lib_dir, "@rpath/libdioxus_compose_renderer.dylib");
+
+    let renderer = acquire_renderer(&Request {
+        env_dir: None,
+        workspace_lib_dir: &lib_dir,
+        cache_root: Some(&temp.path().join("cache")),
+        crate_version: SAMPLE_VERSION,
+        target: "macos-aarch64",
+        target_os: "macos",
+        fetch: None,
+    })
+    .expect("the workspace has a renderer in it");
+
+    assert_eq!(renderer.source, RendererSource::Workspace);
+    assert_eq!(
+        install_name(&library),
+        library.to_string_lossy(),
+        "a renderer built in the workspace still answers to a name no application can \
+         resolve"
+    );
+}
+
+/// And to one the variable points at, which is how a vendored or hand built renderer
+/// arrives. Every route through the search order ends in the same place.
+#[cfg(target_os = "macos")]
+#[test]
+fn nfr10_a_renderer_the_variable_points_at_is_named_after_where_it_sits() {
+    let temp = TempDir::new("env-name");
+    let root = temp.path().join("vendored");
+    let library = macos_renderer(&root.join("lib"), "@rpath/libdioxus_compose_renderer.dylib");
+
+    let renderer = acquire_renderer(&Request {
+        env_dir: Some(&root),
+        workspace_lib_dir: &temp.path().join("no-workspace/lib"),
+        cache_root: Some(&temp.path().join("cache")),
+        crate_version: SAMPLE_VERSION,
+        target: "macos-aarch64",
+        target_os: "macos",
+        fetch: None,
+    })
+    .expect("the variable points at a renderer");
+
+    assert_eq!(renderer.source, RendererSource::Environment);
+    assert_eq!(install_name(&library), library.to_string_lossy());
+}
+
+/// A directory reached through a relative path is spelled absolutely before it becomes a
+/// name.
+///
+/// `DIOXUS_COMPOSE_RENDERER_DIR` is routinely set to a path relative to the build, which
+/// is what the sample release workflow does. The name written into the library is the name
+/// every application that links it looks it up by, and a relative one would be resolved
+/// against whatever directory that application happens to be started from.
+#[test]
+fn nfr10_a_renderer_reached_by_a_relative_path_is_named_absolutely() {
+    let resolved = renderer_dir::absolute(Path::new("dist/lib"));
+    assert!(
+        resolved.is_absolute(),
+        "{} would be resolved against the working directory of whatever runs the program",
+        resolved.display()
+    );
+    assert!(resolved.ends_with("dist/lib"));
+
+    let already = Path::new("/somewhere/lib");
+    assert_eq!(
+        renderer_dir::absolute(already),
+        already,
+        "an absolute path is left exactly as it was spelled, symbolic links and all"
+    );
+}
+
+/// A renderer that already carries the right name is not touched.
+///
+/// Every build runs through this step. Rewriting sixty megabytes each time would be a
+/// waste, and it would turn a renderer someone has vendored into a read-only directory
+/// from something that works into a build failure. The read-only library here is the
+/// assertion: a build that writes fails, and this one must not.
+#[cfg(target_os = "macos")]
+#[test]
+fn nfr11_a_renderer_that_already_answers_to_its_location_is_left_alone() {
+    let temp = TempDir::new("already-named");
+    let lib_dir = temp.path().join("dist/lib");
+    let library = macos_renderer(&lib_dir, "placeholder");
+    let absolute = library.to_string_lossy().to_string();
+    let named = std::process::Command::new("install_name_tool")
+        .args(["-id", &absolute])
+        .arg(&library)
+        .status()
+        .expect("install_name_tool comes with the tools the Rust linker needs");
+    assert!(named.success());
+    read_only(&library);
+
+    let renderer = acquire_renderer(&Request {
+        env_dir: None,
+        workspace_lib_dir: &lib_dir,
+        cache_root: Some(&temp.path().join("cache")),
+        crate_version: SAMPLE_VERSION,
+        target: "macos-aarch64",
+        target_os: "macos",
+        fetch: None,
+    });
+
+    let renderer = renderer.unwrap_or_else(|message| {
+        panic!("a renderer that is already named after itself was rewritten anyway:\n{message}")
+    });
+    assert_eq!(renderer.source, RendererSource::Workspace);
+    assert_eq!(install_name(&library), absolute);
+}
+
+// -------------------------------------------------------------------------------------
+// The Linux half of the same rule: no SONAME
+// -------------------------------------------------------------------------------------
+
+/// A shared object that records a SONAME is looked up by that bare name, and the
+/// application that linked it has no search path to find it on. One with no SONAME is
+/// recorded by the full path the linker opened, which makes the lookup absolute in the
+/// same way an install name does on macOS. An artifact carrying one is corrected as it is
+/// acquired rather than left to fail at start up.
+#[test]
+fn nfr11_a_linux_renderer_that_carries_a_soname_loses_it() {
+    let temp = TempDir::new("soname");
+    let staging = temp.path().join("staging");
+    renderer_tree_named(&staging, Some("libdioxus_compose_renderer.so"));
+    let cache = temp.path().join("cache");
+    pack(
+        &staging,
+        &download_dir(&cache),
+        Checksum::Correct,
+        SAMPLE_TARGET,
+    );
+
+    let before = staging
+        .join(renderer_lib_subdir(SAMPLE_TARGET_OS))
+        .join(renderer_lib_file(SAMPLE_TARGET_OS));
+    assert_eq!(
+        elf::soname(&before).unwrap().as_deref(),
+        Some("libdioxus_compose_renderer.so"),
+        "the fixture was supposed to carry a SONAME"
+    );
+
+    let renderer = acquire_for(
+        SAMPLE_TARGET,
+        SAMPLE_TARGET_OS,
+        &temp,
+        None,
+        Network::Forbidden,
+        &cache,
+    )
+    .expect("the tarball is here");
+
+    let after = renderer.lib_dir.join(renderer_lib_file(SAMPLE_TARGET_OS));
+    assert_eq!(
+        elf::soname(&after).unwrap(),
+        None,
+        "the unpacked library still records a SONAME, so anything linking it would look \
+         for a bare file name on a search path it does not have"
+    );
+}
+
+/// Taking the entry out moves the ones after it up a slot and leaves everything else
+/// alone. The dynamic section is read back in full, because an edit that dropped a
+/// neighbour or broke the terminator would produce a library that still reports no SONAME
+/// and no longer loads.
+#[test]
+fn nfr11_removing_a_soname_keeps_every_other_dynamic_entry() {
+    let temp = TempDir::new("dynamic");
+    let library = temp.path().join("renderer.so");
+    std::fs::write(&library, elf_shared_object(Some("libsomething.so.1"))).unwrap();
+
+    let before = dynamic_entries(&library);
+    // The string table is left exactly as it was. Only the entry pointing into it goes,
+    // which is why this is a local edit and not a rewrite of the library.
+    let expected: Vec<(i64, u64)> = before
+        .iter()
+        .copied()
+        .filter(|(tag, _)| *tag != 14)
+        .collect();
+    assert_eq!(before.len(), expected.len() + 1, "the fixture had a SONAME");
+
+    assert!(elf::remove_soname(&library).unwrap());
+    assert_eq!(
+        dynamic_entries(&library),
+        expected,
+        "removing the SONAME changed something other than the SONAME"
+    );
+    assert_eq!(elf::soname(&library).unwrap(), None);
+}
+
+/// Nothing to remove is not a failure, and it is the case every build of a published
+/// renderer takes.
+#[test]
+fn nfr11_a_linux_renderer_without_a_soname_is_not_rewritten() {
+    let temp = TempDir::new("no-soname");
+    let library = temp.path().join("renderer.so");
+    let bytes = elf_shared_object(None);
+    std::fs::write(&library, &bytes).unwrap();
+
+    assert_eq!(elf::soname(&library).unwrap(), None);
+    assert!(!elf::remove_soname(&library).unwrap());
+    assert_eq!(
+        std::fs::read(&library).unwrap(),
+        bytes,
+        "a library with no SONAME was written to anyway"
+    );
+}
+
+/// "There is no SONAME" and "this file was not read" have different answers, and a file
+/// that is not a shared object at all has to give the second one. Reporting it as having
+/// no SONAME would let a truncated download through to the linker.
+#[test]
+fn nfr11_a_library_that_cannot_be_read_is_not_reported_as_having_no_soname() {
+    let temp = TempDir::new("not-elf");
+    let library = temp.path().join("renderer.so");
+    std::fs::write(&library, b"not a shared object").unwrap();
+
+    let failure = elf::soname(&library).expect_err("this is not an ELF file");
+    assert!(
+        failure.contains("renderer.so"),
+        "the failure has to name the file it read: {failure}"
+    );
+}
+
 // -------------------------------------------------------------------------------------
 // Instructions that rot
 // -------------------------------------------------------------------------------------
@@ -736,15 +970,123 @@ fn acquire_for(
 }
 
 /// An unpacked renderer: the directory layout the artifact has inside it.
+///
+/// The library is a real ELF shared object rather than a few bytes of text, because
+/// acquiring a Linux renderer reads its dynamic section to make sure it carries no
+/// SONAME. A placeholder would exercise only the error path for a file that is not an ELF
+/// at all.
 fn renderer_tree(root: &Path) -> PathBuf {
+    renderer_tree_named(root, None)
+}
+
+/// The same tree, with a SONAME baked into the library. An artifact built that way would
+/// leave every application that links it looking for a bare file name on a search path it
+/// does not have.
+fn renderer_tree_named(root: &Path, soname: Option<&str>) -> PathBuf {
     let lib_dir = root.join(renderer_lib_subdir(SAMPLE_TARGET_OS));
     std::fs::create_dir_all(&lib_dir).unwrap();
     std::fs::write(
         lib_dir.join(renderer_lib_file(SAMPLE_TARGET_OS)),
-        b"a renderer, for the purposes of a path check",
+        elf_shared_object(soname),
     )
     .unwrap();
     root.to_path_buf()
+}
+
+/// A 64-bit little-endian ELF shared object with nothing in it but the headers and a
+/// dynamic section, which is all anything here reads.
+///
+/// Written out by hand rather than compiled, because the tests have to produce a Linux
+/// library on whichever platform they are running on, and because a fixture whose dynamic
+/// section is laid out here is one whose every entry can be asserted on afterwards.
+///
+/// Virtual addresses are the file offsets, so the address in `DT_STRTAB` is where the
+/// string table really is.
+fn elf_shared_object(soname: Option<&str>) -> Vec<u8> {
+    const STRING_TABLE: u64 = 0x100;
+    const DYNAMIC: u64 = 0x200;
+    const PROGRAM_HEADERS: u64 = 64;
+
+    // A leading NUL, because index 0 of a string table is the empty string.
+    let mut strings = vec![0u8];
+    let mut entries: Vec<(i64, u64)> = Vec::new();
+    if let Some(soname) = soname {
+        let at = strings.len() as u64;
+        strings.extend_from_slice(soname.as_bytes());
+        strings.push(0);
+        entries.push((14, at));
+    }
+    // One entry on either side of the SONAME, so a removal that took a neighbour with it
+    // is visible. 1 is DT_NEEDED and 12 is DT_INIT.
+    let needed = strings.len() as u64;
+    strings.extend_from_slice(b"libc.so.6\0");
+    let mut dynamic = vec![(5i64, STRING_TABLE), (10, strings.len() as u64)];
+    dynamic.append(&mut entries);
+    dynamic.push((1, needed));
+    dynamic.push((12, 0x3000));
+    dynamic.push((0, 0));
+
+    let size = DYNAMIC + dynamic.len() as u64 * 16;
+    let mut file = vec![0u8; size as usize];
+
+    file[..4].copy_from_slice(&[0x7f, b'E', b'L', b'F']);
+    file[4] = 2; // 64-bit
+    file[5] = 1; // little-endian
+    file[6] = 1; // ELF version
+    file[16..18].copy_from_slice(&3u16.to_le_bytes()); // a shared object
+    file[18..20].copy_from_slice(&0x3eu16.to_le_bytes()); // x86-64
+    file[20..24].copy_from_slice(&1u32.to_le_bytes());
+    file[32..40].copy_from_slice(&PROGRAM_HEADERS.to_le_bytes());
+    file[52..54].copy_from_slice(&64u16.to_le_bytes()); // ELF header size
+    file[54..56].copy_from_slice(&56u16.to_le_bytes()); // program header size
+    file[56..58].copy_from_slice(&2u16.to_le_bytes()); // two of them
+
+    let mut segment = |index: u64, kind: u32, offset: u64, length: u64| {
+        let at = (PROGRAM_HEADERS + index * 56) as usize;
+        file[at..at + 4].copy_from_slice(&kind.to_le_bytes());
+        file[at + 4..at + 8].copy_from_slice(&4u32.to_le_bytes()); // readable
+        file[at + 8..at + 16].copy_from_slice(&offset.to_le_bytes());
+        file[at + 16..at + 24].copy_from_slice(&offset.to_le_bytes()); // address is offset
+        file[at + 24..at + 32].copy_from_slice(&offset.to_le_bytes());
+        file[at + 32..at + 40].copy_from_slice(&length.to_le_bytes());
+        file[at + 40..at + 48].copy_from_slice(&length.to_le_bytes());
+        file[at + 48..at + 56].copy_from_slice(&0x1000u64.to_le_bytes());
+    };
+    segment(0, 1, 0, size); // PT_LOAD over the whole file
+    segment(1, 2, DYNAMIC, size - DYNAMIC); // PT_DYNAMIC
+
+    let at = STRING_TABLE as usize;
+    file[at..at + strings.len()].copy_from_slice(&strings);
+    for (index, (tag, value)) in dynamic.iter().enumerate() {
+        let at = DYNAMIC as usize + index * 16;
+        file[at..at + 8].copy_from_slice(&tag.to_le_bytes());
+        file[at + 8..at + 16].copy_from_slice(&value.to_le_bytes());
+    }
+    file
+}
+
+/// Every `(tag, value)` in a shared object's dynamic section, up to its terminator.
+fn dynamic_entries(library: &Path) -> Vec<(i64, u64)> {
+    let bytes = std::fs::read(library).unwrap();
+    let at = u64::from_le_bytes(bytes[32..40].try_into().unwrap()) as usize;
+    let count = u16::from_le_bytes(bytes[56..58].try_into().unwrap()) as usize;
+    let dynamic = (0..count)
+        .map(|index| at + index * 56)
+        .find(|at| u32::from_le_bytes(bytes[*at..at + 4].try_into().unwrap()) == 2)
+        .expect("the fixture has a PT_DYNAMIC segment");
+    let offset = u64::from_le_bytes(bytes[dynamic + 8..dynamic + 16].try_into().unwrap()) as usize;
+    let length = u64::from_le_bytes(bytes[dynamic + 32..dynamic + 40].try_into().unwrap()) as usize;
+
+    let mut entries = Vec::new();
+    for at in (offset..offset + length).step_by(16) {
+        let tag = i64::from_le_bytes(bytes[at..at + 8].try_into().unwrap());
+        let value = u64::from_le_bytes(bytes[at + 8..at + 16].try_into().unwrap());
+        entries.push((tag, value));
+        if tag == 0 {
+            break;
+        }
+    }
+    entries
 }
 
 #[derive(Clone, Copy)]
@@ -798,6 +1140,64 @@ fn pack(staging: &Path, into: &Path, checksum: Checksum, target: &str) -> PathBu
     )
     .unwrap();
     tarball
+}
+
+/// A real Mach-O library carrying the install name it is given, which is the only kind of
+/// file the naming step will accept.
+#[cfg(target_os = "macos")]
+fn macos_renderer(lib_dir: &Path, install_name: &str) -> PathBuf {
+    std::fs::create_dir_all(lib_dir).unwrap();
+    let source = lib_dir.join("renderer.c");
+    std::fs::write(
+        &source,
+        "int dioxus_compose_renderer_run(void) { return 0; }\n",
+    )
+    .unwrap();
+    let library = lib_dir.join(renderer_lib_file("macos"));
+    let built = std::process::Command::new("cc")
+        // The renderer's own image is linked with room to grow its load commands, which
+        // is what lets its install name be replaced with a longer one. A fixture linked
+        // without that padding is rejected, correctly, so it asks for the same padding.
+        .args([
+            "-dynamiclib",
+            "-Wl,-headerpad_max_install_names",
+            "-install_name",
+            install_name,
+        ])
+        .arg("-o")
+        .arg(&library)
+        .arg(&source)
+        .status()
+        .expect("cc comes with the tools the Rust linker already needs");
+    assert!(built.success(), "building the fixture library failed");
+    std::fs::remove_file(&source).unwrap();
+    library
+}
+
+/// The name a Mach-O library answers to.
+#[cfg(target_os = "macos")]
+fn install_name(library: &Path) -> String {
+    let printed = std::process::Command::new("otool")
+        .arg("-D")
+        .arg(library)
+        .output()
+        .expect("otool comes with the same tools");
+    String::from_utf8_lossy(&printed.stdout)
+        .lines()
+        .nth(1)
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+/// Take the write bit off, so that a step which was supposed to do nothing fails loudly
+/// if it writes after all.
+#[cfg(target_os = "macos")]
+fn read_only(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = std::fs::metadata(path).unwrap().permissions();
+    permissions.set_mode(0o444);
+    std::fs::set_permissions(path, permissions).unwrap();
 }
 
 /// A throwaway directory. Small enough not to be worth a dependency, and a dependency in

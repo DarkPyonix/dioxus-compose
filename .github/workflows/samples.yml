@@ -71,9 +71,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
+          # patchelf rewrites each packaged executable's DT_NEEDED entry to the renderer
+          # travelling beside it, in place of the absolute path this runner built with.
           sudo apt-get install -y build-essential zlib1g-dev pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 fonts-noto-cjk
+            libfontconfig1-dev libfreetype6-dev libgl1 fonts-noto-cjk patchelf
 
       - name: Cache the Kotlin toolchain and Maven dependencies
         uses: actions/cache@v4
@@ -103,6 +105,12 @@ jobs:
       - name: Package each sample with the renderer beside it
         # A sample is only runnable next to the renderer library it was linked against, so
         # ship them together rather than leaving the download to fail at startup.
+        #
+        # The build records the absolute path the renderer was at on this runner, which is
+        # the only way a binary that merely depends on the crate finds it without an rpath.
+        # That path means nothing on the machine someone downloads this to, so the last
+        # step points each executable at the copy travelling with it. Without it the
+        # archives would ship a runner's directory layout and fail to start.
         shell: bash
         run: |
           set -euo pipefail
@@ -117,6 +125,12 @@ jobs:
               cp "target/release/sample-$app" "$stage/"
             fi
             cp -R "${{ matrix.dist }}/." "$stage/"
+            # Windows is already done by the copy: a DLL is found on the loader's search
+            # path, which the executable's own directory is on, and no name inside either
+            # file is consulted.
+            if [[ "${{ runner.os }}" != "Windows" ]]; then
+              ./scripts/bundle-renderer.sh "$stage/sample-$app" .
+            fi
             tar -czf "artifacts/$app-${{ matrix.target }}.tar.gz" -C staging "$app"
           done
           cd artifacts

@@ -14,6 +14,10 @@ pub mod sha256 {
     include!("sha256.rs");
 }
 
+pub mod elf {
+    include!("elf.rs");
+}
+
 use sha256::{checksum_from_sha256_file, sha256_file};
 use std::path::{Path, PathBuf};
 
@@ -410,15 +414,21 @@ fn unpack(
     // While it is still invisible to any other build, and using the name it is about to
     // have. Doing it after the rename would mean a second build could link the library in
     // the moment between the two.
-    if let Err(message) = name_the_library_after_where_it_will_live(
-        &scratch,
-        destination,
-        target_os,
-        crate_version,
-        target,
-    ) {
-        let _ = std::fs::remove_dir_all(&scratch);
-        return Err(message);
+    let subdir = renderer_lib_subdir(target_os);
+    let lib_file = renderer_lib_file(target_os);
+    let unpacked = scratch.join(subdir).join(lib_file);
+    // A missing library is reported properly by the layout check downstream.
+    if unpacked.is_file() {
+        if let Err(message) = name_after_its_location(
+            &unpacked,
+            &destination.join(subdir).join(lib_file),
+            target_os,
+            crate_version,
+            target,
+        ) {
+            let _ = std::fs::remove_dir_all(&scratch);
+            return Err(message);
+        }
     }
 
     let _ = std::fs::remove_dir_all(destination);
@@ -428,59 +438,69 @@ fn unpack(
     })
 }
 
-/// Teach the unpacked macOS renderer where it lives, so that anything linking it records
-/// that path and can load it.
+/// Teach the unpacked renderer where it lives, so that anything linking it records that
+/// location and can load it.
 ///
-/// A Mach-O library carries the name its dependents will look it up by, and the release
-/// artifact carries `@rpath/libdioxus_compose_renderer.dylib`. `@rpath` is resolved
-/// against the rpaths of whatever loaded it, and an application that merely depends on
-/// this crate has none: Cargo passes a dependency's link search paths and link libraries
-/// down to the final binary, but not its link arguments, and the rpath is a link
-/// argument. The application would link cleanly and then die on startup with dyld unable
-/// to find a library that is sitting right there in the cache.
+/// A library carries the name its dependents will look it up by. The macOS artifact
+/// carries `@rpath/libdioxus_compose_renderer.dylib`, and `@rpath` is resolved against the
+/// rpaths of whatever loaded it. An application that merely depends on this crate has
+/// none: Cargo passes a dependency's link search paths and link libraries down to the
+/// final binary, but not its link arguments, and an rpath is a link argument. The
+/// application would link cleanly and then die on startup with the loader unable to find
+/// a library that is sitting right there on disk.
 ///
-/// Pointing the name at the cache instead makes the lookup absolute, which is exactly as
-/// specific as it should be: the cache entry is keyed by version and target and is where
-/// that library will stay.
+/// Pointing the name at the directory the library is in makes the lookup absolute, which
+/// is exactly as specific as it should be: this is where that library is going to stay,
+/// and the renderer finds its own Skia and AWT companions relative to itself, so the
+/// library has to be named after its real home rather than after a copy of it.
 ///
-/// Nothing to do elsewhere. The Linux shared object carries no SONAME and a `$ORIGIN`
-/// runpath, so the linker records the path it opened and the shim finds the image beside
-/// itself; Windows resolves DLLs through the loader's search path, which no name inside
-/// the file can affect.
-fn name_the_library_after_where_it_will_live(
-    unpacked: &Path,
-    destination: &Path,
+/// `library` is the file to edit and `name` is the path it will answer to, which are the
+/// same path except while an artifact is being unpacked under a scratch name.
+pub fn name_after_its_location(
+    library: &Path,
+    name: &Path,
     target_os: &str,
     crate_version: &str,
     target: &str,
 ) -> Result<(), String> {
-    if target_os != "macos" {
+    match target_os {
+        "macos" => set_install_name(library, name, crate_version, target),
+        "linux" => drop_soname(library, crate_version, target),
+        // Windows resolves a DLL through the loader's search path, which no name inside
+        // the file can affect. The build script says what to do about that instead.
+        _ => Ok(()),
+    }
+}
+
+/// The Mach-O side: `LC_ID_DYLIB`.
+fn set_install_name(
+    library: &Path,
+    name: &Path,
+    crate_version: &str,
+    target: &str,
+) -> Result<(), String> {
+    // Every build runs through here, and rewriting a sixty megabyte library on each one
+    // would be a waste of the build's time and would fail outright on a renderer someone
+    // has vendored into a read-only directory but already named correctly.
+    if install_name(library).as_deref() == Some(name.to_string_lossy().as_ref()) {
         return Ok(());
     }
-    let subdir = renderer_lib_subdir(target_os);
-    let lib_file = renderer_lib_file(target_os);
-    let library = unpacked.join(subdir).join(lib_file);
-    if !library.is_file() {
-        // The layout check downstream reports this properly.
-        return Ok(());
-    }
-    let final_name = destination.join(subdir).join(lib_file);
 
     let status = std::process::Command::new("install_name_tool")
         .arg("-id")
-        .arg(&final_name)
-        .arg(&library)
+        .arg(name)
+        .arg(library)
         .output();
     match status {
         Ok(output) if output.status.success() => Ok(()),
         Ok(output) => Err(install_name_message(
-            &final_name,
+            name,
             &String::from_utf8_lossy(&output.stderr),
             crate_version,
             target,
         )),
         Err(error) => Err(install_name_message(
-            &final_name,
+            name,
             &error.to_string(),
             crate_version,
             target,
@@ -488,8 +508,56 @@ fn name_the_library_after_where_it_will_live(
     }
 }
 
-/// Check the version the artifact declares, if it declares one, and package the answer.
+/// The name the library answers to now, or `None` if that could not be read. `None` means
+/// "unknown", so the caller goes ahead and sets the name rather than assuming either way.
+fn install_name(library: &Path) -> Option<String> {
+    // `otool -D` prints the file name, then the install name. A library with no install
+    // name prints only the first line.
+    let output = std::process::Command::new("otool")
+        .arg("-D")
+        .arg(library)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let name = text.lines().nth(1)?.trim();
+    (!name.is_empty()).then(|| name.to_string())
+}
+
+/// The ELF side: no SONAME at all.
+///
+/// A shared object with a SONAME is recorded by that bare name, and the loader then has
+/// to find it on a search path the application does not have. One with no SONAME is
+/// recorded by the path the linker opened it at, which is absolute here, so there is
+/// nothing left to search for. The renderer is built without one; an artifact that
+/// carries one anyway is fixed here rather than turned into a binary that links and
+/// cannot start.
+fn drop_soname(library: &Path, crate_version: &str, target: &str) -> Result<(), String> {
+    match elf::soname(library) {
+        Ok(None) => Ok(()),
+        Ok(Some(_)) => elf::remove_soname(library)
+            .map(|_| ())
+            .map_err(|detail| soname_message(library, &detail, crate_version, target)),
+        Err(detail) => Err(soname_message(library, &detail, crate_version, target)),
+    }
+}
+
+/// Check the version the artifact declares, if it declares one, name the library after
+/// where it sits, and package the answer.
+///
+/// The naming happens here rather than only where an artifact is unpacked, so that the
+/// renderer a developer of this repository builds from source is loaded exactly the way
+/// the one a consumer downloads is. Two different loading paths meant the one people use
+/// every day was not the one that was broken.
 fn finish(lib_dir: PathBuf, request: &Request, source: RendererSource) -> Result<Renderer, String> {
+    // Whatever was found, from here on it is an absolute path. The name written into the
+    // library is the name every application that links it will look it up by, and a
+    // relative one would be resolved against whatever directory that application happens
+    // to be started from. `DIOXUS_COMPOSE_RENDERER_DIR` is often set to a path relative to
+    // the build, which is how this would otherwise happen.
+    let lib_dir = absolute(&lib_dir);
     let artifact_version = read_artifact_version(&lib_dir);
     if let Some(found) = artifact_version.as_deref() {
         if found != request.crate_version {
@@ -501,11 +569,44 @@ fn finish(lib_dir: PathBuf, request: &Request, source: RendererSource) -> Result
             ));
         }
     }
+
+    let library = lib_dir.join(renderer_lib_file(request.target_os));
+    name_after_its_location(
+        &library,
+        &library,
+        request.target_os,
+        request.crate_version,
+        request.target,
+    )?;
+
     Ok(Renderer {
         lib_dir,
         artifact_version,
         source,
     })
+}
+
+/// The same directory, spelled absolutely.
+///
+/// The name written into the library is the name every application that links it will
+/// look it up by, so it has to mean the same thing from any working directory.
+/// `DIOXUS_COMPOSE_RENDERER_DIR` is routinely set to a path relative to the build, which
+/// is how a relative name would otherwise be baked in.
+///
+/// Symbolic links are left alone rather than resolved. A renderer reached through a link
+/// is a deliberate arrangement, the directory it points at holds the same companion
+/// libraries either way, and resolving would replace the path someone chose with one they
+/// did not.
+pub fn absolute(dir: &Path) -> PathBuf {
+    if dir.is_absolute() {
+        return dir.to_path_buf();
+    }
+    match std::env::current_dir() {
+        Ok(working) => working.join(dir),
+        // Nowhere to resolve against. A build that would have worked keeps working, and
+        // the name is no worse than it was before this step existed.
+        Err(_) => dir.to_path_buf(),
+    }
 }
 
 /// Accept either the unpacked artifact root or the directory holding the library. Both are
@@ -709,18 +810,38 @@ fn install_name_message(library: &Path, detail: &str, crate_version: &str, targe
     format!(
         "dioxus-compose: could not set the renderer's install name ({detail}).\n\
          \n\
-         The unpacked library has to be told that it lives at\n\
+         The library has to be told that it lives at\n\
          \n\
          \x20   {library}\n\
          \n\
          or anything linking it records the name it came with, `@rpath/{file}`, and dyld\n\
          cannot resolve that in an application that has no matching rpath. `install_name_tool`\n\
          does it and comes with the Xcode command line tools, which the Rust linker needs\n\
-         anyway: `xcode-select --install`.\n\
+         anyway: `xcode-select --install`. A renderer in a directory this build cannot write\n\
+         to has to carry that name already; copy it somewhere writable and point\n\
+         {RENDERER_DIR_ENV} at the copy.\n\
          \n\
          {build_it_yourself}",
         library = library.display(),
         file = renderer_lib_file("macos"),
+        build_it_yourself = build_it_yourself(crate_version, target),
+    )
+}
+
+fn soname_message(library: &Path, detail: &str, crate_version: &str, target: &str) -> String {
+    format!(
+        "dioxus-compose: could not read or clear the renderer's SONAME ({detail}).\n\
+         \n\
+         \x20   {library}\n\
+         \n\
+         A shared object that records a SONAME is looked up by that bare name, and the\n\
+         application linking it has no search path to find it on, so it would link and then\n\
+         fail to start. One with no SONAME is recorded by its full path instead, which is\n\
+         what the renderer is built to be. Check the file with `readelf -d`; the renderer\n\
+         published for this crate version has no SONAME line.\n\
+         \n\
+         {build_it_yourself}",
+        library = library.display(),
         build_it_yourself = build_it_yourself(crate_version, target),
     )
 }
@@ -803,6 +924,12 @@ pub fn every_failure_message(sample_dir: &Path) -> Vec<String> {
             "not found",
             version,
             target,
+        ),
+        soname_message(
+            &sample_dir.join(renderer_lib_file("linux")),
+            "permission denied",
+            version,
+            "linux-x64",
         ),
         unexpected_layout_message(&tarball, sample_dir, renderer_lib_file("macos"), "lib"),
         version_mismatch_message(sample_dir, "0.1.0", version, target),
