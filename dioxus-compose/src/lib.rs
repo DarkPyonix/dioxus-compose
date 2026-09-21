@@ -189,7 +189,10 @@ pub mod elements {
         "TextField",
         [placeholder, enabled, multiline, type_role]
     );
-    element!(button, "Button", [text, enabled, variant, color]);
+    // `icon` is the meaning of the glyph on it and never a picture. A button is the
+    // second place a role icon reaches the tree, because a toolbar is a row of icon
+    // buttons and nothing else in the vocabulary can place one.
+    element!(button, "Button", [text, icon, enabled, variant, color]);
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.
     element!(spacer, "Spacer", []);
