@@ -11,7 +11,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import dioxus.compose.protocol.HostEvent
-import dioxus.compose.ui.platform.FrameRequests
+import androidx.compose.runtime.CompositionLocalProvider
+import dioxus.compose.ui.platform.FrameRequestSource
+import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.PropertyKind
@@ -22,7 +24,6 @@ import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
 import dioxus.compose.tooling.HostResponse
 import dioxus.compose.ui.node.nodeTestTag
-import kotlin.test.BeforeTest
 
 private const val ROOT = 1
 private const val DISMISS_HANDLER = 61L
@@ -38,13 +39,11 @@ private fun text(id: Int, parent: Int, index: Int, value: String) = listOf(
 
 @OptIn(ExperimentalTestApi::class)
 class ContainerWidgetsTest {
-    @BeforeTest
-    fun resetTheSharedFrameCounter() {
-        // The frame counter is global, because the C entry point that feeds it takes no
-        // host. Tests therefore share it, and a request left behind by one can drive
-        // another's frame loop and keep it from ever going idle.
-        FrameRequests.resetForTest()
-    }
+    // Private to this class rather than the process-wide counter: two hosts alive at
+    // once in the same test process would otherwise drive each other's frame loops, and a
+    // request left behind by one test can keep another's composition from going idle.
+    private val frames = FrameRequestSource()
+
 
     /**
      * A Card is a container and nothing else on the wire: the Host sends children, never a
@@ -53,7 +52,11 @@ class ContainerWidgetsTest {
     @Test
     fun fr15_a_card_draws_its_children_and_the_host_sends_no_appearance() = runComposeUiTest {
         val batch = listOf(Mutation.Create(ROOT, WidgetKind.Card)) + text(2, ROOT, 0, "grouped")
-        setContent { DioxusContent(rememberDioxusHost(FakeHostConnection(batch))) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(FakeHostConnection(batch)))
+            }
+        }
         waitForIdle()
 
         onNodeWithTag(nodeTestTag(2)).assertTextEquals("grouped")
@@ -64,7 +67,11 @@ class ContainerWidgetsTest {
     @Test
     fun fr15_a_surface_draws_its_children() = runComposeUiTest {
         val batch = listOf(Mutation.Create(ROOT, WidgetKind.Surface)) + text(2, ROOT, 0, "plain")
-        setContent { DioxusContent(rememberDioxusHost(FakeHostConnection(batch))) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(FakeHostConnection(batch)))
+            }
+        }
         waitForIdle()
 
         onNodeWithTag(nodeTestTag(2)).assertTextEquals("plain")
@@ -76,7 +83,11 @@ class ContainerWidgetsTest {
         val batch = listOf(Mutation.Create(ROOT, WidgetKind.TopAppBar)) +
             text(2, ROOT, 0, "Inbox") +
             text(3, ROOT, 1, "Edit")
-        setContent { DioxusContent(rememberDioxusHost(FakeHostConnection(batch))) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(FakeHostConnection(batch)))
+            }
+        }
         waitForIdle()
 
         onNodeWithTag(nodeTestTag(2)).assertTextEquals("Inbox")
@@ -94,14 +105,18 @@ class ContainerWidgetsTest {
             Mutation.SetProp(ROOT, PropertyKind.OnDismiss, PropertyValue.Integer(DISMISS_HANDLER)),
         ) + text(2, ROOT, 0, "delete everything?")
         val connection = FakeHostConnection(closed)
-        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(connection))
+            }
+        }
         waitForIdle()
         onNodeWithTag(nodeTestTag(2)).assertDoesNotExist()
 
         connection.scheduleFrame(
             listOf(Mutation.SetProp(ROOT, PropertyKind.Open, PropertyValue.Bool(true))),
         )
-        FrameRequests.request()
+        frames.request()
         waitForIdle()
         mainClock.advanceTimeByFrame()
         waitForIdle()
@@ -118,7 +133,11 @@ class ContainerWidgetsTest {
             text(2, ROOT, 0, "File") +
             text(3, ROOT, 1, "Open")
         val connection = FakeHostConnection(batch)
-        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(connection))
+            }
+        }
         waitForIdle()
         onNodeWithTag(nodeTestTag(2)).assertTextEquals("File")
         onNodeWithTag(nodeTestTag(3)).assertDoesNotExist()
@@ -126,7 +145,7 @@ class ContainerWidgetsTest {
         connection.scheduleFrame(
             listOf(Mutation.SetProp(ROOT, PropertyKind.Open, PropertyValue.Bool(true))),
         )
-        FrameRequests.request()
+        frames.request()
         waitForIdle()
         mainClock.advanceTimeByFrame()
         waitForIdle()
@@ -148,7 +167,11 @@ class ContainerWidgetsTest {
                 Mutation.SetProp(3, PropertyKind.OnClick, PropertyValue.Integer(SECOND_TAB_HANDLER)),
             )
         val connection = FakeHostConnection(batch)
-        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(connection))
+            }
+        }
         waitForIdle()
 
         // A tab merges its label into the tab row's semantics, so the node carrying the
@@ -169,7 +192,11 @@ class ContainerWidgetsTest {
             Mutation.Create(ROOT, WidgetKind.Tooltip),
             Mutation.SetProp(ROOT, PropertyKind.Text, PropertyValue.Text("Save the document")),
         ) + text(2, ROOT, 0, "Save")
-        setContent { DioxusContent(rememberDioxusHost(FakeHostConnection(batch))) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(FakeHostConnection(batch)))
+            }
+        }
         waitForIdle()
 
         onNodeWithTag(nodeTestTag(ROOT)).assertContentDescriptionEquals("Save the document")
@@ -216,7 +243,11 @@ class ContainerWidgetsTest {
                 HostResponse()
             }
         }
-        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(connection))
+            }
+        }
         waitForIdle()
 
         val requests = connection.events.filterIsInstance<HostEvent.RangeRequested>()
