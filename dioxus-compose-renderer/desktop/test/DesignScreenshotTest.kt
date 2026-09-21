@@ -3,6 +3,7 @@ package dioxus.compose.test
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.runDesktopComposeUiTest
 import java.io.File
@@ -15,6 +16,7 @@ import dioxus.compose.protocol.Theme
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.designShowcaseHost
+import dioxus.compose.tooling.overlayShowcaseHost
 
 /**
  * The scene the showcase is rendered into, tall enough for the whole of it.
@@ -24,6 +26,10 @@ import dioxus.compose.tooling.designShowcaseHost
  */
 private const val SHOWCASE_WIDTH = 520
 private const val SHOWCASE_HEIGHT = 2100
+
+/** Room for a dialog to sit centred with the page showing around it. */
+private const val OVERLAY_WIDTH = 520
+private const val OVERLAY_HEIGHT = 420
 
 /**
  * Renders the design showcase for each system and writes a PNG, so the systems can be
@@ -52,6 +58,45 @@ class DesignScreenshotTest {
                     val data = Image.makeFromBitmap(bitmap).encodeToData(EncodedImageFormat.PNG)
                         ?: error("PNG encoding failed")
                     File(directory, "${system.name}-${scheme.name}.png").writeBytes(data.bytes)
+                }
+            }
+        }
+    }
+
+    /**
+     * The same for the two things that are drawn over a window rather than in it.
+     *
+     * A dialog and a menu were the last surfaces here that had never been on screen under
+     * any system, because putting either one in the showcase next door covers the whole of
+     * it. They get their own scene, one per overlay per system.
+     */
+    @Test
+    fun fr14_overlay_screenshots() {
+        val directory = System.getenv("DXC_SCREENSHOT_DIR") ?: return
+        File(directory).mkdirs()
+        DesignSystem.entries.forEach { system ->
+            listOf("dialog" to true, "menu" to false).forEach { (name, dialog) ->
+                runDesktopComposeUiTest(OVERLAY_WIDTH, OVERLAY_HEIGHT) {
+                    setContent {
+                        DioxusContent(
+                            rememberDioxusHost(
+                                overlayShowcaseHost(
+                                    Theme(system, system, ColorScheme.Light, false),
+                                    dialog,
+                                ),
+                            ),
+                        )
+                    }
+                    waitForIdle()
+                    // An overlay is its own root: the page is one and the popup laid over
+                    // it is another, and the popup is the one with the thing in it.
+                    val roots = onAllNodes(isRoot())
+                    val bitmap = roots[roots.fetchSemanticsNodes().size - 1]
+                        .captureToImage()
+                        .asSkiaBitmap()
+                    val data = Image.makeFromBitmap(bitmap).encodeToData(EncodedImageFormat.PNG)
+                        ?: error("PNG encoding failed")
+                    File(directory, "overlay-${system.name}-$name.png").writeBytes(data.bytes)
                 }
             }
         }

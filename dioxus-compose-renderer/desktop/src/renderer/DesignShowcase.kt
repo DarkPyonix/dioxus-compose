@@ -310,3 +310,107 @@ fun main() = application {
         DioxusContent(rememberDioxusHost(connection))
     }
 }
+
+/**
+ * A screen with one overlay standing open on it.
+ *
+ * Separate from the showcase next door because a dialog and a menu are drawn over the
+ * window rather than in it: put either one in that scroll and it covers everything under
+ * it. They need their own picture, and until they had one they were the part of these six
+ * systems nobody had ever looked at.
+ */
+fun overlayShowcaseHost(theme: Theme, dialog: Boolean): FakeHostConnection {
+    val connection = FakeHostConnection(overlayShowcaseRecords(theme, dialog))
+    connection.respondWith { HostResponse(result = 1) }
+    return connection
+}
+
+/** The records [overlayShowcaseHost] is built from. */
+fun overlayShowcaseRecords(theme: Theme, dialog: Boolean): List<Mutation> {
+    val records = mutableListOf<Mutation>(Mutation.SetTheme(theme))
+    var nextId = 1
+    fun id(): Int = nextId++
+
+    fun text(parent: Int, index: Int, value: String, role: TypeRole) {
+        val node = id()
+        records += Mutation.Create(node, WidgetKind.Text)
+        records += Mutation.SetProp(node, PropertyKind.Text, PropertyValue.Text(value))
+        records += Mutation.SetProp(node, PropertyKind.TypeRole, PropertyValue.Integer(role.ordinal + 1L))
+        records += Mutation.SetProp(
+            node,
+            PropertyKind.Color,
+            PropertyValue.Integer(roleBits(ColorRole.OnSurface)),
+        )
+        records += Mutation.Insert(parent, node, index)
+    }
+
+    // The page underneath, so the scrim has something to dim and the overlay has something
+    // to be raised off.
+    val root = id()
+    records += Mutation.Create(root, WidgetKind.Column)
+    records += Mutation.SetModifier(root, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetModifier(root, 1, ProtocolModifier.FillMaxHeight)
+    records += Mutation.SetModifier(root, 2, ProtocolModifier.Background(Paint.Role(ColorRole.Background)))
+    records += Mutation.SetModifier(root, 3, ProtocolModifier.PaddingRole(SpaceRole.Lg))
+    records += Mutation.SetProp(root, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Md.ordinal + 1L))
+    text(root, 0, systemName(theme), TypeRole.Title)
+    text(root, 1, "The page the overlay is drawn over.", TypeRole.Body)
+
+    if (dialog) {
+        val modal = id()
+        records += Mutation.Create(modal, WidgetKind.Dialog)
+        records += Mutation.SetProp(modal, PropertyKind.Open, PropertyValue.Bool(true))
+        records += Mutation.Insert(root, modal, 2)
+        text(modal, 0, "Discard changes?", TypeRole.Subtitle)
+        text(modal, 1, "The note has not been saved.", TypeRole.Body)
+        val actions = id()
+        records += Mutation.Create(actions, WidgetKind.Row)
+        records += Mutation.SetProp(actions, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
+        records += Mutation.Insert(modal, actions, 2)
+        listOf("Cancel" to ButtonVariant.Text, "Discard" to ButtonVariant.Filled)
+            .forEachIndexed { index, (label, variant) ->
+                val button = id()
+                records += Mutation.Create(button, WidgetKind.Button)
+                records += Mutation.SetProp(button, PropertyKind.Text, PropertyValue.Text(label))
+                records += Mutation.SetProp(button, PropertyKind.Variant, PropertyValue.Integer(variant.ordinal + 1L))
+                records += Mutation.SetProp(button, PropertyKind.OnClick, PropertyValue.Integer(1L))
+                records += Mutation.Insert(actions, button, index)
+            }
+        return records
+    }
+
+    val menu = id()
+    records += Mutation.Create(menu, WidgetKind.Menu)
+    records += Mutation.SetProp(menu, PropertyKind.Open, PropertyValue.Bool(true))
+    records += Mutation.Insert(root, menu, 2)
+    // Child 0 is the anchor the popup hangs off; the rest are the entries.
+    val anchor = id()
+    records += Mutation.Create(anchor, WidgetKind.Button)
+    records += Mutation.SetProp(anchor, PropertyKind.Text, PropertyValue.Text("Options"))
+    records += Mutation.SetProp(anchor, PropertyKind.Variant, PropertyValue.Integer(ButtonVariant.Tonal.ordinal + 1L))
+    records += Mutation.SetProp(anchor, PropertyKind.OnClick, PropertyValue.Integer(1L))
+    records += Mutation.Insert(menu, anchor, 0)
+    // Plain text rather than flat buttons. What this picture is for is the popup itself:
+    // its corner, its line, how far it is raised and how much room it gives a row. Text
+    // buttons would paint every entry in whatever colour each system gives a flat button,
+    // and on one of them that is the accent, so the panel would be the hardest thing in
+    // the picture to see.
+    listOf("Rename", "Duplicate", "Delete").forEachIndexed { index, label ->
+        val entry = id()
+        records += Mutation.Create(entry, WidgetKind.Text)
+        records += Mutation.SetProp(entry, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(
+            entry,
+            PropertyKind.TypeRole,
+            PropertyValue.Integer(TypeRole.Body.ordinal + 1L),
+        )
+        records += Mutation.SetProp(
+            entry,
+            PropertyKind.Color,
+            PropertyValue.Integer(roleBits(ColorRole.OnSurface)),
+        )
+        records += Mutation.SetModifier(entry, 0, ProtocolModifier.PaddingRole(SpaceRole.Sm))
+        records += Mutation.Insert(menu, entry, index + 1)
+    }
+    return records
+}
