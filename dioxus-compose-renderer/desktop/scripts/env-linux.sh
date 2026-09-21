@@ -35,7 +35,7 @@ LINUX_PACKAGES=(build-essential zlib1g-dev unzip pkg-config fontconfig libx11-de
                 libxi-dev libxrender-dev libxtst-dev libxrandr-dev libfontconfig1-dev
                 libfreetype6-dev fonts-noto-cjk)
 
-for tool in cc nm unzip pkg-config fc-match; do
+for tool in cc nm readelf unzip pkg-config fc-match; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool '$tool' was not found" \
         "On Ubuntu 24.04: sudo apt-get install ${LINUX_PACKAGES[*]}"
 done
