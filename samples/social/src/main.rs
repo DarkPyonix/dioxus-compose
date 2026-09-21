@@ -67,13 +67,19 @@ impl Destination {
     }
 }
 
-/// A card whose picture fills it, with the title written over the bottom of the picture.
+/// A card whose picture fills it, with a band along the bottom carrying the title.
 ///
-/// This is the reference's hero shape. The title sits on the scene, so it is set in the
-/// ink the scene's family promises, which is the whole reason a container is a colour with
-/// an ink rather than an accent at low opacity.
+/// The band is the part worth explaining. The title used to sit straight on the scene in
+/// the ink the scene's family promised, which worked while the scene was drawn from that
+/// family: a role's ink is guaranteed to read on that role's fill, and both sides of the
+/// promise were roles. An illustration carries its own colours, so there is no longer a
+/// fill for an ink to be guaranteed against, and the title came out dark blue over a mid
+/// green field. It is readable in the way something you can work out is readable.
+///
+/// A reading surface under it puts both sides of the promise back. The reference does the
+/// same thing with a gradient scrim, which is the same idea drawn more softly than a
+/// closed drawing vocabulary can say.
 fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> Element {
-    let (_, _, ink) = found.palette.roles();
     let id = found.id;
     rsx! {
         dioxus_compose::Box {
@@ -88,6 +94,7 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
             }
             Row {
                 fill_max_width: true,
+                background: Paint::Role(ColorRole::Surface),
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::CenterStart,
@@ -96,14 +103,13 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
                     Text {
                         text: found.title,
                         type_role: TypeRole::Subtitle,
-                        color: Paint::Role(ink),
                         max_lines: 2,
                         overflow: TextOverflow::Ellipsis,
                     }
                     Text {
                         text: sessions_label(found),
                         type_role: TypeRole::Caption,
-                        color: Paint::Role(ink),
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
                 }
                 Button {
@@ -248,10 +254,14 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                     fill_max_height: true,
                     asset_id: asset(AssetKind::Svg, found.palette.scene()),
                 }
+                // Tonal rather than text, because this one sits on the illustration. A
+                // tonal fill is the one variant that promises to stay clear of whatever
+                // is behind it, which is what a control over a picture needs; a text
+                // button takes a colour chosen to read on a role's fill, and the picture
+                // is not that fill.
                 Button {
                     text: "\u{2190}",
-                    variant: ButtonVariant::Text,
-                    color: Paint::Role(ink),
+                    variant: ButtonVariant::Tonal,
                     on_click: move |_| on_back.call(()),
                 }
             }

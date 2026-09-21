@@ -19,8 +19,14 @@ const TICK_LENGTH: f32 = 0.12;
 /// reference draws and what a reader can count without counting.
 const TICKS: usize = 12;
 
-/// How thick the arc that shows the reading is, against the dial's radius.
-const SWEEP_WIDTH: f32 = 0.09;
+/// How thick the arc that shows the reading is, against the dial's width.
+const SWEEP_WIDTH: f32 = 0.05;
+/// How far inside the tick ring the arc sits, against the dial's width.
+///
+/// Inside rather than on the ring. An arc's stroke is centred on its radius, so one drawn
+/// at the ring's own radius is painted over the ticks from both sides and the ring it is
+/// meant to be read against disappears under it.
+const SWEEP_INSET: f32 = 0.055;
 
 /// A dial reading `fraction` of the way round: a ring of ticks, the arc the reading fills,
 /// and a marker where it ends.
@@ -58,6 +64,7 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             2.0,
         );
     }
+    let sweep = inner - size * SWEEP_INSET;
     // A sweep of nothing draws nothing, so a reading of zero is the ring alone rather than
     // an arc command the Renderer has to decide what to do with.
     if fraction > 0.0 {
@@ -65,7 +72,7 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             Paint::Role(marker),
             middle,
             middle,
-            reading,
+            sweep,
             -90.0,
             fraction * 360.0,
             size * SWEEP_WIDTH,
@@ -73,11 +80,13 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
     }
     let angle = fraction * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
     let (sin, cos) = angle.sin_cos();
+    // The marker sits on the ring rather than on the arc, which is where the reference
+    // puts it: the arc says how far round, the mark says exactly where.
     list.circle(
         Paint::Role(marker),
         middle + cos * reading,
         middle + sin * reading,
-        size * 0.032,
+        size * 0.028,
         0.0,
     )
     .build()

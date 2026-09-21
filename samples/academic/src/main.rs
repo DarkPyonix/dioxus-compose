@@ -23,8 +23,12 @@ use school::{LESSONS, Lesson, STAGES, SUBJECTS, Subject, ordinal, overall_progre
 const PAGE_MEASURE: f32 = 420.0;
 
 /// How large a subject's mark is, and how tall its tile is.
-const MARK_SIDE: f32 = 88.0;
-const TILE_HEIGHT: f32 = 168.0;
+///
+/// Larger than they were. The reference's four tiles take the top half of the screen with
+/// the object on each one filling most of its tile, and a grid of small marks in tall
+/// tiles left a band of empty page under it on a phone.
+const MARK_SIDE: f32 = 108.0;
+const TILE_HEIGHT: f32 = 196.0;
 const STRIP_HEIGHT: f32 = 56.0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
