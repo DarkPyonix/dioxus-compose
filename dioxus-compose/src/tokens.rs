@@ -81,7 +81,7 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT];
+pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, LIQUID_GLASS, FLUENT];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -177,9 +177,11 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
     },
 };
 
-const APPLE_HIG: DesignTokenTable = DesignTokenTable {
+/// Apple's table. The design language it describes is Liquid Glass, which macOS 26 and
+/// iOS 26 draw, not the flat fills that came before it.
+const LIQUID_GLASS: DesignTokenTable = DesignTokenTable {
     system: DesignSystem::Cupertino,
-    reference: "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
+    reference: "Apple Human Interface Guidelines, Liquid Glass, system colors and Dynamic Type, 2026",
     default_family: "SF Pro",
     monospace_family: "SF Mono",
     colors: colors! {
@@ -217,14 +219,18 @@ const APPLE_HIG: DesignTokenTable = DesignTokenTable {
         Caption: 12.0 / 400 / 16.0 / 0.0 / false,
         Mono: 15.0 / 400 / 20.0 / 0.0 / true,
     },
-    // HIG corners are continuous curvature. The radius is the same number, but the
-    // Renderer is expected to draw it with a squircle rather than a circular arc.
+    // These corners are continuous curvature, not circular arcs, and the Renderer draws
+    // them as a superellipse. The radii are larger than the pre-Liquid-Glass ones because
+    // the language moved that way: a surface that catches light along its rim needs a
+    // corner long enough for the rim to travel round, and a 10dp arc pinches it into a
+    // point. Nothing else in the table changes size, so the difference on screen is the
+    // corner and the material rather than a relayout.
     shapes: shapes! {
         None: 0.0,
-        ExtraSmall: 4.0,
-        Small: 8.0,
-        Medium: 10.0,
-        Large: 14.0,
+        ExtraSmall: 6.0,
+        Small: 10.0,
+        Medium: 16.0,
+        Large: 22.0,
         Full: 1000.0,
     },
     spaces: spaces! {

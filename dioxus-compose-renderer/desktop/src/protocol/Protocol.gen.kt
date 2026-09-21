@@ -928,7 +928,7 @@ object DesignTokens {
 
     val CUPERTINO: DesignTokenTable = DesignTokenTable(
         DesignSystem.Cupertino,
-        "Apple Human Interface Guidelines, system colors and Dynamic Type, 2024",
+        "Apple Human Interface Guidelines, Liquid Glass, system colors and Dynamic Type, 2026",
         "SF Pro",
         "SF Mono",
         intArrayOf(
@@ -976,7 +976,7 @@ object DesignTokens {
             TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
             TypeToken(15.0f, 400, 20.0f, 0.0f, true), // Mono
         ),
-        floatArrayOf(0.0f, 4.0f, 8.0f, 10.0f, 14.0f, 1000.0f),
+        floatArrayOf(0.0f, 6.0f, 10.0f, 16.0f, 22.0f, 1000.0f),
         floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 20.0f, 32.0f, 44.0f),
     )
 
