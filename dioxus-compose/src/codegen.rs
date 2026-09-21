@@ -1130,10 +1130,7 @@ pub fn generate_vector_description() -> String {
   "byteOrder": "little-endian",
   "mutations": {{
     "file": "mutations.bin",
-    "description": "One batch covering every record, property value, modifier layout, and drawing command",
-    "recordCount": 32,
-    "strings": ["안녕", "compose", " token"]
-    "description": "One batch covering every record, property value, and modifier layout",
+    "description": "One batch covering every record, property value, modifier layout, drawing command and asset",
     "recordCount": 32,
     "strings": ["안녕", "compose", " token"],
     "assets": [{{ "assetId": 5, "kind": "Png", "bytes": "89504e47" }}]

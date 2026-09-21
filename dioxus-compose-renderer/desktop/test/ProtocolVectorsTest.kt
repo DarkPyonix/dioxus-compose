@@ -24,6 +24,8 @@ import dioxus.compose.runtime.DioxusHost
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
 import dioxus.compose.ui.node.nodeTestTag
+import kotlin.test.BeforeTest
+import dioxus.compose.ui.platform.FrameRequests
 
 /**
  * Keeps the interpreter in lockstep with the Rust Host: the checked-in vectors are the bytes
@@ -35,6 +37,14 @@ import dioxus.compose.ui.node.nodeTestTag
  */
 @OptIn(ExperimentalTestApi::class)
 class ProtocolVectorsTest {
+    @BeforeTest
+    fun resetTheSharedFrameCounter() {
+        // The frame counter is global, because the C entry point that feeds it takes no
+        // host. Tests therefore share it, and a request left behind by one can drive
+        // another's frame loop and keep it from ever going idle.
+        FrameRequests.resetForTest()
+    }
+
     @Test
     fun pr4_checked_in_mutation_vector_is_interpreted_without_crashing() = runComposeUiTest {
         val mutations = decodeVector("mutations.bin")

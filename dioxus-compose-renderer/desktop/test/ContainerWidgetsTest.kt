@@ -22,6 +22,7 @@ import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
 import dioxus.compose.tooling.HostResponse
 import dioxus.compose.ui.node.nodeTestTag
+import kotlin.test.BeforeTest
 
 private const val ROOT = 1
 private const val DISMISS_HANDLER = 61L
@@ -37,6 +38,14 @@ private fun text(id: Int, parent: Int, index: Int, value: String) = listOf(
 
 @OptIn(ExperimentalTestApi::class)
 class ContainerWidgetsTest {
+    @BeforeTest
+    fun resetTheSharedFrameCounter() {
+        // The frame counter is global, because the C entry point that feeds it takes no
+        // host. Tests therefore share it, and a request left behind by one can drive
+        // another's frame loop and keep it from ever going idle.
+        FrameRequests.resetForTest()
+    }
+
     /**
      * A Card is a container and nothing else on the wire: the Host sends children, never a
      * colour or a corner, and the children are drawn.

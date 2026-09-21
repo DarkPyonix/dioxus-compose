@@ -23,4 +23,15 @@ internal object FrameRequests {
 
     /** Thread-safe; called from `dioxus_compose_renderer_request_frame`. */
     fun request() = requests.update { it + 1 }
+
+    /**
+     * Puts the counter back to zero, for a test that is about to install a fresh host.
+     *
+     * This object is global because the C entry point that feeds it takes no host: one
+     * process, one isolate, one host. That is right at run time and leaves tests sharing
+     * it, so a request left behind by one can drive another's frame loop. Resetting is
+     * cheaper than making the counter per-host and pretending the boundary has a handle
+     * it does not have.
+     */
+    fun resetForTest() = requests.update { 0L }
 }
