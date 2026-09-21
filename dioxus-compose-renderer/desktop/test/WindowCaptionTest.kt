@@ -7,12 +7,19 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import dioxus.compose.protocol.Mutation
+import androidx.compose.ui.graphics.Color
+import dioxus.compose.design.resolveTheme
+import dioxus.compose.design.HostPlatform
+import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.Paint
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.WindowCaption
 import dioxus.compose.runtime.opensWithABar
+import dioxus.compose.runtime.windowFill
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
 import dioxus.compose.ui.node.NodeTable
@@ -20,6 +27,7 @@ import dioxus.compose.ui.node.nodeTestTag
 import dioxus.compose.ui.platform.FrameRequestSource
 import dioxus.compose.ui.platform.LocalFrameRequests
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -46,6 +54,22 @@ private val TREE_WITH_A_BAR =
 private val TREE_WITHOUT_A_BAR =
     listOf(Mutation.Create(ROOT, WidgetKind.Column)) + label(LABEL, ROOT, 0, "Title")
 
+/** A window whose top is a picture: `Column { Image }`. */
+private val TREE_WITH_A_PICTURE = listOf(
+    Mutation.Create(ROOT, WidgetKind.Column),
+    Mutation.Create(BAR, WidgetKind.Image),
+    Mutation.Insert(ROOT, BAR, 0),
+)
+
+/** The colour an application names when it holds its own palette rather than a role's. */
+private const val CREAM = 0xfffdf3e7.toInt()
+
+/** `Column { Text }` with the page painted cream by the application. */
+private val TREE_PAINTED_BY_THE_APPLICATION = listOf(
+    Mutation.Create(ROOT, WidgetKind.Column),
+    Mutation.SetModifier(ROOT, 0, ProtocolModifier.Background(Paint.Literal(CREAM))),
+) + label(LABEL, ROOT, 0, "Title")
+
 @OptIn(ExperimentalTestApi::class)
 class WindowCaptionTest {
     private val frames = FrameRequestSource()
@@ -67,6 +91,32 @@ class WindowCaptionTest {
 
         val withoutBar = tableOf(TREE_WITHOUT_A_BAR)
         assertFalse(withoutBar.opensWithABar(withoutBar.roots))
+    }
+
+    /**
+     * A screen whose top is a photograph is the same case as a bar. Starting the picture
+     * below the window buttons leaves a strip of page colour above it, which is what a
+     * window with a title bar nobody asked for looks like.
+     */
+    @Test
+    fun fr19_2_a_tree_that_opens_with_a_picture_hands_it_the_caption() {
+        val withPicture = tableOf(TREE_WITH_A_PICTURE)
+        assertTrue(withPicture.opensWithABar(withPicture.roots))
+    }
+
+    /**
+     * The window is painted in the colour the application named, and in the theme's
+     * background only where it named none. Painting the theme's background regardless
+     * leaves a page in the application's colour under a strip in the design system's.
+     */
+    @Test
+    fun fr19_2_the_caption_strip_takes_the_colour_the_root_was_painted() {
+        val theme = resolveTheme(theme = null, platform = HostPlatform.MacOs, systemDark = false)
+        val painted = tableOf(TREE_PAINTED_BY_THE_APPLICATION)
+        assertEquals(Color(CREAM), painted.windowFill(painted.roots, theme))
+
+        val plain = tableOf(TREE_WITHOUT_A_BAR)
+        assertEquals(theme.color(ColorRole.Background), plain.windowFill(plain.roots, theme))
     }
 
     /**
