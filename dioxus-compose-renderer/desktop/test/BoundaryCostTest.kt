@@ -31,6 +31,9 @@ class BoundaryCostTest {
     private var sink: Mutation? = null
     private val collect: (Mutation) -> Unit = { sink = it }
 
+    /** Kept in a field so building a string cannot be optimised away while it is measured. */
+    private var stringSink: String? = null
+
     /**
      * One `SetProp(node, Text, text)` record, with `trailing` unused bytes after the
      * string so the same record can be read out of arenas of different sizes.
@@ -54,6 +57,28 @@ class BoundaryCostTest {
         out.putInt(0)
         out.put(utf8)
         return ByteBuffer.wrap(bytes)
+    }
+
+    /**
+     * The same record shape carrying a boolean instead of a string, so the cost of the
+     * record itself can be told apart from the cost of the text in it.
+     */
+    private fun boolChange(): ByteBuffer {
+        val records = ENVELOPE_BYTES + SET_PROP_BYTES
+        val out = ByteBuffer.allocate(records).order(ByteOrder.LITTLE_ENDIAN)
+        out.putShort(0)
+        out.putShort(ENVELOPE_BYTES.toShort())
+        out.putInt(records)
+        out.putInt(1)
+        out.putShort(2)
+        out.putShort(SET_PROP_BYTES.toShort())
+        out.putInt(7)
+        out.putShort(1)
+        out.putShort(2)
+        out.putLong(1)
+        out.putInt(0)
+        out.rewind()
+        return out
     }
 
     /** Bytes this thread allocates for one decode of `batch`, once everything is warm. */
@@ -117,6 +142,48 @@ class BoundaryCostTest {
         )
     }
 
+    /**
+     * What one `String` of this text costs, measured rather than worked out from the
+     * runtime's object layout, so the comparison below stays right on a runtime that lays
+     * objects out differently.
+     */
+    private fun bytesPerString(text: String): Long {
+        val utf8 = text.toByteArray(StandardCharsets.UTF_8)
+        repeat(WARMUP) { stringSink = String(utf8, 0, utf8.size, StandardCharsets.UTF_8) }
+        val before = threads.currentThreadAllocatedBytes
+        repeat(MEASURED) { stringSink = String(utf8, 0, utf8.size, StandardCharsets.UTF_8) }
+        val after = threads.currentThreadAllocatedBytes
+        return (after - before) / MEASURED
+    }
+
+    /**
+     * The acceptance criterion itself: a text change allocates the string Compose is handed
+     * and nothing else made out of the text.
+     *
+     * Two records of the same shape are decoded, one carrying the text and one carrying a
+     * boolean, so what is left over is the record the interpreter is handed rather than
+     * anything to do with the string. The difference between them is compared against a
+     * `String` of the same text built directly, which is the allowance.
+     */
+    @Test
+    fun pr4_a_text_change_allocates_the_string_and_nothing_else_made_of_it() {
+        val text = "a keystroke's worth"
+        val withText = bytesPerDecode(textChange(text))
+        val withoutText = bytesPerDecode(boolChange())
+        val string = bytesPerString(text)
+        println(
+            "pr4 text change: ${withText}B, the same record carrying a boolean instead " +
+                "${withoutText}B, one String of the text ${string}B",
+        )
+        assertTrue(
+            withText - withoutText <= string + ROUNDING,
+            "the text in a ${text.length} character change costs " +
+                "${withText - withoutText}B beyond the record that carries it, and one " +
+                "String of it costs ${string}B. The arena is read where it lies, so the " +
+                "string is the only thing this side has to build out of the text.",
+        )
+    }
+
     private companion object {
         const val ENVELOPE_BYTES = 12
         const val SET_PROP_BYTES = 24
@@ -124,6 +191,9 @@ class BoundaryCostTest {
         const val MEASURED = 20_000
         const val SHORT_TEXT = 16
         const val EXTRA_TEXT = 4_000
+
+        /** One object's worth of slack, for the size the runtime rounds an array up to. */
+        const val ROUNDING = 8
 
         /**
          * Bytes per character of changed text.
