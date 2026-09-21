@@ -43,6 +43,16 @@ is a rebuild of is a light one or a dark one and a screen that flips with the ma
 running on is not that design. `DXC_DESIGN` and `DXC_SCHEME` override the half they name,
 so any of them can be looked at in any of the seven systems in either scheme.
 
+A unified sample names its colours too. The picture a reference shows has its own accent
+and its own flat fills, and a `ColorRole` hands those back to whichever design system is
+running: wherever the reference had a colour of its own, the screen came out in the
+theme's blue, and the cards came out of the accent containers as pale lilac and powder
+blue. So a unified sample holds a `palette` module of the literals its picture is made of,
+with a test that pins each value and asserts each one is a literal. For the same reason it
+draws its own bar along the bottom: the references have icons alone, with the one you are
+on in the accent, and a labelled bar with a selection pill is what `Navigation` is right to
+give an application that has not been drawn one.
+
 ## The pictures
 
 Five of the unified samples carry artwork, in each one's `assets/` directory: the shop's
