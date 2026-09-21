@@ -90,13 +90,10 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            spacing: 8.0,
 
-            Row {
+            TopAppBar {
                 fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                Text { text: "Chat", type_role: TypeRole::Headline }
+                Text { text: "Chat", type_role: TypeRole::Title, weight: 1.0 }
                 Text {
                     text: if busy { "assistant is replying" } else { "ready" },
                     type_role: TypeRole::Label,
@@ -113,62 +110,105 @@ fn app() -> Element {
                 }
             }
 
-            LazyColumn {
-                item_count: count,
-                key_of: move |index: usize| keys[index].clone(),
-                item: move |index: usize| {
-                    let message = messages.read()[index].clone();
-                    rsx! {
-                        // A `Spacer` would be the obvious way to separate one message from
-                        // the next, but a Spacer can only be sized with a modifier and no
-                        // modifier can be written from rsx, so the gap is the column's
-                        // spacing instead.
-                        Column {
-                            fill_max_width: true,
-                            spacing: 2.0,
-                            Text {
-                                text: if message.from_user { "You" } else { "Assistant" },
-                                type_role: TypeRole::Label,
-                                color: Paint::Role(if message.from_user {
-                                    ColorRole::Primary
+            Column {
+                fill_max_width: true,
+                fill_max_height: true,
+                padding_role: SpaceRole::Lg,
+                space_role: SpaceRole::Md,
+
+                LazyColumn {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    item_count: count,
+                    key_of: move |index: usize| keys[index].clone(),
+                    item: move |index: usize| {
+                        let message = messages.read()[index].clone();
+                        // Who said it is the side it sits on and the colour it is painted
+                        // in, not a word above it. Both come from roles, so the user's
+                        // bubble is the accent colour of whichever design system is
+                        // running and the reply is that system's quiet surface.
+                        let (fill, ink) = if message.from_user {
+                            (ColorRole::Primary, ColorRole::OnPrimary)
+                        } else {
+                            (ColorRole::SurfaceVariant, ColorRole::OnSurfaceVariant)
+                        };
+                        rsx! {
+                            // The list has no spacing of its own, so the gap between one
+                            // message and the next is padding on the row that holds it.
+                            dioxus_compose::Box {
+                                fill_max_width: true,
+                                padding_role: SpaceRole::Xs,
+                                alignment: if message.from_user {
+                                    Alignment::CenterEnd
                                 } else {
-                                    ColorRole::Secondary
-                                }),
-                            }
-                            Text {
-                                // A message still arriving shows a caret so an empty reply
-                                // does not look like a dead one.
-                                text: if message.streaming {
-                                    format!("{}\u{2589}", message.text)
-                                } else {
-                                    message.text.clone()
+                                    Alignment::CenterStart
                                 },
-                                type_role: TypeRole::Body,
+                                Column {
+                                    space_role: SpaceRole::Xs,
+                                    alignment: if message.from_user {
+                                        Alignment::CenterEnd
+                                    } else {
+                                        Alignment::CenterStart
+                                    },
+                                    Text {
+                                        text: if message.from_user { "You" } else { "Assistant" },
+                                        type_role: TypeRole::Label,
+                                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                    }
+                                    // The bubble sizes to its text, so a short reply is a
+                                    // short bubble. Its corner is the design system's
+                                    // large corner rather than a radius chosen here.
+                                    Column {
+                                        background: Paint::Role(fill),
+                                        shape_role: ShapeRole::Large,
+                                        padding_role: SpaceRole::Md,
+                                        Text {
+                                            // A message still arriving shows a caret so an
+                                            // empty reply does not look like a dead one.
+                                            text: if message.streaming {
+                                                format!("{}\u{2589}", message.text)
+                                            } else {
+                                                message.text.clone()
+                                            },
+                                            type_role: TypeRole::Body,
+                                            color: Paint::Role(ink),
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
-                },
-            }
-
-            Row {
-                fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                // No `on_key_down` here on purpose. The Renderer already treats Enter in a
-                // multiline field that has a submit handler as "send" and Shift+Enter as
-                // "new line", and `on_submit` carries the text the field holds at that
-                // instant. A key handler would have to read the separately reported value,
-                // which lags typing by the field's change debounce, so the last characters
-                // typed before Enter would be dropped.
-                TextField {
-                    multiline: true,
-                    placeholder: "Message. Enter sends, Shift+Enter starts a new line",
-                    on_value_change: move |value| draft.set(value),
-                    on_submit: move |value: String| send(value),
+                    },
                 }
-                Button {
-                    text: "Send",
-                    on_click: move |_| send(draft()),
+
+                // The composer, grouped so it reads as one control at the foot of the
+                // conversation rather than as a field and a button that happen to be
+                // side by side.
+                Surface {
+                    fill_max_width: true,
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        // No `on_key_down` here on purpose. The Renderer already treats
+                        // Enter in a multiline field that has a submit handler as "send"
+                        // and Shift+Enter as "new line", and `on_submit` carries the text
+                        // the field holds at that instant. A key handler would have to read
+                        // the separately reported value, which lags typing by the field's
+                        // change debounce, so the last characters typed before Enter would
+                        // be dropped.
+                        TextField {
+                            weight: 1.0,
+                            multiline: true,
+                            placeholder: "Message. Enter sends, Shift+Enter starts a new line",
+                            on_value_change: move |value| draft.set(value),
+                            on_submit: move |value: String| send(value),
+                        }
+                        Button {
+                            text: "Send",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| send(draft()),
+                        }
+                    }
                 }
             }
         }
