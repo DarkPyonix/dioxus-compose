@@ -661,6 +661,9 @@ internal object CupertinoRules : ComponentRules {
             indicator = if (bar) Color.Transparent else theme.color(ColorRole.SurfaceVariant),
             indicatorShape = theme.shape(ShapeRole.Medium),
             indicatorKind = if (bar) NavigationIndicator.None else NavigationIndicator.Pill,
+            // An Apple sidebar fills the whole row it marks, label included. A tab bar
+            // marks nothing, so this says nothing about the bar.
+            indicatorExtent = NavigationExtent.Destination,
             // A tab bar and a sidebar are both divided from the content by a hairline.
             separator = theme.color(ColorRole.OutlineVariant),
             barHeight = 50.dp,
@@ -1155,9 +1158,13 @@ internal object GnomeRules : ComponentRules {
                 rounded = true,
                 periodMillis = 1000,
             ),
+            // The border grey rather than the fainter one. A boxed list is the place
+            // Adwaita rules between rows, and the layer it sits on is a step off white
+            // already: the faint rule is within five parts of that layer, so the rows run
+            // together with nothing between them.
             divider = DividerStyle(
                 thickness = 1.dp,
-                color = theme.color(ColorRole.OutlineVariant),
+                color = outline,
                 inset = 0.dp,
             ),
         )
@@ -1342,10 +1349,98 @@ internal object GnomeRules : ComponentRules {
         tooltipDelayMillis = 500,
     )
 
+    /**
+     * A view switcher across the bottom of a narrow window, a sidebar down the side of a
+     * wide one.
+     *
+     * The mark is a tint of the accent behind the selected view, rounded at the corner GTK
+     * rounds a button. It is not a capsule and it is not opaque: a solid pill behind a
+     * sidebar row is the Material answer, and Adwaita does not draw one anywhere.
+     *
+     * The strip is the header bar grey with a rule between it and the view, which is how
+     * GNOME separates chrome from content everywhere else.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceVariant),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.Primary),
+            indicator = theme.color(ColorRole.Primary).copy(alpha = SELECTED_TINT),
+            indicatorShape = theme.shape(ShapeRole.Medium),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 60.dp,
+            railWidth = 68.dp,
+            drawerWidth = 240.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+
+    /**
+     * A bottom sheet with a grab handle, rounded at the corner Adwaita rounds a window.
+     *
+     * Barely raised and lined instead: everywhere else here a layer is separated from what
+     * it covers by a hairline rather than by a shadow, and a sheet is no exception.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.Surface),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 2.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.34f,
+        heightFraction = 0.52f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+    )
+
+    /**
+     * A toast: a dark capsule centred along the bottom edge.
+     *
+     * Dark in a light session and dark again in a dark one, because GTK draws a toast in
+     * the overlay colours it uses for anything laid over content, and those do not follow
+     * the scheme. Fully rounded, which is the shape nothing else in Adwaita has, and five
+     * seconds, which is what a toast is given when nobody names a time.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = OVERLAY,
+        content = ON_OVERLAY,
+        actionContent = ON_OVERLAY,
+        shape = theme.shape(ShapeRole.Full),
+        elevation = 3.dp,
+        placement = MessagePlacement.BottomCenter,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 5_000,
+        longMillis = 10_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.45f
     private const val PRESS_MIX = 0.1f
     private const val PRESS_SHADE = 0.16f
     private const val SHADOW_SCALE = 0.5f
+
+    /** How much of the accent stands behind the selected destination. */
+    private const val SELECTED_TINT = 0.25f
+
+    /** The overlay grey GTK lays over content, and the white it writes on it. */
+    private val OVERLAY = Color(0xFF383838)
+    private val ON_OVERLAY = Color(0xFFFFFFFF)
 }
 
 /**
@@ -1635,6 +1730,90 @@ internal object BreezeRules : ComponentRules {
         tooltipDelayMillis = 700,
     )
 
+    /**
+     * A Kirigami page stack: a dense strip of destinations, and the selected one filled
+     * solid with the highlight.
+     *
+     * That solid fill is the one place Plasma spends its accent on a large area, and it is
+     * what a selected row in a KDE sidebar, a file manager list and a settings tree all
+     * look like. The strip is the window grey rather than the view white, and it is ruled
+     * off, because Breeze marks every edge.
+     *
+     * Everything here is tighter than the other five: Kirigami's grid unit is smaller than
+     * GNOME's six pixel step, and a Plasma sidebar fits more rows in the same height.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.Background),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnPrimary),
+            indicator = theme.color(ColorRole.Primary),
+            indicatorShape = theme.shape(ShapeRole.ExtraSmall),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = theme.color(ColorRole.Outline),
+            barHeight = 48.dp,
+            railWidth = 56.dp,
+            drawerWidth = 220.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+
+    /**
+     * An overlay drawer: a framed panel, barely rounded, that covers less of the window
+     * than the others do.
+     *
+     * No grab handle inside it. Plasma puts the thing you pull on outside the drawer, on
+     * the edge it comes from, so a bar drawn along the sheet's own edge would be a second
+     * handle for a gesture this one does not offer.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.Surface),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 4.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = null,
+        widthFraction = 0.32f,
+        heightFraction = 0.45f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.Outline),
+    )
+
+    /**
+     * A framed chip along the bottom edge, centred.
+     *
+     * Breeze marks a layer with a line before it marks it with anything else, and a
+     * message is a layer: this is the same frame a menu, a tooltip and a card get, rather
+     * than the inverted surface Material uses or the dark overlay GNOME lays over content.
+     * The two timings are Kirigami's own short and long.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Small),
+        elevation = 4.dp,
+        placement = MessagePlacement.BottomCenter,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 7_000,
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.Outline),
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.5f
     private const val PRESS_MIX = 0.12f
     private const val PRESS_SHADE = 0.1f
@@ -1735,9 +1914,13 @@ internal object DeepinRules : ComponentRules {
                 rounded = true,
                 periodMillis = 1100,
             ),
+            // The warm outline rather than the fainter one, for the same reason GNOME
+            // takes the stronger of its two: Deepin's panel in a dark session is a step
+            // lighter than its reading surface, and the faint line is within eight parts
+            // of it, so a list of rows comes out as one unbroken block.
             divider = DividerStyle(
                 thickness = 1.dp,
-                color = theme.color(ColorRole.OutlineVariant),
+                color = outline,
                 inset = 0.dp,
             ),
         )
@@ -1926,6 +2109,88 @@ internal object DeepinRules : ComponentRules {
         releaseMillis = 200,
         easing = LinearOutSlowInEasing,
         tooltipDelayMillis = 600,
+    )
+
+    /**
+     * A sidebar of large rounded rows, with the selected one filled with the brand blue.
+     *
+     * Deepin's mark is the only fully rounded one of the six: the same lozenge its buttons
+     * and its view switcher are, carried behind a destination. The strip is the panel
+     * white and it is not ruled off from the screen, which is the same decision the title
+     * bar makes: a Deepin window is one rounded surface rather than bars stacked on
+     * content.
+     *
+     * The rows are the tallest and the sidebar is the narrowest, because the labels sit
+     * beside icons drawn on a 24 dp grid and the whole language is roomy vertically.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnPrimary),
+            indicator = theme.color(ColorRole.Primary),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = null,
+            barHeight = 68.dp,
+            railWidth = 72.dp,
+            drawerWidth = 200.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Body,
+        )
+
+    /**
+     * A sheet with the largest corner and the deepest shadow here, and no line anywhere.
+     *
+     * Depth is how this language separates layers, so the sheet is lifted rather than
+     * framed, and it covers more of the window than the others because its padding is
+     * already the roomiest of the six.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 12.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.44f,
+        heightFraction = 0.58f,
+        padding = theme.space(SpaceRole.Xl),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /**
+     * A floating message: a lozenge that drops in at the top of the window, centred.
+     *
+     * The only one of the six that comes from the top middle. Deepin puts a desktop
+     * notification in the corner and an application's own "done that" at the top of its
+     * window, over the title bar, so this is the second of those and not a corner toast.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Full),
+        elevation = 6.dp,
+        placement = MessagePlacement.TopCenter,
+        horizontalPadding = theme.space(SpaceRole.Lg),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 8_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
     )
 
     private const val SCRIM_ALPHA = 0.35f

@@ -27,6 +27,7 @@ import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
@@ -163,6 +164,29 @@ class DesignSystemDifferenceTest {
     }
 
     /**
+     * A rule between two rows can be seen on the panel a list of rows sits on.
+     *
+     * A divider is the one thing on a screen that is nothing but contrast, so one taken
+     * from a colour a hair away from the layer under it is not a faint rule, it is no rule
+     * at all: three rows run together with no gap and nothing to see. The panel rather than
+     * the page, because that is where a list is.
+     */
+    @Test
+    fun fr15_2_4_a_rule_can_be_seen_on_the_panel_a_list_sits_on() {
+        DesignSystem.entries.forEach { system ->
+            bothSchemes(system).forEach { theme ->
+                val divider = theme.rules.controls(theme).divider
+                val panel = theme.color(ColorRole.SurfaceContainer)
+                assertTrue(
+                    apart(divider.color, panel) >= VISIBLE_RULE,
+                    "$system (dark scheme: ${theme.dark}) rules its rows in a colour " +
+                        "${apart(divider.color, panel)} from the panel they sit on",
+                )
+            }
+        }
+    }
+
+    /**
      * A control that asks for no line around it is drawn without one.
      *
      * Compose reads a zero width border as a hairline and draws a one pixel line anyway,
@@ -215,6 +239,89 @@ class DesignSystemDifferenceTest {
             )
         }
     }
+
+    /**
+     * No two systems lay a set of destinations out alike.
+     *
+     * The colours are left out of this on purpose. Every system has its own palette, so
+     * comparing whole styles would pass while all six drew the identical strip in six
+     * tints, which is exactly what three of them were doing: they answered nothing at all
+     * and took the shared default, so the rail was the same width and the selection was
+     * marked the same way on GNOME, on KDE and on Deepin.
+     */
+    @Test
+    fun fr21_no_two_systems_lay_a_set_of_destinations_out_alike() {
+        val shapes = DesignSystem.entries.associateWith { system ->
+            val theme = resolved(system, dark = false)
+            // The rail, because it is the presentation where the three measurements and
+            // the mark are all in play at once.
+            val style = theme.rules.navigation(WindowSizeClass.Medium, theme)
+            listOf(
+                style.indicatorKind,
+                style.barHeight,
+                style.railWidth,
+                style.drawerWidth,
+                style.labelInRail,
+                style.typeRole,
+                style.separator != null,
+            )
+        }
+        assertDistinct(shapes, "a set of destinations")
+    }
+
+    /** No two systems draw a sheet alike, on the same reasoning as the strip above. */
+    @Test
+    fun fr21_no_two_systems_draw_a_sheet_alike() {
+        val shapes = DesignSystem.entries.associateWith { system ->
+            val theme = resolved(system, dark = false)
+            val style = theme.rules.sheet(WindowSizeClass.Compact, theme)
+            listOf(
+                style.edge,
+                style.elevation,
+                style.handle != null,
+                style.widthFraction,
+                style.heightFraction,
+                style.borderWidth,
+            )
+        }
+        assertDistinct(shapes, "a sheet")
+    }
+
+    /**
+     * No two systems say something transient the same way.
+     *
+     * Where it appears and how long it stays are the two parts of this that a reader
+     * actually experiences, and they are the parts a system that answered nothing was
+     * taking from somebody else.
+     */
+    @Test
+    fun fr21_no_two_systems_say_something_transient_alike() {
+        val shapes = DesignSystem.entries.associateWith { system ->
+            val theme = resolved(system, dark = false)
+            val style = theme.rules.message(theme)
+            listOf(
+                style.placement,
+                style.elevation,
+                style.shortMillis,
+                style.longMillis,
+                style.borderWidth,
+            )
+        }
+        assertDistinct(shapes, "a transient message")
+    }
+
+    private fun assertDistinct(shapes: Map<DesignSystem, List<Any>>, what: String) {
+        val systems = shapes.keys.toList()
+        for (i in systems.indices) {
+            for (j in i + 1 until systems.size) {
+                assertTrue(
+                    shapes[systems[i]] != shapes[systems[j]],
+                    "${systems[i]} and ${systems[j]} give $what the same shape: " +
+                        "${shapes[systems[i]]}",
+                )
+            }
+        }
+    }
 }
 
 /** The node the border test draws. */
@@ -230,6 +337,14 @@ private const val LIGHT_HANDLE_LUMINANCE = 0.55f
 
 /** How far apart two colours have to be before the edge between them is worth drawing. */
 private const val VISIBLE_APART = 24f
+
+/**
+ * How far a rule has to be from what it is drawn on.
+ *
+ * Lower than [VISIBLE_APART], because a hairline separating two rows is meant to be quiet:
+ * it only has to be there.
+ */
+private const val VISIBLE_RULE = 12f
 
 /**
  * How dark a pixel of an unlined control is allowed to get.

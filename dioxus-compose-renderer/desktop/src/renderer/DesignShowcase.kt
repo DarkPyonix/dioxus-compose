@@ -65,7 +65,10 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
     records += Mutation.Create(root, WidgetKind.ScrollColumn)
     records += Mutation.SetModifier(root, 0, ProtocolModifier.FillMaxWidth)
     records += Mutation.SetModifier(root, 1, ProtocolModifier.FillMaxHeight)
-    records += Mutation.SetModifier(root, 2, ProtocolModifier.Background(Paint.Role(ColorRole.Surface)))
+    // The window colour rather than the reading surface. A panel is the thing that has to
+    // lift off the page, and painting the page with the same role a panel uses hides
+    // whichever systems set the two alike.
+    records += Mutation.SetModifier(root, 2, ProtocolModifier.Background(Paint.Role(ColorRole.Background)))
     records += Mutation.SetModifier(root, 3, ProtocolModifier.PaddingRole(SpaceRole.Lg))
     records += Mutation.SetProp(root, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Md.ordinal + 1L))
 
@@ -216,6 +219,54 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
     records += Mutation.SetModifier(field, 2, ProtocolModifier.Border(1f, Paint.Role(ColorRole.Outline)))
     records += Mutation.SetModifier(field, 3, ProtocolModifier.PaddingRole(SpaceRole.Sm))
     records += Mutation.Insert(root, field, slot++)
+
+    // The containers. A bar, a card, a panel of rows and a tab strip are where the six
+    // systems disagree about the things a screen is actually made of: whether a layer is
+    // marked by a line, by a tone or by a shadow, and what a selected tab looks like. None
+    // of it was in this window before, so none of it had been looked at.
+    text(root, slot++, "containers", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+
+    val bar = id()
+    records += Mutation.Create(bar, WidgetKind.TopAppBar)
+    records += Mutation.SetModifier(bar, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, bar, slot++)
+    text(bar, 0, "Inbox", TypeRole.Title)
+
+    val grouped = id()
+    records += Mutation.Create(grouped, WidgetKind.Card)
+    records += Mutation.SetModifier(grouped, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, grouped, slot++)
+    text(grouped, 0, "Card", TypeRole.BodyStrong)
+    text(grouped, 1, "A grouped box, raised however this system raises one.", TypeRole.Body)
+
+    // A panel of rows, ruled between: the shape almost every list on a real screen has,
+    // and where a divider's thickness and inset finally mean something.
+    val panel = id()
+    records += Mutation.Create(panel, WidgetKind.Surface)
+    records += Mutation.SetModifier(panel, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, panel, slot++)
+    var row = 0
+    listOf("First row", "Second row", "Third row").forEachIndexed { index, line ->
+        if (index > 0) {
+            val rule = id()
+            records += Mutation.Create(rule, WidgetKind.Divider)
+            records += Mutation.Insert(panel, rule, row++)
+        }
+        text(panel, row++, line, TypeRole.Body)
+    }
+
+    val tabs = id()
+    records += Mutation.Create(tabs, WidgetKind.Tabs)
+    records += Mutation.SetModifier(tabs, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetProp(tabs, PropertyKind.SelectedIndex, PropertyValue.Integer(1))
+    records += Mutation.Insert(root, tabs, slot++)
+    listOf("All", "Unread", "Flagged").forEachIndexed { index, label ->
+        val tab = id()
+        records += Mutation.Create(tab, WidgetKind.Text)
+        records += Mutation.SetProp(tab, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(tab, PropertyKind.OnClick, PropertyValue.Integer(1L))
+        records += Mutation.Insert(tabs, tab, index)
+    }
 
     return records
 }

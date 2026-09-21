@@ -307,6 +307,17 @@ interface ComponentRules {
  */
 enum class NavigationIndicator { Pill, LeadingEdgeBar, None }
 
+/**
+ * How much of a destination the mark covers.
+ *
+ * Material's pill sits behind the icon and the label hangs below it, outside the fill.
+ * A Plasma sidebar row, a Deepin lozenge and an Adwaita view switcher button all cover
+ * the whole destination and write the label on the fill. The two are not interchangeable:
+ * a label coloured to read on the mark, drawn beside a mark that does not reach it, comes
+ * out white on white.
+ */
+enum class NavigationExtent { Icon, Destination }
+
 /** Which of its three shapes a set of destinations has taken. */
 enum class NavigationPresentation {
     /** A bar across the bottom of the window, destinations side by side. */
@@ -335,6 +346,8 @@ data class NavigationStyle(
     val indicator: Color,
     val indicatorShape: Shape,
     val indicatorKind: NavigationIndicator,
+    /** Whether that mark covers the icon alone or the whole destination. */
+    val indicatorExtent: NavigationExtent = NavigationExtent.Icon,
     /** The hairline between the destinations and the screen, null where there is none. */
     val separator: Color?,
     val barHeight: Dp,
@@ -374,8 +387,20 @@ data class SheetStyle(
     val borderColor: Color,
 )
 
-/** Where a transient message appears. */
-enum class MessagePlacement { BottomStart, BottomCenter, TopEnd }
+/**
+ * Where a transient message appears.
+ *
+ * Four rather than one, because this is a place the systems genuinely disagree: Material
+ * puts a snackbar low and to the leading side, GNOME centres a toast along the bottom
+ * edge, Windows and Apple slide a banner in from the top corner, and Deepin drops a
+ * lozenge in at the top middle. A widget that could only be told "show a message" would
+ * have to pick one of the four for everybody.
+ */
+enum class MessagePlacement { BottomStart, BottomCenter, TopCenter, TopEnd;
+
+    /** True where the message sits along the window's top edge. */
+    val atTop: Boolean get() = this == TopCenter || this == TopEnd
+}
 
 /**
  * How a transient message is drawn and how long it stays.

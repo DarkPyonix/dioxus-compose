@@ -23,7 +23,7 @@ import dioxus.compose.tooling.designShowcaseHost
  * bottom off hides exactly the controls that were added last.
  */
 private const val SHOWCASE_WIDTH = 520
-private const val SHOWCASE_HEIGHT = 1700
+private const val SHOWCASE_HEIGHT = 2100
 
 /**
  * Renders the design showcase for each system and writes a PNG, so the systems can be
