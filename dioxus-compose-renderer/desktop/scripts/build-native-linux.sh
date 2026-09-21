@@ -21,6 +21,12 @@ mkdir -p "$obj" "$lib"
 
 cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
 
+# Nothing inside the image calls the two entry points in the C shim: the application does,
+# after loading the library. The link discards unreferenced sections, so without -u the shim
+# is dropped and the library builds cleanly with neither symbol anywhere in it.
+# --export-dynamic-symbol does not save them, because it decides what is visible among the
+# symbols that survive rather than what survives.
+#
 # The Host's dioxus_compose_host_* functions remain unresolved until the application loads
 # the renderer. $ORIGIN lets GraalVM's generated shims and AWT libraries find the
 # renderer and one another in the staged lib directory.
@@ -37,6 +43,8 @@ cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
     "-H:NativeLinkerOption=$obj/renderer_entry.o" \
     '-H:NativeLinkerOption=-Wl,--export-dynamic-symbol=dioxus_compose_renderer_run' \
     '-H:NativeLinkerOption=-Wl,--export-dynamic-symbol=dioxus_compose_renderer_request_frame' \
+    '-H:NativeLinkerOption=-Wl,-u,dioxus_compose_renderer_run' \
+    '-H:NativeLinkerOption=-Wl,-u,dioxus_compose_renderer_request_frame' \
     '-H:NativeLinkerOption=-Wl,-rpath,$ORIGIN')
 
 # These files are emitted by upstream Native Image when AWT is reachable. Fail here instead
