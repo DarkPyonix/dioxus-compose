@@ -30,7 +30,7 @@ enum class Arrangement { Start, Center, End, SpaceBetween, SpaceAround, SpaceEve
 
 enum class Alignment { TopStart, TopCenter, TopEnd, CenterStart, Center, CenterEnd, BottomStart, BottomCenter, BottomEnd }
 
-enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+enum class ButtonVariant { Filled, Tonal, Outlined, Text, Operator }
 
 enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze, Deepin, LiquidGlass }
 
@@ -271,7 +271,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -3929046057968645626L
+    const val SCHEMA_HASH: Long = 2840630162576268329L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -785,6 +785,7 @@ object Protocol {
         2 -> ButtonVariant.Tonal
         3 -> ButtonVariant.Outlined
         4 -> ButtonVariant.Text
+        5 -> ButtonVariant.Operator
         else -> throw ProtocolException("unknown ButtonVariant tag $tag", offset)
     }
 

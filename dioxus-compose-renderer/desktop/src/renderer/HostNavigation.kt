@@ -1,6 +1,7 @@
 package dioxus.compose.foundation
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -115,7 +116,7 @@ internal fun HostNavigation(
     }
 
     when (style.presentation) {
-        NavigationPresentation.Bar -> Column(modifier) {
+        NavigationPresentation.Bar -> Column(modifier.navigationBackdrop(style)) {
             Box(Modifier.fillMaxWidth().weight(1f)) {
                 Screen(content, table, dispatcher)
             }
@@ -149,7 +150,9 @@ internal fun HostNavigation(
             }
         }
 
-        NavigationPresentation.Rail, NavigationPresentation.Drawer -> Row(modifier) {
+        NavigationPresentation.Rail, NavigationPresentation.Drawer -> Row(
+            modifier.navigationBackdrop(style),
+        ) {
             val width = if (style.presentation == NavigationPresentation.Rail) {
                 style.railWidth
             } else {
@@ -218,15 +221,27 @@ internal fun Destination(
     val label = node.text(PropertyKind.Text)
     val role = node.role(PropertyKind.Icon, IconRole.entries.toTypedArray())
     val enabled = node.flag(PropertyKind.Enabled, default = true)
-    val tint = if (selected) style.selectedContent else style.content
+    val search = role == IconRole.Search &&
+        presentation == NavigationPresentation.Drawer &&
+        style.searchContainer != null
+    val tint = if (selected && !search) style.selectedContent else style.content
     val showLabel = label.isNotEmpty() &&
         (presentation != NavigationPresentation.Rail || style.labelInRail)
-    val pill = selected && style.indicatorKind == NavigationIndicator.Pill
-    val bar = selected && style.indicatorKind == NavigationIndicator.LeadingEdgeBar
+    val pill = selected && !search && style.indicatorKind == NavigationIndicator.Pill
+    val bar = selected && !search && style.indicatorKind == NavigationIndicator.LeadingEdgeBar
 
     Box(
         modifier
             .testTag(nodeTestTag(node.id))
+            .then(
+                if (search) {
+                    Modifier
+                        .clip(style.indicatorShape)
+                        .background(style.searchContainer)
+                } else {
+                    Modifier
+                },
+            )
             // `selectable` rather than `clickable`: one of a set is chosen, and saying so
             // is what puts "selected" in the accessibility tree instead of leaving a
             // screen reader to announce every destination identically.
@@ -269,6 +284,12 @@ internal fun Destination(
             }
         }
     }
+}
+
+private fun Modifier.navigationBackdrop(style: NavigationStyle): Modifier {
+    val start = style.pageGradientStart ?: return this
+    val end = style.pageGradientEnd ?: return this
+    return background(Brush.verticalGradient(listOf(start, end)))
 }
 
 @Composable

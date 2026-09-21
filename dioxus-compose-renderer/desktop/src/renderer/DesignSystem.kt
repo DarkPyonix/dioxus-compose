@@ -507,6 +507,11 @@ data class NavigationStyle(
     /** Whether a rail, which is narrow, still writes the label under the icon. */
     val labelInRail: Boolean,
     val typeRole: TypeRole,
+    /** Optional page gradient behind both the destinations and their content. */
+    val pageGradientStart: Color? = null,
+    val pageGradientEnd: Color? = null,
+    /** A search destination becomes a field-shaped action when this is non-null. */
+    val searchContainer: Color? = null,
 )
 
 /** The edge a sheet comes in from. */

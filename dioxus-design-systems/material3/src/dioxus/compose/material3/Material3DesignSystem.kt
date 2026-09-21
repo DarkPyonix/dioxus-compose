@@ -178,6 +178,11 @@ class Material3DesignSystem(
             content = colorScheme.primary,
             border = null,
         )
+        ButtonVariant.Operator -> buttonStyle(
+            container = colorScheme.secondaryContainer,
+            content = colorScheme.primary,
+            border = null,
+        )
     }
 
     /**
