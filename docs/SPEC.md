@@ -1328,7 +1328,10 @@ dioxus_compose_host_dispatch_event: click 1
   1. 일반 JNI와 `@FastNative`의 호출당 비용을 실측합니다. 공개 수치(약 115ns, 약 35ns)와 비교해 기록합니다.
   2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100회 추가되는 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
-- 구현 상태(2026-09-22): 경계 심 생성, 생명주기와 `Resync`, Activity 호스팅, cdylib 빌드가 들어왔습니다. 심은 `aarch64-linux-android`로 컴파일되고, cdylib이 내보내는 JNI 심벌은 컴파일된 Kotlin 클래스가 native로 선언한 이름과 정확히 일치합니다. 수용 기준 1~3은 모두 기기나 에뮬레이터에서만 확인할 수 있어 아직 미검증이고, 5.1의 수용 기준 4(크레이트가 Kotlin 소스를 품고 Maven 좌표 없이 APK가 빌드되는 것)는 아직 착수 전입니다.
+- 구현 상태(2026-09-22): 경계 심 생성, 생명주기와 `Resync`, Activity 호스팅, cdylib 빌드가 들어왔습니다. 심은 `aarch64-linux-android`로 컴파일되고, cdylib이 내보내는 JNI 심벌은 컴파일된 Kotlin 클래스가 native로 선언한 이름과 정확히 일치합니다.
+- **수용 기준 3은 2026-09-22 API 36 에뮬레이터에서 통과했습니다.** 화면 회전, 다크모드 전환, 홈에서 복귀는 모두 크래시 없이 **같은 프로세스가 유지**되었고(위 생명주기 항목이 규정한 대로 Compose만 재구성되고 노드 테이블은 남습니다), 백그라운드로 보낸 뒤 `am kill`한 다음 다시 띄운 것도 새 프로세스로 정상 동작했습니다. `FATAL EXCEPTION`은 한 건도 없습니다. 다크모드는 실제로 팔레트가 바뀌는 것까지 화면으로 확인했고, 그 동안 Rust 워커의 스트리밍이 끊기지 않았으므로 워커의 프레임 요청이 JNI 경계를 계속 넘어온다는 것도 같이 확인됩니다.
+- **이 검증에서 결함이 하나 나왔습니다.** Rust cdylib이 `dioxus_compose_renderer_run`을 선언하고 있어서 `dlopen`이 실패하고 `onCreate`에서 매번 죽었습니다. 빌드 스크립트가 타깃을 데스크톱과 그 외로만 갈라서 Android를 iOS와 같이 취급했기 때문입니다. iOS는 Xcode가 그 심벌을 실제로 링크하지만 Android의 렌더러는 ART 안의 Kotlin이라 그런 네이티브 심벌이 없습니다. Android는 `JNI_OnLoad`에서 진입점을 설치하므로 브라우저와 같은 갈래입니다. 빌드 스크립트는 테스트로 컴파일되지 않아 이 규칙이 어디에서도 검증되지 않고 있었고, 지금은 테스트가 닿는 모듈로 나와 있습니다.
+- 수용 기준 1(호출 비용 실측)과 2(스트리밍 중 Macrobenchmark `FrameTimingMetric`)는 아직 미검증이고, 5.1의 수용 기준 4(크레이트가 Kotlin 소스를 품고 Maven 좌표 없이 APK가 빌드되는 것)는 아직 착수 전입니다.
 
 ### PR-6 Web 경계 (`Done`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입니다. 2026-09-20 실측으로 확정했습니다(`experiments/web-interop/`).
