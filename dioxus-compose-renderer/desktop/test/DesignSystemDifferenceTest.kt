@@ -1,16 +1,27 @@
 package dioxus.compose.test
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.pow
@@ -62,6 +73,20 @@ private fun apart(first: Color, second: Color): Float = max(
     max(abs(first.red - second.red), abs(first.green - second.green)),
     abs(first.blue - second.blue),
 ) * 255f
+
+/** The outermost ring of a picture, which is where a field's frame is drawn. */
+private fun edgeOf(pixels: PixelMap): List<Int> {
+    val edge = mutableListOf<Int>()
+    for (x in 0 until pixels.width) {
+        edge += pixels[x, 0].toArgb()
+        edge += pixels[x, pixels.height - 1].toArgb()
+    }
+    for (y in 0 until pixels.height) {
+        edge += pixels[0, y].toArgb()
+        edge += pixels[pixels.width - 1, y].toArgb()
+    }
+    return edge
+}
 
 /** The corner this shape would round a square of [size] to, in dp. */
 private fun cornerRadius(shape: Shape, size: Dp): Float {
@@ -310,6 +335,143 @@ class DesignSystemDifferenceTest {
         assertDistinct(shapes, "a transient message")
     }
 
+    /**
+     * Every system frames a text field, and no two frame it the same way.
+     *
+     * A field drawn with no fill, no line, no inner room and no focus mark is not a plain
+     * field, it is an editing area with nothing around it, and it looked identical under
+     * all six. The frame is one of the places these languages diverge most: a filled box
+     * with a rule under it, a rounded fill, a box whose bottom line goes accent, a macOS
+     * focus ring.
+     */
+    @Test
+    fun fr14_7_every_system_frames_a_field_and_no_two_frame_it_alike() {
+        val shapes = DesignSystem.entries.associateWith { system ->
+            val theme = resolved(system, dark = false)
+            val field = theme.rules.field(theme)
+            assertTrue(
+                field.container != Color.Transparent ||
+                    field.borderWidth.value > 0f ||
+                    field.underline != null,
+                "$system draws a field with no frame at all",
+            )
+            assertTrue(
+                field.container != field.containerFocused ||
+                    field.border != field.borderFocused ||
+                    field.borderWidth != field.borderWidthFocused ||
+                    field.underline?.let { it.color != it.focusedColor || it.width != it.focusedWidth } == true,
+                "$system does not change a field's frame when the caret goes into it",
+            )
+            listOf(
+                field.borderWidth,
+                field.borderWidthFocused,
+                field.underline != null,
+                field.shape,
+                field.horizontalPadding,
+                field.verticalPadding,
+                field.minHeight,
+            )
+        }
+        assertDistinct(shapes, "a text field")
+    }
+
+    /**
+     * A field with no Modifier on it at all comes out framed, and differently framed under
+     * each system.
+     *
+     * The rule next door can say whatever it likes; what settles this is whether anything
+     * reads it. A page with a field on it that is indistinguishable from the page is what
+     * was there before, and it looked the same under all six.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun fr14_7_a_bare_field_is_drawn_with_the_frame_its_system_gives_it() {
+        val drawn = mutableMapOf<DesignSystem, List<Int>>()
+        DesignSystem.entries.forEach { system ->
+            runComposeUiTest {
+                setContent {
+                    Box(Modifier.size(FIELD_SCENE).background(Color.White), Alignment.Center) {
+                        DioxusContent(
+                            rememberDioxusHost(
+                                FakeHostConnection(
+                                    listOf(
+                                        Mutation.SetTheme(
+                                            Theme(system, system, ColorScheme.Light, false),
+                                        ),
+                                        Mutation.Create(FIELD, WidgetKind.TextField),
+                                    ),
+                                ),
+                            ),
+                        )
+                    }
+                }
+                waitForIdle()
+                val pixels = onRoot().captureToImage().toPixelMap()
+                val colours = mutableListOf<Int>()
+                for (y in 0 until pixels.height) {
+                    for (x in 0 until pixels.width) {
+                        colours += pixels[x, y].toArgb()
+                    }
+                }
+                assertTrue(
+                    colours.distinct().size >= 2,
+                    "$system draws a field nobody can see: the whole scene is one colour",
+                )
+                drawn[system] = colours
+            }
+        }
+        val systems = DesignSystem.entries
+        for (i in systems.indices) {
+            for (j in i + 1 until systems.size) {
+                assertTrue(
+                    drawn[systems[i]] != drawn[systems[j]],
+                    "${systems[i]} and ${systems[j]} draw the same field",
+                )
+            }
+        }
+    }
+
+    /**
+     * Putting the caret in a field changes the frame around it, in every system.
+     *
+     * Only the outermost ring of the picture is compared. The caret itself lands in the
+     * middle, so a test that looked at the whole field would go green on the caret alone
+     * and say nothing about whether the frame moved.
+     */
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun fr14_7_the_frame_changes_when_the_caret_goes_in() {
+        DesignSystem.entries.forEach { system ->
+            runComposeUiTest {
+                setContent {
+                    Box(Modifier.size(FIELD_SCENE).background(Color.White), Alignment.Center) {
+                        DioxusContent(
+                            rememberDioxusHost(
+                                FakeHostConnection(
+                                    listOf(
+                                        Mutation.SetTheme(
+                                            Theme(system, system, ColorScheme.Light, false),
+                                        ),
+                                        Mutation.Create(FIELD, WidgetKind.TextField),
+                                    ),
+                                ),
+                            ),
+                        )
+                    }
+                }
+                waitForIdle()
+                val resting = edgeOf(onNodeWithTag(nodeTestTag(FIELD)).captureToImage().toPixelMap())
+                onNodeWithTag(nodeTestTag(FIELD)).performClick()
+                waitForIdle()
+                val focused = edgeOf(onNodeWithTag(nodeTestTag(FIELD)).captureToImage().toPixelMap())
+                assertTrue(
+                    resting != focused,
+                    "$system draws the same edge whether or not the caret is in the field",
+                )
+            }
+        }
+    }
+
     private fun assertDistinct(shapes: Map<DesignSystem, List<Any>>, what: String) {
         val systems = shapes.keys.toList()
         for (i in systems.indices) {
@@ -326,6 +488,12 @@ class DesignSystemDifferenceTest {
 
 /** The node the border test draws. */
 private const val SWITCH = 1
+
+/** The node the field test draws. */
+private const val FIELD = 1
+
+/** A scene big enough to hold a field and show the page around it. */
+private val FIELD_SCENE = DpSize(220.dp, 90.dp)
 
 /**
  * How light a switch handle has to be to read as the white knob those desktops draw.

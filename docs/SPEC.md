@@ -350,7 +350,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 7. 모션: 상태 전환 duration과 easing
 8. 입력 필드의 틀(14.7)
 
-#### 14.7 입력 필드의 틀 (`Agreed`)
+#### 14.7 입력 필드의 틀 (`Done`)
 
 `TextField`는 지금까지 아무 틀 없이 그려졌습니다. 배경도, 테두리도, 안쪽 여백도, 포커스 표시도 없는 맨 편집 영역 하나입니다. 그래서 여섯 시스템의 입력 필드가 전부 똑같이 보였고, 틀을 원하는 화면은 `Background`와 `Border`와 `PaddingRole`을 직접 붙여 왔습니다. 둘 다 14.1에 어긋납니다.
 

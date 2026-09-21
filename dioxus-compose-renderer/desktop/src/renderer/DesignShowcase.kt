@@ -210,14 +210,14 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
     records += Mutation.Insert(split, standing, 1)
     text(split, 2, "right", TypeRole.Body)
 
-    // A bordered shape role, and a field, so text input is visible in the same window.
+    // A field, with nothing on it but the width. The frame around it is the design
+    // system's: the corner, the fill, the line and the room inside all come from the same
+    // place the button's container does, so a hand drawn border here would be a second
+    // frame around the first.
     val field = id()
     records += Mutation.Create(field, WidgetKind.TextField)
     records += Mutation.SetProp(field, PropertyKind.Placeholder, PropertyValue.Text("type here"))
     records += Mutation.SetModifier(field, 0, ProtocolModifier.FillMaxWidth)
-    records += Mutation.SetModifier(field, 1, ProtocolModifier.ShapeRole(ShapeRole.Small))
-    records += Mutation.SetModifier(field, 2, ProtocolModifier.Border(1f, Paint.Role(ColorRole.Outline)))
-    records += Mutation.SetModifier(field, 3, ProtocolModifier.PaddingRole(SpaceRole.Sm))
     records += Mutation.Insert(root, field, slot++)
 
     // The containers. A bar, a card, a panel of rows and a tab strip are where the six

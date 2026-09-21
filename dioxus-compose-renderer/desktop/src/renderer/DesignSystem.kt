@@ -210,6 +210,15 @@ interface ComponentRules {
      */
     val pickers: PickerRules
 
+    /**
+     * The frame around a text field.
+     *
+     * A field with nothing around it is the same field in all six systems, and it was:
+     * no fill, no line, no inner room, no focus mark. Which of those a system draws, and
+     * what changes when the caret goes in, is decided here.
+     */
+    fun field(theme: ResolvedTheme): FieldStyle
+
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
 
@@ -433,6 +442,47 @@ data class Motion(
     val easing: androidx.compose.animation.core.Easing,
     /** How long a pointer rests on something before its explanation appears. */
     val tooltipDelayMillis: Int = 500,
+)
+
+/**
+ * A line along a field's bottom edge, which is what Material and Fluent thicken when the
+ * caret goes in.
+ *
+ * Null on the systems that mark focus with the box instead. Separate from the box because
+ * Fluent draws both: a grey rectangle that stays grey, and a bottom line that goes accent.
+ */
+data class FieldUnderline(
+    val color: Color,
+    val focusedColor: Color,
+    val width: Dp,
+    val focusedWidth: Dp,
+)
+
+/**
+ * The frame around a text field, resting and with the caret in it.
+ *
+ * Nothing here is sent by the Host. A field is one of the places these six languages
+ * diverge most visibly, and a screen that painted its own fill and line would be deciding
+ * for whichever system it ended up under.
+ *
+ * Focus is Renderer state, so the second half of every pair is reached without a boundary
+ * call and the Host never learns that the caret moved.
+ */
+data class FieldStyle(
+    val container: Color,
+    val containerFocused: Color,
+    /** The box around the field. A zero width is no box, not a hairline. */
+    val border: Color,
+    val borderFocused: Color,
+    val borderWidth: Dp,
+    val borderWidthFocused: Dp,
+    val underline: FieldUnderline?,
+    val shape: Shape,
+    val horizontalPadding: Dp,
+    val verticalPadding: Dp,
+    val cursor: Color,
+    /** How tall an empty single line field is before anything is typed into it. */
+    val minHeight: Dp,
 )
 
 /**

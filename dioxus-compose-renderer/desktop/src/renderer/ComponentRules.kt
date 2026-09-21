@@ -277,6 +277,34 @@ internal object Material3Rules : ComponentRules {
     }
 
     /**
+     * A filled field with a rule under it, and nothing down the sides.
+     *
+     * The rule is the whole of Material's frame: it darkens and doubles in width when the
+     * caret goes in, and the box it sits under never gets a line at all. Tall, because a
+     * filled Material field leaves room above the text for a label whether or not one is
+     * there.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.SurfaceVariant),
+        border = Color.Transparent,
+        borderFocused = Color.Transparent,
+        borderWidth = 0.dp,
+        borderWidthFocused = 0.dp,
+        underline = FieldUnderline(
+            color = theme.color(ColorRole.OnSurfaceVariant),
+            focusedColor = theme.color(ColorRole.Primary),
+            width = 1.dp,
+            focusedWidth = 2.dp,
+        ),
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 56.dp,
+    )
+
+    /**
      * Material Symbols metrics: a 24 dp grid, a 2 dp stem and flat ends.
      *
      * Every role is drawn to the same weight, which is what makes a row of them line up.
@@ -611,6 +639,30 @@ internal object CupertinoRules : ComponentRules {
             ),
         )
     }
+
+    /**
+     * A rounded box with a hairline, and the focus ring macOS puts around whatever the
+     * caret is in.
+     *
+     * The ring is the accent at three times the resting width rather than a recoloured
+     * hairline, because on Apple's desktop it reads as something laid around the field
+     * rather than as the field's own edge changing colour. Short: a HIG field is the
+     * least tall of the six.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.Surface),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 1.dp,
+        borderWidthFocused = 3.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Small),
+        horizontalPadding = theme.space(SpaceRole.Sm),
+        verticalPadding = theme.space(SpaceRole.Xs),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 30.dp,
+    )
 
     /**
      * SF Symbols metrics: a lighter stroke on a 22 dp grid, with rounded ends and joins.
@@ -963,6 +1015,33 @@ internal object FluentRules : ComponentRules {
             ),
         )
     }
+
+    /**
+     * A grey rectangle that stays grey, with a bottom line that goes accent.
+     *
+     * Both, which is the thing that makes a WinUI field a WinUI field: the box marks where
+     * you may type and the line underneath marks that you are typing. A system with one
+     * field colour for the two states would have to pick one of them.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.Surface),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Outline),
+        borderWidth = 1.dp,
+        borderWidthFocused = 1.dp,
+        underline = FieldUnderline(
+            color = theme.color(ColorRole.Outline),
+            focusedColor = theme.color(ColorRole.Primary),
+            width = 1.dp,
+            focusedWidth = 2.dp,
+        ),
+        shape = theme.shape(ShapeRole.Medium),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 32.dp,
+    )
 
     /**
      * Fluent icon metrics: a 20 dp grid, a 1.5 dp stroke and square ends, which is what
@@ -1321,6 +1400,28 @@ internal object GnomeRules : ComponentRules {
         horizontalPadding = theme.space(SpaceRole.Md),
         verticalPadding = theme.space(SpaceRole.Xs),
         typeRole = TypeRole.BodyStrong,
+    )
+
+    /**
+     * A GTK entry: the chrome grey filled in, rounded at six, with the accent taking over
+     * the line when the caret goes in.
+     *
+     * No rule underneath. Adwaita marks the focused entry all the way round, which is the
+     * clearest difference from the Material field beside it.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.SurfaceVariant),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 1.dp,
+        borderWidthFocused = 2.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Small),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 34.dp,
     )
 
     /**
@@ -1704,6 +1805,29 @@ internal object BreezeRules : ComponentRules {
     )
 
     /**
+     * A framed view: the white of a list inside a hairline that is recoloured rather than
+     * thickened when the caret goes in.
+     *
+     * The same thing a Breeze outlined button does when it is pressed, and the same reason:
+     * a line that grows moves everything beside it by a pixel, and Plasma does not.
+     * Shortest of the six after the HIG field, because Kirigami packs tightly.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.Surface),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = theme.color(ColorRole.Outline),
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 1.dp,
+        borderWidthFocused = 1.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Medium),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 28.dp,
+    )
+
+    /**
      * Breeze icon metrics: a 22 dp grid drawn with a thin, even stroke and mitred joins,
      * which is what gives the set its drafted look next to Adwaita's solid symbolics.
      */
@@ -2083,6 +2207,29 @@ internal object DeepinRules : ComponentRules {
         horizontalPadding = theme.space(SpaceRole.Lg),
         verticalPadding = theme.space(SpaceRole.Xs),
         typeRole = TypeRole.Body,
+    )
+
+    /**
+     * A warm filled lozenge with no line on it at all until the caret goes in.
+     *
+     * Depth and fill rather than outline, the same way everything else here works: at rest
+     * the field is a tinted shape on the page, and focusing it lightens the fill to the
+     * reading surface and draws the accent round it. The largest corner and the most inner
+     * room of the six.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.Surface),
+        border = Color.Transparent,
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 0.dp,
+        borderWidthFocused = 2.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Medium),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 36.dp,
     )
 
     /**
