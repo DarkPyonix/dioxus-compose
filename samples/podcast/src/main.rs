@@ -391,14 +391,22 @@ fn new_page(
                         rsx! {
                             dioxus_compose::Box {
                                 padding_role: SpaceRole::Xs,
-                                alignment: Alignment::Center,
-                                {cover(COVER_SMALL, &SHOWS[found.show])}
-                                Button {
-                                    text: "",
-                                    variant: ButtonVariant::Text,
-                                    fill_max_width: true,
-                                    fill_max_height: true,
-                                    on_click: move |_| on_open.call(found.id),
+                                // The inner box is measured, not wrapped. A child that
+                                // fills its parent inside a box with no size of its own
+                                // takes the whole width the shelf was offered, and the
+                                // strip becomes one cover per screen.
+                                dioxus_compose::Box {
+                                    width: COVER_SMALL,
+                                    height: COVER_SMALL,
+                                    alignment: Alignment::Center,
+                                    {cover(COVER_SMALL, &SHOWS[found.show])}
+                                    Button {
+                                        text: "",
+                                        variant: ButtonVariant::Text,
+                                        fill_max_width: true,
+                                        fill_max_height: true,
+                                        on_click: move |_| on_open.call(found.id),
+                                    }
                                 }
                             }
                         }
