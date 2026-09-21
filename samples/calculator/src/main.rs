@@ -457,6 +457,54 @@ mod tests {
             .expect("the calculator tree encodes");
     }
 
+    /// The calculator's first frame under each of the six design systems, in both schemes.
+    ///
+    /// A batch that encodes is not the same as a screen someone can read. Material 3
+    /// shipped a readout filled with a colour that matched the page behind it, drawn full
+    /// size, in the right colour and invisible, and every assertion in this file passed
+    /// the whole time. The only thing that settles it is looking.
+    ///
+    /// So this writes the frames out when `DXC_FRAME_DIR` is set, as exactly the bytes the
+    /// Renderer decodes, and the Renderer's screenshot test turns each one into a PNG.
+    /// Unset, which is the normal run, it still checks that all twelve encode: a design
+    /// system nobody can render is the failure this whole set of tables exists to avoid.
+    #[test]
+    fn fr14_the_first_frame_encodes_under_every_design_system() {
+        use dioxus_compose::schema::{ColorScheme, DesignSystem, Theme};
+
+        let directory = std::env::var("DXC_FRAME_DIR").ok();
+        if let Some(directory) = &directory {
+            std::fs::create_dir_all(directory).expect("the frame directory can be created");
+        }
+        for system in [
+            DesignSystem::Material3,
+            DesignSystem::Cupertino,
+            DesignSystem::Fluent,
+            DesignSystem::Gnome,
+            DesignSystem::Breeze,
+            DesignSystem::Deepin,
+        ] {
+            for scheme in [ColorScheme::Light, ColorScheme::Dark] {
+                let theme = Theme::unified(system).with_color_scheme(scheme);
+                let mut host = Host::with_theme(app, theme);
+                let batch = host.rebuild().unwrap_or_else(|error| {
+                    panic!("{system:?} {scheme:?} does not encode: {error:?}")
+                });
+                assert!(
+                    !batch.is_empty(),
+                    "{system:?} {scheme:?} produced an empty first frame, so there is nothing to draw"
+                );
+                if let Some(directory) = &directory {
+                    let path = std::path::Path::new(directory)
+                        .join(format!("Calculator-{system:?}-{scheme:?}.bin"));
+                    std::fs::write(&path, batch).unwrap_or_else(|error| {
+                        panic!("{} cannot be written: {error}", path.display())
+                    });
+                }
+            }
+        }
+    }
+
     #[test]
     fn display_is_formatted_not_raw() {
         assert_eq!(engine::format_number(1.0 / 3.0), "0.333333333333");
