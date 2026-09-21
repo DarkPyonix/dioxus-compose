@@ -203,8 +203,12 @@ fn app() -> Element {
                         }
                     }
                 } else {
-                // Every row is a Surface of its own, which is what separates one task from
-                // the next without a divider the design systems do not all draw.
+                // The list is one grouped container, not a stack of cards. A task is a row
+                // in a list of tasks, and a card each would say that every task is a
+                // separate document. What separates one row from the next is a hairline.
+                Surface {
+                    fill_max_width: true,
+                    weight: 1.0,
                 LazyColumn {
                     fill_max_width: true,
                     weight: 1.0,
@@ -217,11 +221,12 @@ fn app() -> Element {
                         let task = tasks.read()[index].clone();
                         let editing_this = editing() == Some(task.id);
                         rsx! {
-                            Surface {
+                            Column {
                                 fill_max_width: true,
                                 Row {
                                     fill_max_width: true,
-                                    space_role: SpaceRole::Sm,
+                                    padding_role: SpaceRole::Xs,
+                                    space_role: SpaceRole::Xs,
                                     alignment: Alignment::CenterStart,
                                     // A ballot box reads as something you can tick. The
                                     // filled variant is the second half of the same
@@ -276,9 +281,15 @@ fn app() -> Element {
                                             },
                                         }
                                     }
+                                    // Reordering is a minor, repeatable adjustment, so the
+                                    // arrows are drawn in the quiet ink rather than in the
+                                    // accent. Four actions in the accent would all shout
+                                    // equally, and the one that deletes would shout no
+                                    // louder than the one that nudges a row up by one.
                                     Button {
                                         text: "\u{2191}",
                                         variant: ButtonVariant::Text,
+                                        color: Paint::Role(ColorRole::OnSurfaceVariant),
                                         enabled: previous.is_some(),
                                         on_click: move |_| {
                                             if let Some(above) = previous {
@@ -289,6 +300,7 @@ fn app() -> Element {
                                     Button {
                                         text: "\u{2193}",
                                         variant: ButtonVariant::Text,
+                                        color: Paint::Role(ColorRole::OnSurfaceVariant),
                                         enabled: next.is_some(),
                                         on_click: move |_| {
                                             if let Some(below) = next {
@@ -296,9 +308,12 @@ fn app() -> Element {
                                             }
                                         },
                                     }
+                                    // Deleting a task cannot be undone, and the error role
+                                    // is how every one of these design systems says so.
                                     Button {
                                         text: "Delete",
                                         variant: ButtonVariant::Text,
+                                        color: Paint::Role(ColorRole::Error),
                                         on_click: move |_| {
                                             tasks.write().remove(index);
                                             store::save(&tasks.read());
@@ -308,6 +323,7 @@ fn app() -> Element {
                             }
                         }
                     },
+                }
                 }
                 }
             }
@@ -568,10 +584,11 @@ mod tests {
         let mut screen = Screen::new();
         screen.request_range(4_000, WINDOW);
 
-        // A row is a handful of widgets: its surface, the row inside it, the toggle, the
-        // title and four buttons. The screen's own chrome is a fixed handful on top of
-        // that. What matters is that the total tracks the window and not the list behind it.
-        const PER_ROW: usize = 8;
+        // A row is a handful of widgets: the column holding it, the row itself, the
+        // toggle, the title and four buttons. The screen's own chrome is a fixed handful
+        // on top of that. What matters is that the total tracks the window and not the
+        // list behind it.
+        const PER_ROW: usize = 9;
         const CHROME: usize = 40;
         let nodes = screen.mock.node_count();
         assert_eq!(screen.mock.live_task_titles().len(), WINDOW);

@@ -18,12 +18,18 @@ const ROWS: [[&str; 4]; 5] = [
     ["\u{00b1}", "0", ".", "="],
 ];
 
+/// A keypad is a field of keys, so every key has a surface and the three kinds of key are
+/// told apart by which surface they get.
+///
+/// The operators and equals are the accent, the digits are the quiet filled key that most
+/// of the pad is made of, and the four function keys are outlined, which is a key with an
+/// edge rather than a key with a fill. A plain text button is not a key at all: it reads as
+/// a label lying on the case.
 fn variant_for(label: &str) -> ButtonVariant {
     match label {
-        "=" => ButtonVariant::Filled,
-        "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Tonal,
+        "=" | "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Filled,
         "C" | "\u{232b}" | "%" | "\u{00b1}" => ButtonVariant::Outlined,
-        _ => ButtonVariant::Text,
+        _ => ButtonVariant::Tonal,
     }
 }
 
@@ -76,17 +82,22 @@ fn app() -> Element {
                     Column {
                         fill_max_width: true,
                         space_role: SpaceRole::Xs,
-                        // Text has no width of its own, so the right alignment of a
-                        // calculator display comes from a full-width Box around it.
-                        dioxus_compose::Box {
-                            fill_max_width: true,
-                            alignment: Alignment::CenterEnd,
-                            Text {
-                                text: status,
-                                type_role: TypeRole::Caption,
-                                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                max_lines: 1,
-                                overflow: TextOverflow::Ellipsis,
+                        // The pending operation is a line only while there is one. An
+                        // empty line still has a height, and the panel is meant to be as
+                        // tall as the type it holds and no taller.
+                        if !status.is_empty() {
+                            // Text has no width of its own, so the right alignment of a
+                            // calculator display comes from a full-width Box around it.
+                            dioxus_compose::Box {
+                                fill_max_width: true,
+                                alignment: Alignment::CenterEnd,
+                                Text {
+                                    text: status,
+                                    type_role: TypeRole::Caption,
+                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                    max_lines: 1,
+                                    overflow: TextOverflow::Ellipsis,
+                                }
                             }
                         }
                         dioxus_compose::Box {
@@ -129,21 +140,16 @@ fn app() -> Element {
                     }
                 }
 
-                // The keyboard route, grouped into a footer so it reads as a note about
-                // the keypad above rather than as a second set of controls beside it.
+                // The keyboard route. The instruction is the field's own placeholder: a
+                // sentence above a field that says what to type into the field is the
+                // same sentence twice.
                 Surface {
                     fill_max_width: true,
                     Column {
                         fill_max_width: true,
-                        space_role: SpaceRole::Xs,
-                        Text {
-                            text: "Keyboard: click the field below, then type 0-9 . + - * / % = and Enter",
-                            type_role: TypeRole::Caption,
-                            color: Paint::Role(ColorRole::OnSurfaceVariant),
-                        }
                         TextField {
                             fill_max_width: true,
-                            placeholder: "Keyboard input",
+                            placeholder: "Click here and type 0-9 . + - * / % = or Enter",
                             on_value_change: move |value: String| {
                     let previous = typed();
                     let shared = shared_prefix(&previous, &value);
