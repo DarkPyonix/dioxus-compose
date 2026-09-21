@@ -384,7 +384,20 @@ fn app() -> Element {
             fill_max_height: true,
 
             {thread_bar(measure, busy, rsx! {
-                Text { text: "Chat", type_role: TypeRole::Title, weight: 1.0 }
+                // The conversation's own name, not the application's. The application's
+                // name is on the screen once already, in the sidebar, and it is the one
+                // thing here that never changes.
+                Text {
+                    text: conversations
+                        .read()
+                        .iter()
+                        .find(|entry| entry.id == current())
+                        .map_or_else(|| Conversation::UNTITLED.to_owned(), Conversation::label),
+                    type_role: TypeRole::Title,
+                    weight: 1.0,
+                    max_lines: 1,
+                    overflow: TextOverflow::Ellipsis,
+                }
                 Button {
                     text: "Assistant",
                     variant: ButtonVariant::Text,
