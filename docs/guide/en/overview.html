@@ -169,12 +169,12 @@
           </tr>
           <tr>
             <td>Android</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims. Both halves build for <code>arm64-v8a</code>, and nothing has run on a device or an emulator.</td>
+            <td><span class="pill partial">Runs on an emulator</span></td>
+            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims. Verified on an API&nbsp;36 emulator: the screen draws, rotation and a dark mode change keep the same process rather than rebuilding the tree, and a killed process comes back. One boundary call measured 101&nbsp;ns there, or 4.5&nbsp;ns for the one call short enough to skip the thread state transition, against a frame that is called a handful of times rather than once per node.</td>
           </tr>
           <tr>
             <td>Web (wasm)</td>
-            <td><span class="pill planned">Planned</span></td>
+            <td><span class="pill partial">Draws in a browser</span></td>
             <td>Kotlin owns the wasm linear memory and Rust imports it, so the batch arena is shared in place with no copying. Each boundary call goes through a generated JS forwarder, measured at about 12&nbsp;ns in Safari and not yet re-measured elsewhere.</td>
           </tr>
         </tbody>

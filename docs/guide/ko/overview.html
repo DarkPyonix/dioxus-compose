@@ -168,12 +168,12 @@
           </tr>
           <tr>
             <td>Android</td>
-            <td><span class="pill planned">계획</span></td>
-            <td>Kotlin이 프로세스와 루프를 소유하고, Rust cdylib을 생성된 JNI 심으로 호출합니다. 양쪽 모두 <code>arm64-v8a</code>로 빌드되지만, 기기나 에뮬레이터에서 돌아간 적은 없습니다.</td>
+            <td><span class="pill partial">에뮬레이터에서 동작</span></td>
+            <td>Kotlin이 프로세스와 루프를 소유하고, Rust cdylib을 생성된 JNI 심으로 호출합니다. API&nbsp;36 에뮬레이터에서 확인했습니다. 화면이 그려지고, 회전과 다크모드 전환에서 트리를 다시 만들지 않고 같은 프로세스가 유지되며, 죽인 프로세스도 다시 돌아옵니다. 경계 호출은 그곳에서 101&nbsp;ns로, 스레드 상태 전환을 건너뛸 만큼 짧은 호출 하나는 4.5&nbsp;ns로 측정됐습니다. 노드마다가 아니라 프레임마다 몇 번 부르는 호출입니다.</td>
           </tr>
           <tr>
             <td>Web (wasm)</td>
-            <td><span class="pill planned">계획</span></td>
+            <td><span class="pill partial">브라우저에서 그려짐</span></td>
             <td>Kotlin이 wasm linear memory를 소유하고 Rust가 그것을 import합니다. 배치 arena를 제자리에서 공유하므로 복사가 없고, 경계 호출은 코드젠으로 만든 JS forwarder를 거칩니다. Safari에서 약 12&nbsp;ns로 실측했고 다른 엔진에서는 아직 재지 않았습니다.</td>
           </tr>
         </tbody>
