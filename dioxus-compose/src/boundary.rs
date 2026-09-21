@@ -659,6 +659,16 @@ fn parse_handshake(bytes: &[u8]) -> Result<LoopMode, ProtocolError> {
             .map_err(|_| ProtocolError::Truncated)?,
     );
     if hash != SCHEMA_HASH || version != PROTOCOL_VERSION {
+        // Say what did not match, and say it here rather than leaving the status code to
+        // carry it. A mismatch means the two halves were generated from different
+        // versions of the schema, which on a desktop build means a renderer library
+        // compiled before the last codegen run. The window still opens, because the
+        // renderer stands it up before it asks, so the only thing on screen is an empty
+        // page in the default theme: a symptom that looks like a blank application rather
+        // than like a stale build, and one that cost a morning to read the first time.
+        eprintln!(
+            "dioxus-compose: the renderer was built from a different schema than this              program. It sent hash {hash:#x} version {version}, and this build expects              hash {SCHEMA_HASH:#x} version {PROTOCOL_VERSION}. Rebuild the renderer after              running codegen; if it was already rebuilt, its build directory is holding a              cached copy of the generated protocol and has to be cleared."
+        );
         return Err(ProtocolError::InvalidEnvelope);
     }
     match bytes[10] {
@@ -1325,6 +1335,36 @@ mod demo_theme_tests {
             std::env::remove_var("DXC_DESIGN");
             std::env::remove_var("DXC_SCHEME");
         };
+    }
+    /// A renderer built from a different schema is refused, and says so.
+    ///
+    /// The refusal already worked. What did not was finding out why: the renderer stands
+    /// its window up before it asks the Host anything, so a mismatch leaves an empty page
+    /// in the default theme and a status code, which reads as an application that draws
+    /// nothing rather than as a build that is out of date. It cost a morning once.
+    #[test]
+    fn pr2_a_handshake_from_another_schema_is_refused() {
+        let mut wrong = Vec::with_capacity(12);
+        wrong.extend_from_slice(&SCHEMA_HASH.wrapping_add(1).to_le_bytes());
+        wrong.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+        wrong.extend_from_slice(&[LoopMode::Renderer as u8, 0]);
+        assert!(
+            matches!(
+                parse_handshake(&wrong),
+                Err(crate::protocol::ProtocolError::InvalidEnvelope)
+            ),
+            "a handshake carrying another schema's hash was accepted, so the two halves \
+             would go on to disagree about what every record means"
+        );
+
+        let mut right = Vec::with_capacity(12);
+        right.extend_from_slice(&SCHEMA_HASH.to_le_bytes());
+        right.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+        right.extend_from_slice(&[LoopMode::Renderer as u8, 0]);
+        assert!(
+            parse_handshake(&right).is_ok(),
+            "the handshake this build generates is not one it accepts"
+        );
     }
 }
 
