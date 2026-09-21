@@ -90,7 +90,8 @@ fn rows(block: &str, prefix: &str) -> BTreeMap<String, String> {
     found
 }
 
-/// The eight hex digits of `Color(0xAARRGGBB)`, without the alpha pair.
+/// The `RRGGBB` of a literal `Color(0xAARRGGBB)`. The alpha pair is dropped, because the
+/// shipped tables store a colour as three channels and every literal here is opaque.
 fn kotlin_rgb(value: &str, path: &str, role: &str) -> u32 {
     let digits = value
         .strip_prefix("Color(0x")
