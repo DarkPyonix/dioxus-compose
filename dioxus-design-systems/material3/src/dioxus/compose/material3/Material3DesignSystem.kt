@@ -71,6 +71,9 @@ class Material3DesignSystem(
         ColorRole.OutlineVariant -> colorScheme.outlineVariant
         ColorRole.Error -> colorScheme.error
         ColorRole.OnError -> colorScheme.onError
+        // Material 3's own answer to depth: surface and background are one value here,
+        // and the container roles are what a raised layer is made of.
+        ColorRole.SurfaceContainer -> colorScheme.surfaceContainer
     }
 
     /**

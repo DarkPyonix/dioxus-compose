@@ -365,6 +365,15 @@ define_wire_enum!(COLOR_ROLE_SCHEMA, ColorRole {
     OutlineVariant = 12,
     Error = 13,
     OnError = 14,
+    // The layer a panel is made of: a thing raised off the page, holding the page's own
+    // reading ink. It exists because `Surface` cannot do that job everywhere. Material 3
+    // gives `Surface` and `Background` one value on purpose and expresses depth through
+    // tonal containers instead, so a panel filled with `Surface` on a page of `Background`
+    // is drawn, in the right colour, and is invisible. `SurfaceVariant` is not the answer
+    // either: its ink pair is the muted secondary ink, so a panel holding primary content
+    // would have to set that content half faded. This is the one role every design system
+    // promises to make visible against the page, and `OnSurface` is what reads on it.
+    SurfaceContainer = 15,
 });
 
 // The nine-rung type ladder every supported design system maps onto.

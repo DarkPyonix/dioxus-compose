@@ -68,6 +68,8 @@ class FluentDesignSystem private constructor(
         ColorRole.OutlineVariant -> palette.stroke2
         ColorRole.Error -> palette.danger
         ColorRole.OnError -> palette.onDanger
+        // A card sits on the solid background base, one layer lighter than the canvas.
+        ColorRole.SurfaceContainer -> palette.background1
     }
 
     /**

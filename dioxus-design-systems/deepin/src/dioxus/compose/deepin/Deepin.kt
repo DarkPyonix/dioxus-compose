@@ -73,6 +73,8 @@ class DeepinDesignSystem private constructor(
         ColorRole.Outline -> Color(0xFFD9CDC0)
         ColorRole.OutlineVariant -> Color(0xFFECE3D9)
         ColorRole.Error -> Color(0xFFE35C4B)
+        // The view layer, raised off the window background.
+        ColorRole.SurfaceContainer -> Color(0xFFFFFDFA)
         ColorRole.OnError -> Color(0xFFFFFFFF)
     }
 
@@ -91,6 +93,7 @@ class DeepinDesignSystem private constructor(
         ColorRole.Outline -> Color(0xFF574F4B)
         ColorRole.OutlineVariant -> Color(0xFF383230)
         ColorRole.Error -> Color(0xFFFF8A73)
+        ColorRole.SurfaceContainer -> Color(0xFF2B2726)
         ColorRole.OnError -> Color(0xFF34110A)
     }
 

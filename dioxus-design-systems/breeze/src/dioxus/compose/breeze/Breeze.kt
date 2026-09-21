@@ -80,6 +80,9 @@ class BreezeDesignSystem private constructor(
         ColorRole.OutlineVariant -> Color(0xFFD8DBDD)
         // Breeze "negative".
         ColorRole.Error -> Color(0xFFDA4453)
+        // The view layer, raised off the window background. Breeze already separates the
+        // two, so a panel is the view colour and the window is what it sits on.
+        ColorRole.SurfaceContainer -> Color(0xFFFCFCFC)
         ColorRole.OnError -> Color(0xFFFFFFFF)
     }
 
@@ -98,6 +101,7 @@ class BreezeDesignSystem private constructor(
         ColorRole.Outline -> Color(0xFF4D5155)
         ColorRole.OutlineVariant -> Color(0xFF31363B)
         ColorRole.Error -> Color(0xFFED8079)
+        ColorRole.SurfaceContainer -> Color(0xFF1B1E20)
         ColorRole.OnError -> Color(0xFF2A0806)
     }
 

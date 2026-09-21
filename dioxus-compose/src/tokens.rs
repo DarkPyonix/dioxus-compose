@@ -58,7 +58,7 @@ pub struct DesignTokenTable {
     pub reference: &'static str,
     pub default_family: &'static str,
     pub monospace_family: &'static str,
-    pub colors: &'static [ColorToken; 14],
+    pub colors: &'static [ColorToken; 15],
     pub type_scale: &'static [TypeToken; 9],
     pub shapes: &'static [ShapeToken; 6],
     pub spaces: &'static [SpaceToken; 7],
@@ -142,6 +142,10 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
         OutlineVariant: 0xcac4d0 / 0x49454f,
         Error: 0xb3261e / 0xf2b8b5,
         OnError: 0xffffff / 0x601410,
+        // Material 3's own `surfaceContainer`, which is how this system raises a panel:
+        // `Surface` and `Background` are one value here by design, so the container roles
+        // are the only thing that separates a layer from the page.
+        SurfaceContainer: 0xf3edf7 / 0x211f26,
     },
     type_scale: type_scale! {
         Display: 57.0 / 400 / 64.0 / 0.0 / false,
@@ -196,6 +200,11 @@ const APPLE_HIG: DesignTokenTable = DesignTokenTable {
         OutlineVariant: 0xe5e5ea / 0x48484a,
         Error: 0xff3b30 / 0xff453a,
         OnError: 0xffffff / 0xffffff,
+        // secondarySystemGroupedBackground: the colour of a grouped box sitting on the
+        // grouped page. It matches `Surface` here, and that is correct rather than a
+        // duplicate: on iOS a panel on the grouped page is the plain reading surface, and
+        // what makes it a panel is that the page underneath is not.
+        SurfaceContainer: 0xffffff / 0x1c1c1e,
     },
     type_scale: type_scale! {
         Display: 34.0 / 400 / 41.0 / 0.37 / false,
@@ -252,6 +261,8 @@ const FLUENT: DesignTokenTable = DesignTokenTable {
         OutlineVariant: 0xe0e0e0 / 0x3d3d3d,
         Error: 0xc50f1f / 0xdc626d,
         OnError: 0xffffff / 0x000000,
+        // The card layer, which Fluent lifts off the solid background base by lightness.
+        SurfaceContainer: 0xffffff / 0x2b2b2b,
     },
     type_scale: type_scale! {
         Display: 40.0 / 600 / 52.0 / 0.0 / false,
@@ -358,6 +369,13 @@ mod tests {
     /// `Background` and `Surface` are deliberately not compared. Material 3 gives them the
     /// same value on purpose and expresses depth through tonal containers and elevation,
     /// so requiring those to differ would be requiring Material 3 to stop being itself.
+    ///
+    /// That is exactly why `SurfaceContainer` is checked here too. Material 3 having no
+    /// gap between the page and the surface is not a defect, but it does mean `Surface` is
+    /// not a role a panel can be made of, and until this role existed there was nothing in
+    /// the vocabulary that promised to be visible on the page while holding `OnSurface`
+    /// ink. A calculator readout filled with `Surface` disappeared under Material 3 and
+    /// nothing here noticed, because nothing here was asked about it.
     #[test]
     fn fr14_surface_variant_is_visible_against_the_page_and_the_surface() {
         /// Summed channel distance in eight bit terms, which is enough to catch a collapse.
@@ -388,6 +406,21 @@ mod tests {
                         distance
                     );
                 }
+                // A panel is raised off the page, so the layer role has to be visible
+                // against the page. It is not compared against `Surface`, because in
+                // Cupertino a panel on the grouped page is the plain reading surface and
+                // the two carrying one value there is the correct answer, not a collapse.
+                let container = table.color(ColorRole::SurfaceContainer, scheme);
+                let distance = apart(container, table.color(ColorRole::Background, scheme));
+                assert!(
+                    distance >= 24,
+                    "{:?} {:?}: SurfaceContainer and Background are {} apart, so a panel \
+                     made of it is drawn and cannot be seen. This is the one role a panel \
+                     can rely on, so it has to lift off the page in every system.",
+                    table.system,
+                    scheme,
+                    distance
+                );
             }
         }
     }
@@ -448,6 +481,9 @@ mod tests {
             (ColorRole::Surface, ColorRole::OnSurface),
             (ColorRole::SurfaceVariant, ColorRole::OnSurfaceVariant),
             (ColorRole::Background, ColorRole::OnBackground),
+            // The layer role has no ink of its own: it holds the page's reading ink, and
+            // that is the promise a caller relies on when filling a panel with it.
+            (ColorRole::SurfaceContainer, ColorRole::OnSurface),
         ];
         let accent = [
             (ColorRole::Primary, ColorRole::OnPrimary),
