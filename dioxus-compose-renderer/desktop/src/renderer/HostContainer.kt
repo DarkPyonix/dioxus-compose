@@ -138,7 +138,10 @@ internal fun HostTopAppBar(
                 // nothing.
                 .heightIn(min = caption.height)
                 .containerDecoration(node, style, theme)
-                .padding(start = caption.buttonsWidth),
+                .padding(
+                    start = if (caption.buttonsAtStart) caption.buttonsWidth else 0.dp,
+                    end = if (caption.buttonsAtStart) 0.dp else caption.buttonsWidth,
+                ),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {

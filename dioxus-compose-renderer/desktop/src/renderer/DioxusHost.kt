@@ -207,10 +207,24 @@ fun DioxusContent(
     // window buttons sit in belongs to the bar rather than to the page underneath it.
     // Otherwise the page keeps it and the content starts below the buttons.
     val barIsCaption = caption.height > 0.dp && host.table.opensWithABar(host.roots)
+    val captionStyle = theme.rules.caption(theme)
+    // How much room the buttons take and at which end. The platform's own are at the
+    // leading edge and the renderer's are wherever this design system puts them, so the
+    // bar cannot assume either.
+    val barCaption = when {
+        !barIsCaption -> WindowCaption.None
+        LocalWindowActions.current == null -> caption
+        else -> caption.copy(
+            buttonsWidth = captionStyle.buttonWidth * 3 +
+                captionStyle.spacing * 2 +
+                captionStyle.edgePadding * 2,
+            buttonsAtStart = captionStyle.side == CaptionSide.Start,
+        )
+    }
     CompositionLocalProvider(
         LocalDesignTheme provides theme,
         LocalReduceTransparency provides reduceTransparency,
-        LocalWindowCaption provides if (barIsCaption) caption else WindowCaption.None,
+        LocalWindowCaption provides barCaption,
     ) {
         // The background fills the whole window and the inset is applied inside it. Putting
         // the inset outside instead leaves the window's own background showing through the
@@ -230,7 +244,6 @@ fun DioxusContent(
                 // drawn where the platform draws its own: macOS keeps the system's
                 // traffic lights, and the platform layer provides no actions there.
                 if (caption.height > 0.dp) {
-                    val captionStyle = theme.rules.caption(theme)
                     WindowButtons(
                         style = captionStyle,
                         modifier = Modifier
@@ -298,8 +311,18 @@ val LocalSystemDarkObserver = staticCompositionLocalOf<(@Composable () -> Boolea
 data class WindowCaption(
     /** How tall the strip is. */
     val height: Dp = 0.dp,
-    /** How much room the system's own window buttons take at the leading edge. */
+    /** How much room the window buttons take at the end they sit at. */
     val buttonsWidth: Dp = 0.dp,
+    /**
+     * Which end that is.
+     *
+     * The platform's own buttons are at the leading edge, because the one platform that
+     * keeps its own puts them there. Buttons the renderer draws sit wherever the running
+     * design system puts them, which is the trailing edge for five of the seven, and a
+     * bar that reserved room at the wrong end would push its title away from the buttons
+     * and then draw them over its other end.
+     */
+    val buttonsAtStart: Boolean = true,
 ) {
     companion object {
         /** No strip to avoid: a system title bar, or a platform without one. */

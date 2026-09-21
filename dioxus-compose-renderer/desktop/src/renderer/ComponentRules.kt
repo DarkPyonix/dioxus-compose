@@ -1655,10 +1655,14 @@ internal object GnomeRules : ComponentRules {
         buttonWidth = 26.dp,
         buttonHeight = 26.dp,
         shape = theme.shape(ShapeRole.Full),
-        minimiseContainer = theme.color(ColorRole.SurfaceVariant),
-        maximiseContainer = theme.color(ColorRole.SurfaceVariant),
-        closeContainer = theme.color(ColorRole.SurfaceVariant),
-        hover = theme.color(ColorRole.Outline),
+        // A tint rather than a stored grey. The header bar's own colour is the grey a
+        // stored one would have been, so the discs came out the colour of the bar and
+        // the set read as three bare glyphs, which is the GTK button this is not.
+        // libadwaita defines its own button fill the same way, and for the same reason.
+        minimiseContainer = captionFill(theme.dark, BUTTON_TINT),
+        maximiseContainer = captionFill(theme.dark, BUTTON_TINT),
+        closeContainer = captionFill(theme.dark, BUTTON_TINT),
+        hover = captionFill(theme.dark, BUTTON_TINT_HOVER),
         closeHover = theme.color(ColorRole.Error),
         glyph = theme.color(ColorRole.OnSurface),
         closeHoverGlyph = Color.White,
@@ -1668,6 +1672,14 @@ internal object GnomeRules : ComponentRules {
         edgePadding = theme.space(SpaceRole.Sm),
         titleAlignment = CaptionTitleAlignment.Center,
     )
+
+    /** A fill that darkens a light bar and lightens a dark one, whatever colour it is. */
+    private fun captionFill(dark: Boolean, alpha: Float): Color =
+        if (dark) Color.White.copy(alpha = alpha) else Color.Black.copy(alpha = alpha)
+
+    /** How far a window button's fill moves the header bar under it. */
+    private const val BUTTON_TINT = 0.10f
+    private const val BUTTON_TINT_HOVER = 0.20f
 
     private const val SCRIM_ALPHA = 0.45f
     private const val PRESS_MIX = 0.1f
