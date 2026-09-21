@@ -13,6 +13,7 @@ mod widgets;
 pub mod window;
 
 pub use boundary::{
+    demo_theme,
     Host, LaunchBuilder, MutationBatch, RendererApi, install_renderer_api, launch,
     request_frame_from_worker,
 };
