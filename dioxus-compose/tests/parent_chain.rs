@@ -486,3 +486,207 @@ fn fr8_an_empty_box_in_a_list_item_keeps_the_item_under_its_own_parent() {
         );
     }
 }
+
+/// A list of rows whose actions are entries declared only while the row's menu is open.
+///
+/// This is the shape a row of overflow actions wants: nothing is built for an action until
+/// someone asks for it. It puts three conditionals in one item, one inside another. The
+/// row chooses between editing and reading, the menu's entries are a branch of their own,
+/// and the entries themselves are a loop, so an item carries three placeholders that fill
+/// in and empty again while the list's window moves over them.
+fn menu_of_lazy_entries_app() -> Element {
+    let mut open = use_signal(|| None::<usize>);
+    let mut editing = use_signal(|| None::<usize>);
+    rsx! {
+        LazyColumn {
+            item_count: 40,
+            item: move |index: usize| rsx! {
+                Row {
+                    if editing() == Some(index) {
+                        TextField { placeholder: "title" }
+                        Button {
+                            text: "Save",
+                            on_click: move |_| editing.set(None),
+                        }
+                    } else {
+                        Text { text: "row {index}" }
+                        Menu {
+                            expanded: open() == Some(index),
+                            on_dismiss: move |_| open.set(None),
+                            anchor: rsx! {
+                                Button {
+                                    text: "actions",
+                                    on_click: move |_| open.set(Some(index)),
+                                }
+                            },
+                            if open() == Some(index) {
+                                for entry in MENU_ENTRIES {
+                                    Button {
+                                        text: "{entry}",
+                                        on_click: move |_| {
+                                            open.set(None);
+                                            if entry == MENU_ENTRIES[0] {
+                                                editing.set(Some(index));
+                                            }
+                                        },
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        }
+    }
+}
+
+/// What one row's menu offers, in the order the entries are declared.
+const MENU_ENTRIES: [&str; 4] = ["Edit", "Move up", "Move down", "Delete"];
+
+/// The handler the given node reports its clicks through.
+fn click_handler(batch: &[Mutation<'_>], node: u32) -> Option<u64> {
+    batch.iter().find_map(|mutation| match mutation {
+        Mutation::SetProp {
+            node_id,
+            property: PropertyKind::OnClick,
+            value: PropertyValue::Integer(id),
+        } if *node_id == node => Some(*id as u64),
+        _ => None,
+    })
+}
+
+/// The one node a property with the given name was created for.
+fn only_node_of(batch: &[Mutation<'_>], widget: WidgetKind) -> Option<u32> {
+    batch.iter().find_map(|mutation| match mutation {
+        Mutation::Create {
+            node_id,
+            widget: got,
+        } if *got == widget => Some(*node_id),
+        _ => None,
+    })
+}
+
+/// The nodes the given text was set on, in the order they appear.
+fn nodes_with_text(batch: &[Mutation<'_>], text: &str) -> Vec<u32> {
+    batch
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::Text,
+                value: PropertyValue::String(value),
+            } if *value == text => Some(*node_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Sends one event and hands back what came out of it.
+fn send(host: &mut Host, event: HostEvent<'_>) -> Vec<u8> {
+    let mut wire = Vec::new();
+    encode_event(&event, &mut wire).unwrap();
+    host.dispatch_event(&wire).unwrap().0.to_vec()
+}
+
+/// Fails with the chain it found if any node's parents lead back to the node itself.
+fn assert_no_loop(parents: &HashMap<u32, u32>, what: &str) {
+    let nodes: Vec<u32> = parents.keys().copied().collect();
+    for node in nodes {
+        assert!(
+            loops_from(parents, node).is_none(),
+            "{what}: the parent chain from {node} loops: {:?}",
+            loops_from(parents, node),
+        );
+    }
+}
+
+#[test]
+fn nfr7_a_menu_whose_entries_arrive_only_when_open_never_loops_the_parent_chain() {
+    let mut host = Host::new(menu_of_lazy_entries_app);
+    let mut parents = HashMap::new();
+    let first = host.rebuild().unwrap().to_vec();
+    follow(&first, &mut parents);
+    let records = decode_batch(&first).unwrap();
+    let list = only_node_of(&records, WidgetKind::LazyColumn).expect("the screen has a list");
+    let range = records
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::OnRangeRequested,
+                value: PropertyValue::Integer(id),
+            } if *node_id == list => Some(*id as u64),
+            _ => None,
+        })
+        .expect("the list asks for its range");
+
+    // The window moves forward and back over the same items, so every item is built,
+    // dropped and built again with its menu opened in between.
+    for start in [0_u32, 4, 8, 4, 0] {
+        let window = send(
+            &mut host,
+            HostEvent {
+                node_id: list,
+                handler_id: range,
+                payload: EventPayload::RangeRequested { start, count: 6 },
+            },
+        );
+        follow(&window, &mut parents);
+        assert_no_loop(&parents, &format!("window at {start}"));
+        let window = decode_batch(&window).unwrap();
+
+        let anchors = nodes_with_text(&window, "actions");
+        assert!(
+            !anchors.is_empty(),
+            "the window at {start} materialised no rows",
+        );
+        for anchor in anchors {
+            let menu = parent_of(&window, anchor).expect("the anchor sits in its menu");
+            let handler = click_handler(&window, anchor).expect("the anchor reports its clicks");
+            let opened = send(
+                &mut host,
+                HostEvent {
+                    node_id: anchor,
+                    handler_id: handler,
+                    payload: EventPayload::Clicked,
+                },
+            );
+            follow(&opened, &mut parents);
+            assert_no_loop(&parents, &format!("window at {start}, menu {menu} open"));
+            let opened = decode_batch(&opened).unwrap();
+
+            for (offset, entry) in MENU_ENTRIES.iter().enumerate() {
+                let nodes = nodes_with_text(&opened, entry);
+                assert_eq!(
+                    1,
+                    nodes.len(),
+                    "opening menu {menu} built {entry} {} times",
+                    nodes.len(),
+                );
+                assert_eq!(
+                    Some(menu),
+                    parent_of(&opened, nodes[0]),
+                    "{entry} was attached outside the menu it belongs to",
+                );
+                assert_eq!(
+                    Some(offset as u32 + 1),
+                    index_of(&opened, nodes[0]),
+                    "the window at {start}: {entry} went in at the wrong place under menu \
+                     {menu}, where the anchor holds the first position",
+                );
+            }
+        }
+    }
+}
+
+/// The slot the given node was last attached at.
+fn index_of(batch: &[Mutation<'_>], node: u32) -> Option<u32> {
+    batch.iter().rev().find_map(|mutation| match mutation {
+        Mutation::Insert { node_id, index, .. } | Mutation::Move { node_id, index, .. }
+            if *node_id == node =>
+        {
+            Some(*index)
+        }
+        _ => None,
+    })
+}
