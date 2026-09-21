@@ -11,9 +11,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import dioxus.compose.design.IconStyle
@@ -27,6 +25,7 @@ import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.intProp
 import dioxus.compose.ui.node.Asset
 import dioxus.compose.ui.node.AssetCache
+import dioxus.compose.ui.node.drawVectorDocument
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.TableError
 import dioxus.compose.ui.paintProp
@@ -169,8 +168,7 @@ private fun DrawScope.drawRaster(asset: Asset.Raster) {
 
 private fun DrawScope.drawVector(asset: Asset.Vector) {
     if (size.width <= 0f || size.height <= 0f) return
-    asset.document.setContainerSize(size.width, size.height)
-    drawIntoCanvas { canvas -> asset.document.render(canvas.nativeCanvas) }
+    drawVectorDocument(asset.document)
 }
 
 /**
