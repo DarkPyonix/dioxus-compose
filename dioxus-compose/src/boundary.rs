@@ -151,6 +151,11 @@ impl Host {
     /// The theme the application chose. Choosing nothing follows the host platform, with
     /// Material 3 where the platform has no look of its own.
     pub fn with_theme(app: fn() -> Element, theme: Theme) -> Self {
+        // A fresh Host has not been measured yet, and the Renderer that is about to drive
+        // it starts from the same assumption. Leaving a previous Host's last measurement
+        // behind would put the two sides out of step, because the Renderer reports only
+        // differences.
+        crate::window::reset_window_size();
         Self {
             theme,
             dom: VirtualDom::new(app),

@@ -11,6 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
@@ -176,7 +178,18 @@ fun DioxusContent(
         // the inset outside instead leaves the window's own background showing through the
         // strip the title bar used to occupy, which reads as a leftover title bar rather
         // than as content extending underneath one.
-        Box(modifier.background(theme.color(ColorRole.Background))) {
+        // The window's size is measured here, where the root content is, and reported to
+        // the Host only when it crosses a size class boundary. onSizeChanged already fires
+        // only when the measured size differs, and the reporter drops everything that does
+        // not change the class, so a drag across one class costs no boundary calls.
+        val reporter = remember(host) { WindowSizeReporter() }
+        val density = LocalDensity.current
+        val measured = Modifier.onSizeChanged { size ->
+            with(density) {
+                reporter.report(size.width.toDp().value, size.height.toDp().value, host)
+            }
+        }
+        Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
             Box(Modifier.padding(contentPadding)) {
                 host.roots.forEach { rootId ->
                     androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
