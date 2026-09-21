@@ -97,10 +97,10 @@ the API will change.
 
 | Platform | State | Detail |
 |---|---|---|
-| 🍎 **macOS (arm64)** | **Works end to end** | Rust host → C ABI → native-image renderer → window on screen, verified 2026-09-20 on Liberica NIK 25 Full. Basic Korean IME input works; the full IME checklist (`SPEC §6`) is not finished |
-| 🪟 Windows desktop | Not scripted | A target in `NFR-4`, but `build-native.sh` refuses to run outside macOS today |
-| 🐧 Linux desktop | Not scripted | Same. The **Rust workspace and the JVM dev shell do work** on Linux: CI runs the Rust gate on `ubuntu-latest` |
-| 📱 iOS | Designed, not implemented | Kotlin/Native `-produce static` with `@CName` symbols (milestone M5) |
+| 🍎 **macOS (arm64)** | **Works end to end** | Rust host → C ABI → native-image renderer → window on screen, verified on Liberica NIK 25 Full. Basic Korean IME input works; the full IME checklist (`SPEC §6`) is not finished |
+| 🪟 Windows desktop | Builds and starts | Built with upstream GraalVM 25 and smoke-tested on every renderer change. |
+| 🐧 Linux desktop | Builds and starts | Both architectures (x64 and arm64) build under Xvfb in CI and pass a headless startup smoke test. |
+| 📱 iOS | Builds and starts | Kotlin/Native `-produce static` exporting the same C symbols. Released as an XCFramework. |
 | 🤖 Android | Builds, not yet run | A Kotlin Activity owns the process and the loop, Rust is a cdylib, and the JNI shims on both sides are generated from the schema. The app and the library both build for `arm64-v8a`; nothing has run on a device or an emulator yet, which is what `PR-5` asks for (milestone M6) |
 | 🌐 Web (wasm) | Designed, feasibility open | Rust wasm ↔ Kotlin/Wasm linked directly, no JS bridge, `PR-6` (milestone M7, open question **Q3**) |
 
@@ -113,15 +113,17 @@ still landing.
 | Capability | Host (Rust) | Renderer (Kotlin) |
 |---|---|---|
 | Node tree mutations: `FR-1` | ✅ | ✅ |
-| Schema-driven rendering: `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
-| Synchronous event dispatch: `FR-3`, `FR-12` | ✅ | ✅ key consumption wired to `Modifier.onKeyEvent` |
+| Schema-driven rendering: `FR-2` | ✅ | ✅ 33 composables, all implemented |
+| Synchronous event dispatch: `FR-3`, `FR-12` | ✅ | ✅ `on_click`, `on_change`, `on_dismiss`, key consumption |
 | Uncontrolled `TextField`, IME ownership: `D5` | ✅ | ✅ |
 | Schema codegen in lockstep: `FR-7` | ✅ | ✅ generated `Protocol.gen.kt` |
-| `LazyColumn` windowing: `FR-8` | ✅ the Host materialises only the requested range | ⚠️ **renders as a plain `Column` for now**: the windowing half is an open `TODO(FR-8)` |
-| Streaming text `AppendText`: `FR-9` | ✅ | ✅ |
-| Modifiers: `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ all of the above |
-| Design primitives and design systems: `FR-13`, `FR-14` | ❌ `Draft`: **specified only, no code yet** | ❌ |
-| Third-party widget extension: `FR-11` | ❌ `Draft`: options under evaluation (**Q2**) | ❌ |
+| `LazyColumn` windowing: `FR-8` | ✅ | ✅ renderer asks for a range |
+| Streaming text `AppendText`: `FR-9` | ✅ | ✅ coalesced per frame |
+| Modifiers: `FR-10` | ✅ | ✅ 13 attributes on every widget |
+| Design primitives and design systems: `FR-13`, `FR-14` | ✅ | ✅ Seven systems, role-based contract |
+| Window size classes | ✅ | ✅ `use_window_size()` reports classes |
+| Navigation and sheets | ✅ | ✅ Rail, drawer, bottom bar, sheets |
+| Third-party widget extension: `FR-11` | ⚠️ Compile time only | ⚠️ `LinearProgressIndicator` as worked example |
 
 Milestones live in [`PROJECT.md`](PROJECT.md) (M0–M8). **M1 decides the project**: if Korean IME
 composition holds up in a native-image build, the rest is volume of work.
@@ -192,8 +194,7 @@ Two details worth noticing:
 
 ## 🎨 Design systems
 
-The plan is three first-class design systems, **Material 3**, **Apple HIG** and **WinUI/Fluent** , 
-chosen per application, either unified across every platform or adapted to the host platform:
+The plan is seven first-class design systems, including **Material 3**, **Apple HIG**, **WinUI/Fluent**, and **Liquid Glass**, chosen per application, either unified across every platform or adapted to the host platform:
 
 ```rust
 // The same design system everywhere
@@ -210,7 +211,7 @@ The design is worked out in detail in `FR-13` and `FR-14` of [`docs/SPEC.md`](do
 - **The Renderer resolves roles into tokens**, not the Host. A dark-mode switch is then one
   `SetTheme` mutation plus a `CompositionLocal` invalidation, instead of an `O(nodes)` storm of
   `SetProp` calls charged against the frame budget.
-- Adding a fourth design system must not touch widget code, properties, modifiers or the wire
+- Adding an eighth design system must not touch widget code, properties, modifiers or the wire
   format: one Rust enum variant, one Kotlin token table, one rules implementation.
 - `adaptive` is **not** the default. Without `with_theme` you get
   `Theme::unified(DesignSystem::Material3)`, because a default that looks different on every
@@ -502,6 +503,7 @@ dioxus-compose/
 │  ├─ desktop/                      #   JVM development shell
 │  ├─ shared/                       #   shared Compose code
 │  └─ ios/  android/  web/          #   platform targets
+├─ samples/                         # eleven sample apps (four adaptive, seven unified)
 ├─ scripts/                         # setup-check.sh, check.sh, install-nik.sh, publish-main.sh
 └─ docs/
    ├─ INTENT.md                     # why, decisions D1–D10, rejected alternatives

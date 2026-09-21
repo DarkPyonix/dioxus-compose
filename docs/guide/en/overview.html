@@ -33,6 +33,7 @@
         <li><a href="overview.html" aria-current="page">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
         <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
         <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
         <li><a href="design-systems.html">Design systems</a></li>
         <li><a href="architecture.html">Architecture</a></li>
@@ -84,7 +85,7 @@
         </thead>
         <tbody>
           <tr><td>No webview</td><td>No WKWebView, WebView2 or WebKitGTK; no Tauri, no wry.</td></tr>
-          <tr><td>No bundled JVM</td><td>Desktop ships as a GraalVM <code>native-image</code> shared library; iOS is planned as Kotlin/Native.</td></tr>
+          <tr><td>No bundled JVM</td><td>Desktop ships as a GraalVM <code>native-image</code> shared library; iOS as a Kotlin/Native static archive.</td></tr>
           <tr><td>No hand-written JNI or cinterop</td><td>Every boundary shim is generated from the Rust schema.</td></tr>
           <tr><td>UI code lives in Rust</td><td>Kotlin is an implementation detail of the renderer, not a place you write features.</td></tr>
           <tr><td>Compose-quality text and IME</td><td>No code path may bypass Compose's platform text input.</td></tr>
@@ -135,9 +136,9 @@
 
     <h2>Status</h2>
     <p>
-      This is an honest table, not a roadmap dressed as a feature list. Only macOS desktop runs
-      end to end today. Everything marked <em>planned</em> is designed in
-      <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> and not implemented.
+      This is an honest table, not a roadmap dressed as a feature list. macOS desktop is the
+      platform that has been used by hand; the others are built and smoke-tested by CI, which
+      proves rather less. Everything marked <em>planned</em> is designed and not implemented.
     </p>
 
     <div class="tablewrap">
@@ -149,27 +150,32 @@
           <tr>
             <td>macOS desktop (arm64)</td>
             <td><span class="pill works">Works</span></td>
-            <td>Renderer built with GraalVM <code>native-image --shared</code> on Liberica NIK 25 Full; the Rust binary links it. Verified 2026-09-20.</td>
+            <td>Renderer built with GraalVM <code>native-image --shared</code> on Liberica NIK 25 Full; the Rust binary links it. The Korean IME checklist and VoiceOver were confirmed by hand on this build on 2026-09-21.</td>
           </tr>
           <tr>
-            <td>Windows / Linux desktop</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Same <code>native-image</code> path. Only macOS is scripted so far; the build script refuses to run elsewhere.</td>
+            <td>Windows desktop (x64)</td>
+            <td><span class="pill partial">Builds and starts</span></td>
+            <td>Built with upstream GraalVM 25 and smoke-tested on every renderer change: the window opens, draws, closes cleanly and returns 0. A hosted runner cannot click, so pointer input is unproven there, and nobody has used it interactively.</td>
+          </tr>
+          <tr>
+            <td>Linux desktop (x64 and arm64)</td>
+            <td><span class="pill partial">Builds and starts</span></td>
+            <td>Both architectures build under Xvfb in CI and pass a headless startup smoke test. That is all it proves: no Linux desktop session has drawn this renderer.</td>
           </tr>
           <tr>
             <td>iOS</td>
-            <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin/Native <code>-produce static</code> exporting the same C symbols.</td>
+            <td><span class="pill partial">Builds and starts</span></td>
+            <td>Kotlin/Native <code>-produce static</code> exporting the same C symbols. The protocol codec tests run on Kotlin/Native, the device and simulator archives build, and a simulator smoke test takes a screenshot. Released as an XCFramework.</td>
           </tr>
           <tr>
             <td>Android</td>
             <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims.</td>
+            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims. Both halves build for <code>arm64-v8a</code>, and nothing has run on a device or an emulator.</td>
           </tr>
           <tr>
             <td>Web (wasm)</td>
             <td><span class="pill planned">Planned</span></td>
-            <td>Kotlin owns the wasm linear memory and Rust imports it, so the batch arena is shared in place with no copying. Each boundary call goes through a generated JS forwarder, measured at about 12&nbsp;ns.</td>
+            <td>Kotlin owns the wasm linear memory and Rust imports it, so the batch arena is shared in place with no copying. Each boundary call goes through a generated JS forwarder, measured at about 12&nbsp;ns in Safari and not yet re-measured elsewhere.</td>
           </tr>
         </tbody>
       </table>
@@ -182,14 +188,18 @@
           <tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Notes</th></tr>
         </thead>
         <tbody>
-          <tr><td>Widgets: <code>Column</code>, <code>Row</code>, <code>Box</code>, <code>Text</code>, <code>TextField</code>, <code>Button</code>, <code>Spacer</code>, <code>LazyColumn</code></td><td><span class="pill works">Works</span></td><td>The whole schema, eight widgets. Anything else has to be added to it first.</td></tr>
-          <tr><td>Events and synchronous consumption</td><td><span class="pill works">Works</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code> with <code>event.consume()</code>.</td></tr>
+          <tr><td>The widget vocabulary</td><td><span class="pill works">Works</span></td><td>Thirty-three composables, with a renderer half for every one of them. The schema is closed: anything else has to be added to it first. See the <a href="composables.html">composable reference</a>.</td></tr>
+          <tr><td>Events and synchronous consumption</td><td><span class="pill works">Works</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code> with <code>event.consume()</code>, <code>on_change</code> and <code>on_dismiss</code>.</td></tr>
           <tr><td>Uncontrolled <code>TextField</code></td><td><span class="pill works">Works</span></td><td>Edit and composition state live in the renderer.</td></tr>
           <tr><td>Kotlin protocol codegen from the Rust schema</td><td><span class="pill works">Works</span></td><td>A stale Kotlin file fails the test suite.</td></tr>
-          <tr><td>Modifiers beyond <code>fill_max_width</code> / <code>fill_max_height</code></td><td><span class="pill partial">Partial</span></td><td>Padding, size, background and clickable exist in the wire schema but have no <code>rsx!</code> attribute yet.</td></tr>
-          <tr><td><code>LazyColumn</code> windowing (FR-8)</td><td><span class="pill partial">Host side</span></td><td>Component, protocol and Host tests pass; the Kotlin interpreter still draws it as a <code>Column</code> and sends no <code>RangeRequested</code>.</td></tr>
-          <tr><td><code>AppendText</code> streaming (FR-9)</td><td><span class="pill partial">Host side</span></td><td>Coalesced and flushed per frame by the Host. No <code>rsx!</code>-level API yet; <code>Host::append_text</code> takes a protocol node id.</td></tr>
-          <tr><td>Design systems and theming (FR-13, FR-14)</td><td><span class="pill planned">Planned</span></td><td>Specified as <code>Agreed</code>, down to the wire tags, but nothing is built: no <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code> or <code>SetTheme</code> exists in the crate. See <a href="design-systems.html">Design systems</a>.</td></tr>
+          <tr><td>Modifiers</td><td><span class="pill works">Works</span></td><td>Thirteen attributes on every widget: weight, fill, explicit size, padding in dp or by role, background, shape by role or radius, border and elevation. <code>Clickable</code> is on the wire but has no typed prop.</td></tr>
+          <tr><td>Design systems and theming</td><td><span class="pill works">Works</span></td><td>Seven design systems behind one role-based contract, chosen unified or following the host platform. See <a href="design-systems.html">Design systems</a>.</td></tr>
+          <tr><td><code>LazyColumn</code> and <code>LazyRow</code> windowing</td><td><span class="pill works">Works</span></td><td>The renderer asks for a range, the Host materialises exactly that range. See <a href="lists-and-streaming.html">Lists &amp; streaming</a>.</td></tr>
+          <tr><td>Navigation, sheets and transient messages</td><td><span class="pill works">Works</span></td><td>The renderer picks bar, rail or drawer from the width it measured, and the same for which edge a sheet enters from.</td></tr>
+          <tr><td>Window size classes</td><td><span class="pill works">Works</span></td><td><code>use_window_size()</code> reports compact, medium or expanded, and only wakes a component when the class changes.</td></tr>
+          <tr><td>Custom drawing</td><td><span class="pill works">Works</span></td><td><code>Canvas</code> takes a <code>DrawList</code> value. Two equal lists send nothing.</td></tr>
+          <tr><td><code>AppendText</code> streaming</td><td><span class="pill partial">No rsx! API</span></td><td>Coalesced per frame by the Host and applied by the renderer. There is no <code>rsx!</code>-level API: <code>Host::append_text</code> takes a protocol node id.</td></tr>
+          <tr><td>Third-party widget extension</td><td><span class="pill partial">Compile time only</span></td><td>An extension is a Rust and Kotlin source pair built into both sides, with <code>LinearProgressIndicator</code> as the worked example. A deployed renderer cannot load a new widget.</td></tr>
         </tbody>
       </table>
     </div>
@@ -198,19 +208,23 @@
     <div class="cards">
       <a class="card" href="getting-started.html">
         <h3>Getting started</h3>
-        <p>Install Liberica NIK, build the renderer library, run the desktop demo.</p>
+        <p>Add one dependency, write a component, run it.</p>
       </a>
       <a class="card" href="writing-ui.html">
         <h3>Writing UI</h3>
-        <p>The widget set, event handlers, key consumption, and the uncontrolled text field.</p>
+        <p>Event handlers, key consumption, and the uncontrolled text field.</p>
+      </a>
+      <a class="card" href="composables.html">
+        <h3>Composable reference</h3>
+        <p>Every composable, its props and defaults, the role vocabulary, and where each one keeps its state.</p>
       </a>
       <a class="card" href="lists-and-streaming.html">
         <h3>Lists &amp; streaming</h3>
-        <p>Windowed lists and token streaming: what the Host does today, and what the renderer still owes.</p>
+        <p>Windowed lists and token streaming, and which side owns the scroll position.</p>
       </a>
       <a class="card" href="design-systems.html">
         <h3>Design systems</h3>
-        <p>Colour, type, shape and spacing roles, and the two theme modes. Specified, not yet built.</p>
+        <p>Seven design systems, the colour, type, shape and spacing roles, and the two theme modes.</p>
       </a>
       <a class="card" href="architecture.html">
         <h3>Architecture</h3>
@@ -228,7 +242,7 @@
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
     <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>Guide last reviewed against the repository on 2026-09-20</span>
+    <span>Guide last reviewed against the repository on 2026-09-22</span>
   </div>
 </footer>
 
