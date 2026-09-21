@@ -86,18 +86,6 @@ class ByteBuffer private constructor(
         return this
     }
 
-    /** Independent position and limit over the same bytes; no copy. */
-    fun duplicate(): ByteBuffer =
-        ByteBuffer(array, pointer, offset, capacity).also {
-            it.position = position
-            it.limit = limit
-            it.order = order
-        }
-
-    /** The bytes from the current position to the limit, as a buffer of its own; no copy. */
-    fun slice(): ByteBuffer =
-        ByteBuffer(array, pointer, offset + position, limit - position).also { it.order = order }
-
     private fun byteAt(index: Int): Byte {
         require(index in 0 until capacity) { "index $index out of bounds [0, $capacity)" }
         val absolute = offset + index
@@ -113,25 +101,10 @@ class ByteBuffer private constructor(
     fun get(index: Int): Byte = byteAt(index)
 
     /**
-     * Bulk read from the current position, which is how the codec lifts an asset's bytes
-     * off the arena in one go.
-     */
-    fun get(destination: ByteArray): ByteBuffer {
-        require(destination.size <= limit - position) {
-            "reading ${destination.size} bytes from $position would pass the limit $limit"
-        }
-        for (index in destination.indices) {
-            destination[index] = byteAt(position + index)
-        }
-        position += destination.size
-        return this
-    }
-
-    /**
-     * Bulk read from an absolute index, leaving the position alone, which is how the codec
-     * lifts a string's bytes into the buffer it builds `String` from. Absolute because the
-     * position belongs to the record walk, and a string is read from wherever in the arena
-     * its offset points.
+     * Bulk read from an absolute index, leaving the position alone. Every copy the codec
+     * makes out of the arena goes through this: the buffer a string's `String` is built
+     * from, and an asset's bytes. Absolute because the position belongs to the record
+     * walk, while the payload sits wherever in the arena its offset points.
      */
     fun get(index: Int, destination: ByteArray, destinationOffset: Int, length: Int): ByteBuffer {
         require(index >= 0 && length >= 0 && index + length <= capacity) {
@@ -217,8 +190,4 @@ class ByteBuffer private constructor(
             throw IndexOutOfBoundsException("buffer overflow: $bytes bytes into ${remaining()}")
         }
     }
-
-    /** Copies the bytes between position and limit out. Used only to decode strings. */
-    internal fun toByteArray(): ByteArray =
-        ByteArray(remaining()) { byteAt(position + it) }
 }
