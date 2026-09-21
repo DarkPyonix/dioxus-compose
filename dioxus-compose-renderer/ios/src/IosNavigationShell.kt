@@ -213,3 +213,20 @@ internal fun installNativeNavigationShell(content: UIViewController): NativeNavi
     dioxus.compose.foundation.platformNavigationShell = shell
     return NativeNavigationShell(root, tabs, shell)
 }
+
+/**
+ * The controller the window takes as its root.
+ *
+ * Where the system draws its own chrome as Liquid Glass, that is the container built above,
+ * standing empty with its bar hidden until a navigation reaches the tree. Below that it is
+ * the Compose controller and nothing else, exactly as it was before any of this existed:
+ * there is no system glass down there to take, so a second shell would buy nothing and
+ * would put an untested layout in front of the screen.
+ *
+ * `glass` is a parameter with the real answer as its default so that both sides of the
+ * decision can be run on one machine. Nothing passes it.
+ */
+internal fun rendererRootViewController(
+    content: UIViewController,
+    glass: Boolean = systemDrawsLiquidGlass(),
+): UIViewController = if (glass) installNativeNavigationShell(content).root else content

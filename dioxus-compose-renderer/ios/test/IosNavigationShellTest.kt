@@ -10,6 +10,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -152,5 +153,32 @@ class IosNavigationShellTest {
         assertEquals(0, installed.tabs.view.subviews.indexOf(content.view))
         assertEquals(2, installed.tabs.viewControllers.orEmpty().size)
         assertEquals(1, installed.tabs.selectedIndex.toInt())
+    }
+    /**
+     * Below iOS 26 the window holds the Compose controller and nothing else.
+     *
+     * Run on either runtime by handing the gate its answer, because the thing being checked
+     * is what the renderer does with that answer and there is only one machine.
+     */
+    @Test
+    fun fr14_8_without_system_glass_the_window_holds_only_the_compose_controller() {
+        val content = UIViewController(nibName = null, bundle = null)
+
+        val root = rendererRootViewController(content, glass = false)
+
+        assertEquals(content, root)
+        assertNull(platformNavigationShell, "no shell is stood up below iOS 26")
+    }
+
+    /** With system glass the window holds the container, and the interpreter can find it. */
+    @Test
+    fun fr14_8_with_system_glass_the_window_holds_the_container() {
+        val content = UIViewController(nibName = null, bundle = null)
+
+        val root = rendererRootViewController(content, glass = true)
+
+        assertNotEquals(content, root)
+        assertEquals(content.parentViewController, root)
+        assertNotNull(platformNavigationShell, "the interpreter has to be able to find it")
     }
 }
