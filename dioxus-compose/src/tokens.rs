@@ -568,15 +568,13 @@ const DEEPIN: DesignTokenTable = DesignTokenTable {
         // blue nor a warm colour.
         Tertiary: 0x7a5bd6 / 0x9f8ae3,
         OnTertiary: 0xffffff / 0x1d0f45,
-        // Tints of the three accents, warmed to sit on the warm page rather than against
-        // it. The amber pair is the widest of the three, because the second accent here is
-        // itself a light colour and a wash of it has to stay clear of the page.
-        PrimaryContainer: 0xd3e7ff / 0x0d3355,
-        OnPrimaryContainer: 0x00366e / 0xcfe3fb,
-        SecondaryContainer: 0xfae4c6 / 0x4a3517,
-        OnSecondaryContainer: 0x4a3001 / 0xf8e2c5,
-        TertiaryContainer: 0xe4dcfa / 0x362b5e,
-        OnTertiaryContainer: 0x2c1f63 / 0xe1d9f7,
+        // Tints of the three accents, resolved neutrally against the page colour.
+        PrimaryContainer: 0xd8ecff / 0x203547,
+        OnPrimaryContainer: 0x00407f / 0x9dd0ff,
+        SecondaryContainer: 0xfdf0e1 / 0x473928,
+        OnSecondaryContainer: 0x79501e / 0xffdcb1,
+        TertiaryContainer: 0xebe6f8 / 0x343042,
+        OnTertiaryContainer: 0x3d2d6b / 0xcfc4f1,
     },
     // A middle weight ladder. The body sits between Breeze's 13 and Adwaita's 15, and the
     // headings are semi bold with loose line heights, which suits the rounded shapes and
