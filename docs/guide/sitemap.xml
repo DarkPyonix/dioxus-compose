@@ -44,6 +44,20 @@
     <lastmod>2026-09-20</lastmod>
   </url>
   <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/composables.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <lastmod>2026-09-22</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/composables.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <lastmod>2026-09-22</lastmod>
+  </url>
+  <url>
     <loc>http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html</loc>
     <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html"/>
     <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/lists-and-streaming.html"/>
