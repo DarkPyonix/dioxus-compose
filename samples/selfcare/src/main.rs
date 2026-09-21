@@ -9,8 +9,16 @@
 //!
 //! Unified, naming Cupertino and dark: the reference's check-in is black, and that is
 //! the screen this opens on. `THEME` says both.
+//!
+//! The colours are this sample's own rather than the design system's. Four feelings need
+//! four fills that read as relatives and are quiet enough to hold a drawn face, and the
+//! reference names them: mint, pink, powder blue and coral. A role cannot say any of the
+//! four, because whichever system is active would answer with its own containers, and
+//! measuring the seven of them shows every light page landing within a few percent of
+//! white. So the palette is written here and `palette.rs` is the only place it lives.
 
 mod mood;
+mod palette;
 
 use dioxus_compose::prelude::*;
 use mood::{Mood, SESSIONS, Session, WORRIES, week_line};
@@ -82,7 +90,7 @@ fn feeling_step(
     on_next: EventHandler<()>,
 ) -> Element {
     let mut chosen = chosen;
-    let (fill, ink) = chosen().pair();
+    let (fill, _ink) = chosen().pair();
     rsx! {
         Column {
             fill_max_width: true,
@@ -95,7 +103,7 @@ fn feeling_step(
             dioxus_compose::Box {
                 fill_max_width: true,
                 height: FACE_SIDE * 1.4,
-                background: Paint::Role(fill),
+                background: Paint::Literal(fill),
                 alignment: Alignment::Center,
                 Image {
                     width: FACE_SIDE,
@@ -127,10 +135,20 @@ fn feeling_step(
                             key: "{option.label()}",
                             text: option.label(),
                             weight: 1.0,
-                            variant: if option == chosen() {
-                                ButtonVariant::Filled
+                            variant: ButtonVariant::Filled,
+                            shape_role: ShapeRole::Full,
+                            // The chosen answer is filled with the feeling's own colour
+                            // and the rest are the quiet grey the reference gives them.
+                            // The answer is the colour, so the colour is what changes.
+                            background: if option == chosen() {
+                                Paint::Literal(option.pair().0)
                             } else {
-                                ButtonVariant::Tonal
+                                Paint::Literal(palette::CHIP)
+                            },
+                            color: if option == chosen() {
+                                Paint::Literal(option.pair().1)
+                            } else {
+                                Paint::Literal(palette::INK)
                             },
                             on_click: move |_| chosen.set(option),
                         }
@@ -145,26 +163,7 @@ fn feeling_step(
                         text: "How do you feel today?",
                         type_role: TypeRole::Headline,
                         text_align: TextAlign::Center,
-                    }
-                    Text {
-                        text: "{chosen().label()} is what today looks like.",
-                        type_role: TypeRole::Body,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                        text_align: TextAlign::Center,
-                    }
-                }
-
-                // Only a reminder that the ink is guaranteed to read on the fill: a whole
-                // sentence on the tint, not a word.
-                dioxus_compose::Box {
-                    fill_max_width: true,
-                    background: Paint::Role(fill),
-                    shape_role: ShapeRole::Large,
-                    padding_role: SpaceRole::Md,
-                    Text {
-                        text: "Nothing you say here leaves the phone.",
-                        type_role: TypeRole::Body,
-                        color: Paint::Role(ink),
+                        color: Paint::Literal(palette::INK),
                     }
                 }
 
@@ -177,12 +176,16 @@ fn feeling_step(
                     Button {
                         text: "Skip",
                         variant: ButtonVariant::Text,
+                        color: Paint::Literal(palette::INK),
                         on_click: move |_| on_skip.call(()),
                     }
                     Button {
                         text: "Next",
                         weight: 1.0,
                         variant: ButtonVariant::Filled,
+                        shape_role: ShapeRole::Full,
+                        background: Paint::Literal(palette::INK),
+                        color: Paint::Literal(palette::PAGE),
                         on_click: move |_| on_next.call(()),
                     }
                 }
@@ -287,7 +290,7 @@ fn checked_in(chosen: Mood, worries: Vec<&'static str>, again: EventHandler<()>)
             space_role: SpaceRole::Md,
             Column {
                 fill_max_width: true,
-                background: Paint::Role(fill),
+                background: Paint::Literal(fill),
                 shape_role: ShapeRole::Large,
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Sm,
@@ -300,13 +303,13 @@ fn checked_in(chosen: Mood, worries: Vec<&'static str>, again: EventHandler<()>)
                 Text {
                     text: "Today felt {chosen.label().to_lowercase()}.",
                     type_role: TypeRole::Title,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                     text_align: TextAlign::Center,
                 }
                 Text {
                     text: summary,
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                     text_align: TextAlign::Center,
                 }
             }
@@ -328,14 +331,14 @@ fn session_card(session: &Session) -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            background: Paint::Role(fill),
+            background: Paint::Literal(fill),
             shape_role: ShapeRole::Large,
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Xs,
             Text {
                 text: session.title,
                 type_role: TypeRole::Subtitle,
-                color: Paint::Role(ink),
+                color: Paint::Literal(ink),
                 max_lines: 2,
                 overflow: TextOverflow::Ellipsis,
             }
@@ -347,7 +350,7 @@ fn session_card(session: &Session) -> Element {
                 Text {
                     text: "{session.minutes} min",
                     type_role: TypeRole::Label,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                 }
                 Spacer { weight: 1.0 }
                 Button {
@@ -467,7 +470,7 @@ fn library_page() -> Element {
                         dioxus_compose::Box {
                             width: 48.0,
                             height: 48.0,
-                            background: Paint::Role(session.mood.pair().0),
+                            background: Paint::Literal(session.mood.pair().0),
                             shape_role: ShapeRole::Medium,
                         }
                         Column {
@@ -513,8 +516,8 @@ fn profile_page(chosen: Mood) -> Element {
                 Text {
                     text: chosen.label(),
                     type_role: TypeRole::Label,
-                    color: Paint::Role(ink),
-                    background: Paint::Role(fill),
+                    color: Paint::Literal(ink),
+                    background: Paint::Literal(fill),
                     shape_role: ShapeRole::Full,
                     padding_role: SpaceRole::Sm,
                 }
@@ -640,6 +643,7 @@ fn app() -> Element {
         Navigation {
             fill_max_width: true,
             fill_max_height: true,
+            background: Paint::Literal(palette::PAGE),
             selected_index: destination().index(),
             for choice in Destination::STRIP {
                 NavigationItem {
@@ -652,7 +656,7 @@ fn app() -> Element {
             Column {
                 fill_max_width: true,
                 fill_max_height: true,
-                background: Paint::Role(ColorRole::Background),
+                background: Paint::Literal(palette::PAGE),
                 dioxus_compose::Box {
                     fill_max_width: true,
                     fill_max_height: true,

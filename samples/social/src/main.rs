@@ -9,6 +9,7 @@
 //! illustrated cards. `THEME` says both.
 
 mod courses;
+mod palette;
 
 use courses::{Course, Shelf, course, on, sessions_label};
 use dioxus_compose::prelude::*;
@@ -94,7 +95,7 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
             }
             Row {
                 fill_max_width: true,
-                background: Paint::Role(ColorRole::Surface),
+                background: Paint::Literal(palette::CARD),
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::CenterStart,
@@ -109,7 +110,7 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
                     Text {
                         text: sessions_label(found),
                         type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        color: Paint::Literal(palette::MUTED),
                     }
                 }
                 Button {
@@ -138,7 +139,7 @@ fn tile_card(found: &Course, on_open: EventHandler<u32>) -> Element {
             Text {
                 text: sessions_label(found),
                 type_role: TypeRole::Caption,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                color: Paint::Literal(palette::MUTED),
             }
             Text {
                 text: found.title,
@@ -211,7 +212,7 @@ fn shelf_page(
                 Text {
                     text: strapline,
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    color: Paint::Literal(palette::MUTED),
                 }
             }
 
@@ -220,7 +221,7 @@ fn shelf_page(
             Text {
                 text: "Recommended for you",
                 type_role: TypeRole::Label,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                color: Paint::Literal(palette::MUTED),
             }
             {grid(rest, on_open)}
 
@@ -229,7 +230,7 @@ fn shelf_page(
             Text {
                 text: "Recommended category",
                 type_role: TypeRole::Label,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                color: Paint::Literal(palette::MUTED),
             }
             {hero_card(items[items.len() - 1], WIDE, on_open)}
         }
@@ -243,7 +244,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            background: Paint::Role(quiet),
+            background: Paint::Literal(quiet),
 
             dioxus_compose::Box {
                 fill_max_width: true,
@@ -274,12 +275,12 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                 Text {
                     text: found.title,
                     type_role: TypeRole::Headline,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                 }
                 Text {
                     text: sessions_label(found),
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                 }
                 Column {
                     fill_max_width: true,
@@ -288,7 +289,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                         Row {
                             key: "{number}",
                             fill_max_width: true,
-                            background: Paint::Role(ColorRole::SurfaceContainer),
+                            background: Paint::Literal(palette::CARD),
                             shape_role: ShapeRole::Medium,
                             padding_role: SpaceRole::Md,
                             space_role: SpaceRole::Sm,
@@ -301,7 +302,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                             Text {
                                 text: "{found.minutes} min",
                                 type_role: TypeRole::Caption,
-                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                color: Paint::Literal(palette::MUTED),
                             }
                         }
                     }
@@ -311,7 +312,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                     text: "Begin",
                     fill_max_width: true,
                     variant: ButtonVariant::Filled,
-                    background: Paint::Role(strong),
+                    background: Paint::Literal(strong),
                     on_click: move |_| {
                         Message::new("Playback is not part of this sample").show();
                     },
@@ -388,7 +389,7 @@ fn app() -> Element {
             Column {
                 fill_max_width: true,
                 fill_max_height: true,
-                background: Paint::Role(ColorRole::Background),
+                background: Paint::Literal(palette::PAGE),
                 dioxus_compose::Box {
                     fill_max_width: true,
                     fill_max_height: true,

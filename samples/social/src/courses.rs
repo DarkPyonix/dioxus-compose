@@ -11,8 +11,9 @@ use dioxus_compose::prelude::*;
 /// nine of the same picture with the discs in slightly different places.
 ///
 /// These are original drawings, registered once and drawn by id. An illustration carries
-/// its own colours, which is what makes it an illustration; the card behind it, the title
-/// on it and the row it sits in are all still roles.
+/// its own colours, which is what makes it an illustration, and so does everything around
+/// it: this is a unified sample, so the card behind it and the title on it are named in
+/// `palette.rs` rather than left to whichever design system is active.
 pub static SCENES: [&[u8]; 3] = [
     include_bytes!("../assets/scene-sitting.svg"),
     include_bytes!("../assets/scene-standing.svg"),
@@ -37,23 +38,28 @@ impl Palette {
         }]
     }
 
-    /// The strong colour, the quiet fill it sits on, and the ink that reads on that fill.
-    pub fn roles(self) -> (ColorRole, ColorRole, ColorRole) {
+    /// The three colours a course is drawn in: the fill of its strongest control, the
+    /// ground its page sits on, and the ink that reads on both.
+    ///
+    /// Literals, from the sample's own palette. The reference alternates its illustrations
+    /// between a sage and a blush and writes on them in the same deep plum throughout, and
+    /// no design system holds any of the three.
+    pub fn roles(self) -> (Color, Color, Color) {
         match self {
             Palette::First => (
-                ColorRole::Primary,
-                ColorRole::PrimaryContainer,
-                ColorRole::OnPrimaryContainer,
+                crate::palette::SAGE,
+                crate::palette::PAGE,
+                crate::palette::INK,
             ),
             Palette::Second => (
-                ColorRole::Secondary,
-                ColorRole::SecondaryContainer,
-                ColorRole::OnSecondaryContainer,
+                crate::palette::BLUSH,
+                crate::palette::PAGE,
+                crate::palette::INK,
             ),
             Palette::Third => (
-                ColorRole::Tertiary,
-                ColorRole::TertiaryContainer,
-                ColorRole::OnTertiaryContainer,
+                crate::palette::INK,
+                crate::palette::PAGE,
+                crate::palette::INK,
             ),
         }
     }

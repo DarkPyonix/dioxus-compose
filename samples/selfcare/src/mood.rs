@@ -41,16 +41,19 @@ impl Mood {
     /// relatives of one another, are quiet enough to hold a drawn face, and each come with
     /// an ink that stays readable. That is the accent containers, plus the one fill the
     /// vocabulary already had for something going wrong.
-    pub fn pair(self) -> (ColorRole, ColorRole) {
-        match self {
-            Mood::Sad => (ColorRole::PrimaryContainer, ColorRole::OnPrimaryContainer),
-            Mood::Calm => (
-                ColorRole::SecondaryContainer,
-                ColorRole::OnSecondaryContainer,
-            ),
-            Mood::Happy => (ColorRole::TertiaryContainer, ColorRole::OnTertiaryContainer),
-            Mood::Angry => (ColorRole::Error, ColorRole::OnError),
-        }
+    /// The fill this feeling is drawn in, and the ink that reads on it.
+    ///
+    /// Literals, from the sample's own palette. The reference names four pastels and no
+    /// design system holds them: asking for a container role instead would give whichever
+    /// system is active its own tint, and the answer in this screen is the colour.
+    pub fn pair(self) -> (Color, Color) {
+        let fill = match self {
+            Mood::Sad => crate::palette::POWDER,
+            Mood::Calm => crate::palette::MINT,
+            Mood::Happy => crate::palette::PINK,
+            Mood::Angry => crate::palette::CORAL,
+        };
+        (fill, crate::palette::ON_MOOD)
     }
 }
 
