@@ -157,15 +157,32 @@ class WebBoundaryTest {
 
     private var accumulator = 0
 
+    /**
+     * The other direction, as far as it can be followed from here.
+     *
+     * The Host's frame request is bound to the export below, and the binding itself is
+     * already proved by every other test in this class: the instantiation would fail with a
+     * link error if the export were missing, which is what happened before this test named
+     * it. Naming it is also what keeps it. In the application's module `main` is the root of
+     * everything and the frame clock reaches it, so the export survives; a test binary's
+     * roots are its test functions, and an export nothing in them mentions is dropped
+     * before it reaches the export section.
+     *
+     * What is left untested is the Host actually making the call, which needs work running
+     * off the frame loop, and a browser tab has no thread to run it on.
+     */
+    @Test
+    fun pr3_a_frame_request_reaches_the_frame_clock() {
+        val before = FrameRequests.global.counter.value
+        onFrameRequested()
+        assertTrue(
+            FrameRequests.global.counter.value > before,
+            "a frame request has to move the counter the frame clock watches",
+        )
+    }
+
     /** The Host, or null with a printed reason, because a page may be served without one. */
     private fun hostOrNull(): WebHostConnection? {
-        // Mentioned so that this binary keeps it. In the application's module `main` is the
-        // root of everything and the frame clock reaches this, so the export survives; a
-        // test binary's roots are the test functions, and an export that nothing in the
-        // tests names is dropped before it reaches the export section. The Host's frame
-        // request would then have nothing to bind to and the instantiation would fail with
-        // a link error about a function import that is not callable.
-        onFrameRequested()
         if (compileHostForTest(HOST_WASM) == 0) {
             println(
                 "pr6 skipped: no $HOST_WASM beside the test page. Run " +
