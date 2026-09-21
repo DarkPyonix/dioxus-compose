@@ -218,3 +218,58 @@ class AllDesignSystemsDifferTest {
         }
     }
 }
+
+/**
+ * The three background roles have to be telling apart on screen, in every system.
+ *
+ * A chat bubble filled with SurfaceVariant on a Background page vanished entirely under
+ * Cupertino, because the two colours were three parts in 255 apart. Nothing failed: the
+ * bubble was drawn, with the right colour, and it was invisible. Layering is the whole
+ * point of having three roles, so any pair of them collapsing is a bug even though each
+ * value on its own looks reasonable in a palette file.
+ */
+class LayeringIsVisibleTest {
+
+    private fun systems(dark: Boolean): List<Pair<String, DesignSystem>> = listOf(
+        "Material3" to if (dark) Material3DesignSystem.Dark else Material3DesignSystem.Light,
+        "Cupertino" to if (dark) CupertinoDesignSystem.Dark else CupertinoDesignSystem.Light,
+        "Fluent" to if (dark) FluentDesignSystem.Dark else FluentDesignSystem.Light,
+        "GNOME" to GnomeDesignSystem.of(dark),
+        "Breeze" to BreezeDesignSystem.of(dark),
+        "Deepin" to DeepinDesignSystem.of(dark),
+    )
+
+    /** Summed channel distance in eight bit terms, which is enough to catch a collapse. */
+    private fun distance(first: Color, second: Color): Int {
+        fun channels(color: Color) = listOf(color.red, color.green, color.blue)
+        return channels(first).zip(channels(second))
+            .sumOf { (a, b) -> (kotlin.math.abs(a - b) * 255f).toInt() }
+    }
+
+    /**
+     * Background and Surface are deliberately not compared. Material 3 gives them the same
+     * value on purpose and expresses depth through tonal containers and elevation instead,
+     * so requiring them to differ would be requiring Material 3 to stop being Material 3.
+     * SurfaceVariant is the role a filled thing is given when it has to read as a thing,
+     * and it is the one that has to hold its own against both.
+     */
+    @Test
+    fun fr14_surface_variant_is_visible_against_the_page_and_the_surface() {
+        for (dark in listOf(false, true)) {
+            for ((name, system) in systems(dark)) {
+                for (under in listOf(ColorRole.Background, ColorRole.Surface)) {
+                    val apart = distance(
+                        system.color(ColorRole.SurfaceVariant),
+                        system.color(under),
+                    )
+                    assertTrue(
+                        apart >= 24,
+                        "$name ${if (dark) "dark" else "light"}: SurfaceVariant and $under " +
+                            "are $apart apart, which reads as one flat surface. Anything " +
+                            "filled with one on a page of the other disappears.",
+                    )
+                }
+            }
+        }
+    }
+}
