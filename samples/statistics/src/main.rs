@@ -26,8 +26,13 @@ const PAGE_MEASURE: f32 = 420.0;
 /// Numbers, because these are the proportions of a drawing. The space ladder answers how
 /// far apart two things sit, not how large a picture is.
 const DIAL_SIDE: f32 = 260.0;
-const CHART_HEIGHT: f32 = 150.0;
-const CHART_WIDTH: f32 = 300.0;
+/// The columns beside the dial, and the columns on the costs page.
+///
+/// Two sizes, because a draw list is in the canvas's own coordinates: the canvas is given
+/// exactly these and the chart is drawn at exactly these, so nothing runs off the side and
+/// nothing stops short of it.
+const PANEL_CHART: (f32, f32) = (186.0, 150.0);
+const PAGE_CHART: (f32, f32) = (340.0, 210.0);
 const SOURCE_TILE: f32 = 150.0;
 
 /// The two screens.
@@ -114,7 +119,7 @@ fn dial_card() -> Element {
 /// is guaranteed to be readable on it in every design system and in both schemes. Before
 /// those roles existed the only way to say "a panel in a colour" was a literal, and a
 /// literal is a colour the design system never sees.
-fn costs_panel(title_role: TypeRole, height: f32) -> Element {
+fn costs_panel(title_role: TypeRole, (width, height): (f32, f32)) -> Element {
     let bars = week_bars();
     rsx! {
         Column {
@@ -129,14 +134,9 @@ fn costs_panel(title_role: TypeRole, height: f32) -> Element {
                 color: Paint::Role(ColorRole::OnSecondaryContainer),
             }
             Canvas {
-                fill_max_width: true,
+                width,
                 height,
-                commands: charts::week(
-                    CHART_WIDTH,
-                    height,
-                    &bars,
-                    ColorRole::OnSecondaryContainer,
-                ),
+                commands: charts::week(width, height, &bars, ColorRole::OnSecondaryContainer),
             }
         }
     }
@@ -156,7 +156,7 @@ fn today_page() -> Element {
                 fill_max_width: true,
                 space_role: SpaceRole::Md,
                 alignment: Alignment::TopStart,
-                dioxus_compose::Box { weight: 2.0, {costs_panel(TypeRole::BodyStrong, CHART_HEIGHT)} }
+                dioxus_compose::Box { weight: 2.0, {costs_panel(TypeRole::BodyStrong, PANEL_CHART)} }
                 Column {
                     weight: 1.0,
                     space_role: SpaceRole::Sm,
@@ -231,11 +231,11 @@ fn costs_page() -> Element {
             }
 
             Canvas {
-                fill_max_width: true,
-                height: CHART_HEIGHT * 1.4,
+                width: PAGE_CHART.0,
+                height: PAGE_CHART.1,
                 commands: charts::week(
-                    CHART_WIDTH,
-                    CHART_HEIGHT * 1.4,
+                    PAGE_CHART.0,
+                    PAGE_CHART.1,
                     &week_bars(),
                     ColorRole::OnSecondaryContainer,
                 ),

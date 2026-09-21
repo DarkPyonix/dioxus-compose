@@ -68,6 +68,12 @@ pub struct Bar {
 
 /// A week of columns with the day under each.
 ///
+/// `width` is the box the drawing is given, not a box of its own choosing: a draw list is
+/// in the canvas's own coordinates and knows nothing about how wide the canvas turned out,
+/// so a chart drawn at three hundred inside a canvas that filled two hundred runs off the
+/// side, and one drawn at three hundred inside a canvas that filled four stops short. The
+/// caller passes the same number to both.
+///
 /// The columns that are not the subject are drawn as outlines rather than as a paler fill.
 /// A paler fill would mean a colour between the ink and the ground, and there is no role
 /// for "the ink, quieter": the vocabulary has fills and it has inks, and half of an ink is
@@ -77,9 +83,13 @@ pub fn week(width: f32, height: f32, bars: &[Bar], ink: ColorRole) -> DrawList {
     if bars.is_empty() {
         return DrawListBuilder::with_capacity(0, 0).build();
     }
-    // The label sits under the columns, so the columns get what is left.
-    let label_band = height * 0.18;
+    // The label sits under the columns, so the columns get what is left. The baseline is
+    // set three quarters of the way down that band rather than at the bottom of it,
+    // because a baseline at the bottom puts the descenders outside the box and the row of
+    // days comes out with its tails shaved off.
+    let label_band = height * 0.22;
     let plot = height - label_band;
+    let baseline = plot + label_band * 0.62;
     let slot = width / bars.len() as f32;
     let bar_width = slot * 0.46;
     let radius = bar_width / 2.0;
@@ -104,7 +114,7 @@ pub fn week(width: f32, height: f32, bars: &[Bar], ink: ColorRole) -> DrawList {
             Paint::Role(ink),
             bar.day,
             index as f32 * slot + slot / 2.0,
-            height - label_band * 0.2,
+            baseline,
             TypeRole::Caption,
         );
     }
