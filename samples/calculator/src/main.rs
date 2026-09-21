@@ -209,11 +209,16 @@ fn memory_row(memory_set: bool, press: EventHandler<&'static str>) -> Element {
 /// still the design system's, which is the part of the rung that is worth having.
 const READOUT_SP: f32 = 64.0;
 
-/// The readout panel. A calculator's display is set into the case rather than printed on
-/// it, so it is a surface of its own.
+/// The readout: what is being worked out, and what it comes to.
+///
+/// Printed on the case rather than set into it. It used to be a filled panel, on the
+/// reasoning that a calculator's display is a component behind glass, and none of the
+/// three references does that: the Windows, macOS and Deepin calculators all set the
+/// number directly on the page with nothing drawn behind it. A panel also fought the
+/// reading area, which is mostly the room above the number.
 fn readout(status: String, display: String) -> Element {
     rsx! {
-        Surface {
+        dioxus_compose::Box {
             fill_max_width: true,
             Column {
                 fill_max_width: true,
