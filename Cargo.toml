@@ -4,6 +4,7 @@ members = [
     "samples/calculator",
     "samples/chat",
     "samples/frames",
+    "samples/minimal",
     "samples/notepad",
     "samples/todo",
 ]

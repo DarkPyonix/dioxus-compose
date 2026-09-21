@@ -15,6 +15,17 @@ vocabulary, and belongs in an issue rather than in a workaround.
 | `todo` | Lists with stable keys, checkboxes, filtering, per-item state, `LazyColumn` windowing over thousands of rows, file persistence from a worker thread |
 | `chat` | An LLM chat interface: scrollback, a multiline composer where Enter sends and Shift+Enter starts a new line, and a reply streamed in from a worker thread |
 
+The four above are **adaptive**: they take whichever design system the platform picks, so
+the same declaration is a Material 3 screen on Android and a Cupertino one on a Mac. The
+ones below are **unified**. Each names one design system and draws the same way
+everywhere, which is what an application does when the design is the product rather than
+the platform's convention. All of them are rebuilds of published iOS designs, so all of
+them name Cupertino.
+
+| Sample | What it exercises |
+|---|---|
+| `minimal` | A playground: every control the schema has, all nine fills with the ink each carries, the type and corner ladders, and a `Canvas` drawing |
+
 Each one is an ordinary dx project: a `Dioxus.toml`, an `assets/` directory and
 `src/main.rs`, the layout `dx new` produces. That is deliberate, because a sample exists to
 be copied, and an arrangement that only works inside this repository teaches nothing.
