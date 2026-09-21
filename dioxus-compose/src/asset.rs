@@ -20,15 +20,7 @@ pub(crate) struct PendingAsset {
 
 thread_local! {
     /// What has been registered, so the same picture asked for twice is one registration.
-    ///
-    /// Keyed on where the bytes are and how many there are rather than on their contents.
-    /// A component body that draws a picture calls this on every render, which is the
-    /// natural way to write it, and comparing contents would put a scan of the whole file
-    /// in the frame. Two `&'static [u8]` at the same address of the same length are the
-    /// same bytes.
-    static REGISTERED: RefCell<Vec<(*const u8, usize, u32)>> = const {
-        RefCell::new(Vec::new())
-    };
+    static REGISTERED: RefCell<Vec<(&'static [u8], u32)>> = const { RefCell::new(Vec::new()) };
     static QUEUE: RefCell<Vec<PendingAsset>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -48,21 +40,14 @@ thread_local! {
 /// current call produces, which is not always the call this was made in, and because
 /// `include_bytes!` is what an application almost always has.
 pub fn asset(kind: AssetKind, bytes: &'static [u8]) -> u32 {
-    let key = (bytes.as_ptr(), bytes.len());
-    let existing = REGISTERED.with_borrow(|registered| {
-        registered
-            .iter()
-            .find(|(ptr, len, _)| (*ptr, *len) == key)
-            .map(|(_, _, id)| *id)
-    });
-    if let Some(id) = existing {
+    if let Some(id) = REGISTERED.with_borrow(|registered| registered_id(registered, bytes)) {
         return id;
     }
     // Ids start at one. Zero is what a node with no asset property reads as, so handing it
     // out would make "no picture" and "the first picture" the same value on the wire.
     let asset_id = REGISTERED.with_borrow_mut(|registered| {
         let asset_id = registered.len() as u32 + 1;
-        registered.push((key.0, key.1, asset_id));
+        registered.push((bytes, asset_id));
         asset_id
     });
     QUEUE.with_borrow_mut(|queue| {
@@ -73,6 +58,22 @@ pub fn asset(kind: AssetKind, bytes: &'static [u8]) -> u32 {
         });
     });
     asset_id
+}
+
+/// The id these bytes were registered under, by address first and by content after.
+///
+/// Address first because that is the answer almost every time and it costs a comparison.
+/// Content after because the same picture really can arrive at two addresses: a `const`
+/// holding a reference is inlined at each use, and each use can get an allocation of its
+/// own, so a catalogue written as a `const` array hands out two pointers to one file and
+/// the shop registers the same cover twice under two ids. The full comparison only runs
+/// when the address misses, which is once per new picture and never in the steady state.
+fn registered_id(registered: &[(&'static [u8], u32)], bytes: &'static [u8]) -> Option<u32> {
+    registered
+        .iter()
+        .find(|(known, _)| std::ptr::eq(*known, bytes))
+        .or_else(|| registered.iter().find(|(known, _)| *known == bytes))
+        .map(|(_, id)| *id)
 }
 
 /// Hands every queued registration to `emit` and empties the queue.

@@ -1,5 +1,9 @@
 //! A podcast hub: new episodes, an episode you can open, and a player.
 //!
+//! Covers are pictures: a podcast cover is a poster, made to be recognised at the size of
+//! a thumbnail, and a draw list cannot say one. Each of the three is an original drawing
+//! registered once and drawn by id after that. Everything round a cover is still a role.
+//!
 //! The drawing this sample is about is the waveform. Every design system's player has one,
 //! nothing in the widget vocabulary is one, and it is the clearest case of a `Canvas`
 //! earning its place: forty columns, the played part in the accent and the rest in the
@@ -12,9 +16,7 @@
 mod library;
 
 use dioxus_compose::prelude::*;
-use library::{
-    EPISODES, Episode, Family, SHOWS, Show, artwork, clock, episode, short_count, show_of, waveform,
-};
+use library::{EPISODES, Episode, SHOWS, Show, clock, episode, short_count, show_of, waveform};
 
 /// A phone design in a desktop window is still a phone design.
 const PAGE_MEASURE: f32 = 420.0;
@@ -68,14 +70,18 @@ impl Destination {
     }
 }
 
-/// A show's artwork at some size, as a drawing rather than a photograph.
-fn cover(size: f32, seed: u32, family: Family) -> Element {
+/// A show's cover at some size.
+///
+/// The picture is registered here rather than up front. `asset` returns the same id for
+/// the same bytes and queues nothing the second time, so a cover that appears in the strip,
+/// on the episode card and again in the player is one registration and three nodes.
+fn cover(size: f32, show: &Show) -> Element {
     rsx! {
-        Canvas {
+        Image {
             width: size,
             height: size,
             shape_role: ShapeRole::Large,
-            commands: artwork(size, seed, family),
+            asset_id: asset(AssetKind::Svg, show.cover),
         }
     }
 }
@@ -117,7 +123,7 @@ fn episode_card(found: &Episode, on_play: EventHandler<u32>) -> Element {
                             ColorRole::OutlineVariant,
                         ),
                     }
-                    {cover(COVER_SMALL, found.seed, show.family)}
+                    {cover(COVER_SMALL, show)}
                     Canvas {
                         weight: 1.0,
                         height: WAVE_SMALL.1,
@@ -187,7 +193,7 @@ fn show_row(show: &Show, followed: bool, on_toggle: EventHandler<()>) -> Element
             padding_role: SpaceRole::Sm,
             space_role: SpaceRole::Sm,
             alignment: Alignment::CenterStart,
-            {cover(48.0, show.followers, show.family)}
+            {cover(48.0, show)}
             Column {
                 weight: 1.0,
                 Text {
@@ -250,7 +256,7 @@ fn new_page(
                                 padding_role: SpaceRole::None,
                                 on_click: move |_| on_open.call(found.id),
                             }
-                            {cover(COVER_SMALL, found.seed, SHOWS[found.show].family)}
+                            {cover(COVER_SMALL, &SHOWS[found.show])}
                         }
                     }
                 },
@@ -315,7 +321,7 @@ fn shows_page(on_play: EventHandler<u32>) -> Element {
                                         padding_role: SpaceRole::Md,
                                         space_role: SpaceRole::Sm,
                                         alignment: Alignment::CenterStart,
-                                        {cover(44.0, found.seed, SHOWS[found.show].family)}
+                                        {cover(44.0, &SHOWS[found.show])}
                                         Column {
                                             weight: 1.0,
                                             Text {
@@ -444,7 +450,7 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
             dioxus_compose::Box {
                 fill_max_width: true,
                 alignment: Alignment::Center,
-                {cover(COVER_LARGE, id_seed, show.family)}
+                {cover(COVER_LARGE, show)}
             }
 
             Column {
@@ -828,6 +834,31 @@ mod tests {
             "skipping back left the readout where it was"
         );
         dioxus_compose::window::reset_window_size();
+    }
+
+    /// Every show's cover reaches the Renderer as a picture, and each one crosses once.
+    ///
+    /// Named for what it defends: a cover that appears in the strip, on the episode card
+    /// and again in the player is three nodes and has to be one registration, or a screen
+    /// with five episodes on it sends five copies of the same poster.
+    #[test]
+    fn fr16_every_cover_crosses_once_as_a_picture() {
+        let screen = Screen::new();
+        let mutations = screen.mutations();
+        for show in SHOWS {
+            assert_eq!(
+                mutations
+                    .iter()
+                    .filter(|mutation| matches!(
+                        mutation,
+                        Mutation::RegisterAsset { bytes, .. } if *bytes == show.cover
+                    ))
+                    .count(),
+                1,
+                "{} has no cover, or sent it more than once",
+                show.name
+            );
+        }
     }
 
     /// Every drawing on the shelf has to reach the Renderer with commands on it. A canvas

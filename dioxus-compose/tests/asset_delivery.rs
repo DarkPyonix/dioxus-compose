@@ -289,3 +289,44 @@ fn fr16_a_new_host_registers_the_pictures_again() {
         vec![(1, AssetKind::Svg, TINY_SVG.to_vec())],
     );
 }
+
+/// The same picture reached by two names.
+///
+/// A `const` holding a reference is inlined at each use, and each use can be given an
+/// allocation of its own, so a catalogue written as a `const` array hands out two pointers
+/// to one file. The shop did exactly this and registered one cover twice under two ids,
+/// which is two copies of a file across the boundary and a Renderer cache holding the same
+/// poster twice.
+const FIRST_NAME: &[u8] = TINY_SVG;
+// Spelled out byte by byte rather than as a string literal. Two equal string literals are
+// one allocation, and one allocation is the case this is here to rule out.
+#[allow(clippy::byte_char_slices)]
+const SECOND_NAME: &[u8] = &[
+    b'<', b's', b'v', b'g', b' ', b'x', b'm', b'l', b'n', b's', b'=', b'\'', b'h', b't', b't',
+    b'p', b':', b'/', b'/', b'w', b'w', b'w', b'.', b'w', b'3', b'.', b'o', b'r', b'g', b'/', b'2',
+    b'0', b'0', b'0', b'/', b's', b'v', b'g', b'\'', b' ', b'v', b'i', b'e', b'w', b'B', b'o',
+    b'x', b'=', b'\'', b'0', b' ', b'0', b' ', b'1', b' ', b'1', b'\'', b'/', b'>',
+];
+
+fn twice_named_app() -> Element {
+    rsx! {
+        Column {
+            Image { asset_id: asset(AssetKind::Svg, FIRST_NAME) }
+            Image { asset_id: asset(AssetKind::Svg, SECOND_NAME) }
+        }
+    }
+}
+
+#[test]
+fn fr16_the_same_bytes_under_two_names_are_one_registration() {
+    assert_eq!(
+        FIRST_NAME, SECOND_NAME,
+        "the two names are not the same file"
+    );
+    let mut host = Host::new(twice_named_app);
+    let batch = host.rebuild().unwrap().to_vec();
+    assert_eq!(
+        registrations(&batch),
+        vec![(1, AssetKind::Svg, TINY_SVG.to_vec())],
+    );
+}
