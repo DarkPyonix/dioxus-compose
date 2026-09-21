@@ -2,6 +2,8 @@ package dioxus.compose.test
 
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
@@ -22,9 +24,13 @@ import dioxus.compose.tooling.HostResponse
 import dioxus.compose.ui.node.nodeTestTag
 import dioxus.compose.foundation.LAZY_COLUMN_BUFFER
 
+private const val ROW = 2
 private const val LIST = 1
 private const val RANGE_HANDLER = 91L
 private const val ITEM_COUNT = 10_000
+
+/** A list short enough that its items do not by themselves reach the bottom of the window. */
+private const val SHORT_COUNT = 3
 
 /** First node id of the materialised window; two nodes per item (Box wrapper plus Text). */
 private const val FIRST_ITEM_NODE = 100
@@ -49,6 +55,20 @@ private fun window(start: Int, count: Int, previousCount: Int): List<Mutation> =
         add(Mutation.Insert(LIST, box, offset))
     }
 }
+
+/**
+ * The same list with no size of its own, sitting inside a Row that fills the window. The
+ * height has to come from the Row, which is the list and detail split's shape.
+ */
+private fun lazyListInRow() = listOf(
+    Mutation.Create(ROW, WidgetKind.Row),
+    Mutation.SetModifier(ROW, 0, ProtocolModifier.FillMaxWidth),
+    Mutation.SetModifier(ROW, 1, ProtocolModifier.FillMaxHeight),
+    Mutation.Create(LIST, WidgetKind.LazyColumn),
+    Mutation.SetProp(LIST, PropertyKind.ItemCount, PropertyValue.Integer(SHORT_COUNT.toLong())),
+    Mutation.SetProp(LIST, PropertyKind.OnRangeRequested, PropertyValue.Integer(RANGE_HANDLER)),
+    Mutation.Insert(ROW, LIST, 0),
+)
 
 private fun lazyList() = listOf(
     Mutation.Create(LIST, WidgetKind.LazyColumn),
@@ -93,6 +113,36 @@ class LazyColumnTest {
         assertTrue(
             host.table.node(LIST)!!.children.size <= request.count,
             "the Host materialised more than the window it was asked for",
+        )
+    }
+
+    /**
+     * A list that is given no height of its own fills the height it is offered. A Row hands
+     * its children the full height it has, and a short list has to take it rather than
+     * shrink to the handful of items that happen to be materialised, or the list and detail
+     * split has a list pane a few rows tall with the pane's background showing under it.
+     */
+    @Test
+    fun fr8_a_list_with_no_height_of_its_own_fills_the_height_it_is_offered() = runComposeUiTest {
+        val connection = FakeHostConnection(lazyListInRow())
+        var materialised = 0
+        connection.respondWith { event ->
+            if (event is HostEvent.RangeRequested) {
+                val batch = window(event.start, event.count, materialised)
+                materialised = event.count
+                HostResponse(batch)
+            } else {
+                HostResponse()
+            }
+        }
+        setContent { DioxusContent(rememberDioxusHost(connection)) }
+        waitForIdle()
+
+        val offered = onNodeWithTag(nodeTestTag(ROW)).getUnclippedBoundsInRoot().height
+        val taken = onNodeWithTag(nodeTestTag(LIST)).getUnclippedBoundsInRoot().height
+        assertTrue(
+            taken.value >= offered.value - 0.5f,
+            "the list took $taken of the $offered it was offered; it shrank to its items",
         )
     }
 

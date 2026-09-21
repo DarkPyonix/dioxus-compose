@@ -1,6 +1,7 @@
 package dioxus.compose.foundation
 
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +28,7 @@ import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 
 /**
  * How many items are asked for beyond the visible range on each side.
@@ -84,7 +86,14 @@ internal fun HostLazyColumn(
     // would stop being windowed at all.
     var gapHeight by remember(node.id) { mutableStateOf(ESTIMATED_ITEM_HEIGHT) }
 
-    LazyColumn(modifier = modifier, state = state) {
+    // A scrolling list is a viewport, not a stack of items: told nothing about its height
+    // it fills the height it is offered instead of shrinking to the window of items that
+    // happens to be materialised. Without this a list beside a detail pane is as tall as
+    // the few rows the Host has sent so far, and it can never grow, because the number of
+    // rows it asks for is decided by how tall it already is.
+    val sized = if (node.declaresOwnHeight()) modifier else Modifier.fillMaxHeight().then(modifier)
+
+    LazyColumn(modifier = sized, state = state) {
         items(
             count = itemCount,
             key = { index -> lazyItemKey(table, children, index - windowStart, index) },
@@ -131,6 +140,18 @@ internal fun HostLazyColumn(
                 }
         }
     }
+}
+
+/**
+ * True when the Host gave this node a height of its own, which then decides the viewport.
+ *
+ * `Weight` counts: the parent has already fixed the height of a weighted child.
+ */
+internal fun Node.declaresOwnHeight(): Boolean = modifiers.any { value ->
+    value is ProtocolModifier.Height ||
+        value is ProtocolModifier.Size ||
+        value is ProtocolModifier.FillMaxHeight ||
+        value is ProtocolModifier.Weight
 }
 
 /**
