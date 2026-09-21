@@ -19,16 +19,31 @@ const TICK_LENGTH: f32 = 0.12;
 /// reference draws and what a reader can count without counting.
 const TICKS: usize = 12;
 
-/// A dial reading `fraction` of the way round, with a marker where the reading is.
+/// How thick the arc that shows the reading is, against the dial's radius.
+const SWEEP_WIDTH: f32 = 0.09;
+
+/// A dial reading `fraction` of the way round: a ring of ticks, the arc the reading fills,
+/// and a marker where it ends.
 ///
-/// The ticks are drawn as short lines rather than as an arc with dashes, because an arc
-/// command has one sweep and a dashed stroke is not something the draw vocabulary can
-/// say. Twelve lines is the same picture and costs twelve records once.
+/// The arc is the reading. Without it the dial announced a number in the middle and drew
+/// nothing that showed it: twelve identical ticks and one small dot, which is a clock face
+/// rather than a gauge, and the fifty-five per cent it said was the only place the fifty
+/// five existed.
+///
+/// The ticks stay because they are what the reading is read against, and they are drawn as
+/// short lines rather than as a dashed arc because an arc command has one sweep and a
+/// dashed stroke is not something the draw vocabulary can say. Twelve lines is the same
+/// picture and costs twelve records once.
+///
+/// Angles are measured from the right and go clockwise, which is how the arc command reads
+/// them, so a dial that starts at the top starts a quarter turn back from zero.
 pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> DrawList {
     let middle = size / 2.0;
     let outer = middle * 0.94;
     let inner = outer * (1.0 - TICK_LENGTH);
-    let mut list = DrawListBuilder::with_capacity(TICKS + 2, 0);
+    let reading = (outer + inner) / 2.0;
+    let fraction = fraction.clamp(0.0, 1.0);
+    let mut list = DrawListBuilder::with_capacity(TICKS + 3, 0);
     for step in 0..TICKS {
         // From the top, clockwise, so the marker and the ticks agree about where zero is.
         let angle =
@@ -43,14 +58,26 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             2.0,
         );
     }
-    let angle = fraction.clamp(0.0, 1.0) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
+    // A sweep of nothing draws nothing, so a reading of zero is the ring alone rather than
+    // an arc command the Renderer has to decide what to do with.
+    if fraction > 0.0 {
+        list = list.arc(
+            Paint::Role(marker),
+            middle,
+            middle,
+            reading,
+            -90.0,
+            fraction * 360.0,
+            size * SWEEP_WIDTH,
+        );
+    }
+    let angle = fraction * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
     let (sin, cos) = angle.sin_cos();
-    let reading = (outer + inner) / 2.0;
     list.circle(
         Paint::Role(marker),
         middle + cos * reading,
         middle + sin * reading,
-        size * 0.022,
+        size * 0.032,
         0.0,
     )
     .build()
@@ -141,7 +168,7 @@ mod tests {
     fn fr16_a_dial_draws_a_tick_for_every_step_and_one_marker() {
         let list = dial(200.0, 0.55, ColorRole::OutlineVariant, ColorRole::Tertiary);
         let commands = list.decode().expect("the dial did not decode");
-        assert_eq!(commands.len(), TICKS + 1);
+        assert_eq!(commands.len(), TICKS + 2);
         assert_eq!(
             commands
                 .iter()
@@ -149,6 +176,57 @@ mod tests {
                 .count(),
             1,
             "a dial has one reading on it"
+        );
+    }
+
+    /// The arc is the reading. Named for what it defends: the dial used to draw twelve
+    /// identical ticks and a dot, so the number in the middle was the only place the
+    /// reading existed and the picture showed nothing.
+    #[test]
+    fn fr16_the_arc_covers_the_fraction_the_dial_reads() {
+        for (fraction, expected) in [(0.25_f32, 90.0_f32), (0.55, 198.0), (1.0, 360.0)] {
+            let commands = dial(
+                200.0,
+                fraction,
+                ColorRole::OutlineVariant,
+                ColorRole::Tertiary,
+            )
+            .decode()
+            .expect("the dial did not decode");
+            let arc = commands
+                .iter()
+                .find_map(|command| match command {
+                    DrawCommand::Arc {
+                        start_degrees,
+                        sweep_degrees,
+                        stroke_width,
+                        ..
+                    } => Some((*start_degrees, *sweep_degrees, *stroke_width)),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("a dial reading {fraction} draws no arc"));
+            assert_eq!(arc.0, -90.0, "the dial does not start at the top");
+            assert!(
+                (arc.1 - expected).abs() < 0.01,
+                "a dial reading {fraction} sweeps {} rather than {expected}",
+                arc.1
+            );
+            assert!(arc.2 > 0.0, "the arc is filled rather than stroked");
+        }
+    }
+
+    /// A reading of nothing is the ring alone. An arc of no sweep is a command the
+    /// Renderer has to decide what to do with, and different ones decide differently.
+    #[test]
+    fn fr16_a_dial_reading_nothing_draws_no_arc() {
+        let commands = dial(200.0, 0.0, ColorRole::OutlineVariant, ColorRole::Tertiary)
+            .decode()
+            .expect("the dial did not decode");
+        assert!(
+            !commands
+                .iter()
+                .any(|command| matches!(command, DrawCommand::Arc { .. })),
+            "an empty dial drew an arc of nothing"
         );
     }
 

@@ -29,6 +29,8 @@ const CAROUSEL_HEIGHT: f32 = 200.0;
 /// How tall the banner is. Wider than it is tall, the way a picture at the top of a page
 /// is, and short enough that the first shelf is still on screen under it.
 const BANNER_HEIGHT: f32 = 168.0;
+/// How much of a card the garment takes, leaving the rest for what is written under it.
+const PICTURE_SHARE: f32 = 0.7;
 const STRIP_HEIGHT: f32 = 56.0;
 const HERO_HEIGHT: f32 = 300.0;
 
@@ -100,13 +102,21 @@ fn tile(product: &Product, height: f32, named: bool, on_open: EventHandler<u32>)
             background: Paint::Role(fill),
             shape_role: ShapeRole::Large,
             alignment: Alignment::BottomStart,
-            // The drawing fills the card and everything else is written over it, which is
-            // the reference's shape: a photograph with the name sitting on its lower left.
-            Image {
+            // The drawing takes the upper part of the card and the name is written under
+            // it, which is the reference's shape: a photograph with the label sitting on
+            // its lower left. It is a box of its own rather than the card's first child,
+            // because the card aligns what is in it to the bottom left and a picture put
+            // there sits behind the words.
+            dioxus_compose::Box {
                 fill_max_width: true,
                 fill_max_height: true,
-                padding_role: SpaceRole::Sm,
-                asset_id: asset(AssetKind::Svg, product.picture),
+                alignment: Alignment::TopCenter,
+                Image {
+                    fill_max_width: true,
+                    height: height * PICTURE_SHARE,
+                    padding_role: SpaceRole::Sm,
+                    asset_id: asset(AssetKind::Svg, product.picture),
+                }
             }
             Column {
                 fill_max_width: true,
@@ -241,6 +251,11 @@ fn catalogue_screen(
                 Row {
                     fill_max_width: true,
                     space_role: SpaceRole::Xs,
+                    // Centred across the row, which needs the arrangement rather than the
+                    // alignment: alignment answers where a child sits across the row's
+                    // other axis, so a row of dots set to centre alignment is a row of
+                    // vertically centred dots still starting at the left edge.
+                    arrangement: Arrangement::Center,
                     alignment: Alignment::Center,
                     for (position, product) in shelf.iter().enumerate() {
                         // A bullet in a text button. Nothing in the vocabulary is a dot,
@@ -353,6 +368,16 @@ fn detail_screen(
                 height: HERO_HEIGHT,
                 background: Paint::Role(fill),
                 alignment: Alignment::TopStart,
+                // The garment, full size. The reference's product page is a photograph
+                // running to the window's edges with the panel covering its lower part,
+                // and a page that fills that with a flat colour is the one screen in the
+                // shop that shows you nothing about what you are buying.
+                Image {
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    padding_role: SpaceRole::Lg,
+                    asset_id: asset(AssetKind::Svg, product.picture),
+                }
                 Row {
                     fill_max_width: true,
                     padding_role: SpaceRole::Md,

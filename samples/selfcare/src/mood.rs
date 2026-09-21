@@ -15,6 +15,16 @@ pub enum Mood {
 impl Mood {
     pub const STRIP: [Mood; 4] = [Mood::Sad, Mood::Calm, Mood::Happy, Mood::Angry];
 
+    /// The drawing of this feeling's face.
+    pub fn picture(self) -> &'static [u8] {
+        FACES[match self {
+            Mood::Sad => 0,
+            Mood::Calm => 1,
+            Mood::Happy => 2,
+            Mood::Angry => 3,
+        }]
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             Mood::Sad => "Sad",
@@ -73,12 +83,29 @@ impl Mood {
     }
 }
 
+/// The faces, drawn.
+///
+/// The reference's faces are hand-drawn line art: a loop of hair, a nose that is one
+/// stroke, a mouth that says the whole feeling. A draw list cannot say that. It has
+/// circles, arcs and lines, and what came out of it was a disc with two dots on it, which
+/// is a face the way a rectangle is a garment.
+///
+/// So each face is an original drawing, registered once and drawn by id. Each one carries
+/// its own disc and its own near-black ink, which is what lets it sit on the feeling's
+/// panel in either colour scheme: the disc is light and the lines on it are dark whatever
+/// is behind them, so the face reads on a pale panel and on a dark one without the drawing
+/// having to know which it is.
+pub static FACES: [&[u8]; 4] = [
+    include_bytes!("../assets/face-sad.svg"),
+    include_bytes!("../assets/face-calm.svg"),
+    include_bytes!("../assets/face-happy.svg"),
+    include_bytes!("../assets/face-angry.svg"),
+];
+
 /// A face, drawn into a square of `size`.
 ///
-/// The reference's faces are hand-drawn line art. This is the part of them a draw list can
-/// say: a disc, two eyes and a mouth whose curve is the feeling. Nothing here is a
-/// literal, so the face follows the reader into dark and comes out in the active design
-/// system's own colours.
+/// Kept for the tests that check the feeling reaches the drawing at all, and for a
+/// Renderer that has no vector graphics: the picture above is the one on screen.
 pub fn face(size: f32, mood: Mood) -> DrawList {
     let (fill, ink) = mood.accent();
     let middle = size / 2.0;
@@ -259,6 +286,23 @@ pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> Dr
 mod tests {
     use super::*;
     use dioxus_compose::DrawCommand;
+
+    /// Four feelings, four faces. Two moods sharing a drawing is a picker where two
+    /// answers look like the same answer, which is what the disc with two dots on it was.
+    #[test]
+    fn fr16_no_two_moods_share_a_face() {
+        for (index, first) in Mood::STRIP.iter().enumerate() {
+            for second in &Mood::STRIP[index + 1..] {
+                assert_ne!(
+                    first.picture().as_ptr(),
+                    second.picture().as_ptr(),
+                    "{} and {} are the same drawing",
+                    first.label(),
+                    second.label()
+                );
+            }
+        }
+    }
 
     /// Four feelings, four fills. Two moods sharing one fill is a picker where two
     /// answers look like the same answer.
