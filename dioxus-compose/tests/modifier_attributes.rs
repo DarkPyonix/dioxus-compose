@@ -121,3 +121,65 @@ fn fr13_a_windowed_list_takes_the_modifiers_every_widget_takes() {
         "the list should fill its width: {mods:?}"
     );
 }
+
+fn rounded_fill() -> Element {
+    rsx! {
+        Column {
+            background: Paint::Role(ColorRole::SurfaceVariant),
+            shape_role: ShapeRole::Large,
+            padding_role: SpaceRole::Md,
+            Text { text: "bubble" }
+        }
+    }
+}
+
+/// A container that names a shape role keeps it.
+///
+/// `shape_role` and `corner_radius` fill the same modifier slot, and so do `padding_role`
+/// and `padding`. Whichever of a pair is left unset arrives as an empty attribute, and
+/// that empty attribute used to clear the slot its partner had just written, one mutation
+/// later in the same frame. Every rounded container in every sample was drawn square.
+#[test]
+fn fr13_an_unset_attribute_does_not_clear_its_partner_in_the_same_slot() {
+    let mut host = Host::new(rounded_fill);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let mut slots: Vec<(u16, String)> = Vec::new();
+    for mutation in &mutations {
+        if let Mutation::SetModifier {
+            index, modifier, ..
+        } = mutation
+        {
+            slots.push((*index, format!("{modifier:?}")));
+        }
+    }
+    let shape_slot = slots
+        .iter()
+        .find(|(_, modifier)| modifier.starts_with("ShapeRole"))
+        .map(|(index, _)| *index)
+        .expect("the shape role never reached the wire");
+    let last = slots
+        .iter()
+        .filter(|(index, _)| *index == shape_slot)
+        .next_back()
+        .expect("the slot has no writes");
+    assert!(
+        last.1.starts_with("ShapeRole"),
+        "the shape slot ended the frame holding {}: {slots:?}",
+        last.1
+    );
+    let padding_slot = slots
+        .iter()
+        .find(|(_, modifier)| modifier.starts_with("PaddingRole"))
+        .map(|(index, _)| *index)
+        .expect("the padding role never reached the wire");
+    let last = slots
+        .iter()
+        .filter(|(index, _)| *index == padding_slot)
+        .next_back()
+        .expect("the slot has no writes");
+    assert!(
+        last.1.starts_with("PaddingRole"),
+        "the padding slot ended the frame holding {}: {slots:?}",
+        last.1
+    );
+}

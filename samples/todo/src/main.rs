@@ -17,13 +17,9 @@ use store::{Filter, Task};
 /// Enough rows that the window is a small fraction of the list.
 const BULK_COUNT: usize = 5_000;
 
-/// How much of a split window the list takes. The detail pane takes one share, so the list
-/// keeps two thirds of the width and stays the thing the screen is about.
-const LIST_SHARE: f32 = 2.0;
-
 fn app() -> Element {
     let window = use_window_size();
-    let split = window.is_expanded();
+    let one_line_controls = window.is_expanded();
     let stacked = window.is_compact();
     let mut tasks = use_signal(store::load);
     let mut next_id = use_signal(|| {
@@ -99,64 +95,6 @@ fn app() -> Element {
         .collect();
     let rows = visible.clone();
 
-    let editing_title = editing().and_then(|id| {
-        tasks
-            .read()
-            .iter()
-            .find(|task| task.id == id)
-            .map(|task| task.title.clone())
-    });
-    // The detail pane. A wide window can show the list and the task being renamed at
-    // once, which is the whole reason to be wide.
-    let detail = rsx! {
-        Surface {
-            fill_max_width: true,
-            fill_max_height: true,
-            Column {
-                fill_max_width: true,
-                space_role: SpaceRole::Sm,
-                Text { text: "Task", type_role: TypeRole::Subtitle }
-                if let Some(title) = editing_title.clone() {
-                    TextField {
-                        fill_max_width: true,
-                        placeholder: title,
-                        on_value_change: move |value| edit_draft.set(value),
-                        on_submit: move |value: String| commit_edit(value),
-                    }
-                    Row {
-                        fill_max_width: true,
-                        space_role: SpaceRole::Sm,
-                        Button {
-                            text: "Save",
-                            variant: ButtonVariant::Filled,
-                            on_click: move |_| commit_edit(edit_draft()),
-                        }
-                        Button {
-                            text: "Cancel",
-                            variant: ButtonVariant::Text,
-                            color: Paint::Role(ColorRole::OnSurfaceVariant),
-                            on_click: move |_| {
-                                editing.set(None);
-                                edit_draft.set(String::new());
-                            },
-                        }
-                    }
-                } else {
-                    Text {
-                        text: "Choose Edit on a task to rename it here.",
-                        type_role: TypeRole::Body,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                    Text {
-                        text: "{remaining} of {total} remaining",
-                        type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                }
-            }
-        }
-    };
-
     let list = rsx! {
         // An empty list explains itself rather than leaving a blank half window
         // that could just as well be a screen that failed to draw. It replaces the
@@ -186,7 +124,7 @@ fn app() -> Element {
             weight: 1.0,
         LazyColumn {
             fill_max_width: true,
-            weight: 1.0,
+            fill_max_height: true,
             item_count: rows.len(),
             key_of: move |position: usize| keys[position].clone(),
             item: move |position: usize| {
@@ -413,23 +351,7 @@ fn app() -> Element {
 
                 // List and detail. Narrower than a desktop window the list is the whole
                 // width and the editor is the row itself.
-                Row {
-                    fill_max_width: true,
-                    weight: 1.0,
-                    space_role: SpaceRole::Md,
-                    Column {
-                        weight: LIST_SHARE,
-                        fill_max_height: true,
-                        {list}
-                    }
-                    if split {
-                        Column {
-                            weight: 1.0,
-                            fill_max_height: true,
-                            {detail}
-                        }
-                    }
-                }
+                {list}
             }
         }
     }

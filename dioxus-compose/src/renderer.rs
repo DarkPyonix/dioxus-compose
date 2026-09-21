@@ -30,6 +30,10 @@ struct StackNode {
     paths: HashMap<Vec<u8>, PathTarget>,
 }
 
+/// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
+/// and this is one past the last of them.
+const MODIFIER_SLOTS: usize = 11;
+
 /// `dioxus-core` mutation sink that writes the Compose wire protocol directly.
 pub struct ComposeRenderer {
     encoder: BatchEncoder,
@@ -43,10 +47,17 @@ pub struct ComposeRenderer {
     /// A border arrives as a width and a colour in separate attributes; this holds
     /// whichever came first until the pair can be written as one modifier.
     pending_borders: HashMap<u32, (Option<f32>, Option<crate::Paint>)>,
-    /// Which Modifier slots a node has actually been given, one bit per slot. Clearing a
-    /// slot that was never written would cost a mutation on the first frame of every
-    /// widget, for a Modifier nobody asked for.
-    modifier_slots: HashMap<u32, u16>,
+    /// Which attribute last wrote each of a node's Modifier slots, or `""` for a slot
+    /// nothing has written.
+    ///
+    /// Two things need the owner rather than a "written" bit. Clearing a slot that was
+    /// never written would cost a mutation on the first frame of every widget, for a
+    /// Modifier nobody asked for. And some slots have two attributes that can fill them,
+    /// `shape_role` and `corner_radius` for the shape, `padding_role` and `padding` for
+    /// the padding: the one left unset arrives as an empty attribute, and without the
+    /// owner it would clear the modifier its partner had just written, which is how a
+    /// rounded container came out square.
+    modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
 }
@@ -211,14 +222,21 @@ impl ComposeRenderer {
         // this slot already holds something, because clearing a slot that was never
         // written would cost a mutation on the first frame of every widget.
         if matches!(value, AttributeValue::None) {
-            let used = self.modifier_slots.entry(node_id).or_default();
-            if *used & (1u16 << slot) == 0 {
+            let owners = self
+                .modifier_slots
+                .entry(node_id)
+                .or_insert([""; MODIFIER_SLOTS]);
+            // Only the attribute that wrote the slot may clear it. `corner_radius` being
+            // unset says nothing about the `shape_role` sitting in the same slot.
+            if owners[slot as usize] != name {
                 return Some(None);
             }
-            *used &= !(1u16 << slot);
+            owners[slot as usize] = "";
             return Some(Some((slot, crate::Modifier::Empty)));
         }
-        *self.modifier_slots.entry(node_id).or_default() |= 1u16 << slot;
+        self.modifier_slots
+            .entry(node_id)
+            .or_insert([""; MODIFIER_SLOTS])[slot as usize] = name;
 
         match name {
             "fill_max_width" | "fill_max_height" => {
