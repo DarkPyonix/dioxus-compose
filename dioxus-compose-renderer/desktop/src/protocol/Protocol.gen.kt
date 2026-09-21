@@ -1063,7 +1063,7 @@ object DesignTokens {
             0xff3584e4.toInt(), // Primary
             0xffffffff.toInt(), // OnPrimary
             0xffc061cb.toInt(), // Secondary
-            0xff2a0a30.toInt(), // OnSecondary
+            0xffffffff.toInt(), // OnSecondary
             0xff1e1e1e.toInt(), // Surface
             0xffffffff.toInt(), // OnSurface
             0xff303030.toInt(), // SurfaceVariant
@@ -1128,7 +1128,7 @@ object DesignTokens {
             0xff3f4449.toInt(), // OutlineVariant
             0xffed8079.toInt(), // Error
             0xff2a0806.toInt(), // OnError
-            0xff31363b.toInt(), // SurfaceContainer
+            0xff1b1e20.toInt(), // SurfaceContainer
         ),
         arrayOf(
             TypeToken(34.0f, 600, 40.0f, 0.0f, false), // Display

@@ -306,7 +306,11 @@ const ADWAITA: DesignTokenTable = DesignTokenTable {
         OnPrimary: 0xffffff / 0xffffff,
         // purple 3, the rare second accent. Never a second button colour.
         Secondary: 0x9141ac / 0xc061cb,
-        OnSecondary: 0xffffff / 0x2a0a30,
+        // White in both schemes, which is what libadwaita puts on every accent fill but
+        // yellow. On the lighter purple 2 of the dark scheme that measures 3.6:1, which
+        // carries a short control label but would not carry body text. Nothing puts body
+        // text on the second accent.
+        OnSecondary: 0xffffff / 0xffffff,
         // view_bg_color: the white of a list or a text view.
         Surface: 0xffffff / 0x1e1e1e,
         OnSurface: 0x2e3436 / 0xffffff,
@@ -394,9 +398,11 @@ const BREEZE: DesignTokenTable = DesignTokenTable {
         // Breeze "negative".
         Error: 0xda4453 / 0xed8079,
         OnError: 0xffffff / 0x2a0806,
-        // A framed panel in Plasma is the view colour sitting on the window, which is a
-        // step lighter in light and a step lighter again in dark.
-        SurfaceContainer: 0xfcfcfc / 0x31363b,
+        // A framed panel in Plasma is the view colour sitting on the window: a step
+        // lighter than the window in light, and a step darker in dark, because Breeze
+        // Dark's view really is darker than its window. Either way the panel separates
+        // from the page, which is the whole promise of the role.
+        SurfaceContainer: 0xfcfcfc / 0x1b1e20,
     },
     // Plasma sets its interface in Noto Sans at 10pt, a step smaller than Adwaita's 11pt
     // Cantarell, and its headings are semi bold rather than the near black weights
