@@ -174,8 +174,20 @@ fn app() -> Element {
                 }
             }
 
-            Column {
+            // The page defines a column, and everything under the bar lines up with it.
+            //
+            // The page alone used to be centred and measured while the file strip and the
+            // status line ran to the window edges, so the three things a document window
+            // is made of shared no edge at all. A page is a measure: the chrome that
+            // belongs to the document sits on the same measure or the document is not a
+            // page, it is a rectangle floating between two full width strips.
+            dioxus_compose::Box {
                 fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+            Column {
+                fill_max_width: page_width.is_none(),
+                width: page_width,
                 fill_max_height: true,
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Md,
@@ -202,16 +214,12 @@ fn app() -> Element {
                 }
 
                 // The page. A document is an object you write on, so it is a surface of
-                // its own with the rest of the window as its margin, and it takes what the
-                // toolbar and the status line leave.
-                dioxus_compose::Box {
+                // its own, and it takes what the toolbar and the status line leave. Its
+                // width is the column's, which is what makes the file strip above it and
+                // the status line below it line up with its edges.
+                Surface {
                     fill_max_width: true,
                     weight: 1.0,
-                    alignment: Alignment::TopCenter,
-                Surface {
-                    fill_max_width: page_width.is_none(),
-                    width: page_width,
-                    fill_max_height: true,
                     // The editor scrolls on its own, so a document longer than the window
                     // stays reachable without the Host knowing where the scroll is.
                     ScrollColumn {
@@ -219,7 +227,6 @@ fn app() -> Element {
                         fill_max_height: true,
                         {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
                     }
-                }
                 }
 
                 // The status line: what the last file operation did on the left, the
@@ -252,6 +259,7 @@ fn app() -> Element {
                         color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
                 }
+            }
             }
         }
     }
