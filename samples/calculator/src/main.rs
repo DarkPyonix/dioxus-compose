@@ -56,56 +56,95 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            spacing: 6.0,
+
             TopAppBar {
-                Text { text: "Calculator", type_role: TypeRole::Title }
-            }
-            // Text has no width of its own, so the right alignment of a calculator display
-            // comes from a full-width Box around it.
-            dioxus_compose::Box {
                 fill_max_width: true,
-                alignment: Alignment::CenterEnd,
-                Text {
-                    text: status,
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    max_lines: 1,
-                    overflow: TextOverflow::Ellipsis,
-                }
+                Text { text: "Calculator", type_role: TypeRole::Title, weight: 1.0 }
             }
-            dioxus_compose::Box {
+
+            Column {
                 fill_max_width: true,
-                alignment: Alignment::CenterEnd,
-                Text {
-                    text: display,
-                    type_role: TypeRole::Display,
-                    max_lines: 1,
-                    overflow: TextOverflow::Ellipsis,
-                }
-            }
-            for (index , row) in ROWS.iter().enumerate() {
-                Row {
-                    key: "row-{index}",
+                fill_max_height: true,
+                padding_role: SpaceRole::Lg,
+                space_role: SpaceRole::Md,
+
+                // The readout is a panel of its own, the way a calculator's display is set
+                // into the case rather than printed on it. Surface takes its fill, its
+                // corner and its inner padding from the design system.
+                Surface {
                     fill_max_width: true,
-                    arrangement: Arrangement::SpaceEvenly,
-                    for label in row.iter().copied() {
-                        Button {
-                            key: "{label}",
-                            text: label,
-                            variant: variant_for(label),
-                            on_click: move |_| calculator.write().press(label),
+                    Column {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Xs,
+                        // Text has no width of its own, so the right alignment of a
+                        // calculator display comes from a full-width Box around it.
+                        dioxus_compose::Box {
+                            fill_max_width: true,
+                            alignment: Alignment::CenterEnd,
+                            Text {
+                                text: status,
+                                type_role: TypeRole::Caption,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                        }
+                        dioxus_compose::Box {
+                            fill_max_width: true,
+                            alignment: Alignment::CenterEnd,
+                            Text {
+                                text: display,
+                                type_role: TypeRole::Display,
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
                         }
                     }
                 }
-            }
-            Text {
-                text: "Keyboard: click the field below, then type 0-9 . + - * / % = and Enter",
-                type_role: TypeRole::Caption,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
-            }
-            TextField {
-                placeholder: "Keyboard input",
-                on_value_change: move |value: String| {
+
+                // The keypad takes what the display leaves: every row an equal share of
+                // the height, every key an equal share of its row. Weight is what makes
+                // this a grid rather than five lines of differently sized buttons.
+                Column {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    space_role: SpaceRole::Sm,
+                    for (index , row) in ROWS.iter().enumerate() {
+                        Row {
+                            key: "row-{index}",
+                            fill_max_width: true,
+                            weight: 1.0,
+                            space_role: SpaceRole::Sm,
+                            for label in row.iter().copied() {
+                                Button {
+                                    key: "{label}",
+                                    text: label,
+                                    weight: 1.0,
+                                    fill_max_height: true,
+                                    variant: variant_for(label),
+                                    on_click: move |_| calculator.write().press(label),
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // The keyboard route, grouped into a footer so it reads as a note about
+                // the keypad above rather than as a second set of controls beside it.
+                Surface {
+                    fill_max_width: true,
+                    Column {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Xs,
+                        Text {
+                            text: "Keyboard: click the field below, then type 0-9 . + - * / % = and Enter",
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                        TextField {
+                            fill_max_width: true,
+                            placeholder: "Keyboard input",
+                            on_value_change: move |value: String| {
                     let previous = typed();
                     let shared = shared_prefix(&previous, &value);
                     let removed = previous[shared..].chars().count();
@@ -117,14 +156,17 @@ fn app() -> Element {
                         state.press_char(character);
                     }
                     drop(state);
-                    typed.set(value);
-                },
-                on_key_down: move |event: KeyEvent| {
-                    if event.key() == Key::Enter {
-                        calculator.write().press("=");
-                        event.consume();
+                                typed.set(value);
+                            },
+                            on_key_down: move |event: KeyEvent| {
+                                if event.key() == Key::Enter {
+                                    calculator.write().press("=");
+                                    event.consume();
+                                }
+                            },
+                        }
                     }
-                },
+                }
             }
         }
     }
