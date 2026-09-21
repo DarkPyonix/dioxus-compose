@@ -53,7 +53,7 @@ enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
 
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
-enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+enum class ButtonVariant { Filled, Tonal, Outlined, Text, Operator }
 
 /**
  * Which design system an implementation is.

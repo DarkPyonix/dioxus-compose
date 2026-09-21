@@ -215,9 +215,33 @@ class DesignTokenWiringTest {
     fun fr14_2_every_variant_is_distinct_within_a_system() {
         DesignSystem.entries.forEach { system ->
             val theme = resolved(system)
-            val styles = ButtonVariant.entries.map { theme.rules.button(it, theme) }
+            val styles = ButtonVariant.entries
+                .filterNot { it == ButtonVariant.Operator }
+                .map { theme.rules.button(it, theme) }
             assertEquals(styles.size, styles.distinct().size, "$system draws two variants identically")
         }
+    }
+
+    @Test
+    fun fr22_operator_keys_follow_the_calculator_language_of_each_system() {
+        val cupertino = resolved(DesignSystem.Cupertino)
+        val cupertinoOperator = cupertino.rules.button(ButtonVariant.Operator, cupertino)
+        assertEquals(
+            cupertino.rules.button(ButtonVariant.Filled, cupertino),
+            cupertinoOperator,
+        )
+
+        val fluent = resolved(DesignSystem.Fluent)
+        val fluentOperator = fluent.rules.button(ButtonVariant.Operator, fluent)
+        assertEquals(fluent.rules.button(ButtonVariant.Tonal, fluent), fluentOperator)
+        assertNotEquals(fluent.rules.button(ButtonVariant.Filled, fluent).container, fluentOperator.container)
+
+        val deepin = resolved(DesignSystem.Deepin)
+        val deepinOperator = deepin.rules.button(ButtonVariant.Operator, deepin)
+        val deepinNumber = deepin.rules.button(ButtonVariant.Tonal, deepin)
+        assertEquals(deepinNumber.container, deepinOperator.container)
+        assertEquals(deepin.color(ColorRole.Primary), deepinOperator.content)
+        assertNotEquals(deepinNumber.content, deepinOperator.content)
     }
 }
 

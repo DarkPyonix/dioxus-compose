@@ -496,6 +496,7 @@ define_wire_enum!(BUTTON_VARIANT_SCHEMA, ButtonVariant {
     Tonal = 2,
     Outlined = 3,
     Text = 4,
+    Operator = 5,
 });
 
 // What the bytes behind an asset id are. A kind the Renderer cannot read is a reported

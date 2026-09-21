@@ -280,6 +280,17 @@ class DeepinDesignSystem private constructor(
                 pressedBorder = null,
                 ripple = false,
             )
+            ButtonVariant.Operator -> ButtonStyle(
+                container = tonal,
+                content = accent,
+                border = null,
+                borderWidth = 0.dp,
+                shape = ShapeRole.Medium,
+                pressedContainer = tonalPressed,
+                pressedContent = accent,
+                pressedBorder = null,
+                ripple = false,
+            )
             ButtonVariant.Outlined -> ButtonStyle(
                 container = Color.Transparent,
                 content = onTonal,

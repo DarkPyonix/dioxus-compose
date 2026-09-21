@@ -89,6 +89,16 @@ internal object Material3Rules : ComponentRules {
                 pressedElevation = 1.dp,
             )
 
+            ButtonVariant.Operator -> base.copy(
+                container = theme.color(ColorRole.SurfaceVariant),
+                pressedContainer = stateLayer(
+                    theme.color(ColorRole.SurfaceVariant),
+                    theme.color(ColorRole.Primary),
+                ),
+                content = theme.color(ColorRole.Primary),
+                pressedElevation = 1.dp,
+            )
+
             ButtonVariant.Outlined -> base.copy(
                 pressedContainer = stateLayer(Color.Transparent, theme.color(ColorRole.Primary)),
                 borderWidth = 1.dp,
@@ -484,7 +494,7 @@ internal object CupertinoRules : ComponentRules {
             disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
-            ButtonVariant.Filled -> base.copy(
+            ButtonVariant.Filled, ButtonVariant.Operator -> base.copy(
                 container = theme.color(ColorRole.Primary),
                 pressedContainer = theme.color(ColorRole.Primary).copy(alpha = PRESSED_ALPHA),
                 content = theme.color(ColorRole.OnPrimary),
@@ -902,7 +912,7 @@ internal object FluentRules : ComponentRules {
             )
 
             // Standard button.
-            ButtonVariant.Tonal -> base
+            ButtonVariant.Tonal, ButtonVariant.Operator -> base
 
             // Standard button with a stronger stroke.
             ButtonVariant.Outlined -> base.copy(
@@ -1403,6 +1413,8 @@ internal object GnomeRules : ComponentRules {
             // difference from a Material screen where every variant carries the hue.
             ButtonVariant.Tonal -> base
 
+            ButtonVariant.Operator -> base.copy(content = theme.color(ColorRole.Primary))
+
             ButtonVariant.Outlined -> base.copy(
                 container = Color.Transparent,
                 borderWidth = 1.dp,
@@ -1845,6 +1857,8 @@ internal object BreezeRules : ComponentRules {
             // The standard button: a light fill inside a hairline.
             ButtonVariant.Tonal -> base
 
+            ButtonVariant.Operator -> base.copy(content = accent)
+
             // Hovering or pressing an outlined Breeze button recolours its line rather
             // than filling it in.
             ButtonVariant.Outlined -> base.copy(
@@ -2283,6 +2297,8 @@ internal object DeepinRules : ComponentRules {
             // A plain grey fill, a step off whatever it sits on.
             ButtonVariant.Tonal -> base
 
+            ButtonVariant.Operator -> base.copy(content = accent)
+
             ButtonVariant.Outlined -> base.copy(
                 container = Color.Transparent,
                 pressedContainer = tonal,
@@ -2692,7 +2708,7 @@ internal object LiquidGlassRules : ComponentRules {
             disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
-            ButtonVariant.Filled -> base.copy(
+            ButtonVariant.Filled, ButtonVariant.Operator -> base.copy(
                 container = theme.color(ColorRole.Primary),
                 pressedContainer = theme.color(ColorRole.Primary).copy(alpha = PRESSED_ALPHA),
                 content = theme.color(ColorRole.OnPrimary),

@@ -36,13 +36,15 @@ const ROWS: [[&str; 4]; 5] = [
 /// A keypad is a field of keys, so every key has a surface and the three kinds of key are
 /// told apart by which surface they get.
 ///
-/// The operators and equals are the accent, the digits are the quiet filled key that most
-/// of the pad is made of, and the four function keys are outlined, which is a key with an
-/// edge rather than a key with a fill. A plain text button is not a key at all: it reads as
-/// a label lying on the case.
+/// Equals is the accent action, digits are the quiet filled keys that most of the pad is
+/// made of, and operators use the design system's operator role. That role is an accent
+/// fill on macOS, a neutral key on Windows, and a neutral key with accent ink on Deepin.
+/// The function keys are outlined, which is a key with an edge rather than a key with a
+/// fill. A plain text button is not a key at all: it reads as a label lying on the case.
 fn variant_for(label: &str) -> ButtonVariant {
     match label {
-        "=" | "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Filled,
+        "=" => ButtonVariant::Filled,
+        "\u{00f7}" | "\u{00d7}" | "\u{2212}" | "+" => ButtonVariant::Operator,
         "C" | "\u{232b}" | "%" | "\u{00b1}" => ButtonVariant::Outlined,
         _ => ButtonVariant::Tonal,
     }
@@ -75,13 +77,13 @@ fn keypad(press: EventHandler<&'static str>) -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            space_role: SpaceRole::Sm,
+            space_role: SpaceRole::Xs,
             for (index , row) in ROWS.iter().enumerate() {
                 Row {
                     key: "row-{index}",
                     fill_max_width: true,
                     weight: 1.0,
-                    space_role: SpaceRole::Sm,
+                    space_role: SpaceRole::Xs,
                     for label in row.iter().copied() {
                         Button {
                             key: "{label}",
@@ -128,22 +130,6 @@ fn memory_row(memory_set: bool, press: EventHandler<&'static str>) -> Element {
     }
 }
 
-/// How large the entered number is set, in sp.
-///
-/// This is the one place in the samples where a size is named rather than a rung, and the
-/// reason is that the ladder is a ladder for documents. Its top rung is a headline over a
-/// page of body text: 34sp in Cupertino, 40 in Fluent, 57 in Material. A calculator is not
-/// a document. The number is the whole instrument and everything else on the screen is
-/// support for entering it, so at any rung of a reading ladder the panel ends up a large
-/// box with a small number pinned inside it.
-///
-/// The alternative was a tenth rung above `Display`. It was rejected because every design
-/// system would then have to publish a size for a rung that only an instrument readout
-/// would ever ask for, and a ladder gains a rung nothing reads. Keeping `TypeRole::Display`
-/// and overriding the size alone means the family, the weight and the letter spacing are
-/// still the design system's, which is the part of the rung that is worth having.
-const READOUT_SP: f32 = 64.0;
-
 /// The readout: what is being worked out, and what it comes to.
 ///
 /// Printed on the case rather than set into it. It used to be a filled panel, on the
@@ -177,8 +163,6 @@ fn readout(status: String, display: String) -> Element {
                     fill_max_width: true,
                     text_align: TextAlign::End,
                     type_role: TypeRole::Display,
-                    font_size: READOUT_SP,
-                    line_height: READOUT_SP,
                     color: Paint::Role(ColorRole::OnSurface),
                     max_lines: 1,
                     overflow: TextOverflow::Ellipsis,
@@ -200,7 +184,7 @@ struct TapeEntry {
 }
 
 /// What the app bar calls the tape, and what the sheet is opened by.
-const TAPE_LABEL: &str = "Tape";
+const TAPE_LABEL: &str = "History";
 
 /// The tape: what has been worked out, newest at the top, each line a key back into the
 /// calculation it came from.
@@ -353,7 +337,7 @@ fn app() -> Element {
 
             TopAppBar {
                 fill_max_width: true,
-                Text { text: "Calculator", type_role: TypeRole::Title, weight: 1.0 }
+                Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
                 // Only where the tape is not already on screen. A button that opens what
                 // you are looking at is a button that does nothing.
                 if !tape_beside {
@@ -580,6 +564,14 @@ mod tests {
             }
         }
         assert!(!calculator.display().is_empty());
+    }
+
+    #[test]
+    fn fr22_operators_use_the_adaptive_operator_role_and_equals_stays_filled() {
+        for label in ["\u{00f7}", "\u{00d7}", "\u{2212}", "+"] {
+            assert_eq!(variant_for(label), ButtonVariant::Operator);
+        }
+        assert_eq!(variant_for("="), ButtonVariant::Filled);
     }
 
     /// The whole declared tree, checked against the encoder. A widget or an attribute the
