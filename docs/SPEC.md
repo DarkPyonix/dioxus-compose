@@ -1159,7 +1159,7 @@ dioxus_compose_host_dispatch_event: click 1
 - 핸드셰이크와 초기 배치(180바이트, 8레코드)가 양쪽에서 바이트 단위로 동일합니다.
 - 시뮬레이터에서 버튼을 탭하면 `dispatch_event`가 Rust 핸들러까지 도달합니다. `simctl`에 탭 명령이 없어 이 확인은 자동화되지 않습니다. `ios-smoke-test.sh --await-click`으로 사람이 실행합니다. CI는 이 플래그 없이 기동과 렌더링까지만 증명합니다.
 - iOS에는 isolate가 없어 `@CName`이 공개 심볼을 Kotlin 함수에 직접 붙입니다. isolate 심이 하던 나머지 역할은 Kotlin/Native 런타임과 `NSThread.isMainThread` 검사가 대신합니다.
-- Android와 Web은 아직 검증되지 않았습니다. 네 타깃이 모두 확인되면 `Done`으로 올립니다.
+- Web은 검증되었습니다(PR-6의 검증 절). 같은 다섯 개 논리 연산이 브라우저에서도 그대로 서고, 초기 배치와 클릭 왕복이 공유 메모리 위에서 돕니다. Android만 기기나 에뮬레이터에서 미확인이며, 그것이 확인되면 `Done`으로 올립니다.
 
 ### PR-3 스레드 규칙 (`Agreed`)
 - VirtualDom, 사용자 컴포넌트, 모든 `dioxus_compose_host_*` 호출은 Renderer UI 스레드에서만 실행합니다. 그래서 락이 필요 없습니다.
@@ -1227,7 +1227,7 @@ dioxus_compose_host_dispatch_event: click 1
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
 - 구현 상태(2026-09-22): 경계 심 생성, 생명주기와 `Resync`, Activity 호스팅, cdylib 빌드가 들어왔습니다. 심은 `aarch64-linux-android`로 컴파일되고, cdylib이 내보내는 JNI 심벌은 컴파일된 Kotlin 클래스가 native로 선언한 이름과 정확히 일치합니다. 수용 기준 1~3은 모두 기기나 에뮬레이터에서만 확인할 수 있어 아직 미검증이고, 5.1의 수용 기준 4(크레이트가 Kotlin 소스를 품고 Maven 좌표 없이 APK가 빌드되는 것)는 아직 착수 전입니다.
 
-### PR-6 Web 경계 (`Agreed`)
+### PR-6 Web 경계 (`Done`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입니다. 2026-09-20 실측으로 확정했습니다(`experiments/web-interop/`).
 
 - **메모리: Kotlin이 소유합니다.** Kotlin/Wasm 모듈은 항상 자기 메모리를 정의해 export하며, 외부 메모리를 import하는 경로가 없습니다. 따라서 Rust가 `--import-memory`로 그 메모리를 가져다 씁니다. PR-4의 arena는 양쪽이 제자리에서 읽습니다. 복사는 없습니다.
