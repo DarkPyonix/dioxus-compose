@@ -105,6 +105,78 @@ fn document_bar(measure: Option<f32>, working: bool, children: Element) -> Eleme
     }
 }
 
+/// A document that is open but not on screen.
+///
+/// The one being edited lives in the signals the editor writes to; this is where the
+/// others wait. Swapping the two is what choosing a document does, which is why the
+/// editor code below never has to know that there is more than one.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Shelved {
+    /// Never reused, so it is the list key.
+    id: u64,
+    path: String,
+    text: String,
+    on_disk: String,
+}
+
+/// How the list and the document share an expanded window.
+///
+/// The Loop reference gives its sidebar about a quarter of the window, which is what a
+/// list of names needs and no more: the document is what the window is for.
+const LIST_SHARE: f32 = 1.0;
+const DOCUMENT_SHARE: f32 = 3.0;
+
+/// The open documents, newest last, with the one being edited marked.
+///
+/// The same element stands beside the document on a desktop window and arrives in a sheet
+/// on anything narrower. It is written once because it is one list: a list that had to be
+/// authored twice would drift the first time either copy changed.
+fn document_list(
+    entries: Vec<(u64, String)>,
+    current: u64,
+    choose: EventHandler<u64>,
+    new_document: EventHandler<()>,
+) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            space_role: SpaceRole::Sm,
+            Row {
+                fill_max_width: true,
+                alignment: Alignment::CenterStart,
+                Text { text: "Documents", type_role: TypeRole::Subtitle, weight: 1.0 }
+                Button {
+                    text: "New",
+                    variant: ButtonVariant::Tonal,
+                    on_click: move |_| new_document.call(()),
+                }
+            }
+            Separator {}
+            ScrollColumn {
+                fill_max_width: true,
+                weight: 1.0,
+                for (id , name) in entries {
+                    Button {
+                        key: "{id}",
+                        text: name,
+                        fill_max_width: true,
+                        // The one being edited is the filled one. A list where every row
+                        // looks the same is a list that does not say where you are.
+                        variant: if id == current {
+                            ButtonVariant::Tonal
+                        } else {
+                            ButtonVariant::Text
+                        },
+                        color: Paint::Role(ColorRole::OnSurface),
+                        on_click: move |_| choose.call(id),
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn app() -> Element {
     let window = use_window_size();
     // A document is read across its lines, so past a certain width a page that keeps
@@ -126,6 +198,14 @@ fn app() -> Element {
     // cleared in every place that saves, and the one that forgets is the bug.
     let mut on_disk = use_signal(String::new);
     let mut file_open = use_signal(|| false);
+    // The documents that are open but not on screen, and which one is.
+    let mut shelved = use_signal(Vec::<Shelved>::new);
+    let mut current = use_signal(|| 1_u64);
+    let mut next_document = use_signal(|| 2_u64);
+    let mut list_open = use_signal(|| false);
+    // A desktop window has room for the list to stand beside the document. Narrower than
+    // that it is a sheet, which is the same list arriving from an edge instead.
+    let list_beside = window.is_expanded();
 
     // The worker's result comes back here, on the UI thread, and the signal writes happen
     // where every other signal write in the app happens.
@@ -181,6 +261,67 @@ fn app() -> Element {
         });
     };
 
+    // Putting the document on screen on the shelf and taking another one off it. The
+    // editor's signals are the open document, so choosing one is a swap rather than a
+    // different code path through the whole screen.
+    let choose = move |id: u64| {
+        if id == current() {
+            list_open.set(false);
+            return;
+        }
+        let taken = {
+            let mut list = shelved.write();
+            let Some(at) = list.iter().position(|document| document.id == id) else {
+                return;
+            };
+            let taken = list.remove(at);
+            list.push(Shelved {
+                id: current(),
+                path: path(),
+                text: text(),
+                on_disk: on_disk(),
+            });
+            taken
+        };
+        current.set(taken.id);
+        path.set(taken.path);
+        on_disk.set(taken.on_disk);
+        text.set(taken.text);
+        status.set(format!("Opened {}", file_name(&path())));
+        // The field's contents came from outside it, so the field is rebuilt.
+        stamp += 1;
+        list_open.set(false);
+    };
+
+    let mut new_document = move |()| {
+        shelved.write().push(Shelved {
+            id: current(),
+            path: path(),
+            text: text(),
+            on_disk: on_disk(),
+        });
+        let id = next_document();
+        next_document.set(id + 1);
+        current.set(id);
+        path.set(String::new());
+        text.set(String::new());
+        on_disk.set(String::new());
+        status.set("New document".to_owned());
+        stamp += 1;
+        list_open.set(false);
+    };
+
+    // Every open document, in the order they were opened, with the one on screen in its
+    // own place rather than at the end: the list is not allowed to jump about because the
+    // reader moved between two documents.
+    let mut entries: Vec<(u64, String)> = shelved
+        .read()
+        .iter()
+        .map(|document| (document.id, file_name(&document.path)))
+        .collect();
+    entries.push((current(), file_name(&path())));
+    entries.sort_by_key(|(id, _)| *id);
+
     let Counts {
         words,
         characters,
@@ -208,29 +349,22 @@ fn app() -> Element {
                         color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
                 }
+                // Only where the list is not already on screen. A button that opens what
+                // you are looking at is a button that does nothing.
+                if !list_beside {
+                    Button {
+                        text: "Documents",
+                        variant: ButtonVariant::Text,
+                        on_click: move |_| list_open.set(true),
+                    }
+                }
+                // Starting a document no longer throws one away: the one that was on
+                // screen is in the list, which is why this offers nothing back.
                 Button {
                     text: "New",
                     variant: ButtonVariant::Text,
                     enabled: !working,
-                    on_click: move |_| {
-                        let thrown_away = text();
-                        text.set(String::new());
-                        on_disk.set(String::new());
-                        stamp += 1;
-                        status.set("New document".to_owned());
-                        // Starting a new document throws the old one away without asking,
-                        // so it offers it back rather than asking first: a dialog in front
-                        // of every New is a dialog nobody reads by the third time.
-                        if !thrown_away.is_empty() {
-                            Message::new("Document cleared")
-                                .with_action("Undo", move |()| {
-                                    text.set(thrown_away.clone());
-                                    stamp += 1;
-                                })
-                                .with_duration(MessageDuration::Long)
-                                .show();
-                        }
-                    },
+                    on_click: move |_| new_document(()),
                 }
                 Button {
                     text: "File",
@@ -301,6 +435,41 @@ fn app() -> Element {
                 }
             }
 
+            // The same list, arriving from an edge, for the windows with no room beside
+            // the document. Which edge is the Renderer's decision.
+            Sheet {
+                open: list_open() && !list_beside,
+                on_dismiss: move |_| list_open.set(false),
+                fill_max_width: true,
+                {document_list(
+                    entries.clone(),
+                    current(),
+                    EventHandler::new(choose),
+                    EventHandler::new(move |()| new_document(())),
+                )}
+            }
+
+            // The list and the document, side by side where there is room. Both memo
+            // references do this on a wide window: Loop keeps its documents down the left
+            // and iOS opens the note over the list it came from.
+            Row {
+                fill_max_width: true,
+                fill_max_height: true,
+                if list_beside {
+                    Column {
+                        weight: LIST_SHARE,
+                        fill_max_height: true,
+                        padding_role: SpaceRole::Md,
+                        {document_list(
+                            entries.clone(),
+                            current(),
+                            EventHandler::new(choose),
+                            EventHandler::new(move |()| new_document(())),
+                        )}
+                    }
+                    Divider { vertical: true }
+                }
+
             // The page defines a column, and everything under the bar lines up with it.
             //
             // The page alone used to be centred and measured while the file strip and the
@@ -309,6 +478,7 @@ fn app() -> Element {
             // belongs to the document sits on the same measure or the document is not a
             // page, it is a rectangle floating between two full width strips.
             dioxus_compose::Box {
+                weight: DOCUMENT_SHARE,
                 fill_max_width: true,
                 fill_max_height: true,
                 alignment: Alignment::TopCenter,
@@ -385,6 +555,7 @@ fn app() -> Element {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -530,14 +701,18 @@ mod tests {
 
         /// Whether a node hangs from another, which is how a test says "inside the sheet".
         fn descends_from(&self, node: u32, ancestor: u32) -> bool {
+            self.ancestors(node).contains(&ancestor)
+        }
+
+        /// Everything a node hangs from, nearest first.
+        fn ancestors(&self, node: u32) -> Vec<u32> {
             let mut walk = node;
+            let mut chain = Vec::new();
             while let Some(parent) = self.parents.get(&walk) {
-                if *parent == ancestor {
-                    return true;
-                }
+                chain.push(*parent);
                 walk = *parent;
             }
-            false
+            chain
         }
 
         fn absorb(&mut self, batch: &[u8]) {
@@ -641,6 +816,40 @@ mod tests {
                 .get(&node_id)
                 .expect("the path field declared no change handler");
             self.dispatch(node_id, handler, EventPayload::TextChanged(path));
+        }
+
+        /// Tells the screen the window changed size, the way the Renderer does.
+        fn resize(&mut self, width_dp: f32) {
+            self.dispatch(
+                0,
+                0,
+                EventPayload::WindowSizeChanged {
+                    width_dp,
+                    height_dp: 900.0,
+                    class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+                },
+            );
+        }
+
+        /// Every node of this kind whose text reads exactly this.
+        ///
+        /// The kind matters: a list's heading and the button that opens the list say the
+        /// same word, and a test about where the list is would otherwise be answered by
+        /// the button in the bar.
+        fn labelled(&self, widget: WidgetKind, label: &str) -> Vec<u32> {
+            self.texts
+                .iter()
+                .filter(|(node_id, text)| {
+                    *text == label && self.widgets.get(node_id) == Some(&widget)
+                })
+                .map(|(node_id, _)| *node_id)
+                .collect()
+        }
+
+        fn in_a_sheet(&self, node: u32) -> bool {
+            self.ancestors(node)
+                .iter()
+                .any(|parent| self.widgets.get(parent) == Some(&WidgetKind::Sheet))
         }
 
         fn click(&mut self, label: &str) {
@@ -755,10 +964,13 @@ mod tests {
             KOREAN
         );
 
-        // Clear the editor, so reopening has to put the text back rather than leave it.
+        // Start a different document, so reopening has to put the text back rather than
+        // leave it. The saved one is still open behind this one, which is why the path has
+        // to be named again.
         editor.click("New");
         assert_eq!(editor.document_text(), "");
 
+        editor.set_path(&display_path(&path));
         editor.click("Open");
         editor.settle_until("Opened ");
         assert_eq!(
@@ -875,21 +1087,63 @@ mod tests {
     #[test]
     fn fr22_the_file_controls_are_behind_a_sheet() {
         let editor = Editor::new();
+        let path_field = editor.fields[0];
         let sheet = editor
-            .widgets
-            .iter()
-            .find(|(_, widget)| **widget == WidgetKind::Sheet)
-            .map(|(node_id, _)| *node_id)
-            .expect("the screen has no sheet");
+            .ancestors(path_field)
+            .into_iter()
+            .find(|node| editor.widgets.get(node) == Some(&WidgetKind::Sheet))
+            .expect("the path field is not in a sheet");
         let (open, _) = editor.buttons["Open"];
         assert!(
             editor.descends_from(open, sheet),
             "Open is not in the sheet the path field is in"
         );
-        let path_field = editor.fields[0];
+    }
+
+    /// A desktop window has room for the list of documents to stand beside the one being
+    /// written, which is what both memo references do. Anything narrower and the same list
+    /// arrives from an edge instead.
+    #[test]
+    fn fr22_the_document_list_stands_beside_the_page_on_a_desktop_window() {
+        dioxus_compose::window::reset_window_size();
+        let mut editor = Editor::new();
+        let heading = "Documents";
         assert!(
-            editor.descends_from(path_field, sheet),
-            "the path field is not in the sheet"
+            !editor.labelled(WidgetKind::Text, heading).is_empty(),
+            "the screen never offers the list at all"
+        );
+        assert!(
+            editor
+                .labelled(WidgetKind::Text, heading)
+                .iter()
+                .all(|node| editor.in_a_sheet(*node)),
+            "a phone should reach the list through a sheet"
+        );
+
+        editor.resize(1200.0);
+        assert!(
+            editor
+                .labelled(WidgetKind::Text, heading)
+                .iter()
+                .any(|node| !editor.in_a_sheet(*node)),
+            "a desktop window should stand the list beside the document"
+        );
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// Starting a document keeps the one that was on screen, which is what makes the list
+    /// worth having and what stopped New from throwing work away.
+    #[test]
+    fn fr22_a_new_document_keeps_the_one_that_was_open() {
+        let mut editor = Editor::new();
+        editor.set_path("/tmp/first-note.txt");
+        editor.type_document("something worth keeping");
+
+        editor.click("New");
+        assert_eq!(editor.document_text(), "");
+        assert!(
+            editor.texts.values().any(|text| text == "first-note.txt"),
+            "the document that was open is not in the list"
         );
     }
 
