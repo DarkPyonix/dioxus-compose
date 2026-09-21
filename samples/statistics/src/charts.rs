@@ -56,6 +56,12 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
     .build()
 }
 
+/// Half of what a three letter day comes to at the caption rung, in dp.
+///
+/// A guess, and it has to be: the Host has no font and the draw list carries no measured
+/// width. It is only used to inset a label so the row reads as centred under its columns.
+const DAY_HALF_WIDTH: f32 = 11.0;
+
 /// One column of the week's chart.
 #[derive(Clone, Copy, Debug)]
 pub struct Bar {
@@ -91,6 +97,11 @@ pub fn week(width: f32, height: f32, bars: &[Bar], ink: ColorRole) -> DrawList {
     let plot = height - label_band;
     let baseline = plot + label_band * 0.62;
     let slot = width / bars.len() as f32;
+    // A `TextAt` is placed by the left end of its string, and a draw list has no way to
+    // measure a string: there is no font here, only a rung of the ladder the Renderer
+    // resolves. The day is inset by half of what three caption letters come to, which
+    // centres it under its column closely enough and keeps the last one inside the box.
+    let label_inset = (slot / 2.0 - DAY_HALF_WIDTH).max(0.0);
     let bar_width = slot * 0.46;
     let radius = bar_width / 2.0;
 
@@ -113,7 +124,7 @@ pub fn week(width: f32, height: f32, bars: &[Bar], ink: ColorRole) -> DrawList {
         list = list.text_at(
             Paint::Role(ink),
             bar.day,
-            index as f32 * slot + slot / 2.0,
+            index as f32 * slot + label_inset,
             baseline,
             TypeRole::Caption,
         );
