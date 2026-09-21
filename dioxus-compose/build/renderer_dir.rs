@@ -936,3 +936,46 @@ pub fn every_failure_message(sample_dir: &Path) -> Vec<String> {
         build_it_yourself(version, target),
     ]
 }
+
+/// How the Host reaches the Renderer on this target.
+///
+/// The answer is not "is there a renderer" but "who resolves its symbols, and when".
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RendererLinkage {
+    /// Cargo links the shared library here, so the Host declares the C symbols and the
+    /// linker resolves them now.
+    Linked,
+    /// Something outside Cargo resolves them before anything runs: Xcode links the
+    /// XCFramework into the application. The Host still declares them.
+    Provided,
+    /// Nobody resolves them, because there are none. The renderer runs in a managed
+    /// runtime beside the Host and installs its entry points at load time instead, so a
+    /// declared symbol here is a symbol that can never be found.
+    Installed,
+    /// A build that draws nothing and says so.
+    None,
+}
+
+/// Which of the four this target is.
+///
+/// Android is the one that had to be learned from a device. It reached the same branch as
+/// iOS, because both are "not a desktop", and the Host declared
+/// `dioxus_compose_renderer_run` for it. On iOS that symbol is really there by the time
+/// anything runs. On Android the renderer is Kotlin in ART and there is no native symbol
+/// of that name at all, so every launch ended at `dlopen failed: cannot locate symbol
+/// "dioxus_compose_renderer_run"` before a single line of the application ran. The JNI
+/// entry points install the renderer API from `JNI_OnLoad`, which is the same arrangement
+/// the browser uses, so Android belongs with the browser rather than with iOS.
+pub fn renderer_linkage(target_os: &str, target_family: &str, mock: bool) -> RendererLinkage {
+    if mock {
+        return RendererLinkage::None;
+    }
+    if target_family.split(',').any(|family| family == "wasm") {
+        return RendererLinkage::Installed;
+    }
+    match target_os {
+        "macos" | "windows" | "linux" => RendererLinkage::Linked,
+        "android" => RendererLinkage::Installed,
+        _ => RendererLinkage::Provided,
+    }
+}
