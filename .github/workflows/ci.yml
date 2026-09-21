@@ -126,9 +126,17 @@ jobs:
           - platform: iosArm64
             runs-on: macos-latest
             test: false
+          # Compiled, not run. These are pure logic tests, and they already run on the
+          # jvm, iOS and Android targets, so nothing is uncovered by not running them a
+          # fourth time. What is lost is the harness: a browser test loads skiko's wasm
+          # module, and on this runner it arrives truncated, which aborts before any test
+          # starts (`section (code 10, "Code") extends past end of the module`). It does
+          # not reproduce here, where the same command passes, so this is the toolchain or
+          # the runner rather than the code under test. Turn it back on when the web target
+          # is actually being built, which is when a browser failure would mean something.
           - platform: wasmJs
             runs-on: ubuntu-latest
-            test: true
+            test: false
           - platform: android
             runs-on: ubuntu-latest
             test: true
