@@ -395,6 +395,12 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - **Liquid Glass는 표에 없습니다.** `adaptive`가 고르지 않습니다(14.1-3). macOS와 iOS 자리는 Cupertino이고, Liquid Glass는 `unified`로 이름을 대고 고릅니다. 두 언어 모두 그 플랫폼의 것이며 어느 쪽을 기본으로 둘지는 앱의 결정입니다.
 - **`DXC_DESIGN`으로 샘플의 시스템을 고릅니다.** 값은 `material3`, `cupertino`, `fluent`, `gnome`, `breeze`, `deepin`, `liquidglass`(`liquid-glass`도 같음)이고, 그 밖의 값과 설정하지 않음은 `adaptive`입니다. `DXC_SCHEME`은 같은 이유로 `light`와 `dark`를 받습니다. 한 대의 기계에서 일곱 시스템을 전부 눈으로 확인할 방법이 기본 경로에 없으면 여섯은 보이지 않은 채 남습니다.
 - 명암(`ColorScheme`)은 `Light | Dark | FollowSystem`이고 기본은 `FollowSystem`입니다. 시스템 설정 변화는 Renderer가 먼저 알고 스스로 반영합니다. Host는 관여하지 않습니다(D5).
+- **`Theme::unified`은 명암을 고정하지 않습니다.** `unified`가 말하는 축은 "어느 디자인 시스템인가" 하나이고, 명암은 별개의 축입니다. 디자인이 라이트나 다크 한쪽으로 정해져 있는 앱은 `.with_color_scheme(...)`으로 그렇게 말합니다. 한 줄 더 쓰는 쪽을 고른 이유는 셋입니다.
+  1. `unified`가 명암까지 고정하면, 디자인 시스템 하나만 원했던 앱이 독자의 다크 모드 설정까지 같이 잃습니다. 이름이 약속한 적 없는 일이고, 접근성 후퇴입니다.
+  2. `adaptive`와 `unified`의 차이는 `adaptive` 플래그 하나여야 합니다. 두 생성자를 나란히 읽는 사람은 그 하나만 다르다고 읽고, 실제로 두 번째 축에서도 달라지면 틀리게 읽습니다.
+  3. `unified`가 고정할 수 있는 옳은 값이 없습니다. 라이트로 읽히도록 만든 디자인은 `Light`라고 말하면 되고, 독자의 설정을 따르려는 앱은 아무 말도 하지 않으면 됩니다. 고정해 버리면 두 번째가 사라지고, 그것을 되돌리는 `.follow_system()`을 더하는 것은 `.with_color_scheme(Light)` 한 줄보다 큰 API입니다.
+- **참조 디자인이 한쪽으로 정해진 샘플은 그 한쪽을 명시합니다.** 통합 샘플 일곱 개가 여기 걸립니다. 참조 그림이 라이트 iOS 디자인인데 기계가 다크로 설정되어 있으면 일곱 개 전부 검게 떠서, 참조와 비교할 수 있는 화면이 한 장도 나오지 않습니다. 어느 쪽인지는 참조 그림이 정하며, `docs/references/design-systems/README.md`의 "Unified Examples" 각 항목에 적혀 있습니다.
+- **`demo_theme_for(theme)`은 샘플이 자기 테마를 가진 채로 `DXC_DESIGN`/`DXC_SCHEME`을 받는 경로입니다.** 변수가 이름을 댄 축만 덮어쓰므로, Liquid Glass를 보자고 해도 그 디자인이 그려진 명암은 그대로 남습니다.
 
 #### 14.4 해석 위치: Renderer
 **토큰 해석과 컴포넌트 규칙은 Renderer가 수행합니다.** Host는 역할과 선택만 보냅니다.
@@ -416,6 +422,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - `DesignSystem` 태그: `Material3 = 1`, `Cupertino = 2`, `Fluent = 3`, `Gnome = 4`, `Breeze = 5`, `Deepin = 6`, `LiquidGlass = 7`. 태그 값은 바뀌지 않고 추가만 합니다. `Cupertino`의 이전 이름은 `AppleHig`였습니다.
 - `ColorScheme` 태그: `Light = 1`, `Dark = 2`, `FollowSystem = 3`.
 - 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
+- 수용 기준: `Theme::unified(X)`의 `color_scheme`은 `FollowSystem`입니다. 통합 샘플 일곱 개는 각자 `.with_color_scheme(...)`으로 참조 그림의 명암을 명시하며, 그 값이 `SetTheme` 레코드에 실립니다.
 
 #### 14.6 Renderer 구현자가 채워야 할 표
 디자인 시스템마다 아래 8개가 필요합니다. 채워지면 위젯 코드는 건드리지 않습니다.
