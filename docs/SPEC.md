@@ -967,7 +967,7 @@ dioxus_compose_host_dispatch_event: click 1
 - Android: Host 워커 스레드는 `request_frame`을 부르기 위해 JavaVM에 **1회 영구 attach**합니다. 호출마다 attach하는 것은 금지합니다. `@FastNative`/`@CriticalNative`는 짧은 호출에만 허용합니다.
 - 프레임 예산은 NFR-9를 따릅니다.
 
-### PR-4 배치 버퍼와 인코딩 (`Draft`)
+### PR-4 배치 버퍼와 인코딩 (`Agreed`)
 원칙: **같은 프로세스 안이므로 직렬화, 복사, 경계 호출 횟수를 최소화합니다.** 버퍼는 큐가 아니라 **한 번의 호출에서 Mutation 여러 개를 넘기는 인자**입니다.
 
 - `#[repr(C)] struct MutationBatch { ptr: *const u8, len: u32, result: i64 }`
@@ -984,6 +984,12 @@ dioxus_compose_host_dispatch_event: click 1
   - Android: `NewDirectByteBuffer`로 arena를 감싸서 읽습니다.
   - Web: 공유 linear memory(PR-6)
 - 수용 기준: 텍스트 하나를 바꾸는 이벤트 처리에서 경계 호출 2회(`dispatch_event`, `release_batch`), 힙 할당은 Compose `String` 생성 1회 이하
+
+수용 기준 점검(2026-09-22):
+- **경계 호출 2회: 충족.** `boundary_call_cost.rs`가 C export를 그대로 불러 확인합니다. `dispatch_event`가 돌아온 시점에 diff와 핸들러 반환값이 이미 out 인자에 들어 있고(`pr4_a_text_change_costs_two_boundary_calls`), 바로 뒤에 부른 `render_frame`은 레코드를 하나도 싣지 않으며(`pr4_nothing_is_left_for_a_third_call`), 연속한 키 입력 세 번이 같은 arena에 쓰입니다(`pr4_the_batch_buffer_is_an_argument_and_not_a_queue`). 세 번째 호출이 필요해지면 셋 중 하나가 실패합니다. Host 인코딩 쪽 정상 상태 할당 0회는 `nfr9_boundary_encoding_does_not_allocate`가 지킵니다.
+- **Renderer의 힙 할당: 미충족.** `BoundaryCostTest`로 JVM 개발 셸에서 실측했습니다(2026-09-22). 텍스트 한 번 바뀔 때 글자당 2.99바이트, 16글자짜리 레코드 하나에 352바이트입니다. arena 크기와는 무관하므로(64KB arena에서도 312바이트) 제자리 읽기 자체는 지켜지지만, 문자열은 `String` 하나가 아니라 세 벌입니다. 생성된 디코더가 `CharsetDecoder`로 `CharBuffer`(글자당 2바이트)를 만든 뒤 `String`으로 다시 옮기고, 문자열마다 디코더 하나와 버퍼 뷰 둘을 새로 만들기 때문입니다.
+- 그 경로를 고른 이유는 있습니다. `String(bytes, UTF-8)`은 잘못된 UTF-8을 조용히 치환하는데 프로토콜은 그것을 `ProtocolError`로 보고해야 합니다(`nfr7_non_utf8_string_payload_is_a_protocol_error`). 충족시키려면 검증을 제자리에서 따로 돌리고(할당 없음) 재사용 버퍼를 거쳐 `String`을 한 번만 만들어야 합니다. 코드젠이 내놓는 디코더를 고치는 일이고, 그때까지 `BYTES_PER_CHARACTER_CEILING`이 네 번째 복사가 조용히 들어오는 것을 막습니다.
+- 그래서 상태는 `Agreed`입니다. 설계와 구현은 자리를 잡았고 양쪽 플랫폼이 같은 벡터를 해석하지만, 수용 기준의 한쪽이 실측으로 미달이므로 `Done`이 아닙니다.
 
 ### PR-5 Android (`Draft`)
 - 호스트 관계: Kotlin Activity가 프로세스와 루프를 소유합니다(`LoopMode::Platform`). Rust는 cdylib입니다. VirtualDom은 PR-3에 따라 UI 스레드에서 돕니다.
