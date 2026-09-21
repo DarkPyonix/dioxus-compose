@@ -110,3 +110,46 @@ echo "== starting it"
 
 echo "ok    a crate depending only on dioxus-compose builds, has no rpath, and starts"
 echo "      renderer: $renderer"
+
+# ------------------------------------------------------------------------------------
+# And the other half: what the absolute path above must not do is ship.
+# ------------------------------------------------------------------------------------
+#
+# The path the executable records is a fact about the machine that built it. An
+# application that ships has to carry its own renderer and point at it relatively, or it
+# looks for a directory the person running it does not have and carries the build
+# machine's home directory into the release. scripts/bundle-renderer.sh is the step that
+# does that, and this is the check that it really did.
+
+if [[ "$(uname -s)" == "Linux" ]] && ! command -v patchelf >/dev/null; then
+    echo "skip  bundling: patchelf is not installed, and rewriting an ELF DT_NEEDED needs it"
+    exit 0
+fi
+
+stage="$target/bundled"
+rm -rf "$stage"
+mkdir -p "$stage/lib"
+cp "$binary" "$stage/app"
+cp -R "$(dirname "$renderer")/." "$stage/lib/"
+
+echo "== bundling it, the way an application that ships would"
+"$repo_root/scripts/bundle-renderer.sh" "$stage/app" lib
+
+bundled_renderer() {
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        otool -L "$stage/app" | awk '{ print $1 }'
+    else
+        readelf -d "$stage/app" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p'
+    fi | grep "$(library_name)$"
+}
+
+bundled="$(bundled_renderer)"
+[[ "$bundled" != /* ]] || fail "the bundled application still looks in $bundled" \
+    "That is a path on the machine that built it, so it would not be there for anyone else."
+
+# From a directory that has nothing to do with the build, so the only renderer it can
+# possibly be finding is the one inside it.
+( cd "$stage" && ./app >/dev/null )
+
+echo "ok    a bundled application carries its own renderer and no build machine path"
+echo "      renderer: $bundled"

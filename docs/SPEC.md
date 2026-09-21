@@ -1143,7 +1143,9 @@ Linux 공유 객체에는 `$ORIGIN` 런패스가 붙어 있어 심이 옆에 있
 |---|---|---|---|
 | 1. 우리가 배포 | 릴리스 아티팩트를 만드는 쪽 | 상대 이름. macOS는 `@rpath/libdioxus_compose_renderer.dylib`, Linux는 SONAME 없음 | 아티팩트는 어디에 풀어도 되어야 합니다. 절대 경로를 박아 배포하면 그 경로가 있는 기계에서만 동작합니다 |
 | 2. 소비자의 빌드 | `dioxus-compose`의 빌드 스크립트 | 그 기계에서의 절대 경로 | 이름을 바꾸는 대상은 소비자의 캐시나 작업 트리 안에 있는 사본입니다. 원본 아티팩트(`.tar.gz`)는 건드리지 않으므로 1단계는 그대로 유지됩니다 |
-| 3. 소비자가 앱을 출하 | 애플리케이션의 번들러 | 다시 상대 이름. macOS는 `@executable_path/../Frameworks/...`, Linux는 `$ORIGIN/lib` 런패스와 짧은 `DT_NEEDED` | 2단계가 실행 파일에 남긴 절대 경로를 반드시 지워야 합니다. 지우지 않으면 개발자의 홈 디렉터리 경로가 출하된 바이너리에 남고, 다른 기계에서는 적재에 실패합니다 |
+| 3. 소비자가 앱을 출하 | 애플리케이션의 번들러 | 다시 상대 이름. macOS는 `@executable_path/../Frameworks/lib/...`, Linux는 `$ORIGIN/lib` 런패스와 짧은 `DT_NEEDED` | 2단계가 실행 파일에 남긴 절대 경로를 반드시 지워야 합니다. 지우지 않으면 개발자의 홈 디렉터리 경로가 출하된 바이너리에 남고, 다른 기계에서는 적재에 실패합니다 |
+
+3단계에서 렌더러를 어디에 복사하는지는 자유가 아닙니다. 렌더러는 자기가 적재된 디렉터리에서 Skia와 AWT 동반 파일을 찾고, AWT는 그 디렉터리의 부모에 `lib`을 붙인 자리에서 자기 파일을 읽습니다. macOS에서 확인한 결과, 동작하는 배치는 두 가지입니다. 렌더러 파일을 실행 파일 옆에 두는 것과, 렌더러의 `lib` 디렉터리를 통째로 옮기는 것(깊이는 상관없습니다)입니다. 그 둘 중 어느 쪽도 아닌 자리에 파일만 펼쳐 놓으면 안 됩니다. 파일을 `Contents/Frameworks`에 펼친 앱은 시작해서 렌더러까지 적재한 뒤 `Contents/lib/libjawt.dylib`을 찾다가 죽습니다. `Contents/Frameworks/lib`은 동작합니다.
 
 3단계는 애플리케이션이 정하는 일이며 이 프로젝트의 범위 밖입니다. 범위 안의 책임은 3단계가 가능하도록 남겨 두는 것입니다. 2단계는 되돌릴 수 없는 것을 굽지 않습니다. 실행 파일이 기록한 절대 경로는 `otool -L`(macOS)과 `readelf -d`(Linux)로 그대로 읽히고, macOS는 `install_name_tool -change <절대 경로> <상대 이름>`으로, Linux는 `patchelf --replace-needed`와 `--set-rpath '$ORIGIN/lib'`로 바꿀 수 있습니다. 번들러는 앱 개발자가 한 번 준비하는 환경이므로 patchelf를 요구해도 됩니다. 이 저장소의 `scripts/bundle-renderer.sh`가 그 작업을 하고, 샘플 릴리스 워크플로가 샘플을 묶을 때 실제로 그것을 씁니다.
 
@@ -1180,11 +1182,13 @@ Linux 공유 객체에는 `$ORIGIN` 런패스가 붙어 있어 심이 옆에 있
 
 **2026-09-21 1에서 7까지 충족.** 1에서 6은 `dioxus-compose/tests/renderer_resolution.rs`가 매 실행 확인합니다(5는 렌더러가 정말 없는 빌드에서만 컴파일되므로 `scripts/check.sh`가 `--no-default-features`로 한 번 더 돌립니다). 7은 Apple Silicon Mac에서 캐시를 비우고 측정했습니다: **6.3초, 캐시 119MB**(`.tar.gz` 32MB + 푼 것 86MB). 8은 `cargo build -p sample-calculator`로 확인했습니다. 바이너리가 캐시 절대 경로를 기록했고 창이 열렸습니다.
 
-**9는 `scripts/tests/consumer-crate.test.sh`가 확인합니다.** `dioxus-compose/tests/fixtures/consumer/`에 `build.rs`가 없는 크레이트가 들어 있고, 스크립트가 그것을 빌드해 rpath 개수가 0인지와 실행이 0으로 끝나는지를 봅니다. cargo 테스트가 아니라 셸 스크립트인 이유는 두 가지입니다. 하나는 cargo 안에서 cargo를 부르는 일이라 같은 `target/`을 쓰면 잠금에서 멈추고, 별도 `target/`을 쓰면 의존성 전체를 한 번 더 빌드하기 때문입니다. 다른 하나는 이 확인이 링크된 실행 파일의 적재 명령을 읽는 일이라 확인 대상이 호스트 플랫폼의 도구(`otool`, `readelf`)이기 때문입니다. CI의 `shell` 잡이 `scripts/tests/*.test.sh`를 모두 돌립니다.
+**2026-09-21 9에서 11까지 macOS에서 충족.** 9는 `scripts/tests/consumer-crate.test.sh`가 확인합니다. `dioxus-compose/tests/fixtures/consumer/`에 `build.rs`가 없는 크레이트가 들어 있고, 스크립트가 그것을 빌드해 rpath 개수가 0인지와 실행이 0으로 끝나는지를 봅니다. cargo 테스트가 아니라 셸 스크립트인 이유는 두 가지입니다. 하나는 cargo 안에서 cargo를 부르는 일이라 같은 `target/`을 쓰면 잠금에서 멈추고, 별도 `target/`을 쓰면 의존성 전체를 한 번 더 빌드하기 때문입니다. 다른 하나는 이 확인이 링크된 실행 파일의 적재 명령을 읽는 일이라 확인 대상이 호스트 플랫폼의 도구(`otool`, `readelf`)이기 때문입니다. CI의 `shell` 잡이 `scripts/tests/*.test.sh`를 모두 돌립니다.
 
-10은 렌더러를 직접 빌드한 체크아웃에서만 확인할 수 있으므로, 규칙 자체는 `renderer_resolution.rs`가 워크스페이스 경로로 확인하고 실제 렌더러에 대한 확인은 렌더러를 빌드하는 CI 잡이 맡습니다. 11은 `scripts/bundle-renderer.sh`가 바꾼 실행 파일을 다시 읽어 확인합니다.
+10은 `renderer_resolution.rs`가 워크스페이스 경로와 변수 경로 각각에 대해, 진짜 Mach-O 라이브러리를 만들어 이름이 절대 경로로 바뀌는지 확인합니다. 이미 제 자리 이름을 달고 있는 라이브러리는 쓰기 권한을 뗀 채로 통과해야 하므로, 다시 쓰지 않는다는 것도 같은 방식으로 확인됩니다. 11은 같은 스크립트의 후반부가 확인합니다. 만들어진 실행 파일과 렌더러를 임시 디렉터리로 복사해 `scripts/bundle-renderer.sh`로 상대 이름으로 바꾸고, 기록된 경로에 절대 경로가 남지 않았는지 읽은 뒤, 빌드와 아무 상관 없는 디렉터리에서 실행합니다.
 
-Windows와 Linux는 이 저장소에 실행할 기계가 없어 자동 테스트와 코드 검토까지만 확인했습니다. Linux 쪽 판단은 게시된 `.so`의 ELF 헤더를 읽어 SONAME이 없고 런패스가 `$ORIGIN`임을 확인한 것이 근거입니다.
+이 절에 손으로 확인한 것은 다음과 같습니다. `build.rs` 없는 소비자 크레이트가 `LC_RPATH` 0개로 빌드되어 실행됐고, 샘플 네 개가 모두 같은 모양으로 빌드됐으며 `sample-calculator`가 창을 열었습니다. 번들한 샘플을 `/tmp` 아래 세 가지 배치(실행 파일 옆, `<루트>/lib`, `Contents/Frameworks/lib`)로 실행해 창이 뜨는 것을 확인했고, `Contents/Frameworks`에 펼친 배치가 실패하는 것도 확인했습니다.
+
+Windows와 Linux는 이 저장소에 실행할 기계가 없어 자동 테스트와 코드 검토까지만 확인했습니다. Linux 쪽 판단은 게시된 `.so`의 ELF 헤더를 읽어 SONAME이 없고 런패스가 `$ORIGIN`임을 확인한 것이 근거이고, SONAME을 지우는 편집 자체는 손으로 만든 ELF 픽스처로 `renderer_resolution.rs`가 확인합니다. `scripts/tests/consumer-crate.test.sh`는 두 플랫폼에서 같은 검사를 하도록 쓰여 있으므로, Linux 확인의 다음 단계는 CI의 `shell` 잡이 그것을 돌리는 것입니다.
 
 ## 6. IME 수용 체크리스트 (FR-5, M1)
 
