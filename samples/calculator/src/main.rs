@@ -286,8 +286,13 @@ fn app() -> Element {
     }
 }
 
+// Samples are demonstrations, so they let you see any of the design systems rather than
+// only the one this machine happens to select. Unset, the app adapts to the host platform,
+// which is what a real application wants.
 fn main() {
-    dioxus_compose::launch(app);
+    dioxus_compose::LaunchBuilder::new()
+        .with_theme(dioxus_compose::demo_theme())
+        .launch(app);
 }
 
 #[cfg(test)]
