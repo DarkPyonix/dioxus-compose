@@ -132,12 +132,13 @@ private fun systemName(theme: Theme): String = when (theme.designSystem) {
     DesignSystem.Material3 -> "Material 3"
     DesignSystem.Cupertino -> "Cupertino"
     DesignSystem.Fluent -> "WinUI Fluent 2"
+    DesignSystem.Gnome -> "GNOME 50 Adwaita"
 }
 
 /**
  * Opens the showcase for one design system.
  *
- * `DXC_DESIGN_SYSTEM` is `material3`, `hig` or `fluent`, `DXC_COLOR_SCHEME` is `light`,
+ * `DXC_DESIGN_SYSTEM` is `material3`, `hig`, `fluent` or `gnome`, `DXC_COLOR_SCHEME` is `light`,
  * `dark` or `system`, and `DXC_ADAPTIVE=1` makes the Host send an adaptive theme with the
  * chosen system as the mandatory fallback.
  */
@@ -145,6 +146,7 @@ fun main() = application {
     val system = when (System.getenv("DXC_DESIGN_SYSTEM")?.lowercase()) {
         "hig", "apple", "applehig" -> DesignSystem.Cupertino
         "fluent", "winui" -> DesignSystem.Fluent
+        "gnome", "adwaita" -> DesignSystem.Gnome
         else -> DesignSystem.Material3
     }
     val scheme = when (System.getenv("DXC_COLOR_SCHEME")?.lowercase()) {

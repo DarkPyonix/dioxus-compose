@@ -594,3 +594,193 @@ internal object FluentRules : ComponentRules {
     private const val SCRIM_ALPHA = 0.3f
     private const val PRESS_SHADE = 0.12f
 }
+
+/**
+ * GNOME 50 rules, in the Adwaita design language.
+ *
+ * Reference: the GNOME Human Interface Guidelines ("Ui Styling") and the libadwaita
+ * stylesheet, GNOME 50, the same revision the generated token table cites.
+ *
+ * Adwaita keeps surfaces flat and separates layers with a hairline rather than a tint, it
+ * spends its accent on one suggested action per view, and a pressed control changes fill
+ * and stops: nothing ripples and nothing rises.
+ */
+internal object GnomeRules : ComponentRules {
+    override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
+        if (elevation.value <= 0f) return modifier
+        // Half the requested height, because a Material shadow at the same number reads as
+        // a floating card rather than a GTK popover. The surface colour is left alone: a
+        // raised Adwaita layer is marked by its border, not by a tone shift.
+        return modifier
+            .shadow(elevation * SHADOW_SCALE, shape, clip = false)
+            .border(1.dp, theme.color(ColorRole.OutlineVariant), shape)
+    }
+
+    override fun button(variant: ButtonVariant, theme: ResolvedTheme): ButtonStyle {
+        val neutral = theme.color(ColorRole.SurfaceVariant)
+        val neutralPressed = lerp(neutral, theme.color(ColorRole.OnSurface), PRESS_MIX)
+        val onNeutral = theme.color(ColorRole.OnSurface)
+        val base = ButtonStyle(
+            container = neutral,
+            pressedContainer = neutralPressed,
+            content = onNeutral,
+            pressedContentAlpha = 1f,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            pressedBorderColor = Color.Transparent,
+            topHighlight = null,
+            // GTK buttons are 6 dp rounded, which is ShapeRole.Small in the Adwaita table.
+            shape = theme.shape(ShapeRole.Small),
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Sm),
+            minHeight = 34.dp,
+            typeRole = TypeRole.BodyStrong,
+            restElevation = 0.dp,
+            pressedElevation = 0.dp,
+        )
+        return when (variant) {
+            // The suggested action, and the only place the accent appears.
+            ButtonVariant.Filled -> base.copy(
+                container = theme.color(ColorRole.Primary),
+                pressedContainer = lerp(theme.color(ColorRole.Primary), Color.Black, PRESS_SHADE),
+                content = theme.color(ColorRole.OnPrimary),
+            )
+
+            // The standard button: grey, not a tinted accent, which is the visible
+            // difference from a Material screen where every variant carries the hue.
+            ButtonVariant.Tonal -> base
+
+            ButtonVariant.Outlined -> base.copy(
+                container = Color.Transparent,
+                borderWidth = 1.dp,
+                borderColor = theme.color(ColorRole.Outline),
+                pressedBorderColor = theme.color(ColorRole.Outline),
+            )
+
+            // A flat button, which takes the neutral fill only while it is held.
+            ButtonVariant.Text -> base.copy(
+                container = Color.Transparent,
+                pressedContainer = neutral,
+            )
+        }
+    }
+
+    /**
+     * Adwaita containers: a card is a flat view with a hairline, a header bar is the
+     * chrome grey ruled off from the view below it, and a dialog is a rounded sheet.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val hairline = theme.color(ColorRole.OutlineVariant)
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Large),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        return when (role) {
+            // A boxed list: the view white, a 12 dp corner and a single line around it.
+            ContainerRole.Card -> base.copy(
+                borderWidth = 1.dp,
+                borderColor = hairline,
+            )
+
+            ContainerRole.Surface -> base.copy(shape = theme.shape(ShapeRole.None))
+
+            // A header bar: the chrome grey, flat, with a rule under it.
+            ContainerRole.TopAppBar -> base.copy(
+                container = theme.color(ColorRole.SurfaceVariant),
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Sm),
+                separator = hairline,
+                typeRole = TypeRole.BodyStrong,
+            )
+
+            ContainerRole.Dialog -> base.copy(
+                elevation = 4.dp,
+                borderWidth = 1.dp,
+                borderColor = hairline,
+                horizontalPadding = theme.space(SpaceRole.Xl),
+                verticalPadding = theme.space(SpaceRole.Lg),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            // A popover: rounded, bordered, and only shallowly raised.
+            ContainerRole.Menu -> base.copy(
+                shape = theme.shape(ShapeRole.Medium),
+                elevation = 3.dp,
+                borderWidth = 1.dp,
+                borderColor = hairline,
+                horizontalPadding = 0.dp,
+                verticalPadding = theme.space(SpaceRole.Xs),
+            )
+
+            // A GTK tooltip is a dark chip with light text in both schemes.
+            ContainerRole.Tooltip -> base.copy(
+                container = theme.color(ColorRole.OnSurface),
+                content = theme.color(ColorRole.Surface),
+                shape = theme.shape(ShapeRole.Small),
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                typeRole = TypeRole.Caption,
+            )
+        }
+    }
+
+    /**
+     * A view switcher: the selected view is a filled pill in the header bar, which is
+     * what GNOME uses where Material would underline and Fluent would draw a pivot bar.
+     */
+    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        shape = theme.shape(ShapeRole.None),
+        selectedContent = theme.color(ColorRole.OnSurface),
+        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+        selectedContainer = theme.color(ColorRole.Surface),
+        selectedShape = theme.shape(ShapeRole.Full),
+        indicator = Color.Transparent,
+        indicatorHeight = 0.dp,
+        indicatorShape = theme.shape(ShapeRole.None),
+        indicatorFillsTab = true,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Xs),
+        typeRole = TypeRole.BodyStrong,
+    )
+
+    /**
+     * Adwaita icon metrics: a 16 dp symbolic grid drawn with a heavier stem and rounded
+     * ends, which is what makes a GNOME icon read as solid rather than outlined.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 16.dp,
+        strokeWidth = 2.dp,
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round,
+    )
+
+    /** A calendar grid, a stepped time entry, and a popover list for a choice. */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.CalendarGrid,
+        time = TimePresentation.Stepper,
+        choice = ChoicePresentation.ComboBox,
+    )
+
+    override val motion: Motion = Motion(
+        // GTK state changes are a short symmetric ease, and nothing ripples.
+        pressMillis = 200,
+        releaseMillis = 200,
+        easing = FastOutSlowInEasing,
+        tooltipDelayMillis = 500,
+    )
+
+    private const val SCRIM_ALPHA = 0.45f
+    private const val PRESS_MIX = 0.1f
+    private const val PRESS_SHADE = 0.16f
+    private const val SHADOW_SCALE = 0.5f
+}

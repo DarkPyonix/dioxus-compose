@@ -81,7 +81,7 @@ impl DesignTokenTable {
 ///
 /// A fourth design system is one entry here plus one Renderer rule implementation.
 /// Nothing in `widgets.rs`, the Modifier schema or the Property schema moves (14.1).
-pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT];
+pub const DESIGN_TOKENS: &[DesignTokenTable] = &[MATERIAL3, APPLE_HIG, FLUENT, ADWAITA];
 
 pub fn table(system: DesignSystem) -> &'static DesignTokenTable {
     &DESIGN_TOKENS[system as usize - 1]
@@ -291,6 +291,76 @@ const FLUENT: DesignTokenTable = DesignTokenTable {
         Lg: 12.0,
         Xl: 20.0,
         Xxl: 32.0,
+    },
+};
+
+const ADWAITA: DesignTokenTable = DesignTokenTable {
+    system: DesignSystem::Gnome,
+    reference: "GNOME Human Interface Guidelines and the libadwaita named colours, GNOME 50",
+    default_family: "Cantarell",
+    monospace_family: "Source Code Pro",
+    colors: colors! {
+        // accent_bg_color, blue 3 in the GNOME palette.
+        Primary: 0x3584e4 / 0x3584e4,
+        OnPrimary: 0xffffff / 0xffffff,
+        // purple 3, the rare second accent. Never a second button colour.
+        Secondary: 0x9141ac / 0xc061cb,
+        OnSecondary: 0xffffff / 0x2a0a30,
+        // view_bg_color: the white of a list or a text view.
+        Surface: 0xffffff / 0x1e1e1e,
+        OnSurface: 0x2e3436 / 0xffffff,
+        // headerbar_bg_color: the slightly darker grey of chrome.
+        SurfaceVariant: 0xebebeb / 0x303030,
+        OnSurfaceVariant: 0x5e5c64 / 0xc0bfbc,
+        // window_bg_color.
+        Background: 0xfafafa / 0x242424,
+        OnBackground: 0x2e3436 / 0xffffff,
+        Outline: 0xcdc7c2 / 0x52514f,
+        OutlineVariant: 0xe6e3e1 / 0x3a3a3a,
+        // red 3 in light. Dark takes red 1, because the darker destructive red loses too
+        // much contrast against a dark window.
+        Error: 0xe01b24 / 0xff7b63,
+        OnError: 0xffffff / 0x2a0a06,
+        // An Adwaita card in light is white with a hairline around it, and white against
+        // window_bg_color is five parts of grey: the border is what you actually see. A
+        // role that has to be visible on the page by itself cannot be that, so the layer
+        // is sidebar_bg_color, the grey Adwaita already uses for a panel beside the view.
+        SurfaceContainer: 0xebebeb / 0x303030,
+    },
+    // libadwaita declares its title classes in points against an 11pt Cantarell body, and
+    // they are heavy: the largest title is weight 800, not 700. Those point values are
+    // carried over to sp here, which is why the body is 15 and not the 14 a Material scale
+    // would use.
+    type_scale: type_scale! {
+        Display: 44.0 / 800 / 52.0 / -0.5 / false,
+        Headline: 32.0 / 800 / 40.0 / -0.25 / false,
+        Title: 24.0 / 700 / 32.0 / 0.0 / false,
+        Subtitle: 20.0 / 700 / 28.0 / 0.0 / false,
+        Body: 15.0 / 400 / 22.0 / 0.0 / false,
+        BodyStrong: 15.0 / 700 / 22.0 / 0.0 / false,
+        Label: 13.0 / 700 / 18.0 / 0.1 / false,
+        Caption: 12.0 / 400 / 16.0 / 0.0 / false,
+        Mono: 14.0 / 400 / 20.0 / 0.0 / true,
+    },
+    // Adwaita rounds moderately: 6px on a button or an entry, 12px on a card, a dialog or
+    // a popover. Pills are kept for suggested actions and search entries.
+    shapes: shapes! {
+        None: 0.0,
+        ExtraSmall: 4.0,
+        Small: 6.0,
+        Medium: 8.0,
+        Large: 12.0,
+        Full: 1000.0,
+    },
+    // GNOME lays out on a six pixel grid, and its dialogs are roomy.
+    spaces: spaces! {
+        None: 0.0,
+        Xs: 3.0,
+        Sm: 6.0,
+        Md: 12.0,
+        Lg: 18.0,
+        Xl: 24.0,
+        Xxl: 36.0,
     },
 };
 
@@ -508,6 +578,40 @@ mod tests {
                         table.system
                     );
                 }
+            }
+        }
+    }
+
+    /// No two design systems answer a whole ladder with the same values.
+    ///
+    /// A design system that agrees with another one on every colour, every type rung,
+    /// every radius or every spacing step is that other system wearing a different name,
+    /// and a caller who selected it would see no change at all. Checking each ladder
+    /// separately is what catches a table that was copied and then edited in one place.
+    #[test]
+    fn fr14_no_two_design_systems_answer_a_whole_ladder_identically() {
+        for (index, first) in DESIGN_TOKENS.iter().enumerate() {
+            for second in &DESIGN_TOKENS[index + 1..] {
+                assert_ne!(
+                    first.colors, second.colors,
+                    "{:?} and {:?} have the same palette",
+                    first.system, second.system
+                );
+                assert_ne!(
+                    first.type_scale, second.type_scale,
+                    "{:?} and {:?} have the same type scale",
+                    first.system, second.system
+                );
+                assert_ne!(
+                    first.shapes, second.shapes,
+                    "{:?} and {:?} round everything the same way",
+                    first.system, second.system
+                );
+                assert_ne!(
+                    first.spaces, second.spaces,
+                    "{:?} and {:?} have the same spacing ladder",
+                    first.system, second.system
+                );
             }
         }
     }

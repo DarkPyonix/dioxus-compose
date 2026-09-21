@@ -482,6 +482,7 @@ define_wire_enum!(DESIGN_SYSTEM_SCHEMA, DesignSystem {
     Material3 = 1,
     Cupertino = 2,
     Fluent = 3,
+    Gnome = 4,
 });
 
 // Light and dark selection. `FollowSystem` leaves the choice to the Renderer, which learns
