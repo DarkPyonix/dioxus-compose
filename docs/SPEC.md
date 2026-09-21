@@ -338,9 +338,9 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
 
 #### 14.6 Renderer 구현자가 채워야 할 표
-디자인 시스템마다 아래 7개가 필요합니다. 채워지면 위젯 코드는 건드리지 않습니다.
+디자인 시스템마다 아래 8개가 필요합니다. 채워지면 위젯 코드는 건드리지 않습니다.
 
-1~4번은 14.4에 따라 Rust 스키마에서 코드젠으로 생성되어 `Protocol.gen.kt`의 `DesignTokens`에 이미 들어 있습니다. Renderer 구현자는 **5~7번과, 1~4번을 Compose에 배선하는 일**을 맡습니다.
+1~4번은 14.4에 따라 Rust 스키마에서 코드젠으로 생성되어 `Protocol.gen.kt`의 `DesignTokens`에 이미 들어 있습니다. Renderer 구현자는 **5~8번과, 1~4번을 Compose에 배선하는 일**을 맡습니다.
 1. `ColorRole` 14개 × {Light, Dark} 색값
 2. `TypeRole` 9개 → 크기/굵기/행간/자간/폰트
 3. `ShapeRole` 6개 → 곡률(HIG는 연속 곡률)
@@ -348,6 +348,22 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 5. `Modifier::Elevation(dp)` → 그림자/톤/스트로크 렌더링 규칙
 6. `ButtonVariant` 4개 → 배경·전경·테두리·눌림 표현
 7. 모션: 상태 전환 duration과 easing
+8. 입력 필드의 틀(14.7)
+
+#### 14.7 입력 필드의 틀 (`Agreed`)
+
+`TextField`는 지금까지 아무 틀 없이 그려졌습니다. 배경도, 테두리도, 안쪽 여백도, 포커스 표시도 없는 맨 편집 영역 하나입니다. 그래서 여섯 시스템의 입력 필드가 전부 똑같이 보였고, 틀을 원하는 화면은 `Background`와 `Border`와 `PaddingRole`을 직접 붙여 왔습니다. 둘 다 14.1에 어긋납니다.
+
+필드의 틀은 여섯 시스템이 가장 눈에 띄게 갈라지는 자리입니다. Material 3는 채운 상자에 밑줄을 긋고 포커스에서 밑줄이 두꺼워집니다. Cupertino는 둥근 사각형에 옅은 채움이고 테두리를 거의 쓰지 않습니다. Fluent 2는 사각형에 가까운 상자에 아래쪽 강조선을 두고 그 선만 포커스에서 굵어집니다. Adwaita는 6px 둥근 채움에 포커스에서 강조색 테두리가 생깁니다. Breeze는 한 겹 하이라이트 테두리로 포커스를 표시합니다. Deepin은 큰 반경의 채움에 테두리 없이 포커스에서만 선이 나타납니다. 그것을 Host가 칠한다는 것은 디자인 시스템이 정할 것을 애플리케이션이 정하고 있다는 뜻입니다.
+
+- **위젯은 역할만 내보냅니다**(14.1). `TextField`에 배경·테두리·반경·여백·포커스 표시를 지정하는 속성을 두지 않습니다. 애플리케이션은 필드가 있다고 말할 뿐입니다.
+- **Renderer 쪽 확장은 `ComponentRules`에 `field()` 하나를 더하는 것으로 끝납니다.** 일곱 번째 디자인 시스템은 여전히 구현 하나입니다.
+- **포커스는 Renderer의 상태입니다**(D5). 포커스가 들고 나면서 틀이 바뀌는 것은 경계를 넘지 않고, Host는 그 전환을 알지 못합니다.
+- 규칙이 답하는 값: 채움색, 포커스 시 채움색, 테두리색과 두께, 포커스 시 테두리색과 두께, 밑줄만 그리는지, 모서리, 안쪽 여백, 커서색, 최소 높이.
+- 수용 기준
+  1. Modifier를 하나도 붙이지 않은 `TextField`가 여섯 시스템에서 서로 다른 틀로 그려지고, 어느 것도 틀 없는 맨 편집 영역이 아닙니다.
+  2. 필드에 포커스가 들어가면 그 시스템이 정한 대로 틀이 바뀝니다.
+  3. 같은 `TextField` 선언이 디자인 시스템을 바꾸면 다른 모양이 됩니다.
 
 ### FR-15 위젯 어휘 (`Agreed`)
 
