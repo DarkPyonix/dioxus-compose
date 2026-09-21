@@ -134,10 +134,21 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 
 #### 13.1 색: `Color`와 `ColorRole`, 그리고 `Paint`
 - `Color`는 `u32` ARGB 한 개입니다(`#[repr(transparent)]`). 그라데이션과 이미지 브러시는 넣지 않습니다.
-- `ColorRole`은 의미 슬롯입니다: `Primary`, `OnPrimary`, `Secondary`, `OnSecondary`, `Surface`, `OnSurface`, `SurfaceVariant`, `OnSurfaceVariant`, `Background`, `OnBackground`, `Outline`, `OutlineVariant`, `Error`, `OnError`.
+- `ColorRole`은 의미 슬롯입니다: `Primary`, `OnPrimary`, `Secondary`, `OnSecondary`, `Surface`, `OnSurface`, `SurfaceVariant`, `OnSurfaceVariant`, `Background`, `OnBackground`, `Outline`, `OutlineVariant`, `Error`, `OnError`, `SurfaceContainer`, 그리고 13.1-2의 강조색 계열 8개.
 - `Paint`는 둘 중 하나입니다: `Paint::Role(ColorRole)` 또는 `Paint::Literal(Color)`. `u64` 하나로 인코딩합니다(상위 32비트 = 종류, 하위 32비트 = 값).
 - 색을 받는 자리는 전부 `Paint`를 씁니다. 색 표현이 스키마에 두 번 등장하지 않게 하기 위해서입니다.
 - 수용 기준: `Modifier::Background(Paint::Role(ColorRole::Surface))`와 `Modifier::Background(Paint::Literal(Color::rgb(0x1B1B1F)))`가 같은 레코드 길이로 왕복하고, 디코드 결과가 입력과 같습니다.
+
+#### 13.1-2 세 번째 강조색과 강조 컨테이너
+`Tertiary`, `OnTertiary`, `PrimaryContainer`, `OnPrimaryContainer`, `SecondaryContainer`, `OnSecondaryContainer`, `TertiaryContainer`, `OnTertiaryContainer`를 추가합니다(태그 16~23).
+
+**이유는 색이 크롬이 아니라 내용인 화면입니다.** 강조색 둘과 페이지 하나로는 버튼과 막대와 제목까지는 말할 수 있지만, 과목마다 색이 다른 타일 격자, 기분 선택기, 비용 패널 옆의 합계 패널은 말할 수 없습니다. 그런 화면에는 **서로 친척으로 읽히고, 읽기 표면은 아니며, 본문이 얹힐 만큼 조용한** 채움이 몇 개 필요한데, 어휘에 그것을 가리키는 말이 없었습니다. 유일한 방법은 리터럴이었고, 리터럴은 디자인 시스템이 영영 보지 못하는 색입니다.
+
+- **컨테이너는 강조색의 낮은 불투명도가 아닙니다.** 불투명도는 뒤에 무엇이 있는지 이미 알 때만 의미가 있고, 역할은 뒤에 무엇이 있는지 아무도 모르는 시점에 답해야 합니다. 그래서 컨테이너는 각각 표의 한 색이고, 각각 자기 잉크를 가집니다.
+- 컨테이너 3개는 **본문 기준(4.5:1)** 으로 자기 잉크와 대비를 지킵니다. 채움 위에 이름표만 올리는 것이 아니라 문단이 얹히는 것이 존재 이유이기 때문입니다. `Tertiary`/`OnTertiary`는 다른 강조색과 같은 3:1입니다.
+- 컨테이너 3개는 각각 `Background`와 구분되어야 합니다. 보이지 않는 틴트는 없는 패널입니다.
+- **세 컨테이너끼리는 구분을 요구하지 않습니다.** Material 3의 기준 배색에서 primary와 secondary 컨테이너는 한 팔레트의 이웃한 톤이라 10단계 남짓 떨어져 있고, 그것은 공개된 배색이지 실수가 아닙니다. 한눈에 갈라지는 채움 세 개가 필요한 호출자는 tertiary 쌍을 씁니다.
+- 수용 기준: 6개 디자인 시스템 × 2개 명암 전부에서 컨테이너 3쌍이 4.5:1을 넘고, `Tertiary`가 3:1을 넘으며, 컨테이너 3개가 `Background`와 구분됩니다. **(2026-09-21 통과: `tokens.rs`의 `fr14_on_roles_stay_readable`, `fr14_surface_variant_is_visible_against_the_page_and_the_surface`)**
 
 #### 13.2 타이포그래피
 - `TypeRole`은 9단 사다리입니다: `Display`, `Headline`, `Title`, `Subtitle`, `Body`, `BodyStrong`, `Label`, `Caption`, `Mono`. 세 디자인 시스템의 타입 스케일이 모두 이 사다리에 대응합니다.
@@ -343,7 +354,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - **D5.** 테마는 UI 로컬 상태입니다. 스크롤 위치·포커스와 같은 부류입니다.
 - 비용: Host 쪽 단위 테스트는 "어떤 역할을 보냈는가"까지만 검증할 수 있고, 실제 색·치수는 Renderer 테스트에서 검증합니다. 이 분리를 받아들입니다.
 
-**토큰 테이블의 저작 위치는 Rust이고, 실행 위치는 Renderer입니다.** 14개 `ColorRole` × 2개 명암, 9단 `TypeRole`, `ShapeRole`/`SpaceRole` 치수 같은 값 표는 Rust 스키마에 데이터로 두고, FR-7 코드젠이 `Protocol.gen.kt`에 Kotlin `object`로 내보냅니다. 근거:
+**토큰 테이블의 저작 위치는 Rust이고, 실행 위치는 Renderer입니다.** 23개 `ColorRole` × 2개 명암, 9단 `TypeRole`, `ShapeRole`/`SpaceRole` 치수 같은 값 표는 Rust 스키마에 데이터로 두고, FR-7 코드젠이 `Protocol.gen.kt`에 Kotlin `object`로 내보냅니다. 근거:
 - D6(단일 소스는 Rust)를 토큰에도 그대로 적용합니다. Kotlin에 손으로 적으면 세 시스템 × 7개 표가 검증되지 않은 채 남습니다.
 - 값 표는 Rust 테스트로 검증할 수 있습니다(대비비, 사다리 단조성, 표가 비어 있지 않은지). 14.4가 포기한 것은 "화면에 그려진 결과"이지 "표의 내용"이 아닙니다.
 - 경계는 그대로입니다. 표는 **빌드 시점에** Renderer 바이너리로 들어가고, 런타임에 경계를 넘지 않습니다. 13.7의 "Host가 보내는 토큰 테이블"은 여전히 금지입니다.
@@ -359,7 +370,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 디자인 시스템마다 아래 8개가 필요합니다. 채워지면 위젯 코드는 건드리지 않습니다.
 
 1~4번은 14.4에 따라 Rust 스키마에서 코드젠으로 생성되어 `Protocol.gen.kt`의 `DesignTokens`에 이미 들어 있습니다. Renderer 구현자는 **5~8번과, 1~4번을 Compose에 배선하는 일**을 맡습니다.
-1. `ColorRole` 14개 × {Light, Dark} 색값
+1. `ColorRole` 23개 × {Light, Dark} 색값
 2. `TypeRole` 9개 → 크기/굵기/행간/자간/폰트
 3. `ShapeRole` 6개 → 곡률(HIG는 연속 곡률)
 4. `SpaceRole` 7개 → dp
