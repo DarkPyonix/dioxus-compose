@@ -90,8 +90,12 @@ fn pr6_generated_web_bindings_match_the_boundary_schema() {
         "`web_main!` has to export it under the name the page calls"
     );
     assert!(
-        loader.contains(&format!("host.{WEB_START_SYMBOL}()")),
-        "the loader has to start the Host it just instantiated"
+        kotlin.contains(&format!("host.{WEB_START_SYMBOL}()")),
+        "the Renderer has to start the Host it just instantiated"
+    );
+    assert!(
+        loader.contains("WebAssembly.compileStreaming("),
+        "compiling before the Renderer's module is evaluated is the page's whole job"
     );
 
     assert_eq!(
@@ -211,17 +215,16 @@ fn pr6_the_forwarder_only_passes_its_arguments_on() {
 /// object itself; wrapping it in a closure would cost a frame per frame request for nothing.
 #[test]
 fn pr6_the_frame_request_binds_to_the_wasm_export() {
-    let loader = generate_web_loader_js();
-    let binding = signature_after(&loader, "dioxus_compose_renderer_request_frame:", ',');
+    let kotlin = generate_web_bridge_kotlin();
+    let binding = signature_after(&kotlin, "dioxus_compose_renderer_request_frame:", ',');
     assert!(
-        binding.contains("exports.dioxus_compose_renderer_request_frame"),
+        binding.contains("wasmExports.dioxus_compose_renderer_request_frame"),
         "the frame request has to be bound to the Renderer's export, got: {binding}"
     );
     assert!(
         !binding.contains("=>"),
         "the frame request is wrapped in a closure, which puts a JavaScript frame on it: {binding}"
     );
-    let kotlin = generate_web_bridge_kotlin();
     assert!(
         kotlin.contains("@WasmExport(\"dioxus_compose_renderer_request_frame\")"),
         "the Renderer has to export the function that import binds to"
@@ -239,15 +242,17 @@ fn pr6_the_arena_is_never_copied() {
             "the wasm shims call {forbidden}, and a batch is read in place"
         );
     }
+    let kotlin = generate_web_bridge_kotlin();
     let loader = generate_web_loader_js();
     for forbidden in ["Uint8Array", "DataView", "memory.buffer.slice"] {
         assert!(
-            !loader.contains(forbidden),
-            "the loader reads the shared memory through {forbidden}; only the two modules read it"
+            !kotlin.contains(forbidden) && !loader.contains(forbidden),
+            "the wiring reaches into the shared memory through {forbidden}; only the two \
+             modules read it"
         );
     }
     assert!(
-        loader.contains("env: { memory }"),
+        kotlin.contains("env: { memory }"),
         "the Host has to import the memory the Renderer defined, not make one of its own"
     );
 }
@@ -267,8 +272,8 @@ fn pr6_the_two_regions_are_stated_the_same_on_both_sides() {
         "the Renderer has to know where the Host's region starts"
     );
     assert!(
-        loader.contains(&format!("const RUST_REGION_BASE = {WEB_RUST_REGION_BASE};")),
-        "the page has to know it too, to refuse a Host that landed below it"
+        kotlin.contains(&format!("if (block < {WEB_RUST_REGION_BASE}) {{")),
+        "and refuse a Host whose block landed below it"
     );
     assert!(
         rust.contains("fn lent(address: u32) -> bool {"),
@@ -314,14 +319,11 @@ fn pr6_the_two_regions_are_stated_the_same_on_both_sides() {
 /// import declares before the two types can match. Both numbers come from here.
 #[test]
 fn pr6_the_page_grows_the_memory_to_what_the_host_declares() {
+    let kotlin = generate_web_bridge_kotlin();
     let loader = generate_web_loader_js();
     assert!(
-        loader.contains(&format!("const MEMORY_MIN_PAGES = {WEB_MEMORY_MIN_PAGES};")),
-        "the loader grows the memory to the minimum the Host's link declared"
-    );
-    assert!(
-        loader.contains("memory.grow(MEMORY_MIN_PAGES - pages)"),
-        "and grows it by the difference rather than to it"
+        kotlin.contains(&format!("memory.grow({WEB_MEMORY_MIN_PAGES} - pages)")),
+        "the memory is grown to the minimum the Host's link declared, by the difference"
     );
     assert!(
         loader.contains(&format!("const HOST_WASM = './{WEB_HOST_WASM_NAME}';")),
@@ -341,15 +343,15 @@ fn pr6_the_page_grows_the_memory_to_what_the_host_declares() {
 /// hash.
 #[test]
 fn pr6_the_page_answers_the_imports_the_host_carries() {
-    let loader = generate_web_loader_js();
+    let kotlin = generate_web_bridge_kotlin();
     for namespace in ["__wbindgen_placeholder__", "__wbindgen_externref_xform__"] {
         assert!(
-            loader.contains(&format!("{namespace}: unbound('{namespace}')")),
-            "the page has to answer {namespace} or the Host will not instantiate"
+            kotlin.contains(&format!("{namespace}: unbound('{namespace}')")),
+            "the instantiation has to answer {namespace} or the Host will not start"
         );
     }
     assert!(
-        loader.contains("throw new Error("),
+        kotlin.contains("throw new Error("),
         "and reaching one of them has to be reported rather than ignored"
     );
 }
@@ -358,9 +360,10 @@ fn pr6_the_page_answers_the_imports_the_host_carries() {
 /// the renderer is worked on without the other side being built.
 #[test]
 fn nfr5_a_page_without_a_host_says_so_and_carries_on() {
+    let kotlin = generate_web_bridge_kotlin();
     let loader = generate_web_loader_js();
     assert!(
-        loader.contains("if (compiled === null) return 0;"),
+        kotlin.contains("if (!compiled) return 0;"),
         "a missing Host has to answer zero rather than throw"
     );
     assert!(

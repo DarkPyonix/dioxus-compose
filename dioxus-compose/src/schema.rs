@@ -1311,6 +1311,11 @@ pub const WEB_RENDERER_IMPORT_MODULE: &str = "dioxus_compose_renderer";
 /// name it can reach the loader through is a property of the global object.
 pub const WEB_HOST_GLOBAL: &str = "__dioxusComposeHost";
 
-/// The global the loader module publishes itself under, for the one call that starts the
-/// Host: Kotlin's `main` asks for it once and never again.
-pub const WEB_LOADER_GLOBAL: &str = "__dioxusComposeHostLoader";
+/// The global the loader module publishes the compiled Host module under.
+///
+/// Compiling is all the page does, and the reason the page has to do it at all is that
+/// compiling is asynchronous while the boundary is not: the fetch has to have finished
+/// before the Renderer's `main` runs. Everything after it, the memory, the imports and the
+/// entry point, is in the generated Kotlin, because only the Renderer's own module can name
+/// them.
+pub const WEB_MODULE_GLOBAL: &str = "__dioxusComposeHostModule";

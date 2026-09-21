@@ -52,8 +52,8 @@ region_base="$(
         "$module_dir/src/bridge/HostBridge.gen.kt" | grep -o '[0-9]*$'
 )"
 memory_pages="$(
-    grep -o 'const MEMORY_MIN_PAGES = [0-9]*' \
-        "$module_dir/resources/dioxus-compose-host.gen.mjs" | grep -o '[0-9]*$'
+    grep -o 'memory.grow([0-9]* - pages)' \
+        "$module_dir/src/bridge/HostBridge.gen.kt" | grep -o '[0-9]*'
 )"
 initial_memory=$((memory_pages * 65536))
 

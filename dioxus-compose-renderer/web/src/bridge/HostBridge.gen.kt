@@ -84,17 +84,59 @@ external fun hostReleaseBatch(out: Int): Int
 external fun hostShutdown(): Int
 
 /**
- * Instantiates the Host on this module's memory and answers with the address of the
- * block it lends back. Zero means there is no Host on this page.
+ * Instantiates the Host on this module's memory and answers with the address of the block
+ * it lends back: the record a call reports into, and the buffer an event is encoded in.
+ * Zero means there is no Host on this page.
  *
- * Called once, from `main`, which is the first moment at which both halves exist: the
- * memory was created by this module's own instantiation, and the loader compiled the
- * Host's module before that started. `wasmExports` is the name the generated import
- * object holds them under, and it is set before `main` runs.
+ * Called once, from `main`. That is the first moment at which both halves exist: this
+ * module's own instantiation created the memory the Host imports, and the page compiled the
+ * Host's module before that started.
  */
 @JsFun(
-    "() => globalThis.__dioxusComposeHostLoader " +
-        "? globalThis.__dioxusComposeHostLoader.instantiate(wasmExports) : 0"
+    """() => {
+  const compiled = globalThis.__dioxusComposeHostModule;
+  if (!compiled) return 0;
+  const memory = wasmExports.memory;
+  const pages = memory.buffer.byteLength / 65536;
+  // This module's memory starts at zero pages and the Host's import declares a minimum,
+  // so the two module types do not match until this has run.
+  if (pages < 128) memory.grow(128 - pages);
+  // The wasm-bindgen placeholders dioxus-core brings in through subsecond. A browser will
+  // not instantiate a module with an import nobody supplied, used or not, and their names
+  // carry a per-version hash, so this answers whatever is asked rather than a list that
+  // would go stale. Nothing on the boundary goes near one.
+  const unbound = (namespace) => new Proxy({}, {
+    get: (_, name) => () => {
+      throw new Error('dioxus-compose: the Host called ' + namespace + '.' + String(name) +
+        ', which is a wasm-bindgen import this page does not provide. Nothing on the ' +
+        'boundary uses one, so a call here means the Host reached JavaScript through a ' +
+        'dependency rather than through the boundary.');
+    },
+  });
+  const host = new WebAssembly.Instance(compiled, {
+    env: { memory },
+    dioxus_compose_renderer: {
+      // The exported function object itself, not a closure around it: bound this way the
+      // engine builds no JavaScript frame for the call.
+      dioxus_compose_renderer_request_frame:
+        wasmExports.dioxus_compose_renderer_request_frame,
+    },
+    __wbindgen_placeholder__: unbound('__wbindgen_placeholder__'),
+    __wbindgen_externref_xform__: unbound('__wbindgen_externref_xform__'),
+  }).exports;
+  globalThis.__dioxusComposeHost = host;
+  const block = host.dioxus_compose_host_web_start();
+  if (block < 4194304) {
+    // Either the Host could not start, or its data landed in the half of the memory this
+    // module's allocator uses. The second draws a wrong screen instead of failing, so
+    // neither is allowed to become the first boundary call.
+    globalThis.__dioxusComposeHost = undefined;
+    throw new Error('dioxus-compose: the Host reported its boundary block at ' + block +
+      ', which is not inside the region above 4194304 that it was linked into. ' +
+      'Check that it was linked with --import-memory and --global-base.');
+  }
+  return block;
+}""",
 )
 external fun installHost(): Int
 

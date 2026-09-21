@@ -21,9 +21,11 @@ fi
 module=dioxus-compose-renderer/web/resources/dioxus_compose_host.wasm
 dioxus-compose-renderer/web/scripts/build-host.sh >/dev/null
 
-# The namespaces the loader supplies, read out of the generated file rather than listed
-# here, so the two cannot disagree about what "supplied" means.
-loader=dioxus-compose-renderer/web/resources/dioxus-compose-host.gen.mjs
+# The namespaces the instantiation supplies, read out of the generated file rather than
+# listed here, so the two cannot disagree about what "supplied" means. It is in the Kotlin
+# because only the Renderer's own module can name the memory and the export the Host binds
+# to; the page's loader only compiles.
+loader=dioxus-compose-renderer/web/src/bridge/HostBridge.gen.kt
 supplied="$(python3 - "$loader" <<'PYLOADER'
 import re
 import sys
@@ -33,7 +35,7 @@ opening = "new WebAssembly.Instance(compiled, {"
 start = source.index(opening) + len(opening)
 block = source[start:source.index("}).exports;", start)]
 # The keys of the import object itself, which are the ones at its own indentation.
-keys = re.findall(r"^      ([A-Za-z_][A-Za-z0-9_]*):", block, re.MULTILINE)
+keys = re.findall(r"^    ([A-Za-z_][A-Za-z0-9_]*):", block, re.MULTILINE)
 for key in sorted(set(keys)):
     print(key)
 PYLOADER
