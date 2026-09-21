@@ -20,6 +20,15 @@ pub const STATUS_PROTOCOL_ERROR: i32 = -1;
 pub const STATUS_NOT_INITIALIZED: i32 = -2;
 pub const STATUS_ALREADY_INITIALIZED: i32 = -3;
 pub const STATUS_PANIC: i32 = -4;
+/// There is no renderer in this build to run. Returned by the loop entry point, never by
+/// a boundary call: a call could not have got this far without a renderer to make it.
+pub const STATUS_NO_RENDERER: i32 = -5;
+
+/// What the process exits with when the renderer loop does not finish successfully.
+///
+/// 1, not the status itself: exit codes are a single byte on Unix, so `STATUS_NO_RENDERER`
+/// would reach the shell as 251 and read as a signal rather than an ordinary failure.
+const EXIT_FAILURE: i32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -54,31 +63,70 @@ pub fn install_renderer_api(api: RendererApi) -> Result<(), RendererApi> {
     RENDERER_API.set(api)
 }
 
-#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
+// `renderer_linked` is set by the build script, and only when a renderer was really
+// linked. That is not the same as the feature being on: a documentation build turns the
+// feature on and links nothing, and the result has to behave like the build it is.
+#[cfg(all(renderer_linked, not(any(test, feature = "mock-renderer"))))]
 unsafe extern "C" {
     fn dioxus_compose_renderer_run() -> c_int;
     fn dioxus_compose_renderer_request_frame();
 }
 
-#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
+#[cfg(all(renderer_linked, not(any(test, feature = "mock-renderer"))))]
 extern "C" fn native_run() -> c_int {
     // SAFETY: The application links the Renderer implementation of this declared C ABI.
     unsafe { dioxus_compose_renderer_run() }
 }
 
-#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
+#[cfg(all(renderer_linked, not(any(test, feature = "mock-renderer"))))]
 extern "C" fn native_request_frame() {
     // SAFETY: The Renderer contract makes request_frame thread-safe.
     unsafe { dioxus_compose_renderer_request_frame() }
 }
 
-#[cfg(any(test, feature = "mock-renderer", not(feature = "native-renderer")))]
+// The mock renderer and the crate's own tests drive the boundary directly and never want
+// a window, so doing nothing is the correct answer for them and always has been.
+#[cfg(any(test, feature = "mock-renderer"))]
 extern "C" fn native_run() -> c_int {
     STATUS_OK
 }
 
-#[cfg(any(test, feature = "mock-renderer", not(feature = "native-renderer")))]
+#[cfg(any(test, feature = "mock-renderer"))]
 extern "C" fn native_request_frame() {}
+
+// A real build with no renderer. This used to return success, so an application built
+// this way opened no window, drew nothing, printed nothing and exited 0, and there was
+// no way to tell that from a program that had simply finished.
+#[cfg(all(not(renderer_linked), not(any(test, feature = "mock-renderer"))))]
+extern "C" fn native_run() -> c_int {
+    eprintln!("{}", no_renderer_message());
+    STATUS_NO_RENDERER
+}
+
+#[cfg(all(not(renderer_linked), not(any(test, feature = "mock-renderer"))))]
+extern "C" fn native_request_frame() {}
+
+/// What a build with no renderer says on its way out.
+///
+/// Compiled into every build, not only the one that prints it, so that a test can read it
+/// whatever the build it is running in was configured with.
+pub fn no_renderer_message() -> String {
+    format!(
+        "dioxus-compose: this application was built without a renderer, so there is nothing\n\
+         to draw with and nothing to draw on. Exiting {EXIT_FAILURE} rather than looking like\n\
+         a program that ran and finished.\n\
+         \n\
+         A default `cargo build` links the renderer for the platform it is building for and\n\
+         downloads it if it has to. A build reaches this message by turning that off:\n\
+         \n\
+         \x20   default-features = false, without re-enabling `native-renderer`\n\
+         \x20   a documentation build, which has no network to fetch a renderer with\n\
+         \n\
+         Building for a test or with the `mock-renderer` feature is a third way, and that\n\
+         one is silent on purpose: those builds drive the boundary directly and want no\n\
+         window."
+    )
+}
 
 fn renderer_api() -> RendererApi {
     RENDERER_API.get().copied().unwrap_or(RendererApi {
@@ -441,16 +489,35 @@ impl LaunchBuilder {
         self
     }
 
+    /// Runs the application. Does not return while it is running, and ends the process
+    /// with a failing status if the renderer loop could not run at all.
+    ///
+    /// Exiting rather than returning is the point. `launch` is the last statement of
+    /// `main` in every application that uses this crate, so returning from it means `main`
+    /// returns, which means the process exits 0. A window that never opened would then be
+    /// indistinguishable from a program that did its work and stopped.
     pub fn launch(self, app: fn() -> Element) {
+        let status = self.try_launch(app);
+        if status != STATUS_OK {
+            std::process::exit(EXIT_FAILURE);
+        }
+    }
+
+    /// [`LaunchBuilder::launch`] without the exit: the status the renderer loop ended
+    /// with, handed back for a caller that has its own idea of what to do with it.
+    pub fn try_launch(self, app: fn() -> Element) -> i32 {
         if let Ok(mut slot) = APP.lock() {
             *slot = Some(app);
         }
         if let Ok(mut slot) = THEME.lock() {
             *slot = self.theme;
         }
-        if self.mode == LoopMode::Renderer {
-            let _ = (renderer_api().run)();
+        // Under `LoopMode::Platform` the platform owns the loop and calls in through the
+        // boundary when it is ready. There is nothing to run and nothing to fail.
+        if self.mode != LoopMode::Renderer {
+            return STATUS_OK;
         }
+        (renderer_api().run)()
     }
 }
 
@@ -1004,3 +1071,31 @@ mod demo_theme_tests {
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
     }
 }
+
+/// Keeps the five exported boundary functions in the final executable.
+///
+/// The Renderer resolves them by name once it is loaded, which means nothing in the
+/// application ever refers to them and the linker is free to conclude they are dead. It
+/// does exactly that in any binary whose own code happens not to reach them, a test
+/// harness for an application being the ordinary case, and the result is a process that
+/// dies on startup with the dynamic loader unable to bind a symbol that should have been
+/// right there in the executable.
+///
+/// Taking their addresses in a static the compiler is told to keep marks them as roots
+/// for the dead-code pass, which is the whole job. It costs five pointers.
+#[used]
+static BOUNDARY_EXPORTS: BoundaryExports = BoundaryExports([
+    dioxus_compose_host_init as *const (),
+    dioxus_compose_host_dispatch_event as *const (),
+    dioxus_compose_host_render_frame as *const (),
+    dioxus_compose_host_release_batch as *const (),
+    dioxus_compose_host_shutdown as *const (),
+]);
+
+/// Never read. Being referenced is the entire contract.
+struct BoundaryExports(#[allow(dead_code)] [*const (); 5]);
+
+// SAFETY: The addresses are written once, at compile time, and never read. A static has
+// to be Sync to exist at all, and raw pointers decline to be only because of what they
+// might point at; these point at code.
+unsafe impl Sync for BoundaryExports {}
