@@ -47,6 +47,22 @@ internal data class FluentPalette(
     /** Status Danger primary, and what reads on it. */
     val danger: Color,
     val onDanger: Color,
+    /** The shared purple ramp, Fluent's accent beside the brand blue. */
+    val accentTertiary: Color,
+    val onAccentTertiary: Color,
+    /**
+     * Fluent's brand tints, which are how it fills a selected or highlighted region.
+     *
+     * Two steps of the brand ramp in light and its dark shades in dark. The secondary
+     * tint is a step deeper than the primary one rather than a different hue, because
+     * Fluent's second accent is the same blue used more strongly.
+     */
+    val accentContainer: Color,
+    val onAccentContainer: Color,
+    val accentSecondaryContainer: Color,
+    val onAccentSecondaryContainer: Color,
+    val accentTertiaryContainer: Color,
+    val onAccentTertiaryContainer: Color,
     /**
      * The lit edge Fluent draws along the top of a raised surface.
      *
@@ -78,6 +94,14 @@ internal data class FluentPalette(
             stroke2 = Color(0xFFE0E0E0),
             danger = Color(0xFFC50F1F),
             onDanger = Color(0xFFFFFFFF),
+            accentTertiary = Color(0xFF8764B8),
+            onAccentTertiary = Color(0xFFFFFFFF),
+            accentContainer = Color(0xFFCFE4FA),
+            onAccentContainer = Color(0xFF0C3B5E),
+            accentSecondaryContainer = Color(0xFFB4D6FA),
+            onAccentSecondaryContainer = Color(0xFF0B3350),
+            accentTertiaryContainer = Color(0xFFE8DCF7),
+            onAccentTertiaryContainer = Color(0xFF341A5E),
             strokeTop = Color(0xFFFFFFFF).copy(alpha = 0.70f),
             shadowColor = Color(0xFF000000).copy(alpha = 0.14f),
         )
@@ -106,6 +130,14 @@ internal data class FluentPalette(
             stroke2 = Color(0xFF383838),
             danger = Color(0xFFFF99A4),
             onDanger = Color(0xFF000000),
+            accentTertiary = Color(0xFFB18CD9),
+            onAccentTertiary = Color(0xFF22103A),
+            accentContainer = Color(0xFF0C3B5E),
+            onAccentContainer = Color(0xFFCFE4FA),
+            accentSecondaryContainer = Color(0xFF123D61),
+            onAccentSecondaryContainer = Color(0xFFB4D6FA),
+            accentTertiaryContainer = Color(0xFF3B2159),
+            onAccentTertiaryContainer = Color(0xFFE8DCF7),
             strokeTop = Color(0xFFFFFFFF).copy(alpha = 0.09f),
             // A shadow has to work harder to be seen against a dark canvas.
             shadowColor = Color(0xFF000000).copy(alpha = 0.40f),

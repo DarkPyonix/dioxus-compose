@@ -86,6 +86,20 @@ class BreezeDesignSystem private constructor(
         // two, so a panel is the view colour and the window is what it sits on.
         ColorRole.SurfaceContainer -> Color(0xFFFCFCFC)
         ColorRole.OnError -> Color(0xFFFFFFFF)
+        // Breeze "neutral", the amber of a warning state, taken as the third accent.
+        // Dark ink for the same reason the other two carry it: white on any of these
+        // fills measures under three to one.
+        ColorRole.Tertiary -> Color(0xFFF67400)
+        ColorRole.OnTertiary -> Color(0xFF2B1200)
+        // Plasma tints a selected region with the highlight at low alpha over the view.
+        // Resolved against the window colour, once per accent, so the role can answer
+        // without knowing what it sits on.
+        ColorRole.PrimaryContainer -> Color(0xFFD3ECF9)
+        ColorRole.OnPrimaryContainer -> Color(0xFF0B3B52)
+        ColorRole.SecondaryContainer -> Color(0xFFD2ECE5)
+        ColorRole.OnSecondaryContainer -> Color(0xFF083B31)
+        ColorRole.TertiaryContainer -> Color(0xFFFAE0C4)
+        ColorRole.OnTertiaryContainer -> Color(0xFF4A2C00)
     }
 
     private fun darkColor(role: ColorRole): Color = when (role) {
@@ -107,6 +121,20 @@ class BreezeDesignSystem private constructor(
         ColorRole.Error -> Color(0xFFED8079)
         ColorRole.SurfaceContainer -> Color(0xFF1B1E20)
         ColorRole.OnError -> Color(0xFF2A0806)
+        // Breeze "neutral", the amber of a warning state, taken as the third accent.
+        // Dark ink for the same reason the other two carry it: white on any of these
+        // fills measures under three to one.
+        ColorRole.Tertiary -> Color(0xFFF8A44C)
+        ColorRole.OnTertiary -> Color(0xFF2B1200)
+        // Plasma tints a selected region with the highlight at low alpha over the view.
+        // Resolved against the window colour, once per accent, so the role can answer
+        // without knowing what it sits on.
+        ColorRole.PrimaryContainer -> Color(0xFF123B4F)
+        ColorRole.OnPrimaryContainer -> Color(0xFFCDE6F5)
+        ColorRole.SecondaryContainer -> Color(0xFF103A32)
+        ColorRole.OnSecondaryContainer -> Color(0xFFCFE8E0)
+        ColorRole.TertiaryContainer -> Color(0xFF4A3113)
+        ColorRole.OnTertiaryContainer -> Color(0xFFF8DFC3)
     }
 
     /**

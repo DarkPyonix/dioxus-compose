@@ -395,6 +395,31 @@ define_wire_enum!(COLOR_ROLE_SCHEMA, ColorRole {
     // would have to set that content half faded. This is the one role every design system
     // promises to make visible against the page, and `OnSurface` is what reads on it.
     SurfaceContainer = 15,
+    // The third accent, and a quiet fill for each of the three.
+    //
+    // Two accents and a page say a button, a bar and a heading. They cannot say a grid of
+    // subject tiles where the subject is the colour, a mood picker, or a panel of costs
+    // beside a panel of totals. Those screens need fills that read as relatives of one
+    // another, are not reading surfaces, and are quiet enough that body text sits on them.
+    //
+    // A container is a colour in the table rather than its accent at a lower opacity.
+    // Opacity only means something once you know what is behind it, and a role has to
+    // answer before anyone knows that. So each container is its own value and carries its
+    // own ink, held to the body-text bound rather than the label bound, because the reason
+    // it exists is that paragraphs land on it.
+    //
+    // The three containers are not required to be told apart from each other. Material 3's
+    // baseline primary and secondary containers are neighbouring tones of one palette, and
+    // that is its published scheme, not a mistake. A caller who needs three fills that
+    // separate at a glance reaches for the tertiary pair.
+    Tertiary = 16,
+    OnTertiary = 17,
+    PrimaryContainer = 18,
+    OnPrimaryContainer = 19,
+    SecondaryContainer = 20,
+    OnSecondaryContainer = 21,
+    TertiaryContainer = 22,
+    OnTertiaryContainer = 23,
 });
 
 // The nine-rung type ladder every supported design system maps onto.
