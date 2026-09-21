@@ -971,7 +971,7 @@ dioxus_compose_host_dispatch_event: click 1
   - 레코드: `tag: u16`, `len: u16`, 뒤이어 고정 필드(`node_id: u32` 등)가 오며, 리틀 엔디언이고 4바이트 정렬입니다.
   - 문자열: 같은 arena에 두고 `(offset: u32, len: u32)`로 참조합니다. UTF-8입니다. Renderer는 Compose에 넘기는 시점에만 `String`으로 변환합니다.
   - postcard, bincode, FlatBuffers는 쓰지 않습니다. 레코드 레이아웃과 접근자는 FR-7 코드젠이 생성합니다.
-- **이벤트 태그** (Renderer→Host): 입력 이벤트(FR-3), `TextChanged`/`TextSubmitted`/`FocusLost`(FR-5), `RangeRequested`(FR-8), `Lifecycle(Resumed|Paused|Destroyed)`, `Resync`, `SaveState`/`RestoreState`(선택), `ProtocolError`
+- **이벤트 태그** (Renderer→Host): 입력 이벤트(FR-3), `TextChanged`/`TextSubmitted`/`FocusLost`(FR-5), `RangeRequested`(FR-8), `Lifecycle(Start|Stop)`, `Resync`, `SaveState`/`RestoreState`(선택), `ProtocolError`
 - **플랫폼별 메모리 접근**
   - Desktop(GraalVM): `Pointer`로 직접 읽습니다.
   - iOS(Kotlin/Native): `CPointer`로 읽습니다.
@@ -979,13 +979,15 @@ dioxus_compose_host_dispatch_event: click 1
   - Web: 공유 linear memory(PR-6)
 - 수용 기준: 텍스트 하나를 바꾸는 이벤트 처리에서 경계 호출 2회(`dispatch_event`, `release_batch`), 힙 할당은 Compose `String` 생성 1회 이하
 
-### PR-5 Android (`Draft`)
+### PR-5 Android (`Agreed`)
 - 호스트 관계: Kotlin Activity가 프로세스와 루프를 소유합니다(`LoopMode::Platform`). Rust는 cdylib입니다. VirtualDom은 PR-3에 따라 UI 스레드에서 돕니다.
 - JNI 심: PR-2의 논리 연산에서 jni-rs 기반 심과 Kotlin `external fun` 선언을 코드젠으로 생성합니다. UniFFI(JNA 경유)는 호출당 오버헤드가 커서 쓰지 않습니다.
 - 생명주기:
-  - Surface 파괴와 config change: Compose만 재구성됩니다. VirtualDom은 프로세스 전역에 유지됩니다. Renderer는 재구성 후 `Resync`를 보내고, Host는 전체 트리 배치를 돌려줍니다.
-  - `onStop`/`onStart`: `Lifecycle` 이벤트를 보냅니다. Host는 타이머와 애니메이션을 억제합니다.
+  - Surface 파괴와 config change: Compose만 재구성됩니다. VirtualDom도 노드 테이블도 프로세스에 남으므로, 다시 만들어진 Activity는 같은 테이블을 그대로 그립니다. 경계 호출도 상태 손실도 없고, `Resync`는 이 자리에서 보내지 않습니다.
+  - `Resync`는 노드 테이블을 지킬 수 없는 Renderer를 위한 것입니다. Host는 이미 보낸 트리의 사본을 들고 있지 않아서 애플리케이션을 처음부터 다시 만들어 답하며, 그래서 돌아오는 배치의 노드 id는 1부터 다시 시작하고 컴포넌트 상태는 사라집니다. 받는 쪽은 그 배치가 오기 전에 기존 트리와 에셋과 메시지를 먼저 버려야 합니다. 지킬 수 있는 테이블은 지키는 쪽이 언제나 낫습니다.
+  - `onStop`/`onStart`: `LifecycleStop`과 `LifecycleStart`를 보냅니다. Host는 그 사이에 도착한 워커의 프레임 요청을 기억만 해 두었다가 시작할 때 한 번 내보내고, 그동안 타이머와 애니메이션은 억제됩니다. `Resumed`/`Paused`/`Destroyed`로 나누지 않습니다. 그리는 일이 실제로 멈추는 경계는 `onStop`이고, `Destroyed`는 프로세스가 사라지는 자리라 Host가 들을 수 없습니다.
   - 프로세스 kill: 메모리 상태는 복원하지 않습니다. 필요하면 `SaveState`로 작은 blob을 `onSaveInstanceState`에 저장합니다.
+- 에셋: Android는 자기 그래픽 스택으로 그리므로 SVG 파서가 없습니다. `Svg` 종류의 등록은 FR-16이 정한 대로 읽을 수 없다고 보고하고, 나머지 배치는 그대로 적용됩니다. `VectorIcon`은 영향이 없습니다. 모양을 그리는 것은 디자인 시스템이기 때문입니다.
 - android-activity, NativeActivity, GameActivity 진입점은 쓰지 않습니다. ComposeView와 공존한 사례가 없고 IME 충돌 위험이 있습니다. JavaVM은 `JNI_OnLoad`에서 얻습니다.
 
 #### 5.1 Kotlin이 앱 빌드에 들어가는 방법 (INTENT D11)
@@ -1003,6 +1005,7 @@ dioxus_compose_host_dispatch_event: click 1
   1. 일반 JNI와 `@FastNative`의 호출당 비용을 실측합니다. 공개 수치(약 115ns, 약 35ns)와 비교해 기록합니다.
   2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100회 추가되는 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
+- 구현 상태(2026-09-22): 경계 심 생성, 생명주기와 `Resync`, Activity 호스팅, cdylib 빌드가 들어왔습니다. 심은 `aarch64-linux-android`로 컴파일되고, cdylib이 내보내는 JNI 심벌은 컴파일된 Kotlin 클래스가 native로 선언한 이름과 정확히 일치합니다. 수용 기준 1~3은 모두 기기나 에뮬레이터에서만 확인할 수 있어 아직 미검증이고, 5.1의 수용 기준 4(크레이트가 Kotlin 소스를 품고 Maven 좌표 없이 APK가 빌드되는 것)는 아직 착수 전입니다.
 
 ### PR-6 Web 경계 (`Agreed`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입니다. 2026-09-20 실측으로 확정했습니다(`experiments/web-interop/`).
