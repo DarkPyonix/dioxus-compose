@@ -67,10 +67,13 @@ internal data class CupertinoPalette(
             accentSecondary = Color(0xFF5856D6),
             onAccentSecondary = Color(0xFFFFFFFF),
             surface = Color(0xFFFFFFFF),
-            surfaceVariant = Color(0xFFF2F2F7),
-            canvas = Color(0xFFEFEFF4),
+            // The page is the grouped background and the variant is the colour an incoming
+            // message bubble has. They used to be three parts in 255 apart, close enough
+            // that anything filled with one on a page of the other was invisible.
+            surfaceVariant = Color(0xFFE9E9EB),
+            canvas = Color(0xFFF2F2F7),
             label = Color(0xFF000000),
-            labelSecondary = Color(0xFF6C6C70),
+            labelSecondary = Color(0xFF636366),
             separator = Color(0xFFC6C6C8),
             separatorFaint = Color(0xFFD1D1D6),
             fill = Color(0xFFE5E5EA),
