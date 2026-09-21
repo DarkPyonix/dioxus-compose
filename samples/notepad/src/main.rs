@@ -10,7 +10,7 @@ use dioxus_compose::prelude::*;
 
 mod document;
 
-use document::{Counts, Outcome, counts, display_path};
+use document::{Counts, Outcome, counts, display_path, file_name};
 
 /// The file the editor starts on, so the sample has something to open and save without a
 /// file picker.
@@ -116,7 +116,6 @@ fn app() -> Element {
     } else {
         None
     };
-    let crowded = window.is_compact();
     let mut text = use_signal(String::new);
     let mut stamp = use_signal(|| 0_u64);
     let mut path = use_signal(|| display_path(&starting_path()));
@@ -126,6 +125,7 @@ fn app() -> Element {
     // has drifted from this, which is a comparison rather than a flag: a flag has to be
     // cleared in every place that saves, and the one that forgets is the bug.
     let mut on_disk = use_signal(String::new);
+    let mut file_open = use_signal(|| false);
 
     // The worker's result comes back here, on the UI thread, and the signal writes happen
     // where every other signal write in the app happens.
@@ -233,13 +233,9 @@ fn app() -> Element {
                     },
                 }
                 Button {
-                    text: "Open",
+                    text: "File",
                     variant: ButtonVariant::Tonal,
-                    enabled: !working,
-                    on_click: move |_| {
-                        let target = PathBuf::from(path());
-                        run_on_worker(Box::new(move || document::open(target)));
-                    },
+                    on_click: move |_| file_open.set(true),
                 }
                 Button {
                     text: "Save",
@@ -252,6 +248,58 @@ fn app() -> Element {
                     },
                 }
             })}
+
+            // Which file the document is, and the two things that can be done with it.
+            //
+            // It used to be a strip above the page, carrying a path in monospace across
+            // the top of a document. Neither memo reference has one: a note is a page with
+            // a name on it, and where the bytes live is something you go and ask for. A
+            // sheet is where you ask. It is declared here rather than at the foot of the
+            // screen because it belongs to the button in the bar above, and a sheet is
+            // drawn over the page wherever it is declared.
+            Sheet {
+                open: file_open(),
+                on_dismiss: move |_| file_open.set(false),
+                fill_max_width: true,
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    Row {
+                        fill_max_width: true,
+                        alignment: Alignment::CenterStart,
+                        Text { text: "File", type_role: TypeRole::Subtitle, weight: 1.0 }
+                        Button {
+                            text: "Close",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| file_open.set(false),
+                        }
+                    }
+                    Separator {}
+                    {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        Text {
+                            text: "The document is saved to this path, and Open reads it \
+                                   back.",
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            weight: 1.0,
+                        }
+                        Button {
+                            text: "Open",
+                            variant: ButtonVariant::Tonal,
+                            enabled: !working,
+                            on_click: move |_| {
+                                file_open.set(false);
+                                let target = PathBuf::from(path());
+                                run_on_worker(Box::new(move || document::open(target)));
+                            },
+                        }
+                    }
+                }
+            }
 
             // The page defines a column, and everything under the bar lines up with it.
             //
@@ -274,25 +322,16 @@ fn app() -> Element {
                     padding_role: SpaceRole::Md,
                     space_role: SpaceRole::Md,
 
-                    // The location bar: one grouped strip that says which file the actions
-                    // above work on.
-                    Surface {
+                    // The document's name, which is the first thing on the page in both
+                    // memo references. A document is a thing with a name, and a page that
+                    // opens straight into body text is a page you cannot tell from the
+                    // one beside it.
+                    Text {
+                        text: file_name(&path()),
                         fill_max_width: true,
-                        Row {
-                            fill_max_width: true,
-                            space_role: SpaceRole::Sm,
-                            alignment: Alignment::CenterStart,
-                            // The word is dropped on a phone: the field says what it is in
-                            // its own placeholder, and a path needs every pixel of the line.
-                            if !crowded {
-                                Text {
-                                    text: "File",
-                                    type_role: TypeRole::Label,
-                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                }
-                            }
-                            {path_field(path(), EventHandler::new(move |value| path.set(value)))}
-                        }
+                        type_role: TypeRole::Headline,
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
                     }
 
                     // The page. A document is an object you write on, so it is a surface of
@@ -386,6 +425,8 @@ mod tests {
         texts: HashMap<u32, String>,
         /// Node to the node it was inserted under, so a removal takes the subtree with it.
         parents: HashMap<u32, u32>,
+        /// What each node was created as, so a test can ask where something sits.
+        widgets: HashMap<u32, WidgetKind>,
         /// Every message the screen has said, in order, with its action label.
         messages: Vec<(String, String)>,
         event: Vec<u8>,
@@ -400,6 +441,7 @@ mod tests {
                 buttons: HashMap::new(),
                 texts: HashMap::new(),
                 parents: HashMap::new(),
+                widgets: HashMap::new(),
                 messages: Vec::new(),
                 event: Vec::new(),
             };
@@ -412,12 +454,21 @@ mod tests {
             let mut clicks = HashMap::new();
             let mut changes = HashMap::new();
             let mut texts = HashMap::new();
+            let mut widgets = HashMap::new();
+            let mut parents = HashMap::new();
             for mutation in &decoded {
                 match mutation {
-                    Mutation::Create {
-                        node_id,
-                        widget: WidgetKind::TextField,
-                    } => fields.push(*node_id),
+                    Mutation::Insert {
+                        parent_id, node_id, ..
+                    } => {
+                        parents.insert(*node_id, *parent_id);
+                    }
+                    Mutation::Create { node_id, widget } => {
+                        widgets.insert(*node_id, *widget);
+                        if *widget == WidgetKind::TextField {
+                            fields.push(*node_id);
+                        }
+                    }
                     Mutation::SetProp {
                         node_id,
                         property,
@@ -449,6 +500,8 @@ mod tests {
             editor.fields = fields;
             editor.changes = changes;
             editor.texts = texts;
+            editor.widgets = widgets;
+            editor.parents = parents;
             assert_eq!(
                 editor.fields.len(),
                 2,
@@ -475,10 +528,30 @@ mod tests {
             self.parents.remove(&node_id);
         }
 
+        /// Whether a node hangs from another, which is how a test says "inside the sheet".
+        fn descends_from(&self, node: u32, ancestor: u32) -> bool {
+            let mut walk = node;
+            while let Some(parent) = self.parents.get(&walk) {
+                if *parent == ancestor {
+                    return true;
+                }
+                walk = *parent;
+            }
+            false
+        }
+
         fn absorb(&mut self, batch: &[u8]) {
             let mut clicks: Vec<(u32, u64)> = Vec::new();
             for mutation in decode_batch(batch).expect("a frame did not decode") {
                 match mutation {
+                    Mutation::Create { node_id, widget } => {
+                        self.widgets.insert(node_id, widget);
+                        // The document field is rebuilt under a new key whenever its
+                        // contents come from outside it, so the node id changes.
+                        if widget == WidgetKind::TextField && !self.fields.contains(&node_id) {
+                            self.fields.push(node_id);
+                        }
+                    }
                     Mutation::Insert {
                         parent_id, node_id, ..
                     }
@@ -496,16 +569,6 @@ mod tests {
                         property: PropertyKind::OnClick,
                         value: PropertyValue::Integer(id),
                     } => clicks.push((node_id, id as u64)),
-                    Mutation::Create {
-                        node_id,
-                        widget: WidgetKind::TextField,
-                    } => {
-                        // The document field is rebuilt under a new key whenever its
-                        // contents come from outside it, so the node id changes.
-                        if !self.fields.contains(&node_id) {
-                            self.fields.push(node_id);
-                        }
-                    }
                     Mutation::SetProp {
                         node_id,
                         property: PropertyKind::Text,
@@ -747,11 +810,11 @@ mod tests {
         let mut bytes = Vec::new();
         encode_event(&event, &mut bytes).expect("the resize did not encode");
         let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
-        let after_widths = widths_of(batch);
-        let after_labels = texts_of(batch);
-        if !after_labels.is_empty() {
-            widths = after_widths;
-            labels = after_labels;
+        // A window that stayed in its class produces no batch at all, and then what the
+        // screen is showing is still what the first frame said.
+        if !batch.is_empty() {
+            widths = widths_of(batch);
+            labels = texts_of(batch);
         }
         dioxus_compose::window::reset_window_size();
         (widths, labels)
@@ -786,21 +849,62 @@ mod tests {
             .collect()
     }
 
+    /// The document's name stands at the top of the page, which is where both memo
+    /// references put it, and it follows the file the document is saved to.
+    #[test]
+    fn fr22_the_page_opens_with_the_document_name() {
+        let mut editor = Editor::new();
+        let starting = file_name(&display_path(&starting_path()));
+        assert!(
+            editor.texts.values().any(|text| *text == starting),
+            "the page does not name the document it is showing"
+        );
+
+        editor.set_path("/tmp/a-different-note.txt");
+        assert!(
+            editor
+                .texts
+                .values()
+                .any(|text| text == "a-different-note.txt"),
+            "the name did not follow the file the document is saved to"
+        );
+    }
+
+    /// Where the bytes live is something you go and ask for, not a strip across the top of
+    /// every document. The two things that act on the file are in the sheet with it.
+    #[test]
+    fn fr22_the_file_controls_are_behind_a_sheet() {
+        let editor = Editor::new();
+        let sheet = editor
+            .widgets
+            .iter()
+            .find(|(_, widget)| **widget == WidgetKind::Sheet)
+            .map(|(node_id, _)| *node_id)
+            .expect("the screen has no sheet");
+        let (open, _) = editor.buttons["Open"];
+        assert!(
+            editor.descends_from(open, sheet),
+            "Open is not in the sheet the path field is in"
+        );
+        let path_field = editor.fields[0];
+        assert!(
+            editor.descends_from(path_field, sheet),
+            "the path field is not in the sheet"
+        );
+    }
+
     /// A desktop window gives the document a margin and stops the page growing with the
-    /// window. A phone keeps the page full width and drops the word in front of the path,
-    /// which the field's own placeholder already says.
+    /// window. A phone keeps the page full width, because there is nothing to spare.
     #[test]
     fn fr20_the_page_takes_a_margin_on_a_desktop_window() {
-        let (narrow_widths, narrow_labels) = page_at(420.0);
+        let (narrow_widths, _) = page_at(420.0);
         assert!(narrow_widths.is_empty(), "{narrow_widths:?}");
-        assert!(!narrow_labels.iter().any(|text| text == "File"));
 
-        let (wide_widths, wide_labels) = page_at(1200.0);
+        let (wide_widths, _) = page_at(1200.0);
         assert!(
             wide_widths.contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
             "the page did not take a measure: {wide_widths:?}"
         );
-        assert!(wide_labels.iter().any(|text| text == "File"));
     }
 
     /// The bar's contents and the page are held to the same measure, so the title starts

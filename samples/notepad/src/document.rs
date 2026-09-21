@@ -40,6 +40,27 @@ pub fn display_path(path: &Path) -> String {
     path.display().to_string()
 }
 
+/// What a document with no name is called, so the title line is never empty.
+pub const UNTITLED: &str = "Untitled";
+
+/// The document's name, which is what stands at the top of the page.
+///
+/// Both memo references put the document's name in the document rather than in a path
+/// strip above it: the iOS note's title is the first thing on the page, and the Loop
+/// document's is the heading under its own toolbar. The full path is still what the file
+/// work uses, and it is still editable, just not the first thing the page says.
+pub fn file_name(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return UNTITLED.to_owned();
+    }
+    Path::new(trimmed)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| UNTITLED.to_owned())
+}
+
 /// The three numbers shown under the editor.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct Counts {
