@@ -800,6 +800,22 @@ mod tests {
         sample_frames::record_in("Minimal", &[DesignSystem::Cupertino], app, |_| {});
     }
 
+    /// The surfaces group: the inverted bar, the layer trio, the corner ladder and the
+    /// elevation steps.
+    ///
+    /// A third picture, because this is where a container the application filled itself has
+    /// to come out in that colour rather than in the design system's. It did not, for a
+    /// while, and no assertion here could have said so.
+    #[test]
+    fn fr14_the_surfaces_group_is_recorded() {
+        sample_frames::record_in("MinimalPanels", &[DesignSystem::Cupertino], app, |screen| {
+            assert!(
+                screen.press(Group::Surfaces.label()),
+                "the screen has no way to reach the surfaces group"
+            );
+        });
+    }
+
     /// The colour group, which is a different picture from the one above and the reason
     /// the accent containers were added at all.
     #[test]
