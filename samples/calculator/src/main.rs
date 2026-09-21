@@ -55,6 +55,25 @@ fn variant_for(label: &str) -> ButtonVariant {
     }
 }
 
+/// Whether a key carries content rather than a command.
+///
+/// The digits and the decimal point are the number being entered, and a number is content.
+/// A tonal button is a secondary *action* in all three design systems, so its label is the
+/// accent colour: left alone, a keypad prints its digits in the link colour. The digits
+/// therefore name their own ink and the command keys keep the tint, which leaves one
+/// meaning on the pad reading as accent, something that acts on the number.
+fn is_content_key(label: &str) -> bool {
+    matches!(
+        label,
+        "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "."
+    )
+}
+
+/// The label ink for a key, or `None` to let the variant decide.
+fn color_for(label: &str) -> Option<Paint> {
+    is_content_key(label).then_some(Paint::Role(ColorRole::OnSurface))
+}
+
 /// The longest shared prefix of two strings, rounded down to a character boundary so a
 /// multi-byte character is never split.
 fn shared_prefix(previous: &str, next: &str) -> usize {
@@ -96,6 +115,7 @@ fn keypad(calculator: Signal<Calculator>, wide: bool) -> Element {
                                     weight: 1.0,
                                     fill_max_height: true,
                                     variant: variant_for(label),
+                                    color: color_for(label),
                                     on_click: move |_| calculator.write().press(label),
                                 }
                             }
@@ -113,6 +133,7 @@ fn keypad(calculator: Signal<Calculator>, wide: bool) -> Element {
                             weight: 1.0,
                             fill_max_width: true,
                             variant: variant_for(label),
+                            color: color_for(label),
                             on_click: move |_| calculator.write().press(label),
                         }
                     }
@@ -141,6 +162,7 @@ fn keypad(calculator: Signal<Calculator>, wide: bool) -> Element {
                             weight: 1.0,
                             fill_max_height: true,
                             variant: variant_for(label),
+                            color: color_for(label),
                             on_click: move |_| calculator.write().press(label),
                         }
                     }
@@ -149,6 +171,22 @@ fn keypad(calculator: Signal<Calculator>, wide: bool) -> Element {
         }
     }
 }
+
+/// How large the entered number is set, in sp.
+///
+/// This is the one place in the samples where a size is named rather than a rung, and the
+/// reason is that the ladder is a ladder for documents. Its top rung is a headline over a
+/// page of body text: 34sp in Cupertino, 40 in Fluent, 57 in Material. A calculator is not
+/// a document. The number is the whole instrument and everything else on the screen is
+/// support for entering it, so at any rung of a reading ladder the panel ends up a large
+/// box with a small number pinned inside it.
+///
+/// The alternative was a tenth rung above `Display`. It was rejected because every design
+/// system would then have to publish a size for a rung that only an instrument readout
+/// would ever ask for, and a ladder gains a rung nothing reads. Keeping `TypeRole::Display`
+/// and overriding the size alone means the family, the weight and the letter spacing are
+/// still the design system's, which is the part of the rung that is worth having.
+const READOUT_SP: f32 = 64.0;
 
 /// The readout panel. A calculator's display is set into the case rather than printed on
 /// it, so it is a surface of its own.
@@ -188,6 +226,9 @@ fn readout(status: String, display: String, tall: bool) -> Element {
                     Text {
                         text: display,
                         type_role: TypeRole::Display,
+                        font_size: READOUT_SP,
+                        line_height: READOUT_SP,
+                        color: Paint::Role(ColorRole::OnSurface),
                         max_lines: 1,
                         overflow: TextOverflow::Ellipsis,
                     }
@@ -219,13 +260,19 @@ fn app() -> Element {
     };
 
     let capture = rsx! {
-        // The keyboard route. The instruction is the field's own placeholder: a sentence
-        // above a field saying what to type into the field is the same sentence twice.
-        Surface {
+        // The keyboard route, and nothing a calculator has on its case.
+        //
+        // It exists because key events reach the Host only through a focused field, so the
+        // typing path needs somewhere to put the focus. That makes it scaffolding, and it
+        // is dressed as scaffolding: no panel behind it, the caption rung rather than the
+        // body rung, and the quiet ink. A surface here would have put a development
+        // affordance at the same weight as the display.
+        dioxus_compose::Box {
             fill_max_width: true,
             TextField {
                 fill_max_width: true,
-                placeholder: "Click here and type 0-9 . + - * / % = or Enter",
+                type_role: TypeRole::Caption,
+                placeholder: "Keyboard: 0-9 . + - * / % = Enter",
                 on_value_change: move |value: String| {
                     let previous = typed();
                     let shared = shared_prefix(&previous, &value);
