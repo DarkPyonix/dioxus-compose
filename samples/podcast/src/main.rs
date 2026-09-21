@@ -2,19 +2,23 @@
 //!
 //! Covers are pictures: a podcast cover is a poster, made to be recognised at the size of
 //! a thumbnail, and a draw list cannot say one. Each of the three is an original drawing
-//! registered once and drawn by id after that. Everything round a cover is still a role.
+//! registered once and drawn by id after that.
 //!
 //! The drawing this sample is about is the waveform. Every design system's player has one,
 //! nothing in the widget vocabulary is one, and it is the clearest case of a `Canvas`
-//! earning its place: forty columns, the played part in the accent and the rest in the
-//! outline, built once into an attribute that only crosses the boundary when it changes.
+//! earning its place: forty columns, the played part in the accent and the rest in grey,
+//! built once into an attribute that only crosses the boundary when it changes.
 //!
-//! Unified, naming Cupertino and light: the reference is a light iOS design, and a
-//! design that flips to dark on a machine set that way is not the design being compared
-//! against. `THEME` says both.
+//! Unified rather than adaptive, and the stronger sense of the word: the reference is one
+//! picture of one design, so the hub draws that picture everywhere rather than the
+//! platform's version of it. `THEME` names the design system and the colour scheme, and
+//! `palette` names the colours, because the picture has a single orange accent that no
+//! design system's palette would have given it.
 
 mod library;
+mod palette;
 
+use dioxus_compose::DrawList;
 use dioxus_compose::prelude::*;
 use library::{EPISODES, Episode, SHOWS, Show, clock, episode, short_count, show_of, waveform};
 
@@ -32,9 +36,37 @@ const WAVE_SMALL: (f32, f32) = (300.0, 48.0);
 /// forty records, which is a budget a frame can carry without anyone thinking about it.
 const WAVE_COLUMNS: usize = 40;
 
+/// The round controls: the search button at the head of the shelf, the destinations along
+/// the bottom, and the three actions under an episode.
+const ROUND: f32 = 52.0;
+const ACTION: f32 = 36.0;
+const MARK: f32 = 18.0;
+
 /// Where the player picks up, in seconds. Part way in, because a player sitting at zero
 /// shows a waveform with nothing played and says nothing about what the drawing does.
 const START_SECONDS: u32 = 326;
+
+/// How much of the half waveform on the left of a card is drawn as played.
+///
+/// All of it. The card draws one waveform in two halves with the cover between them, so
+/// the playhead sits behind the artwork: everything to its left is the accent and
+/// everything to its right is grey, which is what the reference draws.
+const CARD_PLAYED: f32 = 1.0;
+
+/// The icons this hub draws, as the bytes each registration carries: the meaning's wire
+/// tag, little endian, and nothing else.
+///
+/// An icon is a meaning rather than a picture. The Renderer holds the artwork for every
+/// design system, so `Home` comes out as this system's house and the hub never says what
+/// a house looks like. The three marks under an episode are not in that set, so they are
+/// drawings instead; they live in `library` beside the waveform.
+mod icon {
+    use dioxus_compose::prelude::IconRole;
+
+    pub static NEW: [u8; 2] = (IconRole::Home as u16).to_le_bytes();
+    pub static SHOWS: [u8; 2] = (IconRole::Search as u16).to_le_bytes();
+    pub static YOU: [u8; 2] = (IconRole::Settings as u16).to_le_bytes();
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Destination {
@@ -46,6 +78,8 @@ enum Destination {
 impl Destination {
     const STRIP: [Destination; 3] = [Destination::New, Destination::Shows, Destination::You];
 
+    /// What the destination is called. Nothing on screen says it: the reference's bar is
+    /// three bare icons. It names the screen you arrive at and it is what a test asks for.
     fn label(self) -> &'static str {
         match self {
             Destination::New => "New",
@@ -54,19 +88,53 @@ impl Destination {
         }
     }
 
-    fn icon(self) -> IconRole {
+    fn icon(self) -> &'static [u8] {
         match self {
-            Destination::New => IconRole::Home,
-            Destination::Shows => IconRole::Search,
-            Destination::You => IconRole::Inbox,
+            Destination::New => &icon::NEW,
+            Destination::Shows => &icon::SHOWS,
+            Destination::You => &icon::YOU,
         }
     }
+}
 
-    fn index(self) -> usize {
-        Self::STRIP
-            .iter()
-            .position(|found| *found == self)
-            .unwrap_or(0)
+/// A round control whose face is a drawing: the fill, the mark, and the press over it.
+///
+/// The button carries no text and sits over the drawing, so the press lands on it
+/// whatever was drawn underneath.
+fn round_button(size: f32, fill: Paint, face: Element, on_click: EventHandler<()>) -> Element {
+    rsx! {
+        dioxus_compose::Box {
+            width: size,
+            height: size,
+            background: fill,
+            shape_role: ShapeRole::Full,
+            alignment: Alignment::Center,
+            {face}
+            Button {
+                text: "",
+                variant: ButtonVariant::Text,
+                fill_max_width: true,
+                fill_max_height: true,
+                on_click: move |_| on_click.call(()),
+            }
+        }
+    }
+}
+
+/// One registered meaning, tinted.
+fn icon_face(picture: &'static [u8], tint: Paint) -> Element {
+    rsx! {
+        Icon {
+            asset_id: asset(AssetKind::VectorIcon, picture),
+            color: tint,
+        }
+    }
+}
+
+/// One drawn mark, at the size the row of actions uses.
+fn mark_face(mark: DrawList) -> Element {
+    rsx! {
+        Canvas { width: MARK, height: MARK, commands: mark }
     }
 }
 
@@ -86,96 +154,125 @@ fn cover(size: f32, show: &Show) -> Element {
     }
 }
 
-/// One episode as a card: the artwork, a waveform either side of it, and what can be done
-/// to it.
+/// One of the three things that can be done to an episode: the mark in its outlined
+/// circle, and how many people have done it.
+fn action(mark: DrawList, count: u32, on_press: EventHandler<()>) -> Element {
+    rsx! {
+        Row {
+            space_role: SpaceRole::Xs,
+            alignment: Alignment::Center,
+            dioxus_compose::Box {
+                width: ACTION,
+                height: ACTION,
+                shape_role: ShapeRole::Full,
+                border_width: 1.0,
+                border_color: palette::OUTLINE,
+                alignment: Alignment::Center,
+                {mark_face(mark)}
+                Button {
+                    text: "",
+                    variant: ButtonVariant::Text,
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    on_click: move |_| on_press.call(()),
+                }
+            }
+            Text {
+                text: short_count(count),
+                type_role: TypeRole::Label,
+                color: palette::MUTED,
+            }
+        }
+    }
+}
+
+/// One episode as a card: the title over the artwork, a waveform either side of it, and
+/// what can be done to it.
 fn episode_card(found: &Episode, on_play: EventHandler<u32>) -> Element {
     let show = show_of(found);
-    let (strong, _, _) = show.family.roles();
     let id = found.id;
     rsx! {
-        Surface {
+        Column {
             fill_max_width: true,
+            background: palette::PAGE,
             shape_role: ShapeRole::Large,
+            border_width: 1.0,
+            border_color: palette::OUTLINE,
             padding_role: SpaceRole::Md,
-            Column {
+            space_role: SpaceRole::Sm,
+            Text {
+                text: "S{found.season}E{found.number}: {found.title}",
+                type_role: TypeRole::Subtitle,
+                color: palette::INK,
+                text_align: TextAlign::Center,
+                fill_max_width: true,
+            }
+            Row {
                 fill_max_width: true,
                 space_role: SpaceRole::Sm,
-                Text {
-                    text: "S{found.season}E{found.number}: {found.title}",
-                    type_role: TypeRole::Subtitle,
-                    text_align: TextAlign::Center,
-                    fill_max_width: true,
+                alignment: Alignment::Center,
+                // The part that has been played is in the accent and the rest is grey, so
+                // the two halves either side of the cover are one waveform with the
+                // playhead behind the artwork.
+                Canvas {
+                    weight: 1.0,
+                    height: WAVE_SMALL.1,
+                    commands: waveform(
+                        WAVE_SMALL.0 / 2.0,
+                        WAVE_SMALL.1,
+                        WAVE_COLUMNS / 2,
+                        found.seed,
+                        CARD_PLAYED,
+                        palette::ACCENT,
+                        palette::WAVE,
+                    ),
                 }
-                Row {
-                    fill_max_width: true,
-                    space_role: SpaceRole::Sm,
-                    alignment: Alignment::Center,
-                    Canvas {
-                        weight: 1.0,
-                        height: WAVE_SMALL.1,
-                        commands: waveform(
-                            WAVE_SMALL.0 / 2.0,
-                            WAVE_SMALL.1,
-                            WAVE_COLUMNS / 2,
-                            found.seed,
-                            1.0,
-                            ColorRole::OutlineVariant,
-                            ColorRole::OutlineVariant,
-                        ),
-                    }
-                    {cover(COVER_SMALL, show)}
-                    Canvas {
-                        weight: 1.0,
-                        height: WAVE_SMALL.1,
-                        commands: waveform(
-                            WAVE_SMALL.0 / 2.0,
-                            WAVE_SMALL.1,
-                            WAVE_COLUMNS / 2,
-                            found.seed.wrapping_add(1),
-                            0.0,
-                            ColorRole::OutlineVariant,
-                            ColorRole::OutlineVariant,
-                        ),
-                    }
+                {cover(COVER_SMALL, show)}
+                Canvas {
+                    weight: 1.0,
+                    height: WAVE_SMALL.1,
+                    commands: waveform(
+                        WAVE_SMALL.0 / 2.0,
+                        WAVE_SMALL.1,
+                        WAVE_COLUMNS / 2,
+                        found.seed.wrapping_add(1),
+                        0.0,
+                        palette::ACCENT,
+                        palette::WAVE,
+                    ),
                 }
-                Text {
-                    text: found.blurb,
-                    type_role: TypeRole::Body,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    max_lines: 3,
-                    overflow: TextOverflow::Ellipsis,
-                }
-                Row {
-                    fill_max_width: true,
-                    space_role: SpaceRole::Sm,
-                    alignment: Alignment::CenterStart,
-                    Text {
-                        text: "\u{2665} {short_count(found.hearts)}",
-                        type_role: TypeRole::Label,
-                        color: Paint::Role(strong),
-                    }
-                    // Words rather than marks. A comment bubble and a share arrow are
-                    // icons, and an icon cannot be placed from application code: `Icon`
-                    // takes an id the Host registered, and `IconRole` only reaches the
-                    // tree through a navigation destination. A heart has a character that
-                    // every font carries; the other two do not, and the ones that come
-                    // closest arrive as an empty box on most systems.
-                    Text {
-                        text: "{short_count(found.comments)} replies",
-                        type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                    Text {
-                        text: "{short_count(found.shares)} shares",
-                        type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                    Spacer { weight: 1.0 }
-                    Button {
-                        text: "\u{25b6}",
-                        variant: ButtonVariant::Filled,
-                        on_click: move |_| on_play.call(id),
-                    }
+            }
+            Text {
+                text: found.blurb,
+                type_role: TypeRole::Body,
+                color: palette::MUTED,
+                max_lines: 3,
+                overflow: TextOverflow::Ellipsis,
+            }
+            Row {
+                fill_max_width: true,
+                space_role: SpaceRole::Sm,
+                alignment: Alignment::Center,
+                {action(library::heart(MARK, palette::INK), found.hearts, EventHandler::new(move |()| {
+                    Message::new("Liking is not part of this sample").show();
+                }))}
+                {action(library::comment(MARK, palette::INK), found.comments, EventHandler::new(move |()| {
+                    Message::new("Replies are not part of this sample").show();
+                }))}
+                {action(library::share(MARK, palette::INK), found.shares, EventHandler::new(move |()| {
+                    Message::new("Sharing is not part of this sample").show();
+                }))}
+                Spacer { weight: 1.0 }
+                // The one filled control on the card, and the only orange circle on the
+                // page that is not a destination.
+                Button {
+                    text: "\u{25b6}",
+                    height: ROUND,
+                    variant: ButtonVariant::Text,
+                    color: palette::PAGE,
+                    background: palette::ACCENT,
+                    shape_role: ShapeRole::Full,
+                    on_click: move |_| on_play.call(id),
                 }
             }
         }
@@ -183,12 +280,33 @@ fn episode_card(found: &Episode, on_play: EventHandler<u32>) -> Element {
 }
 
 /// A show as a row, with a follow button.
-fn show_row(show: &Show, followed: bool, on_toggle: EventHandler<()>) -> Element {
-    let (_, quiet, ink) = show.family.roles();
+///
+/// The first row is the one being recommended, so it is a solid orange pill with white on
+/// it and an outlined white button, and the rest are the same shape on the page with a
+/// hairline round them and the orange on the button instead. That is the reference: one
+/// row picked out, the others quiet.
+fn show_row(
+    show: &Show,
+    followed: bool,
+    recommended: bool,
+    on_toggle: EventHandler<()>,
+) -> Element {
+    let ink = if recommended {
+        palette::PAGE
+    } else {
+        palette::INK
+    };
+    let quiet = if recommended {
+        palette::PAGE
+    } else {
+        palette::MUTED
+    };
     rsx! {
         Row {
             fill_max_width: true,
-            background: Paint::Role(quiet),
+            background: if recommended { palette::ACCENT } else { palette::PAGE },
+            border_width: if recommended { 0.0 } else { 1.0 },
+            border_color: palette::OUTLINE,
             shape_role: ShapeRole::Full,
             padding_role: SpaceRole::Sm,
             space_role: SpaceRole::Sm,
@@ -199,30 +317,35 @@ fn show_row(show: &Show, followed: bool, on_toggle: EventHandler<()>) -> Element
                 Text {
                     text: show.name,
                     type_role: TypeRole::BodyStrong,
-                    color: Paint::Role(ink),
+                    color: ink,
                     max_lines: 1,
                     overflow: TextOverflow::Ellipsis,
                 }
                 Text {
                     text: "{short_count(show.followers)} followers",
                     type_role: TypeRole::Caption,
-                    color: Paint::Role(ink),
+                    color: quiet,
                 }
             }
+            // Orange either way. On the recommended row that is the row's own colour,
+            // so what is left of the button is the white outline round it, and on the
+            // others it is the one filled thing on a white row.
             Button {
                 text: if followed { "Following" } else { "Follow" },
-                variant: if followed {
-                    ButtonVariant::Outlined
-                } else {
-                    ButtonVariant::Filled
-                },
+                variant: ButtonVariant::Text,
+                shape_role: ShapeRole::Full,
+                color: palette::PAGE,
+                background: palette::ACCENT,
+                border_width: if recommended { 1.0 } else { 0.0 },
+                border_color: palette::PAGE,
                 on_click: move |_| on_toggle.call(()),
             }
         }
     }
 }
 
-/// The shelf: a row of covers, then the newest episode in full, then who to follow.
+/// The shelf: the search button and a row of covers, then the newest episode in full,
+/// then who to follow.
 fn new_page(
     followed: Signal<Vec<usize>>,
     on_play: EventHandler<u32>,
@@ -236,38 +359,59 @@ fn new_page(
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Md,
 
-            Text { text: "New episodes", type_role: TypeRole::Headline }
+            Text {
+                text: "New Episodes",
+                type_role: TypeRole::Headline,
+                color: palette::INK,
+            }
 
-            // The shelf across, windowed. A cover is a `Canvas`, so a shelf of them is a
-            // shelf of drawings that only exist while they are on screen.
-            LazyRow {
+            Row {
                 fill_max_width: true,
-                height: COVER_SMALL + 16.0,
-                item_count: EPISODES.len(),
-                key_of: move |position: usize| EPISODES[position].id.to_string(),
-                item: move |position: usize| {
-                    let found = EPISODES[position];
-                    rsx! {
-                        dioxus_compose::Box {
-                            padding_role: SpaceRole::Xs,
-                            Button {
-                                text: "",
-                                variant: ButtonVariant::Text,
-                                padding_role: SpaceRole::None,
-                                on_click: move |_| on_open.call(found.id),
+                space_role: SpaceRole::Sm,
+                alignment: Alignment::Center,
+                // The shelf begins with the one round thing on it, which is how the
+                // reference separates "look for something" from "here is what is new".
+                {round_button(
+                    ROUND,
+                    palette::ACCENT,
+                    icon_face(&icon::SHOWS, palette::PAGE),
+                    EventHandler::new(move |()| {
+                        Message::new("Search is not part of this sample").show();
+                    }),
+                )}
+                // The shelf across, windowed. A cover that is not on screen is a picture
+                // nobody has asked the Renderer to draw.
+                LazyRow {
+                    weight: 1.0,
+                    height: COVER_SMALL + 16.0,
+                    item_count: EPISODES.len(),
+                    key_of: move |position: usize| EPISODES[position].id.to_string(),
+                    item: move |position: usize| {
+                        let found = EPISODES[position];
+                        rsx! {
+                            dioxus_compose::Box {
+                                padding_role: SpaceRole::Xs,
+                                alignment: Alignment::Center,
+                                {cover(COVER_SMALL, &SHOWS[found.show])}
+                                Button {
+                                    text: "",
+                                    variant: ButtonVariant::Text,
+                                    fill_max_width: true,
+                                    fill_max_height: true,
+                                    on_click: move |_| on_open.call(found.id),
+                                }
                             }
-                            {cover(COVER_SMALL, &SHOWS[found.show])}
                         }
-                    }
-                },
+                    },
+                }
             }
 
             {episode_card(&EPISODES[0], on_play)}
 
             Text {
-                text: "Shows you may like",
-                type_role: TypeRole::Label,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                text: "Podcasts You May Like",
+                type_role: TypeRole::BodyStrong,
+                color: palette::INK,
             }
             Column {
                 fill_max_width: true,
@@ -277,7 +421,7 @@ fn new_page(
                         let is_followed = following.contains(&index);
                         rsx! {
                             dioxus_compose::Box { key: "{show.name}", fill_max_width: true,
-                                {show_row(show, is_followed, EventHandler::new(move |()| {
+                                {show_row(show, is_followed, index == 0, EventHandler::new(move |()| {
                                     let mut list = followed.write();
                                     match list.iter().position(|found| *found == index) {
                                         Some(at) => {
@@ -304,47 +448,52 @@ fn shows_page(on_play: EventHandler<u32>) -> Element {
             fill_max_width: true,
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Md,
-            Text { text: "Shows", type_role: TypeRole::Headline }
-            Surface {
+            Text { text: "Shows", type_role: TypeRole::Headline, color: palette::INK }
+            Column {
                 fill_max_width: true,
+                background: palette::PAGE,
+                border_width: 1.0,
+                border_color: palette::OUTLINE,
                 shape_role: ShapeRole::Large,
-                Column {
-                    fill_max_width: true,
-                    for (index, found) in ordered.iter().enumerate() {
-                        {
-                            let found: &'static Episode = found;
-                            let last = index + 1 == EPISODES.len();
-                            rsx! {
-                                Column { key: "{found.id}", fill_max_width: true,
-                                    Row {
-                                        fill_max_width: true,
-                                        padding_role: SpaceRole::Md,
-                                        space_role: SpaceRole::Sm,
-                                        alignment: Alignment::CenterStart,
-                                        {cover(44.0, &SHOWS[found.show])}
-                                        Column {
-                                            weight: 1.0,
-                                            Text {
-                                                text: found.title,
-                                                type_role: TypeRole::Body,
-                                                max_lines: 1,
-                                                overflow: TextOverflow::Ellipsis,
-                                            }
-                                            Text {
-                                                text: "{SHOWS[found.show].name} \u{00b7} {clock(found.seconds)}",
-                                                type_role: TypeRole::Caption,
-                                                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                            }
+                for (index, found) in ordered.iter().enumerate() {
+                    {
+                        let found: &'static Episode = found;
+                        let last = index + 1 == EPISODES.len();
+                        rsx! {
+                            Column { key: "{found.id}", fill_max_width: true,
+                                Row {
+                                    fill_max_width: true,
+                                    padding_role: SpaceRole::Md,
+                                    space_role: SpaceRole::Sm,
+                                    alignment: Alignment::CenterStart,
+                                    {cover(44.0, &SHOWS[found.show])}
+                                    Column {
+                                        weight: 1.0,
+                                        Text {
+                                            text: found.title,
+                                            type_role: TypeRole::Body,
+                                            color: palette::INK,
+                                            max_lines: 1,
+                                            overflow: TextOverflow::Ellipsis,
                                         }
-                                        Button {
-                                            text: "\u{25b6}",
-                                            variant: ButtonVariant::Tonal,
-                                            on_click: move |_| on_play.call(found.id),
+                                        Text {
+                                            text: "{SHOWS[found.show].name} \u{00b7} {clock(found.seconds)}",
+                                            type_role: TypeRole::Caption,
+                                            color: palette::MUTED,
                                         }
                                     }
-                                    if !last {
-                                        Separator {}
+                                    Button {
+                                        text: "\u{25b6}",
+                                        height: ACTION + 8.0,
+                                        variant: ButtonVariant::Text,
+                                        color: palette::PAGE,
+                                        background: palette::ACCENT,
+                                        shape_role: ShapeRole::Full,
+                                        on_click: move |_| on_play.call(found.id),
                                     }
+                                }
+                                if !last {
+                                    Separator { color: palette::OUTLINE }
                                 }
                             }
                         }
@@ -363,40 +512,40 @@ fn you_page(followed: Vec<usize>) -> Element {
             fill_max_width: true,
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Md,
-            Text { text: "You", type_role: TypeRole::Headline }
+            Text { text: "You", type_role: TypeRole::Headline, color: palette::INK }
             Row {
                 fill_max_width: true,
                 space_role: SpaceRole::Md,
                 Column {
                     weight: 1.0,
-                    background: Paint::Role(ColorRole::PrimaryContainer),
+                    background: palette::ACCENT,
                     shape_role: ShapeRole::Large,
                     padding_role: SpaceRole::Md,
                     Text {
                         text: "{followed.len()}",
                         type_role: TypeRole::Display,
-                        color: Paint::Role(ColorRole::OnPrimaryContainer),
+                        color: palette::PAGE,
                     }
                     Text {
                         text: "shows followed",
                         type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnPrimaryContainer),
+                        color: palette::PAGE,
                     }
                 }
                 Column {
                     weight: 1.0,
-                    background: Paint::Role(ColorRole::TertiaryContainer),
+                    background: palette::TILE,
                     shape_role: ShapeRole::Large,
                     padding_role: SpaceRole::Md,
                     Text {
                         text: clock(listened),
                         type_role: TypeRole::Display,
-                        color: Paint::Role(ColorRole::OnTertiaryContainer),
+                        color: palette::INK,
                     }
                     Text {
                         text: "in the queue",
                         type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnTertiaryContainer),
+                        color: palette::MUTED,
                     }
                 }
             }
@@ -404,11 +553,11 @@ fn you_page(followed: Vec<usize>) -> Element {
     }
 }
 
-/// The player: the whole page in the show's accent, with the transport at the bottom.
+/// The player: the cover full bleed at the top of a white page, with the transport under
+/// it.
 fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>) -> Element {
     let mut position = position;
     let show = show_of(found);
-    let (strong, quiet, ink) = show.family.roles();
     let played = position() as f32 / found.seconds.max(1) as f32;
     let id_seed = found.seed;
     let length = found.seconds;
@@ -417,7 +566,7 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            background: Paint::Role(quiet),
+            background: palette::PAGE,
             padding_role: SpaceRole::Md,
             space_role: SpaceRole::Md,
 
@@ -427,28 +576,33 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                 Button {
                     text: "\u{2190}",
                     variant: ButtonVariant::Text,
-                    color: Paint::Role(ink),
+                    color: palette::INK,
                     on_click: move |_| on_back.call(()),
                 }
                 Spacer { weight: 1.0 }
                 Text {
                     text: show.name,
                     type_role: TypeRole::BodyStrong,
-                    color: Paint::Role(ink),
+                    color: palette::INK,
                 }
                 Spacer { weight: 1.0 }
                 Button {
                     text: "Share",
                     variant: ButtonVariant::Text,
-                    color: Paint::Role(ink),
+                    color: palette::ACCENT,
                     on_click: move |_| {
                         Message::new("Sharing is not part of this sample").show();
                     },
                 }
             }
 
+            // The artwork, on the accent, which is the reference's player: a cover that
+            // runs to the edges of the page rather than a dark screen behind it.
             dioxus_compose::Box {
                 fill_max_width: true,
+                background: palette::ACCENT,
+                shape_role: ShapeRole::Large,
+                padding_role: SpaceRole::Md,
                 alignment: Alignment::Center,
                 {cover(COVER_LARGE, show)}
             }
@@ -463,24 +617,24 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                     Text {
                         text: show.host,
                         type_role: TypeRole::Label,
-                        color: Paint::Role(ink),
+                        color: palette::MUTED,
                         weight: 1.0,
                     }
                     Text {
                         text: "\u{2605} 4.7",
                         type_role: TypeRole::Label,
-                        color: Paint::Role(strong),
+                        color: palette::ACCENT,
                     }
                 }
                 Text {
                     text: found.title,
                     type_role: TypeRole::Title,
-                    color: Paint::Role(ink),
+                    color: palette::INK,
                 }
                 Text {
                     text: found.blurb,
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ink),
+                    color: palette::MUTED,
                     max_lines: 3,
                     overflow: TextOverflow::Ellipsis,
                 }
@@ -495,8 +649,8 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                     WAVE_COLUMNS,
                     id_seed,
                     played,
-                    strong,
-                    ColorRole::Outline,
+                    palette::ACCENT,
+                    palette::WAVE,
                 ),
             }
             Row {
@@ -505,13 +659,13 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                 Text {
                     text: clock(position()),
                     type_role: TypeRole::Caption,
-                    color: Paint::Role(ink),
+                    color: palette::MUTED,
                     weight: 1.0,
                 }
                 Text {
                     text: clock(length),
                     type_role: TypeRole::Caption,
-                    color: Paint::Role(ink),
+                    color: palette::MUTED,
                 }
             }
 
@@ -521,15 +675,20 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                 fill_max_width: true,
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::Center,
+                arrangement: Arrangement::Center,
                 Button {
                     text: "\u{21ba} 15",
                     variant: ButtonVariant::Text,
-                    color: Paint::Role(ink),
+                    color: palette::INK,
                     on_click: move |_| position.set(position().saturating_sub(15)),
                 }
                 Button {
                     text: "\u{25b6}",
-                    variant: ButtonVariant::Filled,
+                    height: ROUND + 8.0,
+                    variant: ButtonVariant::Text,
+                    color: palette::PAGE,
+                    background: palette::ACCENT,
+                    shape_role: ShapeRole::Full,
                     on_click: move |_| {
                         Message::new("Playback is not part of this sample").show();
                     },
@@ -537,8 +696,52 @@ fn player_page(found: &Episode, position: Signal<u32>, on_back: EventHandler<()>
                 Button {
                     text: "15 \u{21bb}",
                     variant: ButtonVariant::Text,
-                    color: Paint::Role(ink),
+                    color: palette::INK,
                     on_click: move |_| position.set((position() + 15).min(length)),
+                }
+            }
+        }
+    }
+}
+
+/// The destinations: three round buttons floating on the page.
+///
+/// Drawn here rather than declared as a `Navigation`, which is the widget for "the
+/// destinations, in whatever shape this design system and this window call for": a
+/// labelled bar with a selection pill under a hairline. The reference is three circles
+/// sitting on the page, the one you are on filled with the accent, and that is a shape no
+/// design system would be right to give a set of destinations.
+fn bottom_bar(destination: Destination, on_go: EventHandler<Destination>) -> Element {
+    rsx! {
+        Row {
+            fill_max_width: true,
+            padding_role: SpaceRole::Sm,
+            space_role: SpaceRole::Sm,
+            arrangement: Arrangement::Center,
+            alignment: Alignment::Center,
+            for choice in Destination::STRIP {
+                {
+                    let selected = choice == destination;
+                    let fill = if selected {
+                        palette::ACCENT
+                    } else {
+                        palette::TILE
+                    };
+                    let tint = if selected {
+                        palette::PAGE
+                    } else {
+                        palette::INK
+                    };
+                    rsx! {
+                        dioxus_compose::Box { key: "{choice.label()}",
+                            {round_button(
+                                ROUND,
+                                fill,
+                                icon_face(choice.icon(), tint),
+                                EventHandler::new(move |()| on_go.call(choice)),
+                            )}
+                        }
+                    }
                 }
             }
         }
@@ -568,6 +771,7 @@ fn app() -> Element {
             dioxus_compose::Box {
                 fill_max_width: true,
                 fill_max_height: true,
+                background: palette::PAGE,
                 alignment: Alignment::TopCenter,
                 Column {
                     width: measure,
@@ -590,32 +794,30 @@ fn app() -> Element {
     };
 
     rsx! {
-        Navigation {
+        Column {
             fill_max_width: true,
             fill_max_height: true,
-            selected_index: destination().index(),
-            for choice in Destination::STRIP {
-                NavigationItem {
-                    key: "{choice.label()}",
-                    text: choice.label(),
-                    icon: choice.icon(),
-                    on_click: move |()| destination.set(choice),
+            background: palette::PAGE,
+            dioxus_compose::Box {
+                fill_max_width: true,
+                weight: 1.0,
+                alignment: Alignment::TopCenter,
+                ScrollColumn {
+                    width: measure,
+                    fill_max_width: measure.is_none(),
+                    fill_max_height: true,
+                    {body}
                 }
             }
-            Column {
+            dioxus_compose::Box {
                 fill_max_width: true,
-                fill_max_height: true,
-                background: Paint::Role(ColorRole::Background),
-                dioxus_compose::Box {
-                    fill_max_width: true,
-                    fill_max_height: true,
-                    alignment: Alignment::TopCenter,
-                    ScrollColumn {
-                        width: measure,
-                        fill_max_width: measure.is_none(),
-                        fill_max_height: true,
-                        {body}
-                    }
+                alignment: Alignment::Center,
+                Column {
+                    width: measure,
+                    fill_max_width: measure.is_none(),
+                    {bottom_bar(destination(), EventHandler::new(move |choice: Destination| {
+                        destination.set(choice);
+                    }))}
                 }
             }
         }
@@ -694,6 +896,15 @@ mod tests {
             }
         }
 
+        fn send(&mut self, event: HostEvent<'_>) {
+            let mut bytes = Vec::new();
+            encode_event(&event, &mut bytes).expect("the event did not encode");
+            let (batch, _) = self.host.dispatch_event(&bytes).expect("the event failed");
+            if !batch.is_empty() {
+                self.frames.push(batch.to_vec());
+            }
+        }
+
         fn mutations(&self) -> Vec<Mutation<'_>> {
             self.frames
                 .iter()
@@ -701,46 +912,142 @@ mod tests {
                 .collect()
         }
 
-        fn press(&mut self, label: &str) -> bool {
-            let found = {
-                let mutations = self.mutations();
-                let node = mutations.iter().rev().find_map(|mutation| match mutation {
+        /// The node that last carried this text.
+        fn node_saying(&self, label: &str) -> Option<u32> {
+            self.mutations()
+                .iter()
+                .rev()
+                .find_map(|mutation| match mutation {
                     Mutation::SetProp {
                         node_id,
                         property: PropertyKind::Text,
                         value: PropertyValue::String(text),
                     } if *text == label => Some(*node_id),
                     _ => None,
-                });
-                node.and_then(|node| {
-                    mutations.iter().rev().find_map(|mutation| match mutation {
-                        Mutation::SetProp {
-                            node_id,
-                            property: PropertyKind::OnClick,
-                            value: PropertyValue::Integer(handler),
-                        } if *node_id == node => Some((node, *handler as u64)),
-                        _ => None,
-                    })
                 })
-            };
-            let Some((node_id, handler_id)) = found else {
+        }
+
+        /// The id an icon of this meaning was registered under. A registration carries the
+        /// meaning's wire tag rather than a picture, so the bytes asked for here are the
+        /// two the sample sent.
+        fn icon_asset(&self, tag: &[u8]) -> Option<u32> {
+            self.mutations().iter().find_map(|mutation| match mutation {
+                Mutation::RegisterAsset {
+                    asset_id,
+                    kind: AssetKind::VectorIcon,
+                    bytes,
+                } if *bytes == tag => Some(*asset_id),
+                _ => None,
+            })
+        }
+
+        /// The node that last drew this asset.
+        fn node_drawing(&self, asset_id: u32) -> Option<u32> {
+            self.mutations()
+                .iter()
+                .rev()
+                .find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Asset,
+                        value: PropertyValue::Integer(id),
+                    } if *id as u32 == asset_id => Some(*node_id),
+                    _ => None,
+                })
+        }
+
+        /// What each node was inserted into.
+        fn parents(&self) -> Vec<(u32, u32)> {
+            self.mutations()
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::Insert {
+                        parent_id, node_id, ..
+                    } => Some((*node_id, *parent_id)),
+                    _ => None,
+                })
+                .collect()
+        }
+
+        fn handler_of(&self, node: u32) -> Option<u64> {
+            self.mutations()
+                .iter()
+                .rev()
+                .find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnClick,
+                        value: PropertyValue::Integer(handler),
+                    } if *node_id == node => Some(*handler as u64),
+                    _ => None,
+                })
+        }
+
+        /// Presses the control placed beside this one.
+        ///
+        /// A control whose face is a drawing has no words to name it: what carries the
+        /// press is a `Button` with no label sitting over the picture. So the press is
+        /// asked for by what the reader can see, and found by walking one step up and back
+        /// down to whatever under there answers a click.
+        fn press_beside(&mut self, node: u32) -> bool {
+            let parents = self.parents();
+            let Some(parent) = parents
+                .iter()
+                .rev()
+                .find_map(|(child, owner)| (*child == node).then_some(*owner))
+            else {
                 return false;
             };
-            let mut bytes = Vec::new();
-            encode_event(
-                &HostEvent {
-                    node_id,
-                    handler_id,
-                    payload: EventPayload::Clicked,
-                },
-                &mut bytes,
-            )
-            .expect("the click did not encode");
-            let (batch, _) = self.host.dispatch_event(&bytes).expect("the click failed");
-            if !batch.is_empty() {
-                self.frames.push(batch.to_vec());
+            let mut family = vec![parent];
+            let mut found = None;
+            while let Some(next) = family.pop() {
+                if next != node && self.handler_of(next).is_some() {
+                    found = Some(next);
+                    break;
+                }
+                family.extend(
+                    parents
+                        .iter()
+                        .filter_map(|(child, owner)| (*owner == next).then_some(*child)),
+                );
             }
+            let Some(node_id) = found else { return false };
+            let Some(handler_id) = self.handler_of(node_id) else {
+                return false;
+            };
+            self.send(HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::Clicked,
+            });
             true
+        }
+
+        fn press(&mut self, label: &str) -> bool {
+            let Some(node) = self.node_saying(label) else {
+                return false;
+            };
+            let Some(handler_id) = self.handler_of(node) else {
+                return false;
+            };
+            self.send(HostEvent {
+                node_id: node,
+                handler_id,
+                payload: EventPayload::Clicked,
+            });
+            true
+        }
+
+        /// Presses a destination along the bottom, which is an icon with nothing written
+        /// under it.
+        fn press_icon(&mut self, tag: &[u8]) -> bool {
+            let Some(asset_id) = self.icon_asset(tag) else {
+                return false;
+            };
+            let Some(node) = self.node_drawing(asset_id) else {
+                return false;
+            };
+            self.press_beside(node)
         }
 
         fn latest_texts(&self) -> Vec<String> {
@@ -768,18 +1075,18 @@ mod tests {
     }
 
     /// Every destination has to encode, not just the one the app opens on.
+    ///
+    /// Pressed by its icon, because the bar has no words on it: three circles on the page
+    /// with the one you are on filled, which is the reference's bar.
     #[test]
     fn fr15_every_destination_encodes() {
         let mut screen = Screen::new();
         for choice in Destination::STRIP {
             assert!(
-                screen.press(choice.label()),
-                "the bar has no destination called {}",
+                screen.press_icon(choice.icon()),
+                "the bar has no icon for {}",
                 choice.label()
             );
-            // Nothing is asserted about what came back. Pressing the destination the app
-            // already opened on changes nothing, and a frame with nothing in it is the
-            // right answer to that rather than a failure.
         }
         dioxus_compose::window::reset_window_size();
     }
@@ -801,7 +1108,7 @@ mod tests {
             screen
                 .latest_texts()
                 .iter()
-                .any(|text| text == "New episodes"),
+                .any(|text| text == "New Episodes"),
             "closing the player did not bring the shelf back"
         );
         dioxus_compose::window::reset_window_size();
@@ -822,15 +1129,12 @@ mod tests {
         assert!(screen.press("\u{25b6}"), "nothing on the shelf plays");
         let before = clock(START_SECONDS);
         assert!(
-            screen.latest_texts().iter().any(|text| *text == before),
+            screen.latest_texts().contains(&before),
             "the player does not say where it is"
         );
         assert!(screen.press("\u{21ba} 15"), "the player cannot skip back");
         assert!(
-            screen
-                .latest_texts()
-                .iter()
-                .any(|text| *text == clock(START_SECONDS - 15)),
+            screen.latest_texts().contains(&clock(START_SECONDS - 15)),
             "skipping back left the readout where it was"
         );
         dioxus_compose::window::reset_window_size();
@@ -896,6 +1200,66 @@ mod tests {
             );
         }
         dioxus_compose::window::reset_window_size();
+    }
+
+    /// Nothing on the screen is painted by the design system.
+    ///
+    /// Named for what it defends: the rows under "Podcasts You May Like" used to be the
+    /// three accent containers, so they came out pale blue, lilac and pink, and every
+    /// accent on the page was the theme's blue. The reference has one orange and one
+    /// hairline grey.
+    #[test]
+    fn fr22_nothing_on_the_screen_is_painted_by_a_role() {
+        let screen = Screen::new();
+        for mutation in screen.mutations() {
+            if let Mutation::SetModifier {
+                modifier: Modifier::Background(paint) | Modifier::Border { paint, .. },
+                node_id,
+                ..
+            } = mutation
+            {
+                assert!(
+                    matches!(paint, Paint::Literal(_)),
+                    "node {node_id} is filled with {paint:?}, which the design system picks"
+                );
+            }
+        }
+    }
+
+    /// The destination you are on is the one filled circle in the bar, and the row being
+    /// recommended is the one filled row in the list.
+    #[test]
+    fn fr22_the_accent_marks_the_destination_and_the_recommended_row() {
+        let screen = Screen::new();
+        let fills: Vec<Paint> = screen
+            .mutations()
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetModifier {
+                    modifier: Modifier::Background(paint),
+                    ..
+                } => Some(*paint),
+                _ => None,
+            })
+            .collect();
+        let accents = fills
+            .iter()
+            .filter(|paint| **paint == palette::ACCENT)
+            .count();
+        // The search button, the play button on the card, the recommended row, the button
+        // on each of the three rows, and the destination the hub opens on.
+        assert_eq!(
+            accents, 7,
+            "the accent is on the wrong number of things: {fills:?}"
+        );
+        assert_eq!(
+            fills
+                .iter()
+                .filter(|paint| **paint == palette::TILE)
+                .count(),
+            Destination::STRIP.len() - 1,
+            "the destinations you are not on are the grey circles"
+        );
     }
 
     /// The shelf, in the design system it ships, in both schemes, at all three widths.
