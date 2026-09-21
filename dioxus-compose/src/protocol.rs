@@ -128,6 +128,9 @@ const EVENT_PROTOCOL_ERROR: u16 = 5;
 const EVENT_KEY_DOWN: u16 = 6;
 const EVENT_RANGE_REQUESTED: u16 = 7;
 const EVENT_VALUE_CHANGED: u16 = 8;
+// Tags 9 to 15 are reserved for pointer gestures, and 16 is where the picker's value
+// change belongs, so the window size report continues from 17.
+const EVENT_WINDOW_SIZE_CHANGED: u16 = 17;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -178,7 +181,21 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
         EVENT_VALUE_CHANGED if record_len == 24 => {
             crate::schema::EventPayload::ValueChanged(read_u64(bytes, 16)? as i64)
         }
-        EVENT_CLICK..=EVENT_VALUE_CHANGED => return Err(ProtocolError::InvalidRecordLength),
+        EVENT_WINDOW_SIZE_CHANGED if record_len == 28 => {
+            let raw_class = read_u32(bytes, 24)?;
+            let class = u16::try_from(raw_class)
+                .ok()
+                .and_then(|value| crate::schema::WindowSizeClass::try_from(value).ok())
+                .ok_or(ProtocolError::InvalidValueKind(raw_class as u16))?;
+            crate::schema::EventPayload::WindowSizeChanged {
+                width_dp: f32::from_bits(read_u32(bytes, 16)?),
+                height_dp: f32::from_bits(read_u32(bytes, 20)?),
+                class,
+            }
+        }
+        EVENT_CLICK..=EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
+            return Err(ProtocolError::InvalidRecordLength);
+        }
         other => return Err(ProtocolError::InvalidTag(other)),
     };
     Ok(HostEvent {
@@ -220,6 +237,21 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.extend_from_slice(&(value as u64).to_le_bytes());
         return Ok(());
     }
+    if let crate::schema::EventPayload::WindowSizeChanged {
+        width_dp,
+        height_dp,
+        class,
+    } = event.payload
+    {
+        output.extend_from_slice(&EVENT_WINDOW_SIZE_CHANGED.to_le_bytes());
+        output.extend_from_slice(&28_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        output.extend_from_slice(&width_dp.to_bits().to_le_bytes());
+        output.extend_from_slice(&height_dp.to_bits().to_le_bytes());
+        output.extend_from_slice(&u32::from(u16::from(class)).to_le_bytes());
+        return Ok(());
+    }
     if let crate::schema::EventPayload::RangeRequested { start, count } = event.payload {
         output.extend_from_slice(&EVENT_RANGE_REQUESTED.to_le_bytes());
         output.extend_from_slice(&24_u16.to_le_bytes());
@@ -243,7 +275,8 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         }
         crate::schema::EventPayload::KeyDown { .. }
         | crate::schema::EventPayload::RangeRequested { .. }
-        | crate::schema::EventPayload::ValueChanged(_) => unreachable!(),
+        | crate::schema::EventPayload::ValueChanged(_)
+        | crate::schema::EventPayload::WindowSizeChanged { .. } => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());
@@ -1016,5 +1049,63 @@ mod tests {
             encode_event(&event, &mut bytes).unwrap();
             assert_eq!(decode_event(&bytes).unwrap(), event);
         }
+    }
+
+    #[test]
+    fn fr20_window_size_changed_round_trips_in_twenty_eight_bytes() {
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: crate::EventPayload::WindowSizeChanged {
+                width_dp: 841.5,
+                height_dp: 600.25,
+                class: crate::WindowSizeClass::Expanded,
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).unwrap();
+        assert_eq!(bytes.len(), 28);
+        assert_eq!(decode_event(&bytes).unwrap(), event);
+    }
+
+    #[test]
+    fn fr20_unknown_window_size_class_is_a_protocol_error() {
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: crate::EventPayload::WindowSizeChanged {
+                width_dp: 320.0,
+                height_dp: 640.0,
+                class: crate::WindowSizeClass::Compact,
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).unwrap();
+        bytes[24..28].copy_from_slice(&99_u32.to_le_bytes());
+        assert_eq!(
+            decode_event(&bytes),
+            Err(ProtocolError::InvalidValueKind(99))
+        );
+    }
+
+    #[test]
+    fn fr20_window_size_classes_follow_the_material_boundaries() {
+        use crate::WindowSizeClass;
+        assert_eq!(
+            WindowSizeClass::from_width_dp(599.9),
+            WindowSizeClass::Compact
+        );
+        assert_eq!(
+            WindowSizeClass::from_width_dp(600.0),
+            WindowSizeClass::Medium
+        );
+        assert_eq!(
+            WindowSizeClass::from_width_dp(839.9),
+            WindowSizeClass::Medium
+        );
+        assert_eq!(
+            WindowSizeClass::from_width_dp(840.0),
+            WindowSizeClass::Expanded
+        );
     }
 }

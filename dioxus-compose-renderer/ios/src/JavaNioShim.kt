@@ -177,6 +177,11 @@ class ByteBuffer private constructor(
         return this
     }
 
+    fun putFloat(value: Float): ByteBuffer {
+        writeBits(value.toRawBits().toLong() and 0xffff_ffffL, 4)
+        return this
+    }
+
     fun putLong(value: Long): ByteBuffer {
         writeBits(value, 8)
         return this

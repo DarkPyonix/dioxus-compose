@@ -13,6 +13,8 @@ enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValu
 
 enum class Key { Enter }
 
+enum class WindowSizeClass { Compact, Medium, Expanded }
+
 enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError }
 
 enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
@@ -225,13 +227,14 @@ sealed interface HostEvent {
     data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent
     data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
     data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Long) : HostEvent
+    data class WindowSizeChanged(override val nodeId: Int, override val handlerId: Long, val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -1945212457916591098L
+    const val SCHEMA_HASH: Long = 7806618612347972479L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -422,6 +425,7 @@ object Protocol {
                 is HostEvent.KeyDown -> null
                 is HostEvent.RangeRequested -> null
                 is HostEvent.ValueChanged -> null
+                is HostEvent.WindowSizeChanged -> null
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -432,6 +436,7 @@ object Protocol {
                 is HostEvent.KeyDown -> 20
                 is HostEvent.RangeRequested -> 24
                 is HostEvent.ValueChanged -> 24
+                is HostEvent.WindowSizeChanged -> 28
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -446,6 +451,7 @@ object Protocol {
                 is HostEvent.KeyDown -> 6
                 is HostEvent.RangeRequested -> 7
                 is HostEvent.ValueChanged -> 8
+                is HostEvent.WindowSizeChanged -> 17
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -475,6 +481,11 @@ object Protocol {
                     out.putInt(event.count)
                 }
                 is HostEvent.ValueChanged -> out.putLong(event.value)
+                is HostEvent.WindowSizeChanged -> {
+                    out.putFloat(event.widthDp)
+                    out.putFloat(event.heightDp)
+                    out.putInt(windowSizeClassTag(event.sizeClass))
+                }
             }
             if (text != null) out.put(text)
             return out.position() - start
@@ -576,6 +587,12 @@ object Protocol {
 
     private fun keyTag(key: Key): Int = when (key) {
         Key.Enter -> 1
+    }
+
+    private fun windowSizeClassTag(sizeClass: WindowSizeClass): Int = when (sizeClass) {
+        WindowSizeClass.Compact -> 0
+        WindowSizeClass.Medium -> 1
+        WindowSizeClass.Expanded -> 2
     }
 
     private fun colorRole(tag: Int, offset: Int): ColorRole = when (tag) {
@@ -917,7 +934,7 @@ object DesignTokens {
             0xffffffff.toInt(), // OnSecondary
             0xffffffff.toInt(), // Surface
             0xff000000.toInt(), // OnSurface
-            0xfff2f2f7.toInt(), // SurfaceVariant
+            0xffe9e9eb.toInt(), // SurfaceVariant
             0xff3c3c43.toInt(), // OnSurfaceVariant
             0xfff2f2f7.toInt(), // Background
             0xff000000.toInt(), // OnBackground
@@ -969,9 +986,9 @@ object DesignTokens {
             0xff0f548c.toInt(), // OnSecondary
             0xffffffff.toInt(), // Surface
             0xff242424.toInt(), // OnSurface
-            0xfff5f5f5.toInt(), // SurfaceVariant
+            0xffeaeaea.toInt(), // SurfaceVariant
             0xff424242.toInt(), // OnSurfaceVariant
-            0xfffafafa.toInt(), // Background
+            0xfff3f3f3.toInt(), // Background
             0xff242424.toInt(), // OnBackground
             0xffd1d1d1.toInt(), // Outline
             0xffe0e0e0.toInt(), // OutlineVariant
