@@ -10,6 +10,18 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
+# Every native command in this script goes through here. With ErrorActionPreference set to
+# Stop, PowerShell turns anything a native program writes to stderr into a terminating
+# error, so a single warning line kills the script and reports NativeCommandError with the
+# pipeline as the culprit. The renderer prints two JDK warnings about restricted native
+# access on every start, which is how a working smoke test came back red.
+function Invoke-Native {
+    param([scriptblock]$Command)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command } finally { $ErrorActionPreference = $previous }
+}
+
 function Fail([string]$Message) {
     [Console]::Error.WriteLine("error: $Message")
     exit 1
@@ -67,7 +79,7 @@ New-Item -ItemType Directory -Force -Path $ObjDir | Out-Null
 
 # __declspec(dllexport) in smoke_host.c is required: the renderer DLL forwards its existing
 # host imports through GetProcAddress(GetModuleHandle(NULL), ...).
-& cl.exe /nologo /O2 "/Fe$SmokeHost" $SmokeSource "/link" "/LIBPATH:$BinDir" "$LibraryName.lib"
+Invoke-Native { & cl.exe /nologo /O2 "/Fe$SmokeHost" $SmokeSource "/link" "/LIBPATH:$BinDir" "$LibraryName.lib" }
 if ($LASTEXITCODE -ne 0) {
     Fail "MSVC could not link the smoke host"
 }
@@ -77,7 +89,12 @@ $OldAutoExit = $env:DIOXUS_COMPOSE_AUTOEXIT_MS
 try {
     $env:PATH = "$BinDir;$OldPath"
     $env:DIOXUS_COMPOSE_AUTOEXIT_MS = if ($RequireClick) { "30000" } else { "5000" }
-    & $SmokeHost 2>&1 | Tee-Object -FilePath $SmokeLog
+    # ToString first: merging stderr makes each of those lines an ErrorRecord, and letting
+    # Tee-Object format one writes the whole PowerShell error block into the log instead of
+    # the line the renderer actually printed, which the checks below then fail to match.
+    Invoke-Native { & $SmokeHost 2>&1 } |
+        ForEach-Object { $_.ToString() } |
+        Tee-Object -FilePath $SmokeLog
     $ExitCode = $LASTEXITCODE
 } finally {
     $env:PATH = $OldPath

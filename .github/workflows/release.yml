@@ -12,6 +12,12 @@
 #   - the renderer ships as a checksummed tarball on the GitHub Release for
 #     this tag, one per platform, fetched at build or install time.
 #
+# Every platform the project claims has to be in the matrix below, and the crate
+# publish waits for all of them. A crate version on crates.io can be yanked but
+# never replaced, and its build script points at the release artifact for its own
+# version, so publishing while a platform is missing would leave anyone on that
+# platform with a version that can never be made to work.
+#
 # Pushing a version tag also publishes the crate to crates.io. That needs a
 # CARGO_REGISTRY_TOKEN secret, and the job refuses to run if the tag and the
 # version in Cargo.toml disagree, because publishing cannot be undone: a
@@ -47,54 +53,99 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Only macOS arm64 is scripted today (SPEC PR-8, INTENT D9-macOS).
-          # Windows, Linux, and iOS (NFR-4) join this matrix when their build
-          # scripts exist; the packaging steps below are already generic.
           - runner: macos-latest
             target: macos-aarch64
+            build: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
+            smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
+            dist: dioxus-compose-renderer/build/native-image/dist
+          - runner: windows-2022
+            target: windows-x64
+            build: .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
+            smoke: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
+            dist: dioxus-compose-renderer/build/native-image/dist
+          - runner: ubuntu-24.04
+            target: linux-x64
+            build: ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+            smoke: ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
+            dist: dioxus-compose-renderer/build/native-image-linux/dist
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref }}
 
       - name: Cache Liberica NIK
+        if: runner.os == 'macOS'
         uses: actions/cache@v4
         with:
           path: ~/.cache/dioxus-compose/nik
           key: nik-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install-nik.sh') }}
 
       - name: Install Liberica NIK 25 Full
+        # macOS only: upstream GraalVM has no AWT there, and Liberica does.
+        if: runner.os == 'macOS'
         run: ./scripts/install-nik.sh --github-env
+
+      - name: Install upstream GraalVM for JDK 25
+        # Upstream supports AWT on Windows and Linux, so neither needs Liberica.
+        if: runner.os != 'macOS'
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: ${{ runner.os == 'Windows' && 'graalvm' || 'graalvm-community' }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install the Linux AWT, Skia, font and virtual display dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
+            libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
+            fonts-noto-cjk xvfb xauth dbus-x11
 
       - name: Cache the Kotlin toolchain and Maven dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/Library/Caches/JetBrains/Kotlin
+            ~/.cache/JetBrains/Kotlin
+            ~/AppData/Local/JetBrains/Kotlin
             ~/.m2/repository
           key: kotlin-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
           restore-keys: |
             kotlin-${{ runner.os }}-
 
       - name: Build the renderer shared library
-        run: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
+        shell: ${{ runner.os == 'Windows' && 'powershell' || 'bash' }}
+        # Linux draws through a virtual display; the other two have one.
+        run: ${{ runner.os == 'Linux' && format('xvfb-run -a {0}', matrix.build) || matrix.build }}
 
-      - name: Smoke test before shipping (SPEC PR-8)
+      - name: Smoke test before shipping
+        # Nothing ships that cannot start, render and exit cleanly on its own platform.
+        shell: ${{ runner.os == 'Windows' && 'powershell' || 'bash' }}
         env:
           DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
-        run: ./dioxus-compose-renderer/desktop/scripts/smoke-test.sh
+        run: ${{ runner.os == 'Linux' && format('xvfb-run -a {0}', matrix.smoke) || matrix.smoke }}
 
       - name: Package the distribution with a checksum
         id: package
+        # bash on every runner, Windows included, so one script packages all three.
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: |
           set -euo pipefail
           version="${{ inputs.tag || github.ref_name }}"
           name="dioxus-compose-renderer-${version}-${TARGET}"
-          # dist/ holds lib/ (renderer, Skia, the AWT shims) and include/.
-          tar -czf "${name}.tar.gz" -C dioxus-compose-renderer/build/native-image/dist .
-          shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          # dist/ holds the renderer, Skia and the AWT libraries, plus include/.
+          # Linux stages its own directory, and Windows keeps the DLLs in bin/ so the
+          # loader finds them together.
+          tar -czf "${name}.tar.gz" -C "${{ matrix.dist }}" .
+          if command -v shasum >/dev/null; then
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
           cat "${name}.tar.gz.sha256"
           echo "name=${name}" >> "$GITHUB_OUTPUT"
 
