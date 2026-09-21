@@ -457,41 +457,16 @@ mod tests {
             .expect("the calculator tree encodes");
     }
 
-    /// Writes one screen as the batches that build it, each behind its byte length.
-    ///
-    /// A batch is a single envelope and cannot simply be appended to another one, so a
-    /// screen that takes more than one of them has to keep the boundaries. Four little
-    /// endian bytes of length in front of each is enough, and it is what the Renderer's
-    /// screenshot test reads back.
-    fn write_frames(path: &std::path::Path, batches: &[&[u8]]) {
-        let mut bytes = Vec::new();
-        for batch in batches {
-            bytes.extend_from_slice(&(batch.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(batch);
-        }
-        std::fs::write(path, bytes)
-            .unwrap_or_else(|error| panic!("{} cannot be written: {error}", path.display()));
-    }
-
     /// The calculator's first frame under each of the six design systems, in both schemes.
     ///
-    /// A batch that encodes is not the same as a screen someone can read. Material 3
-    /// shipped a readout filled with a colour that matched the page behind it, drawn full
-    /// size, in the right colour and invisible, and every assertion in this file passed
-    /// the whole time. The only thing that settles it is looking.
-    ///
-    /// So this writes the frames out when `DXC_FRAME_DIR` is set, as exactly the bytes the
-    /// Renderer decodes, and the Renderer's screenshot test turns each one into a PNG.
-    /// Unset, which is the normal run, it still checks that all twelve encode: a design
-    /// system nobody can render is the failure this whole set of tables exists to avoid.
+    /// Every one of them has to encode: a design system nobody can render is the failure
+    /// this whole set of tables exists to avoid. With `DXC_FRAME_DIR` set it also writes
+    /// the twelve out, so the tables can be compared by eye against each other.
     #[test]
     fn fr14_the_first_frame_encodes_under_every_design_system() {
-        use dioxus_compose::schema::{ColorScheme, DesignSystem, Theme};
+        use dioxus_compose::schema::{ColorScheme, DesignSystem};
 
-        let directory = std::env::var("DXC_FRAME_DIR").ok();
-        if let Some(directory) = &directory {
-            std::fs::create_dir_all(directory).expect("the frame directory can be created");
-        }
+        let directory = frame_directory();
         for system in [
             DesignSystem::Material3,
             DesignSystem::Cupertino,
@@ -501,21 +476,40 @@ mod tests {
             DesignSystem::Deepin,
         ] {
             for scheme in [ColorScheme::Light, ColorScheme::Dark] {
-                let theme = Theme::unified(system).with_color_scheme(scheme);
-                let mut host = Host::with_theme(app, theme);
-                let batch = host.rebuild().unwrap_or_else(|error| {
-                    panic!("{system:?} {scheme:?} does not encode: {error:?}")
-                });
-                assert!(
-                    !batch.is_empty(),
-                    "{system:?} {scheme:?} produced an empty first frame, so there is nothing to draw"
+                record(
+                    directory.as_deref(),
+                    "Calculator",
+                    system,
+                    scheme,
+                    CLASS_WINDOWS[0],
                 );
-                if let Some(directory) = &directory {
-                    let path = std::path::Path::new(directory)
-                        .join(format!("Calculator-{system:?}-{scheme:?}.bin"));
-                    write_frames(&path, &[batch]);
-                }
             }
+        }
+    }
+
+    /// The calculator in all three windows, under the three systems it was drawn from.
+    ///
+    /// Windows 11, macOS and Deepin each ship a calculator, and they do not look alike:
+    /// one has a caption and a memory row, one is a column of circles, one is a flat grid
+    /// with a blue equals. The same declaration is supposed to come out as each of them,
+    /// and the only way that claim gets checked is by putting the three pictures beside
+    /// the three screenshots.
+    #[test]
+    fn fr20_the_keypad_is_recorded_in_every_window() {
+        use dioxus_compose::schema::{ColorScheme, DesignSystem};
+
+        let directory = frame_directory();
+        for system in [
+            DesignSystem::Fluent,
+            DesignSystem::Cupertino,
+            DesignSystem::Deepin,
+        ] {
+            record_every_width(
+                directory.as_deref(),
+                "Calculator",
+                system,
+                ColorScheme::Dark,
+            );
         }
     }
 
@@ -748,5 +742,166 @@ mod tests {
         assert_eq!(keypad.display(), "12");
         keypad.type_text("");
         assert_eq!(keypad.display(), "0");
+    }
+
+    // Recording the screens, so that "it adapts" is something someone can look at.
+    //
+    // A batch that encodes is not the same as a screen someone can read. Material 3
+    // shipped a readout filled with a colour that matched the page behind it, drawn full
+    // size, in the right colour and invisible, and every assertion in this file passed the
+    // whole time. The only thing that settles it is looking.
+
+    /// The frame directory, or `None` on an ordinary run.
+    ///
+    /// Opt in, because it writes files. Unset, the tests below still build every screen
+    /// and still check that it encodes; the only thing that does not happen is the picture.
+    fn frame_directory() -> Option<String> {
+        let directory = std::env::var("DXC_FRAME_DIR").ok()?;
+        std::fs::create_dir_all(&directory).expect("the frame directory can be created");
+        Some(directory)
+    }
+
+    /// How many rows a recorded list is asked for. Enough to reach the foot of the tallest
+    /// window recorded below, so no picture ends in a band of empty list.
+    const RECORDED_WINDOW: u32 = 24;
+
+    /// The batches that build this screen in a window `width_dp` wide.
+    ///
+    /// Three things have to happen before there is a screen, and each is one batch. The
+    /// first frame, which every Host produces believing the window is `Compact`. The diff
+    /// that came of being told otherwise, where it is not. And the rows, because a
+    /// `LazyColumn` holds none until something asks for a window of them, so a recording
+    /// that skipped the request would be a picture of an empty list.
+    fn frames_at(
+        theme: dioxus_compose::schema::Theme,
+        width_dp: f32,
+        height_dp: f32,
+    ) -> Vec<Vec<u8>> {
+        let mut host = Host::with_theme(app, theme);
+        let mut batches = vec![
+            host.rebuild()
+                .expect("the first frame failed to encode")
+                .to_vec(),
+        ];
+        let class = dioxus_compose::WindowSizeClass::from_width_dp(width_dp);
+        if class != dioxus_compose::WindowSizeClass::Compact {
+            let (batch, _) = host
+                .dispatch(HostEvent {
+                    node_id: 0,
+                    handler_id: 0,
+                    payload: EventPayload::WindowSizeChanged {
+                        width_dp,
+                        height_dp,
+                        class,
+                    },
+                })
+                .expect("the resize failed");
+            batches.push(batch.to_vec());
+        }
+        if let Some((list, handler)) = first_lazy_list(&batches) {
+            let (batch, _) = host
+                .dispatch(HostEvent {
+                    node_id: list,
+                    handler_id: handler,
+                    payload: EventPayload::RangeRequested {
+                        start: 0,
+                        count: RECORDED_WINDOW,
+                    },
+                })
+                .expect("the range request failed");
+            batches.push(batch.to_vec());
+        }
+        dioxus_compose::window::reset_window_size();
+        batches
+    }
+
+    /// The first lazy list in these batches and the handler it asks for rows through, or
+    /// `None` where the screen has no lazy list at all.
+    fn first_lazy_list(batches: &[Vec<u8>]) -> Option<(u32, u64)> {
+        let mut lists = Vec::new();
+        let mut handlers: HashMap<u32, u64> = HashMap::new();
+        for batch in batches {
+            for mutation in decode_batch(batch).expect("a recorded batch did not decode") {
+                match mutation {
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::LazyColumn,
+                    } => lists.push(node_id),
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnRangeRequested,
+                        value: PropertyValue::Integer(id),
+                    } => {
+                        handlers.insert(node_id, id as u64);
+                    }
+                    Mutation::Remove { node_id } => {
+                        lists.retain(|held| *held != node_id);
+                        handlers.remove(&node_id);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        lists
+            .into_iter()
+            .find_map(|list| handlers.get(&list).map(|handler| (list, *handler)))
+    }
+
+    /// The three windows every adaptive screen is looked at in.
+    ///
+    /// The widths sit well inside their classes rather than on the boundaries, because a
+    /// picture is meant to show what that class ordinarily looks like. They are the same
+    /// three the Renderer's screenshot test draws in, so the layout the Host chose and the
+    /// presentation the Renderer chose belong to one window rather than to two.
+    const CLASS_WINDOWS: [(&str, f32, f32); 3] = [
+        ("compact", 420.0, 760.0),
+        ("medium", 720.0, 760.0),
+        ("expanded", 1180.0, 800.0),
+    ];
+
+    /// Builds this screen under one design system in one window, and records it when a
+    /// directory was named.
+    ///
+    /// The batches are written each behind four little endian bytes of its length. A batch
+    /// is a single envelope and cannot be appended to another one, so a screen that takes
+    /// more than one of them has to keep the boundaries, and that is what the Renderer's
+    /// screenshot test reads back.
+    fn record(
+        directory: Option<&str>,
+        name: &str,
+        system: dioxus_compose::schema::DesignSystem,
+        scheme: dioxus_compose::schema::ColorScheme,
+        window: (&str, f32, f32),
+    ) {
+        let (class, width_dp, height_dp) = window;
+        let theme = dioxus_compose::schema::Theme::unified(system).with_color_scheme(scheme);
+        let batches = frames_at(theme, width_dp, height_dp);
+        assert!(
+            !batches[0].is_empty(),
+            "{system:?} {scheme:?} at {class} produced an empty first frame, \
+so there is nothing to draw"
+        );
+        let Some(directory) = directory else { return };
+        let mut bytes = Vec::new();
+        for batch in &batches {
+            bytes.extend_from_slice(&(batch.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(batch);
+        }
+        let path = std::path::Path::new(directory)
+            .join(format!("{name}-{system:?}-{scheme:?}-{class}.bin"));
+        std::fs::write(&path, bytes)
+            .unwrap_or_else(|error| panic!("{} cannot be written: {error}", path.display()));
+    }
+
+    /// The same screen in all three windows, which is the whole of the adaptive claim.
+    fn record_every_width(
+        directory: Option<&str>,
+        name: &str,
+        system: dioxus_compose::schema::DesignSystem,
+        scheme: dioxus_compose::schema::ColorScheme,
+    ) {
+        for window in CLASS_WINDOWS {
+            record(directory, name, system, scheme, window);
+        }
     }
 }
