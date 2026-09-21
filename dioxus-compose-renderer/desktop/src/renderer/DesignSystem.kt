@@ -341,6 +341,40 @@ interface ComponentRules {
     )
 
     /**
+     * How this system draws the window's own caption: the three buttons, and where the
+     * title sits.
+     *
+     * Only the platforms where the renderer draws the caption itself use this. macOS
+     * keeps its own buttons, and imitating them would be the most visible way to fail at
+     * looking native. Everywhere else the window is undecorated, so these three are the
+     * only way to minimise, maximise or close it: they are not decoration.
+     *
+     * The Host has no say here, deliberately. The colour, the position and the shape of a
+     * window button belong to the design system and the platform.
+     *
+     * The default is a plain set at the trailing edge with a tinted hover, which is what
+     * most of these systems do. A system overrides what it actually differs about.
+     */
+    fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 32.dp,
+        buttonHeight = 32.dp,
+        shape = theme.shape(ShapeRole.Small),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = theme.color(ColorRole.OnError),
+        glyphStroke = 1.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Xs),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Start,
+    )
+
+    /**
      * How a transient message is drawn, and how long each of the two durations lasts.
      *
      * The milliseconds are here rather than on the wire because they are a rule of the
@@ -364,6 +398,53 @@ interface ComponentRules {
         typeRole = TypeRole.Body,
     )
 }
+
+/** Which end of the caption the window buttons sit at. */
+enum class CaptionSide { Start, End }
+
+/** Where the window's title sits along the caption. */
+enum class CaptionTitleAlignment { Start, Center }
+
+/**
+ * How the window's own caption is drawn: the three buttons, and where the title sits.
+ *
+ * All seven systems are described by one shape, because the differences between them are
+ * differences of value rather than of kind: a disc at the leading edge that shows its
+ * glyph only under the pointer, a wide rectangle at the trailing edge that turns red when
+ * the pointer is on close, a grey circle, a bare glyph. What none of them disagree about
+ * is that there are three buttons and what each one does.
+ *
+ * Nothing here crosses the boundary. A window button is the design system's and the
+ * platform's, and an application that could recolour one would be deciding for whichever
+ * platform it ended up on.
+ */
+data class CaptionStyle(
+    val side: CaptionSide,
+    /** Wider than it is tall on the systems that give a button a hover zone. */
+    val buttonWidth: Dp,
+    val buttonHeight: Dp,
+    val shape: Shape,
+    /** What each button is filled with when the pointer is elsewhere. */
+    val minimiseContainer: Color,
+    val maximiseContainer: Color,
+    val closeContainer: Color,
+    val hover: Color,
+    /** Close is the button most of these systems colour differently under the pointer. */
+    val closeHover: Color,
+    val glyph: Color,
+    val closeHoverGlyph: Color,
+    val glyphStroke: Dp,
+    /**
+     * Whether the glyph is drawn when the pointer is elsewhere.
+     *
+     * False on the one system whose buttons are coloured discs: their colour is what says
+     * which is which, and the marks inside appear only when the pointer is over the set.
+     */
+    val glyphAtRest: Boolean,
+    val spacing: Dp,
+    val edgePadding: Dp,
+    val titleAlignment: CaptionTitleAlignment,
+)
 
 /**
  * What marks the selected destination.

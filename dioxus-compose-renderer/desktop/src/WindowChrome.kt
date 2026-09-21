@@ -2,8 +2,11 @@ package dioxus.compose.ui.platform
 
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dioxus.compose.runtime.WindowActions
 import dioxus.compose.runtime.WindowCaption
+import java.awt.Frame
 import java.awt.Window as AwtWindow
+import java.awt.event.WindowEvent
 import javax.swing.JRootPane
 import javax.swing.RootPaneContainer
 
@@ -90,6 +93,33 @@ internal fun windowCaption(window: AwtWindow?, chrome: WindowChrome): WindowCapt
     } else {
         WindowCaption(height = captionHeight(window), buttonsWidth = systemWindowButtonsWidth)
     }
+
+/**
+ * What this window's three caption buttons do, or null where the platform draws its own.
+ *
+ * Null is the whole point of returning null: on macOS the system owns these buttons, and
+ * the renderer draws nothing rather than drawing a second set beside them. Null also
+ * covers a window that kept its ordinary title bar, where the buttons are already there.
+ *
+ * Maximise toggles rather than only maximising, because an undecorated window has no
+ * other way back: the button that made the window full size has to be the button that
+ * undoes it.
+ */
+internal fun windowActions(window: AwtWindow?, chrome: WindowChrome): WindowActions? {
+    if (chrome == WindowChrome.System || platformDrawsWindowButtons) return null
+    val frame = window as? Frame ?: return null
+    return WindowActions(
+        minimise = { frame.extendedState = frame.extendedState or Frame.ICONIFIED },
+        maximise = {
+            frame.extendedState = if (frame.extendedState and Frame.MAXIMIZED_BOTH != 0) {
+                Frame.NORMAL
+            } else {
+                Frame.MAXIMIZED_BOTH
+            }
+        },
+        close = { frame.dispatchEvent(WindowEvent(frame, WindowEvent.WINDOW_CLOSING)) },
+    )
+}
 
 /**
  * The height of the strip the window buttons occupy.

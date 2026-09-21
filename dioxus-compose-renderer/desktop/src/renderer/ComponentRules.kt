@@ -372,6 +372,31 @@ internal object Material3Rules : ComponentRules {
             typeRole = TypeRole.Label,
         )
 
+    /**
+     * Material has no desktop caption of its own, so this is Material's vocabulary applied
+     * to one: a capsule hover behind each glyph, in the tonal grey a Material icon button
+     * uses, and the error colour under close. The title sits at the start, where a
+     * Material top app bar puts it.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 40.dp,
+        buttonHeight = 40.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = theme.color(ColorRole.OnError),
+        glyphStroke = 1.5.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Xs),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Start,
+    )
+
     /** A bottom sheet with a drag handle, or a side sheet once there is room for one. */
     override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
         edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
@@ -739,6 +764,37 @@ internal object CupertinoRules : ComponentRules {
         )
     }
 
+    /**
+     * Three coloured discs at the leading edge, close then minimise then zoom.
+     *
+     * This is only ever drawn where the platform does not draw it. On macOS the system
+     * owns these buttons and imitating them would be the most visible way to fail at
+     * looking native; on a Linux or Windows session running the Apple language there is
+     * nothing to keep, and a caption with no buttons is a window nobody can close.
+     *
+     * The discs carry no glyphs until the pointer is over the set, which is the behaviour
+     * that makes them read as Apple's rather than as three coloured dots.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.Start,
+        buttonWidth = 12.dp,
+        buttonHeight = 12.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = TRAFFIC_AMBER,
+        maximiseContainer = TRAFFIC_GREEN,
+        closeContainer = TRAFFIC_RED,
+        hover = Color.Transparent,
+        closeHover = Color.Transparent,
+        glyph = Color.Black.copy(alpha = 0.55f),
+        closeHoverGlyph = Color.Black.copy(alpha = 0.55f),
+        glyphStroke = 1.dp,
+        // The colour says which is which; the marks appear under the pointer.
+        glyphAtRest = false,
+        spacing = 8.dp,
+        edgePadding = 20.dp,
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
     /** A card sheet pulled up over a dimmed screen, with the grabber along its top edge. */
     override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
         edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
@@ -785,6 +841,15 @@ internal object CupertinoRules : ComponentRules {
     private const val SPOT_ALPHA = 0.12f
     private const val SPREAD = 2f
 }
+
+/**
+ * The three window button colours the Apple systems use, shared because they are the
+ * same three buttons in both languages: the glass window in the reference screens carries
+ * exactly the discs the flat one does.
+ */
+internal val TRAFFIC_RED = Color(0xFFFF5F57)
+internal val TRAFFIC_AMBER = Color(0xFFFEBC2E)
+internal val TRAFFIC_GREEN = Color(0xFF28C840)
 
 /**
  * WinUI / Fluent 2 rules: elevation, button variants and motion.
@@ -1147,6 +1212,38 @@ internal object FluentRules : ComponentRules {
         borderColor = theme.color(ColorRole.OutlineVariant),
         typeRole = TypeRole.Body,
     )
+
+    /**
+     * Windows 11's caption: three wide rectangles at the trailing edge, with the close
+     * zone turning the platform's own red.
+     *
+     * 46 by 32 is the Windows caption button, and its width is the point: the hover zone
+     * is half as wide again as it is tall, which is why a Windows caption reads as three
+     * bands rather than three buttons. The red under close is the system value rather
+     * than this palette's error colour, because it is the same red on every Windows
+     * window whatever an application's accent is.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 46.dp,
+        buttonHeight = 32.dp,
+        shape = theme.shape(ShapeRole.None),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = WINDOWS_CLOSE_RED,
+        glyph = theme.color(ColorRole.OnSurface),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.dp,
+        glyphAtRest = true,
+        spacing = 0.dp,
+        edgePadding = 0.dp,
+        titleAlignment = CaptionTitleAlignment.Start,
+    )
+
+    /** The red Windows puts under a close button, on every window and every accent. */
+    private val WINDOWS_CLOSE_RED = Color(0xFFC42B1C)
 
     private const val SCRIM_ALPHA = 0.3f
     private const val DISABLED_ALPHA = 0.38f
@@ -1542,6 +1639,34 @@ internal object GnomeRules : ComponentRules {
         borderWidth = 0.dp,
         borderColor = Color.Transparent,
         typeRole = TypeRole.Body,
+    )
+
+    /**
+     * Adwaita's caption: three grey circles at the trailing edge, and the title centred.
+     *
+     * A GNOME window button is a filled disc rather than a bare glyph or a hover zone, and
+     * the fill is there at rest rather than appearing under the pointer. That, and the
+     * centred title, are what the GNOME 50 screen in the reference shows on every window
+     * in it, and they are the two things that make a header bar read as GNOME's before
+     * anything inside it is read at all.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 26.dp,
+        buttonHeight = 26.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = theme.color(ColorRole.SurfaceVariant),
+        maximiseContainer = theme.color(ColorRole.SurfaceVariant),
+        closeContainer = theme.color(ColorRole.SurfaceVariant),
+        hover = theme.color(ColorRole.Outline),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurface),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.5.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Sm),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Center,
     )
 
     private const val SCRIM_ALPHA = 0.45f
@@ -1952,6 +2077,34 @@ internal object BreezeRules : ComponentRules {
         typeRole = TypeRole.Body,
     )
 
+    /**
+     * Breeze's caption: small square buttons at the trailing edge, barely rounded, with a
+     * light hover and the negative colour under close.
+     *
+     * The smallest set of the seven, which is the house style: Plasma spends less room on
+     * chrome than GNOME next door, and the Dolphin window in the reference screen puts
+     * three small glyphs where GNOME puts three circles. The title is centred, which both
+     * Breeze windows in the reference do.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 24.dp,
+        buttonHeight = 24.dp,
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Xs),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
     private const val SCRIM_ALPHA = 0.5f
     private const val PRESS_MIX = 0.12f
     private const val PRESS_SHADE = 0.1f
@@ -2352,6 +2505,34 @@ internal object DeepinRules : ComponentRules {
         borderWidth = 0.dp,
         borderColor = Color.Transparent,
         typeRole = TypeRole.Body,
+    )
+
+    /**
+     * Deepin's caption: bare glyphs at the trailing edge in a square hover zone, with the
+     * close zone turning red.
+     *
+     * The rounding on the hover zone is what makes it Deepin's rather than Windows': the
+     * whole language rounds, and a square hover in a window cut at eighteen looks
+     * borrowed. Both reference screens put the glyphs on the same line as the rest of the
+     * bar's content, which the caption layout already does.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 40.dp,
+        buttonHeight = 40.dp,
+        shape = theme.shape(ShapeRole.Small),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.5.dp,
+        glyphAtRest = true,
+        spacing = 0.dp,
+        edgePadding = theme.space(SpaceRole.Xs),
+        titleAlignment = CaptionTitleAlignment.Center,
     )
 
     private const val SCRIM_ALPHA = 0.35f
@@ -2881,6 +3062,33 @@ internal object LiquidGlassRules : ComponentRules {
     /** How far a tinted button moves what is under it, resting and pressed. */
     private const val TONAL_ALPHA = 0.08f
     private const val TONAL_PRESSED_ALPHA = 0.16f
+
+    /**
+     * The glass caption. Three coloured discs at the leading edge, exactly as the flat
+     * Apple system draws them, because they are the same three buttons: the glass window
+     * in the reference screens carries the same traffic lights, sitting straight on the
+     * translucent chrome with no strip of their own.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.Start,
+        buttonWidth = 12.dp,
+        buttonHeight = 12.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = TRAFFIC_AMBER,
+        maximiseContainer = TRAFFIC_GREEN,
+        closeContainer = TRAFFIC_RED,
+        hover = Color.Transparent,
+        closeHover = Color.Transparent,
+        glyph = Color.Black.copy(alpha = 0.55f),
+        closeHoverGlyph = Color.Black.copy(alpha = 0.55f),
+        glyphStroke = 1.dp,
+        glyphAtRest = false,
+        spacing = 8.dp,
+        // Further in than the flat language's, because the glass chrome the discs sit on
+        // is inset from the window edge rather than flush with it.
+        edgePadding = 22.dp,
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
 
     private const val SCRIM_ALPHA = 0.4f
     private const val DISABLED_ALPHA = 0.38f

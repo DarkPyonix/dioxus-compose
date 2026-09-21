@@ -9,6 +9,8 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -22,6 +24,7 @@ import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.design.CaptionSide
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
@@ -221,6 +224,25 @@ fun DioxusContent(
                             RenderNode(rootId, host.table, host)
                         }
                     }
+                }
+                // The window's own buttons, over everything, because the caption strip is
+                // the window's and whatever the Host drew runs underneath it. Nothing is
+                // drawn where the platform draws its own: macOS keeps the system's
+                // traffic lights, and the platform layer provides no actions there.
+                if (caption.height > 0.dp) {
+                    val captionStyle = theme.rules.caption(theme)
+                    WindowButtons(
+                        style = captionStyle,
+                        modifier = Modifier
+                            .align(
+                                if (captionStyle.side == CaptionSide.Start) {
+                                    Alignment.TopStart
+                                } else {
+                                    Alignment.TopEnd
+                                },
+                            )
+                            .height(caption.height),
+                    )
                 }
                 // Over the content rather than in it: a message is not part of the tree,
                 // and it covers whatever it has to for as long as it is up.
