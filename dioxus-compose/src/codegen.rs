@@ -223,6 +223,13 @@ object Protocol {
     private const val TAG_SHOW_MESSAGE = 12
     private const val ENVELOPE_LENGTH = 12
 
+    /**
+     * The high bit of each of eight bytes, which is where UTF-8 stops being ASCII. Written
+     * as a negative literal because 0x8080808080808080 does not fit a signed `Long`; the
+     * bits are what matter and they are the same either way.
+     */
+    private const val ASCII_HIGH_BITS = -0x7f7f7f7f7f7f7f80L
+
     private const val VALUE_NONE = 0
     private const val VALUE_TEXT = 1
     private const val VALUE_BOOL = 2
@@ -774,6 +781,17 @@ object Protocol {
             val lead = batch.get(start + index).toInt() and 0xff
             if (lead < 0x80) {
                 index += 1
+                // Eight bytes at a time for as long as the text stays ASCII, which most
+                // text is and all of a streaming append usually is: a long with no high
+                // bit anywhere in it is eight characters that need nothing else checked.
+                // The mask is the same at both ends, so which order the long is read in
+                // does not matter. Entered only after an ASCII byte, so text with no
+                // ASCII in it never pays for the attempt.
+                while (index + 8 <= length &&
+                    batch.getLong(start + index) and ASCII_HIGH_BITS == 0L
+                ) {
+                    index += 8
+                }
                 continue
             }
             val width = when {
