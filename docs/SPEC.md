@@ -1033,7 +1033,7 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 - Dioxus에 같은 개념이 있으면 Rust 쪽은 Dioxus 이름을 씁니다(`VirtualDom`, `Mutations`, `ElementId`).
 - 두 이름이 충돌하면 Rust 쪽은 Dioxus 이름을, Kotlin 쪽은 Compose 이름을 쓰고, 대응 관계를 코드젠 스키마에 기록합니다.
 
-### PR-8 macOS 런타임 요건 (`Draft`)
+### PR-8 macOS 런타임 요건 (`Done`)
 - 빌드 도구는 Liberica NIK 25 Full입니다(INTENT D9-macOS).
 - 배포 레이아웃은 `<root>/lib/` 하나이며 `java.home`은 그 부모입니다. 렌더러는 자기 라이브러리 경로를 dladdr로 얻어 `java.home`, `skiko.library.path`, `skiko.data.path`를 설정합니다.
 - `lib/`에 함께 두는 파일: 렌더러 라이브러리, Skia(`libskiko-macos-<arch>.dylib`), `libjawt.dylib` 포워더, `libawt_lwawt.dylib` 자리 채우기.
@@ -1041,7 +1041,9 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 - 빌드 스크립트는 `lib/static/darwin-*/libawt_lwawt.a`가 없는 설치를 이미지 빌드 시작 전에 거부합니다. 순정 GraalVM과 비 Full NIK을 걸러내기 위한 것입니다.
 - 수용 기준
   1. C 호스트가 라이브러리를 링크해 `run`을 호출하면 창이 뜨고, 창을 닫으면 `run`이 0을 반환하며 프로세스가 정상 종료됩니다. **(2026-09-20 통과)**
+     근거: `desktop/c/smoke_host.c`가 `run`의 반환값을 프로세스 종료 코드로 옮기고, `desktop/scripts/smoke-test.sh`가 그 호스트를 링크해 실행합니다. `native-renderer.yml`의 macOS 잡이 native-image 빌드 뒤에 이 스크립트를 돌리므로, 창이 뜨지 않거나 `run`이 0이 아닌 값을 돌려주면 잡이 실패합니다.
   2. 잘못된 툴체인(`GRAALVM_HOME` 미설정/없는 경로/`native-image` 없음/정적 AWT 아카이브 없음)에서 빌드가 즉시 실패하고 조치 방법을 출력합니다. **(2026-09-20 통과)**
+     근거: `scripts/tests/renderer-toolchain.test.sh`가 네 경우를 전부 임시 디렉터리로 재현해 `env.sh`가 1로 끝나고 설치 방법을 출력하는지 확인하고, 올바른 모양의 설치에서는 통과하는지도 함께 확인합니다. `build-native.sh`와 `smoke-test.sh`의 첫 실행문이 `env.sh`를 source하는지도 같은 파일이 봅니다. native-image 툴체인 없이 밀리초 단위로 돌기 때문에 PR마다 도는 `ci.yml`의 `scripts/tests` 루프에 들어 있습니다.
 
 ## 5. 비기능 요구사항
 
