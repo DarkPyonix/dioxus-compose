@@ -6,8 +6,10 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeViewport
 import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.HostConnection
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.m0DemoHost
+import dioxus.compose.ui.platform.WebHostConnection
 
 /**
  * The web renderer's entry point.
@@ -17,14 +19,19 @@ import dioxus.compose.tooling.m0DemoHost
  * screen is drawn entirely from the mutation batches the Host streams, exactly as it is on
  * every other target, because the interpreter under it is the same source.
  *
- * The Host is the scripted [m0DemoHost] until the Rust module is wired in, which is the
- * same development shell the JVM target has and is what NFR-5 asks for: the renderer must
- * be workable without building the other side.
+ * The Host is installed here rather than on the page, because this is the first moment at
+ * which both modules exist. The page compiled the Host's module before this one was
+ * evaluated, and instantiating this one is what created the memory the Host imports, so
+ * `install` has both halves in hand and is synchronous.
+ *
+ * A page served without a Host beside it falls back to the scripted [m0DemoHost], which is
+ * the same development shell the JVM target has: the renderer has to be workable without
+ * the other side being built.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
+    val connection: HostConnection = WebHostConnection.install() ?: m0DemoHost()
     ComposeViewport {
-        val connection = remember { m0DemoHost() }
-        DioxusContent(rememberDioxusHost(connection), Modifier.fillMaxSize())
+        DioxusContent(rememberDioxusHost(remember { connection }), Modifier.fillMaxSize())
     }
 }
