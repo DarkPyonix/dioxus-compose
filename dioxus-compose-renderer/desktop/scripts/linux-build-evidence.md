@@ -20,6 +20,30 @@ build that does not emit `libawt.so`, `libawt_headless.so`, `libawt_xawt.so`,
 `libfontmanager.so`, `libjava.so`, and `libjvm.so`. Liberica NIK is not expected to be
 needed. That expectation is untested.
 
+## Why Linux ships two libraries where macOS ships one
+
+On macOS the C shim (`c/renderer_entry.c`) is handed to `native-image` as
+`-H:NativeLinkerOption=<obj>` and exported with `-Wl,-exported_symbol`. That does not work on
+Linux. When Native Image links a shared library it writes its own linker version script and
+passes it as `-Wl,--version-script=<file>`. The script lists the image's own `@CEntryPoint`
+symbols under `global:` and ends with `local: *;`, and `-Wl,-x` then strips the local
+entries. Any symbol Native Image did not generate itself is therefore local and then gone,
+however it entered the link. Neither `-Wl,--export-dynamic-symbol` nor `-Wl,-u` changes that:
+the first only chooses among symbols a version script already left global, the second only
+forces a definition to be pulled in, and a second `--version-script` of our own is refused by
+GNU ld with "anonymous version tag cannot be combined with other version tags" because the
+generated one is anonymous.
+
+- Version script and `-Wl,-x`: <https://github.com/oracle/graal/blob/master/substratevm/src/com.oracle.svm.hosted/src/com/oracle/svm/hosted/image/CCLinkerInvocation.java>
+- Symbol versioning and the anonymous-tag restriction: <https://maskray.me/blog/2020-11-26-all-about-symbol-versioning>
+
+So `build-native-linux.sh` lets Native Image build `libdioxus_compose_renderer_image.so`
+(with `-Wl,-soname` so the dependency stays relocatable) and then links
+`libdioxus_compose_renderer.so` itself from `renderer_entry.o` against that image library.
+The public library is produced by a plain `cc -shared` command, so the two exported names no
+longer depend on how `native-image` forwards linker arguments. The C ABI the Host sees is
+unchanged: the same two argument-free functions, in a library with the same file name.
+
 ## macOS workaround mapping
 
 | macOS workaround | Expected Linux result | Verification status |

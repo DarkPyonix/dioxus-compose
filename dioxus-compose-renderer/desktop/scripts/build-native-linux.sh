@@ -21,40 +21,68 @@ mkdir -p "$obj" "$lib"
 
 cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
 
-# Nothing inside the image calls the two entry points in the C shim: the application does,
-# after loading the library. The link discards unreferenced sections, so without -u the shim
-# is dropped and the library builds cleanly with neither symbol anywhere in it.
-# --export-dynamic-symbol does not save them, because it decides what is visible among the
-# symbols that survive rather than what survives.
+# Why the C shim is not handed to native-image here, the way build-native.sh does on macOS.
 #
+# When Native Image links a shared library on Linux it always writes its own linker version
+# script and passes it as -Wl,--version-script=<file>. That script lists the image's own
+# @CEntryPoint symbols under "global:" and ends with "local: *;", so any symbol that Native
+# Image did not generate itself becomes local no matter how it got into the link, and the
+# -Wl,-x that follows drops local entries from the symbol table altogether. That is why the
+# shim's two functions were missing from even the full symbol table, and why neither
+# --export-dynamic-symbol nor -u brought them back: a version script's "local: *" cannot be
+# overridden by another command-line flag, and GNU ld refuses a second --version-script when
+# the first one is anonymous, which the generated one is. The version script is written in
+# CCLinkerInvocation.java in the GraalVM sources (the shared-library branch that produces
+# exported_symbols.list); the second-script refusal is binutils' "anonymous version tag
+# cannot be combined with other version tags".
+#
+# So Native Image builds the image under its own name and this script performs the final
+# link itself. Nothing below depends on how native-image forwards linker arguments: the shim
+# object and the image library sit on a plain cc command whose output is the library the Host
+# loads. macOS keeps using -H:NativeLinkerOption, where -exported_symbol does work.
+image_name="${LIBRARY_NAME}_image"
+
 # The Host's dioxus_compose_host_* functions remain unresolved until the application loads
 # the renderer. $ORIGIN lets GraalVM's generated shims and AWT libraries find the
-# renderer and one another in the staged lib directory.
+# renderer and one another in the staged lib directory. The soname keeps the wrapper's
+# DT_NEEDED entry a bare file name, so the staged directory stays relocatable.
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
     --shared \
     -cp "$classpath" \
-    -o "$LIBRARY_NAME" \
+    -o "$image_name" \
     --no-fallback \
     --features=dioxus.compose.ui.platform.ImeReachabilityFeature \
     -Djava.awt.headless=false \
     -H:IncludeLocales=en,ko \
     -Os \
     -H:+UnlockExperimentalVMOptions \
-    "-H:NativeLinkerOption=$obj/renderer_entry.o" \
-    '-H:NativeLinkerOption=-Wl,--export-dynamic-symbol=dioxus_compose_renderer_run' \
-    '-H:NativeLinkerOption=-Wl,--export-dynamic-symbol=dioxus_compose_renderer_request_frame' \
-    '-H:NativeLinkerOption=-Wl,-u,dioxus_compose_renderer_run' \
-    '-H:NativeLinkerOption=-Wl,-u,dioxus_compose_renderer_request_frame' \
+    "-H:NativeLinkerOption=-Wl,-soname,$image_name.so" \
     '-H:NativeLinkerOption=-Wl,-rpath,$ORIGIN')
 
 # These files are emitted by upstream Native Image when AWT is reachable. Fail here instead
 # of shipping an image that later resolves its toolkit against a developer JDK.
-for runtime_file in "$LIBRARY_NAME.so" libawt.so libawt_headless.so libawt_xawt.so \
+for runtime_file in "$image_name.so" libawt.so libawt_headless.so libawt_xawt.so \
                     libfontmanager.so libjava.so libjvm.so; do
     [[ -f "$lib/$runtime_file" ]] || die "Native Image did not emit $runtime_file" \
         "This upstream GraalVM Linux AWT layout is untested for the selected JDK build." \
         "Keep $BUILD_DIR and report: $GRAALVM_HOME/bin/native-image --version"
 done
+
+# The shim calls these five. Check them before linking, so a rename or a dropped export is
+# reported as itself rather than as an undefined reference in the middle of a cc command.
+for required_symbol in graal_create_isolate graal_attach_thread graal_get_current_thread \
+                       dioxus_compose_renderer_run_impl \
+                       dioxus_compose_renderer_request_frame_impl; do
+    nm -D "$lib/$image_name.so" | grep -Eq " [TW] ${required_symbol}$" && continue
+    echo "-- dynamic symbol table of $image_name.so (graal_*, dioxus_*)" >&2
+    nm -D "$lib/$image_name.so" | grep -E "graal_|dioxus_" >&2 || echo "   (none)" >&2
+    die "$image_name.so does not export $required_symbol" \
+        "The C shim forwards to it, so the public library cannot be linked without it."
+done
+
+# The library the Host loads: the argument-free C ABI, linked against the image library.
+cc -shared -fPIC -pthread -o "$lib/$LIBRARY_NAME.so" "$obj/renderer_entry.o" \
+    -L"$lib" -Wl,--no-as-needed "-l${image_name#lib}" -Wl,-rpath,'$ORIGIN'
 
 for exported_symbol in dioxus_compose_renderer_run dioxus_compose_renderer_request_frame; do
     nm -D "$lib/$LIBRARY_NAME.so" | grep -Eq " [TW] ${exported_symbol}$" && continue
@@ -67,8 +95,16 @@ for exported_symbol in dioxus_compose_renderer_run dioxus_compose_renderer_reque
     echo "-- full symbol table (dioxus_compose_renderer_*)" >&2
     nm "$lib/$LIBRARY_NAME.so" 2>/dev/null | grep dioxus_compose_renderer_ >&2 || echo "   (none)" >&2
     die "$LIBRARY_NAME.so does not export $exported_symbol" \
-        "Keep $BUILD_DIR and inspect the Native Image linker command."
+        "Keep $BUILD_DIR and inspect the cc -shared command in this script."
 done
+
+# A DT_NEEDED entry carrying a build-host path would make the staged directory unusable
+# anywhere else, and that failure would only surface when someone runs the shipped bundle.
+needed="$(readelf -d "$lib/$LIBRARY_NAME.so" | grep NEEDED | grep "$image_name" || true)"
+[[ "$needed" == *"[$image_name.so]"* ]] || die \
+    "$LIBRARY_NAME.so does not depend on $image_name.so by bare file name" \
+    "readelf -d reported: ${needed:-no matching NEEDED entry}" \
+    "Check that -Wl,-soname reached the Native Image link."
 
 # Skiko loads JAWT from <java.home>/lib. Native Image may emit it when it sees the load. If
 # it does not, stage the matching library from the same GraalVM. This fallback is untested.
