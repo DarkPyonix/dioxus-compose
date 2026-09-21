@@ -1,7 +1,7 @@
 # Native renderer -- the slow half of the quality gate, and the release.
 #
 # A version tag runs the same three platform builds this workflow already ran for
-# verification, then attaches what they produced to a draft GitHub Release and publishes
+# verification, then attaches what they produced to a GitHub Release and publishes
 # the crate. The renderer distribution is the native-image shared library plus Skia, about
 # 85MB, which crates.io will not take and which has no business in a source crate anyway,
 # so the split is: `dioxus-compose` stays an ordinary crate that builds with no renderer
@@ -412,13 +412,13 @@ jobs:
   # while a platform is missing would leave anyone on that platform with a version that can
   # never be made to work.
   release:
-    name: Draft the GitHub Release
+    name: Publish the GitHub Release
     needs: [changed, build, windows, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       # The only write permission anywhere in this repository's workflows, and
-      # it is scoped to this job: it creates a draft release and uploads files.
+      # it is scoped to this job: it creates a release and uploads files.
       contents: write
     steps:
       - uses: actions/checkout@v4
@@ -437,7 +437,12 @@ jobs:
           cat artifacts/*.sha256 > artifacts/SHA256SUMS
           cat artifacts/SHA256SUMS
 
-      - name: Create or update the draft release
+      - name: Create or update the release
+        # Published, not drafted. The crate that names these artifacts is uploaded to
+        # crates.io by the next job, and that cannot be undone, so a release left in draft
+        # means the published crate points at a download page nobody outside this
+        # repository can see. The gate is the tag: a tag only reaches here after all three
+        # platforms built and smoke tested.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -445,11 +450,12 @@ jobs:
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS --clobber
+            # A release created by an earlier run of this tag may still be a draft.
+            gh release edit "$TAG" --draft=false
           else
             gh release create "$TAG" \
-              --draft \
               --title "$TAG" \
-              --notes "Renderer artifacts for \`$TAG\`. Verify with \`shasum -a 256 -c SHA256SUMS\`. Review, then publish by hand." \
+              --notes "Renderer artifacts for \`$TAG\`. Verify with \`shasum -a 256 -c SHA256SUMS\`." \
               artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS
           fi
 
