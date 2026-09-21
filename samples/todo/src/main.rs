@@ -152,9 +152,12 @@ fn app() -> Element {
                         }
                     }
                     Spacer { weight: 1.0 }
+                    // Clearing throws work away, so it says so in the same colour the
+                    // row's own Delete uses.
                     Button {
                         text: "Clear completed",
                         variant: ButtonVariant::Text,
+                        color: Paint::Role(ColorRole::Error),
                         on_click: move |_| {
                             tasks.write().retain(|task| !task.done);
                             store::save(&tasks.read());
@@ -229,16 +232,17 @@ fn app() -> Element {
                                     padding_role: SpaceRole::Xs,
                                     space_role: SpaceRole::Xs,
                                     alignment: Alignment::CenterStart,
-                                    // A ballot box reads as something you can tick. The
-                                    // filled variant is the second half of the same
-                                    // statement, so a completed task is legible at a
-                                    // glance rather than by reading the glyph.
+                                    // A ballot box reads as something you can tick. Ticking
+                                    // it colours the mark rather than putting a container
+                                    // behind it: a filled box around one row's first
+                                    // column would weigh more than the row it belongs to.
                                     Button {
                                         text: if task.done { "\u{2611}" } else { "\u{2610}" },
-                                        variant: if task.done {
-                                            ButtonVariant::Tonal
+                                        variant: ButtonVariant::Text,
+                                        color: if task.done {
+                                            Paint::Role(ColorRole::Primary)
                                         } else {
-                                            ButtonVariant::Text
+                                            Paint::Role(ColorRole::Outline)
                                         },
                                         on_click: move |_| {
                                             tasks.write()[index].done = !task.done;
