@@ -1,8 +1,12 @@
-//! An LLM chat interface with no network.
+//! An LLM chat interface with no network, clone coded from Google Gemini.
 //!
-//! A scrollback of messages, a multiline composer where Enter sends and Shift+Enter starts
-//! a new line, and an assistant whose reply arrives a few characters at a time from a
-//! worker thread while the user keeps scrolling and typing.
+//! Conversations down the side, a scrollback of messages, a composer where Enter sends and
+//! Shift+Enter starts a new line, and an assistant whose reply arrives a few characters at
+//! a time from a worker thread while the user keeps scrolling and typing.
+//!
+//! The conversations are a destination set rather than a list this code lays out, so the
+//! Renderer draws them as a bar along the bottom of a phone, a rail beside a tablet and the
+//! reference's sidebar on a desktop, from one declaration.
 //!
 //! The scrollback is a `LazyColumn` so a long conversation costs widgets in proportion to
 //! what is on screen. Each message carries an id that never changes and that id is its key,
@@ -18,21 +22,97 @@ pub struct Message {
     pub id: u64,
     /// The turn this message belongs to. A stale worker compares it before appending.
     pub token: u64,
+    /// Which conversation said it. One list holds every conversation's messages so the
+    /// worker can keep appending to the last one it was given without knowing that the
+    /// person reading has moved to a different conversation meanwhile.
+    pub conversation: u64,
     pub from_user: bool,
     pub text: String,
     pub streaming: bool,
 }
 
+/// One conversation in the sidebar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Conversation {
+    /// Never reused, so it is the destination's key and what a message belongs to.
+    id: u64,
+    /// What the sidebar calls it. Empty until the first thing is said in it, because
+    /// the reference names a conversation after its opening line.
+    title: String,
+}
+
+impl Conversation {
+    /// What a conversation with nothing in it is called.
+    const UNTITLED: &'static str = "New chat";
+
+    fn label(&self) -> String {
+        if self.title.is_empty() {
+            Self::UNTITLED.to_owned()
+        } else {
+            self.title.clone()
+        }
+    }
+}
+
+/// How many characters of the opening line become the conversation's name.
+///
+/// Long enough to tell two conversations apart and short enough to sit in a rail. The
+/// reference does the same thing with about the same amount of room.
+const TITLE_CHARS: usize = 24;
+
+fn title_from(text: &str) -> String {
+    let mut title: String = text.chars().take(TITLE_CHARS).collect();
+    if text.chars().nth(TITLE_CHARS).is_some() {
+        title.push('\u{2026}');
+    }
+    title
+}
+
+/// How many conversations stand in the destination set.
+///
+/// The reference's sidebar shows recent chats and keeps the rest behind a "show more",
+/// and there is a harder reason than taste: the same declaration is a bar along the
+/// bottom of a phone, and a bar that holds every conversation ever started is a bar with
+/// nothing legible in it. Five is the published ceiling for a bottom bar in the design
+/// system this project takes its size classes from.
+const RECENT_CONVERSATIONS: usize = 5;
+
+/// A new conversation has nothing in it.
+///
+/// It used to open with one message from the assistant explaining what the screen was,
+/// which put an introduction in the transcript: something the assistant never said, under
+/// its name, that you could scroll back to a week later and read as part of the
+/// conversation. The reference does not do that. An empty conversation is empty, and what
+/// the screen is gets said by the screen, in the middle, until there is something to read.
 fn opening_messages() -> Vec<Message> {
-    vec![Message {
-        id: 1,
-        token: 0,
-        from_user: false,
-        text: "Ask me something. I will answer slowly and at length, on a thread that is \
-not this one. Enter sends; Shift+Enter starts a new line."
-            .to_owned(),
-        streaming: false,
-    }]
+    Vec::new()
+}
+
+/// What stands in the middle of a conversation that has not started.
+///
+/// Not a widget in the scrollback: the list is genuinely empty, and this sits over it. It
+/// leaves as soon as there is a first message, which is why it can say the thing that is
+/// only true before then.
+fn opening_greeting() -> Element {
+    rsx! {
+        Column {
+            padding_role: SpaceRole::Lg,
+            space_role: SpaceRole::Sm,
+            alignment: Alignment::Center,
+            Text {
+                text: "Ask me something",
+                type_role: TypeRole::Headline,
+                text_align: TextAlign::Center,
+            }
+            Text {
+                text: "I answer slowly and at length, on a thread that is not this one. \
+                       Enter sends, Shift+Enter starts a new line.",
+                type_role: TypeRole::Body,
+                text_align: TextAlign::Center,
+                color: Paint::Role(ColorRole::OnSurfaceVariant),
+            }
+        }
+    }
 }
 
 /// The widest a thread is allowed to be, per class.
@@ -191,6 +271,18 @@ fn app() -> Element {
     let turns = use_signal(Turns::default);
     let mut settings = use_signal(Settings::default);
     let mut settings_open = use_signal(|| false);
+    let mut length_open = use_signal(|| false);
+    // The conversations, newest last, and the one being read. A chat application with one
+    // conversation is a chat application with the part people use missing, and the
+    // reference's sidebar is mostly this list.
+    let mut conversations = use_signal(|| {
+        vec![Conversation {
+            id: 1,
+            title: String::new(),
+        }]
+    });
+    let mut current = use_signal(|| 1_u64);
+    let mut next_conversation = use_signal(|| 2_u64);
 
     let mut send = move |text: String| {
         let text = text.trim().to_owned();
@@ -200,11 +292,13 @@ fn app() -> Element {
         let token = turns.peek().begin();
         let id = next_id();
         next_id.set(id + 2);
+        let conversation = current();
         {
             let mut list = messages.write();
             list.push(Message {
                 id,
                 token,
+                conversation,
                 from_user: true,
                 text: text.clone(),
                 streaming: false,
@@ -214,63 +308,172 @@ fn app() -> Element {
             list.push(Message {
                 id: id + 1,
                 token,
+                conversation,
                 from_user: false,
                 text: String::new(),
                 streaming: true,
             });
         }
+        // A conversation is named after the first thing said in it, which is how the
+        // sidebar tells one from another without asking anybody to name anything.
+        {
+            let mut list = conversations.write();
+            if let Some(entry) = list.iter_mut().find(|entry| entry.id == conversation) {
+                if entry.title.is_empty() {
+                    entry.title = title_from(&text);
+                }
+            }
+        }
         draft.set(String::new());
         assistant::stream_reply(text, token, turns.peek().clone(), settings(), messages);
     };
 
-    let count = messages.read().len();
+    // What is on screen is one conversation's messages. The list holds every
+    // conversation's, so this is the window into it, the same shape the task list uses
+    // for its filters.
+    let thread: Vec<usize> = messages
+        .read()
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| message.conversation == current())
+        .map(|(index, _)| index)
+        .collect();
+    let count = thread.len();
     let busy = messages
         .read()
         .last()
-        .is_some_and(|message| message.streaming);
-    let keys: Vec<String> = messages
-        .read()
+        .is_some_and(|message| message.streaming && message.conversation == current());
+    let keys: Vec<String> = thread
         .iter()
-        .map(|message| message.id.to_string())
+        .map(|index| messages.read()[*index].id.to_string())
         .collect();
+    let rows = thread.clone();
+    // Newest first in the sidebar, and only as many as a set of destinations can hold.
+    let recent: Vec<Conversation> = conversations()
+        .iter()
+        .rev()
+        .take(RECENT_CONVERSATIONS)
+        .cloned()
+        .collect();
+    let selected = recent
+        .iter()
+        .position(|entry| entry.id == current())
+        .unwrap_or(0);
 
     rsx! {
+        // The conversations are the destination set, which is the reference's sidebar.
+        // This code never asks how wide the window is for it: the Renderer has measured
+        // the window and draws a bar along the bottom of a phone, a rail beside a tablet
+        // and a sidebar standing open on a desktop, from these same items.
+        Navigation {
+            fill_max_width: true,
+            fill_max_height: true,
+            selected_index: selected,
+            for conversation in recent.iter().cloned() {
+                NavigationItem {
+                    key: "{conversation.id}",
+                    text: conversation.label(),
+                    // A rail is allowed to drop the labels, so a destination that is
+                    // nothing but a title would be a blank strip in one of the three
+                    // presentations.
+                    icon: IconRole::Inbox,
+                    on_click: {
+                        let id = conversation.id;
+                        move |()| current.set(id)
+                    },
+                }
+            }
         Column {
             fill_max_width: true,
             fill_max_height: true,
 
             {thread_bar(measure, busy, rsx! {
-                Text { text: "Chat", type_role: TypeRole::Title, weight: 1.0 }
+                // The conversation's own name, not the application's. The application's
+                // name is on the screen once already, in the sidebar, and it is the one
+                // thing here that never changes.
+                Text {
+                    text: conversations
+                        .read()
+                        .iter()
+                        .find(|entry| entry.id == current())
+                        .map_or_else(|| Conversation::UNTITLED.to_owned(), Conversation::label),
+                    type_role: TypeRole::Title,
+                    weight: 1.0,
+                    max_lines: 1,
+                    overflow: TextOverflow::Ellipsis,
+                }
                 Button {
                     text: "Assistant",
                     variant: ButtonVariant::Text,
                     on_click: move |_| settings_open.set(true),
                 }
+                // Deleting is the one thing here that throws a conversation away, so it
+                // says what it did and offers it back. Starting a new one no longer
+                // destroys anything: the old conversation is still in the sidebar.
+                Button {
+                    text: "Delete",
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ColorRole::Error),
+                    enabled: conversations.read().len() > 1,
+                    on_click: move |_| {
+                        let gone = current();
+                        let entries = conversations();
+                        let Some(at) = entries.iter().position(|entry| entry.id == gone) else {
+                            return;
+                        };
+                        let removed = entries[at].clone();
+                        let lines = messages();
+                        // The worker is already handled: beginning a turn bumps the token,
+                        // and a worker whose token is no longer current stops at its next
+                        // chunk rather than appending to a conversation that has gone.
+                        turns.peek().begin();
+                        conversations.write().remove(at);
+                        messages
+                            .write()
+                            .retain(|message| message.conversation != gone);
+                        // There is always somewhere to be. Deleting the last one leaves an
+                        // empty conversation rather than a screen with no conversation in
+                        // it, which is a state the rest of this screen cannot draw.
+                        if conversations.read().is_empty() {
+                            let id = next_conversation();
+                            next_conversation.set(id + 1);
+                            conversations.write().push(Conversation {
+                                id,
+                                title: String::new(),
+                            });
+                        }
+                        let next = conversations.read()[at.min(conversations.read().len() - 1)].id;
+                        current.set(next);
+                        // Spelled out, because this file already has a `Message` and it is
+                        // a line of a conversation. The library's is the one sentence an
+                        // application says after something happened.
+                        dioxus_compose::Message::new(format!(
+                            "Deleted \u{201c}{}\u{201d}",
+                            removed.label()
+                        ))
+                        .with_action("Undo", move |()| {
+                            conversations.write().insert(at, removed.clone());
+                            messages.set(lines.clone());
+                            current.set(gone);
+                        })
+                        .with_duration(MessageDuration::Long)
+                        .show();
+                    },
+                }
                 Button {
                     text: if crowded { "New" } else { "New conversation" },
                     variant: ButtonVariant::Text,
                     on_click: move |_| {
-                        // Starting again throws a conversation away, so it offers it back
-                        // rather than asking first. The stale worker is already handled:
-                        // beginning a turn bumps the token, and a worker whose token is no
-                        // longer current stops at its next chunk.
-                        let previous = messages();
-                        let previous_id = next_id();
-                        turns.peek().begin();
-                        messages.set(opening_messages());
-                        next_id.set(2);
-                        if previous.len() > 1 {
-                            // Spelled out, because this file already has a `Message` and
-                            // it is a line of a conversation. The library's is the one
-                            // sentence an application says after something happened.
-                            dioxus_compose::Message::new("Conversation cleared")
-                                .with_action("Undo", move |()| {
-                                    messages.set(previous.clone());
-                                    next_id.set(previous_id);
-                                })
-                                .with_duration(MessageDuration::Long)
-                                .show();
-                        }
+                        // Nothing is thrown away: the conversation that was on screen
+                        // stays in the sidebar, which is what the reference does and what
+                        // makes the sidebar worth having.
+                        let id = next_conversation();
+                        next_conversation.set(id + 1);
+                        conversations.write().push(Conversation {
+                            id,
+                            title: String::new(),
+                        });
+                        current.set(id);
                     },
                 }
             })}
@@ -303,19 +506,27 @@ fn app() -> Element {
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Md,
 
-                LazyColumn {
+                // The scrollback and, while there is nothing in it, what the screen is.
+                // The list is declared either way: a conversation that begins by building
+                // a list is a conversation whose first message arrives a frame late.
+                dioxus_compose::Box {
                     fill_max_width: true,
                     weight: 1.0,
+                    alignment: Alignment::Center,
+                LazyColumn {
+                    fill_max_width: true,
+                    fill_max_height: true,
                     item_count: count,
                     key_of: move |index: usize| keys[index].clone(),
-                    item: move |index: usize| {
+                    item: move |position: usize| {
+                        let index = rows[position];
                         let message = messages.read()[index].clone();
                         // A name over every bubble is a name repeated once per line. The
                         // side and the fill already say who is speaking, so the name is
                         // printed once at the head of a run and the rest of the run is
                         // read as the same speaker still talking.
-                        let starts_a_run = index == 0
-                            || messages.read()[index - 1].from_user != message.from_user;
+                        let starts_a_run = position == 0
+                            || messages.read()[rows[position - 1]].from_user != message.from_user;
                         // Who said it should be readable without reading, so it is the side
                         // the bubble sits on and the colour it is filled with, with the
                         // name left as confirmation rather than as the only clue. Both
@@ -384,20 +595,28 @@ fn app() -> Element {
                         }
                     },
                 }
+                if count == 0 {
+                    {opening_greeting()}
+                }
+                }
 
-                // The composer, grouped so it reads as one control at the foot of the
-                // conversation rather than as a field and a button that happen to be
-                // side by side.
+                // The composer, as the reference has it: one rounded bar floating at the
+                // foot of the page, holding everything that belongs to sending a message.
+                // It used to be a field with a button parked beside it inside a square
+                // panel, which is two controls that happen to be adjacent.
                 //
-                // It is drawn with an edge rather than with a fill, because the thread it
-                // sits at the foot of is the reading surface. A filled panel on a reading
-                // surface would either match the page, which is nothing, or match the
-                // incoming bubble, which would make the place you type look like something
-                // the assistant said.
-                Surface {
+                // A `Card` rather than a `Surface`, because floating is the whole
+                // difference between the two: the design system's raised container already
+                // knows what lifting something off a page looks like in that system, and a
+                // shadow depth chosen in this file would only be right in one of them.
+                Card {
                     fill_max_width: true,
-                    border_width: 1.0,
-                    border_color: Paint::Role(ColorRole::Outline),
+                    shape_role: ShapeRole::Full,
+                    // A step of room inside the pill, on top of whatever the design system
+                    // already puts there. A stadium's edge curves in at the top and bottom,
+                    // and the field is a rectangle: at the system's own padding the field's
+                    // corners came out through the curve.
+                    padding_role: SpaceRole::Sm,
                     Row {
                         fill_max_width: true,
                         space_role: SpaceRole::Sm,
@@ -412,13 +631,56 @@ fn app() -> Element {
                         TextField {
                             weight: 1.0,
                             multiline: true,
-                            placeholder: "Message. Enter sends, Shift+Enter starts a new line",
+                            // The long form is a sentence of documentation, which is worth
+                            // having in a sample and needs a line to itself. On a phone
+                            // there is no line to spare: it wrapped to three, and a
+                            // composer three lines tall before anything is typed is not the
+                            // bar the reference has.
+                            placeholder: if crowded {
+                                "Message"
+                            } else {
+                                "Message. Enter sends, Shift+Enter starts a new line"
+                            },
                             on_value_change: move |value| draft.set(value),
                             on_submit: move |value: String| send(value),
+                        }
+                        // What the reference calls the model, which is the one thing
+                        // about an answer you can choose before asking for it. It sits in
+                        // the composer, where that choice is made, as well as in the
+                        // settings, where everything about the assistant is.
+                        //
+                        // A menu behind its own label rather than a `Dropdown`: a picker
+                        // is a wheel in one of these design systems, and a wheel is the
+                        // right shape for a form and the wrong one for a strip you type
+                        // in, where it would be taller than the composer it sits in.
+                        Menu {
+                            expanded: length_open(),
+                            on_dismiss: move |_| length_open.set(false),
+                            anchor: rsx! {
+                                Button {
+                                    text: settings().length.label(),
+                                    variant: ButtonVariant::Text,
+                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                    on_click: move |_| length_open.set(true),
+                                }
+                            },
+                            for length in Length::ALL {
+                                Button {
+                                    key: "{length.label()}",
+                                    text: length.label(),
+                                    variant: ButtonVariant::Text,
+                                    fill_max_width: true,
+                                    on_click: move |_| {
+                                        length_open.set(false);
+                                        settings.set(Settings { length, ..settings() });
+                                    },
+                                }
+                            }
                         }
                         Button {
                             text: "Send",
                             variant: ButtonVariant::Filled,
+                            shape_role: ShapeRole::Full,
                             on_click: move |_| send(draft()),
                         }
                     }
@@ -439,6 +701,7 @@ fn app() -> Element {
                     EventHandler::new(move |()| settings_open.set(false)),
                 )}
             }
+        }
         }
     }
 }
@@ -540,6 +803,8 @@ mod tests {
         change_handler: u64,
         /// The text of every node, as the frames report it.
         texts: HashMap<u32, String>,
+        /// The destination nodes that are still on screen, which is the sidebar.
+        destinations: Vec<u32>,
         /// Every message the screen has said, in order, with its action label.
         messages: Vec<(String, String)>,
         event: Vec<u8>,
@@ -594,6 +859,16 @@ mod tests {
                     _ => None,
                 })
                 .collect();
+            let destinations = first
+                .iter()
+                .filter_map(|mutation| match mutation {
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::NavigationItem,
+                    } => Some(*node_id),
+                    _ => None,
+                })
+                .collect();
             drop(first);
             Self {
                 host,
@@ -604,6 +879,7 @@ mod tests {
                 submit_handler,
                 change_handler,
                 texts,
+                destinations,
                 messages: Vec::new(),
                 event: Vec::new(),
             }
@@ -650,12 +926,31 @@ mod tests {
                     } => {
                         self.texts.insert(node_id, text.to_owned());
                     }
+                    Mutation::Create {
+                        node_id,
+                        widget: WidgetKind::NavigationItem,
+                    } => self.destinations.push(node_id),
+                    Mutation::Remove { node_id } => {
+                        self.destinations.retain(|found| *found != node_id);
+                    }
                     Mutation::ShowMessage { text, action, .. } => {
                         self.messages.push((text.to_owned(), action.to_owned()));
                     }
                     _ => {}
                 }
             }
+        }
+
+        /// What the sidebar is offering, by label. Sorted, because what the destination
+        /// set holds is the claim here and the order it is drawn in is the Renderer's.
+        fn destinations(&self) -> Vec<String> {
+            let mut labels: Vec<String> = self
+                .destinations
+                .iter()
+                .filter_map(|node| self.texts.get(node).cloned())
+                .collect();
+            labels.sort();
+            labels
         }
 
         /// Sends an event and keeps what came back.
@@ -746,9 +1041,13 @@ mod tests {
         fn send(&mut self, text: &str) {
             let (node, handler) = (self.composer, self.submit_handler);
             self.encode(node, handler, EventPayload::TextSubmitted(text));
-            self.host
+            let batch = self
+                .host
                 .dispatch_event(&self.event)
-                .expect("the send failed");
+                .expect("the send failed")
+                .0
+                .to_vec();
+            self.absorb(&batch);
         }
 
         fn type_into_composer(&mut self, text: &str) -> usize {
@@ -1066,9 +1365,10 @@ mod tests {
         );
     }
 
-    /// Starting again throws a conversation away, so it offers it back.
+    /// Deleting throws a conversation away, so it offers it back. Starting a new one no
+    /// longer destroys anything, because the old conversation stays in the sidebar.
     #[test]
-    fn fr21_starting_a_new_conversation_offers_the_old_one_back() {
+    fn fr21_deleting_a_conversation_offers_it_back() {
         let mut screen = Screen::new();
         screen.open_window();
         screen.send("tell me about streaming");
@@ -1078,10 +1378,145 @@ mod tests {
         // the screen is laid out for the narrowest one and the button carries its short
         // label.
         screen.press("New");
+        screen.press("Delete");
         assert_eq!(
             screen.messages,
-            vec![("Conversation cleared".to_owned(), "Undo".to_owned())],
-            "clearing should say what it did and offer it back"
+            vec![(
+                "Deleted \u{201c}New chat\u{201d}".to_owned(),
+                "Undo".to_owned()
+            )],
+            "deleting should say what it did and offer it back"
+        );
+    }
+
+    /// The conversations are the destination set, which is what the reference's sidebar
+    /// is. One declaration, and the Renderer draws it as a bar, a rail or a sidebar from
+    /// the width it measured.
+    #[test]
+    fn fr22_the_conversations_are_the_destination_set() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        let before = screen.destinations();
+        assert_eq!(
+            before,
+            vec!["New chat".to_owned()],
+            "a fresh screen should offer the one conversation it has"
+        );
+
+        screen.send("tell me about streaming");
+        screen.settle();
+        screen.press("New");
+        let after = screen.destinations();
+        assert_eq!(
+            after,
+            vec!["New chat".to_owned(), "tell me about streaming".to_owned()],
+            "the conversation that was on screen should still be in the sidebar, named \
+             after its opening line"
+        );
+    }
+
+    /// The reference puts everything that belongs to sending a message inside one rounded
+    /// bar. A field with a button parked next to it is two controls that happen to be
+    /// adjacent, which is what this used to be.
+    #[test]
+    fn fr22_the_composer_is_one_rounded_bar_holding_the_send() {
+        let screen = Screen::new();
+        let batch = decode_batch(&screen.first).expect("the first frame did not decode");
+
+        let mut parents = HashMap::new();
+        for mutation in &batch {
+            if let Mutation::Insert {
+                parent_id, node_id, ..
+            } = mutation
+            {
+                parents.insert(*node_id, *parent_id);
+            }
+        }
+        let row = parents[&screen.composer];
+        let bar = parents[&row];
+
+        let send = *screen
+            .texts
+            .iter()
+            .find(|(_, text)| *text == "Send")
+            .map(|(node_id, _)| node_id)
+            .expect("the screen has nothing labelled Send");
+        assert_eq!(
+            parents[&send], row,
+            "the send button is outside the row the field is in, so the composer is not \
+             one control"
+        );
+
+        let rounded = batch.iter().any(|mutation| {
+            matches!(
+                mutation,
+                Mutation::SetModifier { node_id, modifier: Modifier::ShapeRole(ShapeRole::Full), .. }
+                    if *node_id == bar
+            )
+        });
+        assert!(rounded, "the composer is not the reference's pill");
+    }
+
+    /// Nothing has been said yet, so the middle of the screen says what the screen is.
+    /// It is not a message: an introduction under the assistant's name is something the
+    /// assistant never said, sitting in the transcript for good.
+    #[test]
+    fn fr22_an_empty_conversation_says_what_it_is_in_the_middle() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        let greeting = "Ask me something";
+        assert!(
+            screen.texts.values().any(|text| text == greeting),
+            "an empty conversation does not say what the screen is"
+        );
+        assert!(
+            screen
+                .texts
+                .values()
+                .all(|text| !text.starts_with("You said:")),
+            "an empty conversation already holds a reply"
+        );
+
+        // And it leaves as soon as there is something to read, which is what lets it say
+        // the thing that is only true before then.
+        let node = *screen
+            .texts
+            .iter()
+            .find(|(_, text)| *text == greeting)
+            .map(|(node_id, _)| node_id)
+            .expect("the greeting has no node");
+        let (composer, handler) = (screen.composer, screen.submit_handler);
+        screen.encode(composer, handler, EventPayload::TextSubmitted("hello"));
+        let batch = screen
+            .host
+            .dispatch_event(&screen.event)
+            .expect("the send failed")
+            .0
+            .to_vec();
+        // A removal takes the subtree with it, so what has to be gone is the greeting or
+        // something it hangs from.
+        let mut parents = HashMap::new();
+        for mutation in decode_batch(&screen.first).expect("the first frame did not decode") {
+            if let Mutation::Insert {
+                parent_id, node_id, ..
+            } = mutation
+            {
+                parents.insert(node_id, parent_id);
+            }
+        }
+        let mut chain = vec![node];
+        while let Some(parent) = parents.get(chain.last().expect("the chain is never empty")) {
+            chain.push(*parent);
+        }
+        let removed = decode_batch(&batch)
+            .expect("the send did not decode")
+            .iter()
+            .any(|mutation| {
+                matches!(mutation, Mutation::Remove { node_id } if chain.contains(node_id))
+            });
+        assert!(
+            removed,
+            "the greeting stayed on screen once the conversation had started"
         );
     }
 

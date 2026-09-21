@@ -1,8 +1,13 @@
-//! A working text editor.
+//! A working text editor, clone coded from the iOS and Windows memo applications.
 //!
 //! Written the way an application using this library would be written: `rsx!` and hooks,
 //! no Kotlin and no protocol types. Reading and writing files happens on a worker thread
 //! and comes back as a signal update, so the UI thread never waits on a disk.
+//!
+//! Several documents can be open at once. The one being written lives in the signals the
+//! editor reads, and the rest wait on a shelf, so choosing a document is a swap rather
+//! than a different code path through the whole screen. The list of them stands beside the
+//! page on a desktop window and arrives in a sheet on anything narrower.
 
 use std::path::PathBuf;
 
@@ -10,7 +15,7 @@ use dioxus_compose::prelude::*;
 
 mod document;
 
-use document::{Counts, Outcome, counts, display_path};
+use document::{Counts, Outcome, counts, display_path, file_name};
 
 /// The file the editor starts on, so the sample has something to open and save without a
 /// file picker.
@@ -105,6 +110,78 @@ fn document_bar(measure: Option<f32>, working: bool, children: Element) -> Eleme
     }
 }
 
+/// A document that is open but not on screen.
+///
+/// The one being edited lives in the signals the editor writes to; this is where the
+/// others wait. Swapping the two is what choosing a document does, which is why the
+/// editor code below never has to know that there is more than one.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct Shelved {
+    /// Never reused, so it is the list key.
+    id: u64,
+    path: String,
+    text: String,
+    on_disk: String,
+}
+
+/// How the list and the document share an expanded window.
+///
+/// The Loop reference gives its sidebar about a quarter of the window, which is what a
+/// list of names needs and no more: the document is what the window is for.
+const LIST_SHARE: f32 = 1.0;
+const DOCUMENT_SHARE: f32 = 3.0;
+
+/// The open documents, newest last, with the one being edited marked.
+///
+/// The same element stands beside the document on a desktop window and arrives in a sheet
+/// on anything narrower. It is written once because it is one list: a list that had to be
+/// authored twice would drift the first time either copy changed.
+fn document_list(
+    entries: Vec<(u64, String)>,
+    current: u64,
+    choose: EventHandler<u64>,
+    new_document: EventHandler<()>,
+) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            space_role: SpaceRole::Sm,
+            Row {
+                fill_max_width: true,
+                alignment: Alignment::CenterStart,
+                Text { text: "Documents", type_role: TypeRole::Subtitle, weight: 1.0 }
+                Button {
+                    text: "New",
+                    variant: ButtonVariant::Tonal,
+                    on_click: move |_| new_document.call(()),
+                }
+            }
+            Separator {}
+            ScrollColumn {
+                fill_max_width: true,
+                weight: 1.0,
+                for (id , name) in entries {
+                    Button {
+                        key: "{id}",
+                        text: name,
+                        fill_max_width: true,
+                        // The one being edited is the filled one. A list where every row
+                        // looks the same is a list that does not say where you are.
+                        variant: if id == current {
+                            ButtonVariant::Tonal
+                        } else {
+                            ButtonVariant::Text
+                        },
+                        color: Paint::Role(ColorRole::OnSurface),
+                        on_click: move |_| choose.call(id),
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn app() -> Element {
     let window = use_window_size();
     // A document is read across its lines, so past a certain width a page that keeps
@@ -116,7 +193,6 @@ fn app() -> Element {
     } else {
         None
     };
-    let crowded = window.is_compact();
     let mut text = use_signal(String::new);
     let mut stamp = use_signal(|| 0_u64);
     let mut path = use_signal(|| display_path(&starting_path()));
@@ -126,6 +202,16 @@ fn app() -> Element {
     // has drifted from this, which is a comparison rather than a flag: a flag has to be
     // cleared in every place that saves, and the one that forgets is the bug.
     let mut on_disk = use_signal(String::new);
+    let mut file_open = use_signal(|| false);
+    // The documents that are open but not on screen, and which one is.
+    let mut shelved = use_signal(Vec::<Shelved>::new);
+    let mut current = use_signal(|| 1_u64);
+    let mut next_document = use_signal(|| 2_u64);
+    let mut list_open = use_signal(|| false);
+    // A desktop window has room for the list to stand beside the document. Narrower than
+    // that it is a sheet, which is the same list arriving from an edge instead.
+    let list_beside = window.is_expanded();
+    let crowded = window.is_compact();
 
     // The worker's result comes back here, on the UI thread, and the signal writes happen
     // where every other signal write in the app happens.
@@ -181,6 +267,67 @@ fn app() -> Element {
         });
     };
 
+    // Putting the document on screen on the shelf and taking another one off it. The
+    // editor's signals are the open document, so choosing one is a swap rather than a
+    // different code path through the whole screen.
+    let choose = move |id: u64| {
+        if id == current() {
+            list_open.set(false);
+            return;
+        }
+        let taken = {
+            let mut list = shelved.write();
+            let Some(at) = list.iter().position(|document| document.id == id) else {
+                return;
+            };
+            let taken = list.remove(at);
+            list.push(Shelved {
+                id: current(),
+                path: path(),
+                text: text(),
+                on_disk: on_disk(),
+            });
+            taken
+        };
+        current.set(taken.id);
+        path.set(taken.path);
+        on_disk.set(taken.on_disk);
+        text.set(taken.text);
+        status.set(format!("Opened {}", file_name(&path())));
+        // The field's contents came from outside it, so the field is rebuilt.
+        stamp += 1;
+        list_open.set(false);
+    };
+
+    let mut new_document = move |()| {
+        shelved.write().push(Shelved {
+            id: current(),
+            path: path(),
+            text: text(),
+            on_disk: on_disk(),
+        });
+        let id = next_document();
+        next_document.set(id + 1);
+        current.set(id);
+        path.set(String::new());
+        text.set(String::new());
+        on_disk.set(String::new());
+        status.set("New document".to_owned());
+        stamp += 1;
+        list_open.set(false);
+    };
+
+    // Every open document, in the order they were opened, with the one on screen in its
+    // own place rather than at the end: the list is not allowed to jump about because the
+    // reader moved between two documents.
+    let mut entries: Vec<(u64, String)> = shelved
+        .read()
+        .iter()
+        .map(|document| (document.id, file_name(&document.path)))
+        .collect();
+    entries.push((current(), file_name(&path())));
+    entries.sort_by_key(|(id, _)| *id);
+
     let Counts {
         words,
         characters,
@@ -197,7 +344,21 @@ fn app() -> Element {
             // The document's actions belong in the bar, not in a line of buttons above the
             // text.
             {document_bar(page_width, working, rsx! {
-                Text { text: "Notepad", type_role: TypeRole::Title, weight: 1.0 }
+                // The application's name, on the windows with room for it. On a phone the
+                // four actions need the whole bar, and the page already says what document
+                // this is, which is the thing a title is for. Left in, the name was
+                // squeezed to one letter per line.
+                if crowded {
+                    dioxus_compose::Box { weight: 1.0 }
+                } else {
+                    Text {
+                        text: "Notepad",
+                        type_role: TypeRole::Title,
+                        weight: 1.0,
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                }
                 // Whether there is anything to lose, said where the actions that could
                 // lose it are. Not the error colour: unsaved work is an ordinary state of
                 // a document being written, not a fault.
@@ -208,38 +369,27 @@ fn app() -> Element {
                         color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
                 }
+                // Only where the list is not already on screen. A button that opens what
+                // you are looking at is a button that does nothing.
+                if !list_beside {
+                    Button {
+                        text: "Documents",
+                        variant: ButtonVariant::Text,
+                        on_click: move |_| list_open.set(true),
+                    }
+                }
+                // Starting a document no longer throws one away: the one that was on
+                // screen is in the list, which is why this offers nothing back.
                 Button {
                     text: "New",
                     variant: ButtonVariant::Text,
                     enabled: !working,
-                    on_click: move |_| {
-                        let thrown_away = text();
-                        text.set(String::new());
-                        on_disk.set(String::new());
-                        stamp += 1;
-                        status.set("New document".to_owned());
-                        // Starting a new document throws the old one away without asking,
-                        // so it offers it back rather than asking first: a dialog in front
-                        // of every New is a dialog nobody reads by the third time.
-                        if !thrown_away.is_empty() {
-                            Message::new("Document cleared")
-                                .with_action("Undo", move |()| {
-                                    text.set(thrown_away.clone());
-                                    stamp += 1;
-                                })
-                                .with_duration(MessageDuration::Long)
-                                .show();
-                        }
-                    },
+                    on_click: move |_| new_document(()),
                 }
                 Button {
-                    text: "Open",
+                    text: "File",
                     variant: ButtonVariant::Tonal,
-                    enabled: !working,
-                    on_click: move |_| {
-                        let target = PathBuf::from(path());
-                        run_on_worker(Box::new(move || document::open(target)));
-                    },
+                    on_click: move |_| file_open.set(true),
                 }
                 Button {
                     text: "Save",
@@ -253,6 +403,93 @@ fn app() -> Element {
                 }
             })}
 
+            // Which file the document is, and the two things that can be done with it.
+            //
+            // It used to be a strip above the page, carrying a path in monospace across
+            // the top of a document. Neither memo reference has one: a note is a page with
+            // a name on it, and where the bytes live is something you go and ask for. A
+            // sheet is where you ask. It is declared here rather than at the foot of the
+            // screen because it belongs to the button in the bar above, and a sheet is
+            // drawn over the page wherever it is declared.
+            Sheet {
+                open: file_open(),
+                on_dismiss: move |_| file_open.set(false),
+                fill_max_width: true,
+                Column {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    Row {
+                        fill_max_width: true,
+                        alignment: Alignment::CenterStart,
+                        Text { text: "File", type_role: TypeRole::Subtitle, weight: 1.0 }
+                        Button {
+                            text: "Close",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| file_open.set(false),
+                        }
+                    }
+                    Separator {}
+                    {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        Text {
+                            text: "The document is saved to this path, and Open reads it \
+                                   back.",
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            weight: 1.0,
+                        }
+                        Button {
+                            text: "Open",
+                            variant: ButtonVariant::Tonal,
+                            enabled: !working,
+                            on_click: move |_| {
+                                file_open.set(false);
+                                let target = PathBuf::from(path());
+                                run_on_worker(Box::new(move || document::open(target)));
+                            },
+                        }
+                    }
+                }
+            }
+
+            // The same list, arriving from an edge, for the windows with no room beside
+            // the document. Which edge is the Renderer's decision.
+            Sheet {
+                open: list_open() && !list_beside,
+                on_dismiss: move |_| list_open.set(false),
+                fill_max_width: true,
+                {document_list(
+                    entries.clone(),
+                    current(),
+                    EventHandler::new(choose),
+                    EventHandler::new(move |()| new_document(())),
+                )}
+            }
+
+            // The list and the document, side by side where there is room. Both memo
+            // references do this on a wide window: Loop keeps its documents down the left
+            // and iOS opens the note over the list it came from.
+            Row {
+                fill_max_width: true,
+                fill_max_height: true,
+                if list_beside {
+                    Column {
+                        weight: LIST_SHARE,
+                        fill_max_height: true,
+                        padding_role: SpaceRole::Md,
+                        {document_list(
+                            entries.clone(),
+                            current(),
+                            EventHandler::new(choose),
+                            EventHandler::new(move |()| new_document(())),
+                        )}
+                    }
+                    Divider { vertical: true }
+                }
+
             // The page defines a column, and everything under the bar lines up with it.
             //
             // The page alone used to be centred and measured while the file strip and the
@@ -261,6 +498,7 @@ fn app() -> Element {
             // belongs to the document sits on the same measure or the document is not a
             // page, it is a rectangle floating between two full width strips.
             dioxus_compose::Box {
+                weight: DOCUMENT_SHARE,
                 fill_max_width: true,
                 fill_max_height: true,
                 alignment: Alignment::TopCenter,
@@ -274,41 +512,31 @@ fn app() -> Element {
                     padding_role: SpaceRole::Md,
                     space_role: SpaceRole::Md,
 
-                    // The location bar: one grouped strip that says which file the actions
-                    // above work on.
-                    Surface {
+                    // The document's name, which is the first thing on the page in both
+                    // memo references. A document is a thing with a name, and a page that
+                    // opens straight into body text is a page you cannot tell from the
+                    // one beside it.
+                    Text {
+                        text: file_name(&path()),
                         fill_max_width: true,
-                        Row {
-                            fill_max_width: true,
-                            space_role: SpaceRole::Sm,
-                            alignment: Alignment::CenterStart,
-                            // The word is dropped on a phone: the field says what it is in
-                            // its own placeholder, and a path needs every pixel of the line.
-                            if !crowded {
-                                Text {
-                                    text: "File",
-                                    type_role: TypeRole::Label,
-                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                }
-                            }
-                            {path_field(path(), EventHandler::new(move |value| path.set(value)))}
-                        }
+                        type_role: TypeRole::Headline,
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
                     }
 
-                    // The page. A document is an object you write on, so it is a surface of
-                    // its own, and it takes what the toolbar and the status line leave. Its
-                    // width is the column's, which is what makes the file strip above it and
-                    // the status line below it line up with its edges.
-                    Surface {
+                    // The page: the field itself, taking everything the title above it
+                    // and the status line below it leave.
+                    //
+                    // It used to be a field inside a scrolling column inside a surface.
+                    // Height cannot reach a field through a scrolling column, because what
+                    // a scroll offers its content is unbounded, so the editor came out one
+                    // line tall at the top of a page-sized panel: a text editor you could
+                    // not see your document in. The field scrolls itself once it is taller
+                    // than the window, which is the behaviour the column was there for.
+                    dioxus_compose::Box {
                         fill_max_width: true,
                         weight: 1.0,
-                        // The editor scrolls on its own, so a document longer than the window
-                        // stays reachable without the Host knowing where the scroll is.
-                        ScrollColumn {
-                            fill_max_width: true,
-                            fill_max_height: true,
-                            {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
-                        }
+                        {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
                     }
 
                     // The status line is not part of the page, so a rule separates them.
@@ -346,6 +574,7 @@ fn app() -> Element {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -386,6 +615,8 @@ mod tests {
         texts: HashMap<u32, String>,
         /// Node to the node it was inserted under, so a removal takes the subtree with it.
         parents: HashMap<u32, u32>,
+        /// What each node was created as, so a test can ask where something sits.
+        widgets: HashMap<u32, WidgetKind>,
         /// Every message the screen has said, in order, with its action label.
         messages: Vec<(String, String)>,
         event: Vec<u8>,
@@ -400,6 +631,7 @@ mod tests {
                 buttons: HashMap::new(),
                 texts: HashMap::new(),
                 parents: HashMap::new(),
+                widgets: HashMap::new(),
                 messages: Vec::new(),
                 event: Vec::new(),
             };
@@ -412,12 +644,21 @@ mod tests {
             let mut clicks = HashMap::new();
             let mut changes = HashMap::new();
             let mut texts = HashMap::new();
+            let mut widgets = HashMap::new();
+            let mut parents = HashMap::new();
             for mutation in &decoded {
                 match mutation {
-                    Mutation::Create {
-                        node_id,
-                        widget: WidgetKind::TextField,
-                    } => fields.push(*node_id),
+                    Mutation::Insert {
+                        parent_id, node_id, ..
+                    } => {
+                        parents.insert(*node_id, *parent_id);
+                    }
+                    Mutation::Create { node_id, widget } => {
+                        widgets.insert(*node_id, *widget);
+                        if *widget == WidgetKind::TextField {
+                            fields.push(*node_id);
+                        }
+                    }
                     Mutation::SetProp {
                         node_id,
                         property,
@@ -449,6 +690,8 @@ mod tests {
             editor.fields = fields;
             editor.changes = changes;
             editor.texts = texts;
+            editor.widgets = widgets;
+            editor.parents = parents;
             assert_eq!(
                 editor.fields.len(),
                 2,
@@ -475,10 +718,34 @@ mod tests {
             self.parents.remove(&node_id);
         }
 
+        /// Whether a node hangs from another, which is how a test says "inside the sheet".
+        fn descends_from(&self, node: u32, ancestor: u32) -> bool {
+            self.ancestors(node).contains(&ancestor)
+        }
+
+        /// Everything a node hangs from, nearest first.
+        fn ancestors(&self, node: u32) -> Vec<u32> {
+            let mut walk = node;
+            let mut chain = Vec::new();
+            while let Some(parent) = self.parents.get(&walk) {
+                chain.push(*parent);
+                walk = *parent;
+            }
+            chain
+        }
+
         fn absorb(&mut self, batch: &[u8]) {
             let mut clicks: Vec<(u32, u64)> = Vec::new();
             for mutation in decode_batch(batch).expect("a frame did not decode") {
                 match mutation {
+                    Mutation::Create { node_id, widget } => {
+                        self.widgets.insert(node_id, widget);
+                        // The document field is rebuilt under a new key whenever its
+                        // contents come from outside it, so the node id changes.
+                        if widget == WidgetKind::TextField && !self.fields.contains(&node_id) {
+                            self.fields.push(node_id);
+                        }
+                    }
                     Mutation::Insert {
                         parent_id, node_id, ..
                     }
@@ -496,16 +763,6 @@ mod tests {
                         property: PropertyKind::OnClick,
                         value: PropertyValue::Integer(id),
                     } => clicks.push((node_id, id as u64)),
-                    Mutation::Create {
-                        node_id,
-                        widget: WidgetKind::TextField,
-                    } => {
-                        // The document field is rebuilt under a new key whenever its
-                        // contents come from outside it, so the node id changes.
-                        if !self.fields.contains(&node_id) {
-                            self.fields.push(node_id);
-                        }
-                    }
                     Mutation::SetProp {
                         node_id,
                         property: PropertyKind::Text,
@@ -578,6 +835,40 @@ mod tests {
                 .get(&node_id)
                 .expect("the path field declared no change handler");
             self.dispatch(node_id, handler, EventPayload::TextChanged(path));
+        }
+
+        /// Tells the screen the window changed size, the way the Renderer does.
+        fn resize(&mut self, width_dp: f32) {
+            self.dispatch(
+                0,
+                0,
+                EventPayload::WindowSizeChanged {
+                    width_dp,
+                    height_dp: 900.0,
+                    class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+                },
+            );
+        }
+
+        /// Every node of this kind whose text reads exactly this.
+        ///
+        /// The kind matters: a list's heading and the button that opens the list say the
+        /// same word, and a test about where the list is would otherwise be answered by
+        /// the button in the bar.
+        fn labelled(&self, widget: WidgetKind, label: &str) -> Vec<u32> {
+            self.texts
+                .iter()
+                .filter(|(node_id, text)| {
+                    *text == label && self.widgets.get(node_id) == Some(&widget)
+                })
+                .map(|(node_id, _)| *node_id)
+                .collect()
+        }
+
+        fn in_a_sheet(&self, node: u32) -> bool {
+            self.ancestors(node)
+                .iter()
+                .any(|parent| self.widgets.get(parent) == Some(&WidgetKind::Sheet))
         }
 
         fn click(&mut self, label: &str) {
@@ -692,10 +983,13 @@ mod tests {
             KOREAN
         );
 
-        // Clear the editor, so reopening has to put the text back rather than leave it.
+        // Start a different document, so reopening has to put the text back rather than
+        // leave it. The saved one is still open behind this one, which is why the path has
+        // to be named again.
         editor.click("New");
         assert_eq!(editor.document_text(), "");
 
+        editor.set_path(&display_path(&path));
         editor.click("Open");
         editor.settle_until("Opened ");
         assert_eq!(
@@ -747,11 +1041,11 @@ mod tests {
         let mut bytes = Vec::new();
         encode_event(&event, &mut bytes).expect("the resize did not encode");
         let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
-        let after_widths = widths_of(batch);
-        let after_labels = texts_of(batch);
-        if !after_labels.is_empty() {
-            widths = after_widths;
-            labels = after_labels;
+        // A window that stayed in its class produces no batch at all, and then what the
+        // screen is showing is still what the first frame said.
+        if !batch.is_empty() {
+            widths = widths_of(batch);
+            labels = texts_of(batch);
         }
         dioxus_compose::window::reset_window_size();
         (widths, labels)
@@ -786,21 +1080,104 @@ mod tests {
             .collect()
     }
 
+    /// The document's name stands at the top of the page, which is where both memo
+    /// references put it, and it follows the file the document is saved to.
+    #[test]
+    fn fr22_the_page_opens_with_the_document_name() {
+        let mut editor = Editor::new();
+        let starting = file_name(&display_path(&starting_path()));
+        assert!(
+            editor.texts.values().any(|text| *text == starting),
+            "the page does not name the document it is showing"
+        );
+
+        editor.set_path("/tmp/a-different-note.txt");
+        assert!(
+            editor
+                .texts
+                .values()
+                .any(|text| text == "a-different-note.txt"),
+            "the name did not follow the file the document is saved to"
+        );
+    }
+
+    /// Where the bytes live is something you go and ask for, not a strip across the top of
+    /// every document. The two things that act on the file are in the sheet with it.
+    #[test]
+    fn fr22_the_file_controls_are_behind_a_sheet() {
+        let editor = Editor::new();
+        let path_field = editor.fields[0];
+        let sheet = editor
+            .ancestors(path_field)
+            .into_iter()
+            .find(|node| editor.widgets.get(node) == Some(&WidgetKind::Sheet))
+            .expect("the path field is not in a sheet");
+        let (open, _) = editor.buttons["Open"];
+        assert!(
+            editor.descends_from(open, sheet),
+            "Open is not in the sheet the path field is in"
+        );
+    }
+
+    /// A desktop window has room for the list of documents to stand beside the one being
+    /// written, which is what both memo references do. Anything narrower and the same list
+    /// arrives from an edge instead.
+    #[test]
+    fn fr22_the_document_list_stands_beside_the_page_on_a_desktop_window() {
+        dioxus_compose::window::reset_window_size();
+        let mut editor = Editor::new();
+        let heading = "Documents";
+        assert!(
+            !editor.labelled(WidgetKind::Text, heading).is_empty(),
+            "the screen never offers the list at all"
+        );
+        assert!(
+            editor
+                .labelled(WidgetKind::Text, heading)
+                .iter()
+                .all(|node| editor.in_a_sheet(*node)),
+            "a phone should reach the list through a sheet"
+        );
+
+        editor.resize(1200.0);
+        assert!(
+            editor
+                .labelled(WidgetKind::Text, heading)
+                .iter()
+                .any(|node| !editor.in_a_sheet(*node)),
+            "a desktop window should stand the list beside the document"
+        );
+        dioxus_compose::window::reset_window_size();
+    }
+
+    /// Starting a document keeps the one that was on screen, which is what makes the list
+    /// worth having and what stopped New from throwing work away.
+    #[test]
+    fn fr22_a_new_document_keeps_the_one_that_was_open() {
+        let mut editor = Editor::new();
+        editor.set_path("/tmp/first-note.txt");
+        editor.type_document("something worth keeping");
+
+        editor.click("New");
+        assert_eq!(editor.document_text(), "");
+        assert!(
+            editor.texts.values().any(|text| text == "first-note.txt"),
+            "the document that was open is not in the list"
+        );
+    }
+
     /// A desktop window gives the document a margin and stops the page growing with the
-    /// window. A phone keeps the page full width and drops the word in front of the path,
-    /// which the field's own placeholder already says.
+    /// window. A phone keeps the page full width, because there is nothing to spare.
     #[test]
     fn fr20_the_page_takes_a_margin_on_a_desktop_window() {
-        let (narrow_widths, narrow_labels) = page_at(420.0);
+        let (narrow_widths, _) = page_at(420.0);
         assert!(narrow_widths.is_empty(), "{narrow_widths:?}");
-        assert!(!narrow_labels.iter().any(|text| text == "File"));
 
-        let (wide_widths, wide_labels) = page_at(1200.0);
+        let (wide_widths, _) = page_at(1200.0);
         assert!(
             wide_widths.contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
             "the page did not take a measure: {wide_widths:?}"
         );
-        assert!(wide_labels.iter().any(|text| text == "File"));
     }
 
     /// The bar's contents and the page are held to the same measure, so the title starts

@@ -771,8 +771,8 @@ LaunchBuilder::new()
 
 1. 아무 설정 없이 실행한 창이 macOS에서 신호등 버튼을 유지하면서 콘텐츠가 타이틀바 영역까지 올라옵니다. 타이틀 문자열은 표시되지 않습니다.
 2. Windows와 Linux에서 시스템 타이틀바가 없고, 최소화·최대화·닫기가 동작하며, 캡션 빈 영역 드래그로 창이 움직이고, 가장자리로 크기 조절이 됩니다.
-3. `TopAppBar`가 있는 앱에서 그 내용이 macOS 신호등 버튼과 겹치지 않습니다.
-4. `TopAppBar`가 없는 앱의 콘텐츠가 캡션 영역에 가려지지 않습니다.
+3. `TopAppBar`가 있는 앱에서 그 내용이 macOS 신호등 버튼과 겹치지 않습니다. (`fr19_a_screen_that_leads_with_a_bar_lays_it_out_around_the_window_buttons`)
+4. `TopAppBar`가 없는 앱의 콘텐츠가 캡션 영역에 가려지지 않습니다. (`fr19_a_screen_with_no_bar_keeps_its_content_clear_of_the_window_buttons`)
 5. `Chrome::System`으로 실행하면 플랫폼 기본 타이틀바가 그대로 나옵니다.
 6. 창 버튼이 접근성 트리에 노출됩니다. macOS는 시스템이 제공하므로 자동이고, Windows와 Linux는 우리가 그리므로 역할과 레이블을 직접 붙여야 합니다.
 
@@ -970,6 +970,67 @@ tag 12, 32바이트: handler_id: u64, text: (offset, len), action: (offset, len)
 
 **8번은 아직입니다.** Renderer의 `ComponentRules` 구현은 현재 셋(Material 3, Cupertino, Fluent)이고, GNOME/Breeze/Deepin은 다른 작업에서 들어오는 중입니다. 세 멤버 전부 토큰 표에서 유도한 기본 구현을 가지므로 그 셋이 합류할 때 컴파일이 깨지지 않고 각자의 색으로 나오지만, "여섯 시스템 전부"는 그 작업이 합쳐진 뒤에 확인해야 합니다. 그때까지 이 요구사항은 `Done`이 아닙니다.
 
+
+### FR-22 샘플 애플리케이션의 참조 구현 (`Agreed`)
+
+샘플 네 개는 어휘가 실제로 쓸 만한지 확인하는 장치입니다. 지금까지 확인한 것은 "위젯이 동작하는가"였고, "이 어휘로 사람들이 실제로 쓰는 화면을 말할 수 있는가"는 확인하지 않았습니다. 그래서 샘플마다 참조 디자인을 못 박고, 그 화면이 나오는지를 기준으로 삼습니다. 참조 이미지는 `docs/references/design-systems/README.md`의 "Sample Apps"에 있습니다.
+
+두 축이 동시에 움직입니다.
+
+- **디자인은 플랫폼을 따릅니다.** 샘플은 디자인 시스템을 고르지 않습니다(FR-14의 `Theme::adaptive`). 같은 선언이 macOS에서 Cupertino로, Windows에서 Fluent로, Linux에서 GNOME/Breeze/Deepin으로 나옵니다. 계산기의 참조가 셋(Windows, macOS, Deepin)인 것은 그래서 모순이 아닙니다. **한 선언의 세 가지 결과**를 찍은 사진입니다.
+- **레이아웃은 창 크기 클래스를 따릅니다.** 샘플은 `use_window_size()`(FR-20)만 읽습니다. 목적지 집합이 막대인지 레일인지 서랍인지, 시트가 어느 가장자리에서 오는지는 Renderer가 정합니다(FR-21).
+
+#### 22.1 샘플별 참조와 형태
+
+| 샘플 | 참조 | Compact | Medium | Expanded |
+|---|---|---|---|---|
+| `todo` | jordansinger/todo-macos-swiftui-sample, Dribbble ToDo Scheduler | 한 열, 목적지는 하단 막대, 작성은 시트 | 한 열, 목적지는 레일 | 측정폭으로 좁힌 한 열, 목적지는 서랍 |
+| `notepad` | iOS 26 메모, Fluent 2 Loop | 문서 하나, 문서 목록은 시트 | 문서 하나, 목록은 시트 | 목록과 문서가 나란히 |
+| `calculator` | Windows 11 계산기, macOS 계산기, Deepin 계산기 | 한 열 키패드, 기록은 시트 | 함수열이 그리드에서 빠진 넓은 키패드 | 키패드 옆에 기록 |
+| `chat` | Google Gemini 데스크톱/세로 | 한 열, 목적지는 하단 막대 | 목적지는 레일 | 목적지는 서랍(사이드바) |
+
+세 참조가 모두 공유하는 것이 화면의 뼈대입니다.
+
+- **계산기**: 읽는 자리(식 한 줄과 결과 한 줄, 둘 다 오른쪽 정렬)가 위, 메모리 줄이 그 아래, 키패드가 창 아래쪽에 붙습니다. 키는 창이 커져도 손가락보다 크게 자라지 않습니다. 세 참조가 전부 그 모양이고, 다른 것은 디자인 시스템이 정하는 색과 모서리뿐입니다.
+- **메모장**: 문서에 이름이 있고 그 이름이 문서 맨 위에 제목으로 섭니다. 문서는 여러 개이며 목록에서 고릅니다. 서식은 시트로 열립니다.
+- **채팅**: 목적지 집합이 사이드바가 되고, 대화가 비어 있으면 가운데에 이 화면이 무엇인지 적힌 자리가 서며, 작성란은 페이지 아래에 떠 있는 둥근 막대입니다.
+- **할 일**: 화면 제목이 두 줄(무엇을 보고 있는지와 그 상태)이고, 작성은 좁은 창에서 시트로 물러납니다.
+
+#### 22.2 값은 역할로만 말합니다
+
+샘플 코드에는 16진수 색도, 근거 없는 dp 상수도 없습니다. 색은 `ColorRole`, 글자는 `TypeRole`, 모서리는 `ShapeRole`, 간격은 `SpaceRole`입니다. 참조가 역할 어휘로 말할 수 없는 것을 요구하면 샘플에서 우회하지 않고, 역할을 스키마와 여섯 디자인 시스템 전부에 추가합니다(FR-14.1).
+
+#### 22.3 수용 기준
+
+1. 계산기 화면이 식 줄, 결과 줄, 메모리 줄, 키패드 순서로 나오고, 메모리 키가 실제로 값을 저장하고 되불러옵니다.
+2. 계산기의 키패드가 창 아래쪽에 붙고, 읽는 자리가 남는 높이를 가져갑니다. 참조 셋의 비율(읽는 자리 하나에 키패드 둘에서 셋)을 따릅니다.
+3. 메모장이 문서를 여러 개 들고, 문서 이름이 페이지 맨 위 제목으로 섭니다. Expanded에서 목록이 문서 옆에 서고, 그보다 좁으면 시트로 물러납니다.
+4. 채팅의 목적지 집합이 하나의 `Navigation` 선언이고, 대화가 비어 있을 때 가운데에 안내가 섭니다.
+5. 채팅의 작성란이 `ShapeRole::Full`의 떠 있는 막대이며, 보내기는 그 안에 있습니다.
+6. 할 일의 제목이 두 줄이고, Compact에서 작성이 시트로 물러납니다.
+7. 네 샘플이 여섯 디자인 시스템 × 두 색 구성 × 세 폭 전부에서 기록되고 그려집니다(`scripts/sample-shots.sh`).
+8. 샘플 소스 어디에도 16진수 색 리터럴이 없습니다.
+
+#### 22.4 지금까지 확인된 것
+
+| 기준 | 확인 방법 |
+|---|---|
+| 1 | `fr22_the_memory_keys_store_and_recall`, `fr22_clearing_the_entry_leaves_the_memory_alone`, `fr22_the_memory_row_stands_between_the_reading_area_and_the_keys` |
+| 2 | `fr20_the_keypad_is_one_shape_and_the_tape_is_what_moves`, `fr20_the_tape_stands_beside_the_keypad_on_a_desktop_window`. 높이 비율 자체는 사진으로 봅니다 |
+| 3 | `fr22_the_page_opens_with_the_document_name`, `fr22_the_file_controls_are_behind_a_sheet`, `fr22_the_document_list_stands_beside_the_page_on_a_desktop_window`, `fr22_a_new_document_keeps_the_one_that_was_open` |
+| 4 | `fr22_the_conversations_are_the_destination_set`, `fr22_an_empty_conversation_says_what_it_is_in_the_middle` |
+| 5 | `fr22_the_composer_is_one_rounded_bar_holding_the_send` |
+| 6 | `fr22_the_screen_is_headed_by_what_it_is_showing`, `fr22_the_composer_moves_into_a_sheet_on_a_phone` |
+| 7 | `scripts/sample-shots.sh`가 180장을 씁니다(샘플 4 + 채팅 설정 시트 × 시스템 6 × 구성 2 × 폭 3) |
+| 8 | `scripts/tests/samples-speak-in-roles.test.sh` |
+
+**"참조처럼 보이는가"는 테스트가 답할 수 없습니다.** 위 목록은 구조를 고정할 뿐이고, 닮았는지는 사진을 봐야 압니다. 그래서 `Done`이 아닙니다. 남은 것은 여섯 디자인 시스템 전부에서 네 화면을 눈으로 확인하는 일입니다.
+
+아직 참조와 다른 것으로 알려진 부분:
+
+- **연산자 키의 색.** 세 계산기 참조가 서로 다릅니다. Windows는 등호만 강조색이고 나머지 연산자는 숫자와 같은 회색, Deepin은 회색 키에 강조색 글리프, macOS는 연산자 전부가 주황입니다. `ButtonVariant` 넷으로는 "숫자와 다르고 등호와도 다른 세 번째 키"를 말할 수 없어서, 지금은 연산자와 등호가 모두 `Filled`입니다. 다섯 번째 변형을 만들기 전에 다른 화면에서도 필요한지 봐야 합니다.
+- **할 일 목록의 행.** Dribbble 참조는 카드 하나에 제목, 메타 줄, 진행률이 들어가고, macOS 참조는 구분선으로 나뉜 목록 하나입니다. 지금은 후자입니다.
+- **Gemini의 사이드바 색과 배경 그라데이션.** 그라데이션은 `Paint`에 없고(FR-13.1), 사이드바의 반투명 색조는 디자인 시스템이 정하는 탐색 컨테이너 색입니다.
 
 ### FR-11 스키마 확장 (서드파티 위젯) (`Agreed`)
 스키마에 없는 Compose 컴포넌트는 **E1 확장 스키마 패키지**로 추가합니다. 확장은 런타임 플러그인이 아니라 Host와 Renderer의 소스 빌드에 함께 들어가는 한 쌍입니다. Rust 쪽 선언이 위젯 태그, 속성 태그, 타입이 붙은 Dioxus 컴포넌트를 소유하고, Kotlin 쪽 구현이 그 태그와 속성을 실제 `@Composable` 호출로 해석합니다.
