@@ -71,6 +71,6 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 |---|---|---|
 | Q1 | 데스크톱 접근성이 native-image에서 AWT 경로로 유지되는지 | 실험으로 확인 (M1, SPEC §7) |
 | Q2 | 서드파티 Compose 컴포넌트를 스키마에 확장하는 방식 | 후보 탐색 중 (SPEC FR-11) |
-| Q3 | Web: V8과 SpiderMonkey에서 PR-6의 실측 수치를 재확인 | Safari에서는 확정 (SPEC PR-6, `experiments/web-interop/`) |
+| Q3 | Web: SpiderMonkey에서 PR-6의 실측 수치를 재확인 | Safari 26.5와 V8에서 확정 (SPEC PR-6) |
 
 경계 호출 모델, 인코딩, 스레드 모델, Android 경계는 결정되었습니다(INTENT D8, D9 / SPEC PR-1~PR-5).
