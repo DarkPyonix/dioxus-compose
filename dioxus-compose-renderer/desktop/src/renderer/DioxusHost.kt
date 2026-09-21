@@ -13,7 +13,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import dioxus.compose.foundation.HostMessages
 import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
@@ -184,16 +188,31 @@ fun DioxusContent(
         // not change the class, so a drag across one class costs no boundary calls.
         val reporter = remember(host) { WindowSizeReporter() }
         val density = LocalDensity.current
+        // The same measurement answers two questions. The Host is told when the class
+        // changes so a component can choose what to put on the screen; the widgets that
+        // change shape with the window read it from the CompositionLocal, because they are
+        // drawn on this side and a round trip to ask would cost a boundary call, a
+        // VirtualDom pass and a rebuilt subtree for a layout this side can already reach.
+        var sizeClass by remember(host) { mutableStateOf(WindowSizeClass.Compact) }
         val measured = Modifier.onSizeChanged { size ->
             with(density) {
-                reporter.report(size.width.toDp().value, size.height.toDp().value, host)
+                val widthDp = size.width.toDp().value
+                sizeClass = windowSizeClassOf(widthDp)
+                reporter.report(widthDp, size.height.toDp().value, host)
             }
         }
-        Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
-            Box(Modifier.padding(contentPadding)) {
-                host.roots.forEach { rootId ->
-                    androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
+        CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
+            Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
+                Box(Modifier.padding(contentPadding)) {
+                    host.roots.forEach { rootId ->
+                        androidx.compose.runtime.key(rootId) {
+                            RenderNode(rootId, host.table, host)
+                        }
+                    }
                 }
+                // Over the content rather than in it: a message is not part of the tree,
+                // and it covers whatever it has to for as long as it is up.
+                HostMessages(host.table.messages, host, theme)
             }
         }
     }

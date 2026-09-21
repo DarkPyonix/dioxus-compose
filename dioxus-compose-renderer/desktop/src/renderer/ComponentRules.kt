@@ -20,6 +20,7 @@ import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.WindowSizeClass
 
 /**
  * Material 3 rules: elevation, button variants and motion.
@@ -212,6 +213,73 @@ internal object Material3Rules : ComponentRules {
         tooltipDelayMillis = 500,
     )
 
+
+    /**
+     * Material's navigation set: a bar of destinations at the bottom of a phone-shaped
+     * window, a rail beside a tablet-shaped one, a drawer standing open on a desktop.
+     *
+     * The mark is the pill Material 3 puts behind the selected icon, which is the single
+     * thing that reads most as Material in a row of destinations.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnSurface),
+            indicator = theme.color(ColorRole.SurfaceVariant),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.Pill,
+            // Material's bars sit flush against the content and are separated by tone.
+            separator = null,
+            barHeight = 80.dp,
+            railWidth = 80.dp,
+            drawerWidth = 280.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Label,
+        )
+
+    /** A bottom sheet with a drag handle, or a side sheet once there is room for one. */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 1.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.OutlineVariant),
+        widthFraction = 0.4f,
+        heightFraction = 0.5f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /** A snackbar: the inverse surface, low and to the leading side, with four seconds. */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.OnSurface),
+        content = theme.color(ColorRole.Surface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        elevation = 6.dp,
+        placement = MessagePlacement.BottomStart,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        // The two durations Material documents for a snackbar.
+        shortMillis = 4_000,
+        longMillis = 10_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.32f
     private const val STATE_LAYER_ALPHA = 0.12f
     private const val TONE_FULL_DP = 24f
@@ -396,6 +464,80 @@ internal object CupertinoRules : ComponentRules {
         easing = LinearOutSlowInEasing,
         // A help tag waits until the pointer has clearly stopped.
         tooltipDelayMillis = 1000,
+    )
+
+
+    /**
+     * A tab bar at the bottom of a phone, a sidebar once the window is wide enough.
+     *
+     * The tab bar marks its selection with colour alone, which is what Apple does; the
+     * sidebar marks it with a rounded fill, which is also what Apple does. One style
+     * expresses both because the size class is what it is answering about.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle {
+        val presentation = when (sizeClass) {
+            WindowSizeClass.Compact -> NavigationPresentation.Bar
+            WindowSizeClass.Medium -> NavigationPresentation.Rail
+            WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+        }
+        val bar = presentation == NavigationPresentation.Bar
+        return NavigationStyle(
+            presentation = presentation,
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.Primary),
+            indicator = if (bar) Color.Transparent else theme.color(ColorRole.SurfaceVariant),
+            indicatorShape = theme.shape(ShapeRole.Medium),
+            indicatorKind = if (bar) NavigationIndicator.None else NavigationIndicator.Pill,
+            // A tab bar and a sidebar are both divided from the content by a hairline.
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 50.dp,
+            railWidth = 76.dp,
+            drawerWidth = 260.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Xs),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+    }
+
+    /** A card sheet pulled up over a dimmed screen, with the grabber along its top edge. */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        // Apple's sheets are not raised by a shadow, they cover.
+        elevation = 0.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.38f,
+        heightFraction = 0.55f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /**
+     * A banner rather than a snackbar: a light capsule at the top, with a hairline and no
+     * inverted surface. Apple has no snackbar, and drawing one here would be the Material
+     * answer wearing Apple's colours.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 2.dp,
+        placement = MessagePlacement.TopEnd,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 3_000,
+        longMillis = 8_000,
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+        typeRole = TypeRole.Body,
     )
 
     private const val SCRIM_ALPHA = 0.4f
@@ -589,6 +731,73 @@ internal object FluentRules : ComponentRules {
         releaseMillis = 100,
         easing = LinearEasing,
         tooltipDelayMillis = 300,
+    )
+
+
+    /**
+     * One `NavigationView`, in its three display modes: minimal at the bottom, compact as a
+     * narrow rail, expanded as a pane of labelled rows.
+     *
+     * Fluent marks the selection with a short bar along the leading edge of the row rather
+     * than a fill, and the pane is ruled off from the content.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnSurface),
+            indicator = theme.color(ColorRole.Primary),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.LeadingEdgeBar,
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 56.dp,
+            railWidth = 48.dp,
+            drawerWidth = 320.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            // A compact rail is icons only: Fluent puts the label in the flyout instead.
+            labelInRail = false,
+            typeRole = TypeRole.Body,
+        )
+
+    /** A layer, so the sheet carries the stroke every Fluent layer carries. */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Medium),
+        elevation = 8.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        // Fluent's sheets are not dragged about, so there is no grabber to draw.
+        handle = null,
+        widthFraction = 0.36f,
+        heightFraction = 0.5f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+    )
+
+    /** A teaching tip: a stroked layer in the corner the notifications come from. */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Medium),
+        elevation = 8.dp,
+        placement = MessagePlacement.TopEnd,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 9_000,
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+        typeRole = TypeRole.Body,
     )
 
     private const val SCRIM_ALPHA = 0.3f

@@ -34,6 +34,9 @@ import dioxus.compose.foundation.HostTimePicker
 import dioxus.compose.foundation.HostLazyColumn
 import dioxus.compose.foundation.HostLazyRow
 import dioxus.compose.foundation.HostMenu
+import dioxus.compose.foundation.HostNavigation
+import dioxus.compose.foundation.HostNavigationItem
+import dioxus.compose.foundation.HostSheet
 import dioxus.compose.foundation.HostTabs
 import dioxus.compose.foundation.HostTooltip
 import dioxus.compose.foundation.HostTopAppBar
@@ -172,6 +175,19 @@ fun RenderNode(
         WidgetKind.DatePicker -> HostDatePicker(node, modifier, dispatcher, theme)
         WidgetKind.TimePicker -> HostTimePicker(node, modifier, dispatcher, theme)
         WidgetKind.Dropdown -> HostDropdown(node, modifier, table, dispatcher, theme)
+
+        // One declaration, three presentations. Which one this is comes from the design
+        // system, asked about the size class this window is in, so the Host that declared
+        // it never learned how wide the window was.
+        WidgetKind.Navigation -> HostNavigation(node, modifier, table, dispatcher, theme)
+
+        // Normally drawn by the Navigation it belongs to, which knows whether it is the
+        // selected one. On its own it is a destination nobody has chosen.
+        WidgetKind.NavigationItem -> HostNavigationItem(node, modifier, theme)
+
+        // A temporary surface from an edge of the window. Which edge is this side's
+        // decision, and so is everything about the drag that closes it.
+        WidgetKind.Sheet -> HostSheet(node, modifier, table, dispatcher, theme)
     }
 }
 

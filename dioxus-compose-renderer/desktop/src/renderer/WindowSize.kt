@@ -1,5 +1,6 @@
 package dioxus.compose.runtime
 
+import androidx.compose.runtime.compositionLocalOf
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.WindowSizeClass
 
@@ -12,6 +13,20 @@ import dioxus.compose.protocol.WindowSizeClass
  */
 const val MEDIUM_MIN_WIDTH_DP: Float = 600f
 const val EXPANDED_MIN_WIDTH_DP: Float = 840f
+
+/**
+ * The size class of the window this content is in.
+ *
+ * The Host is told about this too, but only so a component can choose what to put on the
+ * screen. The widgets that change shape with the window read it here instead, because they
+ * are drawn on this side and asking the Host would mean a boundary call, a VirtualDom pass
+ * and a rebuilt subtree to arrive at a layout this side could reach by moving the nodes it
+ * already has.
+ *
+ * Not `staticCompositionLocalOf`: this one does change, and only the widgets that read it
+ * should be invalidated when it does.
+ */
+val LocalWindowSizeClass = compositionLocalOf { WindowSizeClass.Compact }
 
 /** The class a window of this width belongs to. Height does not take part. */
 fun windowSizeClassOf(widthDp: Float): WindowSizeClass = when {

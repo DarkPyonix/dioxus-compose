@@ -35,7 +35,7 @@ import dioxus.compose.ui.node.nodeTestTag
 import dioxus.compose.ui.textStyle
 
 /** Whether an overlay is showing, and the way to change it without asking the Host. */
-private class OverlayOpen(val value: Boolean, val set: (Boolean) -> Unit)
+internal class OverlayOpen(val value: Boolean, val set: (Boolean) -> Unit)
 
 /**
  * The open state of an overlay.
@@ -46,7 +46,7 @@ private class OverlayOpen(val value: Boolean, val set: (Boolean) -> Unit)
  * honour it by sending the property back as false.
  */
 @Composable
-private fun rememberOverlayOpen(node: Node): OverlayOpen {
+internal fun rememberOverlayOpen(node: Node): OverlayOpen {
     val fromHost = node.flag(PropertyKind.Open, default = false)
     var open by remember(node.id) { mutableStateOf(fromHost) }
     LaunchedEffect(node.id, fromHost) { open = fromHost }
@@ -54,7 +54,7 @@ private fun rememberOverlayOpen(node: Node): OverlayOpen {
 }
 
 /** Tells the Host the user asked to close this overlay, if it asked to be told. */
-private fun dismiss(node: Node, dispatcher: EventDispatcher) {
+internal fun dismiss(node: Node, dispatcher: EventDispatcher) {
     val handlerId = node.handler(PropertyKind.OnDismiss) ?: return
     dispatcher.dispatch(HostEvent.Clicked(node.id, handlerId))
 }
