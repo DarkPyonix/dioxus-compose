@@ -13,6 +13,9 @@ dioxus-hooks.workspace = true
 # channel for that, so the sample brings its own.
 futures-channel = "0.3"
 
+[dev-dependencies]
+sample-frames = { path = "../frames" }
+
 # The sample is an application, not a benchmark. Without this `cargo bench` runs the
 # binary with Criterion's flags, which its plain test harness rejects.
 [[bin]]

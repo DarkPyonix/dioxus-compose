@@ -65,6 +65,7 @@ internal object Material3Rules : ComponentRules {
             typeRole = TypeRole.Label,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             ButtonVariant.Filled -> base.copy(
@@ -446,6 +447,7 @@ internal object CupertinoRules : ComponentRules {
             // Apple's buttons never cast a shadow, pressed or not.
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             ButtonVariant.Filled -> base.copy(
@@ -812,6 +814,7 @@ internal object FluentRules : ComponentRules {
             typeRole = TypeRole.BodyStrong,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // Accent button.
@@ -1280,6 +1283,7 @@ internal object GnomeRules : ComponentRules {
             typeRole = TypeRole.BodyStrong,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // The suggested action, and the only place the accent appears.
@@ -1680,6 +1684,7 @@ internal object BreezeRules : ComponentRules {
             typeRole = TypeRole.Body,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // Even the accent button is a filled rectangle inside a darker line.
@@ -2091,6 +2096,7 @@ internal object DeepinRules : ComponentRules {
             typeRole = TypeRole.Body,
             restElevation = 0.dp,
             pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
         )
         return when (variant) {
             // A rounded slab of brand blue with no border at all.

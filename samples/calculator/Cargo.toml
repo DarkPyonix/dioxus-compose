@@ -10,6 +10,9 @@ publish = false
 dioxus-compose = { path = "../../dioxus-compose" }
 dioxus-hooks.workspace = true
 
+[dev-dependencies]
+sample-frames = { path = "../frames" }
+
 # The sample is an application, not a benchmark. Without this `cargo bench` runs the
 # binary with Criterion's flags, which its plain test harness rejects.
 [[bin]]

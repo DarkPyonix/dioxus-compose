@@ -230,7 +230,8 @@ class SelectionControlTest {
      *
      * That default is what keeps a new design system to a single implementation. A seventh
      * system writes `controls()` and stops; if it had to supply six composables as well,
-     * adding a design system would no longer be a small change.
+     * adding one would stop being a token table and a rule implementation and become a
+     * widget set.
      */
     @Test
     fun fr15_2_4_material_3_is_the_only_system_that_brings_its_own_controls() {

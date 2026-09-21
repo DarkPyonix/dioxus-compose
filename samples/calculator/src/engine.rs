@@ -98,6 +98,21 @@ fn format_exponent(value: f64) -> String {
     }
 }
 
+/// A calculation that finished, for whoever keeps the tape.
+///
+/// The expression is rebuilt from the two operands and the operator rather than recorded
+/// as it was typed, so `2 + 3 = = =` writes three lines that each say what they actually
+/// worked out instead of three copies of the keys that were pressed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Completed {
+    pub expression: String,
+    pub result: String,
+    pub value: f64,
+    /// Whether the answer is one a calculator can show. Dividing by zero and overflowing
+    /// a double both land here, and neither belongs on a tape.
+    pub failed: bool,
+}
+
 /// The calculator's whole state.
 ///
 /// `entry` is what the user is typing right now. When it is empty the display shows
@@ -111,6 +126,9 @@ pub struct Calculator {
     /// The operation and right operand to reuse when `=` is pressed again.
     repeat: Option<(Operation, f64)>,
     error: bool,
+    /// The last finished calculation, waiting to be taken. Untaken, it is simply
+    /// overwritten: whoever wanted it had a chance after the key that produced it.
+    completed: Option<Completed>,
 }
 
 impl Default for Calculator {
@@ -128,6 +146,7 @@ impl Calculator {
             pending: None,
             repeat: None,
             error: false,
+            completed: None,
         }
     }
 
@@ -155,6 +174,25 @@ impl Calculator {
         }
     }
 
+    /// Hands over the last finished calculation and forgets it, so a caller that asks
+    /// after every key gets each one exactly once.
+    pub fn take_completed(&mut self) -> Option<Completed> {
+        self.completed.take()
+    }
+
+    /// Puts a number back into the entry, as if it had just been typed.
+    ///
+    /// Typed rather than assigned, because the two behave differently: a recalled number
+    /// that replaced the running value would swallow a pending operation, so `5 +` then a
+    /// recall of 42 would read 42 instead of `5 + 42`.
+    pub fn recall(&mut self, value: f64) {
+        if self.error {
+            *self = Self::new();
+        }
+        self.entry = format_number(value);
+        self.typing = true;
+    }
+
     /// The value the next operation will use: what is being typed, or the running result.
     fn operand(&self) -> f64 {
         if self.typing {
@@ -171,8 +209,7 @@ impl Calculator {
         self.error = !result.is_finite();
     }
 
-    /// One key, named by the label printed on it. Keyboard characters come in through
-    /// [`Calculator::press_char`], which maps them onto the same labels.
+    /// One key, named by the label printed on it.
     pub fn press(&mut self, label: &str) {
         match label {
             "C" => *self = Self::new(),
@@ -189,25 +226,6 @@ impl Calculator {
                     self.operation(operation);
                 }
             }
-        }
-    }
-
-    /// A typed character, for the keyboard route.
-    pub fn press_char(&mut self, character: char) {
-        match character {
-            '0'..='9' => self.digit(character),
-            '.' | ',' => self.decimal_point(),
-            '+' | '-' | '*' | 'x' | 'X' | '/' => {
-                if let Some(operation) = Operation::from_label(&character.to_string()) {
-                    self.operation(operation);
-                }
-            }
-            '%' => self.percent(),
-            '=' | '\n' | '\r' => self.equals(),
-            'c' | 'C' => *self = Self::new(),
-            'n' | 'N' => self.flip_sign(),
-            '\u{8}' | '\u{7f}' => self.backspace(),
-            _ => {}
         }
     }
 
@@ -313,18 +331,38 @@ impl Calculator {
             return;
         }
         if let Some(pending) = self.pending {
+            let left = self.value;
             let operand = self.operand();
-            let result = pending.apply(self.value, operand);
+            let result = pending.apply(left, operand);
+            self.record(left, pending, operand, result);
             self.settle(result);
             self.repeat = Some((pending, operand));
             self.pending = None;
         } else if let Some((operation, operand)) = self.repeat {
-            let result = operation.apply(self.value, operand);
+            let left = self.value;
+            let result = operation.apply(left, operand);
+            self.record(left, operation, operand, result);
             self.settle(result);
         } else {
+            // Equals with nothing waiting works nothing out, so there is nothing to
+            // record. A tape line reading `7 = 7` says only that a key was pressed.
             let operand = self.operand();
             self.settle(operand);
         }
+    }
+
+    fn record(&mut self, left: f64, operation: Operation, right: f64, result: f64) {
+        self.completed = Some(Completed {
+            expression: format!(
+                "{} {} {}",
+                format_number(left),
+                operation.symbol(),
+                format_number(right)
+            ),
+            result: format_number(result),
+            value: result,
+            failed: !result.is_finite(),
+        });
     }
 }
 
@@ -332,11 +370,46 @@ impl Calculator {
 mod tests {
     use super::*;
 
+    /// The key a character stands for, so a test can write a sequence as a string.
+    ///
+    /// The keypad is labelled with the typographic operators, and nobody wants to write
+    /// those in a test, so this is the translation and it lives here rather than in the
+    /// engine: the engine takes the labels its keys carry and nothing else.
+    fn key(character: char) -> &'static str {
+        match character {
+            '0' => "0",
+            '1' => "1",
+            '2' => "2",
+            '3' => "3",
+            '4' => "4",
+            '5' => "5",
+            '6' => "6",
+            '7' => "7",
+            '8' => "8",
+            '9' => "9",
+            '.' => ".",
+            '+' => "+",
+            '-' => "\u{2212}",
+            '*' => "\u{00d7}",
+            '/' => "\u{00f7}",
+            '%' => "%",
+            '=' => "=",
+            'c' => "C",
+            '~' => "\u{00b1}",
+            '<' => "\u{232b}",
+            other => panic!("no key is labelled {other}"),
+        }
+    }
+
+    fn press_all(calculator: &mut Calculator, keys: &str) {
+        for character in keys.chars() {
+            calculator.press(key(character));
+        }
+    }
+
     fn run(keys: &str) -> String {
         let mut calculator = Calculator::new();
-        for character in keys.chars() {
-            calculator.press_char(character);
-        }
+        press_all(&mut calculator, keys);
         calculator.display()
     }
 
@@ -377,9 +450,7 @@ mod tests {
     #[test]
     fn dividing_by_zero_reports_an_error_and_recovers() {
         let mut calculator = Calculator::new();
-        for character in "5/0=".chars() {
-            calculator.press_char(character);
-        }
+        press_all(&mut calculator, "5/0=");
         assert_eq!(calculator.display(), "Error");
         calculator.press("C");
         assert_eq!(calculator.display(), "0");
@@ -394,9 +465,7 @@ mod tests {
     #[test]
     fn sign_flip_applies_to_the_entry_and_to_the_result() {
         let mut calculator = Calculator::new();
-        for character in "5".chars() {
-            calculator.press_char(character);
-        }
+        press_all(&mut calculator, "5");
         calculator.press("\u{00b1}");
         assert_eq!(calculator.display(), "-5");
         calculator.press("=");
@@ -412,8 +481,8 @@ mod tests {
 
     #[test]
     fn backspace_removes_one_character_of_the_entry() {
-        assert_eq!(run("123\u{8}"), "12");
-        assert_eq!(run("5\u{8}"), "0");
+        assert_eq!(run("123<"), "12");
+        assert_eq!(run("5<"), "0");
     }
 
     #[test]
