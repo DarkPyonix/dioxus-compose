@@ -2,6 +2,7 @@ package dioxus.compose.ui.platform
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -11,7 +12,7 @@ import kotlinx.coroutines.delay
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.HostConnection
 import dioxus.compose.runtime.rememberDioxusHost
-import dioxus.compose.runtime.systemDarkObserver
+import dioxus.compose.runtime.LocalSystemDarkObserver
 
 /**
  * Runs the renderer's Compose application on the calling thread until its window closes.
@@ -27,10 +28,6 @@ internal fun runRenderer(
     chrome: WindowChrome = WindowChrome.Modern,
     connection: () -> HostConnection,
 ) = application(exitProcessOnExit = false) {
-    // Compose's own reading of the system appearance is taken once on this platform, so
-    // the renderer is given one that keeps looking.
-    LaunchedEffect(Unit) { systemDarkObserver = { rememberSystemDark().value } }
-
     // Undecorated everywhere the platform will not hand us a transparent title bar, which
     // is everywhere except macOS. There we keep the real one and make it see through, so
     // the close, minimise and zoom buttons stay the system's own.
@@ -52,13 +49,22 @@ internal fun runRenderer(
                 exitApplication()
             }
         }
-        DioxusContent(
-            rememberDioxusHost(remember { connection() }),
-            Modifier.fillMaxSize(),
-            // Content runs under the caption on purpose, but a widget sitting where the
-            // window buttons are would leave both unusable. The inset goes inside the
-            // content's own background so the window has one continuous surface.
-            contentPadding = windowContentInsets(window, chrome, hasTopAppBar = false),
-        )
+        // Compose's own reading of the system appearance is taken once on this platform, so
+        // the window is given one that keeps looking. It is provided here, around this
+        // window's content, rather than stored anywhere a later composition could inherit
+        // it: the observer polls in a loop that never ends, which a window wants and a
+        // test clock cannot survive.
+        CompositionLocalProvider(
+            LocalSystemDarkObserver provides { rememberSystemDark().value },
+        ) {
+            DioxusContent(
+                rememberDioxusHost(remember { connection() }),
+                Modifier.fillMaxSize(),
+                // Content runs under the caption on purpose, but a widget sitting where
+                // the window buttons are would leave both unusable. The inset goes inside
+                // the content's own background so the window has one continuous surface.
+                contentPadding = windowContentInsets(window, chrome, hasTopAppBar = false),
+            )
+        }
     }
 }
