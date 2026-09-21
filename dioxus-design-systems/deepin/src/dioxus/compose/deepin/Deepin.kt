@@ -85,15 +85,13 @@ class DeepinDesignSystem private constructor(
         // blue nor a warm colour.
         ColorRole.Tertiary -> Color(0xFF7A5BD6)
         ColorRole.OnTertiary -> Color(0xFFFFFFFF)
-        // Tints of the three accents, warmed to sit on the warm page rather than against
-        // it. The amber pair is the widest of the three, because the second accent is
-        // itself a light colour and a wash of it has to stay clear of the page.
-        ColorRole.PrimaryContainer -> Color(0xFFD3E7FF)
-        ColorRole.OnPrimaryContainer -> Color(0xFF00366E)
-        ColorRole.SecondaryContainer -> Color(0xFFFAE4C6)
-        ColorRole.OnSecondaryContainer -> Color(0xFF4A3001)
-        ColorRole.TertiaryContainer -> Color(0xFFE4DCFA)
-        ColorRole.OnTertiaryContainer -> Color(0xFF2C1F63)
+        // Tints of the three accents, resolved neutrally against the page colour.
+        ColorRole.PrimaryContainer -> Color(0xFFD8ECFF)
+        ColorRole.OnPrimaryContainer -> Color(0xFF00407F)
+        ColorRole.SecondaryContainer -> Color(0xFFFDF0E1)
+        ColorRole.OnSecondaryContainer -> Color(0xFF79501E)
+        ColorRole.TertiaryContainer -> Color(0xFFEBE6F8)
+        ColorRole.OnTertiaryContainer -> Color(0xFF3D2D6B)
     }
 
     private fun darkColor(role: ColorRole): Color = when (role) {
@@ -119,15 +117,13 @@ class DeepinDesignSystem private constructor(
         // blue nor a warm colour.
         ColorRole.Tertiary -> Color(0xFF9F8AE3)
         ColorRole.OnTertiary -> Color(0xFF1D0F45)
-        // Tints of the three accents, warmed to sit on the warm page rather than against
-        // it. The amber pair is the widest of the three, because the second accent is
-        // itself a light colour and a wash of it has to stay clear of the page.
-        ColorRole.PrimaryContainer -> Color(0xFF0D3355)
-        ColorRole.OnPrimaryContainer -> Color(0xFFCFE3FB)
-        ColorRole.SecondaryContainer -> Color(0xFF4A3517)
-        ColorRole.OnSecondaryContainer -> Color(0xFFF8E2C5)
-        ColorRole.TertiaryContainer -> Color(0xFF362B5E)
-        ColorRole.OnTertiaryContainer -> Color(0xFFE1D9F7)
+        // Tints of the three accents, resolved neutrally against the page colour.
+        ColorRole.PrimaryContainer -> Color(0xFF203547)
+        ColorRole.OnPrimaryContainer -> Color(0xFF9DD0FF)
+        ColorRole.SecondaryContainer -> Color(0xFF473928)
+        ColorRole.OnSecondaryContainer -> Color(0xFFFFDCB1)
+        ColorRole.TertiaryContainer -> Color(0xFF343042)
+        ColorRole.OnTertiaryContainer -> Color(0xFFCFC4F1)
     }
 
     /**
