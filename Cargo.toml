@@ -9,6 +9,7 @@ members = [
     "samples/notepad",
     "samples/podcast",
     "samples/selfcare",
+    "samples/social",
     "samples/statistics",
     "samples/store",
     "samples/todo",
