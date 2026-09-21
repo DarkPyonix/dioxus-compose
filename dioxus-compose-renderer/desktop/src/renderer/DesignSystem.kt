@@ -627,6 +627,15 @@ data class ButtonStyle(
     val typeRole: TypeRole,
     val restElevation: Dp,
     val pressedElevation: Dp,
+    /**
+     * How much of the button is left when it is disabled.
+     *
+     * One number for the whole control rather than a disabled colour per variant: four
+     * more colours is four more answers every design system owes, and a seventh system
+     * would owe them too. Fading the drawn button says the same thing in every system's
+     * own palette, because it is that system's palette being faded.
+     */
+    val disabledAlpha: Float,
 )
 
 /**
