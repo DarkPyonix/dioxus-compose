@@ -30,7 +30,6 @@ pub fn generate_kotlin() -> String {
     writeln!(output, "package {KOTLIN_PACKAGE}\n").unwrap();
     output.push_str("import java.nio.ByteBuffer\n");
     output.push_str("import java.nio.ByteOrder\n");
-    output.push_str("import java.nio.charset.CodingErrorAction\n");
     output.push_str("import java.nio.charset.StandardCharsets\n\n");
 
     write_enum(&mut output, "WidgetKind", WIDGET_SCHEMA);
@@ -728,6 +727,20 @@ object Protocol {
         return copy
     }
 
+    /**
+     * The string Compose is handed, and the only copy of the text this side makes.
+     *
+     * Validating and building are two passes rather than one because the two things that
+     * do both are each wrong here. `String(bytes, UTF_8)` replaces a malformed byte with
+     * U+FFFD, and a malformed string means the two sides disagree about the arena, which
+     * has to be reported rather than drawn. A `CharsetDecoder` reports it, but assembles
+     * the text as `char` first, two bytes a character, and then copies that into the
+     * `String`, and it needs a decoder and two buffer views of its own to do it.
+     *
+     * So the bytes are checked where they lie, which allocates nothing, and then copied
+     * once into a buffer this object keeps and handed to `String`, which by then has
+     * nothing left to replace. What remains is the one allocation the string itself is.
+     */
     private fun readString(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): String {
         val offsetLong = readU32(batch, base, available, referenceOffset)
         val lengthLong = readU32(batch, base, available, referenceOffset + 4)
@@ -737,18 +750,93 @@ object Protocol {
         val offset = offsetLong.toInt()
         val length = lengthLong.toInt()
         requireRange(available, offset, length, referenceOffset)
-        val view = batch.duplicate()
-        view.position(base + offset)
-        view.limit(base + offset + length)
-        return try {
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(view.slice())
-                .toString()
-        } catch (_: java.nio.charset.CharacterCodingException) {
-            throw ProtocolException("string is not valid UTF-8", offset)
+        if (length == 0) {
+            return ""
         }
+        requireUtf8(batch, base + offset, length, offset)
+        val scratch = stringBytes(length)
+        batch.get(base + offset, scratch, 0, length)
+        return String(scratch, 0, length, StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Reads a range of the arena as UTF-8 without building anything out of it.
+     *
+     * The bounds are Unicode's, and the ones that look arbitrary are the point. A two byte
+     * sequence starts at 0xc2 because 0xc0 and 0xc1 could only encode what one byte
+     * already encodes; the second byte after 0xe0 starts at 0xa0 and after 0xf0 at 0x90
+     * for the same reason; 0xed stops at 0x9f because the surrogate halves follow it; and
+     * four byte sequences stop at 0xf4 0x8f because U+10FFFF is the last code point. The
+     * platform's decoder refuses every one of those, and this has to refuse them too, or
+     * a range it called text would come out of `String` as replacement characters.
+     */
+    private fun requireUtf8(batch: ByteBuffer, start: Int, length: Int, errorOffset: Int) {
+        var index = 0
+        while (index < length) {
+            val lead = batch.get(start + index).toInt() and 0xff
+            if (lead < 0x80) {
+                index += 1
+                continue
+            }
+            val width = when {
+                lead >= 0xc2 && lead <= 0xdf -> 2
+                lead >= 0xe0 && lead <= 0xef -> 3
+                lead >= 0xf0 && lead <= 0xf4 -> 4
+                else -> malformedUtf8(errorOffset)
+            }
+            if (index + width > length) {
+                malformedUtf8(errorOffset)
+            }
+            val lowest = when (lead) {
+                0xe0 -> 0xa0
+                0xf0 -> 0x90
+                else -> 0x80
+            }
+            val highest = when (lead) {
+                0xed -> 0x9f
+                0xf4 -> 0x8f
+                else -> 0xbf
+            }
+            val second = batch.get(start + index + 1).toInt() and 0xff
+            if (second < lowest || second > highest) {
+                malformedUtf8(errorOffset)
+            }
+            var step = 2
+            while (step < width) {
+                val continuation = batch.get(start + index + step).toInt() and 0xff
+                if (continuation < 0x80 || continuation > 0xbf) {
+                    malformedUtf8(errorOffset)
+                }
+                step += 1
+            }
+            index += width
+        }
+    }
+
+    private fun malformedUtf8(errorOffset: Int): Nothing =
+        throw ProtocolException("string is not valid UTF-8", errorOffset)
+
+    /**
+     * The buffer every string is copied through, grown to fit and then kept.
+     *
+     * A frame's strings go through it one after another, so a stream of keystrokes costs
+     * nothing here once it is big enough. It doubles rather than fitting exactly, because
+     * text that grows a character at a time would otherwise reallocate on every keystroke.
+     */
+    private var stringScratch = ByteArray(256)
+
+    private fun stringBytes(length: Int): ByteArray {
+        val scratch = stringScratch
+        if (scratch.size >= length) {
+            return scratch
+        }
+        var size = scratch.size
+        while (size < length) {
+            size = if (size > Int.MAX_VALUE / 2) length else size + size
+        }
+        val grown = ByteArray(size)
+        stringScratch = grown
+        return grown
     }
 
     private fun readU16(batch: ByteBuffer, base: Int, available: Int, offset: Int): Int {

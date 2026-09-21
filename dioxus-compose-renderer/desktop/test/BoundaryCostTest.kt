@@ -128,15 +128,14 @@ class BoundaryCostTest {
         /**
          * Bytes per character of changed text.
          *
-         * One byte is the string itself, and one byte is what this should cost. Three is
-         * what it costs today: the decoder reads the arena through a `CharsetDecoder`,
-         * which builds the text as `char` (two bytes each) before the `String` compacts it
-         * back down to one. It does that because it has to report invalid UTF-8 rather
-         * than replace it silently, which `String(bytes, UTF_8)` will not do.
-         *
-         * So this ceiling is not the target. It is here to stop a fourth copy arriving
-         * unnoticed while the third one is still there.
+         * One byte is the string itself, and one byte is what it costs: the decoder checks
+         * the arena is UTF-8 where it lies, which allocates nothing, then copies the bytes
+         * once through a buffer it keeps and builds the `String` from them. The margin is
+         * for the array size the runtime rounds up to, and nothing else. A second copy of
+         * the text would add another byte a character and fail here, which is the whole
+         * job of this number: allocation is invisible in the interpreter's output, so
+         * without it a copy can be added and nothing notices.
          */
-        const val BYTES_PER_CHARACTER_CEILING = 3.2
+        const val BYTES_PER_CHARACTER_CEILING = 1.05
     }
 }
