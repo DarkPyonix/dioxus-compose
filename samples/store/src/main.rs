@@ -1,9 +1,9 @@
 //! A clothing shop: a catalogue you can browse by category, a product you can size and
 //! count, and a bag that adds up.
 //!
-//! Unified rather than adaptive. The reference is an iOS design and the shop's look is the
-//! shop's, not the platform's, so `Theme::unified(DesignSystem::Cupertino)` is named once
-//! in `main` and the same declaration draws the same screen everywhere.
+//! Unified rather than adaptive. The reference is a light iOS design and the shop's look
+//! is the shop's, not the platform's, so `THEME` names the design system and the colour
+//! scheme once and the same declaration draws the same screen everywhere.
 //!
 //! The one thing the reference has that this cannot is photography. `Image` takes an id
 //! the Host registered and an application only has the tree, so every garment here is a
@@ -755,20 +755,58 @@ fn add_to_bag(
     })
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and light because the reference is a white page with black ink,
+/// grey product cards and one yellow accent.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use dioxus_compose::Host;
     use dioxus_compose::protocol::{
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind};
+
+    /// Named for what it defends: the reference is a light design, and a machine set
+    /// the other way drew this sample dark with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Light);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// The screen, driven the way a Renderer drives it.
     ///
@@ -1020,23 +1058,33 @@ mod tests {
     /// box and the picture is of a screen with a hole in it.
     #[test]
     fn fr14_the_catalogue_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("Store", &[DesignSystem::Cupertino], app, |screen| {
-            assert_eq!(
-                screen.fill_lists(6),
-                2,
-                "the catalogue should hold two windowing lists, the carousel and the \
+        sample_frames::record_as(
+            "Store",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert_eq!(
+                    screen.fill_lists(6),
+                    2,
+                    "the catalogue should hold two windowing lists, the carousel and the \
                  category strip, or the picture is of a screen with a hole in it"
-            );
-        });
+                );
+            },
+        );
     }
 
     /// A garment's own page, which is a different picture: the grid is gone, the sizes and
     /// the stepper are there, and the panel covers the lower part of the tile.
     #[test]
     fn fr14_a_garment_page_is_recorded() {
-        sample_frames::record_in("StoreProduct", &[DesignSystem::Cupertino], app, |screen| {
-            screen.fill_lists(6);
-            assert!(screen.press("View"), "no garment on the catalogue opens");
-        });
+        sample_frames::record_as(
+            "StoreProduct",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                screen.fill_lists(6);
+                assert!(screen.press("View"), "no garment on the catalogue opens");
+            },
+        );
     }
 }

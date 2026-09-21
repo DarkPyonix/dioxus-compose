@@ -248,48 +248,83 @@ pub fn record_in(
     screen: &str,
     systems: &[DesignSystem],
     app: fn() -> Element,
+    prepare: impl FnMut(&mut Screen),
+) {
+    let themes: Vec<Theme> = systems
+        .iter()
+        .copied()
+        .flat_map(|system| SCHEMES.map(|scheme| Theme::unified(system).with_color_scheme(scheme)))
+        .collect();
+    record_as(screen, &themes, app, prepare);
+}
+
+/// The systems a design drawn for the iPhone is worth being looked at in.
+///
+/// Both of Apple's own languages, because both are that platform's and which one an
+/// application wants is the application's decision. A design taken from an iOS reference
+/// is the case where seeing it in each of them is the point.
+pub const APPLE: [DesignSystem; 2] = [DesignSystem::Cupertino, DesignSystem::LiquidGlass];
+
+/// The themes a unified sample is drawn in: its own colour scheme, and each system.
+///
+/// The scheme is the sample's rather than both of them. A sample whose design is a light
+/// one is not drawn dark by anything a reader can reach without saying so, and a picture
+/// of a screen nobody opens is a picture that gets compared against a reference it was
+/// never meant to match.
+pub fn as_designed(theme: Theme, systems: &[DesignSystem]) -> Vec<Theme> {
+    systems
+        .iter()
+        .copied()
+        .map(|system| Theme::unified(system).with_color_scheme(theme.color_scheme))
+        .collect()
+}
+
+/// Records one screen once per theme and window.
+pub fn record_as(
+    screen: &str,
+    themes: &[Theme],
+    app: fn() -> Element,
     mut prepare: impl FnMut(&mut Screen),
 ) {
     let directory = frame_dir();
-    for system in systems.iter().copied() {
-        for scheme in SCHEMES {
-            for viewport in VIEWPORTS {
-                dioxus_compose::window::reset_window_size();
-                let theme = Theme::unified(system).with_color_scheme(scheme);
-                let mut host = Host::with_theme(app, theme);
-                let first = host
-                    .rebuild()
-                    .unwrap_or_else(|error| {
-                        panic!("{screen} {system:?} {scheme:?} does not encode: {error:?}")
-                    })
-                    .to_vec();
-                assert!(
-                    !first.is_empty(),
-                    "{screen} {system:?} {scheme:?} produced an empty first frame, so there is \
-                     nothing to draw"
+    for theme in themes.iter().copied() {
+        let system = theme.design_system;
+        let scheme = theme.color_scheme;
+        for viewport in VIEWPORTS {
+            dioxus_compose::window::reset_window_size();
+            let mut host = Host::with_theme(app, theme);
+            let first = host
+                .rebuild()
+                .unwrap_or_else(|error| {
+                    panic!("{screen} {system:?} {scheme:?} does not encode: {error:?}")
+                })
+                .to_vec();
+            assert!(
+                !first.is_empty(),
+                "{screen} {system:?} {scheme:?} produced an empty first frame, so there is \
+                 nothing to draw"
+            );
+            let mut recording = Screen {
+                host,
+                frames: vec![first],
+                event: Vec::new(),
+                viewport,
+            };
+            recording.dispatch(HostEvent {
+                node_id: 0,
+                handler_id: 0,
+                payload: EventPayload::WindowSizeChanged {
+                    width_dp: viewport.width_dp,
+                    height_dp: viewport.height_dp,
+                    class: WindowSizeClass::from_width_dp(viewport.width_dp),
+                },
+            });
+            prepare(&mut recording);
+            if let Some(directory) = &directory {
+                write(
+                    &file_name(directory, screen, system, scheme, viewport),
+                    &recording,
                 );
-                let mut recording = Screen {
-                    host,
-                    frames: vec![first],
-                    event: Vec::new(),
-                    viewport,
-                };
-                recording.dispatch(HostEvent {
-                    node_id: 0,
-                    handler_id: 0,
-                    payload: EventPayload::WindowSizeChanged {
-                        width_dp: viewport.width_dp,
-                        height_dp: viewport.height_dp,
-                        class: WindowSizeClass::from_width_dp(viewport.width_dp),
-                    },
-                });
-                prepare(&mut recording);
-                if let Some(directory) = &directory {
-                    write(
-                        &file_name(directory, screen, system, scheme, viewport),
-                        &recording,
-                    );
-                }
             }
         }
     }

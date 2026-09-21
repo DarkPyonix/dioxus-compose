@@ -585,23 +585,57 @@ fn app() -> Element {
     }
 }
 
-// Unified, not adaptive. The design is the product here, so the same declaration draws the
-// same screen on a Mac, on Windows and on a phone, and what it draws is Cupertino: this is
-// an iOS design and Cupertino is the vocabulary's name for that. Liquid Glass is not a
-// choice at this level, because it is a material Cupertino is made of rather than a
-// seventh design system.
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and light because the reference sheet is a white page with the
+/// components laid out on it. The two dark buttons and the dark card on it are the
+/// inverted pair the sheet is demonstrating, not a second sheet in a second scheme.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use dioxus_compose::Host;
     use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
     use dioxus_compose::schema::{PropertyKind, WidgetKind};
+
+    /// Named for what it defends: the reference is a light design, and a machine set
+    /// the other way drew this sample dark with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Light);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// Every piece of text the screen is carrying after a batch.
     fn texts(batch: &[u8]) -> Vec<String> {
@@ -797,7 +831,12 @@ mod tests {
     /// widths.
     #[test]
     fn fr14_the_playground_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("Minimal", &[DesignSystem::Cupertino], app, |_| {});
+        sample_frames::record_as(
+            "Minimal",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |_| {},
+        );
     }
 
     /// The surfaces group: the inverted bar, the layer trio, the corner ladder and the
@@ -808,23 +847,33 @@ mod tests {
     /// while, and no assertion here could have said so.
     #[test]
     fn fr14_the_surfaces_group_is_recorded() {
-        sample_frames::record_in("MinimalPanels", &[DesignSystem::Cupertino], app, |screen| {
-            assert!(
-                screen.press(Group::Surfaces.label()),
-                "the screen has no way to reach the surfaces group"
-            );
-        });
+        sample_frames::record_as(
+            "MinimalPanels",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert!(
+                    screen.press(Group::Surfaces.label()),
+                    "the screen has no way to reach the surfaces group"
+                );
+            },
+        );
     }
 
     /// The colour group, which is a different picture from the one above and the reason
     /// the accent containers were added at all.
     #[test]
     fn fr13_the_colour_group_is_recorded() {
-        sample_frames::record_in("MinimalColour", &[DesignSystem::Cupertino], app, |screen| {
-            assert!(
-                screen.press(Group::Colour.label()),
-                "the screen has no way to reach the colour group"
-            );
-        });
+        sample_frames::record_as(
+            "MinimalColour",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert!(
+                    screen.press(Group::Colour.label()),
+                    "the screen has no way to reach the colour group"
+                );
+            },
+        );
     }
 }

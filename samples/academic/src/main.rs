@@ -7,8 +7,9 @@
 //! neighbours. That is written down in `school.rs` rather than papered over with a
 //! literal.
 //!
-//! Unified, naming Cupertino: the reference is an iOS design. It is drawn on black there,
-//! and this draws on whatever the reader asked for, which in dark is the same screen.
+//! Unified, naming Cupertino and dark: the reference is drawn on black, both screens,
+//! and a drum school that comes up white on a machine set to light is not that design.
+//! `THEME` says both.
 
 mod school;
 
@@ -399,20 +400,58 @@ fn app() -> Element {
     }
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and dark because the reference is black throughout, both
+/// screens, with the four subject tiles and one white card as the only light areas.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use dioxus_compose::Host;
     use dioxus_compose::protocol::{
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+
+    /// Named for what it defends: the reference is a dark design, and a machine set
+    /// the other way drew this sample light with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Dark);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// The screen, driven the way a Renderer drives it. Every batch is kept, because a
     /// batch is the change since the frame before it rather than what is on screen.
@@ -655,19 +694,29 @@ mod tests {
     /// reference is drawn on black, so the dark recording is the one to hold beside it.
     #[test]
     fn fr13_the_subject_grid_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("Academic", &[DesignSystem::Cupertino], app, |_| {});
+        sample_frames::record_as(
+            "Academic",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |_| {},
+        );
     }
 
     /// The lesson plan, which is where an open lesson and a locked one sit next to each
     /// other and have to be told apart at a glance.
     #[test]
     fn fr13_the_lesson_plan_is_recorded() {
-        sample_frames::record_in("AcademicPlan", &[DesignSystem::Cupertino], app, |screen| {
-            assert!(
-                screen.press(Destination::Plan.label()),
-                "the bar has no way to the lesson plan"
-            );
-            screen.fill_lists(4);
-        });
+        sample_frames::record_as(
+            "AcademicPlan",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert!(
+                    screen.press(Destination::Plan.label()),
+                    "the bar has no way to the lesson plan"
+                );
+                screen.fill_lists(4);
+            },
+        );
     }
 }

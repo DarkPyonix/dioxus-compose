@@ -7,7 +7,8 @@
 //! ink that stays readable on them. A literal would have been easier and would have kept
 //! its light-mode pink when the reader asked for dark.
 //!
-//! Unified, naming Cupertino: the reference is an iOS design.
+//! Unified, naming Cupertino and dark: the reference's check-in is black, and that is
+//! the screen this opens on. `THEME` says both.
 
 mod mood;
 
@@ -669,9 +670,27 @@ fn app() -> Element {
     }
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and dark because the check-in, which is the screen this opens
+/// on and the screen the sample exists for, is black under a pastel panel in the
+/// reference, and the worry picker is black throughout. The home and profile screens in
+/// the same sheet are light, so this is the one reference whose halves disagree, and the
+/// screen it opens on wins.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
@@ -683,6 +702,28 @@ mod tests {
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+
+    /// Named for what it defends: the reference is a dark design, and a machine set the
+    /// other way drew this sample light with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Dark);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// The screen, driven the way a Renderer drives it. Every batch is kept, because a
     /// batch is the change since the frame before it rather than what is on screen.
@@ -874,16 +915,21 @@ mod tests {
     /// The check-in, in the design system it ships, in both schemes, at all three widths.
     #[test]
     fn fr16_the_check_in_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("SelfCare", &[DesignSystem::Cupertino], app, |_| {});
+        sample_frames::record_as(
+            "SelfCare",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |_| {},
+        );
     }
 
     /// The profile, which is the other drawing: a week as a line, on a reading surface
     /// rather than on a tint.
     #[test]
     fn fr16_the_profile_is_recorded() {
-        sample_frames::record_in(
+        sample_frames::record_as(
             "SelfCareProfile",
-            &[DesignSystem::Cupertino],
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
             |screen| {
                 assert!(
@@ -897,9 +943,9 @@ mod tests {
     /// The listening screen, which is where the session cards and the windowing row are.
     #[test]
     fn fr15_the_listening_screen_is_recorded() {
-        sample_frames::record_in(
+        sample_frames::record_as(
             "SelfCareListen",
-            &[DesignSystem::Cupertino],
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
             |screen| {
                 assert!(
