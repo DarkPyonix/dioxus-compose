@@ -171,6 +171,10 @@ pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> Dr
     // Placed at the slot's middle the whole row sat half a slot to the right and Sunday
     // was drawn past the edge and clipped to its first letter.
     let label_inset = (slot / 2.0 - DAY_HALF_WIDTH).max(0.0);
+    // The rightmost label is the one that can leave the box, and leaving it is not a few
+    // dp out of place: the Renderer clips at the canvas edge, so Sunday came out as "Su".
+    // Its left end is pulled back to where a three letter word still ends inside.
+    let last_label_start = (width - DAY_HALF_WIDTH * 2.0).max(0.0);
     let x_of = |index: usize| index as f32 * slot + slot / 2.0;
     let y_of = |value: f32| plot - value.clamp(0.0, 1.0) * (plot * 0.86) - plot * 0.07;
 
@@ -191,7 +195,7 @@ pub fn week_line(width: f32, height: f32, ink: ColorRole, mark: ColorRole) -> Dr
             .text_at(
                 Paint::Role(ink),
                 day,
-                index as f32 * slot + label_inset,
+                (index as f32 * slot + label_inset).min(last_label_start),
                 baseline,
                 TypeRole::Caption,
             );
@@ -256,6 +260,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The last day stays inside the box. Named for what it defends: a label placed past
+    /// the canvas edge is clipped there rather than merely mispositioned, so Sunday was
+    /// drawn as "Su" and looked like a spelling nobody had noticed.
+    #[test]
+    fn fr16_the_last_day_is_written_inside_the_chart() {
+        let width = 300.0;
+        let commands = week_line(width, 160.0, ColorRole::OnSurface, ColorRole::Primary)
+            .decode()
+            .expect("the week did not decode");
+        let days: Vec<f32> = commands
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::TextAt { x, .. } => Some(*x),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(days.len(), WEEK.len(), "a day was not written at all");
+        let last = days[days.len() - 1];
+        assert!(
+            last + DAY_HALF_WIDTH * 2.0 <= width,
+            "{} starts at {last} and runs past the chart's {width}",
+            WEEK[WEEK.len() - 1].0
+        );
     }
 
     /// Seven readings make six segments. A line with a segment missing is a chart with a
