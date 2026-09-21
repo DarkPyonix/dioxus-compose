@@ -43,6 +43,12 @@ private val ONE_PIXEL_PNG = byteArrayOf(
     0x42, 0x60, 0x82.toByte(),
 )
 
+/** A minimal SVG, so the parser has a real document to read rather than a stub. */
+private val SQUARE_SVG = (
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 8\">" +
+        "<rect width=\"8\" height=\"8\" fill=\"#336699\"/></svg>"
+    ).toByteArray(Charsets.UTF_8)
+
 private fun iconBytes(role: IconRole): ByteArray {
     val tag = role.ordinal + 1
     return byteArrayOf((tag and 0xFF).toByte(), ((tag shr 8) and 0xFF).toByte())
@@ -85,6 +91,33 @@ class AssetDeliveryTest {
             emptyList(),
             connection.events.filterIsInstance<HostEvent.ProtocolError>(),
             "a registered asset must not be reported as a problem",
+        )
+    }
+
+    /**
+     * Vectors take a different path from rasters all the way through: a different decoder,
+     * a different thing held in the cache, and a different draw. Only one of the two was
+     * covered, and a renderer whose graphics stack cannot parse one reports it rather than
+     * drawing it, so which of the two happened has to be visible.
+     */
+    @Test
+    fun fr16_a_registered_svg_is_drawn_from_the_cache() = runComposeUiTest {
+        val connection = FakeHostConnection(
+            listOf(Mutation.RegisterAsset(ASSET, AssetKind.Svg.ordinal + 1, SQUARE_SVG)) +
+                imageTree(ASSET),
+        )
+        lateinit var host: DioxusHost
+        setContent {
+            host = rememberDioxusHost(connection)
+            DioxusContent(host)
+        }
+        waitForIdle()
+
+        onNodeWithTag(nodeTestTag(IMAGE)).assertIsDisplayed()
+        assertEquals(
+            emptyList(),
+            connection.events.filterIsInstance<HostEvent.ProtocolError>(),
+            "this renderer parses vectors, so nothing is reported",
         )
     }
 
