@@ -275,8 +275,14 @@ interface ComponentRules {
      * A field with nothing around it is the same field in all six systems, and it was:
      * no fill, no line, no inner room, no focus mark. Which of those a system draws, and
      * what changes when the caret goes in, is decided here.
+     *
+     * `multiline` is here because a stadium is the shape of one line. A radius wide enough
+     * to round a 40 dp field into a capsule, applied to a page of text, makes the corners
+     * meet in the middle: the editing area comes out as an ellipse with the writing
+     * clipped off its sides. Only the systems that round a field that far have a different
+     * answer to give; the rest ignore it.
      */
-    fun field(theme: ResolvedTheme): FieldStyle
+    fun field(theme: ResolvedTheme, multiline: Boolean = false): FieldStyle
 
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion

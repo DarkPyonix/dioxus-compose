@@ -150,7 +150,7 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
     // The frame is the design system's, not the Host's: a fill, a line, room inside, and
     // whatever each of them changes when the caret arrives. Focus is read here rather than
     // reported, so none of that transition crosses the boundary.
-    val frame = theme.rules.field(theme)
+    val frame = theme.rules.field(theme, multiline)
 
     BasicTextField(
         value = value,

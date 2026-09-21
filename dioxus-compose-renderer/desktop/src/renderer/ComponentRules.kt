@@ -294,7 +294,7 @@ internal object Material3Rules : ComponentRules {
      * filled Material field leaves room above the text for a label whether or not one is
      * there.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.SurfaceVariant),
         containerFocused = theme.color(ColorRole.SurfaceVariant),
         border = Color.Transparent,
@@ -685,7 +685,7 @@ internal object CupertinoRules : ComponentRules {
      * rather than as the field's own edge changing colour. Short: a HIG field is the
      * least tall of the six.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.Surface),
         containerFocused = theme.color(ColorRole.Surface),
         border = theme.color(ColorRole.Outline),
@@ -1100,7 +1100,7 @@ internal object FluentRules : ComponentRules {
      * you may type and the line underneath marks that you are typing. A system with one
      * field colour for the two states would have to pick one of them.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.Surface),
         containerFocused = theme.color(ColorRole.Surface),
         border = theme.color(ColorRole.Outline),
@@ -1519,7 +1519,7 @@ internal object GnomeRules : ComponentRules {
      * No rule underneath. Adwaita marks the focused entry all the way round, which is the
      * clearest difference from the Material field beside it.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.SurfaceVariant),
         containerFocused = theme.color(ColorRole.SurfaceVariant),
         border = theme.color(ColorRole.Outline),
@@ -1963,7 +1963,7 @@ internal object BreezeRules : ComponentRules {
      * a line that grows moves everything beside it by a pixel, and Plasma does not.
      * Shortest of the six after the HIG field, because Kirigami packs tightly.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.Surface),
         containerFocused = theme.color(ColorRole.Surface),
         border = theme.color(ColorRole.Outline),
@@ -2396,7 +2396,7 @@ internal object DeepinRules : ComponentRules {
      * reading surface and draws the accent round it. The largest corner and the most inner
      * room of the six.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.SurfaceVariant),
         containerFocused = theme.color(ColorRole.Surface),
         border = Color.Transparent,
@@ -2915,7 +2915,7 @@ internal object LiquidGlassRules : ComponentRules {
      * fill, so the resting state has no line at all and focus is marked by the accent
      * being laid around it.
      */
-    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+    override fun field(theme: ResolvedTheme, multiline: Boolean): FieldStyle = FieldStyle(
         container = theme.color(ColorRole.SurfaceVariant),
         containerFocused = theme.color(ColorRole.SurfaceVariant),
         border = Color.Transparent,
@@ -2923,7 +2923,12 @@ internal object LiquidGlassRules : ComponentRules {
         borderWidth = 0.dp,
         borderWidthFocused = 2.dp,
         underline = null,
-        shape = theme.shape(ShapeRole.Full),
+        // A capsule for a line, and the large corner for a page. iOS 26 rounds a search
+        // field into a stadium and leaves the body of a note as a rounded rectangle, for
+        // the reason the stadium exists: it is the shape of a row of text. Kept on a field
+        // several hundred dp tall the two corners of each side meet, and what gets drawn
+        // is an ellipse with the writing clipped away at the edges.
+        shape = theme.shape(if (multiline) ShapeRole.Large else ShapeRole.Full),
         horizontalPadding = theme.space(SpaceRole.Md),
         verticalPadding = theme.space(SpaceRole.Sm),
         cursor = theme.color(ColorRole.Primary),
