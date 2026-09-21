@@ -208,10 +208,15 @@ fn app() -> Element {
     let display = calculator.read().display();
     let status = calculator.read().status();
     // A phone holds one column of keys. Anything wider has room for the functions to leave
-    // the grid, and a desktop window has room for the readout to stand beside the keys
-    // instead of sitting on top of them, which is where a desk calculator's display is.
+    // the grid and stand in a column of their own. A desktop window has more width than a
+    // keypad can use: keys that grew to fill it would be the size of a hand, so the pad
+    // stops at the width an expanded window starts at and centres under the readout.
     let wide = !window.is_compact();
-    let beside = window.is_expanded();
+    let pad_width = if window.is_expanded() {
+        Some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+    } else {
+        None
+    };
 
     let capture = rsx! {
         // The keyboard route. The instruction is the field's own placeholder: a sentence
@@ -261,34 +266,21 @@ fn app() -> Element {
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Md,
 
-                if beside {
-                    Row {
-                        fill_max_width: true,
-                        weight: 1.0,
-                        space_role: SpaceRole::Md,
-                        Column {
-                            weight: 1.0,
-                            fill_max_height: true,
-                            space_role: SpaceRole::Md,
-                            {readout(status, display, true)}
-                        }
-                        Column {
-                            weight: 1.0,
-                            fill_max_height: true,
-                            space_role: SpaceRole::Md,
-                            {keypad(calculator, wide)}
-                            {capture}
-                        }
-                    }
-                } else {
-                    {readout(status, display, false)}
+                {readout(status, display, false)}
+                // The pad takes the height the readout and the capture line leave, and on
+                // a desktop window it stops widening and centres instead.
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    alignment: Alignment::TopCenter,
                     Column {
-                        fill_max_width: true,
-                        weight: 1.0,
+                        fill_max_width: pad_width.is_none(),
+                        width: pad_width,
+                        fill_max_height: true,
                         {keypad(calculator, wide)}
                     }
-                    {capture}
                 }
+                {capture}
             }
         }
     }
