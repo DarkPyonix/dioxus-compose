@@ -27,6 +27,7 @@ import kotlin.math.max
 import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import dioxus.compose.design.ContainerRole
 import dioxus.compose.design.HostPlatform
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.resolveTheme
@@ -113,6 +114,27 @@ class DesignSystemDifferenceTest {
      * the control stops reading as a box at all, and a reader is left with two circles
      * that differ only in what is drawn inside them.
      */
+    /**
+     * Material cuts its corners on the expressive ladder, not the baseline one.
+     *
+     * The reference screens are Material 3 Expressive, and the corner is the thing a
+     * reader sees first: a card there is cut at twenty eight, and the same layout drawn
+     * on the baseline ladder at sixteen reads as the previous version of Material. This
+     * is the only system here that rounds a card that far, so the number is the
+     * signature.
+     */
+    @Test
+    fun fr14_7_material_cuts_a_card_on_the_expressive_ladder() {
+        val theme = resolved(DesignSystem.Material3, dark = false)
+        val card = theme.rules.container(ContainerRole.Card, theme)
+        val radius = cornerRadius(card.shape, 200.dp)
+        assertTrue(
+            radius >= 24f,
+            "a Material card is cut at $radius, which is the baseline ladder rather than " +
+                "the expressive one the reference screens are drawn in",
+        )
+    }
+
     @Test
     fun fr14_1_a_checkbox_is_a_box_except_where_the_system_draws_a_circle() {
         val round = setOf(DesignSystem.Cupertino, DesignSystem.LiquidGlass)

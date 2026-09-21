@@ -23,13 +23,16 @@ import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WindowSizeClass
 
 /**
- * Material 3 rules: elevation, button variants and motion.
+ * Material 3 Expressive rules: elevation, button variants and motion.
  *
- * Reference: m3.material.io, "Elevation", "Buttons" and "Motion easing and duration",
- * 2024 baseline, the same revision the generated token table cites.
+ * Reference: m3.material.io, "Elevation", "Buttons", "Shape" and "Motion easing and
+ * duration", the 2025 expressive revision, which is the revision the generated token
+ * table cites and the one the screens in `docs/references/design-systems/material3/` are
+ * drawn in.
  *
- * Elevation is tonal plus a shadow, buttons are fully rounded with a state layer that grows
- * on press, and motion uses the emphasised easing.
+ * Elevation is tonal plus a shadow, buttons are capsules at every size with a state layer
+ * that grows on press, motion uses the emphasised easing, and corners are cut on the
+ * expressive ladder, which is the part of this that a reader sees first.
  */
 internal object Material3Rules : ComponentRules {
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
@@ -153,7 +156,7 @@ internal object Material3Rules : ComponentRules {
             )
 
             ContainerRole.Menu -> base.copy(
-                shape = theme.shape(ShapeRole.ExtraSmall),
+                shape = theme.shape(ShapeRole.Small),
                 elevation = 3.dp,
                 horizontalPadding = 0.dp,
                 verticalPadding = theme.space(SpaceRole.Xs),
@@ -171,7 +174,13 @@ internal object Material3Rules : ComponentRules {
         }
     }
 
-    /** A Material tab row: the selected tab is underlined across its full width. */
+    /**
+     * A Material tab row: the selected tab is underlined across its full width.
+     *
+     * The rule under it is a thick rounded bar rather than a hairline. That is the
+     * expressive indicator, and it is what the reference screens draw under a selected
+     * destination: a stub of capsule, not a line.
+     */
     override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
         container = theme.color(ColorRole.Surface),
         shape = theme.shape(ShapeRole.None),
@@ -180,8 +189,8 @@ internal object Material3Rules : ComponentRules {
         selectedContainer = Color.Transparent,
         selectedShape = theme.shape(ShapeRole.None),
         indicator = theme.color(ColorRole.Primary),
-        indicatorHeight = 3.dp,
-        indicatorShape = theme.shape(ShapeRole.ExtraSmall),
+        indicatorHeight = 4.dp,
+        indicatorShape = theme.shape(ShapeRole.Full),
         indicatorFillsTab = true,
         horizontalPadding = theme.space(SpaceRole.Md),
         verticalPadding = theme.space(SpaceRole.Sm),

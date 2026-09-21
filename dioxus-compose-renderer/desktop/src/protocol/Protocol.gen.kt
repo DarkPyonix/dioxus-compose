@@ -930,7 +930,7 @@ class DesignTokenTable(
 object DesignTokens {
     val MATERIAL3: DesignTokenTable = DesignTokenTable(
         DesignSystem.Material3,
-        "Material 3 baseline scheme and type scale, m3.material.io, 2024 baseline",
+        "Material 3 Expressive shape, colour and type scales, m3.material.io, 2025",
         "Roboto",
         "Roboto Mono",
         intArrayOf(
@@ -978,7 +978,7 @@ object DesignTokens {
             TypeToken(12.0f, 400, 16.0f, 0.4f, false), // Caption
             TypeToken(14.0f, 400, 20.0f, 0.0f, true), // Mono
         ),
-        floatArrayOf(0.0f, 4.0f, 8.0f, 12.0f, 16.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 12.0f, 16.0f, 28.0f, 1000.0f),
         floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 24.0f, 32.0f, 48.0f),
     )
 
@@ -1208,34 +1208,34 @@ object DesignTokens {
             0xffffffff.toInt(), // OnPrimary
             0xfff2a13c.toInt(), // Secondary
             0xff2b1a05.toInt(), // OnSecondary
-            0xfffffdfa.toInt(), // Surface
-            0xff2c2622.toInt(), // OnSurface
-            0xfff0e9e0.toInt(), // SurfaceVariant
-            0xff6b5f56.toInt(), // OnSurfaceVariant
-            0xfffaf7f2.toInt(), // Background
-            0xff2c2622.toInt(), // OnBackground
-            0xffd9cdc0.toInt(), // Outline
-            0xffece3d9.toInt(), // OutlineVariant
-            0xffe35c4b.toInt(), // Error
+            0xffffffff.toInt(), // Surface
+            0xff202020.toInt(), // OnSurface
+            0xffe6e6e6.toInt(), // SurfaceVariant
+            0xff5a5a5a.toInt(), // OnSurfaceVariant
+            0xffffffff.toInt(), // Background
+            0xff202020.toInt(), // OnBackground
+            0xffcdcdcd.toInt(), // Outline
+            0xffe0e0e0.toInt(), // OutlineVariant
+            0xffff5736.toInt(), // Error
             0xffffffff.toInt(), // OnError
-            0xffffffff.toInt(), // SurfaceContainer
+            0xfff1f1f1.toInt(), // SurfaceContainer
         ),
         intArrayOf(
             0xff3ba2ff.toInt(), // Primary
             0xff04203a.toInt(), // OnPrimary
             0xffffb964.toInt(), // Secondary
             0xff33200a.toInt(), // OnSecondary
-            0xff2b2726.toInt(), // Surface
-            0xfff5efe9.toInt(), // OnSurface
-            0xff3a3533.toInt(), // SurfaceVariant
-            0xffc4b8ad.toInt(), // OnSurfaceVariant
-            0xff232020.toInt(), // Background
-            0xfff5efe9.toInt(), // OnBackground
-            0xff574f4b.toInt(), // Outline
-            0xff383230.toInt(), // OutlineVariant
+            0xff2a2a2a.toInt(), // Surface
+            0xfff0f0f0.toInt(), // OnSurface
+            0xff3a3a3a.toInt(), // SurfaceVariant
+            0xffb4b4b4.toInt(), // OnSurfaceVariant
+            0xff1a1a1a.toInt(), // Background
+            0xfff0f0f0.toInt(), // OnBackground
+            0xff4d4d4d.toInt(), // Outline
+            0xff333333.toInt(), // OutlineVariant
             0xffff8a73.toInt(), // Error
             0xff34110a.toInt(), // OnError
-            0xff302b29.toInt(), // SurfaceContainer
+            0xff2a2a2a.toInt(), // SurfaceContainer
         ),
         arrayOf(
             TypeToken(40.0f, 600, 50.0f, 0.0f, false), // Display

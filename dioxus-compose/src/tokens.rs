@@ -132,7 +132,7 @@ macro_rules! spaces {
 
 const MATERIAL3: DesignTokenTable = DesignTokenTable {
     system: DesignSystem::Material3,
-    reference: "Material 3 baseline scheme and type scale, m3.material.io, 2024 baseline",
+    reference: "Material 3 Expressive shape, colour and type scales, m3.material.io, 2025",
     default_family: "Roboto",
     monospace_family: "Roboto Mono",
     colors: colors! {
@@ -166,12 +166,18 @@ const MATERIAL3: DesignTokenTable = DesignTokenTable {
         Caption: 12.0 / 400 / 16.0 / 0.4 / false,
         Mono: 14.0 / 400 / 20.0 / 0.0 / true,
     },
+    // The expressive ladder, which is the baseline one shifted up a rung at every step
+    // above the smallest. This is the loudest thing about the reference screens: a card
+    // there is cut at twenty eight rather than sixteen, a sheet is rounder still, and the
+    // buttons and the chips and the selected destination are all capsules. The baseline
+    // ladder drew the same layout with corners half the size, which reads as the previous
+    // version of Material rather than as this one.
     shapes: shapes! {
         None: 0.0,
         ExtraSmall: 4.0,
-        Small: 8.0,
-        Medium: 12.0,
-        Large: 16.0,
+        Small: 12.0,
+        Medium: 16.0,
+        Large: 28.0,
         Full: 1000.0,
     },
     spaces: spaces! {
