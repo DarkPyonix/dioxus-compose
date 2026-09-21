@@ -608,6 +608,11 @@ fn app() -> Element {
                 Card {
                     fill_max_width: true,
                     shape_role: ShapeRole::Full,
+                    // A step of room inside the pill, on top of whatever the design system
+                    // already puts there. A stadium's edge curves in at the top and bottom,
+                    // and the field is a rectangle: at the system's own padding the field's
+                    // corners came out through the curve.
+                    padding_role: SpaceRole::Sm,
                     Row {
                         fill_max_width: true,
                         space_role: SpaceRole::Sm,
@@ -622,7 +627,16 @@ fn app() -> Element {
                         TextField {
                             weight: 1.0,
                             multiline: true,
-                            placeholder: "Message. Enter sends, Shift+Enter starts a new line",
+                            // The long form is a sentence of documentation, which is worth
+                            // having in a sample and needs a line to itself. On a phone
+                            // there is no line to spare: it wrapped to three, and a
+                            // composer three lines tall before anything is typed is not the
+                            // bar the reference has.
+                            placeholder: if crowded {
+                                "Message"
+                            } else {
+                                "Message. Enter sends, Shift+Enter starts a new line"
+                            },
                             on_value_change: move |value| draft.set(value),
                             on_submit: move |value: String| send(value),
                         }
