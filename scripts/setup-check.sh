@@ -52,6 +52,27 @@ else
          "note: rustup installs into ~/.cargo/bin; make sure it is on PATH"
 fi
 
+# --- Build directory --------------------------------------------------------
+# This checkout has to build into its own target/. Two checkouts sharing one build
+# directory run each other's binaries: cargo leaves the package path out of the unit hash
+# for a path package, so identical sources in two places are a single cache entry, and
+# everything fixed at compile time comes from whichever one compiled first.
+build_override=""
+if [[ -f "$repo_root/.cargo/config.toml" ]] &&
+   grep -qE '^[[:space:]]*target[-_]dir[[:space:]]*=' "$repo_root/.cargo/config.toml"; then
+    build_override="$repo_root/.cargo/config.toml"
+fi
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+    build_override="${build_override:+$build_override and }CARGO_TARGET_DIR=$CARGO_TARGET_DIR"
+fi
+if [[ -n "$build_override" ]]; then
+    fail "this checkout builds somewhere other than its own target/ ($build_override)" \
+         "Two checkouts sharing one build directory run each other's binaries." \
+         "fix: ./scripts/setup-worktrees.sh --all, and unset CARGO_TARGET_DIR"
+else
+    ok "build directory: $repo_root/target, this checkout's own"
+fi
+
 # --- Platform ---------------------------------------------------------------
 uname_s="$(uname -s)"
 case "$uname_s" in

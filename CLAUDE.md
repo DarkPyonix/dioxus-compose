@@ -40,10 +40,22 @@ under `docs/`.
    deletions with it.
 3. `scripts/tests/planning-docs.test.sh` fails if those documents go missing, so the loss
    is caught rather than discovered weeks later.
-4. **Run `scripts/setup-worktrees.sh` once per clone.** Every worktree otherwise builds
-   into its own `target/`, each a full copy of every dependency's output. Ten agent
-   worktrees filled a 349GB volume to 100% and took down every build then running.
-5. **One worktree per agent, and never two workers in the same checkout.** Switching
+4. **Every worktree builds into its own `target/`.** Two checkouts sharing one build
+   directory run each other's binaries. Cargo leaves the package path out of the unit hash
+   for a path package, so identical sources in two places are a single cache entry, and
+   everything fixed at compile time (`env!("CARGO_MANIFEST_DIR")`, `include_str!`, what a
+   build script left in `OUT_DIR`, the renderer's install name) comes from whichever
+   checkout compiled first. A `cargo run --bin codegen` in the main checkout generated
+   into an agent's worktree that way, and a sample built there came up with a black
+   window. Run `scripts/setup-worktrees.sh --all` after adding a worktree, and never set
+   `target-dir` or `CARGO_TARGET_DIR` anywhere that outlives a single command.
+5. **Prune worktrees you are not using.** A worktree costs about 1GB once it is built and
+   tested. Ten of them filled a 349GB volume to 100% and took down every build then
+   running, which is what sharing one build directory was trying to avoid.
+   `scripts/setup-worktrees.sh` prints what each one costs and how much room is left.
+6. **Start a background agent with `scripts/launch-agent.sh`.** It creates the worktree
+   from `origin/develop` and gives it its own build directory.
+7. **One worktree per agent, and never two workers in the same checkout.** Switching
    branches changes every file under that checkout, so a `git checkout` while an agent is
    working pulls the files out from under it. Work has been lost that way. Give a
    background agent its own worktree and leave that checkout alone until it finishes.
