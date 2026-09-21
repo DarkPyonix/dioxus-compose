@@ -467,7 +467,9 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 
 ##### 14.9.1 무엇이 네이티브가 되는가
 
-디자인 시스템이 `Navigation`을 **막대**로 그리기로 답했고(FR-21.2의 기본 대응에서 `Compact`), 플랫폼이 아래 게이트를 통과할 때에만 해당합니다.
+디자인 시스템이 `Navigation`을 **막대**로 그리기로 답했고(FR-21.2의 기본 대응에서 `Compact`), 플랫폼이 아래 게이트를 통과하며, 해석된 디자인 시스템이 Apple의 것(`Cupertino` 또는 `LiquidGlass`)일 때에만 해당합니다.
+
+**디자인 시스템 조건은 잊어도 되는 것이 아닙니다.** 셸이 세우는 크롬은 Apple이 그리는 Apple의 것입니다. Material 3나 Fluent를 달라고 한 화면 밑에 그것을 놓는 것은 아무도 하지 않은 질문에 답하는 일이고, 하필 답을 반박하기 가장 어려운 플랫폼에서 하는 일입니다. 이 플랫폼에서 아무 말도 하지 않은 애플리케이션은 어차피 Apple의 것을 받습니다(FR-14.3의 adaptive 기본값).
 
 - 목적지 하나가 `UITabBarItem` 하나입니다. 라벨은 `Text`(태그 1), 그림은 `Icon`(태그 60)의 `IconRole`을 SF Symbol 이름으로 옮긴 것입니다.
 - 탭 하나가 `UINavigationController`이고, 그 안에는 비어 있고 투명한 화면이 하나 있습니다. 목적지의 라벨이 아래쪽 탭 바에서 탭의 이름이 되고 위쪽 바에서 제목이 됩니다. 시스템이 유리를 입히는 자리가 그 두 바이기 때문입니다.
@@ -497,6 +499,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 1. 이음매에 아무것도 설치되지 않은 상태에서 `Navigation`이 그리는 화면이 이 변경 전과 같습니다. 목적지 수, 선택 표시, 내용 배치가 모두 그대로입니다.
 2. 이음매가 "내가 그렸다"고 답하면 Compose 막대가 그려지지 않고, 내용은 그대로 그려집니다.
 3. 게이트가 iOS 26 미만에서 거짓, 26 이상에서 참입니다.
+3-1. Material 3를 지정한 화면은 iOS 26에서도 이쪽에서 그린 막대를 씁니다. `LiquidGlass`를 지정한 화면은 `Cupertino`와 같이 셸을 받습니다.
 4. 네이티브 셸이 서면 창의 루트 뷰 컨트롤러가 `UITabBarController`이고, 그 탭 수가 `NavigationItem` 자식 수와 같으며, 각 탭의 제목이 그 목적지의 `Text`입니다.
 5. 시스템 탭 바에서 탭을 고르면 그 목적지의 `OnClick` 핸들러로 `Clicked`가 **정확히 한 번** 갑니다. FR-21.7의 3번과 같은 규약이고, 경계에 새 이벤트가 없습니다.
 6. Host가 `SelectedIndex`(태그 42)를 바꾸면 시스템 탭 바의 선택이 따라 움직입니다.
@@ -506,7 +509,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 
 ##### 14.9.5 지금까지 확인된 것 (2026-09-22)
 
-1번부터 7번까지 통과했습니다. 1번, 2번, 5번, 6번은 `PlatformNavigationShellTest`가 JVM에서, 3번, 4번, 7번은 `LiquidGlassAvailabilityTest`와 `IosNavigationShellTest`가 시뮬레이터에서 확인합니다. 후자는 UIKit이 실제로 만든 것에 대한 단언입니다. 이 기계의 기본 런타임은 iOS 26으로 보고되었고 게이트는 참이었으며, 잰 값은 아래쪽 83pt, 위쪽 54pt였습니다.
+1번부터 7번까지 통과했습니다. 1번, 2번, 3-1번, 5번, 6번은 `PlatformNavigationShellTest`가 JVM에서, 3번, 4번, 7번은 `LiquidGlassAvailabilityTest`와 `IosNavigationShellTest`가 시뮬레이터에서 확인합니다. 후자는 UIKit이 실제로 만든 것에 대한 단언입니다. 이 기계의 기본 런타임은 iOS 26으로 보고되었고 게이트는 참이었으며, 잰 값은 아래쪽 83pt, 위쪽 54pt였습니다.
 
 **8번과 9번은 아직입니다.** 둘 다 스크린샷이고, 이 작업은 렌더러를 빌드하지 않았습니다. 스크린샷은 CI의 iOS 잡이 찍습니다. 기본 스모크 트리에는 `Navigation`이 없어서 그 화면에는 이 작업의 크롬이 한 조각도 나오지 않으므로, `--navigation`으로 목적지 두 개를 선언한 두 번째 스크린샷을 같이 올립니다.
 

@@ -37,6 +37,7 @@ import dioxus.compose.design.NavigationIndicator
 import dioxus.compose.design.NavigationPresentation
 import dioxus.compose.design.NavigationStyle
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.PropertyKind
@@ -120,7 +121,15 @@ internal fun HostNavigation(
     // screen would take the window's bar away from whatever owns it, and two of them would
     // take turns. A nested one keeps the bar drawn here, where it can sit inside the part
     // of the screen it actually belongs to.
-    val offered = style.presentation == NavigationPresentation.Bar && node.id in table.roots
+    //
+    // And only where Apple's design language was asked for. The chrome the shell stands up
+    // is Apple's, drawn by Apple; putting it under an application that asked for Material 3
+    // or Fluent would answer a question nobody asked. An application on this platform that
+    // said nothing gets Apple's anyway, because the default theme follows the platform.
+    val apple = theme.system == DesignSystem.Cupertino || theme.system == DesignSystem.LiquidGlass
+    val offered = style.presentation == NavigationPresentation.Bar &&
+        node.id in table.roots &&
+        apple
     val shell = platformNavigationShell?.takeIf { it.drawsStrip && offered }
 
     // A message is drawn over the whole window, so it has to be told what the bar along

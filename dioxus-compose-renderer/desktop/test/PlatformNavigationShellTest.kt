@@ -47,10 +47,8 @@ private const val FIRST_HANDLER = 91L
 private const val SECOND_HANDLER = 92L
 
 /** The same two destinations and one screen the drawn bar is tested with. */
-private fun navigationBatch() = listOf(
-    Mutation.SetTheme(
-        Theme(DesignSystem.Cupertino, DesignSystem.Cupertino, ColorScheme.Light, adaptive = false),
-    ),
+private fun navigationBatch(system: DesignSystem = DesignSystem.Cupertino) = listOf(
+    Mutation.SetTheme(Theme(system, system, ColorScheme.Light, adaptive = false)),
     Mutation.Create(NAVIGATION, WidgetKind.Navigation),
     Mutation.SetProp(NAVIGATION, PropertyKind.SelectedIndex, PropertyValue.Integer(0)),
     Mutation.Create(FIRST, WidgetKind.NavigationItem),
@@ -348,5 +346,56 @@ class PlatformNavigationShellTest {
 
         onNodeWithTag(navigationStripTestTag(NAVIGATION)).assertExists()
         assertEquals(0, shell.presentations, "the window's bar is not a nested widget's")
+    }
+    /**
+     * An application that asked for Material 3 gets Material 3, on iOS as anywhere.
+     *
+     * The chrome the shell stands up is Apple's, drawn by Apple. Putting it under a screen
+     * that asked for another design language would answer a question nobody asked, and it
+     * would do it on the one platform where the answer is hardest to argue with.
+     */
+    @Test
+    fun fr14_9_another_design_language_keeps_its_own_bar() = runComposeUiTest {
+        val shell = RecordingShell()
+        platformNavigationShell = shell
+        setContent {
+            CompositionLocalProvider(
+                LocalFrameRequests provides frames,
+                LocalDensity provides Density(1f),
+            ) {
+                DioxusContent(
+                    rememberDioxusHost(FakeHostConnection(navigationBatch(DesignSystem.Material3))),
+                    Modifier.requiredSize(500.dp, 800.dp),
+                )
+            }
+        }
+        waitForIdle()
+
+        onNodeWithTag(navigationStripTestTag(NAVIGATION)).assertExists()
+        assertEquals(0, shell.presentations, "Material 3 does not get Apple's tab bar")
+    }
+
+    /** The seventh design system is Apple's too, and it gets the same chrome. */
+    @Test
+    fun fr14_9_the_liquid_glass_system_is_offered_the_shell() = runComposeUiTest {
+        val shell = RecordingShell()
+        platformNavigationShell = shell
+        setContent {
+            CompositionLocalProvider(
+                LocalFrameRequests provides frames,
+                LocalDensity provides Density(1f),
+            ) {
+                DioxusContent(
+                    rememberDioxusHost(
+                        FakeHostConnection(navigationBatch(DesignSystem.LiquidGlass)),
+                    ),
+                    Modifier.requiredSize(500.dp, 800.dp),
+                )
+            }
+        }
+        waitForIdle()
+
+        onNodeWithTag(navigationStripTestTag(NAVIGATION)).assertDoesNotExist()
+        assertTrue(shell.presentations > 0)
     }
 }
