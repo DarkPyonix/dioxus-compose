@@ -342,19 +342,16 @@ fn app() -> Element {
             TopAppBar {
                 fill_max_width: true,
                 Button {
-                    text: "\u{2630}",
+                    text: "",
+                    icon: IconRole::Menu,
                     variant: ButtonVariant::Text,
                     on_click: move |_| {},
                 }
                 Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
-                Button {
-                    text: "\u{25a1}",
-                    variant: ButtonVariant::Text,
-                    on_click: move |_| {},
-                }
                 if !tape_beside {
                     Button {
-                        text: "\u{23f2}",
+                        text: "",
+                    icon: IconRole::History,
                         variant: ButtonVariant::Text,
                         on_click: move |_| tape_open.set(true),
                     }
@@ -551,7 +548,7 @@ mod tests {
             "a phone should reach the tape through a sheet"
         );
         assert!(
-            narrow.has_button(TAPE_LABEL),
+            narrow.has_icon_button(IconRole::History),
             "a phone has no way to open the tape"
         );
 
@@ -561,7 +558,7 @@ mod tests {
             "a desktop window should stand the tape beside the keys"
         );
         assert!(
-            !wide.has_button(TAPE_LABEL),
+            !wide.has_icon_button(IconRole::History),
             "a button that opens what you are already looking at"
         );
     }
@@ -639,6 +636,8 @@ mod tests {
         /// The buttons in the order they were created, which is the order the screen
         /// declares them.
         buttons: Vec<u32>,
+        /// The icon role of every node that carries one, for naming a button with no text.
+        icons: HashMap<u32, u8>,
         /// Node to the handler its `on_click` was given.
         clicks: HashMap<u32, u64>,
         /// Node to the node it was inserted under, so a removal takes the subtree with it
@@ -658,6 +657,7 @@ mod tests {
                 texts: HashMap::new(),
                 widgets: HashMap::new(),
                 buttons: Vec::new(),
+                icons: HashMap::new(),
                 clicks: HashMap::new(),
                 parents: HashMap::new(),
                 display: 0,
@@ -712,6 +712,12 @@ mod tests {
                         }
                         (PropertyKind::OnClick, PropertyValue::Integer(id)) => {
                             self.clicks.insert(node_id, id as u64);
+                        }
+                        // A button with no text is named by its icon, which is what the
+                        // Renderer hands to a screen reader, so the tests look a button up
+                        // the same way rather than by a glyph nobody types.
+                        (PropertyKind::Icon, PropertyValue::Integer(role)) => {
+                            self.icons.insert(node_id, role as u8);
                         }
                         (PropertyKind::TypeRole, PropertyValue::Integer(role))
                             if role == i64::from(TypeRole::Display as u8) =>
@@ -775,6 +781,13 @@ mod tests {
 
         fn has_button(&self, label: &str) -> bool {
             self.button_labels().iter().any(|found| found == label)
+        }
+
+        /// Whether a button carrying this icon stands on the screen.
+        fn has_icon_button(&self, role: IconRole) -> bool {
+            self.buttons
+                .iter()
+                .any(|node| self.icons.get(node) == Some(&(role as u8)))
         }
 
         /// Whether anything of this kind carrying this text stands on the screen itself

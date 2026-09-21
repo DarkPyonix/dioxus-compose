@@ -487,7 +487,7 @@ mod tests {
         dioxus_compose::window::reset_window_size();
         let mut host = Host::new(app);
         let first = host.rebuild().expect("the first frame failed").to_vec();
-        
+
         let mutations = decode_batch(&first).expect("the batch did not decode");
         let node = mutations
             .iter()

@@ -117,6 +117,40 @@ fun iconGeometry(role: IconRole): IconGeometry = when (role) {
         ),
     )
 
+    // Three rules stacked, which is what every desktop has meant by a menu button since
+    // the phone made it common. Not the dotted list above: that one is a list of things,
+    // this one is the way in to what the window does not have room to show.
+    IconRole.Menu -> IconGeometry(
+        strokes = listOf(
+            listOf(Offset(0.14f, 0.28f), Offset(0.86f, 0.28f)),
+            listOf(Offset(0.14f, 0.50f), Offset(0.86f, 0.50f)),
+            listOf(Offset(0.14f, 0.72f), Offset(0.86f, 0.72f)),
+        ),
+    )
+
+    // A clock with its hand turned back, which is the one drawing that says the past
+    // rather than the time: the arrow around the rim is what separates it from a timer.
+    IconRole.History -> IconGeometry(
+        strokes = listOf(
+            listOf(
+                Offset(0.16f, 0.36f),
+                Offset(0.28f, 0.22f),
+                Offset(0.48f, 0.14f),
+                Offset(0.70f, 0.20f),
+                Offset(0.84f, 0.38f),
+                Offset(0.86f, 0.58f),
+                Offset(0.74f, 0.78f),
+                Offset(0.52f, 0.86f),
+                Offset(0.30f, 0.80f),
+                Offset(0.18f, 0.66f),
+            ),
+            // The hand, from the middle out to noon and across to three.
+            listOf(Offset(0.50f, 0.32f), Offset(0.50f, 0.52f), Offset(0.68f, 0.60f)),
+            // The arrowhead on the open end of the rim, pointing back the way it came.
+            listOf(Offset(0.06f, 0.30f), Offset(0.16f, 0.36f), Offset(0.14f, 0.20f)),
+        ),
+    )
+
     // A tray: the open box with a lip that things arrive in.
     IconRole.Inbox -> IconGeometry(
         strokes = listOf(

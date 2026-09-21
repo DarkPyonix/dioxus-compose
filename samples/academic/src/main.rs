@@ -673,7 +673,7 @@ mod tests {
         assert_eq!(palette::TEAL.to_argb(), 0xFF2DD4BF);
         assert_eq!(palette::AMBER.to_argb(), 0xFFFBBF24);
     }
-    
+
     #[test]
     fn the_first_frame_encodes_without_a_protocol_error() {
         assert!(Host::new(app).rebuild().is_ok());
@@ -755,7 +755,9 @@ mod tests {
         assert!(screen.press("Technique"), "no subject on the grid opens");
         let showing = screen.latest_texts();
         assert!(
-            showing.iter().any(|text| text == "Lesson plan" || text == "< LESSON PLAN"),
+            showing
+                .iter()
+                .any(|text| text == "Lesson plan" || text == "< LESSON PLAN"),
             "opening a subject did not reach the lessons"
         );
         dioxus_compose::window::reset_window_size();
@@ -767,7 +769,10 @@ mod tests {
     #[test]
     fn fr15_every_stage_encodes() {
         let mut screen = Screen::new();
-        assert!(screen.press_icon(Destination::Plan.icon()), "no lesson plan");
+        assert!(
+            screen.press_icon(Destination::Plan.icon()),
+            "no lesson plan"
+        );
         // The strip windows its stages, so nothing inside it exists until something asks
         // for a range. A real Renderer asks before the first pixel.
         screen.fill_lists(STAGES.len() as u32);

@@ -526,6 +526,12 @@ define_wire_enum!(ICON_ROLE_SCHEMA, IconRole {
     Home = 9,
     List = 10,
     Inbox = 11,
+    // What a window's own bar needs: the button that opens everything this screen does
+    // not have room for, and the one that goes back over what has already happened. Both
+    // are in the reference bar of more than one sample, and neither is a destination, so
+    // neither could be said with the three above.
+    Menu = 12,
+    History = 13,
 });
 
 // How long a transient message stays on screen. Closed, and deliberately short: a message
