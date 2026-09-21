@@ -1027,6 +1027,14 @@ pub enum EventPayload<'a> {
         height_dp: f32,
         class: WindowSizeClass,
     },
+    /// The Renderer lost its node table and asks for the whole tree again. A recreated
+    /// Activity is the case that produces it.
+    Resync,
+    /// The platform brought the UI back. Timers and animations resume.
+    LifecycleStart,
+    /// The platform stopped the UI. Timers and animations are suppressed, so a process
+    /// that is not on screen is not asked to draw.
+    LifecycleStop,
 }
 
 pub const EVENT_SCHEMA: &[EventSchema] = &[
@@ -1075,5 +1083,22 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "WindowSizeChanged",
         tag: 17,
         payload: EventPayloadType::WindowSize,
+    },
+    // The three below address the Host itself rather than a node, so they carry no handler
+    // and the Host answers them before it looks one up.
+    EventSchema {
+        name: "Resync",
+        tag: 18,
+        payload: EventPayloadType::None,
+    },
+    EventSchema {
+        name: "LifecycleStart",
+        tag: 19,
+        payload: EventPayloadType::None,
+    },
+    EventSchema {
+        name: "LifecycleStop",
+        tag: 20,
+        payload: EventPayloadType::None,
     },
 ];

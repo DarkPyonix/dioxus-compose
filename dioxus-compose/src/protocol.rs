@@ -146,6 +146,9 @@ const EVENT_RANGE_REQUESTED: u16 = 7;
 // and the window size report continues from 17.
 const EVENT_VALUE_CHANGED: u16 = 16;
 const EVENT_WINDOW_SIZE_CHANGED: u16 = 17;
+const EVENT_RESYNC: u16 = 18;
+const EVENT_LIFECYCLE_START: u16 = 19;
+const EVENT_LIFECYCLE_STOP: u16 = 20;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -208,7 +211,10 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 class,
             }
         }
-        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
+        EVENT_RESYNC if record_len == 16 => crate::schema::EventPayload::Resync,
+        EVENT_LIFECYCLE_START if record_len == 16 => crate::schema::EventPayload::LifecycleStart,
+        EVENT_LIFECYCLE_STOP if record_len == 16 => crate::schema::EventPayload::LifecycleStop,
+        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED..=EVENT_LIFECYCLE_STOP => {
             return Err(ProtocolError::InvalidRecordLength);
         }
         other => return Err(ProtocolError::InvalidTag(other)),
@@ -285,6 +291,9 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
             (EVENT_TEXT_SUBMITTED, 24, Some(*value), None)
         }
         crate::schema::EventPayload::FocusLost => (EVENT_FOCUS_LOST, 16, None, None),
+        crate::schema::EventPayload::Resync => (EVENT_RESYNC, 16, None, None),
+        crate::schema::EventPayload::LifecycleStart => (EVENT_LIFECYCLE_START, 16, None, None),
+        crate::schema::EventPayload::LifecycleStop => (EVENT_LIFECYCLE_STOP, 16, None, None),
         crate::schema::EventPayload::ProtocolError { code, message } => {
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
