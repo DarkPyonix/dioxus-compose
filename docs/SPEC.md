@@ -38,7 +38,10 @@
 
 ### FR-1 노드 트리 구성 (`Agreed`)
 Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭제, 이동할 수 있어야 합니다.
+- 빈 분기(`if false`)와 빈 반복은 Dioxus 플레이스홀더를 남깁니다. 플레이스홀더는 Compose 트리의 노드가 아니라서 node id 0을 싣고, Host는 그 자리에 `Insert`를 보내지 않습니다. 대신 자리(부모와 인덱스)를 **엘리먼트별로** 기억하고, 그 분기가 채워질 때 보내는 `Insert`가 그 자리를 싣습니다. node id가 같으므로, 한 화면의 플레이스홀더 둘을 node id로 구분하면 서로의 자리를 덮어씁니다.
+- 자기 자신이나 자기 자손 아래로 넣는 `Insert`/`Move`는 부모 사슬에 뿌리가 없게 만듭니다. Renderer는 붙이기 전에 그런 `Insert`를 거부하고 `ProtocolError`로 알리며 가지고 있던 트리를 그대로 둡니다(NFR-7).
 - 수용 기준: `Create`, `SetProp`, `SetModifier`, `Insert`, `Move`, `Remove`로 임의의 트리를 만들 수 있고, 적용 결과가 Renderer의 트리 덤프와 일치합니다.
+- 수용 기준: 부모가 다른 빈 분기 둘이 동시에 채워질 때 각 분기의 내용이 자기 부모 아래에 붙고, Host가 보내는 부모 사슬은 순환하지 않습니다. 순환하는 `Insert`를 받은 Renderer는 프로세스를 중단하지 않고 `ProtocolError`를 보냅니다. **(2026-09-21 통과)**
 
 ### FR-2 스키마 기반 렌더링 (`Agreed`)
 Renderer는 스키마에 정의된 위젯 타입만 해석해서 해당 Compose 컴포저블로 렌더링합니다.
@@ -78,7 +81,10 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - 아이템 식별: Host가 아이템마다 `Box` 래퍼 노드를 만들고 `item_key`(문자열)를 실어 보냅니다. Renderer는 그 값을 Compose `LazyColumn`의 key로 씁니다.
 - Renderer는 `item_count`개짜리 실제 Compose `LazyColumn`을 그립니다. 전역 인덱스 `i`는 `i - start`번째 자식으로 그리고, 구간 밖은 빈 자리로 둡니다. 그래서 스크롤 막대와 스크롤 거리가 전체 목록 기준으로 맞습니다.
 - 와이어: `RangeRequested`는 이벤트 태그 7(24바이트, `start: u32`, `count: u32`)입니다. Host는 `item_count`, `item_key`, `on_range_requested` 속성으로 선언합니다.
+- **목록은 뷰포트입니다.** Host가 높이를 정해주지 않았다면(`height`, `size`, `fill_max_height`, 그리고 세로로 쌓는 부모 아래의 `weight`) Renderer는 목록에 주어진 높이를 채웁니다. 자기 아이템 높이로 줄어든 목록은 다시 커질 수 없습니다. 요청하는 구간이 지금 높이로 결정되기 때문입니다. `Row` 아래의 `weight`는 너비의 몫이므로 높이를 정하지 않습니다(13.4).
+- **크기가 0인 아이템은 목록의 끝이 아니라 빈 자리입니다.** 보이는 자리는 실제로 자리를 차지하는 것만 셉니다. 화면에 있는 윈도우가 아무것도 그리지 않으면 그 윈도우를 그대로 둡니다. 그러지 않으면 크기 0 아이템이 모두 보이는 것으로 보고되어 컬렉션 전체 크기의 구간을 요청하고, 두 윈도우가 프레임마다 서로를 대체하면서 아무것도 그려지지 않습니다.
 - 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(Host 측 통과: 가시 20 + 버퍼 4 요청에 아이템 28개)**
+- 수용 기준: 화면 높이를 채우는 `Row` 안의 `LazyColumn`은 `weight`만 받은 경우에도 Row가 주는 높이를 채웁니다. 아이템이 모두 크기 0인 목록은 한 윈도우에 정착하고 경계 호출을 되풀이하지 않습니다. **(2026-09-21 통과)**
 
 ### FR-9 스트리밍 텍스트 (`Agreed`)
 긴 텍스트가 점진적으로 늘어나는 경우를 위해 Text 노드에 `AppendText` 명령을 둡니다(태그 8, 16바이트). 전체 문자열이 아니라 늘어난 꼬리만 보냅니다. Host는 추가분을 모아 프레임당 노드별 1건으로 flush하며, flush 지점은 `render_frame`입니다.
@@ -141,7 +147,8 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 - `SpaceRole`: `None|Xs|Sm|Md|Lg|Xl|Xxl`. 밀도가 디자인 시스템마다 다른 부분이라 리터럴 dp보다 역할이 먼저입니다.
 - `Modifier::PaddingRole(SpaceRole)`, 기존 `Modifier::Padding(f32)`는 유지합니다.
 - `Modifier::PaddingEach { start, top, end, bottom }`, f32 4개.
-- `Modifier::Weight(f32)`, `RowScope`/`ColumnScope`의 weight입니다.
+- `Modifier::Weight(f32)`, `RowScope`/`ColumnScope`의 weight입니다. 부모 데이터이므로 자식을 쌓는 레이아웃만 적용할 수 있고, 자식을 세로로 쌓는 컨테이너(`Card`, `Surface`, `ScrollColumn`)도 `Column`과 같게 적용합니다. 몫이 되는 축은 부모가 쌓는 축입니다: `Column` 아래에서는 높이, `Row` 아래에서는 너비이며, `Box`처럼 쌓지 않는 부모 아래에서는 어느 축도 정하지 않습니다.
+- 수용 기준: 높이가 정해진 `Surface` 안에서 `weight` 1과 3을 받은 자식 둘이 높이를 1:3으로 나눕니다. **(2026-09-21 통과)**
 - `Column`/`Row` 속성: `arrangement`(`Start|Center|End|SpaceBetween|SpaceAround|SpaceEvenly`), `spacing`(f32 dp) 또는 `space_role`, `alignment`(교차축 정렬).
 - `Box` 속성: `alignment`(9점 정렬).
 - 수용 기준: 위 속성/Modifier가 전부 `(tag, u64, u64)` 안에 들어가고, 인코딩 후 디코딩 결과가 입력과 같습니다.
