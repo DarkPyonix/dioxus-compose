@@ -7,7 +7,7 @@
 //! has happened here: a run in the main checkout overwrote a file in a worktree somebody
 //! was working in.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// A directory of our own to point the binary at, named after the test that owns it so
@@ -62,3 +62,37 @@ fn fr7_codegen_refuses_a_checkout_it_was_not_compiled_in() {
 // checkout would have it rewrite files that generated_protocol.rs is reading in the same
 // cargo test run. The accepting side is a unit test next to the function instead, and
 // generated_protocol.rs already fails when the generated files are stale.
+
+/// Reading is corrupted by a shared build directory too, and more quietly than writing.
+///
+/// A test binary compiled in another checkout reads that checkout's vectors and fixtures,
+/// so it passes or fails on somebody else's files. Every test target in this crate
+/// resolves its fixtures through `env!("CARGO_MANIFEST_DIR")`, which names the checkout
+/// that compiled it, while cargo puts the checkout the command was run in into the
+/// environment. When those disagree, the green this run produced was not about this
+/// checkout, and one assertion turns that from invisible into a failure.
+#[test]
+fn nfr12_this_test_binary_was_compiled_in_this_checkout() {
+    let Some(invoked_in) = std::env::var_os("CARGO_MANIFEST_DIR") else {
+        // Run directly rather than through cargo, so there is nothing to compare against.
+        return;
+    };
+    let compiled_in = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let invoked_in = PathBuf::from(invoked_in);
+    let same = compiled_in == invoked_in
+        || matches!(
+            (
+                std::fs::canonicalize(compiled_in),
+                std::fs::canonicalize(&invoked_in),
+            ),
+            (Ok(left), Ok(right)) if left == right
+        );
+    assert!(
+        same,
+        "this test binary was compiled in {} but cargo ran it in {}, so it read that \
+         checkout's fixtures rather than this one's. Two checkouts are sharing one build \
+         directory: run scripts/setup-worktrees.sh --all and unset CARGO_TARGET_DIR.",
+        compiled_in.display(),
+        invoked_in.display(),
+    );
+}
