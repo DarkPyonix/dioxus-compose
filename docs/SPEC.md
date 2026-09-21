@@ -80,6 +80,7 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - `generated_protocol.rs`의 `fr7_generated_kotlin_matches_schema`가 체크인된 `Protocol.gen.kt`를 생성기 출력과 바이트 단위로 비교합니다. 스키마를 고치고 코드젠을 돌리지 않으면 여기서 빨개집니다. 프로토콜 벡터도 같은 방식으로 `fr7_generated_vectors_match_schema`가 붙잡습니다.
 - `interpreter_exhaustiveness.rs`가 두 번째 고리를 봅니다. 생성기가 내놓는 `WidgetKind`, `PropertyKind`, `Modifier`, `Mutation`의 모든 변형이 인터프리터의 해당 `when`에 이름으로 나와 있어야 합니다. Kotlin의 exhaustive `when`이 원래 하던 일이지만 `else` 한 줄이면 사라지므로, `else`로 바꿔도 빨개지도록 Rust 테스트가 대신 확인합니다. iOS가 같은 파일을 심링크로 쓰는지도 같은 파일이 봅니다.
 - 실제로 확인했습니다: `PropertyKind`에 변형을 하나 더하고 인터프리터를 그대로 두면 `fr7_every_property_in_the_schema_has_an_arm_in_the_interpreter`가 실패하고, `PropertyKind.Progress` 팔을 `else -> false`로 바꿔도 같은 테스트가 실패합니다.
+- 체크아웃 경계: `codegen_tree.rs`가 codegen 바이너리를 다른 `CARGO_MANIFEST_DIR`로 실행해서 그 디렉터리가 비어 있는 채로 남는지, 종료 코드와 메시지가 두 경로를 말하는지 확인합니다.
 - 스키마 해시: `boundary_hardening.rs`의 `nfr7_init_with_a_wrong_schema_hash_returns_a_status`가 불일치 핸드셰이크에서 `init`이 실패 상태를 돌려주는지 보고, iOS 쪽은 `ProtocolBufferTest.pr4_handshake_carries_the_schema_hash_the_host_checks`가 Host가 검사하는 그 해시를 핸드셰이크에 싣는지 봅니다.
 
 ### FR-8 LazyColumn 윈도잉 (`Agreed`)
