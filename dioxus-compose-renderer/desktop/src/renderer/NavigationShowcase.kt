@@ -5,7 +5,6 @@ import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.MessageDuration
 import dioxus.compose.protocol.Mutation
-import dioxus.compose.protocol.Paint
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.SpaceRole

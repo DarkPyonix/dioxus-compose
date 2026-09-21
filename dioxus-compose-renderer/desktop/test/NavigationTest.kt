@@ -23,6 +23,7 @@ import dioxus.compose.foundation.navigationStripTestTag
 import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.IconRole
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
@@ -194,6 +195,47 @@ class NavigationTest {
             onNodeWithTag(navigationStripTestTag(NAVIGATION)).getBoundsInRoot().let { it.right - it.left },
             "Fluent's compact navigation pane",
         )
+    }
+
+    /**
+     * A windowed list is what the screen behind a set of destinations usually holds, and a
+     * rail or a drawer puts that screen in a `Row`.
+     *
+     * A list that comes out with no height at all in a `Row` is a known way for this to go
+     * wrong, and it would take the whole screen with it at exactly the two widths the rail
+     * and the drawer appear at. So the list is asked how tall it ended up.
+     */
+    @Test
+    fun fr21_a_windowed_list_beside_a_rail_gets_the_height_it_was_offered() = runComposeUiTest {
+        val list = 9
+        val batch = navigationBatch() + listOf(
+            Mutation.Create(list, WidgetKind.LazyColumn),
+            Mutation.SetModifier(list, 1, ProtocolModifier.FillMaxWidth),
+            Mutation.SetModifier(list, 2, ProtocolModifier.FillMaxHeight),
+            Mutation.SetProp(list, PropertyKind.ItemCount, PropertyValue.Integer(500)),
+            Mutation.SetProp(list, PropertyKind.OnRangeRequested, PropertyValue.Integer(99L)),
+            Mutation.Insert(NAVIGATION, list, 3),
+        )
+        var width by mutableStateOf(700.dp)
+        setContent {
+            CompositionLocalProvider(
+                LocalFrameRequests provides frames,
+                LocalDensity provides Density(1f),
+            ) {
+                DioxusContent(
+                    rememberDioxusHost(FakeHostConnection(batch)),
+                    Modifier.requiredSize(width, 800.dp),
+                )
+            }
+        }
+        waitForIdle()
+        val beside = onNodeWithTag(nodeTestTag(list)).getBoundsInRoot()
+        assertNear(800.dp, beside.bottom - beside.top, "the list beside a rail")
+
+        width = 1100.dp
+        waitForIdle()
+        val drawer = onNodeWithTag(nodeTestTag(list)).getBoundsInRoot()
+        assertNear(800.dp, drawer.bottom - drawer.top, "the list beside a drawer")
     }
 
     /** A destination on its own is still a destination, and draws what it was given. */
