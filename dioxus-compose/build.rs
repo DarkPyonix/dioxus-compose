@@ -27,6 +27,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed={DOCS_RS_ENV}");
     println!("cargo:rerun-if-changed=build/renderer_dir.rs");
     println!("cargo:rerun-if-changed=build/sha256.rs");
+    println!("cargo:rerun-if-changed=build/elf.rs");
 
     if std::env::var_os("CARGO_FEATURE_NATIVE_RENDERER").is_none() {
         return;
@@ -113,15 +114,31 @@ fn main() {
 
     if target_os == "windows" {
         // MSVC links against the import library the native image produced beside the DLL,
-        // and it carries the same `lib` prefix the image was named with. There is no
-        // rpath: Windows finds the DLL through the loader's search path, so the renderer
-        // directory has to be on PATH or its files beside the executable at run time.
+        // and it carries the same `lib` prefix the image was named with.
         println!("cargo:rustc-link-lib=dylib=libdioxus_compose_renderer");
+        // Windows has no rpath and no name inside the file that the loader consults: a
+        // DLL is found on the loader's search path and nowhere else. The other platforms
+        // are handled by naming the library after where it sits, which does nothing here,
+        // so this is the one platform where the application's author has a step to take.
+        // Saying it is the whole of the fix until a Windows machine is available to check
+        // the alternative on, which is copying tens of megabytes beside every profile's
+        // executable.
+        println!(
+            "cargo:warning=dioxus-compose: on Windows the renderer is found through the \
+             loader's search path. Put {} on PATH, or copy its contents next to the \
+             executable, or the program will not start.",
+            lib_dir.display()
+        );
         return;
     }
 
     println!("cargo:rustc-link-lib=dylib=dioxus_compose_renderer");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,{}", lib_dir.display());
+    // No rpath. It would not reach an application that merely depends on this crate,
+    // because Cargo does not pass a dependency's link arguments on, and emitting one here
+    // anyway would leave this repository's own binaries loading the renderer by a route no
+    // consumer has. The renderer is named after the absolute path it sits at instead,
+    // which every binary that links it records for itself.
+    //
     // The Renderer resolves the Host's dioxus_compose_host_* symbols from this executable.
     // GNU ld spells this `--export-dynamic`. Passing the macOS spelling to it is not a
     // harmless no-op: `-export_dynamic` parses as `-e xport_dynamic`, which sets the

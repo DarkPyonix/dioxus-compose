@@ -190,6 +190,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install the pinned Rust toolchain
+        # consumer-crate.test.sh builds a crate that depends on dioxus-compose, to check
+        # that an application with no build script of its own links, loads the renderer
+        # and starts.
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Install patchelf
+        # The same test bundles that application the way one that ships would, which means
+        # rewriting the executable's DT_NEEDED entry. Without patchelf it says so and skips
+        # that half rather than passing quietly.
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y patchelf
+
       - name: Run scripts/tests
         # scripts/publish-main.sh and scripts/install-nik.sh carry their own
         # tests; they run against throwaway temporary directories only.

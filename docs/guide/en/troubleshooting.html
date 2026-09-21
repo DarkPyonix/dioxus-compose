@@ -76,8 +76,8 @@
     <p>
       Inside a checkout the build prefers the workspace copy at
       <code>dioxus-compose-renderer/build/native-image/dist/lib</code> over anything downloadable,
-      and bakes it in as an rpath. If that directory exists but is empty, the renderer has not
-      been built.
+      and tells that library it lives there, so that anything linking it records the same path.
+      If that directory exists but is empty, the renderer has not been built.
     </p>
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
       <figcaption>shell</figcaption>
