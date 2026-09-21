@@ -1,7 +1,8 @@
 use crate::protocol::{HostEvent, ProtocolError, decode_event};
 use crate::renderer::ComposeRenderer;
 use crate::schema::{
-    AssetKind, EventPayload, IconRole, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH, Theme,
+    AssetKind, ColorScheme, EventPayload, IconRole, LoopMode, PROTOCOL_VERSION, SCHEMA_HASH,
+    Theme,
 };
 use crate::{Element, KeyEvent, RangeRequest, Selection, VirtualDom};
 use dioxus_core::{ElementId, Event};
@@ -973,9 +974,16 @@ mod tests {
 /// Mac, so everything was Cupertino.
 ///
 /// `DXC_DESIGN` names the system. Anything else, including nothing, adapts to the host.
+///
+/// `DXC_SCHEME` names the colour scheme for the same reason: a design system has a light
+/// form and a dark form, and on any one machine following the system appearance shows you
+/// whichever one that machine happens to be set to. Checking both otherwise means changing
+/// a system-wide setting, which is not something a sample should ask of a reader, and it
+/// makes a screenshot of the dark form depend on the machine it was taken on. Anything
+/// else, including nothing, follows the system.
 pub fn demo_theme() -> Theme {
     use crate::schema::DesignSystem;
-    match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
+    let system = match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
         Ok("material3") => Theme::unified(DesignSystem::Material3),
         // The Apple slot answers to the language it draws as well as to its own name,
         // because "Liquid Glass" is what a reader will have in mind when they go looking
@@ -985,6 +993,16 @@ pub fn demo_theme() -> Theme {
         }
         Ok("fluent") => Theme::unified(DesignSystem::Fluent),
         _ => Theme::adaptive(DesignSystem::Material3),
+    };
+    system.with_color_scheme(demo_color_scheme())
+}
+
+/// The colour scheme `DXC_SCHEME` asks for, following the system when it says nothing.
+fn demo_color_scheme() -> ColorScheme {
+    match std::env::var("DXC_SCHEME").as_deref().map(str::trim) {
+        Ok("light") => ColorScheme::Light,
+        Ok("dark") => ColorScheme::Dark,
+        _ => ColorScheme::FollowSystem,
     }
 }
 
@@ -994,11 +1012,17 @@ mod demo_theme_tests {
     use crate::schema::DesignSystem;
 
     /// Named for what it defends: a sample that cannot be pointed at a design system
-    /// leaves five of the six unseen on any one machine.
+    /// leaves five of the six unseen on any one machine, and one that cannot be pointed at
+    /// a colour scheme leaves half of whichever it does show unseen.
+    ///
+    /// Both switches are checked in one test on purpose. They read process environment,
+    /// and Rust runs tests in parallel threads, so two tests setting the same variables
+    /// would each see the other's writes.
     #[test]
-    fn fr14_a_named_design_system_is_unified_and_anything_else_adapts() {
-        // SAFETY: the test process is single threaded here and the variable is read only
-        // by this function, which is called below.
+    fn fr14_3_a_named_design_system_and_colour_scheme_are_used_and_anything_else_follows_the_host()
+    {
+        // SAFETY: these variables are set and read only here, and this is the one test
+        // that touches them, so no other thread in this process is reading them.
         unsafe { std::env::set_var("DXC_DESIGN", "fluent") };
         assert_eq!(demo_theme(), Theme::unified(DesignSystem::Fluent));
 
@@ -1013,5 +1037,26 @@ mod demo_theme_tests {
 
         unsafe { std::env::remove_var("DXC_DESIGN") };
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
+
+        // The scheme is chosen on top of whichever system was chosen, not instead of it.
+        unsafe { std::env::set_var("DXC_SCHEME", "dark") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::Dark);
+
+        unsafe { std::env::set_var("DXC_SCHEME", "light") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::Light);
+
+        unsafe { std::env::set_var("DXC_DESIGN", "apple") };
+        unsafe { std::env::set_var("DXC_SCHEME", "dark") };
+        assert_eq!(
+            demo_theme(),
+            Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark),
+        );
+        unsafe { std::env::remove_var("DXC_DESIGN") };
+
+        unsafe { std::env::set_var("DXC_SCHEME", "nonsense") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::FollowSystem);
+
+        unsafe { std::env::remove_var("DXC_SCHEME") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::FollowSystem);
     }
 }

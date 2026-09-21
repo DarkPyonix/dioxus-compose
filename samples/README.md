@@ -33,5 +33,21 @@ DIOXUS_COMPOSE_RENDERER_DIR=$PWD/dioxus-compose-renderer/build/native-image/dist
   cargo run -p sample-calculator --features dioxus-compose/native-renderer
 ```
 
+## Seeing a system you are not running
+
+Every sample takes its theme from `demo_theme()`, which reads two variables. An
+application picks its own theme and never needs either of these; a sample does, because on
+any one machine following the host would only ever show you one of the six systems and one
+of its two colour schemes.
+
+| Variable | Values | Default |
+|---|---|---|
+| `DXC_DESIGN` | `material3`, `cupertino` (also `apple`, `liquid-glass`, `liquidglass`), `fluent` | follows the host platform |
+| `DXC_SCHEME` | `light`, `dark` | follows the system appearance |
+
+```
+DXC_DESIGN=apple DXC_SCHEME=dark cargo run -p sample-chat --features dioxus-compose/native-renderer
+```
+
 Pushing a `sample-v*` tag builds all of them for every desktop platform and attaches the
 binaries to a GitHub Release.
