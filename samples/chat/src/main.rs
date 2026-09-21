@@ -159,32 +159,23 @@ fn app() -> Element {
                     key_of: move |index: usize| keys[index].clone(),
                     item: move |index: usize| {
                         let message = messages.read()[index].clone();
-                        // A name over every bubble is a name repeated once per line. The
-                        // side and the fill already say who is speaking, so the name is
-                        // printed once at the head of a run and the rest of the run is
-                        // read as the same speaker still talking.
+                        // A change of speaker gets more air than a continuation, which is
+                        // what makes a conversation read as turns rather than as an evenly
+                        // spaced column of boxes.
                         let starts_a_run = index == 0
                             || messages.read()[index - 1].from_user != message.from_user;
-                        // Who said it should be readable without reading, so it is the side
-                        // the bubble sits on and the colour it is filled with, with the
-                        // name left as confirmation rather than as the only clue. Both
-                        // colours are roles, so the user's bubble is the accent of
-                        // whichever design system is running and the reply is that
-                        // system's quiet surface.
-                        let (fill, ink) = if message.from_user {
-                            (ColorRole::Primary, ColorRole::OnPrimary)
+                        // A message still arriving shows a caret, so an empty reply does
+                        // not look like a dead one.
+                        let text = if message.streaming {
+                            format!("{}\u{2589}", message.text)
                         } else {
-                            (ColorRole::SurfaceVariant, ColorRole::OnSurfaceVariant)
+                            message.text.clone()
                         };
                         rsx! {
                             // The list has no spacing of its own, so the gap between one
                             // message and the next is padding on the row that holds it.
                             dioxus_compose::Box {
                                 fill_max_width: true,
-                                // Consecutive messages from one speaker sit close
-                                // together and a change of speaker gets more air, which is
-                                // what makes a conversation read as turns rather than as
-                                // an evenly spaced column of boxes.
                                 padding_role: if starts_a_run {
                                     SpaceRole::Sm
                                 } else {
@@ -195,37 +186,33 @@ fn app() -> Element {
                                 } else {
                                     Alignment::CenterStart
                                 },
-                                Column {
-                                    space_role: SpaceRole::Xs,
-                                    alignment: if message.from_user {
-                                        Alignment::CenterEnd
-                                    } else {
-                                        Alignment::CenterStart
-                                    },
-                                    if starts_a_run {
-                                        Text {
-                                            text: if message.from_user { "You" } else { "Assistant" },
-                                            type_role: TypeRole::Caption,
-                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                        }
-                                    }
-                                    // The bubble sizes to its text, so a short reply is a
-                                    // short bubble. Its corner is the design system's
-                                    // large corner rather than a radius chosen here.
+                                // Only what you said is a bubble. The reply is set on the
+                                // page itself, left aligned and the full width of the
+                                // thread, because it is the thing being read: a long
+                                // answer boxed in a tinted rectangle is harder to read
+                                // than the same answer as text, and the side it sits on
+                                // already says who is speaking. This is what every current
+                                // assistant does and it is not a stylistic preference, it
+                                // is the difference between a page and a chat log.
+                                if message.from_user {
                                     Column {
-                                        background: Paint::Role(fill),
+                                        background: Paint::Role(ColorRole::SurfaceVariant),
                                         shape_role: ShapeRole::Large,
                                         padding_role: SpaceRole::Md,
                                         Text {
-                                            // A message still arriving shows a caret so an
-                                            // empty reply does not look like a dead one.
-                                            text: if message.streaming {
-                                                format!("{}\u{2589}", message.text)
-                                            } else {
-                                                message.text.clone()
-                                            },
+                                            text,
                                             type_role: TypeRole::Body,
-                                            color: Paint::Role(ink),
+                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                        }
+                                    }
+                                } else {
+                                    Column {
+                                        fill_max_width: true,
+                                        padding_role: SpaceRole::Sm,
+                                        Text {
+                                            text,
+                                            type_role: TypeRole::Body,
+                                            color: Paint::Role(ColorRole::OnSurface),
                                         }
                                     }
                                 }
