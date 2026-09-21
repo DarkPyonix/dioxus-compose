@@ -1,0 +1,262 @@
+//! The window's measured size, and the hook components read it through.
+//!
+//! The UI is authored here but measured by the Renderer, so the only way a Rust component
+//! can know how wide the window is, is for the Renderer to tell it. The Renderer sends one
+//! event when the size class changes and nothing in between, so this module is a single
+//! current value plus the list of components that asked to be told when it changes.
+
+use crate::schema::WindowSizeClass;
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+use std::sync::Arc;
+
+/// The window's size, as the Renderer last measured it.
+///
+/// `width_dp` and `height_dp` are density-independent pixels, the same unit gesture
+/// coordinates use. They are the measurements taken at the moment the class last changed,
+/// not a value that follows every pixel of a drag: a size that changed every layout pass
+/// would run the VirtualDom every layout pass.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WindowSize {
+    pub width_dp: f32,
+    pub height_dp: f32,
+    pub class: WindowSizeClass,
+}
+
+impl WindowSize {
+    pub const fn new(width_dp: f32, height_dp: f32, class: WindowSizeClass) -> Self {
+        Self {
+            width_dp,
+            height_dp,
+            class,
+        }
+    }
+
+    /// Phone-shaped: narrower than 600dp. One column.
+    pub fn is_compact(&self) -> bool {
+        matches!(self.class, WindowSizeClass::Compact)
+    }
+
+    /// Tablet-shaped: 600dp to 840dp.
+    pub fn is_medium(&self) -> bool {
+        matches!(self.class, WindowSizeClass::Medium)
+    }
+
+    /// Desktop-shaped: 840dp and wider. Room for a permanent sidebar.
+    pub fn is_expanded(&self) -> bool {
+        matches!(self.class, WindowSizeClass::Expanded)
+    }
+}
+
+impl Default for WindowSize {
+    /// What a component sees before the Renderer has measured anything.
+    ///
+    /// Compact rather than a wider guess: a one-column layout is usable at any width, so
+    /// the single render that happens before the first measurement arrives is never
+    /// broken, only narrower than it needs to be.
+    fn default() -> Self {
+        Self::new(0.0, 0.0, WindowSizeClass::Compact)
+    }
+}
+
+struct Subscriber {
+    id: u64,
+    notify: Arc<dyn Fn() + Send + Sync>,
+}
+
+thread_local! {
+    static CURRENT: Cell<WindowSize> = const { Cell::new(WindowSize {
+        width_dp: 0.0,
+        height_dp: 0.0,
+        class: WindowSizeClass::Compact,
+    }) };
+    static SUBSCRIBERS: RefCell<Vec<Subscriber>> = const { RefCell::new(Vec::new()) };
+    static NEXT_SUBSCRIBER_ID: Cell<u64> = const { Cell::new(1) };
+}
+
+/// The size the Renderer last reported. Available outside a component too.
+pub fn window_size() -> WindowSize {
+    CURRENT.with(Cell::get)
+}
+
+/// Records a new measurement and wakes the components that asked about it.
+///
+/// Returns whether anything changed. Nothing is allocated here: the subscriber list is
+/// walked in place, and waking a component only marks its scope dirty.
+pub(crate) fn publish(size: WindowSize) -> bool {
+    if CURRENT.with(Cell::get) == size {
+        return false;
+    }
+    CURRENT.with(|current| current.set(size));
+    SUBSCRIBERS.with_borrow(|subscribers| {
+        for subscriber in subscribers {
+            (subscriber.notify)();
+        }
+    });
+    true
+}
+
+/// Clears the measurement and every subscription. Used between tests.
+#[doc(hidden)]
+pub fn reset_window_size() {
+    CURRENT.with(|current| current.set(WindowSize::default()));
+    SUBSCRIBERS.with_borrow_mut(Vec::clear);
+}
+
+/// A component's registration, dropped with the hook state when the component unmounts.
+struct WindowSizeSubscription {
+    id: u64,
+}
+
+impl WindowSizeSubscription {
+    fn new(notify: Arc<dyn Fn() + Send + Sync>) -> Self {
+        let id = NEXT_SUBSCRIBER_ID.with(|next| {
+            let id = next.get();
+            next.set(id + 1);
+            id
+        });
+        SUBSCRIBERS.with_borrow_mut(|subscribers| subscribers.push(Subscriber { id, notify }));
+        Self { id }
+    }
+}
+
+impl Drop for WindowSizeSubscription {
+    fn drop(&mut self) {
+        SUBSCRIBERS.with_borrow_mut(|subscribers| {
+            subscribers.retain(|subscriber| subscriber.id != self.id);
+        });
+    }
+}
+
+/// Reads the window's size class inside a component, and re-renders it when the class
+/// changes.
+///
+/// ```ignore
+/// let window = use_window_size();
+/// rsx! {
+///     if window.is_expanded() {
+///         Row { Sidebar {} Content {} }
+///     } else {
+///         Content {}
+///     }
+/// }
+/// ```
+///
+/// Only components that call this are woken, and only when the class actually changes.
+/// Resizing inside one class re-renders nothing.
+pub fn use_window_size() -> WindowSize {
+    // Rc, because hook state has to be `Clone` and the registration must not be
+    // duplicated: dropping the last handle with the component's hook state is what
+    // removes the subscription.
+    dioxus_core::use_hook(|| Rc::new(WindowSizeSubscription::new(dioxus_core::schedule_update())));
+    window_size()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::boundary::Host;
+    use crate::prelude::*;
+    use crate::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+    use crate::schema::{EventPayload, PropertyKind};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static RESPONSIVE_RENDERS: AtomicUsize = AtomicUsize::new(0);
+    static SIBLING_RENDERS: AtomicUsize = AtomicUsize::new(0);
+
+    #[component]
+    fn Responsive() -> Element {
+        RESPONSIVE_RENDERS.fetch_add(1, Ordering::SeqCst);
+        let window = use_window_size();
+        let label = if window.is_expanded() {
+            "sidebar"
+        } else if window.is_medium() {
+            "two columns"
+        } else {
+            "one column"
+        };
+        rsx! { Text { text: label } }
+    }
+
+    #[component]
+    fn Sibling() -> Element {
+        SIBLING_RENDERS.fetch_add(1, Ordering::SeqCst);
+        rsx! { Text { text: "fixed" } }
+    }
+
+    fn responsive_app() -> Element {
+        rsx! {
+            Column {
+                Responsive {}
+                Sibling {}
+            }
+        }
+    }
+
+    fn resize(host: &mut Host, width_dp: f32) -> Vec<String> {
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 800.0,
+                class: WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        let (batch, _) = host.dispatch(event).unwrap();
+        decode_batch(batch)
+            .unwrap()
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(value),
+                    ..
+                } => Some((*value).to_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fr20_crossing_a_boundary_rerenders_the_hook_and_resizing_within_a_class_does_not() {
+        reset_window_size();
+        RESPONSIVE_RENDERS.store(0, Ordering::SeqCst);
+        SIBLING_RENDERS.store(0, Ordering::SeqCst);
+        let mut host = Host::new(responsive_app);
+        host.rebuild().unwrap();
+        assert_eq!(RESPONSIVE_RENDERS.load(Ordering::SeqCst), 1);
+        assert_eq!(SIBLING_RENDERS.load(Ordering::SeqCst), 1);
+
+        // Crossing 600dp: the hook's component re-renders once, its sibling not at all.
+        assert_eq!(resize(&mut host, 700.0), vec!["two columns".to_owned()]);
+        assert_eq!(RESPONSIVE_RENDERS.load(Ordering::SeqCst), 2);
+        assert_eq!(SIBLING_RENDERS.load(Ordering::SeqCst), 1);
+
+        // A report that does not change the class changes nothing. The Renderer does not
+        // send one, and a Host that receives one anyway must not run the VirtualDom for it.
+        assert!(resize(&mut host, 700.0).is_empty());
+        assert_eq!(RESPONSIVE_RENDERS.load(Ordering::SeqCst), 2);
+
+        assert_eq!(resize(&mut host, 900.0), vec!["sidebar".to_owned()]);
+        assert_eq!(RESPONSIVE_RENDERS.load(Ordering::SeqCst), 3);
+        assert_eq!(SIBLING_RENDERS.load(Ordering::SeqCst), 1);
+        reset_window_size();
+    }
+
+    #[test]
+    fn fr20_window_size_starts_compact_before_the_renderer_measures_anything() {
+        reset_window_size();
+        assert_eq!(window_size(), WindowSize::default());
+        assert!(window_size().is_compact());
+    }
+
+    #[test]
+    fn fr20_publishing_the_same_size_twice_wakes_nobody() {
+        reset_window_size();
+        let size = WindowSize::new(700.0, 800.0, WindowSizeClass::Medium);
+        assert!(publish(size));
+        assert!(!publish(size));
+        reset_window_size();
+    }
+}

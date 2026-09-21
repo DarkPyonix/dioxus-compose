@@ -35,6 +35,7 @@ import dioxus.compose.ui.node.nodeTestTag
  */
 @OptIn(ExperimentalTestApi::class)
 class ProtocolVectorsTest {
+
     @Test
     fun pr4_checked_in_mutation_vector_is_interpreted_without_crashing() = runComposeUiTest {
         val mutations = decodeVector("mutations.bin")
@@ -42,8 +43,20 @@ class ProtocolVectorsTest {
 
         val connection = FakeHostConnection(mutations)
         lateinit var host: DioxusHost
+        // Timed, because this test has hung on CI where it takes seconds here, and a bare
+        // waitForIdle() that never returns tells you only that a minute went by. Knowing
+        // which of the two phases ate it is the difference between a slow machine and a
+        // composition that never settles.
+        val started = System.nanoTime()
         setContent { host = rememberDioxusHost(connection) ; DioxusContent(host) }
+        val composed = System.nanoTime()
         waitForIdle()
+        val idle = System.nanoTime()
+        println(
+            "vector interpreted: setContent ${(composed - started) / 1_000_000}ms, " +
+                "waitForIdle ${(idle - composed) / 1_000_000}ms, " +
+                "${mutations.size} records",
+        )
 
         val root = host.table.node(1)
         assertEquals(WidgetKind.Box, root?.widget)

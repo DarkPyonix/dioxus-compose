@@ -68,9 +68,12 @@ class BreezeDesignSystem private constructor(
         // View background: the white of a list or an entry.
         ColorRole.Surface -> Color(0xFFFCFCFC)
         ColorRole.OnSurface -> Color(0xFF232629)
-        // Window background, a touch cooler and darker than the view.
-        ColorRole.SurfaceVariant -> Color(0xFFEFF0F1)
+        // A step deeper than the window, in Breeze's own grey. The two used to carry the
+        // same value, so a filled container sitting on the window was invisible: same
+        // colour, no border, nothing to see.
+        ColorRole.SurfaceVariant -> Color(0xFFE1E3E5)
         ColorRole.OnSurfaceVariant -> Color(0xFF4D5052)
+        // Window background, a touch cooler and darker than the view.
         ColorRole.Background -> Color(0xFFEFF0F1)
         ColorRole.OnBackground -> Color(0xFF232629)
         ColorRole.Outline -> Color(0xFFBDC3C7)

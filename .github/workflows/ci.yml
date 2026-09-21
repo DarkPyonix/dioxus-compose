@@ -80,7 +80,92 @@ jobs:
         # recorded baseline, so shared-runner noise does not make them flaky;
         # the benchmark *assertions* (NFR-9) still fail the build if a real
         # regression lands.
+        #
+        # Without the Kotlin half. check.sh runs it by default, which is right on a
+        # developer's machine and wrong here: this job is named for Rust, has no Kotlin
+        # caches, and so spent most of ten minutes downloading the Kotlin/Native compiler
+        # and the wasm toolchain before doing eight seconds of work. The kotlin job below
+        # runs it once, with the caches that make it cheap.
+        env:
+          DXC_SKIP_KOTLIN: '1'
         run: ./scripts/check.sh
+
+  kotlin:
+    # One job per platform, not one job for all of them.
+    #
+    # `./kotlin build` with no argument compiles every module for every platform it
+    # declares, and the design systems declare five each. That put the Kotlin/Native
+    # compiler, its platform libraries and the wasm toolchain on the critical path of a
+    # gate whose JVM half finishes in seconds, and it serialised work that has no reason
+    # to be serial: measured warm here, jvm 4s, android 4s, wasmJs 11s, iosSimulatorArm64
+    # 21s. Sequentially that is the sum; split, it is the slowest one.
+    #
+    # The split also keeps each cache honest. The jvm and android jobs never download
+    # konan at all, and a Kotlin/Native toolchain change no longer invalidates the cache
+    # of the job that finishes first.
+    name: Kotlin gate (${{ matrix.platform }})
+    runs-on: ${{ matrix.runs-on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The renderer's desktop module and every UI test live here. macOS because it is
+          # the primary platform and the one the Compose desktop tests are written against.
+          - platform: jvm
+            runs-on: macos-latest
+            test: true
+          # Kotlin/Native. Compiles the iOS renderer, which shares its interpreter sources
+          # with the desktop one through symlinks, and runs the protocol codec tests on it.
+          - platform: iosSimulatorArm64
+            runs-on: macos-latest
+            test: true
+          # The device slice is linked, never run: running it needs a signed app on real
+          # hardware. Building it is what proves the arm64 slice still compiles.
+          - platform: iosArm64
+            runs-on: macos-latest
+            test: false
+          - platform: wasmJs
+            runs-on: ubuntu-latest
+            test: true
+          - platform: android
+            runs-on: ubuntu-latest
+            test: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the Kotlin toolchain, konan and Maven dependencies
+        # Keyed on the platform as well as the inputs, so each job carries only what it
+        # actually downloads instead of every job restoring every toolchain.
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.cache/JetBrains/Kotlin
+            ~/.konan
+            ~/.m2/repository
+          key: kotlin-${{ matrix.platform }}-${{ runner.os }}-${{ hashFiles('dioxus-compose-renderer/**/module.yaml', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/kotlin', 'dioxus-design-systems/**/module.yaml') }}
+          restore-keys: |
+            kotlin-${{ matrix.platform }}-${{ runner.os }}-
+
+      - name: Build the renderer
+        working-directory: dioxus-compose-renderer
+        run: ./kotlin build -p ${{ matrix.platform }}
+
+      - name: Test the renderer
+        if: matrix.test
+        working-directory: dioxus-compose-renderer
+        run: ./kotlin test -p ${{ matrix.platform }}
+
+      - name: Build the design systems
+        # A separate Amper project, and deliberately so: it must never depend on the
+        # renderer, which is what lets it be published on its own.
+        working-directory: dioxus-design-systems
+        run: ./kotlin build -p ${{ matrix.platform }}
+
+      - name: Test the design systems
+        if: matrix.test
+        working-directory: dioxus-design-systems
+        run: ./kotlin test -p ${{ matrix.platform }}
 
   shell:
     name: Shell script tests (${{ matrix.os }})

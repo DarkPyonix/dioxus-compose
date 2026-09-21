@@ -35,7 +35,24 @@ not this one. Enter sends; Shift+Enter starts a new line."
     }]
 }
 
+/// The widest a thread is allowed to be, per class.
+///
+/// A line of text stops being readable somewhere around sixty to eighty characters, and a
+/// window twice that wide does not make it more readable, it makes it worse. So the thread
+/// stops growing and centres itself instead. The two bounds are the class boundaries
+/// themselves: a medium window reads at the width a medium window starts at, and an
+/// expanded one at the width an expanded one starts at.
+fn thread_width(window: &WindowSize) -> Option<f32> {
+    match window.class {
+        WindowSizeClass::Compact => None,
+        WindowSizeClass::Medium => Some(WindowSizeClass::MEDIUM_MIN_WIDTH_DP),
+        WindowSizeClass::Expanded => Some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+    }
+}
+
 fn app() -> Element {
+    let window = use_window_size();
+    let measure = thread_width(&window);
     // Shared with the assistant thread, so it is a sync signal rather than the usual one.
     // Writing it from the worker marks this scope dirty through a channel the scheduler
     // owns, and the Host asks for the frame.
@@ -90,13 +107,10 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            spacing: 8.0,
 
-            Row {
+            TopAppBar {
                 fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                Text { text: "Chat", type_role: TypeRole::Headline }
+                Text { text: "Chat", type_role: TypeRole::Title, weight: 1.0 }
                 Text {
                     text: if busy { "assistant is replying" } else { "ready" },
                     type_role: TypeRole::Label,
@@ -113,70 +127,144 @@ fn app() -> Element {
                 }
             }
 
-            LazyColumn {
-                item_count: count,
-                key_of: move |index: usize| keys[index].clone(),
-                item: move |index: usize| {
-                    let message = messages.read()[index].clone();
-                    rsx! {
-                        // A `Spacer` would be the obvious way to separate one message from
-                        // the next, but a Spacer can only be sized with a modifier and no
-                        // modifier can be written from rsx, so the gap is the column's
-                        // spacing instead.
-                        Column {
-                            fill_max_width: true,
-                            spacing: 2.0,
-                            Text {
-                                text: if message.from_user { "You" } else { "Assistant" },
-                                type_role: TypeRole::Label,
-                                color: Paint::Role(if message.from_user {
-                                    ColorRole::Primary
+            // On a narrow window the thread is the window. On anything wider it is a
+            // column of its own, centred, with the page showing either side of it.
+            dioxus_compose::Box {
+                fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+            Column {
+                fill_max_width: measure.is_none(),
+                width: measure,
+                fill_max_height: true,
+                padding_role: SpaceRole::Lg,
+                space_role: SpaceRole::Md,
+
+                LazyColumn {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    item_count: count,
+                    key_of: move |index: usize| keys[index].clone(),
+                    item: move |index: usize| {
+                        let message = messages.read()[index].clone();
+                        // A name over every bubble is a name repeated once per line. The
+                        // side and the fill already say who is speaking, so the name is
+                        // printed once at the head of a run and the rest of the run is
+                        // read as the same speaker still talking.
+                        let starts_a_run = index == 0
+                            || messages.read()[index - 1].from_user != message.from_user;
+                        // Who said it should be readable without reading, so it is the side
+                        // the bubble sits on and the colour it is filled with, with the
+                        // name left as confirmation rather than as the only clue. Both
+                        // colours are roles, so the user's bubble is the accent of
+                        // whichever design system is running and the reply is that
+                        // system's quiet surface.
+                        let (fill, ink) = if message.from_user {
+                            (ColorRole::Primary, ColorRole::OnPrimary)
+                        } else {
+                            (ColorRole::SurfaceVariant, ColorRole::OnSurfaceVariant)
+                        };
+                        rsx! {
+                            // The list has no spacing of its own, so the gap between one
+                            // message and the next is padding on the row that holds it.
+                            dioxus_compose::Box {
+                                fill_max_width: true,
+                                // Consecutive messages from one speaker sit close
+                                // together and a change of speaker gets more air, which is
+                                // what makes a conversation read as turns rather than as
+                                // an evenly spaced column of boxes.
+                                padding_role: if starts_a_run {
+                                    SpaceRole::Sm
                                 } else {
-                                    ColorRole::Secondary
-                                }),
-                            }
-                            Text {
-                                // A message still arriving shows a caret so an empty reply
-                                // does not look like a dead one.
-                                text: if message.streaming {
-                                    format!("{}\u{2589}", message.text)
-                                } else {
-                                    message.text.clone()
+                                    SpaceRole::Xs
                                 },
-                                type_role: TypeRole::Body,
+                                alignment: if message.from_user {
+                                    Alignment::CenterEnd
+                                } else {
+                                    Alignment::CenterStart
+                                },
+                                Column {
+                                    space_role: SpaceRole::Xs,
+                                    alignment: if message.from_user {
+                                        Alignment::CenterEnd
+                                    } else {
+                                        Alignment::CenterStart
+                                    },
+                                    if starts_a_run {
+                                        Text {
+                                            text: if message.from_user { "You" } else { "Assistant" },
+                                            type_role: TypeRole::Caption,
+                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                        }
+                                    }
+                                    // The bubble sizes to its text, so a short reply is a
+                                    // short bubble. Its corner is the design system's
+                                    // large corner rather than a radius chosen here.
+                                    Column {
+                                        background: Paint::Role(fill),
+                                        shape_role: ShapeRole::Large,
+                                        padding_role: SpaceRole::Md,
+                                        Text {
+                                            // A message still arriving shows a caret so an
+                                            // empty reply does not look like a dead one.
+                                            text: if message.streaming {
+                                                format!("{}\u{2589}", message.text)
+                                            } else {
+                                                message.text.clone()
+                                            },
+                                            type_role: TypeRole::Body,
+                                            color: Paint::Role(ink),
+                                        }
+                                    }
+                                }
                             }
                         }
-                    }
-                },
-            }
+                    },
+                }
 
-            Row {
-                fill_max_width: true,
-                spacing: 8.0,
-                alignment: Alignment::CenterStart,
-                // No `on_key_down` here on purpose. The Renderer already treats Enter in a
-                // multiline field that has a submit handler as "send" and Shift+Enter as
-                // "new line", and `on_submit` carries the text the field holds at that
-                // instant. A key handler would have to read the separately reported value,
-                // which lags typing by the field's change debounce, so the last characters
-                // typed before Enter would be dropped.
-                TextField {
-                    multiline: true,
-                    placeholder: "Message. Enter sends, Shift+Enter starts a new line",
-                    on_value_change: move |value| draft.set(value),
-                    on_submit: move |value: String| send(value),
+                // The composer, grouped so it reads as one control at the foot of the
+                // conversation rather than as a field and a button that happen to be
+                // side by side.
+                Surface {
+                    fill_max_width: true,
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        // No `on_key_down` here on purpose. The Renderer already treats
+                        // Enter in a multiline field that has a submit handler as "send"
+                        // and Shift+Enter as "new line", and `on_submit` carries the text
+                        // the field holds at that instant. A key handler would have to read
+                        // the separately reported value, which lags typing by the field's
+                        // change debounce, so the last characters typed before Enter would
+                        // be dropped.
+                        TextField {
+                            weight: 1.0,
+                            multiline: true,
+                            placeholder: "Message. Enter sends, Shift+Enter starts a new line",
+                            on_value_change: move |value| draft.set(value),
+                            on_submit: move |value: String| send(value),
+                        }
+                        Button {
+                            text: "Send",
+                            variant: ButtonVariant::Filled,
+                            on_click: move |_| send(draft()),
+                        }
+                    }
                 }
-                Button {
-                    text: "Send",
-                    on_click: move |_| send(draft()),
-                }
+            }
             }
         }
     }
 }
 
+// Samples are demonstrations, so they let you see any of the design systems rather than
+// only the one this machine happens to select. Unset, the app adapts to the host platform,
+// which is what a real application wants.
 fn main() {
-    dioxus_compose::launch(app);
+    dioxus_compose::LaunchBuilder::new()
+        .with_theme(dioxus_compose::demo_theme())
+        .launch(app);
 }
 
 #[cfg(test)]
@@ -526,8 +614,56 @@ mod tests {
         );
     }
 
-    /// The hundredth keystroke has to cost what the third one cost. A per-event buffer that
-    /// is grown rather than reused shows up here as a count that climbs.
+    /// The widths a thread takes, read back off the wire after the Renderer reports a
+    /// window of the given width.
+    fn widths_at(width_dp: f32) -> Vec<f32> {
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        host.rebuild().expect("the first frame failed to encode");
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 900.0,
+                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).expect("the resize did not encode");
+        let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
+        let widths = decode_batch(batch)
+            .expect("the resize batch did not decode")
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetModifier {
+                    modifier: dioxus_compose::Modifier::Width(width),
+                    ..
+                } => Some(*width),
+                _ => None,
+            })
+            .collect();
+        dioxus_compose::window::reset_window_size();
+        widths
+    }
+
+    /// A wide window does not get a wide thread. The column stops at the reading measure
+    /// for its class and the page shows either side of it, and a narrow window keeps the
+    /// full width because there is nothing to give back.
+    #[test]
+    fn fr20_the_thread_stops_growing_once_the_window_is_wide() {
+        assert!(
+            widths_at(420.0).is_empty(),
+            "a compact window should not size the thread"
+        );
+        assert!(widths_at(700.0).contains(&dioxus_compose::WindowSizeClass::MEDIUM_MIN_WIDTH_DP));
+        assert!(
+            widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+        );
+    }
+
+    /// The hundredth keystroke has to cost what the third one cost. A per-event buffer
+    /// that is grown rather than reused shows up here as a count that climbs.
     #[test]
     fn nfr9_allocations_do_not_grow_across_repeated_interactions() {
         let mut screen = Screen::new();

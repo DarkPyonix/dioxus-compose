@@ -37,6 +37,8 @@ fn editor(stamp: u64, contents: String, on_edit: EventHandler<String>) -> Elemen
                 key: "editor-{generation}",
                 "text": "{contents}",
                 multiline: true,
+                fill_max_width: true,
+                fill_max_height: true,
                 placeholder: "Type here, or open a file",
                 onvaluechange: move |event: Event<String>| on_edit.call((*event.data()).clone()),
             }
@@ -45,10 +47,17 @@ fn editor(stamp: u64, contents: String, on_edit: EventHandler<String>) -> Elemen
 }
 
 /// A single-line field whose contents are set once, for the path.
+///
+/// It takes the weight the toolbar gives it, so the path grows with the window instead of
+/// being sized by whatever happens to be typed in it.
 fn path_field(contents: String, on_edit: EventHandler<String>) -> Element {
     rsx! {
         textfield {
             "text": "{contents}",
+            weight: 1.0,
+            // A path is a machine string, so it is set in the monospace rung: the
+            // separators line up and it stops competing with the document's own text.
+            type_role: i64::from(u16::from(TypeRole::Mono)),
             placeholder: "Path to a file",
             onvaluechange: move |event: Event<String>| on_edit.call((*event.data()).clone()),
         }
@@ -56,6 +65,17 @@ fn path_field(contents: String, on_edit: EventHandler<String>) -> Element {
 }
 
 fn app() -> Element {
+    let window = use_window_size();
+    // A document is read across its lines, so past a certain width a page that keeps
+    // growing is a page nobody can read. On a desktop window the page stops at the width
+    // an expanded window starts at and takes a margin either side, which is what a page
+    // is. Narrower than that the page is the window, because there is nothing to spare.
+    let page_width = if window.is_expanded() {
+        Some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+    } else {
+        None
+    };
+    let crowded = window.is_compact();
     let mut text = use_signal(String::new);
     let mut stamp = use_signal(|| 0_u64);
     let mut path = use_signal(|| display_path(&starting_path()));
@@ -117,16 +137,22 @@ fn app() -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            spacing: 6.0,
+
+            // The document's actions belong in the bar, not in a line of buttons above the
+            // text. The title takes the weight, which pushes them to the far end.
             TopAppBar {
-                Text { text: "Notepad", type_role: TypeRole::Title }
-            }
-            Row {
                 fill_max_width: true,
-                spacing: 6.0,
-                alignment: Alignment::CenterStart,
-                Text { text: "File", type_role: TypeRole::Label }
-                {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                Text { text: "Notepad", type_role: TypeRole::Title, weight: 1.0 }
+                Button {
+                    text: "New",
+                    variant: ButtonVariant::Text,
+                    enabled: !working,
+                    on_click: move |_| {
+                        text.set(String::new());
+                        stamp += 1;
+                        status.set("New document".to_owned());
+                    },
+                }
                 Button {
                     text: "Open",
                     variant: ButtonVariant::Tonal,
@@ -146,56 +172,98 @@ fn app() -> Element {
                         run_on_worker(Box::new(move || document::save(target, contents)));
                     },
                 }
-                Button {
-                    text: "New",
-                    variant: ButtonVariant::Outlined,
-                    enabled: !working,
-                    on_click: move |_| {
-                        text.set(String::new());
-                        stamp += 1;
-                        status.set("New document".to_owned());
-                    },
-                }
             }
-            Text {
-                text: status(),
-                type_role: TypeRole::Caption,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                max_lines: 1,
-                overflow: TextOverflow::Ellipsis,
-            }
-            // The editor scrolls on its own, so a document longer than the window stays
-            // reachable without the Host knowing where the scroll is.
-            ScrollColumn {
+
+            Column {
                 fill_max_width: true,
                 fill_max_height: true,
-                {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
-            }
-            Row {
-                fill_max_width: true,
-                arrangement: Arrangement::SpaceBetween,
-                Text {
-                    text: "{words} words",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                padding_role: SpaceRole::Lg,
+                space_role: SpaceRole::Md,
+
+                // The location bar: one grouped strip that says which file the actions
+                // above work on.
+                Surface {
+                    fill_max_width: true,
+                    Row {
+                        fill_max_width: true,
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        // The word is dropped on a phone: the field says what it is in
+                        // its own placeholder, and a path needs every pixel of the line.
+                        if !crowded {
+                            Text {
+                                text: "File",
+                                type_role: TypeRole::Label,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            }
+                        }
+                        {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                    }
                 }
-                Text {
-                    text: "{characters} characters",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+
+                // The page. A document is an object you write on, so it is a surface of
+                // its own with the rest of the window as its margin, and it takes what the
+                // toolbar and the status line leave.
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    alignment: Alignment::TopCenter,
+                Surface {
+                    fill_max_width: page_width.is_none(),
+                    width: page_width,
+                    fill_max_height: true,
+                    // The editor scrolls on its own, so a document longer than the window
+                    // stays reachable without the Host knowing where the scroll is.
+                    ScrollColumn {
+                        fill_max_width: true,
+                        fill_max_height: true,
+                        {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
+                    }
                 }
-                Text {
-                    text: "{lines} lines",
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                }
+
+                // The status line: what the last file operation did on the left, the
+                // document's measurements on the right.
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Md,
+                    alignment: Alignment::CenterStart,
+                    Text {
+                        text: status(),
+                        weight: 1.0,
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                    Text {
+                        text: "{words} words",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                    Text {
+                        text: "{characters} characters",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                    Text {
+                        text: "{lines} lines",
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
                 }
             }
         }
     }
 }
 
+// Samples are demonstrations, so they let you see any of the design systems rather than
+// only the one this machine happens to select. Unset, the app adapts to the host platform,
+// which is what a real application wants.
 fn main() {
-    dioxus_compose::launch(app);
+    dioxus_compose::LaunchBuilder::new()
+        .with_theme(dioxus_compose::demo_theme())
+        .launch(app);
 }
 
 #[cfg(test)]
@@ -491,6 +559,82 @@ mod tests {
             format!("{expected} characters")
         );
         assert_eq!(editor.counter(" lines"), "2 lines");
+    }
+
+    /// The page widths and the strip's labels after the Renderer reports a window of the
+    /// given width.
+    fn page_at(width_dp: f32) -> (Vec<f32>, Vec<String>) {
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        let first = host.rebuild().expect("the first frame failed to encode");
+        let mut widths = widths_of(first);
+        let mut labels = texts_of(first);
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 900.0,
+                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).expect("the resize did not encode");
+        let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
+        let after_widths = widths_of(batch);
+        let after_labels = texts_of(batch);
+        if !after_labels.is_empty() {
+            widths = after_widths;
+            labels = after_labels;
+        }
+        dioxus_compose::window::reset_window_size();
+        (widths, labels)
+    }
+
+    fn widths_of(batch: &[u8]) -> Vec<f32> {
+        decode_batch(batch)
+            .expect("the batch did not decode")
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetModifier {
+                    modifier: dioxus_compose::Modifier::Width(width),
+                    ..
+                } => Some(*width),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn texts_of(batch: &[u8]) -> Vec<String> {
+        decode_batch(batch)
+            .expect("the batch did not decode")
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(text),
+                    ..
+                } => Some((*text).to_owned()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A desktop window gives the document a margin and stops the page growing with the
+    /// window. A phone keeps the page full width and drops the word in front of the path,
+    /// which the field's own placeholder already says.
+    #[test]
+    fn fr20_the_page_takes_a_margin_on_a_desktop_window() {
+        let (narrow_widths, narrow_labels) = page_at(420.0);
+        assert!(narrow_widths.is_empty(), "{narrow_widths:?}");
+        assert!(!narrow_labels.iter().any(|text| text == "File"));
+
+        let (wide_widths, wide_labels) = page_at(1200.0);
+        assert!(
+            wide_widths.contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+            "the page did not take a measure: {wide_widths:?}"
+        );
+        assert!(wide_labels.iter().any(|text| text == "File"));
     }
 
     /// A path that is not there is a message on the status line, not a crash and not a

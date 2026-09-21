@@ -77,12 +77,24 @@ if (-not (Test-Path -LiteralPath $KotlinWrapper -PathType Leaf)) {
         "The checked-in Kotlin Toolchain wrapper is required; no separate Gradle install is used."
     )
 }
-# This is deliberately a Windows-only overlay, not the reference project's whole Compose
-# 1.9 stack bundle. This checkout currently resolves a newer Compose/Skiko stack and carries
-# its own metadata. Importing all reference entries would hide that version difference.
+# This carries the whole verified Compose desktop AWT stack, not just the sun.awt.windows
+# classes. An earlier Windows-only selection kept the entries whose names mention Windows and
+# dropped the rest, which removed the JNI registration of java.awt.Toolkit.getDefaultToolkit.
+# Toolkit.initIDs looks that method up through JNI before any window exists, so the image
+# built and then died at startup with NoSuchMethodError on a method the JDK plainly has.
+# The reference project hit the identical error with no metadata at all and fixed it with
+# this bundle. Entries naming classes this checkout's newer Compose and Skiko no longer have
+# are left unresolved by native-image rather than failing the build.
+#
+# Two directories because native-image documents a configuration directory as holding either
+# reachability-metadata.json or the older split files, not both, and the resource and bundle
+# declarations are still in the older form.
 $ReachabilityMetadata = Join-Path $MetadataDir "reachability-metadata.json"
+$ResourceMetadataDir = Join-Path $MetadataDir "resources"
+$ResourceMetadata = Join-Path $ResourceMetadataDir "resource-config.json"
 $MetadataEvidence = Join-Path $MetadataDir "evidence.json"
 if (-not (Test-Path -LiteralPath $ReachabilityMetadata -PathType Leaf) -or
+    -not (Test-Path -LiteralPath $ResourceMetadata -PathType Leaf) -or
     -not (Test-Path -LiteralPath $MetadataEvidence -PathType Leaf)) {
     Fail "Windows GraalVM 25 reachability metadata is missing from $MetadataDir" @(
         "Do not replace it with an unattended tracing-agent run.",
@@ -255,14 +267,35 @@ $NativeImageArgs = @(
     "-H:IncludeLocales=en,ko",
     "-Os",
     "-H:+UnlockExperimentalVMOptions",
-    "-H:ConfigurationFileDirectories=$MetadataDir",
+    "-H:ConfigurationFileDirectories=$MetadataDir,$ResourceMetadataDir",
+    # The JDK half of the desktop stack, registered wholesale for reflection and JNI.
+    # Curated metadata got the image past Toolkit.getDefaultToolkit and straight into the
+    # next reflective lookup: Swing asks UIManager for a ComponentUI by class name, and a
+    # look and feel class nobody references is not in the image, so a window cannot build
+    # its own root pane. Chasing that one class at a time costs a CI run each. This is the
+    # recipe Native Image uses for its own non-headless desktop image, and it registers
+    # for JNI as well as reflection, so it covers both failures at once.
+    "-H:Preserve=module=java.desktop",
     "-H:NativeLinkerOption=$RendererObject",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"
 )
+# Through an argument file, not the command line. The runtime classpath alone is tens of
+# kilobytes of Maven cache paths and Windows caps a command line at 32767 characters, so
+# passing it directly fails with "The command line is too long." before native-image runs.
+# Java argument files treat a backslash inside quotes as an escape, so the paths go in with
+# forward slashes, which every Windows API accepts.
+$ArgumentFile = Join-Path $BuildDir "native-image-args.txt"
+Set-Content -Path $ArgumentFile -Encoding ASCII -Value (
+    $NativeImageArgs | ForEach-Object {
+        $argument = $_ -replace '\\', '/'
+        if ($argument -match '\s') { '"' + $argument + '"' } else { $argument }
+    }
+)
+
 Push-Location $BinDir
 try {
-    Invoke-Native { & $NativeImage @NativeImageArgs }
+    Invoke-Native { & $NativeImage "@$ArgumentFile" }
     if ($LASTEXITCODE -ne 0) {
         Fail "native-image failed to build the Windows renderer"
     }

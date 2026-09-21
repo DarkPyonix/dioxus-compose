@@ -99,16 +99,33 @@ cat > "$app/Info.plist" <<PLIST
 </plist>
 PLIST
 
-device="$(xcrun simctl list devices available | awk -v name="$device_name" '
-    $0 ~ "^    " name " \\(" { match($0, /\(([-0-9A-F]+)\)/, m); print m[1]; exit }
-' 2>/dev/null || true)"
+# Every one of these pipelines can legitimately match nothing, and this script runs under
+# `set -e` with `pipefail`, which turns "grep found no lines" into a silent abort with no
+# message at all. That is not hypothetical: a runner image whose newest simulator was an
+# iPhone 17 killed this script here, two seconds after a successful link, printing nothing,
+# and the failure read as a linker problem for a day. `|| true` keeps the lookup a lookup,
+# so the explanation below is the thing that actually reports the problem.
+requested_device_name="$device_name"
+available="$(xcrun simctl list devices available || true)"
+device="$(printf '%s\n' "$available" | grep -F "$device_name (" | head -1 |
+    sed -E 's/.*\(([-0-9A-F]{36})\).*/\1/' || true)"
+
 if [[ -z "$device" ]]; then
-    device="$(xcrun simctl list devices available | grep -F "$device_name (" | head -1 |
-        sed -E 's/.*\(([-0-9A-F]{36})\).*/\1/')"
+    # Any iPhone will do: this test proves the C ABI and that the renderer draws, neither
+    # of which depends on the model. Pinning a model that the runner image has since
+    # dropped would fail for a reason that has nothing to do with the code under test.
+    fallback_line="$(printf '%s\n' "$available" | grep -E '^    iPhone .*\(' | head -1 || true)"
+    device="$(printf '%s\n' "$fallback_line" |
+        sed -E 's/.*\(([-0-9A-F]{36})\).*/\1/' || true)"
+    if [[ -n "$device" ]]; then
+        device_name="$(printf '%s\n' "$fallback_line" | sed -E 's/^ *(.*) \(([-0-9A-F]{36})\).*/\1/')"
+        echo "==> '$requested_device_name' is not available here, using $device_name" >&2
+    fi
 fi
-[[ -n "$device" ]] || die "no available simulator called '$device_name'" \
-    "Pick one from: xcrun simctl list devices available" \
-    "then pass it with --device-name."
+
+[[ -n "$device" ]] || die "no iPhone simulator is available" \
+    "Wanted '$requested_device_name' and found no iPhone at all. Available devices:" \
+    "$(printf '%s\n' "$available")"
 
 echo "==> booting $device_name ($device)"
 xcrun simctl boot "$device" 2>/dev/null || true

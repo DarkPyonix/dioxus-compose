@@ -10,8 +10,10 @@ pub mod renderer;
 pub mod schema;
 pub mod tokens;
 mod widgets;
+pub mod window;
 
 pub use boundary::{
+    demo_theme,
     Host, LaunchBuilder, MutationBatch, RendererApi, install_renderer_api, launch,
     request_frame_from_worker,
 };
@@ -23,13 +25,14 @@ pub use extensions::LinearProgressIndicator;
 pub use schema::{
     Alignment, Arrangement, AssetKind, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
     EventPayload, IconRole, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection,
-    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind,
+    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
     Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
-    KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs,
-    Text, TextField, TimePicker, Tooltip, TopAppBar,
+    KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Separator, Spacer,
+    Surface, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
+pub use window::{WindowSize, use_window_size, window_size};
 
 pub mod prelude {
     pub use crate as dioxus_elements;
@@ -41,8 +44,9 @@ pub mod prelude {
         ColorScheme, Column, DatePicker, DesignSystem, Dialog, DrawCommand, DrawList, Dropdown,
         Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
         LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
-        ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
-        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, component, launch, rsx,
+        Separator, ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField,
+        TextOverflow, Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass,
+        component, launch, rsx, use_window_size,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -68,6 +72,8 @@ pub mod elements {
     macro_rules! modifier_attributes {
         () => {
             pub const weight: AttributeDescription = ("weight", None, false);
+            pub const fill_max_width: AttributeDescription = ("fill_max_width", None, false);
+            pub const fill_max_height: AttributeDescription = ("fill_max_height", None, false);
             pub const width: AttributeDescription = ("width", None, false);
             pub const height: AttributeDescription = ("height", None, false);
             pub const padding: AttributeDescription = ("padding", None, false);
@@ -110,32 +116,10 @@ pub mod elements {
     element!(
         column,
         "Column",
-        [
-            fill_max_width,
-            fill_max_height,
-            arrangement,
-            spacing,
-            space_role,
-            alignment
-        ]
+        [arrangement, spacing, space_role, alignment]
     );
-    element!(
-        row,
-        "Row",
-        [
-            fill_max_width,
-            fill_max_height,
-            arrangement,
-            spacing,
-            space_role,
-            alignment
-        ]
-    );
-    element!(
-        composebox,
-        "Box",
-        [fill_max_width, fill_max_height, item_key, alignment]
-    );
+    element!(row, "Row", [arrangement, spacing, space_role, alignment]);
+    element!(composebox, "Box", [item_key, alignment]);
     // The type role plus one attribute per override axis, so changing one axis is one
     // SetProp and the rest of the text's styling is not resent.
     element!(
@@ -154,8 +138,12 @@ pub mod elements {
             overflow
         ]
     );
-    element!(textfield, "TextField", [placeholder, enabled, multiline]);
-    element!(button, "Button", [text, enabled, variant]);
+    element!(
+        textfield,
+        "TextField",
+        [placeholder, enabled, multiline, type_role]
+    );
+    element!(button, "Button", [text, enabled, variant, color]);
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.
     element!(spacer, "Spacer", []);
@@ -189,11 +177,7 @@ pub mod elements {
     element!(timepicker, "TimePicker", [value, min, max, enabled]);
     element!(dropdown, "Dropdown", [selected_index, enabled]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
-    element!(
-        scrollcolumn,
-        "ScrollColumn",
-        [fill_max_width, fill_max_height]
-    );
+    element!(scrollcolumn, "ScrollColumn", []);
 
     #[doc(hidden)]
     pub mod completions {

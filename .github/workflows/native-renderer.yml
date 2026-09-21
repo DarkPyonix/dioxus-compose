@@ -119,6 +119,12 @@ jobs:
           restore-keys: |
             kotlin-${{ runner.os }}-
 
+      - name: Windows build contract
+        # A static check of the Windows script, metadata and staging rules. It runs here
+        # because it is pure text and JSON, and because the Windows job itself only reaches
+        # its assertions after a ninety minute build.
+        run: bash dioxus-compose-renderer/desktop/scripts/windows-build-contract.test.sh
+
       - name: Build the renderer shared library
         # Stages build/native-image/dist/lib with the renderer, Skia, and the
         # libjawt / libawt_lwawt shims described in SPEC PR-8.
@@ -185,6 +191,9 @@ jobs:
       - name: Run Linux script contract tests
         run: bash dioxus-compose-renderer/desktop/scripts/tests/linux-build.test.sh
 
+      - name: Run the Linux metadata contract test
+        run: bash dioxus-compose-renderer/desktop/scripts/tests/linux-metadata.test.sh
+
       - name: Build the Linux renderer under Xvfb
         run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
 
@@ -211,7 +220,12 @@ jobs:
   # it evidence for PR-2: one unmodified host, two renderers, one ABI.
   ios:
     name: iOS build and simulator smoke test
-    runs-on: macos-15
+    # macos-26, not macos-latest. Compose Multiplatform's iOS artifacts carry
+    # precompiled Objective-C objects built against the iOS 26 SDK, and one of them
+    # references UIViewLayoutRegion, a class that does not exist in the iOS 18 SDK on the
+    # macos-15 image. Linking the smoke host there fails with an undefined symbol even
+    # though both archives built cleanly.
+    runs-on: macos-26
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4

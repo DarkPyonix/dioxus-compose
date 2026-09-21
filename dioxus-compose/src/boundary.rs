@@ -151,6 +151,11 @@ impl Host {
     /// The theme the application chose. Choosing nothing follows the host platform, with
     /// Material 3 where the platform has no look of its own.
     pub fn with_theme(app: fn() -> Element, theme: Theme) -> Self {
+        // A fresh Host has not been measured yet, and the Renderer that is about to drive
+        // it starts from the same assumption. Leaving a previous Host's last measurement
+        // behind would put the two sides out of step, because the Renderer reports only
+        // differences.
+        crate::window::reset_window_size();
         Self {
             theme,
             dom: VirtualDom::new(app),
@@ -177,6 +182,21 @@ impl Host {
     }
 
     pub fn dispatch(&mut self, event: HostEvent<'_>) -> Result<(&[u8], i64), ProtocolError> {
+        // The window's size belongs to no node and no handler: the Renderer measures the
+        // root content and reports it. It takes the same synchronous path as every other
+        // event, so the batch it produces is applied in the frame that asked for it.
+        if let EventPayload::WindowSizeChanged {
+            width_dp,
+            height_dp,
+            class,
+        } = event.payload
+        {
+            crate::window::publish(crate::window::WindowSize::new(width_dp, height_dp, class));
+            self.renderer.begin_frame();
+            self.dom.render_immediate(&mut self.renderer);
+            self.arm_scheduler_wake();
+            return Ok((self.renderer.finish_frame()?, 0));
+        }
         let Some((element, node_id, name)) = self.renderer.handler(event.handler_id) else {
             return Err(ProtocolError::InvalidValueKind(0));
         };
@@ -209,6 +229,7 @@ impl Host {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
             EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
+            EventPayload::WindowSizeChanged { .. } => unreachable!("handled above"),
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
@@ -940,5 +961,46 @@ mod tests {
             dioxus_compose_host_release_batch(std::ptr::null_mut());
         }
         dioxus_compose_host_shutdown();
+    }
+}
+
+/// The design system a demonstration should start in.
+///
+/// An application picks its own theme and never needs this. The samples do, because the
+/// point of a sample is to show what one declaration looks like under each system, and on
+/// any given machine the adaptive default can only ever show you one of them. Material 3
+/// and Fluent went unseen for weeks for exactly that reason: everything was checked on a
+/// Mac, so everything was Cupertino.
+///
+/// `DXC_DESIGN` names the system. Anything else, including nothing, adapts to the host.
+pub fn demo_theme() -> Theme {
+    use crate::schema::DesignSystem;
+    match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
+        Ok("material3") => Theme::unified(DesignSystem::Material3),
+        Ok("cupertino") => Theme::unified(DesignSystem::Cupertino),
+        Ok("fluent") => Theme::unified(DesignSystem::Fluent),
+        _ => Theme::adaptive(DesignSystem::Material3),
+    }
+}
+
+#[cfg(test)]
+mod demo_theme_tests {
+    use super::*;
+    use crate::schema::DesignSystem;
+
+    /// Named for what it defends: a sample that cannot be pointed at a design system
+    /// leaves five of the six unseen on any one machine.
+    #[test]
+    fn fr14_a_named_design_system_is_unified_and_anything_else_adapts() {
+        // SAFETY: the test process is single threaded here and the variable is read only
+        // by this function, which is called below.
+        unsafe { std::env::set_var("DXC_DESIGN", "fluent") };
+        assert_eq!(demo_theme(), Theme::unified(DesignSystem::Fluent));
+
+        unsafe { std::env::set_var("DXC_DESIGN", "nonsense") };
+        assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
+
+        unsafe { std::env::remove_var("DXC_DESIGN") };
+        assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
     }
 }

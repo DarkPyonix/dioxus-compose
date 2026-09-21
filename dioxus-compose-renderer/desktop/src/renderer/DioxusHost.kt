@@ -4,14 +4,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import dioxus.compose.protocol.ColorRole
-import dioxus.compose.ui.platform.FrameRequests
+import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.design.LocalDesignTheme
@@ -151,9 +154,10 @@ fun DioxusContent(
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
 ) {
-    LaunchedEffect(host) {
-        var applied = FrameRequests.counter.value
-        FrameRequests.counter.collect { requested ->
+    val frames = LocalFrameRequests.current
+    LaunchedEffect(host, frames) {
+        var applied = frames.counter.value
+        frames.counter.collect { requested ->
             if (requested == applied) return@collect
             applied = requested
             withFrameNanos { frameTimeNanos -> host.renderFrame(frameTimeNanos) }
@@ -166,7 +170,7 @@ fun DioxusContent(
     // notices it change, so a window there keeps its original colours while the rest of
     // the screen switches. The desktop installs an observer that does follow the system;
     // where nobody installs one, Compose's own answer is correct and is used.
-    val observedDark = systemDarkObserver?.invoke() ?: isSystemInDarkTheme()
+    val observedDark = LocalSystemDarkObserver.current?.invoke() ?: isSystemInDarkTheme()
     val systemDark = systemDarkOverride ?: observedDark
     val theme = resolveTheme(host.table.theme, platform, systemDark)
     CompositionLocalProvider(LocalDesignTheme provides theme) {
@@ -174,7 +178,18 @@ fun DioxusContent(
         // the inset outside instead leaves the window's own background showing through the
         // strip the title bar used to occupy, which reads as a leftover title bar rather
         // than as content extending underneath one.
-        Box(modifier.background(theme.color(ColorRole.Background))) {
+        // The window's size is measured here, where the root content is, and reported to
+        // the Host only when it crosses a size class boundary. onSizeChanged already fires
+        // only when the measured size differs, and the reporter drops everything that does
+        // not change the class, so a drag across one class costs no boundary calls.
+        val reporter = remember(host) { WindowSizeReporter() }
+        val density = LocalDensity.current
+        val measured = Modifier.onSizeChanged { size ->
+            with(density) {
+                reporter.report(size.width.toDp().value, size.height.toDp().value, host)
+            }
+        }
+        Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
             Box(Modifier.padding(contentPadding)) {
                 host.roots.forEach { rootId ->
                     androidx.compose.runtime.key(rootId) { RenderNode(rootId, host.table, host) }
@@ -202,5 +217,12 @@ var systemDarkOverride: Boolean? = null
  * It lives here rather than in the desktop module because this file is compiled for every
  * target: the iOS renderer symlinks it, and Skiko, which the desktop observer reads, does
  * not exist on Kotlin/Native.
+ *
+ * It is a CompositionLocal rather than a global, and that is not a matter of taste. The
+ * desktop observer polls in a loop that never finishes, which is correct in a window and
+ * fatal under a test clock: a composition with a coroutine forever waiting on a delay never
+ * goes idle, so waitForIdle spins until the test times out. As a global, one composition
+ * installing it silently did that to every composition created afterwards in the same
+ * process, including tests that had nothing to do with it.
  */
-var systemDarkObserver: (@Composable () -> Boolean)? = null
+val LocalSystemDarkObserver = staticCompositionLocalOf<(@Composable () -> Boolean)?> { null }
