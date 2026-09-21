@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,9 @@ import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.runtime.LocalCaptionBar
+import dioxus.compose.runtime.LocalWindowCaption
+import dioxus.compose.runtime.WindowCaption
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.Children
@@ -114,11 +118,22 @@ internal fun HostTopAppBar(
     theme: ResolvedTheme,
 ) {
     val style = theme.rules.container(ContainerRole.TopAppBar, theme)
+    // The bar at the top of the window is the caption. Its fill still reaches the window's
+    // edges, because that is what makes it the top of the window rather than a strip below
+    // one, and its contents start after the room the system's buttons take: a title drawn
+    // under the macOS traffic lights leaves both of them unusable.
+    val caption = if (node.id == LocalCaptionBar.current) {
+        LocalWindowCaption.current
+    } else {
+        WindowCaption.None
+    }
     Column(modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .containerDecoration(node, style, theme),
+                .containerDecoration(node, style, theme)
+                .padding(start = caption.buttonsWidth)
+                .defaultMinSize(minHeight = caption.height),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {

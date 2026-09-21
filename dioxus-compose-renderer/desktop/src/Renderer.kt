@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.HostConnection
 import dioxus.compose.runtime.rememberDioxusHost
+import dioxus.compose.runtime.WindowCaption
 import dioxus.compose.runtime.LocalSystemDarkObserver
 
 /**
@@ -61,9 +62,11 @@ internal fun runRenderer(
                 rememberDioxusHost(remember { connection() }),
                 Modifier.fillMaxSize(),
                 // Content runs under the caption on purpose, but a widget sitting where
-                // the window buttons are would leave both unusable. The inset goes inside
-                // the content's own background so the window has one continuous surface.
-                contentPadding = windowContentInsets(window, chrome, hasTopAppBar = false),
+                // the window buttons are would leave both unusable. What to do about that
+                // depends on what the Host declared, so the window says how much room the
+                // buttons take and the content decides: a tree that leads with a bar makes
+                // that bar the caption, and one that does not is pushed clear of them.
+                caption = windowCaption(window, chrome),
             )
         }
     }

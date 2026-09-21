@@ -1,8 +1,8 @@
 package dioxus.compose.ui.platform
 
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dioxus.compose.runtime.WindowCaption
 import java.awt.Window as AwtWindow
 import javax.swing.JRootPane
 import javax.swing.RootPaneContainer
@@ -68,28 +68,28 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
 }
 
 /**
- * How far content must be inset to clear the window buttons and the draggable caption.
+ * The strip the system's own window buttons occupy, for the content to keep clear of.
  *
  * Content is allowed to run underneath the caption, which is the point, but a widget
- * placed where the macOS traffic lights are would leave both unusable. The renderer
- * applies this; the Host never sees it and cannot set it, because the safe area is a fact
- * about the window rather than a decision the application makes.
+ * placed where the macOS traffic lights are would leave both unusable. What to do about
+ * that depends on what the Host declared, so this reports the room rather than deciding:
+ * a tree that leads with a `TopAppBar` makes that bar the caption and lays it out around
+ * the buttons, and a tree that does not is pushed clear of them. The Host never sees any
+ * of it, because the safe area is a fact about the window rather than a decision the
+ * application makes.
  *
  * The height is measured rather than guessed. AWT reports a decorated window's title bar
  * as the top inset of its frame, and on macOS that is the same strip the traffic lights
  * sit in. Reading it means the value follows the platform instead of drifting from it the
  * next time Apple changes the height, which a constant in this file would not.
  */
-internal fun windowContentInsets(
-    window: AwtWindow?,
-    chrome: WindowChrome,
-    hasTopAppBar: Boolean,
-): PaddingValues = when {
-    chrome == WindowChrome.System -> PaddingValues(0.dp)
-    // A TopAppBar is the caption, so it lays itself out around the buttons rather than
-    // being pushed below them.
-    hasTopAppBar -> PaddingValues(0.dp)
-    else -> PaddingValues(top = captionHeight(window))
+internal fun windowCaption(window: AwtWindow?, chrome: WindowChrome): WindowCaption = when (chrome) {
+    // The platform's own title bar is above the content, so nothing of it is in the way.
+    WindowChrome.System -> WindowCaption.None
+    WindowChrome.Modern -> WindowCaption(
+        height = captionHeight(window),
+        buttonsWidth = systemWindowButtonsWidth,
+    )
 }
 
 /**

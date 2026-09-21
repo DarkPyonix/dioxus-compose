@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dioxus.compose.foundation.HostMessages
 import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
@@ -31,6 +32,7 @@ import java.lang.InterruptedException
 import java.lang.System
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -135,6 +137,59 @@ internal var onProtocolError: (TableError) -> Unit = { error ->
     System.err.println("dioxus-compose protocol error ${error.code}: ${error.message}")
 }
 
+/**
+ * The strip of the window the system's own buttons occupy.
+ *
+ * Content is allowed to run underneath it, which is the point of modern chrome, but a
+ * widget placed where the macOS traffic lights are would leave both unusable. The Host
+ * never sees this: the safe area is a fact about the window rather than a decision the
+ * application makes.
+ *
+ * `buttonsWidth` is the horizontal room the buttons take at the leading edge, which is
+ * zero on the platforms where the caption is ours to draw.
+ */
+data class WindowCaption(val height: Dp = 0.dp, val buttonsWidth: Dp = 0.dp) {
+    companion object {
+        /** A window with no system buttons over its content. */
+        val None = WindowCaption()
+    }
+}
+
+/** The caption of the window this content is in. */
+internal val LocalWindowCaption = staticCompositionLocalOf { WindowCaption.None }
+
+/**
+ * The node that is acting as the caption, or null where nothing is.
+ *
+ * Only one bar can be the caption, and which one is decided where the whole tree can be
+ * seen. A bar further down the tree reads null here and lays itself out normally.
+ */
+internal val LocalCaptionBar = staticCompositionLocalOf<Int?> { null }
+
+/**
+ * The bar a tree leads with, if it leads with one.
+ *
+ * A `TopAppBar` at the top of the window is the caption: it lays itself out around the
+ * system buttons and the content is not pushed below them. Applications do not put a bar
+ * at the root, they put it first inside the column that is the screen, so this walks the
+ * first child of each layout it meets rather than looking only at the root.
+ *
+ * A `Navigation` stops the walk. With a rail or a drawer the bar does not reach the
+ * window's leading edge, so it cannot be what the buttons sit in, and the content keeps
+ * the inset instead.
+ */
+private fun captionBarOf(table: NodeTable, id: Int): Int? {
+    val node = table.node(id) ?: return null
+    return when (node.widget) {
+        WidgetKind.TopAppBar -> node.id
+        WidgetKind.Column, WidgetKind.Box -> node.children
+            .firstOrNull()
+            ?.let { captionBarOf(table, it) }
+
+        else -> null
+    }
+}
+
 /** Creates a Host bound to the composition's lifetime. */
 @Composable
 fun rememberDioxusHost(connection: HostConnection): DioxusHost {
@@ -156,7 +211,7 @@ fun rememberDioxusHost(connection: HostConnection): DioxusHost {
 fun DioxusContent(
     host: DioxusHost,
     modifier: Modifier = Modifier,
-    contentPadding: PaddingValues = PaddingValues(0.dp),
+    caption: WindowCaption = WindowCaption.None,
 ) {
     val frames = LocalFrameRequests.current
     LaunchedEffect(host, frames) {
@@ -201,7 +256,20 @@ fun DioxusContent(
                 reporter.report(widthDp, size.height.toDp().value, host)
             }
         }
-        CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
+        // A tree that leads with a bar puts that bar in the caption and lays it out around
+        // the window buttons; a tree that does not is pushed clear of them. The decision is
+        // made here because it is the only place the whole tree is in view.
+        val captionBar = host.roots.firstNotNullOfOrNull { captionBarOf(host.table, it) }
+        val contentPadding = if (captionBar == null) {
+            PaddingValues(top = caption.height)
+        } else {
+            PaddingValues(0.dp)
+        }
+        CompositionLocalProvider(
+            LocalWindowSizeClass provides sizeClass,
+            LocalWindowCaption provides caption,
+            LocalCaptionBar provides captionBar,
+        ) {
             Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
                 Box(Modifier.padding(contentPadding)) {
                     host.roots.forEach { rootId ->
