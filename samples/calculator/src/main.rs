@@ -457,6 +457,22 @@ mod tests {
             .expect("the calculator tree encodes");
     }
 
+    /// Writes one screen as the batches that build it, each behind its byte length.
+    ///
+    /// A batch is a single envelope and cannot simply be appended to another one, so a
+    /// screen that takes more than one of them has to keep the boundaries. Four little
+    /// endian bytes of length in front of each is enough, and it is what the Renderer's
+    /// screenshot test reads back.
+    fn write_frames(path: &std::path::Path, batches: &[&[u8]]) {
+        let mut bytes = Vec::new();
+        for batch in batches {
+            bytes.extend_from_slice(&(batch.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(batch);
+        }
+        std::fs::write(path, bytes)
+            .unwrap_or_else(|error| panic!("{} cannot be written: {error}", path.display()));
+    }
+
     /// The calculator's first frame under each of the six design systems, in both schemes.
     ///
     /// A batch that encodes is not the same as a screen someone can read. Material 3
@@ -497,9 +513,7 @@ mod tests {
                 if let Some(directory) = &directory {
                     let path = std::path::Path::new(directory)
                         .join(format!("Calculator-{system:?}-{scheme:?}.bin"));
-                    std::fs::write(&path, batch).unwrap_or_else(|error| {
-                        panic!("{} cannot be written: {error}", path.display())
-                    });
+                    write_frames(&path, &[batch]);
                 }
             }
         }

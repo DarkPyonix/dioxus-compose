@@ -32,10 +32,14 @@ import org.jetbrains.skia.Image
  * cannot be seen. Six systems that nobody has looked at under a real screen is six
  * chances at that.
  *
- * The frames are the bytes the Host encoded, written by the calculator's
- * `DXC_FRAME_DIR` run, so what gets drawn here is what an application would send and not
- * a Kotlin restatement of it. Enabled only when `DXC_FRAME_DIR` names a directory holding
- * those frames, because it reads and writes files.
+ * The frames are the bytes the Host encoded, written by the samples' own `DXC_FRAME_DIR`
+ * runs, so what gets drawn here is what an application would send and not a Kotlin
+ * restatement of it. A screen can take more than one batch to build, a list holds no rows
+ * until something asks for a window, so a file is a sequence of batches, each behind four
+ * little endian bytes of its length.
+ *
+ * Enabled only when `DXC_FRAME_DIR` names a directory holding those frames, because it
+ * reads and writes files.
  */
 @OptIn(ExperimentalTestApi::class)
 class SampleScreenshotTest {
@@ -46,14 +50,20 @@ class SampleScreenshotTest {
         check(frames.isNotEmpty()) {
             "${directory.absolutePath} holds no frames. Record them first with " +
                 "`DXC_FRAME_DIR=${directory.absolutePath} cargo test -p sample-calculator " +
-                "fr14_the_first_frame`."
+                "fr14_the_first_frame` and the same for `-p sample-todo fr14_a_filled_list`."
         }
         frames.forEach { frame ->
             val mutations = mutableListOf<Mutation>()
-            Protocol.decode(
-                ByteBuffer.wrap(frame.readBytes()).order(ByteOrder.LITTLE_ENDIAN),
-                mutations::add,
-            )
+            val file = ByteBuffer.wrap(frame.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+            while (file.remaining() >= Int.SIZE_BYTES) {
+                val length = file.int
+                check(length in 0..file.remaining()) {
+                    "${frame.name} claims a batch of $length bytes with ${file.remaining()} left"
+                }
+                val batch = file.slice().order(ByteOrder.LITTLE_ENDIAN).limit(length)
+                Protocol.decode(batch, mutations::add)
+                file.position(file.position() + length)
+            }
             check(mutations.isNotEmpty()) { "${frame.name} decoded to no records" }
             runComposeUiTest {
                 setContent {
