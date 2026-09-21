@@ -106,12 +106,55 @@ internal fun HostNavigation(
         }
     }
 
+    // Where the platform has a strip of its own worth more than the one drawn here, it
+    // gets the destinations and this side draws only the screen. The question is asked of
+    // whatever is installed, and on the platforms where nothing is, the answer is no and
+    // the code below is unchanged.
+    //
+    // Only the bar is offered. A rail and a drawer are laid out beside the screen and take
+    // their width out of it, so handing them to a chrome that sits outside the Compose
+    // surface would leave the screen the full window wide with the strip on top of it.
+    val shell = platformNavigationShell
+        ?.takeIf { it.drawsStrip && style.presentation == NavigationPresentation.Bar }
+
     // A message is drawn over the whole window, so it has to be told what the bar along
     // the bottom is using or it would cover the destinations.
-    val barHeight = if (style.presentation == NavigationPresentation.Bar) style.barHeight else 0.dp
+    val barHeight = when {
+        shell != null -> shell.stripHeight.dp
+        style.presentation == NavigationPresentation.Bar -> style.barHeight
+        else -> 0.dp
+    }
     DisposableEffect(table, barHeight) {
         table.insets.bottom = barHeight
         onDispose { table.insets.bottom = 0.dp }
+    }
+
+    if (shell != null) {
+        val handed = destinations.mapNotNull { childId ->
+            table.node(childId)?.let { destination ->
+                ShellDestination(
+                    nodeId = childId,
+                    label = destination.text(PropertyKind.Text),
+                    icon = destination.role(PropertyKind.Icon, IconRole.entries.toTypedArray()),
+                    enabled = destination.flag(PropertyKind.Enabled, default = true),
+                )
+            }
+        }
+        // Two effects rather than one. Handing the destinations over happens again every
+        // time they or the selection change, and tapping a destination changes the
+        // selection, so putting the teardown in the same effect would take the strip down
+        // and put it back up on every tap.
+        DisposableEffect(shell, handed, selected) {
+            shell.present(handed, selected) { index ->
+                handed.getOrNull(index)?.let { choose(index, it.nodeId) }
+            }
+            onDispose {}
+        }
+        DisposableEffect(shell) {
+            onDispose { shell.dismiss() }
+        }
+        Box(modifier) { Screen(content, table, dispatcher) }
+        return
     }
 
     when (style.presentation) {
