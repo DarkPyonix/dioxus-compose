@@ -42,6 +42,14 @@ class WebHostConnection private constructor(block: Int) : HostConnection {
     private val outAddress = block
     private val eventAddress = block + EVENT_BUFFER_OFFSET
 
+    /**
+     * The address of the record a call reports into, for the test that times a call.
+     *
+     * `ReleaseBatch` is the cheapest real boundary function there is, which makes it the one
+     * to time, and timing it needs the address it takes.
+     */
+    internal val outAddressForMeasurement: Int get() = outAddress
+
     /** A view over the Host's half of the memory, and how far it reaches. */
     private var region: ByteBuffer? = null
     private var regionEnd = 0
