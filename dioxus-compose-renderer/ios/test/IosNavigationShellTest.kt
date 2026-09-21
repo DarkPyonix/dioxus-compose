@@ -3,6 +3,7 @@ package dioxus.compose.ui.platform
 import dioxus.compose.foundation.ShellDestination
 import dioxus.compose.foundation.platformNavigationShell
 import dioxus.compose.protocol.IconRole
+import platform.UIKit.UINavigationController
 import platform.UIKit.UITabBarController
 import platform.UIKit.UIViewController
 import platform.UIKit.tabBarItem
@@ -41,11 +42,48 @@ class IosNavigationShellTest {
     fun fr14_8_one_tab_is_built_for_each_destination_and_carries_its_label() {
         shell.present(destinations(), selected = 0) {}
 
-        val built = tabs.viewControllers.orEmpty().filterIsInstance<UIViewController>()
+        val built = tabs.viewControllers.orEmpty().filterIsInstance<UINavigationController>()
         assertEquals(2, built.size)
-        assertEquals(listOf("Tasks", "Done"), built.map { it.title })
         assertEquals(listOf("Tasks", "Done"), built.map { it.tabBarItem.title })
         assertFalse(tabs.tabBar.hidden, "the bar is on the screen once it has tabs")
+    }
+
+    /**
+     * The label names the tab at the bottom and titles the bar at the top.
+     *
+     * Both bars are the system's, which is the whole reason for standing them up instead of
+     * drawing them, and an iOS application does name a screen in both places.
+     */
+    @Test
+    fun fr14_8_each_tab_is_a_navigation_controller_titled_with_its_label() {
+        shell.present(destinations(), selected = 0) {}
+
+        val built = tabs.viewControllers.orEmpty().filterIsInstance<UINavigationController>()
+        assertEquals(2, built.size, "every tab is a navigation controller")
+        assertEquals(
+            listOf("Tasks", "Done"),
+            built.map { it.viewControllers.orEmpty().filterIsInstance<UIViewController>()[0].title },
+        )
+        assertFalse(built[0].navigationBar.hidden, "the title bar is the system's to draw")
+    }
+
+    /**
+     * The title bar's height is measured and not assumed, and it is not zero.
+     *
+     * It is what the screen is padded by, so a zero here is content drawn under the bar and
+     * lost. The number itself is the system's, and it differs by device.
+     */
+    @Test
+    fun fr14_8_the_title_bar_is_measured_and_the_screen_clears_it() {
+        assertEquals(0f, shell.titleHeight, "nothing is padded away before a bar exists")
+
+        shell.present(destinations(), selected = 0) {}
+
+        assertTrue(shell.titleHeight > 0f, "a title bar that measures zero hides the screen")
+        assertTrue(shell.stripHeight > 0f, "a tab bar takes room along the bottom")
+
+        shell.dismiss()
+        assertEquals(0f, shell.titleHeight, "nothing is padded away once the bar is gone")
     }
 
     /** A role that has a symbol gets one, and the tab is built either way. */

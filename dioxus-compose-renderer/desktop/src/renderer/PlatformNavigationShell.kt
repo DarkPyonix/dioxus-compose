@@ -48,6 +48,20 @@ interface PlatformNavigationShell {
     val stripHeight: Float
 
     /**
+     * Room the shell's own title bar takes along the top edge, in density independent
+     * pixels, or zero where it has none.
+     *
+     * Unlike the strip along the bottom, this one is padding and not just a warning. A
+     * title bar drawn by the platform sits over the top of the screen, and content left
+     * underneath it is content nobody can read.
+     *
+     * Read during composition, so an implementation that measures it after a layout pass
+     * has to keep it somewhere Compose observes, or the first frame's zero is the only
+     * answer anyone ever sees.
+     */
+    val titleHeight: Float
+
+    /**
      * Puts these destinations on the platform's chrome, with `selected` marked.
      *
      * Called again whenever the destinations or the selection change, so an implementation

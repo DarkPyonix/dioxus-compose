@@ -153,7 +153,12 @@ internal fun HostNavigation(
         DisposableEffect(shell) {
             onDispose { shell.dismiss() }
         }
-        Box(modifier) { Screen(content, table, dispatcher) }
+        // The strip along the bottom is not padded away: the screen runs under it, which
+        // is what gives a bar made of glass something to refract. A title bar is padded
+        // away, because it is opaque enough at the top that content under it is lost.
+        Box(modifier.padding(top = shell.titleHeight.dp)) {
+            Screen(content, table, dispatcher)
+        }
         return
     }
 

@@ -8,6 +8,7 @@ import platform.UIKit.UIColor
 import platform.UIKit.UIImage
 import platform.UIKit.UITabBarController
 import platform.UIKit.UITabBarControllerDelegateProtocol
+import platform.UIKit.UINavigationController
 import platform.UIKit.UITabBarItem
 import platform.UIKit.UITabBarMinimizeBehaviorAutomatic
 import platform.UIKit.UIViewAutoresizingFlexibleHeight
@@ -18,6 +19,9 @@ import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.setTabBarItem
 import platform.UIKit.tabBarItem
 import platform.darwin.NSObject
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlinx.cinterop.useContents
 
 /** How tall a tab bar is before the system has laid one out. */
@@ -70,17 +74,21 @@ internal class IosNavigationShell(
     private val selection = TabSelectionDelegate()
     private var presented: List<ShellDestination> = emptyList()
 
+    // Measured after UIKit has laid the bars out, and held where Compose observes it. A
+    // plain getter would be read once, on the frame before the bars exist, and the zero it
+    // answered then would be the only answer anything ever saw.
+    private var measuredStrip by mutableFloatStateOf(ASSUMED_TAB_BAR_HEIGHT)
+    private var measuredTitle by mutableFloatStateOf(0f)
+
     init {
         tabs.delegate = selection
     }
 
     override val drawsStrip: Boolean get() = true
 
-    override val stripHeight: Float
-        get() {
-            val laid = tabs.tabBar.frame.useContents { size.height }.toFloat()
-            return if (laid > 0f) laid else ASSUMED_TAB_BAR_HEIGHT
-        }
+    override val stripHeight: Float get() = measuredStrip
+
+    override val titleHeight: Float get() = measuredTitle
 
     override fun present(
         destinations: List<ShellDestination>,
@@ -101,6 +109,7 @@ internal class IosNavigationShell(
         if (destinations.isNotEmpty() && tabs.selectedIndex.toInt() != index) {
             tabs.selectedIndex = index.toULong()
         }
+        measure()
     }
 
     override fun dismiss() {
@@ -108,6 +117,34 @@ internal class IosNavigationShell(
         selection.onSelect = {}
         tabs.setViewControllers(emptyList<UIViewController>(), animated = false)
         tabs.tabBar.hidden = true
+        measuredStrip = ASSUMED_TAB_BAR_HEIGHT
+        measuredTitle = 0f
+    }
+
+    /**
+     * Takes the bars' sizes from UIKit rather than assuming them.
+     *
+     * A tab bar is 49 points on one device, floats at another height on the next, and grows
+     * by the home indicator on a third; the title bar grows by the status bar and by
+     * whatever the notch needs. Both are laid out by the system and both are asked, after
+     * forcing the layout that has not happened yet on the frame a navigation first arrives.
+     */
+    private fun measure() {
+        tabs.view.layoutIfNeeded()
+        val height = tabs.view.bounds.useContents { size.height }.toFloat()
+        val barTop = tabs.tabBar.frame.useContents { origin.y }.toFloat()
+        measuredStrip = when {
+            tabs.tabBar.hidden -> 0f
+            height > 0f && barTop > 0f -> height - barTop
+            else -> ASSUMED_TAB_BAR_HEIGHT
+        }
+        val navigation = tabs.selectedViewController as? UINavigationController
+        measuredTitle = navigation?.navigationBar
+            ?.takeIf { !it.hidden }
+            ?.frame
+            ?.useContents { origin.y + size.height }
+            ?.toFloat()
+            ?: 0f
     }
 
     /**
@@ -124,21 +161,39 @@ internal class IosNavigationShell(
         tabs.tabBarMinimizeBehavior = UITabBarMinimizeBehaviorAutomatic
     }
 
+    /**
+     * One tab: a navigation controller over an empty screen, carrying the label twice.
+     *
+     * Twice because that is what an iOS application looks like. The label names the tab in
+     * the bar along the bottom and titles the bar along the top, and both bars are drawn by
+     * the system, which is the whole point of standing them up rather than drawing them.
+     *
+     * The screen inside is empty and transparent. What is under it is the Compose surface,
+     * which is a sibling of this whole stack and is never moved into it.
+     *
+     * The navigation controller's own view is made untouchable, not just the empty screen
+     * inside it. Its container view covers the whole tab, so leaving it touchable would
+     * swallow every tap meant for the content underneath. The cost is that the title bar is
+     * decoration: the first thing put in it that a user has to press needs this replaced
+     * with a view that answers `hitTest` for the bar's rectangle alone.
+     */
     private fun tab(destination: ShellDestination): UIViewController {
-        val controller = UIViewController(nibName = null, bundle = null)
-        controller.title = destination.label
-        controller.view.backgroundColor = UIColor.clearColor
-        // The Compose surface is the screen. This view is only what UIKit insists on having
-        // behind a tab, so it must not take the touches meant for what is underneath it.
-        controller.view.userInteractionEnabled = false
+        val screen = UIViewController(nibName = null, bundle = null)
+        screen.title = destination.label
+        screen.view.backgroundColor = UIColor.clearColor
+        screen.view.userInteractionEnabled = false
+
+        val navigation = UINavigationController(rootViewController = screen)
+        navigation.view.backgroundColor = UIColor.clearColor
+        navigation.view.userInteractionEnabled = false
         val item = UITabBarItem(
             title = destination.label,
             image = symbolName(destination.icon)?.let { UIImage.systemImageNamed(it) },
             tag = 0,
         )
         item.enabled = destination.enabled
-        controller.tabBarItem = item
-        return controller
+        navigation.tabBarItem = item
+        return navigation
     }
 }
 

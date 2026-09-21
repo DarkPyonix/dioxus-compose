@@ -76,6 +76,7 @@ private fun navigationBatch() = listOf(
  */
 private class RecordingShell(override val drawsStrip: Boolean = true) : PlatformNavigationShell {
     override val stripHeight: Float = 49f
+    override val titleHeight: Float = 0f
 
     var handed: List<ShellDestination> = emptyList()
         private set
