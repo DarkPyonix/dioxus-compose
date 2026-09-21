@@ -260,9 +260,22 @@ $NativeImageArgs = @(
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"
 )
+# Through an argument file, not the command line. The runtime classpath alone is tens of
+# kilobytes of Maven cache paths and Windows caps a command line at 32767 characters, so
+# passing it directly fails with "The command line is too long." before native-image runs.
+# Java argument files treat a backslash inside quotes as an escape, so the paths go in with
+# forward slashes, which every Windows API accepts.
+$ArgumentFile = Join-Path $BuildDir "native-image-args.txt"
+Set-Content -Path $ArgumentFile -Encoding ASCII -Value (
+    $NativeImageArgs | ForEach-Object {
+        $argument = $_ -replace '\\', '/'
+        if ($argument -match '\s') { '"' + $argument + '"' } else { $argument }
+    }
+)
+
 Push-Location $BinDir
 try {
-    Invoke-Native { & $NativeImage @NativeImageArgs }
+    Invoke-Native { & $NativeImage "@$ArgumentFile" }
     if ($LASTEXITCODE -ne 0) {
         Fail "native-image failed to build the Windows renderer"
     }
