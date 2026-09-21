@@ -64,6 +64,47 @@ fn path_field(contents: String, on_edit: EventHandler<String>) -> Element {
     }
 }
 
+/// The bar across the top of the window, with its contents held to the page's measure.
+///
+/// A bar spans the window because it belongs to the window. Its contents belong to the
+/// document, and a title that starts at the window's edge while the page it names starts
+/// two hundred dp further in is a window whose two halves disagree about where the left
+/// side is. So the bar fills, and the row inside it is the same width as the page and
+/// carries the same inset.
+///
+/// `measure` is `None` on a window with nothing to spare, where the row fills the bar and
+/// the bar's own inset is already the page's.
+fn document_bar(measure: Option<f32>, working: bool, children: Element) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            TopAppBar {
+                fill_max_width: true,
+                dioxus_compose::Box {
+                    weight: 1.0,
+                    alignment: Alignment::Center,
+                    Row {
+                        width: measure,
+                        fill_max_width: measure.is_none(),
+                        padding_role: measure.map(|_| SpaceRole::Md),
+                        space_role: SpaceRole::Sm,
+                        alignment: Alignment::CenterStart,
+                        {children}
+                    }
+                }
+            }
+            // Reading and writing happen on a worker, so the window stays live while they
+            // run and there has to be something that says they are running. Indeterminate,
+            // because a file system does not report how far through a read it is.
+            // The bar spans its container without being told to: how wide a rule or a
+            // progress track is on the axis it runs along is the design system's.
+            if working {
+                ProgressIndicator { determinate: false }
+            }
+        }
+    }
+}
+
 fn app() -> Element {
     let window = use_window_size();
     // A document is read across its lines, so past a certain width a page that keeps
@@ -81,6 +122,10 @@ fn app() -> Element {
     let mut path = use_signal(|| display_path(&starting_path()));
     let mut status = use_signal(|| "Ready".to_owned());
     let mut busy = use_signal(|| false);
+    // What was last read from or written to disk. The document is unsaved exactly when it
+    // has drifted from this, which is a comparison rather than a flag: a flag has to be
+    // cleared in every place that saves, and the one that forgets is the bug.
+    let mut on_disk = use_signal(String::new);
 
     // The worker's result comes back here, on the UI thread, and the signal writes happen
     // where every other signal write in the app happens.
@@ -96,6 +141,7 @@ fn app() -> Element {
                     display_path(&opened),
                     contents.chars().count()
                 ));
+                on_disk.set(contents.clone());
                 text.set(contents);
                 path.set(display_path(&opened));
                 // The field's contents came from outside it, so the field is rebuilt.
@@ -103,8 +149,17 @@ fn app() -> Element {
             }
             Outcome::Saved { path: saved, bytes } => {
                 status.set(format!("Saved {} ({bytes} bytes)", display_path(&saved)));
+                on_disk.set(text());
             }
-            Outcome::Failed(message) => status.set(message),
+            // A failure is worth saying out loud as well as writing down. The status line
+            // is where you look afterwards; the message is what reaches someone who was
+            // looking at the document when it happened.
+            Outcome::Failed(message) => {
+                Message::new(message.clone())
+                    .with_duration(MessageDuration::Long)
+                    .show();
+                status.set(message);
+            }
         }
     };
 
@@ -132,6 +187,7 @@ fn app() -> Element {
         lines,
     } = counts(&text());
     let working = busy();
+    let edited = text() != on_disk();
 
     rsx! {
         Column {
@@ -139,18 +195,41 @@ fn app() -> Element {
             fill_max_height: true,
 
             // The document's actions belong in the bar, not in a line of buttons above the
-            // text. The title takes the weight, which pushes them to the far end.
-            TopAppBar {
-                fill_max_width: true,
+            // text.
+            {document_bar(page_width, working, rsx! {
                 Text { text: "Notepad", type_role: TypeRole::Title, weight: 1.0 }
+                // Whether there is anything to lose, said where the actions that could
+                // lose it are. Not the error colour: unsaved work is an ordinary state of
+                // a document being written, not a fault.
+                if edited {
+                    Text {
+                        text: "Edited",
+                        type_role: TypeRole::Label,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
+                }
                 Button {
                     text: "New",
                     variant: ButtonVariant::Text,
                     enabled: !working,
                     on_click: move |_| {
+                        let thrown_away = text();
                         text.set(String::new());
+                        on_disk.set(String::new());
                         stamp += 1;
                         status.set("New document".to_owned());
+                        // Starting a new document throws the old one away without asking,
+                        // so it offers it back rather than asking first: a dialog in front
+                        // of every New is a dialog nobody reads by the third time.
+                        if !thrown_away.is_empty() {
+                            Message::new("Document cleared")
+                                .with_action("Undo", move |()| {
+                                    text.set(thrown_away.clone());
+                                    stamp += 1;
+                                })
+                                .with_duration(MessageDuration::Long)
+                                .show();
+                        }
                     },
                 }
                 Button {
@@ -172,7 +251,7 @@ fn app() -> Element {
                         run_on_worker(Box::new(move || document::save(target, contents)));
                     },
                 }
-            }
+            })}
 
             // The page defines a column, and everything under the bar lines up with it.
             //
@@ -185,81 +264,88 @@ fn app() -> Element {
                 fill_max_width: true,
                 fill_max_height: true,
                 alignment: Alignment::TopCenter,
-            Column {
-                fill_max_width: page_width.is_none(),
-                width: page_width,
-                fill_max_height: true,
-                padding_role: SpaceRole::Lg,
-                space_role: SpaceRole::Md,
+                Column {
+                    fill_max_width: page_width.is_none(),
+                    width: page_width,
+                    fill_max_height: true,
+                    // The medium step, because that is what the bar insets its own
+                    // contents by. Anything else and the title and the page below it start
+                    // at two different places.
+                    padding_role: SpaceRole::Md,
+                    space_role: SpaceRole::Md,
 
-                // The location bar: one grouped strip that says which file the actions
-                // above work on.
-                Surface {
-                    fill_max_width: true,
+                    // The location bar: one grouped strip that says which file the actions
+                    // above work on.
+                    Surface {
+                        fill_max_width: true,
+                        Row {
+                            fill_max_width: true,
+                            space_role: SpaceRole::Sm,
+                            alignment: Alignment::CenterStart,
+                            // The word is dropped on a phone: the field says what it is in
+                            // its own placeholder, and a path needs every pixel of the line.
+                            if !crowded {
+                                Text {
+                                    text: "File",
+                                    type_role: TypeRole::Label,
+                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                }
+                            }
+                            {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                        }
+                    }
+
+                    // The page. A document is an object you write on, so it is a surface of
+                    // its own, and it takes what the toolbar and the status line leave. Its
+                    // width is the column's, which is what makes the file strip above it and
+                    // the status line below it line up with its edges.
+                    Surface {
+                        fill_max_width: true,
+                        weight: 1.0,
+                        // The editor scrolls on its own, so a document longer than the window
+                        // stays reachable without the Host knowing where the scroll is.
+                        ScrollColumn {
+                            fill_max_width: true,
+                            fill_max_height: true,
+                            {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
+                        }
+                    }
+
+                    // The status line is not part of the page, so a rule separates them.
+                    // Its thickness and colour are the design system's.
+                    Separator {}
+
+                    // The status line: what the last file operation did on the left, the
+                    // document's measurements on the right.
                     Row {
                         fill_max_width: true,
-                        space_role: SpaceRole::Sm,
+                        space_role: SpaceRole::Md,
                         alignment: Alignment::CenterStart,
-                        // The word is dropped on a phone: the field says what it is in
-                        // its own placeholder, and a path needs every pixel of the line.
-                        if !crowded {
-                            Text {
-                                text: "File",
-                                type_role: TypeRole::Label,
-                                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                            }
+                        Text {
+                            text: status(),
+                            weight: 1.0,
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            max_lines: 1,
+                            overflow: TextOverflow::Ellipsis,
                         }
-                        {path_field(path(), EventHandler::new(move |value| path.set(value)))}
+                        Text {
+                            text: "{words} words",
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                        Text {
+                            text: "{characters} characters",
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                        Text {
+                            text: "{lines} lines",
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
                     }
                 }
-
-                // The page. A document is an object you write on, so it is a surface of
-                // its own, and it takes what the toolbar and the status line leave. Its
-                // width is the column's, which is what makes the file strip above it and
-                // the status line below it line up with its edges.
-                Surface {
-                    fill_max_width: true,
-                    weight: 1.0,
-                    // The editor scrolls on its own, so a document longer than the window
-                    // stays reachable without the Host knowing where the scroll is.
-                    ScrollColumn {
-                        fill_max_width: true,
-                        fill_max_height: true,
-                        {editor(stamp(), text(), EventHandler::new(move |value| text.set(value)))}
-                    }
-                }
-
-                // The status line: what the last file operation did on the left, the
-                // document's measurements on the right.
-                Row {
-                    fill_max_width: true,
-                    space_role: SpaceRole::Md,
-                    alignment: Alignment::CenterStart,
-                    Text {
-                        text: status(),
-                        weight: 1.0,
-                        type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                        max_lines: 1,
-                        overflow: TextOverflow::Ellipsis,
-                    }
-                    Text {
-                        text: "{words} words",
-                        type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                    Text {
-                        text: "{characters} characters",
-                        type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                    Text {
-                        text: "{lines} lines",
-                        type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                }
-            }
             }
         }
     }
@@ -298,6 +384,10 @@ mod tests {
         /// Button label to its node and click handler.
         buttons: HashMap<String, (u32, u64)>,
         texts: HashMap<u32, String>,
+        /// Node to the node it was inserted under, so a removal takes the subtree with it.
+        parents: HashMap<u32, u32>,
+        /// Every message the screen has said, in order, with its action label.
+        messages: Vec<(String, String)>,
         event: Vec<u8>,
     }
 
@@ -309,6 +399,8 @@ mod tests {
                 changes: HashMap::new(),
                 buttons: HashMap::new(),
                 texts: HashMap::new(),
+                parents: HashMap::new(),
+                messages: Vec::new(),
                 event: Vec::new(),
             };
             let batch = editor
@@ -365,9 +457,45 @@ mod tests {
             editor
         }
 
+        /// Drops a node and everything under it, the way the Renderer's node table does.
+        /// Without it a label that has been taken off the screen is still there as far as
+        /// this harness can tell.
+        fn forget(&mut self, node_id: u32) {
+            let children: Vec<u32> = self
+                .parents
+                .iter()
+                .filter(|(_, parent)| **parent == node_id)
+                .map(|(child, _)| *child)
+                .collect();
+            for child in children {
+                self.forget(child);
+            }
+            self.texts.remove(&node_id);
+            self.buttons.retain(|_, (node, _)| *node != node_id);
+            self.parents.remove(&node_id);
+        }
+
         fn absorb(&mut self, batch: &[u8]) {
+            let mut clicks: Vec<(u32, u64)> = Vec::new();
             for mutation in decode_batch(batch).expect("a frame did not decode") {
                 match mutation {
+                    Mutation::Insert {
+                        parent_id, node_id, ..
+                    }
+                    | Mutation::Move {
+                        parent_id, node_id, ..
+                    } => {
+                        self.parents.insert(node_id, parent_id);
+                    }
+                    Mutation::Remove { node_id } => self.forget(node_id),
+                    Mutation::ShowMessage { text, action, .. } => {
+                        self.messages.push((text.to_owned(), action.to_owned()));
+                    }
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnClick,
+                        value: PropertyValue::Integer(id),
+                    } => clicks.push((node_id, id as u64)),
                     Mutation::Create {
                         node_id,
                         widget: WidgetKind::TextField,
@@ -393,6 +521,13 @@ mod tests {
                         self.changes.insert(node_id, id as u64);
                     }
                     _ => {}
+                }
+            }
+            // The label has to be known before a button can be recorded under it, and the
+            // two arrive in the same batch in either order.
+            for (node_id, handler) in clicks {
+                if let Some(label) = self.texts.get(&node_id) {
+                    self.buttons.insert(label.clone(), (node_id, handler));
                 }
             }
         }
@@ -488,6 +623,11 @@ mod tests {
                 })
                 .cloned()
                 .unwrap_or_default()
+        }
+
+        /// Whether the screen is showing this exact label anywhere.
+        fn showing(&self, label: &str) -> bool {
+            self.texts.values().any(|text| text == label)
         }
 
         fn document_text(&self) -> String {
@@ -661,6 +801,84 @@ mod tests {
             "the page did not take a measure: {wide_widths:?}"
         );
         assert!(wide_labels.iter().any(|text| text == "File"));
+    }
+
+    /// The bar's contents and the page are held to the same measure, so the title starts
+    /// where the page starts.
+    ///
+    /// A window has one left edge for the document in it. The bar used to span the window
+    /// while the page was centred at 840dp, so on a desktop window the title began two
+    /// hundred dp to the left of the page it named. Two nodes carrying the measure is what
+    /// that agreement looks like on the wire: one is the row inside the bar, the other is
+    /// the page column.
+    #[test]
+    fn fr20_the_bar_holds_its_contents_to_the_same_measure_as_the_page() {
+        let measure = dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP;
+        let (wide_widths, _) = page_at(1200.0);
+        assert_eq!(
+            wide_widths
+                .iter()
+                .filter(|width| **width == measure)
+                .count(),
+            2,
+            "the bar and the page should both be the measure: {wide_widths:?}"
+        );
+
+        // Narrower, neither is measured: the page is the window and the bar's own inset is
+        // already the page's.
+        let (narrow_widths, _) = page_at(420.0);
+        assert!(narrow_widths.is_empty(), "{narrow_widths:?}");
+    }
+
+    /// A document that has drifted from what is on disk says so, and stops saying so once
+    /// it has been saved.
+    #[test]
+    fn fr6_a_document_says_when_it_has_unsaved_changes() {
+        let path = scratch("notepad-edited");
+        let _ = std::fs::remove_file(&path);
+
+        let mut editor = Editor::new();
+        assert!(
+            !editor.showing("Edited"),
+            "an empty document that has never been touched is not edited"
+        );
+
+        editor.type_document("something new");
+        assert!(
+            editor.showing("Edited"),
+            "a typed document has unsaved changes and should say so"
+        );
+
+        editor.set_path(&display_path(&path));
+        editor.click("Save");
+        editor.settle_until("Saved ");
+        assert!(
+            !editor.showing("Edited"),
+            "a document that has just been saved has nothing unsaved in it"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A file that cannot be opened is said out loud as well as written on the status
+    /// line. Someone looking at the document rather than at its footer still finds out.
+    #[test]
+    fn fr21_a_failed_file_operation_is_said_as_a_message() {
+        let path = scratch("notepad-unreadable");
+        let _ = std::fs::remove_file(&path);
+
+        let mut editor = Editor::new();
+        editor.set_path(&display_path(&path));
+        editor.click("Open");
+        editor.settle_until("Could not open");
+        assert!(
+            editor
+                .messages
+                .iter()
+                .any(|(text, _)| text.starts_with("Could not open")),
+            "the failure never reached a message: {:?}",
+            editor.messages
+        );
     }
 
     /// A path that is not there is a message on the status line, not a crash and not a
