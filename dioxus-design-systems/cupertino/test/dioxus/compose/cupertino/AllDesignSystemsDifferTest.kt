@@ -13,6 +13,7 @@ import dioxus.compose.breeze.BreezeDesignSystem
 import dioxus.compose.deepin.DeepinDesignSystem
 import dioxus.compose.fluent.FluentDesignSystem
 import dioxus.compose.gnome.GnomeDesignSystem
+import dioxus.compose.liquidglass.contrastRatio
 import dioxus.compose.material3.Material3DesignSystem
 import kotlin.math.abs
 import kotlin.test.Test
@@ -119,6 +120,55 @@ class AllDesignSystemsDifferTest {
                     "${system.id} ${if (dark) "dark" else "light"}: a panel and the page " +
                         "it sits on are $apart apart, so the panel is invisible",
                 )
+            }
+        }
+    }
+
+    /**
+     * Every `On*` role is readable on the role it names, in all six systems.
+     *
+     * Only Cupertino was checked before, so the other five could put unreadable ink on
+     * their own fills and nothing here would say so. Breeze shipped white on its
+     * "positive" teal until the port to the running path replaced it with dark ink, and
+     * that pairing was never measured on this side at all.
+     *
+     * The thresholds are the ones the Cupertino test explains: reading surfaces carry
+     * body text and are held to 4.5, accent fills carry short control labels and are
+     * held to the 3.0 that Apple's own systemBlue and systemRed land near.
+     */
+    @Test
+    fun fr14_every_on_role_is_readable_on_its_pair_in_every_system() {
+        // `SurfaceContainer` has no ink of its own: a panel filled with it holds the
+        // page's reading ink, and that is the promise a caller relies on.
+        val reading = listOf(
+            ColorRole.Surface to ColorRole.OnSurface,
+            ColorRole.SurfaceVariant to ColorRole.OnSurfaceVariant,
+            ColorRole.Background to ColorRole.OnBackground,
+            ColorRole.SurfaceContainer to ColorRole.OnSurface,
+        )
+        val accent = listOf(
+            ColorRole.Primary to ColorRole.OnPrimary,
+            ColorRole.Secondary to ColorRole.OnSecondary,
+            ColorRole.Error to ColorRole.OnError,
+        )
+        for (dark in listOf(false, true)) {
+            for (system in systems(dark)) {
+                for ((container, content) in reading) {
+                    val ratio = contrastRatio(system.color(container), system.color(content))
+                    assertTrue(
+                        ratio >= 4.5f,
+                        "${system.id} ${if (dark) "dark" else "light"}: $content on " +
+                            "$container reads at $ratio, below the 4.5 body minimum",
+                    )
+                }
+                for ((container, content) in accent) {
+                    val ratio = contrastRatio(system.color(container), system.color(content))
+                    assertTrue(
+                        ratio >= 3f,
+                        "${system.id} ${if (dark) "dark" else "light"}: $content on " +
+                            "$container reads at $ratio, below the 3.0 control label minimum",
+                    )
+                }
             }
         }
     }
