@@ -177,10 +177,11 @@ fun RenderNode(
 
 /**
  * Children of a Column: weight is applied here because `Modifier.weight` exists only inside
- * `ColumnScope`.
+ * `ColumnScope`. Every layout that stacks its children vertically draws them through this,
+ * so a weighted child is given its share wherever it is hosted and not only under a Column.
  */
 @Composable
-private fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
+internal fun ColumnScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
     // `key` keeps each child's state attached to its Host node id across Move mutations.
     node.children.forEach { childId -> key(childId) { WeightedChild(childId, table, dispatcher) } }
 }
