@@ -12,6 +12,13 @@ source "$(dirname "$0")/env-linux.sh"
 # Unlike Darwin, upstream GraalVM supports Linux AWT. Its Native Image feature registers
 # awt_xawt and writes the dynamic AWT libraries and libjava/libjvm shims beside the image.
 # Do not force-load libawt_xawt.a and do not add the macOS placeholder or JNI_OnLoad_osxui.
+#
+# The JNI half of that support still has to be asked for. Staging the libraries only decides
+# which ones load; it does not put any class in the image's JNI tables, and libawt's
+# JNI_OnLoad starts by resolving java/awt/GraphicsEnvironment with FindClass to decide
+# between the headless and the X11 toolkit. Without a registration that FindClass returns
+# null and the process dies with NoClassDefFoundError on a class the JDK plainly has, inside
+# Toolkit.loadLibraries, before any window exists. See the preserve flag below.
 DIOXUS_COMPOSE_AUTOEXIT_MS=1 run_on_jvm ""
 classpath="$(cat "$CLASSPATH_FILE")"
 obj="$BUILD_DIR/obj"
@@ -46,6 +53,18 @@ image_name="${LIBRARY_NAME}_image"
 # the renderer. $ORIGIN lets GraalVM's generated shims and AWT libraries find the
 # renderer and one another in the staged lib directory. The soname keeps the wrapper's
 # DT_NEEDED entry a bare file name, so the staged directory stays relocatable.
+#
+# -H:Preserve=module=java.desktop is how the AWT classes reach the image's reflection and JNI
+# tables. It is what GraalVM itself passes to build its own non-headless java.desktop
+# integration test, which is the only AWT image upstream runs on Linux, and it is documented
+# as removing the need to write reachability metadata for what it covers. The alternative
+# would be a hand-written list of the X11 toolkit classes that libawt_xawt calls back into,
+# and nobody here can run Linux to find out where such a list stops. It costs build time and
+# image size, which is what -Os above is for, and the Linux job prints the staged size.
+#
+# The Compose, Skiko and Skia registrations are not part of java.desktop. They come from
+# desktop/resources/META-INF/native-image, which is on the classpath and is therefore read on
+# every platform without a -H:ConfigurationFileDirectories argument.
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
     --shared \
     -cp "$classpath" \
@@ -56,6 +75,7 @@ image_name="${LIBRARY_NAME}_image"
     -H:IncludeLocales=en,ko \
     -Os \
     -H:+UnlockExperimentalVMOptions \
+    -H:Preserve=module=java.desktop \
     "-H:NativeLinkerOption=-Wl,-soname,$image_name.so" \
     '-H:NativeLinkerOption=-Wl,-rpath,$ORIGIN')
 

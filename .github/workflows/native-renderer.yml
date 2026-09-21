@@ -191,6 +191,9 @@ jobs:
       - name: Run Linux script contract tests
         run: bash dioxus-compose-renderer/desktop/scripts/tests/linux-build.test.sh
 
+      - name: Run the Linux metadata contract test
+        run: bash dioxus-compose-renderer/desktop/scripts/tests/linux-metadata.test.sh
+
       - name: Build the Linux renderer under Xvfb
         run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
 
