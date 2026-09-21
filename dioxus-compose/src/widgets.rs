@@ -344,7 +344,8 @@ pub fn TextField(
     #[props(default)] multiline: bool,
     /// The rung of the type ladder the field's own text is set in. A field holding a file
     /// path or a snippet of code wants the monospace rung; prose does not.
-    #[props(default)] type_role: Option<TypeRole>,
+    #[props(default)]
+    type_role: Option<TypeRole>,
     #[props(default)] on_value_change: EventHandler<String>,
     #[props(default)] on_submit: EventHandler<String>,
     #[props(default)] on_focus_lost: EventHandler<()>,
