@@ -49,8 +49,8 @@ under `docs/`.
    into an agent's worktree that way, and a sample built there came up with a black
    window. Run `scripts/setup-worktrees.sh --all` after adding a worktree, and never set
    `target-dir` or `CARGO_TARGET_DIR` anywhere that outlives a single command.
-5. **Prune worktrees you are not using.** A worktree costs about 1GB once it is built and
-   tested. Ten of them filled a 349GB volume to 100% and took down every build then
+5. **Prune worktrees you are not using.** A worktree costs about 1GB once it is built
+   and tested, and about 2GB once `scripts/check.sh` has run benchmarks in it. Ten of them filled a 349GB volume to 100% and took down every build then
    running, which is what sharing one build directory was trying to avoid.
    `scripts/setup-worktrees.sh` prints what each one costs and how much room is left.
 6. **Start a background agent with `scripts/launch-agent.sh`.** It creates the worktree

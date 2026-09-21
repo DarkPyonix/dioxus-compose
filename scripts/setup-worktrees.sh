@@ -18,6 +18,13 @@
 # worktree this way, and a sample built there came up with a black window because the
 # binary had been compiled somewhere else.
 #
+# Removing the override is not enough on its own. A directory two checkouts have already
+# built into still holds their binaries, and cargo goes on reusing them: after the override
+# came off, a cargo build --bin codegen in the main checkout rebuilt nothing and left a
+# binary compiled in a different worktree in place. So a build directory an override named
+# is discarded as well. It is a cache, and a cold build of this workspace is about 23
+# seconds.
+#
 # The saving that override bought was real: ten worktrees each with their own target/
 # filled a 349GB volume to 100% once. So this reports what each worktree costs and how
 # much room is left, because the answer to that incident is fewer worktrees and pruning
@@ -38,6 +45,9 @@ for arg in "$@"; do
 done
 
 failures=0
+# Build directories an override named. Whatever is in them was compiled by more than one
+# checkout, so none of it can be trusted and all of it is quick to rebuild.
+poisoned=()
 
 ok()   { printf 'ok    %s\n' "$1"; }
 note() { printf '      %s\n' "$1"; }
@@ -82,6 +92,9 @@ handle() {
             return
         fi
         if only_sets_target_dir "$config"; then
+            local named
+            named="$(sed -E 's/^[^=]*=[[:space:]]*//; s/^"//; s/"[[:space:]]*$//' <<<"$(echo "$where" | xargs)")"
+            [[ -n "$named" ]] && poisoned+=("$named")
             rm -f "$config"
             rmdir "$tree/.cargo" 2>/dev/null
             ok "$tree: removed the build directory override"
@@ -113,6 +126,15 @@ for tree in "${trees[@]}"; do
     handle "$tree"
 done
 
+# Discard what the overrides were writing into. Two checkouts built there, so which one
+# any given artifact came from is unknowable, and cargo will hand it back as fresh.
+for dir in ${poisoned+"${poisoned[@]}"}; do
+    [[ -d "$dir" ]] || continue
+    size="$(du -sh "$dir" 2>/dev/null | cut -f1)"
+    rm -rf "$dir"
+    ok "discarded $dir ($size), built by more than one checkout"
+done
+
 # An override in the environment beats every config file, so it is worth the same look.
 if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
     fail "CARGO_TARGET_DIR is set in this environment" \
@@ -124,7 +146,7 @@ fi
 
 if [[ $check -eq 0 ]]; then
     note "$(df -h "$repo_root" | tail -1 | awk '{print $4}') free on the volume holding this repository"
-    note "each worktree costs about 1GB built and tested, so prune the ones nobody is using"
+    note "a worktree is about 1GB built and tested and about 2GB after scripts/check.sh, so prune the ones nobody is using"
 fi
 
 exit $((failures > 0))
