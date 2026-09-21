@@ -210,8 +210,13 @@ jobs:
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
       # Guards the distribution plan: the Host crate must stay publishable as a
-      # plain crate while the ~85MB renderer ships as a release artifact. This
-      # builds the packaged tarball with default features (no `native-renderer`),
-      # which is exactly what a crates.io consumer gets.
+      # plain crate while the ~85MB renderer ships as a release artifact.
+      #
+      # The verification build inside `cargo package` uses default features, which
+      # now include the renderer, so this also exercises the path a consumer takes:
+      # the packaged crate has no workspace to fall back on and has to fetch the
+      # artifact for its own version from the release. That is the point. If the
+      # release for this version has no Linux renderer, a consumer on Linux cannot
+      # build, and this job is where that is discovered.
       - name: cargo package
         run: cargo package -p dioxus-compose
