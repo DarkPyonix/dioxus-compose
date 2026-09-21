@@ -1,6 +1,10 @@
 package dioxus.compose.foundation
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
@@ -10,7 +14,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -26,6 +35,8 @@ import kotlinx.coroutines.flow.collectLatest
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.design.FieldStyle
+import dioxus.compose.design.FieldUnderline
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
@@ -136,6 +147,11 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
             }
         }
 
+    // The frame is the design system's, not the Host's: a fill, a line, room inside, and
+    // whatever each of them changes when the caret arrives. Focus is read here rather than
+    // reported, so none of that transition crosses the boundary.
+    val frame = theme.rules.field(theme)
+
     BasicTextField(
         value = value,
         onValueChange = { value = it },
@@ -143,9 +159,21 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
         enabled = enabled,
         singleLine = !multiline,
         textStyle = textStyle,
-        cursorBrush = SolidColor(theme.color(ColorRole.Primary)),
+        cursorBrush = SolidColor(frame.cursor),
         decorationBox = { inner ->
-            Box {
+            Box(
+                Modifier
+                    .defaultMinSize(minHeight = frame.minHeight)
+                    .clip(frame.shape)
+                    .background(if (focused) frame.containerFocused else frame.container)
+                    .fieldBorder(frame, focused)
+                    .fieldUnderline(frame.underline, focused)
+                    .padding(
+                        horizontal = frame.horizontalPadding,
+                        vertical = frame.verticalPadding,
+                    ),
+                contentAlignment = if (multiline) Alignment.TopStart else Alignment.CenterStart,
+            ) {
                 if (value.text.isEmpty() && placeholder.isNotEmpty()) {
                     BasicText(
                         placeholder,
@@ -156,6 +184,35 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
             }
         },
     )
+}
+
+/** The box around a field, or nothing where the system draws none in this state. */
+private fun Modifier.fieldBorder(style: FieldStyle, focused: Boolean): Modifier {
+    val width = if (focused) style.borderWidthFocused else style.borderWidth
+    if (width.value <= 0f) return this
+    return border(width, if (focused) style.borderFocused else style.border, style.shape)
+}
+
+/**
+ * The line along the bottom edge, drawn over the fill rather than behind it.
+ *
+ * It is a fill rather than a border because it is only one edge, and because the systems
+ * that draw it want it square across the full width even where the corners above are
+ * rounded.
+ */
+private fun Modifier.fieldUnderline(underline: FieldUnderline?, focused: Boolean): Modifier {
+    if (underline == null) return this
+    val width = if (focused) underline.focusedWidth else underline.width
+    if (width.value <= 0f) return this
+    val color = if (focused) underline.focusedColor else underline.color
+    return drawBehind {
+        val thickness = width.toPx()
+        drawRect(
+            color = color,
+            topLeft = Offset(0f, size.height - thickness),
+            size = Size(size.width, thickness),
+        )
+    }
 }
 
 private fun HostText.selection(text: String): TextRange {

@@ -34,6 +34,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -44,6 +45,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -200,7 +202,7 @@ internal object DrawnControlWidgets : ControlWidgets {
                     .size(style.size)
                     .clip(style.shape)
                     .background(container.copy(alpha = container.alpha * alpha), style.shape)
-                    .border(style.borderWidth, style.border.copy(alpha = alpha), style.shape)
+                    .controlBorder(style.borderWidth, style.border.copy(alpha = alpha), style.shape)
                     .drawBehind { drawTick(style.mark.copy(alpha = alpha), progress) },
             )
 
@@ -209,7 +211,7 @@ internal object DrawnControlWidgets : ControlWidgets {
                     .size(style.size)
                     .clip(style.shape)
                     .background(container.copy(alpha = container.alpha * alpha), style.shape)
-                    .border(style.borderWidth, style.border.copy(alpha = alpha), style.shape)
+                    .controlBorder(style.borderWidth, style.border.copy(alpha = alpha), style.shape)
                     .drawBehind {
                         val radius = style.thumbSize.toPx() / 2f * progress
                         if (radius > 0f) {
@@ -223,7 +225,7 @@ internal object DrawnControlWidgets : ControlWidgets {
                     .size(width = style.trackWidth, height = style.trackHeight)
                     .clip(style.shape)
                     .background(container.copy(alpha = container.alpha * alpha), style.shape)
-                    .border(style.borderWidth, style.border.copy(alpha = alpha), style.shape)
+                    .controlBorder(style.borderWidth, style.border.copy(alpha = alpha), style.shape)
                     .drawBehind {
                         val diameter = style.thumbSize.toPx()
                         val margin = (size.height - diameter) / 2f
@@ -443,6 +445,16 @@ internal object DrawnControlWidgets : ControlWidgets {
         }
     }
 }
+
+/**
+ * The line around a control, or nothing where the design system asked for nothing.
+ *
+ * `Modifier.border` reads a zero width as a hairline and draws a one pixel line anyway, in
+ * whatever the colour's channels happen to be, so a system that said its switch has no
+ * outline still got a dark ring around the track. Asking for no line has to mean no line.
+ */
+private fun Modifier.controlBorder(width: Dp, color: Color, shape: Shape): Modifier =
+    if (width.value <= 0f) this else border(width, color, shape)
 
 /**
  * The checkmark, drawn as two strokes that sweep in together.
