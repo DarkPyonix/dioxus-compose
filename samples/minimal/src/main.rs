@@ -53,6 +53,12 @@ fn block(title: &str, children: Element) -> Element {
 /// that pair is the whole of what the reference's light and dark card is saying. Drawn
 /// with the same declaration twice and two role arguments, rather than with two blocks of
 /// code, which is the point: an inverted card is not a second component.
+/// One stepper card.
+///
+/// The keys are drawn in the card's own two colours rather than in the design system's
+/// accent: the reference is a sheet of black and white components and has no accent in
+/// it, so a Tonal button left to itself puts the one colour there that the design does
+/// not use. The pair is inverted on the dark card, which is the point of showing two.
 fn counter(fill: ColorRole, ink: ColorRole, amount: i32, step: EventHandler<i32>) -> Element {
     rsx! {
         Surface {
@@ -81,12 +87,18 @@ fn counter(fill: ColorRole, ink: ColorRole, amount: i32, step: EventHandler<i32>
                     // whose two keys are different widths is a stepper that wobbles.
                     Button {
                         text: "\u{2212}",
-                        variant: ButtonVariant::Tonal,
+                        variant: ButtonVariant::Filled,
+                        shape_role: ShapeRole::Full,
+                        background: Paint::Role(ink),
+                        color: Paint::Role(fill),
                         on_click: move |_| step.call(-1),
                     }
                     Button {
                         text: "+",
-                        variant: ButtonVariant::Tonal,
+                        variant: ButtonVariant::Filled,
+                        shape_role: ShapeRole::Full,
+                        background: Paint::Role(ink),
+                        color: Paint::Role(fill),
                         on_click: move |_| step.call(1),
                     }
                 }
