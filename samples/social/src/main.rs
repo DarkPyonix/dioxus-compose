@@ -1,16 +1,16 @@
 //! A meditation app: a course of the day, shelves of courses, and sleep stories.
 //!
-//! Every card in the reference carries a drawn illustration, and a drawn illustration is
-//! the one thing in these seven designs that has no route into the tree at all: `Image`
-//! takes an id the Host registered, and an application only has the tree. So each card's
-//! picture is a `Canvas` scene built from the card's own accent family, which at least
-//! follows the reader into dark rather than staying the colour it was drawn.
+//! Every card in the reference carries a drawn illustration, and now so does every card
+//! here: three original drawings in `assets/`, one per accent family, registered once and
+//! drawn by id. The card behind an illustration, the title on it and the row it sits in
+//! are still roles, so only the artwork carries colours of its own.
 //!
-//! Unified, naming Cupertino: the reference is an iOS design.
+//! Unified, naming Cupertino and light: the reference is a cream page carrying
+//! illustrated cards. `THEME` says both.
 
 mod courses;
 
-use courses::{Course, Shelf, course, on, scene, sessions_label};
+use courses::{Course, Shelf, course, on, sessions_label};
 use dioxus_compose::prelude::*;
 
 /// A phone design in a desktop window is still a phone design.
@@ -67,13 +67,19 @@ impl Destination {
     }
 }
 
-/// A card whose picture fills it, with the title written over the bottom of the picture.
+/// A card whose picture fills it, with a band along the bottom carrying the title.
 ///
-/// This is the reference's hero shape. The title sits on the scene, so it is set in the
-/// ink the scene's family promises, which is the whole reason a container is a colour with
-/// an ink rather than an accent at low opacity.
+/// The band is the part worth explaining. The title used to sit straight on the scene in
+/// the ink the scene's family promised, which worked while the scene was drawn from that
+/// family: a role's ink is guaranteed to read on that role's fill, and both sides of the
+/// promise were roles. An illustration carries its own colours, so there is no longer a
+/// fill for an ink to be guaranteed against, and the title came out dark blue over a mid
+/// green field. It is readable in the way something you can work out is readable.
+///
+/// A reading surface under it puts both sides of the promise back. The reference does the
+/// same thing with a gradient scrim, which is the same idea drawn more softly than a
+/// closed drawing vocabulary can say.
 fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> Element {
-    let (_, _, ink) = found.palette.roles();
     let id = found.id;
     rsx! {
         dioxus_compose::Box {
@@ -81,13 +87,14 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
             height: size.1,
             shape_role: ShapeRole::Large,
             alignment: Alignment::BottomStart,
-            Canvas {
+            Image {
                 fill_max_width: true,
                 fill_max_height: true,
-                commands: scene(size.0, size.1, found.seed, found.palette),
+                asset_id: asset(AssetKind::Svg, found.palette.scene()),
             }
             Row {
                 fill_max_width: true,
+                background: Paint::Role(ColorRole::Surface),
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::CenterStart,
@@ -96,14 +103,13 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
                     Text {
                         text: found.title,
                         type_role: TypeRole::Subtitle,
-                        color: Paint::Role(ink),
                         max_lines: 2,
                         overflow: TextOverflow::Ellipsis,
                     }
                     Text {
                         text: sessions_label(found),
                         type_role: TypeRole::Caption,
-                        color: Paint::Role(ink),
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
                     }
                 }
                 Button {
@@ -123,11 +129,11 @@ fn tile_card(found: &Course, on_open: EventHandler<u32>) -> Element {
         Column {
             fill_max_width: true,
             space_role: SpaceRole::Xs,
-            Canvas {
+            Image {
                 fill_max_width: true,
                 height: TILE.1,
                 shape_role: ShapeRole::Medium,
-                commands: scene(TILE.0, TILE.1, found.seed, found.palette),
+                asset_id: asset(AssetKind::Svg, found.palette.scene()),
             }
             Text {
                 text: sessions_label(found),
@@ -243,15 +249,19 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                 fill_max_width: true,
                 height: HERO.1,
                 alignment: Alignment::TopStart,
-                Canvas {
+                Image {
                     fill_max_width: true,
                     fill_max_height: true,
-                    commands: scene(HERO.0, HERO.1, found.seed, found.palette),
+                    asset_id: asset(AssetKind::Svg, found.palette.scene()),
                 }
+                // Tonal rather than text, because this one sits on the illustration. A
+                // tonal fill is the one variant that promises to stay clear of whatever
+                // is behind it, which is what a control over a picture needs; a text
+                // button takes a colour chosen to read on a role's fill, and the picture
+                // is not that fill.
                 Button {
                     text: "\u{2190}",
-                    variant: ButtonVariant::Text,
-                    color: Paint::Role(ink),
+                    variant: ButtonVariant::Tonal,
                     on_click: move |_| on_back.call(()),
                 }
             }
@@ -395,21 +405,60 @@ fn app() -> Element {
     }
 }
 
+/// The design this sample draws, named once.
+///
+/// One design system everywhere, because the design is the product here rather than the
+/// platform's convention, and light because the reference is a cream page carrying
+/// illustrated cards. The sleep stories screen is dark navy, but that is one destination
+/// inside a light app rather than the app's scheme.
+///
+/// The scheme is said out loud rather than left to follow the machine. `Theme::unified`
+/// settles which design system is drawn and nothing else, so without this line a reader
+/// whose system is set the other way sees a screen the design was never drawn for.
+const THEME: Theme = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+
+/// `demo_theme_for` rather than `THEME` alone: a sample is something to look at, and one
+/// machine can only show the design system and the scheme it is set to. `DXC_DESIGN` and
+/// `DXC_SCHEME` each override the half they name, so the line above stays the answer to
+/// everything nobody asked about.
 fn main() {
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(Theme::unified(DesignSystem::Cupertino))
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .launch(app);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use courses::COURSES;
     use dioxus_compose::Host;
     use dioxus_compose::protocol::{
         HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
     };
     use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
+
+    /// Named for what it defends: the reference is a light design, and a machine set
+    /// the other way drew this sample dark with nothing to compare against.
+    #[test]
+    fn fr14_the_design_names_its_colour_scheme() {
+        // Through the wire rather than off the constant: what settles the question is the
+        // record the Renderer reads, and a scheme that never leaves the Host is a scheme
+        // nobody is drawn in.
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::with_theme(app, THEME);
+        let batch = host.rebuild().expect("the first frame failed").to_vec();
+        let first = decode_batch(&batch)
+            .expect("the first batch did not decode")
+            .into_iter()
+            .next()
+            .expect("the first batch is empty");
+        let Mutation::SetTheme(theme) = first else {
+            panic!("the first record is {first:?} rather than the theme");
+        };
+        assert_eq!(theme.color_scheme, ColorScheme::Light);
+        assert!(!theme.adaptive, "the design is the product here");
+    }
 
     /// The screen, driven the way a Renderer drives it. Every batch is kept, because a
     /// batch is the change since the frame before it rather than what is on screen.
@@ -516,8 +565,11 @@ mod tests {
         dioxus_compose::window::reset_window_size();
     }
 
-    /// Every card carries its picture. A `Canvas` with no draw list is a blank rectangle,
-    /// and on this screen the pictures are most of what there is.
+    /// Every card carries its picture, and each drawing crosses once.
+    ///
+    /// Named for what it defends: an `Image` whose id names nothing is a blank rectangle,
+    /// and on this screen the pictures are most of what there is. A shelf of nine cards
+    /// drawn from three illustrations is three registrations, not nine.
     #[test]
     fn fr16_every_card_carries_its_picture() {
         dioxus_compose::window::reset_window_size();
@@ -526,28 +578,46 @@ mod tests {
             .expect("the first frame failed")
             .to_vec();
         let mutations = decode_batch(&batch).expect("the batch did not decode");
-        let canvases: Vec<u32> = mutations
+        let registered: Vec<u32> = mutations
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::RegisterAsset { asset_id, .. } => Some(*asset_id),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !registered.is_empty(),
+            "the shelf registered no pictures at all"
+        );
+        assert!(
+            registered.len() <= courses::SCENES.len(),
+            "the shelf registered {} pictures out of {} drawings",
+            registered.len(),
+            courses::SCENES.len()
+        );
+        let images: Vec<u32> = mutations
             .iter()
             .filter_map(|mutation| match mutation {
                 Mutation::Create {
                     node_id,
-                    widget: WidgetKind::Canvas,
+                    widget: WidgetKind::Image,
                 } => Some(*node_id),
                 _ => None,
             })
             .collect();
-        assert!(!canvases.is_empty(), "the shelf draws nothing at all");
-        for canvas in canvases {
+        assert!(!images.is_empty(), "the shelf draws nothing at all");
+        for image in images {
+            let drawn = mutations.iter().find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Asset,
+                    value: PropertyValue::Integer(id),
+                } if *node_id == image => Some(*id as u32),
+                _ => None,
+            });
             assert!(
-                mutations.iter().any(|mutation| matches!(
-                    mutation,
-                    Mutation::SetProp {
-                        node_id,
-                        property: PropertyKind::Commands,
-                        ..
-                    } if *node_id == canvas
-                )),
-                "a card reached the Renderer with no picture on it"
+                drawn.is_some_and(|id| registered.contains(&id)),
+                "a card draws an id that was never registered"
             );
         }
         dioxus_compose::window::reset_window_size();
@@ -589,27 +659,42 @@ mod tests {
     /// The shelf, in the design system it ships, in both schemes, at all three widths.
     #[test]
     fn fr16_the_shelf_is_recorded_in_the_system_it_ships() {
-        sample_frames::record_in("Social", &[DesignSystem::Cupertino], app, |_| {});
+        sample_frames::record_as(
+            "Social",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |_| {},
+        );
     }
 
     /// The sleep shelf, which the reference draws on a dark page: a different set of
     /// pictures and the one place the cards are all the same shape.
     #[test]
     fn fr16_the_sleep_shelf_is_recorded() {
-        sample_frames::record_in("SocialSleep", &[DesignSystem::Cupertino], app, |screen| {
-            assert!(
-                screen.press(Destination::Sleep.label()),
-                "the bar has no way to the sleep stories"
-            );
-        });
+        sample_frames::record_as(
+            "SocialSleep",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert!(
+                    screen.press(Destination::Sleep.label()),
+                    "the bar has no way to the sleep stories"
+                );
+            },
+        );
     }
 
     /// One course opened, which is the page where the picture, the tint and the ink on it
     /// are all from one family and have to agree.
     #[test]
     fn fr13_an_opened_course_is_recorded() {
-        sample_frames::record_in("SocialCourse", &[DesignSystem::Cupertino], app, |screen| {
-            assert!(screen.press("Start"), "no card on the shelf opens");
-        });
+        sample_frames::record_as(
+            "SocialCourse",
+            &sample_frames::as_designed(THEME, &sample_frames::APPLE),
+            app,
+            |screen| {
+                assert!(screen.press("Start"), "no card on the shelf opens");
+            },
+        );
     }
 }

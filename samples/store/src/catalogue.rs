@@ -35,16 +35,39 @@ impl Category {
     }
 }
 
-/// The colour a product's tile is filled with.
+/// The garments, drawn. Vector rather than raster, because a flat garment is paths and a
+/// path file is a few hundred bytes that stays sharp at any tile size.
 ///
-/// The reference fills each tile with a photograph of the garment, and a photograph cannot
-/// be declared from application code: `Image` takes an id the Host registered, and an
-/// application only has the tree. So a tile is filled with one of the three accent
-/// containers instead, which is what those roles exist for: quiet fills that read as
-/// relatives of one another and carry a name and a price without the text having to fade.
+/// These are original drawings made for this sample. The reference is photography, which
+/// is the one thing that cannot be written into a repository: a photograph of a real
+/// garment belongs to whoever took it. So the shop draws its stock instead, and what the
+/// sample demonstrates, that a picture crosses the boundary once and is drawn by id
+/// afterwards, is the same either way.
+///
+/// A picture carries its own colours. That is what makes it a picture rather than a fill,
+/// and it is the one exception to the rule the rest of this sample keeps: the card behind
+/// the garment, the name under it and the price beside it are all roles, so everything
+/// except the artwork still follows the reader into dark.
+static TEE: &[u8] = include_bytes!("../assets/tee.svg");
+static TANK: &[u8] = include_bytes!("../assets/tank.svg");
+static JACKET: &[u8] = include_bytes!("../assets/jacket.svg");
+static SHORTS: &[u8] = include_bytes!("../assets/shorts.svg");
+static JOGGER: &[u8] = include_bytes!("../assets/jogger.svg");
+static HOODIE: &[u8] = include_bytes!("../assets/hoodie.svg");
+static KIT: &[u8] = include_bytes!("../assets/kit.svg");
+
+/// The banner at the top of the catalogue, which is the one picture that is a scene rather
+/// than a garment.
+pub static HERO: &[u8] = include_bytes!("../assets/hero.svg");
+
+/// The colour the card behind a garment is filled with.
+///
+/// The picture is the picture; this is the card it sits on, and the ink the card promises
+/// to carry for the name and the price written over it. Three accent containers, which is
+/// what those roles exist for: quiet fills that read as relatives of one another.
 ///
 /// A literal colour was the other option and is worse. A literal is a colour the design
-/// system never sees, so the shop would keep its pastel tiles when the reader asked for
+/// system never sees, so the shop would keep its pastel cards when the reader asked for
 /// dark and the text on them would stop being readable.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Tint {
@@ -78,6 +101,10 @@ pub struct Product {
     pub category: Category,
     /// Tenths of a star, so the rating adds up and rounds the same way every time.
     pub rating: u32,
+    /// The drawing of the garment, as the bytes of an SVG. Registered once with `asset`
+    /// and drawn by id after that, so a shelf of eight garments costs eight registrations
+    /// on the first frame and nothing on any frame after it.
+    pub picture: &'static [u8],
 }
 
 /// The sizes every garment here comes in.
@@ -91,6 +118,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 9500,
         tint: Tint::First,
         category: Category::New,
+        picture: TEE,
         rating: 50,
     },
     Product {
@@ -100,6 +128,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 7000,
         tint: Tint::Second,
         category: Category::New,
+        picture: TANK,
         rating: 44,
     },
     Product {
@@ -109,6 +138,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 12000,
         tint: Tint::Third,
         category: Category::Women,
+        picture: JACKET,
         rating: 47,
     },
     Product {
@@ -118,6 +148,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 4500,
         tint: Tint::First,
         category: Category::Women,
+        picture: SHORTS,
         rating: 41,
     },
     Product {
@@ -127,6 +158,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 8500,
         tint: Tint::Second,
         category: Category::Men,
+        picture: JOGGER,
         rating: 46,
     },
     Product {
@@ -136,6 +168,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 5500,
         tint: Tint::Third,
         category: Category::Men,
+        picture: TEE,
         rating: 39,
     },
     Product {
@@ -145,6 +178,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 6000,
         tint: Tint::First,
         category: Category::Kids,
+        picture: KIT,
         rating: 48,
     },
     Product {
@@ -154,6 +188,7 @@ pub const CATALOGUE: [Product; 8] = [
         cents: 4000,
         tint: Tint::Third,
         category: Category::Sale,
+        picture: HOODIE,
         rating: 43,
     },
 ];

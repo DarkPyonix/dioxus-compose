@@ -395,6 +395,12 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - **Liquid Glass는 표에 없습니다.** `adaptive`가 고르지 않습니다(14.1-3). macOS와 iOS 자리는 Cupertino이고, Liquid Glass는 `unified`로 이름을 대고 고릅니다. 두 언어 모두 그 플랫폼의 것이며 어느 쪽을 기본으로 둘지는 앱의 결정입니다.
 - **`DXC_DESIGN`으로 샘플의 시스템을 고릅니다.** 값은 `material3`, `cupertino`, `fluent`, `gnome`, `breeze`, `deepin`, `liquidglass`(`liquid-glass`도 같음)이고, 그 밖의 값과 설정하지 않음은 `adaptive`입니다. `DXC_SCHEME`은 같은 이유로 `light`와 `dark`를 받습니다. 한 대의 기계에서 일곱 시스템을 전부 눈으로 확인할 방법이 기본 경로에 없으면 여섯은 보이지 않은 채 남습니다.
 - 명암(`ColorScheme`)은 `Light | Dark | FollowSystem`이고 기본은 `FollowSystem`입니다. 시스템 설정 변화는 Renderer가 먼저 알고 스스로 반영합니다. Host는 관여하지 않습니다(D5).
+- **`Theme::unified`은 명암을 고정하지 않습니다.** `unified`가 말하는 축은 "어느 디자인 시스템인가" 하나이고, 명암은 별개의 축입니다. 디자인이 라이트나 다크 한쪽으로 정해져 있는 앱은 `.with_color_scheme(...)`으로 그렇게 말합니다. 한 줄 더 쓰는 쪽을 고른 이유는 셋입니다.
+  1. `unified`가 명암까지 고정하면, 디자인 시스템 하나만 원했던 앱이 독자의 다크 모드 설정까지 같이 잃습니다. 이름이 약속한 적 없는 일이고, 접근성 후퇴입니다.
+  2. `adaptive`와 `unified`의 차이는 `adaptive` 플래그 하나여야 합니다. 두 생성자를 나란히 읽는 사람은 그 하나만 다르다고 읽고, 실제로 두 번째 축에서도 달라지면 틀리게 읽습니다.
+  3. `unified`가 고정할 수 있는 옳은 값이 없습니다. 라이트로 읽히도록 만든 디자인은 `Light`라고 말하면 되고, 독자의 설정을 따르려는 앱은 아무 말도 하지 않으면 됩니다. 고정해 버리면 두 번째가 사라지고, 그것을 되돌리는 `.follow_system()`을 더하는 것은 `.with_color_scheme(Light)` 한 줄보다 큰 API입니다.
+- **참조 디자인이 한쪽으로 정해진 샘플은 그 한쪽을 명시합니다.** 통합 샘플 일곱 개가 여기 걸립니다. 참조 그림이 라이트 iOS 디자인인데 기계가 다크로 설정되어 있으면 일곱 개 전부 검게 떠서, 참조와 비교할 수 있는 화면이 한 장도 나오지 않습니다. 어느 쪽인지는 참조 그림이 정하며, `docs/references/design-systems/README.md`의 "Unified Examples" 각 항목에 적혀 있습니다.
+- **`demo_theme_for(theme)`은 샘플이 자기 테마를 가진 채로 `DXC_DESIGN`/`DXC_SCHEME`을 받는 경로입니다.** 변수가 이름을 댄 축만 덮어쓰므로, Liquid Glass를 보자고 해도 그 디자인이 그려진 명암은 그대로 남습니다.
 
 #### 14.4 해석 위치: Renderer
 **토큰 해석과 컴포넌트 규칙은 Renderer가 수행합니다.** Host는 역할과 선택만 보냅니다.
@@ -416,6 +422,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - `DesignSystem` 태그: `Material3 = 1`, `Cupertino = 2`, `Fluent = 3`, `Gnome = 4`, `Breeze = 5`, `Deepin = 6`, `LiquidGlass = 7`. 태그 값은 바뀌지 않고 추가만 합니다. `Cupertino`의 이전 이름은 `AppleHig`였습니다.
 - `ColorScheme` 태그: `Light = 1`, `Dark = 2`, `FollowSystem = 3`.
 - 수용 기준: `Theme::unified(...)`로 띄운 앱의 첫 배치 첫 레코드가 `SetTheme`이고 `adaptive = false`입니다. `Theme::adaptive(...)`이면 `adaptive = true`이며 `fallback`이 인자로 준 시스템입니다.
+- 수용 기준: `Theme::unified(X)`의 `color_scheme`은 `FollowSystem`입니다. 통합 샘플 일곱 개는 각자 `.with_color_scheme(...)`으로 참조 그림의 명암을 명시하며, 그 값이 `SetTheme` 레코드에 실립니다.
 
 #### 14.6 Renderer 구현자가 채워야 할 표
 디자인 시스템마다 아래 8개가 필요합니다. 채워지면 위젯 코드는 건드리지 않습니다.
@@ -643,6 +650,31 @@ PR-4의 고정 레이아웃 레코드에는 이미지 바이트가 들어가지 
 - PNG 1장을 등록하고 `Image`로 그린 뒤 해제하면, 해제 후 같은 `asset_id` 사용이 `ProtocolError`가 됩니다.
 - 등록은 프레임당 0회인 정상 경로에서 스틸 프레임 할당이 0입니다(NFR-9).
 - 같은 `VectorIcon` 역할이 세 디자인 시스템에서 각 시스템의 아이콘으로 그려집니다.
+
+#### 16.4 애플리케이션이 등록하는 경로
+
+16.2는 배치에 무엇이 실리는지를 정하지만, 그 레코드를 만들 수 있는 것은 `Host`뿐이었습니다. `Host`는 경계 객체이고 사용자 코드는 경계 함수를 부르지 않으므로(PR-3), `Image`는 와이어에도 위젯 목록에도 있는데 애플리케이션이 쓸 방법이 없었습니다. 통합 샘플 일곱 개의 그림이 전부 단색 사각형인 이유가 이것이고, 그 사실이 샘플 주석에 "그릴 수 없다"고 여러 번 적혀 있었습니다. 위젯이 있는데 부를 수 없으면 요구사항이 절반만 구현된 것입니다.
+
+메시지(FR-22)와 같은 모양으로 해결합니다. 새 경계 진입점은 없습니다.
+
+```rust
+static HERO: &[u8] = include_bytes!("../assets/hero.svg");
+rsx! { Image { asset_id: asset(AssetKind::Svg, HERO), height: 240.0 } }
+```
+
+1. `asset(kind, bytes)`는 등록을 스레드 로컬 큐에 넣고 id를 돌려줍니다. Host는 그 호출이 만드는 배치에 `RegisterAsset`을 실어 보냅니다. 메시지와 같은 경로이므로 경계 모델(PR-1)은 그대로입니다.
+2. `bytes`는 `&'static [u8]`입니다. `include_bytes!`로 실행 파일에 들어간 바이트가 보통의 경우이고, `'static`이면 등록이 어느 프레임에 실리든 포인터가 유효합니다.
+3. **같은 바이트를 다시 부르면 같은 id가 나오고 두 번째 등록은 큐에 들어가지 않습니다.** 컴포넌트 본문에서 매 렌더 부르는 것이 자연스러운 쓰기이므로, 중복 제거가 없으면 프레임마다 같은 그림이 다시 등록되고 NFR-9의 스틸 프레임 할당 0이 깨집니다.
+   - **주소를 먼저 보고, 빗나가면 내용을 봅니다.** 주소 비교가 거의 항상 답이고 비교 한 번이면 끝납니다. 내용 비교가 필요한 이유는 같은 파일이 두 주소로 도착할 수 있기 때문입니다. 참조를 담은 `const`는 쓰는 자리마다 인라인되고 자리마다 별도 할당을 받을 수 있어서, `const` 배열로 쓴 카탈로그는 한 파일에 대해 두 개의 포인터를 내놓습니다. 실제로 팟캐스트 샘플이 커버 하나를 두 개의 id로 두 번 등록했습니다. 내용 비교는 주소가 빗나갔을 때만 돌고, 그것은 새 그림 하나당 한 번이며 정상 프레임에서는 일어나지 않습니다.
+4. id는 1부터 Host가 나눠 줍니다. 애플리케이션이 숫자를 고르지 않으므로 두 화면이 같은 id를 쓰는 일이 생기지 않습니다.
+5. 새 `Host`가 스레드를 넘겨받으면 큐와 id가 비워집니다. 새 Renderer의 캐시는 비어 있으므로, 이전 Host가 나눠 준 id를 그대로 쓰면 등록되지 않은 id가 됩니다.
+6. 레코드 순서는 문제가 되지 않습니다. Renderer는 배치 전체를 적용한 뒤에 그리므로, 같은 배치 안에서 `RegisterAsset`이 그것을 쓰는 노드보다 뒤에 있어도 그릴 때는 이미 캐시에 있습니다.
+
+수용 기준:
+- `asset(...)`을 부른 컴포넌트의 첫 배치에 `RegisterAsset`이 한 건 있고, 같은 바이트를 여러 번 불러도 한 건입니다. 같은 내용이 서로 다른 두 주소로 도착해도 한 건입니다.
+- 같은 화면의 두 번째 프레임에는 `RegisterAsset`이 없습니다.
+- 두 개의 다른 바이트는 서로 다른 id를 받습니다.
+- 새 `Host`에서 같은 화면을 다시 만들면 `RegisterAsset`이 다시 나갑니다.
 
 ### FR-17 커스텀 드로잉 (`Agreed`)
 

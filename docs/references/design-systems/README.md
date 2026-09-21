@@ -95,32 +95,54 @@
 
 > https://www.justinmind.com/ui-design/ios-app-design
 
+A unified sample draws the design the reference specifies rather than the one the machine
+it is running on happens to be set to, so each entry below records which colour scheme its
+reference actually shows. The sample says that scheme in its own `main`, and what is
+written here is where that value comes from. Read the picture, not the habit: two of the
+seven are dark designs, and one of those two is a sheet whose other screens are light.
 
 ### 5. Minimal
 - Minimal Design Playground
+- **Light.** A white sheet with the components laid out on it. Two of the buttons and one
+  card are drawn dark, which is the inverted pair the sheet is demonstrating rather than a
+  dark version of the sheet.
 - https://adobexdelements.com/minimal-ios-design-system/
 ![img](./samples/adobe-minimal-ios-design-system.png)
 
 
 ### 6. Store
+- **Light.** White page, black ink, grey product cards, one yellow accent.
 - ![img](./samples/ios-app-design-clothing-store.png.webp)
 
 
 ### 7. Statistics
+- **Light.** A near-white page with a white dial card on it and a sage panel under that.
+  The second screen is that same sage filling the window, which is a page in the design's
+  own colour rather than a dark scheme.
 - ![img](./samples/ios-app-design-statistics.png.webp)
 
 
 ### 8. Self-care
+- **Dark.** The check-in, which is the screen this sample is about, is black under a pastel
+  panel, and the worry picker is black throughout. The home and profile screens in the same
+  sheet are light, so this is the one reference whose two halves disagree; the check-in wins
+  because it is the screen the sample opens on.
 - ![img](./samples/ios-app-design-self-care.png.webp)
 
 
 ### 9. Podcast
+- **Light.** White pages with orange as the single accent. The player's cover art is a
+  full-bleed orange picture, not a dark page.
 - ![img](./samples/ios-app-design-podcast-hub.png.webp)
 
 
 ### 10. Academic
+- **Dark.** Black throughout, both screens, with the four subject tiles and one white card
+  as the only light areas.
 - ![img](./samples/ios-app-design-drum-school.png.webp)
 
 
 ### 11. Social
+- **Light.** A cream page with illustrated cards. The sleep stories screen is dark navy,
+  but it is one destination inside a light app rather than the app's scheme.
 - ![img](./samples/ios-app-design-meditation.png.webp)
