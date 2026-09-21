@@ -353,6 +353,87 @@ jobs:
           path: dioxus-compose-renderer/build/native-image-linux/dist/
           retention-days: 7
 
+  linux-arm64:
+    needs: changed
+    if: needs.changed.outputs.renderer == 'true'
+    name: Linux arm64 native-image build and headless smoke test
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install upstream GraalVM Community for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25.0.1'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux AWT, Skia, font, and virtual-display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
+            libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
+            fonts-noto-cjk xvfb xauth dbus-x11
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-linux-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-linux-
+
+      - name: Build the Linux renderer under Xvfb
+        run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+
+      - name: Inspect staged dynamic dependencies
+        run: |
+          find dioxus-compose-renderer/build/native-image-linux/dist/lib -maxdepth 1 -type f -print | sort
+          ldd dioxus-compose-renderer/build/native-image-linux/dist/lib/*.so
+
+      - name: Headless startup smoke only
+        env:
+          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
+        run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
+
+      - name: Package the distribution for a release
+        id: package
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="dioxus-compose-renderer-${{ github.ref_name }}-linux-arm64"
+          # dist/ holds the renderer, Skia and the AWT libraries, plus include/.
+          tar -czf "${name}.tar.gz" -C dioxus-compose-renderer/build/native-image-linux/dist .
+          if command -v shasum >/dev/null; then
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
+          cat "${name}.tar.gz.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          retention-days: 7
+
+      - name: Upload the Linux renderer for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: dioxus-compose-renderer-linux-arm64
+          path: dioxus-compose-renderer/build/native-image-linux/dist/
+          retention-days: 7
+
   # iOS is Kotlin/Native, not native-image, so it shares nothing with the jobs above
   # except the interpreter source. It builds both slices (simulator and device) and
   # runs the *desktop* C smoke host against the simulator archive, which is what makes
@@ -397,6 +478,42 @@ jobs:
       - name: Simulator smoke test (PR-2)
         run: ./dioxus-compose-renderer/desktop/scripts/ios-smoke-test.sh --screenshot "${RUNNER_TEMP}/ios-smoke.png"
 
+      - name: Package the iOS renderer as an XCFramework
+        # Both slices in one bundle, which is the only form Xcode links directly. A bare
+        # .a would make every consumer pick the right slice by hand and would break the
+        # moment they switched between a device and the simulator.
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: package
+        run: |
+          set -euo pipefail
+          name="dioxus-compose-renderer-${GITHUB_REF_NAME}-ios"
+          build=dioxus-compose-renderer/build/ios
+          for slice in device simulator; do
+            mkdir -p "$build/$slice/include"
+            cp "$build/$slice"/*.h "$build/$slice/include/"
+          done
+          rm -rf "$name.xcframework"
+          xcodebuild -create-xcframework \
+            -library "$build/device/libdioxus_compose_renderer.a" \
+            -headers "$build/device/include" \
+            -library "$build/simulator/libdioxus_compose_renderer.a" \
+            -headers "$build/simulator/include" \
+            -output "$name.xcframework"
+          tar -czf "$name.tar.gz" "$name.xcframework"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          cat "$name.tar.gz.sha256"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          retention-days: 7
+
       - name: Upload the simulator screenshot
         # The one artifact a human can judge without a Mac to hand.
         if: always()
@@ -413,7 +530,7 @@ jobs:
   # never be made to work.
   release:
     name: Publish the GitHub Release
-    needs: [changed, build, windows, linux]
+    needs: [changed, build, windows, linux, linux-arm64, ios]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
