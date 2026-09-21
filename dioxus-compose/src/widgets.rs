@@ -484,6 +484,19 @@ impl RangeRequest {
 /// scrolling back re-materialises an identical subtree.
 #[component]
 pub fn LazyColumn(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     item_count: usize,
     #[props(default)] key_of: Option<Callback<usize, String>>,
     item: Callback<usize, Element>,
@@ -494,6 +507,19 @@ pub fn LazyColumn(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazycolumn {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             item_count: item_count as i64,
             onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
                 let requested = event.data();
@@ -773,6 +799,19 @@ pub fn TopAppBar(
 /// read-ahead buffer belongs to the Renderer because the scroll position does.
 #[component]
 pub fn LazyRow(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
     item_count: usize,
     #[props(default)] key_of: Option<Callback<usize, String>>,
     item: Callback<usize, Element>,
@@ -783,6 +822,19 @@ pub fn LazyRow(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazyrow {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             item_count: item_count as i64,
             onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
                 let requested = event.data();
