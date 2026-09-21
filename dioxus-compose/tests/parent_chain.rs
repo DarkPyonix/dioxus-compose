@@ -317,7 +317,6 @@ fn fr1_an_empty_branch_fills_in_under_its_own_parent() {
     );
 }
 
-
 /// A Menu whose children are a branch that is not taken, inside a list item.
 ///
 /// The empty branch and the loop over nothing both leave a placeholder, and the list
@@ -404,7 +403,6 @@ fn nfr7_a_menu_of_empty_branches_in_a_list_item_never_loops_the_parent_chain() {
         }
     }
 }
-
 
 /// A list whose items hold an empty Box.
 ///
