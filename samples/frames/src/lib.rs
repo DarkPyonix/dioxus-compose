@@ -167,10 +167,49 @@ impl Screen {
         lists.len()
     }
 
-    /// Presses the button carrying this label, if the screen has one.
-    ///
-    /// A recording that has to open something before it is worth looking at says so in the
-    /// language of the screen rather than in node ids.
+    pub fn press_icon(&mut self, icon: dioxus_compose::schema::IconRole) -> bool {
+        let found = {
+            let mutations = self.mutations();
+            let node = mutations.iter().find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Icon,
+                    value: PropertyValue::Integer(val),
+                } if *val == icon as i64 => Some(*node_id),
+                _ => None,
+            });
+            node.and_then(|node| {
+                mutations.iter().find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnClick,
+                        value: PropertyValue::Integer(id),
+                    } if *node_id == node => Some((node, *id as u64)),
+                    _ => None,
+                })
+            })
+        };
+        let Some((node_id, handler_id)) = found else {
+            return false;
+        };
+        let mut bytes = Vec::new();
+        encode_event(
+            &HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::Clicked,
+            },
+            &mut bytes,
+        )
+        .expect("the click did not encode");
+        let (batch, _) = self.host.dispatch_event(&bytes).expect("the click failed");
+        if !batch.is_empty() {
+            self.frames.push(batch.to_vec());
+        }
+        true
+    }
+
+    /// Finds what says `label` and presses it.
     pub fn press(&mut self, label: &str) -> bool {
         let found = {
             let mutations = self.mutations();
