@@ -23,13 +23,16 @@ import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WindowSizeClass
 
 /**
- * Material 3 rules: elevation, button variants and motion.
+ * Material 3 Expressive rules: elevation, button variants and motion.
  *
- * Reference: m3.material.io, "Elevation", "Buttons" and "Motion easing and duration",
- * 2024 baseline, the same revision the generated token table cites.
+ * Reference: m3.material.io, "Elevation", "Buttons", "Shape" and "Motion easing and
+ * duration", the 2025 expressive revision, which is the revision the generated token
+ * table cites and the one the screens in `docs/references/design-systems/material3/` are
+ * drawn in.
  *
- * Elevation is tonal plus a shadow, buttons are fully rounded with a state layer that grows
- * on press, and motion uses the emphasised easing.
+ * Elevation is tonal plus a shadow, buttons are capsules at every size with a state layer
+ * that grows on press, motion uses the emphasised easing, and corners are cut on the
+ * expressive ladder, which is the part of this that a reader sees first.
  */
 internal object Material3Rules : ComponentRules {
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
@@ -153,7 +156,7 @@ internal object Material3Rules : ComponentRules {
             )
 
             ContainerRole.Menu -> base.copy(
-                shape = theme.shape(ShapeRole.ExtraSmall),
+                shape = theme.shape(ShapeRole.Small),
                 elevation = 3.dp,
                 horizontalPadding = 0.dp,
                 verticalPadding = theme.space(SpaceRole.Xs),
@@ -171,7 +174,13 @@ internal object Material3Rules : ComponentRules {
         }
     }
 
-    /** A Material tab row: the selected tab is underlined across its full width. */
+    /**
+     * A Material tab row: the selected tab is underlined across its full width.
+     *
+     * The rule under it is a thick rounded bar rather than a hairline. That is the
+     * expressive indicator, and it is what the reference screens draw under a selected
+     * destination: a stub of capsule, not a line.
+     */
     override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
         container = theme.color(ColorRole.Surface),
         shape = theme.shape(ShapeRole.None),
@@ -180,8 +189,8 @@ internal object Material3Rules : ComponentRules {
         selectedContainer = Color.Transparent,
         selectedShape = theme.shape(ShapeRole.None),
         indicator = theme.color(ColorRole.Primary),
-        indicatorHeight = 3.dp,
-        indicatorShape = theme.shape(ShapeRole.ExtraSmall),
+        indicatorHeight = 4.dp,
+        indicatorShape = theme.shape(ShapeRole.Full),
         indicatorFillsTab = true,
         horizontalPadding = theme.space(SpaceRole.Md),
         verticalPadding = theme.space(SpaceRole.Sm),
@@ -362,6 +371,31 @@ internal object Material3Rules : ComponentRules {
             labelInRail = true,
             typeRole = TypeRole.Label,
         )
+
+    /**
+     * Material has no desktop caption of its own, so this is Material's vocabulary applied
+     * to one: a capsule hover behind each glyph, in the tonal grey a Material icon button
+     * uses, and the error colour under close. The title sits at the start, where a
+     * Material top app bar puts it.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 40.dp,
+        buttonHeight = 40.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = theme.color(ColorRole.OnError),
+        glyphStroke = 1.5.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Xs),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Start,
+    )
 
     /** A bottom sheet with a drag handle, or a side sheet once there is room for one. */
     override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
@@ -730,6 +764,37 @@ internal object CupertinoRules : ComponentRules {
         )
     }
 
+    /**
+     * Three coloured discs at the leading edge, close then minimise then zoom.
+     *
+     * This is only ever drawn where the platform does not draw it. On macOS the system
+     * owns these buttons and imitating them would be the most visible way to fail at
+     * looking native; on a Linux or Windows session running the Apple language there is
+     * nothing to keep, and a caption with no buttons is a window nobody can close.
+     *
+     * The discs carry no glyphs until the pointer is over the set, which is the behaviour
+     * that makes them read as Apple's rather than as three coloured dots.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.Start,
+        buttonWidth = 12.dp,
+        buttonHeight = 12.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = TRAFFIC_AMBER,
+        maximiseContainer = TRAFFIC_GREEN,
+        closeContainer = TRAFFIC_RED,
+        hover = Color.Transparent,
+        closeHover = Color.Transparent,
+        glyph = Color.Black.copy(alpha = 0.55f),
+        closeHoverGlyph = Color.Black.copy(alpha = 0.55f),
+        glyphStroke = 1.dp,
+        // The colour says which is which; the marks appear under the pointer.
+        glyphAtRest = false,
+        spacing = 8.dp,
+        edgePadding = 20.dp,
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
     /** A card sheet pulled up over a dimmed screen, with the grabber along its top edge. */
     override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
         edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
@@ -776,6 +841,15 @@ internal object CupertinoRules : ComponentRules {
     private const val SPOT_ALPHA = 0.12f
     private const val SPREAD = 2f
 }
+
+/**
+ * The three window button colours the Apple systems use, shared because they are the
+ * same three buttons in both languages: the glass window in the reference screens carries
+ * exactly the discs the flat one does.
+ */
+internal val TRAFFIC_RED = Color(0xFFFF5F57)
+internal val TRAFFIC_AMBER = Color(0xFFFEBC2E)
+internal val TRAFFIC_GREEN = Color(0xFF28C840)
 
 /**
  * WinUI / Fluent 2 rules: elevation, button variants and motion.
@@ -1138,6 +1212,38 @@ internal object FluentRules : ComponentRules {
         borderColor = theme.color(ColorRole.OutlineVariant),
         typeRole = TypeRole.Body,
     )
+
+    /**
+     * Windows 11's caption: three wide rectangles at the trailing edge, with the close
+     * zone turning the platform's own red.
+     *
+     * 46 by 32 is the Windows caption button, and its width is the point: the hover zone
+     * is half as wide again as it is tall, which is why a Windows caption reads as three
+     * bands rather than three buttons. The red under close is the system value rather
+     * than this palette's error colour, because it is the same red on every Windows
+     * window whatever an application's accent is.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 46.dp,
+        buttonHeight = 32.dp,
+        shape = theme.shape(ShapeRole.None),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = WINDOWS_CLOSE_RED,
+        glyph = theme.color(ColorRole.OnSurface),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.dp,
+        glyphAtRest = true,
+        spacing = 0.dp,
+        edgePadding = 0.dp,
+        titleAlignment = CaptionTitleAlignment.Start,
+    )
+
+    /** The red Windows puts under a close button, on every window and every accent. */
+    private val WINDOWS_CLOSE_RED = Color(0xFFC42B1C)
 
     private const val SCRIM_ALPHA = 0.3f
     private const val DISABLED_ALPHA = 0.38f
@@ -1534,6 +1640,46 @@ internal object GnomeRules : ComponentRules {
         borderColor = Color.Transparent,
         typeRole = TypeRole.Body,
     )
+
+    /**
+     * Adwaita's caption: three grey circles at the trailing edge, and the title centred.
+     *
+     * A GNOME window button is a filled disc rather than a bare glyph or a hover zone, and
+     * the fill is there at rest rather than appearing under the pointer. That, and the
+     * centred title, are what the GNOME 50 screen in the reference shows on every window
+     * in it, and they are the two things that make a header bar read as GNOME's before
+     * anything inside it is read at all.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 26.dp,
+        buttonHeight = 26.dp,
+        shape = theme.shape(ShapeRole.Full),
+        // A tint rather than a stored grey. The header bar's own colour is the grey a
+        // stored one would have been, so the discs came out the colour of the bar and
+        // the set read as three bare glyphs, which is the GTK button this is not.
+        // libadwaita defines its own button fill the same way, and for the same reason.
+        minimiseContainer = captionFill(theme.dark, BUTTON_TINT),
+        maximiseContainer = captionFill(theme.dark, BUTTON_TINT),
+        closeContainer = captionFill(theme.dark, BUTTON_TINT),
+        hover = captionFill(theme.dark, BUTTON_TINT_HOVER),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurface),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.5.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Sm),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
+    /** A fill that darkens a light bar and lightens a dark one, whatever colour it is. */
+    private fun captionFill(dark: Boolean, alpha: Float): Color =
+        if (dark) Color.White.copy(alpha = alpha) else Color.Black.copy(alpha = alpha)
+
+    /** How far a window button's fill moves the header bar under it. */
+    private const val BUTTON_TINT = 0.10f
+    private const val BUTTON_TINT_HOVER = 0.20f
 
     private const val SCRIM_ALPHA = 0.45f
     private const val PRESS_MIX = 0.1f
@@ -1943,6 +2089,34 @@ internal object BreezeRules : ComponentRules {
         typeRole = TypeRole.Body,
     )
 
+    /**
+     * Breeze's caption: small square buttons at the trailing edge, barely rounded, with a
+     * light hover and the negative colour under close.
+     *
+     * The smallest set of the seven, which is the house style: Plasma spends less room on
+     * chrome than GNOME next door, and the Dolphin window in the reference screen puts
+     * three small glyphs where GNOME puts three circles. The title is centred, which both
+     * Breeze windows in the reference do.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 24.dp,
+        buttonHeight = 24.dp,
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.dp,
+        glyphAtRest = true,
+        spacing = theme.space(SpaceRole.Xs),
+        edgePadding = theme.space(SpaceRole.Sm),
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
     private const val SCRIM_ALPHA = 0.5f
     private const val PRESS_MIX = 0.12f
     private const val PRESS_SHADE = 0.1f
@@ -2043,7 +2217,7 @@ internal object DeepinRules : ComponentRules {
                 rounded = true,
                 periodMillis = 1100,
             ),
-            // The warm outline rather than the fainter one, for the same reason GNOME
+            // The stronger outline rather than the fainter one, for the same reason GNOME
             // takes the stronger of its two: Deepin's panel in a dark session is a step
             // lighter than its reading surface, and the faint line is within eight parts
             // of it, so a list of rows comes out as one unbroken block.
@@ -2088,7 +2262,7 @@ internal object DeepinRules : ComponentRules {
             borderColor = Color.Transparent,
             pressedBorderColor = Color.Transparent,
             topHighlight = null,
-            // A lozenge: 12 dp, which is ShapeRole.Medium in the Deepin table.
+            // A lozenge: 10 dp, which is ShapeRole.Medium in the Deepin table.
             shape = theme.shape(ShapeRole.Medium),
             horizontalPadding = theme.space(SpaceRole.Lg),
             verticalPadding = theme.space(SpaceRole.Sm),
@@ -2106,8 +2280,7 @@ internal object DeepinRules : ComponentRules {
                 content = theme.color(ColorRole.OnPrimary),
             )
 
-            // A warm tinted fill, which is where the palette shows on a control that
-            // carries no accent.
+            // A plain grey fill, a step off whatever it sits on.
             ButtonVariant.Tonal -> base
 
             ButtonVariant.Outlined -> base.copy(
@@ -2346,6 +2519,34 @@ internal object DeepinRules : ComponentRules {
         typeRole = TypeRole.Body,
     )
 
+    /**
+     * Deepin's caption: bare glyphs at the trailing edge in a square hover zone, with the
+     * close zone turning red.
+     *
+     * The rounding on the hover zone is what makes it Deepin's rather than Windows': the
+     * whole language rounds, and a square hover in a window cut at eighteen looks
+     * borrowed. Both reference screens put the glyphs on the same line as the rest of the
+     * bar's content, which the caption layout already does.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.End,
+        buttonWidth = 40.dp,
+        buttonHeight = 40.dp,
+        shape = theme.shape(ShapeRole.Small),
+        minimiseContainer = Color.Transparent,
+        maximiseContainer = Color.Transparent,
+        closeContainer = Color.Transparent,
+        hover = theme.color(ColorRole.SurfaceVariant),
+        closeHover = theme.color(ColorRole.Error),
+        glyph = theme.color(ColorRole.OnSurfaceVariant),
+        closeHoverGlyph = Color.White,
+        glyphStroke = 1.5.dp,
+        glyphAtRest = true,
+        spacing = 0.dp,
+        edgePadding = theme.space(SpaceRole.Xs),
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
     private const val SCRIM_ALPHA = 0.35f
     private const val PRESS_MIX = 0.35f
     private const val PRESS_SHADE = 0.2f
@@ -2354,5 +2555,557 @@ internal object DeepinRules : ComponentRules {
     private const val SPREAD = 1.6f
     private const val LIFT_FULL_DP = 24f
     private const val MAX_LIFT = 0.08f
-    private val LIFT_DARK = Color(0xFFFFE9D2)
+    private val LIFT_DARK = Color(0xFFFFFFFF)
+}
+
+/**
+ * Liquid Glass rules: the language macOS 26 and iOS 26 draw.
+ *
+ * Reference: the screens in `docs/references/design-systems/liquidglass/`, read against
+ * Apple's "Liquid Glass" announcement and the Human Interface Guidelines materials and
+ * buttons chapters, 2026 revision, which is the revision the generated token table cites.
+ *
+ * This sits beside the flat Apple language rather than replacing it. Four things separate
+ * it, and all four are drawn here rather than described:
+ *
+ *  - Surfaces are a translucent tint over whatever the application drew behind them.
+ *  - Their edges are lit along the top and shaded along the bottom, so they have depth.
+ *  - Corners are continuous rather than circular, and an inner corner is cut concentric
+ *    with the container it sits in.
+ *  - Depth comes from layers overlapping instead of from a stack of shadows.
+ *
+ * What is not drawn, and is not claimed: the material does not sample the desktop behind
+ * the window. That needs a platform compositing view outside the Compose surface.
+ *
+ * Where the glass goes depends on the window. The desktop screens put it on chrome, the
+ * sidebar and the toolbar and the title bar area, over document content that stays
+ * opaque; the phone screens carry it onto floating control surfaces too. A window that is
+ * glass from edge to edge is wrong at both sizes, so the size class decides, and [isGlass]
+ * is where that decision lives.
+ */
+internal object LiquidGlassRules : ComponentRules {
+
+    /**
+     * Which container roles are glass in a window of this class.
+     *
+     * Compact is a phone: the floating control surfaces are glass as well as the chrome.
+     * Medium and Expanded are a desktop window, where a card or a plain surface is the
+     * document being read and has to stay opaque behind its text.
+     */
+    private fun isGlass(role: ContainerRole, sizeClass: WindowSizeClass): Boolean = when (role) {
+        // Chrome, at every size.
+        ContainerRole.TopAppBar, ContainerRole.Menu, ContainerRole.Dialog, ContainerRole.Tooltip -> true
+        // Content, glass only where the screen is small enough that there is no separate
+        // chrome to speak of.
+        ContainerRole.Card, ContainerRole.Surface -> sizeClass == WindowSizeClass.Compact
+    }
+
+    /**
+     * The material for one container role: glass where this window puts glass, and a flat
+     * fill everywhere else.
+     *
+     * [container] is what the surface expects to sit over, which is what decides how the
+     * translucent tint will actually read once composited. [content] is the colour that
+     * will be drawn on top, and is what the opaque fallback has to stay legible against.
+     */
+    private fun material(
+        role: ContainerRole,
+        container: Color,
+        content: Color,
+        theme: ResolvedTheme,
+    ): SurfaceMaterial = if (isGlass(role, theme.sizeClass)) {
+        LiquidGlass.material(
+            dark = theme.dark,
+            // Regular throughout. Every container role here carries text or controls,
+            // and that is exactly what Regular is for: the clear recipe is meant for a
+            // surface floating over media where the content underneath is the point, and
+            // none of these are that. Using it for bars and cards made them invisible.
+            prominence = GlassProminence.Regular,
+            backdrop = container,
+            content = content,
+        )
+    } else {
+        SurfaceMaterial.Opaque(container)
+    }
+
+    /**
+     * The page, which Apple specifies twice.
+     *
+     * In dark mode the grouped page is pure black, and on a phone that is right: the
+     * screen is almost all content and the black is what the panels sit on. A desktop
+     * window has never been black. Painting one black leaves a 0x1c1c1e panel two levels
+     * away from the page it sits on, so the panels stop reading as panels and the window
+     * reads as a video player rather than as a document. The desktop page is the darkest
+     * of the system greys instead, which is what the panels are meant to be a well in.
+     *
+     * Light needs no such choice: the page is already the reading surface at either size.
+     */
+    override fun color(role: ColorRole, dark: Boolean, sizeClass: WindowSizeClass): Color? = when {
+        role != ColorRole.Background || !dark -> null
+        sizeClass == WindowSizeClass.Compact -> null
+        else -> DESKTOP_PAGE_DARK
+    }
+
+    override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
+        if (elevation.value <= 0f) return modifier
+        // Glass gets its depth from layers tinting each other rather than from a stack of
+        // shadows, so what remains is one wide, faint shadow whose job is to lift the
+        // layer off the page and nothing more.
+        return modifier.shadow(
+            elevation = elevation * SPREAD,
+            shape = shape,
+            clip = false,
+            ambientColor = Color.Black.copy(alpha = AMBIENT_ALPHA),
+            spotColor = Color.Black.copy(alpha = SPOT_ALPHA),
+        )
+    }
+
+    /**
+     * Every button is a capsule, at every size.
+     *
+     * That is the single loudest difference from the flat language beside it, where a
+     * button is a rounded rectangle that only becomes a capsule when it happens to be
+     * short. Every button in the reference screens is a capsule: the alert pair, the
+     * playback buttons, the formatting chips, the composer's send key.
+     */
+    override fun button(variant: ButtonVariant, theme: ResolvedTheme): ButtonStyle {
+        val base = ButtonStyle(
+            container = Color.Transparent,
+            pressedContainer = Color.Transparent,
+            content = theme.color(ColorRole.Primary),
+            // A press dims the whole control rather than layering a colour on it.
+            pressedContentAlpha = PRESSED_ALPHA,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            pressedBorderColor = Color.Transparent,
+            topHighlight = null,
+            shape = theme.shape(ShapeRole.Full),
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Sm),
+            // Taller than the flat button, because a capsule that is not tall enough for
+            // its own end caps reads as a lozenge rather than as a pill.
+            minHeight = 40.dp,
+            typeRole = TypeRole.BodyStrong,
+            // These buttons never cast a shadow, pressed or not.
+            restElevation = 0.dp,
+            pressedElevation = 0.dp,
+            disabledAlpha = DISABLED_ALPHA,
+        )
+        return when (variant) {
+            ButtonVariant.Filled -> base.copy(
+                container = theme.color(ColorRole.Primary),
+                pressedContainer = theme.color(ColorRole.Primary).copy(alpha = PRESSED_ALPHA),
+                content = theme.color(ColorRole.OnPrimary),
+            )
+
+            // A glass button: a translucent fill rather than a solid grey, so it is
+            // always a step away from whatever it sits on. A stored grey cannot be: the
+            // secondary fill and the tint of a bar are neighbours, so a tinted button on
+            // a toolbar came out the colour of the toolbar and vanished. Apple's own fill
+            // colours are defined this way too, dark in light mode and light in dark,
+            // which is why the direction flips with the scheme.
+            ButtonVariant.Tonal -> base.copy(
+                container = tintedFill(theme.dark, TONAL_ALPHA),
+                pressedContainer = tintedFill(theme.dark, TONAL_PRESSED_ALPHA),
+                content = theme.color(ColorRole.Primary),
+            )
+
+            ButtonVariant.Outlined -> base.copy(
+                pressedContainer = tintedFill(theme.dark, TONAL_ALPHA),
+                borderWidth = 1.dp,
+                borderColor = theme.color(ColorRole.Outline),
+                pressedBorderColor = theme.color(ColorRole.Outline),
+            )
+
+            // A plain button: content colour only, no container even when pressed.
+            ButtonVariant.Text -> base
+        }
+    }
+
+    /**
+     * The containers: chrome is glass, content is a surface with a continuous corner, and
+     * nothing is divided by a hairline that a layer edge already divides.
+     */
+    override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
+        val base = ContainerStyle(
+            container = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+            shape = theme.shape(ShapeRole.Medium),
+            elevation = 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = theme.space(SpaceRole.Md),
+            separator = null,
+            scrim = Color.Transparent,
+            typeRole = TypeRole.Body,
+        )
+        val styled = when (role) {
+            // A floating panel, with the deepest corner in the ladder.
+            ContainerRole.Card -> base.copy(
+                container = theme.color(ColorRole.SurfaceContainer),
+                shape = theme.shape(ShapeRole.Large),
+            )
+
+            // A `Surface` is a panel: a layer raised off the page, holding the page's own
+            // reading ink. That is `SurfaceContainer`, not `Surface`. Here the page is
+            // white in light mode, so a panel painted with `Surface` would be drawn full
+            // size, in the right colour, and could not be seen at all.
+            ContainerRole.Surface -> base.copy(container = theme.color(ColorRole.SurfaceContainer))
+
+            // A toolbar. Glass at every size, because this is the piece the desktop
+            // screens make glass over opaque content. No hairline under it: the lit edge
+            // of the glass is the division, and a rule under a lit edge is one line too
+            // many.
+            ContainerRole.TopAppBar -> base.copy(
+                shape = theme.shape(ShapeRole.None),
+                verticalPadding = theme.space(SpaceRole.Sm),
+                typeRole = TypeRole.BodyStrong,
+            )
+
+            // An alert: centred, capsule buttons inside, over a dimmed screen.
+            ContainerRole.Dialog -> base.copy(
+                shape = theme.shape(ShapeRole.Large),
+                horizontalPadding = theme.space(SpaceRole.Lg),
+                verticalPadding = theme.space(SpaceRole.Lg),
+                scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+            )
+
+            ContainerRole.Menu -> base.copy(
+                shape = theme.shape(ShapeRole.Medium),
+                elevation = 2.dp,
+                horizontalPadding = 0.dp,
+                verticalPadding = theme.space(SpaceRole.Xs),
+            )
+
+            // A help tag: a light chip, not an inverted one.
+            ContainerRole.Tooltip -> base.copy(
+                shape = theme.shape(ShapeRole.Small),
+                horizontalPadding = theme.space(SpaceRole.Sm),
+                verticalPadding = theme.space(SpaceRole.Xs),
+                typeRole = TypeRole.Caption,
+            )
+        }
+        return styled.copy(material = material(role, styled.container, styled.content, theme))
+    }
+
+    /**
+     * A segmented control: a capsule track with the selected segment floating inside it.
+     *
+     * The selected segment's corner is cut concentric with the track's, so the gap
+     * between the two outlines is the same all the way round instead of pinching at the
+     * corners. This is the smallest place the concentric rule shows, and the easiest to
+     * see once you know to look. Both are capsules in the reference screens, which is
+     * what the concentric rule reduces to when the outer radius is larger than the
+     * height.
+     */
+    override fun tabs(theme: ResolvedTheme): TabsStyle {
+        val inset = theme.space(SpaceRole.Xs)
+        return TabsStyle(
+            container = theme.color(ColorRole.SurfaceVariant),
+            shape = theme.shape(ShapeRole.Full),
+            selectedContent = theme.color(ColorRole.OnSurface),
+            unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContainer = theme.color(ColorRole.Surface),
+            selectedShape = theme.shape(ShapeRole.Full),
+            indicator = Color.Transparent,
+            indicatorHeight = 0.dp,
+            indicatorShape = theme.shape(ShapeRole.None),
+            indicatorFillsTab = true,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = inset,
+            typeRole = TypeRole.Label,
+        )
+    }
+
+    /**
+     * The controls: a circular checkmark, a capsule switch that is green rather than
+     * accent coloured, and a slider whose thumb sits over the track rather than in it.
+     *
+     * The green is not a substitution for the accent. Every switch in the reference
+     * screens is green whatever else on that screen is tinted, because on this platform a
+     * switch means on rather than means selected, and colouring it with the accent would
+     * make a screen full of switches look like a screen full of selections.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val primary = theme.color(ColorRole.Primary)
+        val surface = theme.color(ColorRole.Surface)
+        return ControlsStyle(
+            // A circle, not a box, which is the clearest difference from Material here.
+            checkbox = ToggleStyle(
+                size = 24.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = theme.color(ColorRole.Outline),
+                borderWidth = 1.5.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 24.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = theme.color(ColorRole.Outline),
+                borderWidth = 1.5.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 9.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // 54 by 32, a shade larger than the flat switch beside it, with a thumb that
+            // all but fills the track. The reference switches read as one solid capsule
+            // with a disc pushed to one end rather than as a dot in a groove, and that
+            // only happens when the thumb is within a few dp of the track's height.
+            switch = ToggleStyle(
+                size = 32.dp,
+                container = theme.color(ColorRole.SurfaceVariant),
+                containerChecked = SWITCH_ON,
+                mark = Color.White,
+                markUnchecked = Color.White,
+                border = Color.Transparent,
+                borderWidth = 0.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 28.dp,
+                trackWidth = 54.dp,
+                trackHeight = 32.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 5.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                activeTrack = primary,
+                // A large pale thumb that sits over the track rather than in it.
+                thumbSize = 28.dp,
+                thumb = surface,
+                thumbBorder = theme.color(ColorRole.OutlineVariant),
+                thumbBorderWidth = 0.5.dp,
+                tick = null,
+            ),
+            progress = ProgressStyle(
+                thickness = 4.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                indicator = primary,
+                diameter = 22.dp,
+                rounded = true,
+                periodMillis = 1_000,
+            ),
+            // A hairline held back from the leading edge, the way a grouped list rules
+            // between its rows.
+            divider = DividerStyle(
+                thickness = 0.5.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 16.dp,
+            ),
+        )
+    }
+
+    /**
+     * A capsule with no box around it.
+     *
+     * Every field in the reference screens is a filled capsule: the sidebar search, the
+     * composer at the foot of the window, the search bar over a list. The frame is the
+     * fill, so the resting state has no line at all and focus is marked by the accent
+     * being laid around it.
+     */
+    override fun field(theme: ResolvedTheme): FieldStyle = FieldStyle(
+        container = theme.color(ColorRole.SurfaceVariant),
+        containerFocused = theme.color(ColorRole.SurfaceVariant),
+        border = Color.Transparent,
+        borderFocused = theme.color(ColorRole.Primary),
+        borderWidth = 0.dp,
+        borderWidthFocused = 2.dp,
+        underline = null,
+        shape = theme.shape(ShapeRole.Full),
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        cursor = theme.color(ColorRole.Primary),
+        minHeight = 40.dp,
+    )
+
+    /**
+     * SF Symbols metrics on a 22 dp grid, with rounded ends and joins, and a heavier
+     * stroke than the flat language uses.
+     *
+     * The weight is the difference that matters. A glyph sitting on a translucent surface
+     * competes with whatever shows through it, and every toolbar glyph in the reference
+     * screens is drawn at a semibold weight for that reason. The rounded terminal is what
+     * reads most as Apple's icon set, and it is shared with the flat language because it
+     * is the same icon set.
+     */
+    override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
+        size = 22.dp,
+        strokeWidth = 2.dp,
+        cap = StrokeCap.Round,
+        join = StrokeJoin.Round,
+    )
+
+    /**
+     * Wheels throughout: a date, a time and a list are all spun to the value.
+     *
+     * The rows are taller than the flat language's, which is the same decision as the
+     * roomier spacing ladder: a value on a wheel is a control, and the controls here have
+     * more room around them.
+     */
+    override val pickers: PickerRules = PickerRules(
+        date = DatePresentation.Wheel,
+        time = TimePresentation.Wheel,
+        choice = ChoicePresentation.Wheel,
+        wheelRowHeight = 36.dp,
+    )
+
+    override val motion: Motion = Motion(
+        pressMillis = 80,
+        releaseMillis = 220,
+        easing = LinearOutSlowInEasing,
+        // A help tag waits until the pointer has clearly stopped.
+        tooltipDelayMillis = 1000,
+    )
+
+    /**
+     * A floating tab bar on a phone, a sidebar once the window is wide enough.
+     *
+     * The bar marks its selection with a filled capsule behind the destination rather
+     * than with colour alone, which is where this differs from the flat tab bar beside
+     * it, and it is separated from the content by its own lit edge rather than by a
+     * hairline: the bar floats over the content instead of sitting under it.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle {
+        val presentation = when (sizeClass) {
+            WindowSizeClass.Compact -> NavigationPresentation.Bar
+            WindowSizeClass.Medium -> NavigationPresentation.Rail
+            WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+        }
+        return NavigationStyle(
+            presentation = presentation,
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.Primary),
+            indicator = tintedFill(theme.dark, TONAL_ALPHA),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.Pill,
+            indicatorExtent = NavigationExtent.Destination,
+            separator = null,
+            barHeight = 56.dp,
+            railWidth = 76.dp,
+            drawerWidth = 260.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Xs),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+    }
+
+    /**
+     * A sheet pulled up over a dimmed screen, with the deepest corner in the ladder.
+     *
+     * It takes less of the window than the flat language's sheet does. The formatting
+     * sheet in the reference sits low over a note that stays visible above it, which is
+     * the point of a glass sheet: what it covers still shows through and still reads, so
+     * covering more of the screen would be covering it for no reason.
+     */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        // Sheets here are not raised by a shadow, they cover.
+        elevation = 0.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.34f,
+        heightFraction = 0.45f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /**
+     * A capsule that drops in at the top of the window, centred.
+     *
+     * Not a snackbar and not a bordered banner: the cards that arrive at the top of these
+     * screens are capsules with a lit edge and no line, and they are centred over the
+     * window rather than tucked into a corner.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Full),
+        elevation = 4.dp,
+        placement = MessagePlacement.TopCenter,
+        horizontalPadding = theme.space(SpaceRole.Lg),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 3_000,
+        longMillis = 8_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
+    )
+
+    /**
+     * A fill that lightens or darkens whatever it lands on, rather than replacing it.
+     *
+     * Light mode fills are translucent black and dark mode fills are translucent white,
+     * which is how Apple defines them and the reason a control keeps its separation over
+     * a page, over a panel and over a bar without any of the three being named here.
+     */
+    private fun tintedFill(dark: Boolean, alpha: Float): Color =
+        if (dark) Color.White.copy(alpha = alpha) else Color.Black.copy(alpha = alpha)
+
+    /**
+     * systemGray6 in dark: the darkest of Apple's greys that is not black, and the tone a
+     * desktop window is. Far enough from the 0x1c1c1e of a panel that the panel has an
+     * edge.
+     */
+    private val DESKTOP_PAGE_DARK = Color(0xFF2C2C2E)
+
+    /** systemGreen. A switch means on, so it is green and not the accent. */
+    private val SWITCH_ON = Color(0xFF34C759)
+
+    /** How far a tinted button moves what is under it, resting and pressed. */
+    private const val TONAL_ALPHA = 0.08f
+    private const val TONAL_PRESSED_ALPHA = 0.16f
+
+    /**
+     * The glass caption. Three coloured discs at the leading edge, exactly as the flat
+     * Apple system draws them, because they are the same three buttons: the glass window
+     * in the reference screens carries the same traffic lights, sitting straight on the
+     * translucent chrome with no strip of their own.
+     */
+    override fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+        side = CaptionSide.Start,
+        buttonWidth = 12.dp,
+        buttonHeight = 12.dp,
+        shape = theme.shape(ShapeRole.Full),
+        minimiseContainer = TRAFFIC_AMBER,
+        maximiseContainer = TRAFFIC_GREEN,
+        closeContainer = TRAFFIC_RED,
+        hover = Color.Transparent,
+        closeHover = Color.Transparent,
+        glyph = Color.Black.copy(alpha = 0.55f),
+        closeHoverGlyph = Color.Black.copy(alpha = 0.55f),
+        glyphStroke = 1.dp,
+        glyphAtRest = false,
+        spacing = 8.dp,
+        // Further in than the flat language's, because the glass chrome the discs sit on
+        // is inset from the window edge rather than flush with it.
+        edgePadding = 22.dp,
+        titleAlignment = CaptionTitleAlignment.Center,
+    )
+
+    private const val SCRIM_ALPHA = 0.4f
+    private const val DISABLED_ALPHA = 0.38f
+    private const val PRESSED_ALPHA = 0.6f
+    private const val AMBIENT_ALPHA = 0.08f
+    private const val SPOT_ALPHA = 0.12f
+    private const val SPREAD = 2f
 }

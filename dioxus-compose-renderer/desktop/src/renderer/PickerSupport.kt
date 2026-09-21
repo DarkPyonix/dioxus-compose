@@ -46,8 +46,13 @@ import dioxus.compose.protocol.TypeRole
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
 
-/** How tall one row of a wheel is. A wheel shows the chosen value between its neighbours. */
-internal val WHEEL_ROW_HEIGHT: Dp = 32.dp
+/**
+ * How tall one row of this theme's wheel is.
+ *
+ * The design system answers, because two systems that both spin a wheel still do not spin
+ * the same one: the roomier language gives each value more room.
+ */
+internal val ResolvedTheme.wheelRowHeight: Dp get() = rules.pickers.wheelRowHeight
 
 /** How many rows of a wheel are visible at once, the chosen one in the middle. */
 internal const val WHEEL_VISIBLE_ROWS = 5
@@ -181,18 +186,18 @@ internal fun PickerWheel(
     onSelect: (Int) -> Unit,
 ) {
     if (labels.isEmpty()) {
-        Box(modifier.height(WHEEL_ROW_HEIGHT * WHEEL_VISIBLE_ROWS))
+        Box(modifier.height(theme.wheelRowHeight * WHEEL_VISIBLE_ROWS))
         return
     }
     val state = rememberLazyListState()
     LaunchedEffect(selectedIndex) {
         state.scrollToItem(selectedIndex.coerceIn(0, labels.lastIndex))
     }
-    Box(modifier.height(WHEEL_ROW_HEIGHT * WHEEL_VISIBLE_ROWS), contentAlignment = Alignment.Center) {
+    Box(modifier.height(theme.wheelRowHeight * WHEEL_VISIBLE_ROWS), contentAlignment = Alignment.Center) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(WHEEL_ROW_HEIGHT)
+                .height(theme.wheelRowHeight)
                 .background(theme.color(ColorRole.SurfaceVariant)),
         )
         LazyColumn(
@@ -201,7 +206,7 @@ internal fun PickerWheel(
             // Half a wheel of padding at each end, so the first and last values can still
             // reach the middle.
             contentPadding = PaddingValues(
-                vertical = WHEEL_ROW_HEIGHT * ((WHEEL_VISIBLE_ROWS - 1) / 2),
+                vertical = theme.wheelRowHeight * ((WHEEL_VISIBLE_ROWS - 1) / 2),
             ),
         ) {
             items(labels.size) { index ->
@@ -209,7 +214,7 @@ internal fun PickerWheel(
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .height(WHEEL_ROW_HEIGHT)
+                        .height(theme.wheelRowHeight)
                         .clickable(enabled = enabled) { onSelect(index) },
                     contentAlignment = Alignment.Center,
                 ) {

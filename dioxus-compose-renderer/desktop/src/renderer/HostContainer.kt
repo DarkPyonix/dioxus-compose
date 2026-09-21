@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -20,9 +21,11 @@ import androidx.compose.ui.unit.dp
 import dioxus.compose.design.ContainerRole
 import dioxus.compose.design.ContainerStyle
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.design.glassSurface
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.runtime.LocalWindowCaption
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.Children
@@ -64,9 +67,17 @@ internal fun Modifier.containerDecoration(
     } else {
         theme.rules.elevation(this, style.elevation, shape, theme)
     }
-    return raised
-        .clip(shape)
-        .background(style.container, shape)
+    val material = style.material
+    val filled = if (material == null) {
+        raised.clip(shape).background(style.container, shape)
+    } else {
+        // A glass surface paints its own fill and its own lit edge, because the two are
+        // one effect: the tint is what lets the backdrop through and the edge is what
+        // gives the sheet thickness. Clipping still happens first so a child cannot spill
+        // past the corner.
+        raised.clip(shape).glassSurface(material, shape)
+    }
+    return filled
         .then(
             if (style.borderWidth.value > 0f) {
                 Modifier.border(style.borderWidth, style.borderColor, shape)
@@ -114,11 +125,23 @@ internal fun HostTopAppBar(
     theme: ResolvedTheme,
 ) {
     val style = theme.rules.container(ContainerRole.TopAppBar, theme)
+    val caption = LocalWindowCaption.current
     Column(modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .containerDecoration(node, style, theme),
+                // The bar is the window's caption where the tree opens with one: at
+                // least as tall as the strip the window buttons sit in, and starting
+                // clear of them. Its content shares that row rather than stacking under
+                // it, because a desktop toolbar sits on the same line as the window
+                // buttons and a bar that began below them would be twice as tall for
+                // nothing.
+                .heightIn(min = caption.height)
+                .containerDecoration(node, style, theme)
+                .padding(
+                    start = if (caption.buttonsAtStart) caption.buttonsWidth else 0.dp,
+                    end = if (caption.buttonsAtStart) 0.dp else caption.buttonsWidth,
+                ),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {

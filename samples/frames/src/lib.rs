@@ -50,13 +50,14 @@ pub const VIEWPORTS: [Viewport; 3] = [
 ];
 
 /// Every design system, in the order the schema declares them.
-pub const SYSTEMS: [DesignSystem; 6] = [
+pub const SYSTEMS: [DesignSystem; 7] = [
     DesignSystem::Material3,
     DesignSystem::Cupertino,
     DesignSystem::Fluent,
     DesignSystem::Gnome,
     DesignSystem::Breeze,
     DesignSystem::Deepin,
+    DesignSystem::LiquidGlass,
 ];
 
 pub const SCHEMES: [ColorScheme; 2] = [ColorScheme::Light, ColorScheme::Dark];
