@@ -14,6 +14,7 @@ import dioxus.compose.deepin.DeepinDesignSystem
 import dioxus.compose.fluent.FluentDesignSystem
 import dioxus.compose.gnome.GnomeDesignSystem
 import dioxus.compose.material3.Material3DesignSystem
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -91,6 +92,33 @@ class AllDesignSystemsDifferTest {
                 }
                 for (variant in ButtonVariant.entries) system.button(variant)
                 assertTrue(system.motion.pressMillis > 0, "${system.id} presses instantly")
+            }
+        }
+    }
+
+    @Test
+    fun fr14_a_panel_lifts_off_the_page_in_every_system() {
+        // `SurfaceContainer` is the one role a panel can be made of, so it has to be
+        // visible against the page it sits on. `Surface` cannot carry that promise:
+        // several systems give it the same value as the page on purpose, and a panel
+        // painted with it is drawn full size, in the right colour, and cannot be seen.
+        //
+        // Three systems answered this role with their own `Surface` when it was added,
+        // and two of those were within twenty parts of their own page.
+        for (dark in listOf(false, true)) {
+            for (system in systems(dark)) {
+                val panel = system.color(ColorRole.SurfaceContainer)
+                val page = system.color(ColorRole.Background)
+                val apart = (
+                    abs(panel.red - page.red) +
+                        abs(panel.green - page.green) +
+                        abs(panel.blue - page.blue)
+                    ) * 255f
+                assertTrue(
+                    apart >= 24f,
+                    "${system.id} ${if (dark) "dark" else "light"}: a panel and the page " +
+                        "it sits on are $apart apart, so the panel is invisible",
+                )
             }
         }
     }
