@@ -59,20 +59,28 @@ fn node_of(records: &[Record], widget: WidgetKind) -> u32 {
         .unwrap_or_else(|| panic!("no {widget:?} was created"))
 }
 
-/// Children in the order the parent will draw them. Node id 0 is the Host's placeholder
-/// for a dynamic slot that produced nothing, so it occupies no position and is dropped.
+/// Children in the order the parent will draw them, replayed the way the Renderer applies
+/// a batch: each Insert takes the position its index names and moves the ones already
+/// standing there along. Node id 0 is the Host's placeholder for a dynamic slot that
+/// produced nothing, so it occupies no position and is dropped.
+///
+/// The indices cannot be sorted on instead. An index is a position in the list as it
+/// stands when that record is applied, not a position in the finished list, and the Host
+/// builds a dynamic slot before the slot that comes before it whenever Dioxus hands the
+/// two over in that order.
 fn children_of(records: &[Record], parent: u32) -> Vec<u32> {
-    let mut inserted: Vec<(u32, u32)> = records
-        .iter()
-        .filter_map(|record| match record {
-            Record::Insert(parent_id, node_id, index) if *parent_id == parent && *node_id != 0 => {
-                Some((*index, *node_id))
-            }
-            _ => None,
-        })
-        .collect();
-    inserted.sort_by_key(|(index, _)| *index);
-    inserted.into_iter().map(|(_, node_id)| node_id).collect()
+    let mut children: Vec<u32> = Vec::new();
+    for record in records {
+        let Record::Insert(parent_id, node_id, index) = record else {
+            continue;
+        };
+        if *parent_id != parent || *node_id == 0 {
+            continue;
+        }
+        let at = (*index as usize).min(children.len());
+        children.insert(at, *node_id);
+    }
+    children
 }
 
 fn handler_of(records: &[Record], node: u32, property: PropertyKind) -> u64 {
