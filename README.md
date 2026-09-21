@@ -101,7 +101,7 @@ the API will change.
 | 🪟 Windows desktop | Not scripted | A target in `NFR-4`, but `build-native.sh` refuses to run outside macOS today |
 | 🐧 Linux desktop | Not scripted | Same. The **Rust workspace and the JVM dev shell do work** on Linux: CI runs the Rust gate on `ubuntu-latest` |
 | 📱 iOS | Designed, not implemented | Kotlin/Native `-produce static` with `@CName` symbols (milestone M5) |
-| 🤖 Android | Designed, not implemented | Kotlin host plus generated JNI shims, `PR-5` (milestone M6) |
+| 🤖 Android | Builds, not yet run | A Kotlin Activity owns the process and the loop, Rust is a cdylib, and the JNI shims on both sides are generated from the schema. The app and the library both build for `arm64-v8a`; nothing has run on a device or an emulator yet, which is what `PR-5` asks for (milestone M6) |
 | 🌐 Web (wasm) | Designed, feasibility open | Rust wasm ↔ Kotlin/Wasm linked directly, no JS bridge, `PR-6` (milestone M7, open question **Q3**) |
 
 ### The two halves
