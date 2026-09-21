@@ -404,3 +404,87 @@ fn nfr7_a_menu_of_empty_branches_in_a_list_item_never_loops_the_parent_chain() {
         }
     }
 }
+
+
+/// A list whose items hold an empty Box.
+///
+/// A Box with no children still has a children slot, and an empty slot is a placeholder,
+/// so a window of these items is a window of placeholders standing in different parents.
+fn empty_box_in_a_list_app() -> Element {
+    rsx! {
+        LazyColumn {
+            item_count: 20,
+            item: move |index: usize| rsx! {
+                Column {
+                    dioxus_compose::Box {}
+                    Text { text: "row {index}" }
+                }
+            },
+        }
+    }
+}
+
+#[test]
+fn fr8_an_empty_box_in_a_list_item_keeps_the_item_under_its_own_parent() {
+    let mut host = Host::new(empty_box_in_a_list_app);
+    let mut parents = HashMap::new();
+    let batch = host.rebuild().unwrap().to_vec();
+    follow(&batch, &mut parents);
+
+    let records = decode_batch(&batch).unwrap();
+    let list = records
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: WidgetKind::LazyColumn,
+            } => Some(*node_id),
+            _ => None,
+        })
+        .expect("the screen has a list");
+    let handler = records
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::OnRangeRequested,
+                value: PropertyValue::Integer(id),
+            } if *node_id == list => Some(*id as u64),
+            _ => None,
+        })
+        .expect("the list asks for its range");
+
+    let mut wire = Vec::new();
+    encode_event(
+        &HostEvent {
+            node_id: list,
+            handler_id: handler,
+            payload: EventPayload::RangeRequested { start: 0, count: 4 },
+        },
+        &mut wire,
+    )
+    .unwrap();
+    let batch = host.dispatch_event(&wire).unwrap().0.to_vec();
+    follow(&batch, &mut parents);
+    let window = decode_batch(&batch).unwrap();
+
+    for index in 0..4 {
+        let text = node_with_text(&window, &format!("row {index}"))
+            .unwrap_or_else(|| panic!("item {index} was not materialised"));
+        let column = parent_of(&window, text).expect("the item's text was attached");
+        let wrapper = parent_of(&window, column).expect("the item's column was attached");
+        assert_eq!(
+            Some(list),
+            parent_of(&window, wrapper),
+            "item {index} was attached outside the list",
+        );
+    }
+    let nodes: Vec<u32> = parents.keys().copied().collect();
+    for node in nodes {
+        assert!(
+            loops_from(&parents, node).is_none(),
+            "the parent chain from {node} loops: {:?}",
+            loops_from(&parents, node),
+        );
+    }
+}
