@@ -457,9 +457,12 @@ class NodeTable {
                 // anything the Host described command by command.
                 PropertyKind.Commands -> widget == WidgetKind.Canvas
 
-                // The meaning of a destination's icon. A meaning, never a picture: the
-                // artwork is the design system's.
-                PropertyKind.Icon -> widget == WidgetKind.NavigationItem
+                // The meaning of an icon. A meaning, never a picture: the artwork is the
+                // design system's. A destination carries one, and so does a button,
+                // because every toolbar worth copying is a row of icon buttons and
+                // nothing else in the vocabulary can place one.
+                PropertyKind.Icon ->
+                    widget == WidgetKind.NavigationItem || widget == WidgetKind.Button
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.

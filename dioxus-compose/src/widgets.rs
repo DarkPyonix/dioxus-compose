@@ -396,6 +396,14 @@ pub fn Button(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(into)] text: String,
+    /// The meaning of the glyph on it, never a picture: `IconRole::Search` comes out as
+    /// this design system's search icon.
+    ///
+    /// With a `text` beside it the button shows both. With `text` empty it is the glyph
+    /// alone, which is what every one of the reference toolbars is made of, and the role
+    /// is what names it for assistive technology.
+    #[props(default)]
+    icon: Option<IconRole>,
     #[props(default = true)] enabled: bool,
     #[props(default)] variant: Option<ButtonVariant>,
     /// The label's colour, for the rare button whose meaning is not the variant's.
@@ -421,6 +429,7 @@ pub fn Button(
             fill_max_width,
             fill_max_height,
             text,
+            icon: opt_role(icon),
             enabled,
             variant: role(variant),
             color: opt_paint(color),
