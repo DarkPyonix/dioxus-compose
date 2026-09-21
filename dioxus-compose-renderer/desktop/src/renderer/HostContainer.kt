@@ -24,6 +24,7 @@ import dioxus.compose.design.glassSurface
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.runtime.LocalWindowCaption
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.Children
@@ -123,11 +124,18 @@ internal fun HostTopAppBar(
     theme: ResolvedTheme,
 ) {
     val style = theme.rules.container(ContainerRole.TopAppBar, theme)
+    val caption = LocalWindowCaption.current
     Column(modifier) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .containerDecoration(node, style, theme),
+                .containerDecoration(node, style, theme)
+                // The bar is the window's caption where the tree opens with one, so it
+                // grows up into the strip the window buttons sit in and steps its own
+                // content clear of them. The decoration comes first on purpose: the bar's
+                // surface has to cover that strip, or the window keeps a band of page
+                // colour above the bar and reads as having a title bar after all.
+                .padding(top = caption.height, start = caption.buttonsWidth),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
