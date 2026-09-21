@@ -164,6 +164,35 @@ fn keypad(wide: bool, press: EventHandler<&'static str>) -> Element {
     }
 }
 
+/// The memory keys, as the row the Windows and Deepin references give them.
+///
+/// A second register beside the running value. They are text keys rather than keys in the
+/// pad, because they do not enter anything: the pad is what a number is typed on, and a
+/// row of quiet labels above it is how both references say "these act on what is already
+/// there".
+fn memory_row(memory_set: bool, press: EventHandler<&'static str>) -> Element {
+    rsx! {
+        Row {
+            fill_max_width: true,
+            space_role: SpaceRole::Xs,
+            alignment: Alignment::CenterStart,
+            for label in engine::MEMORY_KEYS {
+                Button {
+                    key: "{label}",
+                    text: label,
+                    weight: 1.0,
+                    variant: ButtonVariant::Text,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    // Recalling and clearing act on what is stored, so they are dead keys
+                    // until something is. The reference greys them the same way.
+                    enabled: memory_set || !matches!(label, "MC" | "MR"),
+                    on_click: move |_| press.call(label),
+                }
+            }
+        }
+    }
+}
+
 /// How large the entered number is set, in sp.
 ///
 /// This is the one place in the samples where a size is named rather than a rung, and the
@@ -298,6 +327,15 @@ fn tape(entries: Vec<TapeEntry>, recall: EventHandler<f64>, clear: EventHandler<
     }
 }
 
+/// How the reading area and the keypad share the instrument's height.
+///
+/// All three references put the keypad along the bottom and let the number sit at the
+/// foot of whatever is left above it. The ratio is theirs too: measured off the three
+/// shots it runs from one to two to one to three, and the keys grow with the window in
+/// every one of them rather than stopping at a size.
+const READING_SHARE: f32 = 1.0;
+const KEYPAD_SHARE: f32 = 3.0;
+
 /// How the instrument and the tape share an expanded window.
 ///
 /// The keypad is what the hand is on, so it gets the larger share, and the tape is a
@@ -314,6 +352,7 @@ fn app() -> Element {
 
     let display = calculator.read().display();
     let status = calculator.read().status();
+    let memory_set = calculator.read().memory_set();
     // A phone holds one column of keys. Anything wider has room for the functions to leave
     // the grid and stand in a column of their own.
     let wide = !window.is_compact();
@@ -398,13 +437,23 @@ fn app() -> Element {
                     padding_role: SpaceRole::Md,
                     space_role: SpaceRole::Md,
 
-                    {readout(status, display)}
-                    // The pad takes the height the readout leaves, and on a desktop
-                    // window it stops widening and centres instead.
+                    // The reading area takes the height the keys leave and the number
+                    // sits at its foot, which is where all three references put it: the
+                    // room above the number is what a long expression grows into rather
+                    // than something that pushes the keys down.
                     dioxus_compose::Box {
                         fill_max_width: true,
-                        weight: 1.0,
-                        alignment: Alignment::TopCenter,
+                        weight: READING_SHARE,
+                        alignment: Alignment::BottomCenter,
+                        {readout(status, display)}
+                    }
+                    {memory_row(memory_set, EventHandler::new(press))}
+                    // The pad is along the bottom, and on a desktop window it stops
+                    // widening and centres instead.
+                    dioxus_compose::Box {
+                        fill_max_width: true,
+                        weight: KEYPAD_SHARE,
+                        alignment: Alignment::BottomCenter,
                         Column {
                             fill_max_width: pad_width.is_none(),
                             width: pad_width,
@@ -523,6 +572,37 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The reference screen reads from the top down: what is being worked out, what it
+    /// comes to, the memory keys, then the pad. This asserts the order the screen is
+    /// declared in, because a memory row under the keypad would be a different screen.
+    #[test]
+    fn fr22_the_memory_row_stands_between_the_reading_area_and_the_keys() {
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        let batch = host.rebuild().expect("the first frame failed to encode");
+        let labels = collect_button_labels(batch);
+        dioxus_compose::window::reset_window_size();
+
+        let memory_at = labels
+            .iter()
+            .position(|label| label == engine::MEMORY_KEYS[0])
+            .expect("the screen has no memory row");
+        assert_eq!(
+            &labels[memory_at..memory_at + engine::MEMORY_KEYS.len()],
+            engine::MEMORY_KEYS,
+            "the memory keys are not the row the reference prints"
+        );
+
+        let first_key = labels
+            .iter()
+            .position(|label| label == ROWS[0][0])
+            .expect("the screen has no keypad");
+        assert!(
+            memory_at < first_key,
+            "the memory row is declared after the keypad, so it is drawn under it"
+        );
     }
 
     /// A phone keypad and a desk keypad are different keypads, not the same one scaled.
