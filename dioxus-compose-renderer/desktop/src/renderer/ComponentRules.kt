@@ -187,9 +187,18 @@ internal object Material3Rules : ComponentRules {
     )
 
     /**
+     * Material draws its own controls: `androidx.compose.material3` is already here, and a
+     * hand-written copy of a filled box with a tick would only be a worse one.
+     */
+    override val controlWidgets: ControlWidgets get() = Material3ControlWidgets
+
+    /**
      * Material's controls: a filled box with a tick, a ring with a dot, and a wide track
      * whose thumb travels across it. The unchecked states are outlined rather than
      * filled, which is what makes a checked one read as a deliberate choice.
+     *
+     * The colours here are what [Material3ControlWidgets] hands the library, and the
+     * divider is drawn from them directly. The dimensions are the library's own.
      */
     override fun controls(theme: ResolvedTheme): ControlsStyle {
         val outline = theme.color(ColorRole.Outline)

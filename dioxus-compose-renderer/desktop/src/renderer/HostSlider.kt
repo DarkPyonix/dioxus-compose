@@ -1,11 +1,5 @@
 package dioxus.compose.foundation
 
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.defaultMinSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -13,13 +7,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.dp
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.PropertyKind
@@ -29,12 +16,15 @@ import dioxus.compose.ui.node.Node
 import kotlin.math.roundToInt
 
 /**
- * A Slider drawn by the active design system's rules.
+ * A Slider.
  *
- * The position a drag is passing through is held here, not in the Host: following a
- * finger would otherwise cost a boundary call per frame. The Host's `value` seeds that
- * position and moves it when the change came from somewhere else, and every position the
- * slider settles on is reported once.
+ * The position a drag is passing through is held here, not in the Host: following a finger
+ * would otherwise cost a boundary call per frame. The Host's `value` seeds that position
+ * and moves it when the change came from somewhere else, and every stop the slider settles
+ * on is reported once.
+ *
+ * How the track, the thumb and the stops are drawn belongs to
+ * [dioxus.compose.design.ComponentRules.controlWidgets].
  */
 @Composable
 internal fun HostSlider(
@@ -44,10 +34,8 @@ internal fun HostSlider(
     theme: ResolvedTheme,
 ) {
     val enabled = node.flag(PropertyKind.Enabled, default = true)
-    val style = theme.rules.controls(theme).slider
     val min = node.number(PropertyKind.Min) ?: 0f
     val max = node.number(PropertyKind.Max) ?: 1f
-    val span = (max - min).takeIf { it > 0f }
     // Zero means continuous, which is also what an absent property means.
     val steps = (node.intProp(PropertyKind.Steps) ?: 0L).toInt().coerceAtLeast(0)
     val fromHost = (node.number(PropertyKind.Value) ?: min).coerceIn(min, max)
@@ -65,78 +53,18 @@ internal fun HostSlider(
         }
     }
 
-    val fraction = if (span == null) 0f else ((current - min) / span).coerceIn(0f, 1f)
-    val thumbPx = style.thumbSize
-    val interactive = if (!enabled) {
-        modifier
-    } else {
-        modifier
-            .pointerInput(node.id, min, max, steps) {
-                detectTapGestures { offset ->
-                    report(valueAt(offset.x, size.width.toFloat(), thumbPx.toPx(), min, max))
-                }
-            }
-            .pointerInput(node.id, min, max, steps) {
-                detectHorizontalDragGestures { change, _ ->
-                    report(
-                        valueAt(change.position.x, size.width.toFloat(), thumbPx.toPx(), min, max),
-                    )
-                }
-            }
-    }
-
-    Box(
-        interactive
-            .defaultMinSize(minWidth = 120.dp)
-            .fillMaxWidth()
-            .height(maxOf(thumbPx, style.trackHeight))
-            .drawBehind {
-                val thumb = thumbPx.toPx()
-                val trackTop = (size.height - style.trackHeight.toPx()) / 2f
-                val trackHeight = style.trackHeight.toPx()
-                val left = thumb / 2f
-                val usable = size.width - thumb
-                val radius = CornerRadius(trackHeight / 2f, trackHeight / 2f)
-                drawRoundRect(
-                    color = style.track,
-                    topLeft = Offset(left, trackTop),
-                    size = Size(usable, trackHeight),
-                    cornerRadius = radius,
-                )
-                drawRoundRect(
-                    color = style.activeTrack,
-                    topLeft = Offset(left, trackTop),
-                    size = Size(usable * fraction, trackHeight),
-                    cornerRadius = radius,
-                )
-                // The stops, in the systems that mark them. A slider with no steps is
-                // continuous and has nothing to mark.
-                val tick = style.tick
-                if (tick != null && steps > 0) {
-                    for (index in 1..steps) {
-                        val at = left + usable * (index.toFloat() / (steps + 1))
-                        drawCircle(tick, radius = trackHeight / 4f, center = Offset(at, trackTop + trackHeight / 2f))
-                    }
-                }
-                val centre = Offset(left + usable * fraction, size.height / 2f)
-                drawCircle(style.thumb, radius = thumb / 2f, center = centre)
-                if (style.thumbBorderWidth.value > 0f) {
-                    val border = style.thumbBorderWidth.toPx()
-                    drawCircle(
-                        color = style.thumbBorder,
-                        radius = (thumb - border) / 2f,
-                        center = centre,
-                        style = Stroke(width = border),
-                    )
-                }
-            },
+    theme.rules.controlWidgets.Slider(
+        value = current,
+        // An empty or inverted range would make every position mean the same thing, so it
+        // is widened to a single unit rather than handed on to a widget that would divide
+        // by it.
+        range = min..(if (max > min) max else min + 1f),
+        steps = steps,
+        enabled = enabled,
+        onChange = report,
+        modifier = modifier,
+        theme = theme,
     )
-}
-
-/** The value a press at [x] lands on, with the thumb's own width taken off both ends. */
-private fun valueAt(x: Float, width: Float, thumb: Float, min: Float, max: Float): Float {
-    val usable = (width - thumb).takeIf { it > 0f } ?: return min
-    return min + (max - min) * ((x - thumb / 2f) / usable).coerceIn(0f, 1f)
 }
 
 /**

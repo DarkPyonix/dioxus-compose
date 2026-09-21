@@ -181,6 +181,16 @@ interface ComponentRules {
     fun controls(theme: ResolvedTheme): ControlsStyle
 
     /**
+     * Who draws those six.
+     *
+     * The default draws them from [controls], so a new design system implements `controls()`
+     * and nothing else. Material 3 overrides this because `androidx.compose.material3`
+     * already draws Material's controls, and a copy of them would only drift from the
+     * specification it claims to follow.
+     */
+    val controlWidgets: ControlWidgets get() = DrawnControlWidgets
+
+    /**
      * The metrics this system's icon set is drawn to.
      *
      * The Host registers a meaning, never a picture or a system icon name, so the artwork

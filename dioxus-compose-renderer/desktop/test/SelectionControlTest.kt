@@ -1,6 +1,12 @@
 package dioxus.compose.test
 
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
@@ -11,6 +17,9 @@ import androidx.compose.ui.unit.width
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import dioxus.compose.design.DrawnControlWidgets
+import dioxus.compose.design.Material3ControlWidgets
+import dioxus.compose.design.rulesFor
 import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.HostEvent
@@ -146,26 +155,96 @@ class SelectionControlTest {
         )
     }
 
-    /** A checkbox and a radio button are not the same control with a different corner. */
+    /**
+     * A checkbox, a radio button and a switch are three controls, not one with three
+     * corners, and a screen reader is told which it is.
+     *
+     * This is the difference that survives every design system. Cupertino and Fluent draw a
+     * box and a ring to the same width on purpose, so a measurement would find them alike;
+     * what a user of assistive technology hears is "one choice of several" against "a
+     * setting turned on", and that has to be right under all three systems.
+     */
     @Test
-    fun fr14_1_a_checkbox_and_a_radio_button_are_drawn_to_their_own_sizes() {
-        fun sizeOf(widget: WidgetKind): Float {
-            var size = 0f
+    fun fr14_1_each_toggle_announces_which_control_it_is() {
+        val expected = mapOf(
+            WidgetKind.Checkbox to Role.Checkbox,
+            WidgetKind.RadioButton to Role.RadioButton,
+            WidgetKind.Switch to Role.Switch,
+        )
+        DesignSystem.entries.forEach { system ->
+            expected.forEach { (widget, role) ->
+                runComposeUiTest {
+                    val connection = FakeHostConnection(
+                        toggleTree(widget, checked = true, system = system),
+                    )
+                    setContent { DioxusContent(rememberDioxusHost(connection)) }
+                    waitForIdle()
+                    onNodeWithTag(nodeTestTag(CONTROL))
+                        .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, role))
+                }
+            }
+        }
+    }
+
+    /**
+     * Every toggle tells the accessibility tree whether it is on, under all three systems.
+     *
+     * A control that announces only its name leaves a screen reader saying "checkbox" with
+     * no way to learn whether it is ticked. A radio button reports being selected rather
+     * than being toggled, because choosing one of several is not the same act as turning a
+     * setting on.
+     */
+    @Test
+    fun nfr8_every_toggle_reports_its_state_to_the_accessibility_tree() {
+        DesignSystem.entries.forEach { system ->
+            listOf(WidgetKind.Checkbox, WidgetKind.Switch).forEach { widget ->
+                runComposeUiTest {
+                    val connection = FakeHostConnection(
+                        toggleTree(widget, checked = true, system = system),
+                    )
+                    setContent { DioxusContent(rememberDioxusHost(connection)) }
+                    waitForIdle()
+                    onNodeWithTag(nodeTestTag(CONTROL)).assert(
+                        SemanticsMatcher.expectValue(
+                            SemanticsProperties.ToggleableState,
+                            ToggleableState.On,
+                        ),
+                    )
+                }
+            }
             runComposeUiTest {
-                val connection = FakeHostConnection(toggleTree(widget, checked = true))
+                val connection = FakeHostConnection(
+                    toggleTree(WidgetKind.RadioButton, checked = true, system = system),
+                )
                 setContent { DioxusContent(rememberDioxusHost(connection)) }
                 waitForIdle()
-                size = onNodeWithTag(nodeTestTag(CONTROL))
-                    .getUnclippedBoundsInRoot()
-                    .height
-                    .value
+                onNodeWithTag(nodeTestTag(CONTROL)).assertIsSelected()
             }
-            return size
         }
-        assertTrue(
-            sizeOf(WidgetKind.Checkbox) != sizeOf(WidgetKind.RadioButton),
-            "Material draws an 18 dp box and a 20 dp ring",
+    }
+
+    /**
+     * Material 3 is the one system that brings its own controls, and the other two get the
+     * shared drawing without asking for it.
+     *
+     * That default is what keeps a new design system to a single implementation. A seventh
+     * system writes `controls()` and stops; if it had to supply six composables as well,
+     * adding one would stop being the small change FR-14.2 promises.
+     */
+    @Test
+    fun fr15_2_4_material_3_is_the_only_system_that_brings_its_own_controls() {
+        assertEquals(
+            Material3ControlWidgets,
+            rulesFor(DesignSystem.Material3).controlWidgets,
+            "Material 3 draws with androidx.compose.material3",
         )
+        listOf(DesignSystem.Cupertino, DesignSystem.Fluent).forEach { system ->
+            assertEquals(
+                DrawnControlWidgets,
+                rulesFor(system).controlWidgets,
+                "$system inherits the drawing built from controls()",
+            )
+        }
     }
 
     /**
