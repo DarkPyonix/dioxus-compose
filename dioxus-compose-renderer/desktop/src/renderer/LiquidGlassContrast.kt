@@ -79,20 +79,37 @@ fun ensureContrast(color: Color, against: Color, minRatio: Float): Color {
     // The ratio itself is unaffected: it is computed from the colour channels alone.
     if (contrastRatio(color, against) >= minRatio) return color.copy(alpha = 1f)
 
-    // Move away from the content colour: darken a colour that is already darker than the
-    // content, lighten one that is lighter. Going the other way would have to cross the
-    // content colour first, which is the worst possible reading on the way.
-    val target =
-        if (relativeLuminance(color) < relativeLuminance(against)) Color.Black else Color.White
+    // Both directions are walked rather than one being deduced from which colour is
+    // lighter. That deduction is right only while the two are clearly apart. A surface
+    // the colour of its own text has no away direction yet, and the comparison picks
+    // whichever way the tie happens to fall; a surface one shade lighter than very light
+    // text has an away direction that runs out of room long before the ratio is met.
+    // Both cases used to return a colour that did not keep the promise this function
+    // exists to make, silently. Two searches instead of one is the whole cost.
+    val darker = nearestMeeting(color, Color.Black, against, minRatio)
+    val lighter = nearestMeeting(color, Color.White, against, minRatio)
+    val meeting = listOf(darker, lighter).filter { contrastRatio(it, against) >= minRatio }
+    // Of the directions that work, the one that moved the colour least. Where neither
+    // works the content colour is a mid grey and nothing can reach the ratio, so the
+    // caller gets the best reading there is.
+    return meeting.minByOrNull { squaredDistance(color, it) }
+        ?: listOf(darker, lighter).maxBy { contrastRatio(it, against) }
+}
 
+/**
+ * The point closest to [from] on the way to [target] that reads at [minRatio] against
+ * [against], or [target] itself when no point on that line does.
+ *
+ * Binary search rather than a step walk, so the result is as close to the colour that was
+ * asked for as the requirement allows.
+ */
+private fun nearestMeeting(from: Color, target: Color, against: Color, minRatio: Float): Color {
     var low = 0f
     var high = 1f
-    var best = lerpOpaque(color, target, 1f)
-    // Binary search for the smallest movement that satisfies the ratio, so the result
-    // stays as close to the requested colour as the requirement allows.
+    var best = lerpOpaque(from, target, 1f)
     repeat(24) {
         val mid = (low + high) / 2f
-        val candidate = lerpOpaque(color, target, mid)
+        val candidate = lerpOpaque(from, target, mid)
         if (contrastRatio(candidate, against) >= minRatio) {
             best = candidate
             high = mid
@@ -101,6 +118,14 @@ fun ensureContrast(color: Color, against: Color, minRatio: Float): Color {
         }
     }
     return best
+}
+
+/** How far apart two colours are, for choosing the smaller of two corrections. */
+private fun squaredDistance(a: Color, b: Color): Float {
+    val red = a.red - b.red
+    val green = a.green - b.green
+    val blue = a.blue - b.blue
+    return red * red + green * green + blue * blue
 }
 
 private fun lerpOpaque(from: Color, to: Color, t: Float): Color = Color(
