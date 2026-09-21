@@ -15,7 +15,7 @@ enum class Key { Enter }
 
 enum class WindowSizeClass { Compact, Medium, Expanded }
 
-enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError }
+enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError, SurfaceContainer }
 
 enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
 
@@ -159,6 +159,7 @@ object DrawCommands {
         12 -> ColorRole.OutlineVariant
         13 -> ColorRole.Error
         14 -> ColorRole.OnError
+        15 -> ColorRole.SurfaceContainer
         else -> null
     }
 
@@ -234,7 +235,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 7806618612347972479L
+    const val SCHEMA_HASH: Long = 7851656791429325612L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -610,6 +611,7 @@ object Protocol {
         12 -> ColorRole.OutlineVariant
         13 -> ColorRole.Error
         14 -> ColorRole.OnError
+        15 -> ColorRole.SurfaceContainer
         else -> throw ProtocolException("unknown ColorRole tag $tag", offset)
     }
 
@@ -890,6 +892,7 @@ object DesignTokens {
             0xffcac4d0.toInt(), // OutlineVariant
             0xffb3261e.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xfff3edf7.toInt(), // SurfaceContainer
         ),
         intArrayOf(
             0xffd0bcff.toInt(), // Primary
@@ -906,6 +909,7 @@ object DesignTokens {
             0xff49454f.toInt(), // OutlineVariant
             0xfff2b8b5.toInt(), // Error
             0xff601410.toInt(), // OnError
+            0xff211f26.toInt(), // SurfaceContainer
         ),
         arrayOf(
             TypeToken(57.0f, 400, 64.0f, 0.0f, false), // Display
@@ -942,6 +946,7 @@ object DesignTokens {
             0xffe5e5ea.toInt(), // OutlineVariant
             0xffff3b30.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xffffffff.toInt(), // SurfaceContainer
         ),
         intArrayOf(
             0xff0a84ff.toInt(), // Primary
@@ -958,6 +963,7 @@ object DesignTokens {
             0xff48484a.toInt(), // OutlineVariant
             0xffff453a.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xff1c1c1e.toInt(), // SurfaceContainer
         ),
         arrayOf(
             TypeToken(34.0f, 400, 41.0f, 0.37f, false), // Display
@@ -994,6 +1000,7 @@ object DesignTokens {
             0xffe0e0e0.toInt(), // OutlineVariant
             0xffc50f1f.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xffffffff.toInt(), // SurfaceContainer
         ),
         intArrayOf(
             0xff479ef5.toInt(), // Primary
@@ -1010,6 +1017,7 @@ object DesignTokens {
             0xff3d3d3d.toInt(), // OutlineVariant
             0xffdc626d.toInt(), // Error
             0xff000000.toInt(), // OnError
+            0xff2b2b2b.toInt(), // SurfaceContainer
         ),
         arrayOf(
             TypeToken(40.0f, 600, 52.0f, 0.0f, false), // Display

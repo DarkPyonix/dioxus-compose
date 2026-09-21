@@ -129,7 +129,12 @@ internal object Material3Rules : ComponentRules {
                 elevation = 1.dp,
             )
 
-            ContainerRole.Surface -> base
+            // A `Surface` is a panel: a layer raised off the page, holding the page's own
+            // reading ink. That is `SurfaceContainer`, not `Surface`. `Surface` is the base
+            // reading colour, and Material 3 gives it the same value as `Background` on
+            // purpose, so a panel painted with it was drawn full size, in the right colour,
+            // and could not be seen against the page it sat on.
+            ContainerRole.Surface -> base.copy(container = theme.color(ColorRole.SurfaceContainer))
 
             ContainerRole.TopAppBar -> base.copy(
                 shape = theme.shape(ShapeRole.None),
@@ -307,7 +312,12 @@ internal object CupertinoRules : ComponentRules {
                 shape = theme.shape(ShapeRole.Large),
             )
 
-            ContainerRole.Surface -> base
+            // A `Surface` is a panel: a layer raised off the page, holding the page's own
+            // reading ink. That is `SurfaceContainer`, not `Surface`. `Surface` is the base
+            // reading colour, and Material 3 gives it the same value as `Background` on
+            // purpose, so a panel painted with it was drawn full size, in the right colour,
+            // and could not be seen against the page it sat on.
+            ContainerRole.Surface -> base.copy(container = theme.color(ColorRole.SurfaceContainer))
 
             // A navigation bar is flush with the content and divided by a hairline.
             ContainerRole.TopAppBar -> base.copy(
@@ -491,7 +501,12 @@ internal object FluentRules : ComponentRules {
                 borderColor = stroke,
             )
 
-            ContainerRole.Surface -> base
+            // A `Surface` is a panel: a layer raised off the page, holding the page's own
+            // reading ink. That is `SurfaceContainer`, not `Surface`. `Surface` is the base
+            // reading colour, and Material 3 gives it the same value as `Background` on
+            // purpose, so a panel painted with it was drawn full size, in the right colour,
+            // and could not be seen against the page it sat on.
+            ContainerRole.Surface -> base.copy(container = theme.color(ColorRole.SurfaceContainer))
 
             // A command bar: flat, tight, and ruled off from the content below it.
             ContainerRole.TopAppBar -> base.copy(

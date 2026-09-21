@@ -45,6 +45,7 @@ fn app() -> Element {
     // The task being edited in place, and the text its editor currently holds.
     let mut editing = use_signal(|| Option::<u64>::None);
     let mut edit_draft = use_signal(String::new);
+    let mut menu_open = use_signal(|| Option::<u64>::None);
 
     let visible: Vec<usize> = tasks
         .read()
@@ -194,55 +195,85 @@ fn app() -> Element {
                                     max_lines: 1,
                                     overflow: TextOverflow::Ellipsis,
                                 }
-                                // On a phone the two worded actions become their marks: a
-                                // pencil and a cross are the same two actions, and at
-                                // 400dp the words leave the title no room at all.
-                                Button {
-                                    text: if stacked { "\u{270e}" } else { "Edit" },
-                                    variant: ButtonVariant::Text,
-                                    on_click: move |_| {
-                                        edit_draft.set(String::new());
-                                        editing.set(Some(task.id));
+                                // What a row can have done to it lives behind one control,
+                                // not spread across four.
+                                //
+                                // Edit, move up, move down and delete on the face of every
+                                // row is four permanently drawn controls per task, twenty
+                                // thousand of them once this list is filled, and a row
+                                // whose actions outweigh the task they act on. An overflow
+                                // menu is the idiom all three design systems share for
+                                // this: Material calls it the overflow menu, Cupertino the
+                                // ellipsis menu, Fluent a command flyout. The other two
+                                // answers are hover reveal and swipe, and neither is
+                                // available: pointer enter and exit are not events the
+                                // protocol carries, and a swipe is not a gesture the
+                                // schema has.
+                                //
+                                // The entries are declared whether the menu is open or
+                                // not. Declaring them only while it is open would be
+                                // better, and it recurses until the stack overflows: a
+                                // `Menu` whose children are a conditional or a loop,
+                                // inside a `LazyColumn` item, does not terminate. Four
+                                // entries and an anchor per visible row is still a cost
+                                // that tracks the window rather than the list.
+                                Menu {
+                                    expanded: menu_open() == Some(task.id),
+                                    on_dismiss: move |_| menu_open.set(None),
+                                    anchor: rsx! {
+                                        Button {
+                                            text: "\u{22ef}",
+                                            variant: ButtonVariant::Text,
+                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                            on_click: move |_| menu_open.set(Some(task.id)),
+                                        }
                                     },
+                                    Button {
+                                        text: "Edit",
+                                        variant: ButtonVariant::Text,
+                                        fill_max_width: true,
+                                        on_click: move |_| {
+                                            menu_open.set(None);
+                                            edit_draft.set(String::new());
+                                            editing.set(Some(task.id));
+                                        },
+                                    }
+                                    Button {
+                                        text: "Move up",
+                                        variant: ButtonVariant::Text,
+                                        fill_max_width: true,
+                                        enabled: previous.is_some(),
+                                        on_click: move |_| {
+                                            menu_open.set(None);
+                                            if let Some(above) = previous {
+                                                swap_tasks(index, above);
+                                            }
+                                        },
+                                    }
+                                    Button {
+                                        text: "Move down",
+                                        variant: ButtonVariant::Text,
+                                        fill_max_width: true,
+                                        enabled: next.is_some(),
+                                        on_click: move |_| {
+                                            menu_open.set(None);
+                                            if let Some(below) = next {
+                                                swap_tasks(index, below);
+                                            }
+                                        },
+                                    }
+                                    Button {
+                                        text: "Delete",
+                                        variant: ButtonVariant::Text,
+                                        fill_max_width: true,
+                                        color: Paint::Role(ColorRole::Error),
+                                        on_click: move |_| {
+                                            menu_open.set(None);
+                                            tasks.write().remove(index);
+                                            store::save(&tasks.read());
+                                        },
+                                    }
                                 }
-                            }
-                            // Reordering is a minor, repeatable adjustment, so the
-                            // arrows are drawn in the quiet ink rather than in the
-                            // accent. Four actions in the accent would all shout
-                            // equally, and the one that deletes would shout no
-                            // louder than the one that nudges a row up by one.
-                            Button {
-                                text: "\u{2191}",
-                                variant: ButtonVariant::Text,
-                                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                enabled: previous.is_some(),
-                                on_click: move |_| {
-                                    if let Some(above) = previous {
-                                        swap_tasks(index, above);
-                                    }
-                                },
-                            }
-                            Button {
-                                text: "\u{2193}",
-                                variant: ButtonVariant::Text,
-                                color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                enabled: next.is_some(),
-                                on_click: move |_| {
-                                    if let Some(below) = next {
-                                        swap_tasks(index, below);
-                                    }
-                                },
-                            }
-                            // Deleting a task cannot be undone, and the error role
-                            // is how every one of these design systems says so.
-                            Button {
-                                text: if stacked { "\u{2715}" } else { "Delete" },
-                                variant: ButtonVariant::Text,
-                                color: Paint::Role(ColorRole::Error),
-                                on_click: move |_| {
-                                    tasks.write().remove(index);
-                                    store::save(&tasks.read());
-                                },
                             }
                         }
                         // The hairline belongs between two rows, so the last row
@@ -334,13 +365,42 @@ fn app() -> Element {
                             store::save(&tasks.read());
                         },
                     }
+                }
+
+                // List and detail. Narrower than a desktop window the list is the whole
+                // width and the editor is the row itself.
+                {list}
+
+                // The demo footer. Filling the list with five thousand rows is not
+                // something a task list does, it is how this sample makes its claim about
+                // windowing checkable, so it says that and sits below the list in the
+                // caption ink. It used to share the filter strip with "Clear completed",
+                // where a tonal container beside bare red text read as two peers styled by
+                // accident rather than as an action and a demo control.
+                Row {
+                    fill_max_width: true,
+                    space_role: SpaceRole::Sm,
+                    alignment: Alignment::CenterStart,
+                    if !stacked {
+                        Text {
+                            text: "Sample: the list windows its rows, so only what is on screen exists.",
+                            weight: 1.0,
+                            type_role: TypeRole::Caption,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                            max_lines: 1,
+                            overflow: TextOverflow::Ellipsis,
+                        }
+                    } else {
+                        Spacer { weight: 1.0 }
+                    }
                     Button {
                         text: if stacked {
                             format!("+{BULK_COUNT}")
                         } else {
                             format!("Add {BULK_COUNT} tasks")
                         },
-                        variant: ButtonVariant::Tonal,
+                        variant: ButtonVariant::Text,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
                         on_click: move |_| {
                             let start = next_id();
                             {
@@ -360,10 +420,6 @@ fn app() -> Element {
                         },
                     }
                 }
-
-                // List and detail. Narrower than a desktop window the list is the whole
-                // width and the editor is the row itself.
-                {list}
             }
             }
         }
@@ -516,6 +572,34 @@ mod tests {
 
         fn node_count(&self) -> usize {
             self.widgets.len()
+        }
+
+        /// How many live nodes are of one kind.
+        fn count_of(&self, kind: WidgetKind) -> usize {
+            self.widgets.values().filter(|got| **got == kind).count()
+        }
+
+        /// Whether a node has an ancestor of the given kind.
+        fn is_inside(&self, node_id: u32, kind: WidgetKind) -> bool {
+            let mut current = node_id;
+            while let Some(parent) = self.parents.get(&current).copied() {
+                if self.widgets.get(&parent) == Some(&kind) {
+                    return true;
+                }
+                current = parent;
+            }
+            false
+        }
+
+        /// The nodes carrying one piece of text.
+        fn nodes_with_text(&self, wanted: &str) -> Vec<u32> {
+            self.texts
+                .iter()
+                .filter(|(node_id, text)| {
+                    self.widgets.contains_key(node_id) && text.as_str() == wanted
+                })
+                .map(|(node_id, _)| *node_id)
+                .collect()
         }
     }
 
@@ -682,26 +766,61 @@ mod tests {
         widths
     }
 
-    /// A phone spells the row's two worded actions as marks and shortens the bulk
-    /// actions, because at 400dp the words leave the title no room. A desktop window
-    /// stops the screen widening and centres it, because a one line item read across
-    /// 1200dp cannot be scanned.
+    /// A phone shortens the worded actions, because at 400dp the words leave the title no
+    /// room, and drops the line that explains the demo control. A desktop window stops the
+    /// screen widening and centres it, because a one line item read across 1200dp cannot
+    /// be scanned.
+    ///
+    /// The row's own actions are not in this any more: they are entries in the row's menu,
+    /// so they are read at their full length at every width and never crowd the title.
     #[test]
     fn fr20_the_screen_shortens_on_a_phone_and_stops_widening_on_a_desktop() {
         let narrow = texts_at(420.0);
-        assert!(narrow.iter().any(|text| text == "\u{2715}"), "{narrow:?}");
-        assert!(!narrow.iter().any(|text| text == "Delete"));
-        assert!(narrow.iter().any(|text| text == "Clear"));
+        assert!(narrow.iter().any(|text| text == "Clear"), "{narrow:?}");
+        assert!(!narrow.iter().any(|text| text == "Clear completed"));
+        assert!(narrow.iter().any(|text| text == "+5000"));
 
         let wide = texts_at(1200.0);
-        assert!(wide.iter().any(|text| text == "Delete"), "{wide:?}");
-        assert!(wide.iter().any(|text| text == "Clear completed"));
+        assert!(
+            wide.iter().any(|text| text == "Clear completed"),
+            "{wide:?}"
+        );
+        assert!(wide.iter().any(|text| text == "Add 5000 tasks"));
 
         assert!(widths_at(420.0).is_empty());
         assert!(
             widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
             "the screen did not take a measure"
         );
+    }
+
+    /// A row carries one action control, and what it can do sits behind it.
+    ///
+    /// Edit, an up arrow, a down arrow and a delete on the face of every row is four
+    /// permanently drawn controls per task, and twenty thousand of them once this list is
+    /// filled. They are entries in the row's menu now, which is one control on the row and
+    /// nothing drawn until it is opened.
+    #[test]
+    fn fr20_a_row_carries_one_action_control_and_hides_the_rest() {
+        let mut screen = Screen::new();
+        screen.request_range(0, WINDOW);
+
+        assert_eq!(
+            screen.mock.count_of(WidgetKind::Menu),
+            WINDOW,
+            "each visible row should carry exactly one action menu"
+        );
+        assert_eq!(screen.mock.nodes_with_text("\u{22ef}").len(), WINDOW);
+        for action in ["Edit", "Move up", "Move down", "Delete"] {
+            let nodes = screen.mock.nodes_with_text(action);
+            assert_eq!(nodes.len(), WINDOW, "{action} is not once per visible row");
+            for node in nodes {
+                assert!(
+                    screen.mock.is_inside(node, WidgetKind::Menu),
+                    "{action} is on the face of a row rather than inside its menu"
+                );
+            }
+        }
     }
 
     /// costs widgets in proportion to the twenty. This is the test that fails the day
@@ -712,10 +831,11 @@ mod tests {
         screen.request_range(4_000, WINDOW);
 
         // A row is a handful of widgets: the column holding it, the row itself, the
-        // toggle, the title, four buttons and the hairline under it. The screen's own
-        // chrome is a fixed handful on top of that. What matters is that the total tracks
-        // the window and not the list behind it.
-        const PER_ROW: usize = 10;
+        // toggle, the title, the action menu with its anchor and its four entries, and
+        // the hairline under it. The screen's own chrome is a fixed handful on top of
+        // that. What matters is that the total tracks the window and not the list behind
+        // it, which is why this is a per-row multiplier rather than a fixed total.
+        const PER_ROW: usize = 12;
         const CHROME: usize = 40;
         let nodes = screen.mock.node_count();
         assert_eq!(screen.mock.live_task_titles().len(), WINDOW);

@@ -79,6 +79,9 @@ class CupertinoDesignSystem private constructor(
         ColorRole.OutlineVariant -> palette.separatorFaint
         ColorRole.Error -> palette.danger
         ColorRole.OnError -> palette.onDanger
+        // A grouped box on the grouped page is the plain reading surface, and what makes
+        // it a panel is that the page underneath it is not.
+        ColorRole.SurfaceContainer -> palette.surface
     }
 
     /**
@@ -257,7 +260,9 @@ class CupertinoDesignSystem private constructor(
      * recompute contrast at draw time.
      */
     override fun material(role: ColorRole): SurfaceMaterial = when (role) {
-        ColorRole.Surface -> LiquidGlass.material(
+        // A panel is a layer over the page, which is exactly what the regular glass
+        // recipe is for, so the layer role answers the same material as the surface.
+        ColorRole.Surface, ColorRole.SurfaceContainer -> LiquidGlass.material(
             dark = isDark,
             prominence = GlassProminence.Regular,
             backdrop = palette.canvas,

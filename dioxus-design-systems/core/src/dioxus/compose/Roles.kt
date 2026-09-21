@@ -19,6 +19,11 @@ enum class ColorRole {
     Background, OnBackground,
     Outline, OutlineVariant,
     Error, OnError,
+    // The layer a panel is made of. Separate from Surface because Material 3 gives
+    // Surface and Background one value on purpose, so a panel painted with Surface is
+    // invisible there. This role is the one a caller can rely on to lift off the page,
+    // and OnSurface is the ink that reads on it.
+    SurfaceContainer,
 }
 
 enum class TypeRole {
