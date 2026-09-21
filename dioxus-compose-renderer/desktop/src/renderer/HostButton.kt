@@ -98,10 +98,19 @@ internal fun HostButton(
     // control fades rather than each variant naming a disabled colour, so a design system
     // owes one number instead of four and the faded colours are still its own.
     val available = if (enabled) Modifier else Modifier.alpha(style.disabledAlpha)
+    // A Host that named its own Background has already had it applied to this node's
+    // modifier chain, so painting the variant's fill here would cover it. The shape, the
+    // border, the resting height and the padding still come from the design system: only
+    // the colour is the application's, which is the rule a Container already follows.
+    //
+    // A unified sample is what needs it. Its reference names a mint chip and a white
+    // pill, and asking for a variant instead hands the question to whichever design
+    // system is active, which answers with its own accent.
+    val ownFill = node.setsOwnBackground()
     val decorated = theme.rules
         .elevation(clickable.then(available), elevation, style.shape, theme)
         .clip(style.shape)
-        .background(container, style.shape)
+        .then(if (ownFill) Modifier else Modifier.background(container, style.shape))
         .then(
             if (style.borderWidth.value > 0f) {
                 Modifier.border(style.borderWidth, borderColor, style.shape)

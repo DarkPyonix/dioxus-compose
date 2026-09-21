@@ -126,6 +126,7 @@ fun iconGeometry(role: IconRole): IconGeometry = when (role) {
             listOf(Offset(0.14f, 0.50f), Offset(0.86f, 0.50f)),
             listOf(Offset(0.14f, 0.72f), Offset(0.86f, 0.72f)),
         ),
+        dots = emptyList(),
     )
 
     // A clock with its hand turned back, which is the one drawing that says the past
@@ -149,6 +150,7 @@ fun iconGeometry(role: IconRole): IconGeometry = when (role) {
             // The arrowhead on the open end of the rim, pointing back the way it came.
             listOf(Offset(0.06f, 0.30f), Offset(0.16f, 0.36f), Offset(0.14f, 0.20f)),
         ),
+        dots = emptyList(),
     )
 
     // A tray: the open box with a lip that things arrive in.
