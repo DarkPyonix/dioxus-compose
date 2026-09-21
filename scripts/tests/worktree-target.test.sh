@@ -123,3 +123,22 @@ if [[ $failures -gt 0 ]]; then
     exit 1
 fi
 echo "ok    worktree build directories are separate"
+
+# --- nfr12_every_launcher_tells_its_run_where_to_work -----------------------
+#
+# Entering the worktree is not enough on its own. Two runs started by launch-agy.sh did
+# their work in the main checkout anyway: they created the branch there, switched it twice
+# while another worker was committing, and left that worker's commits on two unrelated
+# branches. Whatever resolved the path, the run never read the cd. So each launcher says
+# the working directory in the prompt, where the run cannot miss it.
+for launcher in scripts/launch-agent.sh scripts/launch-agy.sh scripts/launch-codex.sh; do
+    name="nfr12_${launcher##*/} names the worktree in the prompt"
+    if grep -q 'Your working directory is' "$launcher"; then
+        pass "$name"
+    else
+        fail "$name" \
+            "$launcher enters the worktree but never says so to the run it starts." \
+            "A run that resolves the repository some other way edits the main checkout," \
+            "which is where another worker is committing."
+    fi
+done

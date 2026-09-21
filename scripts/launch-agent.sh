@@ -69,6 +69,15 @@ fi
 
 cd "$tree"
 : > "$log"
+# The working directory is named in the prompt as well as entered here. Two runs started
+# with a launcher like this one did their work in the main checkout instead of the
+# worktree they were given: they created the branch there, switched it twice while
+# another worker was committing, and left that worker's two commits on two different
+# unrelated branches. cd alone was not enough, so the path is stated where the run can
+# read it.
+prompt="Your working directory is $tree, and you are already in it. Every command you run, every file you edit and every git operation happens there. Never run a command against $repo, never cd out of your worktree, and never switch the branch of any checkout but your own: another worker is committing in that one. If a path you want is not under $tree, you are in the wrong place.
+
+$prompt"
 # stream-json, not plain text. With plain `-p` the output arrives in one lump when the
 # run finishes, so the log sits at zero bytes for an hour and there is no way to tell a
 # working run from a wedged one. Each line here is one event as it happens.
