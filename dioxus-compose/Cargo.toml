@@ -12,6 +12,7 @@ repository = "https://github.com/DarkPyonix/dioxus-compose"
 homepage = "http://darkpyonix.dev/dioxus-compose/"
 keywords = ["ui", "gui", "dioxus", "compose", "desktop"]
 categories = ["gui"]
+readme = "../README.md"
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]
