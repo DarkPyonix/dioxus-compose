@@ -34,6 +34,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+mkdir -p "$out"
+
 playwright_project="$renderer_root/build/tasks/_web_testWasmJsDebug/playwright-project"
 if [[ ! -d "$playwright_project/node_modules/playwright" ]]; then
     echo "no Playwright at $playwright_project." >&2
