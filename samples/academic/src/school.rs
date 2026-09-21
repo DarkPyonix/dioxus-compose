@@ -1,7 +1,23 @@
 //! What the school teaches, and what a pupil has got through.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::{DrawList, DrawListBuilder};
+
+/// The four subject marks, drawn.
+///
+/// The reference puts a rendered three dimensional object on each tile: a camera, a safe,
+/// a joystick, a turntable. A draw list has no lighting and no mesh, and what it made of
+/// that was three concentric circles, four times, so four subjects came out as four
+/// targets in four colours.
+///
+/// These are original drawings of the things a drummer actually touches, registered once
+/// and drawn by id. The tile behind a mark, the name under it and the ink on both are
+/// still roles, so the four tiles are still the design system's four colours.
+pub static MARKS: [&[u8]; 4] = [
+    include_bytes!("../assets/mark-technique.svg"),
+    include_bytes!("../assets/mark-arsenal.svg"),
+    include_bytes!("../assets/mark-coordination.svg"),
+    include_bytes!("../assets/mark-songs.svg"),
+];
 
 /// One of the four things a drummer works on.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -11,6 +27,8 @@ pub struct Subject {
     /// How much of it is done, nought to one.
     pub progress: f32,
     pub tile: Tile,
+    /// The drawing on the subject's tile.
+    pub mark: &'static [u8],
 }
 
 /// The fill a subject's tile takes, and the ink that reads on it.
@@ -62,24 +80,28 @@ impl Tile {
 pub const SUBJECTS: [Subject; 4] = [
     Subject {
         name: "Technique",
+        mark: MARKS[0],
         blurb: "Grip, rebound and the four strokes",
         progress: 0.75,
         tile: Tile::First,
     },
     Subject {
         name: "Arsenal",
+        mark: MARKS[1],
         blurb: "Fills, rolls and where to put them",
         progress: 0.4,
         tile: Tile::Second,
     },
     Subject {
         name: "Coordination",
+        mark: MARKS[2],
         blurb: "Limbs that disagree, on purpose",
         progress: 0.55,
         tile: Tile::Third,
     },
     Subject {
         name: "Songs",
+        mark: MARKS[3],
         blurb: "Whole tunes, start to finish",
         progress: 0.2,
         tile: Tile::Neutral,
@@ -193,22 +215,6 @@ pub fn ordinal(number: u32) -> String {
     format!("{number}{suffix}")
 }
 
-/// A subject's mark: a drum seen from above, as three rings.
-///
-/// The reference puts a rendered three dimensional object on each tile. A draw list has no
-/// lighting and no mesh, and it does have circles, so this is the part of the idea that
-/// survives: a shell, a head and a rim, in the tile's own family. It is a mark rather than
-/// an illustration and does not pretend otherwise.
-pub fn drum(size: f32, tile: Tile) -> DrawList {
-    let (_, ink, strong) = tile.roles();
-    let middle = size / 2.0;
-    DrawListBuilder::with_capacity(3, 0)
-        .circle(Paint::Role(strong), middle, middle, size * 0.40, 0.0)
-        .circle(Paint::Role(ink), middle, middle, size * 0.40, size * 0.05)
-        .circle(Paint::Role(ink), middle, middle, size * 0.16, size * 0.04)
-        .build()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,20 +278,38 @@ mod tests {
         }
     }
 
-    /// Every mark is painted with a role.
+    /// Four subjects, four marks. Named for what it defends: three concentric circles in
+    /// four colours is four subjects nobody can tell apart, which is what the draw list
+    /// could say and why these are pictures.
     #[test]
-    fn fr13_no_mark_carries_a_literal_colour() {
-        for subject in SUBJECTS {
-            for command in drum(100.0, subject.tile)
-                .decode()
-                .expect("a mark did not decode")
-            {
-                assert!(
-                    matches!(command.paint(), Paint::Role(_)),
-                    "{} is drawn with something other than a role",
-                    subject.name
+    fn fr16_no_two_subjects_share_a_mark() {
+        for (index, first) in SUBJECTS.iter().enumerate() {
+            for second in &SUBJECTS[index + 1..] {
+                assert_ne!(
+                    first.mark, second.mark,
+                    "{} and {} are the same drawing",
+                    first.name, second.name
                 );
             }
+        }
+    }
+
+    /// A drawing that is not a drawing is a tile with a hole in it, and a drawing with no
+    /// box to scale from is drawn at its own size in the corner of the tile.
+    #[test]
+    fn fr16_every_mark_is_a_document_that_can_be_scaled() {
+        for subject in SUBJECTS {
+            let text = std::str::from_utf8(subject.mark).expect("a mark is not text");
+            assert!(
+                text.starts_with("<svg"),
+                "{}'s mark is not an svg document",
+                subject.name
+            );
+            assert!(
+                text.contains("viewBox='0 0 120 120'"),
+                "{}'s mark has no box to scale from",
+                subject.name
+            );
         }
     }
 

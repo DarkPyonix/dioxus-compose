@@ -1,17 +1,16 @@
 //! A meditation app: a course of the day, shelves of courses, and sleep stories.
 //!
-//! Every card in the reference carries a drawn illustration, and a drawn illustration is
-//! the one thing in these seven designs that has no route into the tree at all: `Image`
-//! takes an id the Host registered, and an application only has the tree. So each card's
-//! picture is a `Canvas` scene built from the card's own accent family, which at least
-//! follows the reader into dark rather than staying the colour it was drawn.
+//! Every card in the reference carries a drawn illustration, and now so does every card
+//! here: three original drawings in `assets/`, one per accent family, registered once and
+//! drawn by id. The card behind an illustration, the title on it and the row it sits in
+//! are still roles, so only the artwork carries colours of its own.
 //!
 //! Unified, naming Cupertino and light: the reference is a cream page carrying
 //! illustrated cards. `THEME` says both.
 
 mod courses;
 
-use courses::{Course, Shelf, course, on, scene, sessions_label};
+use courses::{Course, Shelf, course, on, sessions_label};
 use dioxus_compose::prelude::*;
 
 /// A phone design in a desktop window is still a phone design.
@@ -82,10 +81,10 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
             height: size.1,
             shape_role: ShapeRole::Large,
             alignment: Alignment::BottomStart,
-            Canvas {
+            Image {
                 fill_max_width: true,
                 fill_max_height: true,
-                commands: scene(size.0, size.1, found.seed, found.palette),
+                asset_id: asset(AssetKind::Svg, found.palette.scene()),
             }
             Row {
                 fill_max_width: true,
@@ -124,11 +123,11 @@ fn tile_card(found: &Course, on_open: EventHandler<u32>) -> Element {
         Column {
             fill_max_width: true,
             space_role: SpaceRole::Xs,
-            Canvas {
+            Image {
                 fill_max_width: true,
                 height: TILE.1,
                 shape_role: ShapeRole::Medium,
-                commands: scene(TILE.0, TILE.1, found.seed, found.palette),
+                asset_id: asset(AssetKind::Svg, found.palette.scene()),
             }
             Text {
                 text: sessions_label(found),
@@ -244,10 +243,10 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                 fill_max_width: true,
                 height: HERO.1,
                 alignment: Alignment::TopStart,
-                Canvas {
+                Image {
                     fill_max_width: true,
                     fill_max_height: true,
-                    commands: scene(HERO.0, HERO.1, found.seed, found.palette),
+                    asset_id: asset(AssetKind::Svg, found.palette.scene()),
                 }
                 Button {
                     text: "\u{2190}",
@@ -556,8 +555,11 @@ mod tests {
         dioxus_compose::window::reset_window_size();
     }
 
-    /// Every card carries its picture. A `Canvas` with no draw list is a blank rectangle,
-    /// and on this screen the pictures are most of what there is.
+    /// Every card carries its picture, and each drawing crosses once.
+    ///
+    /// Named for what it defends: an `Image` whose id names nothing is a blank rectangle,
+    /// and on this screen the pictures are most of what there is. A shelf of nine cards
+    /// drawn from three illustrations is three registrations, not nine.
     #[test]
     fn fr16_every_card_carries_its_picture() {
         dioxus_compose::window::reset_window_size();
@@ -566,28 +568,46 @@ mod tests {
             .expect("the first frame failed")
             .to_vec();
         let mutations = decode_batch(&batch).expect("the batch did not decode");
-        let canvases: Vec<u32> = mutations
+        let registered: Vec<u32> = mutations
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::RegisterAsset { asset_id, .. } => Some(*asset_id),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !registered.is_empty(),
+            "the shelf registered no pictures at all"
+        );
+        assert!(
+            registered.len() <= courses::SCENES.len(),
+            "the shelf registered {} pictures out of {} drawings",
+            registered.len(),
+            courses::SCENES.len()
+        );
+        let images: Vec<u32> = mutations
             .iter()
             .filter_map(|mutation| match mutation {
                 Mutation::Create {
                     node_id,
-                    widget: WidgetKind::Canvas,
+                    widget: WidgetKind::Image,
                 } => Some(*node_id),
                 _ => None,
             })
             .collect();
-        assert!(!canvases.is_empty(), "the shelf draws nothing at all");
-        for canvas in canvases {
+        assert!(!images.is_empty(), "the shelf draws nothing at all");
+        for image in images {
+            let drawn = mutations.iter().find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Asset,
+                    value: PropertyValue::Integer(id),
+                } if *node_id == image => Some(*id as u32),
+                _ => None,
+            });
             assert!(
-                mutations.iter().any(|mutation| matches!(
-                    mutation,
-                    Mutation::SetProp {
-                        node_id,
-                        property: PropertyKind::Commands,
-                        ..
-                    } if *node_id == canvas
-                )),
-                "a card reached the Renderer with no picture on it"
+                drawn.is_some_and(|id| registered.contains(&id)),
+                "a card draws an id that was never registered"
             );
         }
         dioxus_compose::window::reset_window_size();

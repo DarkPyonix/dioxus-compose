@@ -1,9 +1,25 @@
 //! The courses, the categories, and the scenes drawn on their cards.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::{DrawList, DrawListBuilder};
 
-/// Which accent family a card's scene is drawn from.
+/// The scenes, drawn.
+///
+/// The reference's cards carry illustrations of people: someone at a drawing board,
+/// two people sitting cross-legged, someone asleep in the back of a car. A draw list has
+/// lines, arcs, circles and rounded rectangles. What it made of that idea was a disc for a
+/// hill, a disc for a sun and two strokes for a frond, and nine cards drawn from it are
+/// nine of the same picture with the discs in slightly different places.
+///
+/// These are original drawings, registered once and drawn by id. An illustration carries
+/// its own colours, which is what makes it an illustration; the card behind it, the title
+/// on it and the row it sits in are all still roles.
+pub static SCENES: [&[u8]; 3] = [
+    include_bytes!("../assets/scene-sitting.svg"),
+    include_bytes!("../assets/scene-standing.svg"),
+    include_bytes!("../assets/scene-resting.svg"),
+];
+
+/// Which accent family a card's chrome is drawn from, and which scene it carries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Palette {
     First,
@@ -12,6 +28,15 @@ pub enum Palette {
 }
 
 impl Palette {
+    /// The illustration this family's cards carry.
+    pub fn scene(self) -> &'static [u8] {
+        SCENES[match self {
+            Palette::First => 0,
+            Palette::Second => 1,
+            Palette::Third => 2,
+        }]
+    }
+
     /// The strong colour, the quiet fill it sits on, and the ink that reads on that fill.
     pub fn roles(self) -> (ColorRole, ColorRole, ColorRole) {
         match self {
@@ -44,8 +69,6 @@ pub struct Course {
     pub palette: Palette,
     /// Which shelf it belongs to.
     pub shelf: Shelf,
-    /// What its scene is arranged from.
-    pub seed: u32,
 }
 
 /// Which part of the app a course shows up in.
@@ -64,7 +87,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 3,
         palette: Palette::First,
         shelf: Shelf::ForYou,
-        seed: 11,
     },
     Course {
         id: 2,
@@ -73,7 +95,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 12,
         palette: Palette::Second,
         shelf: Shelf::ForYou,
-        seed: 23,
     },
     Course {
         id: 3,
@@ -82,7 +103,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 9,
         palette: Palette::Third,
         shelf: Shelf::ForYou,
-        seed: 37,
     },
     Course {
         id: 4,
@@ -91,7 +111,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 10,
         palette: Palette::First,
         shelf: Shelf::Meditate,
-        seed: 53,
     },
     Course {
         id: 5,
@@ -100,7 +119,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 8,
         palette: Palette::Second,
         shelf: Shelf::Meditate,
-        seed: 67,
     },
     Course {
         id: 6,
@@ -109,7 +127,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 15,
         palette: Palette::Third,
         shelf: Shelf::Meditate,
-        seed: 79,
     },
     Course {
         id: 7,
@@ -118,7 +135,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 21,
         palette: Palette::First,
         shelf: Shelf::Sleep,
-        seed: 97,
     },
     Course {
         id: 8,
@@ -127,7 +143,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 21,
         palette: Palette::Second,
         shelf: Shelf::Sleep,
-        seed: 113,
     },
     Course {
         id: 9,
@@ -136,7 +151,6 @@ pub const COURSES: [Course; 9] = [
         minutes: 21,
         palette: Palette::Third,
         shelf: Shelf::Sleep,
-        seed: 131,
     },
 ];
 
@@ -159,71 +173,6 @@ pub fn sessions_label(course: &Course) -> String {
         "sessions"
     };
     format!("{} {word} \u{00b7} {} min", course.sessions, course.minutes)
-}
-
-/// A repeatable sequence from a seed, so a scene is the same scene every frame.
-fn wobble(seed: u32, step: u32) -> f32 {
-    let mixed = seed
-        .wrapping_mul(1_664_525)
-        .wrapping_add(step.wrapping_mul(1_013_904_223))
-        .wrapping_mul(2_246_822_519);
-    (mixed >> 8) as f32 / (1_u32 << 24) as f32
-}
-
-/// The illustration on a course's card: a sky, a sun, a hill and a frond.
-///
-/// The reference's cards carry drawn illustrations of people. A draw list has lines, arcs,
-/// circles and rounded rectangles, and no way to reach a picture at all: `Image` takes an
-/// id the Host registered and an application only has the tree. So this is the part of the
-/// idea a draw list can hold, built from the card's own accent family, which means it
-/// follows the reader into dark instead of staying the colour it was drawn.
-pub fn scene(width: f32, height: f32, seed: u32, palette: Palette) -> DrawList {
-    let (strong, quiet, ink) = palette.roles();
-    let a = wobble(seed, 1);
-    let b = wobble(seed, 2);
-    let c = wobble(seed, 3);
-
-    DrawListBuilder::with_capacity(5, 0)
-        // The sky.
-        .rect(Paint::Role(quiet), 0.0, 0.0, width, height, 0.0)
-        // The hill: a filled disc whose middle sits below the bottom edge, so what is
-        // left inside the picture is a dome. A stroked arc was the first attempt and came
-        // out as a ring: an arc's stroke is centred on its radius, so a thick one bulges
-        // out of the shape on both sides and reads as a donut rather than as a horizon.
-        .circle(
-            Paint::Role(strong),
-            width * (0.22 + c * 0.5),
-            height * 1.34,
-            height * 1.02,
-            0.0,
-        )
-        // The sun over it, in the ink, which is dark enough to read as a disc rather than
-        // as a second hill.
-        .circle(
-            Paint::Role(ink),
-            width * (0.18 + a * 0.5),
-            height * (0.2 + b * 0.14),
-            height * 0.11,
-            0.0,
-        )
-        // A frond, as two strokes leaning out of the hill.
-        .line(
-            Paint::Role(ink),
-            width * (0.72 + a * 0.12),
-            height * 0.92,
-            width * (0.82 + b * 0.1),
-            height * 0.42,
-            2.0,
-        )
-        .line(
-            Paint::Role(ink),
-            width * (0.78 + a * 0.1),
-            height * 0.7,
-            width * (0.9 + c * 0.06),
-            height * 0.52,
-            2.0,
-        )
-        .build()
 }
 
 #[cfg(test)]
@@ -258,46 +207,33 @@ mod tests {
         }
     }
 
-    /// A scene is the same scene every time it is drawn. One that reshuffles on each
-    /// redraw flickers, and one built from real randomness cannot be tested.
+    /// Three families, three illustrations. Two families sharing a picture is a shelf
+    /// that reads as one card repeated, which is what nine cards built from one draw list
+    /// and a seed looked like.
     #[test]
-    fn fr16_a_scene_is_the_same_every_time_it_is_drawn() {
-        let once = scene(200.0, 120.0, 11, Palette::First);
-        let again = scene(200.0, 120.0, 11, Palette::First);
-        assert_eq!(once.as_bytes(), again.as_bytes());
-    }
-
-    /// Two courses have to look different, or a shelf reads as one card repeated.
-    #[test]
-    fn fr16_two_seeds_draw_two_different_scenes() {
-        let first = scene(200.0, 120.0, 11, Palette::First);
-        let second = scene(200.0, 120.0, 23, Palette::First);
-        assert_ne!(first.as_bytes(), second.as_bytes());
-    }
-
-    /// Every colour in a scene is a role.
-    #[test]
-    fn fr13_no_scene_carries_a_literal_colour() {
-        for palette in [Palette::First, Palette::Second, Palette::Third] {
-            for command in scene(200.0, 120.0, 11, palette)
-                .decode()
-                .expect("a scene did not decode")
-            {
-                assert!(
-                    matches!(command.paint(), Paint::Role(_)),
-                    "{command:?} is painted with something other than a role"
+    fn fr16_no_two_families_share_a_scene() {
+        let palettes = [Palette::First, Palette::Second, Palette::Third];
+        for (index, first) in palettes.iter().enumerate() {
+            for second in &palettes[index + 1..] {
+                assert_ne!(
+                    first.scene(),
+                    second.scene(),
+                    "{first:?} and {second:?} are the same drawing"
                 );
             }
         }
     }
 
-    /// A scene is a whole picture rather than an empty rectangle: the sky, the sun, the
-    /// hill and the two strokes of the frond.
+    /// A drawing that is not a drawing is a card with a hole in it.
     #[test]
-    fn fr16_a_scene_draws_every_part_of_itself() {
-        let commands = scene(200.0, 120.0, 11, Palette::First)
-            .decode()
-            .expect("it did not decode");
-        assert_eq!(commands.len(), 5);
+    fn fr16_every_scene_is_a_document_with_something_in_it() {
+        for scene in SCENES {
+            let text = std::str::from_utf8(scene).expect("a scene is not text");
+            assert!(text.starts_with("<svg"), "a scene is not an svg document");
+            assert!(
+                text.contains("viewBox='0 0 320 200'"),
+                "a scene with no box to scale from is drawn at its own size in a corner"
+            );
+        }
     }
 }

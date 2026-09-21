@@ -1,5 +1,8 @@
 //! A drum school: four subjects, four stages of lessons, and what is still locked.
 //!
+//! The marks on the tiles are pictures: the reference puts a rendered object on each, and
+//! three concentric circles in four colours is four subjects nobody can tell apart.
+//!
 //! The screen this sample exists for is the grid of subjects, and it is the one place in
 //! the seven references where the role vocabulary ran out. Four subjects want four fills
 //! that are peers of each other. There are three accent families and nothing else that is
@@ -14,7 +17,7 @@
 mod school;
 
 use dioxus_compose::prelude::*;
-use school::{LESSONS, Lesson, STAGES, SUBJECTS, Subject, drum, ordinal, overall_progress, stage};
+use school::{LESSONS, Lesson, STAGES, SUBJECTS, Subject, ordinal, overall_progress, stage};
 
 /// A phone design in a desktop window is still a phone design.
 const PAGE_MEASURE: f32 = 420.0;
@@ -78,10 +81,10 @@ fn subject_tile(subject: &Subject, on_open: EventHandler<&'static str>) -> Eleme
                 fill_max_width: true,
                 weight: 1.0,
                 alignment: Alignment::Center,
-                Canvas {
+                Image {
                     width: MARK_SIDE,
                     height: MARK_SIDE,
-                    commands: drum(MARK_SIDE, subject.tile),
+                    asset_id: asset(AssetKind::Svg, subject.mark),
                 }
             }
             Text {
@@ -609,8 +612,8 @@ mod tests {
         dioxus_compose::window::reset_window_size();
     }
 
-    /// The grid has four marks on it, and a mark with no draw list is a blank square where
-    /// a subject should be.
+    /// The grid has four marks on it, one registration each, and a mark whose id names
+    /// nothing is a blank square where a subject should be.
     #[test]
     fn fr16_every_subject_carries_a_mark() {
         dioxus_compose::window::reset_window_size();
@@ -619,32 +622,46 @@ mod tests {
             .expect("the first frame failed")
             .to_vec();
         let mutations = decode_batch(&batch).expect("the batch did not decode");
-        let canvases: Vec<u32> = mutations
+        for subject in SUBJECTS {
+            assert_eq!(
+                mutations
+                    .iter()
+                    .filter(|mutation| matches!(
+                        mutation,
+                        Mutation::RegisterAsset { bytes, .. } if *bytes == subject.mark
+                    ))
+                    .count(),
+                1,
+                "{} has no mark, or sent it more than once",
+                subject.name
+            );
+        }
+        let images: Vec<u32> = mutations
             .iter()
             .filter_map(|mutation| match mutation {
                 Mutation::Create {
                     node_id,
-                    widget: WidgetKind::Canvas,
+                    widget: WidgetKind::Image,
                 } => Some(*node_id),
                 _ => None,
             })
             .collect();
         assert_eq!(
-            canvases.len(),
+            images.len(),
             SUBJECTS.len(),
             "the grid should hold one mark per subject"
         );
-        for canvas in canvases {
+        for image in images {
             assert!(
                 mutations.iter().any(|mutation| matches!(
                     mutation,
                     Mutation::SetProp {
                         node_id,
-                        property: PropertyKind::Commands,
+                        property: PropertyKind::Asset,
                         ..
-                    } if *node_id == canvas
+                    } if *node_id == image
                 )),
-                "a subject's mark reached the Renderer with no draw list"
+                "a subject's mark reached the Renderer with no picture on it"
             );
         }
         dioxus_compose::window::reset_window_size();

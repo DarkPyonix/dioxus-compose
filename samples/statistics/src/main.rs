@@ -27,7 +27,7 @@ const PAGE_MEASURE: f32 = 420.0;
 ///
 /// Numbers, because these are the proportions of a drawing. The space ladder answers how
 /// far apart two things sit, not how large a picture is.
-const DIAL_SIDE: f32 = 260.0;
+const DIAL_SIDE: f32 = 300.0;
 /// The columns beside the dial, and the columns on the costs page.
 ///
 /// Two sizes, because a draw list is in the canvas's own coordinates: the canvas is given
@@ -144,7 +144,57 @@ fn costs_panel(title_role: TypeRole, (width, height): (f32, f32)) -> Element {
     }
 }
 
-/// The overview: the dial, the costs panel and a second reading beside it.
+/// Where the money went, one tile per service, running past the right edge.
+///
+/// On both pages, because a page that says how much was spent this week and never says
+/// what it went on is the top half of the reference with the bottom half missing, and that
+/// missing half is the empty third at the foot of the window.
+fn sources_strip() -> Element {
+    rsx! {
+        LazyRow {
+            fill_max_width: true,
+            height: SOURCE_TILE,
+            item_count: SOURCES.len(),
+            key_of: move |position: usize| SOURCES[position].name.to_owned(),
+            item: move |position: usize| {
+                let source = SOURCES[position];
+                rsx! {
+                    dioxus_compose::Box {
+                        width: SOURCE_TILE,
+                        fill_max_height: true,
+                        padding_role: SpaceRole::Xs,
+                        Column {
+                            fill_max_width: true,
+                            fill_max_height: true,
+                            background: Paint::Role(ColorRole::TertiaryContainer),
+                            shape_role: ShapeRole::Large,
+                            padding_role: SpaceRole::Md,
+                            space_role: SpaceRole::Xs,
+                            Text {
+                                text: source.name,
+                                type_role: TypeRole::Label,
+                                color: Paint::Role(ColorRole::OnTertiaryContainer),
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                            Spacer { weight: 1.0 }
+                            Text {
+                                text: cost(source.cents),
+                                type_role: TypeRole::Title,
+                                color: Paint::Role(ColorRole::OnTertiaryContainer),
+                                max_lines: 1,
+                                overflow: TextOverflow::Ellipsis,
+                            }
+                        }
+                    }
+                }
+            },
+        }
+    }
+}
+
+/// The overview: the dial, the costs panel, a second reading beside it, and what the
+/// money went on.
 fn today_page() -> Element {
     rsx! {
         Column {
@@ -187,6 +237,8 @@ fn today_page() -> Element {
                     }
                 }
             }
+
+            {sources_strip()}
 
             Separator {}
 
@@ -243,46 +295,7 @@ fn costs_page() -> Element {
                 ),
             }
 
-            // Where the money went, one tile per service, running past the right edge.
-            LazyRow {
-                fill_max_width: true,
-                height: SOURCE_TILE,
-                item_count: SOURCES.len(),
-                key_of: move |position: usize| SOURCES[position].name.to_owned(),
-                item: move |position: usize| {
-                    let source = SOURCES[position];
-                    rsx! {
-                        dioxus_compose::Box {
-                            width: SOURCE_TILE,
-                            fill_max_height: true,
-                            padding_role: SpaceRole::Xs,
-                            Column {
-                                fill_max_width: true,
-                                fill_max_height: true,
-                                background: Paint::Role(ColorRole::TertiaryContainer),
-                                shape_role: ShapeRole::Large,
-                                padding_role: SpaceRole::Md,
-                                space_role: SpaceRole::Xs,
-                                Text {
-                                    text: source.name,
-                                    type_role: TypeRole::Label,
-                                    color: Paint::Role(ColorRole::OnTertiaryContainer),
-                                    max_lines: 1,
-                                    overflow: TextOverflow::Ellipsis,
-                                }
-                                Spacer { weight: 1.0 }
-                                Text {
-                                    text: cost(source.cents),
-                                    type_role: TypeRole::Title,
-                                    color: Paint::Role(ColorRole::OnTertiaryContainer),
-                                    max_lines: 1,
-                                    overflow: TextOverflow::Ellipsis,
-                                }
-                            }
-                        }
-                    }
-                },
-            }
+            {sources_strip()}
 
             Spacer { weight: 1.0 }
 
@@ -554,7 +567,14 @@ mod tests {
             "Statistics",
             &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
-            |_| {},
+            |screen| {
+                assert_eq!(
+                    screen.fill_lists(5),
+                    1,
+                    "the overview's sources row should be its one windowing list, or the \
+                     picture is of a screen with a hole in it"
+                );
+            },
         );
     }
 
