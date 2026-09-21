@@ -33,13 +33,6 @@ impl Category {
             Category::Sale => "Sale",
         }
     }
-
-    pub fn index(self) -> usize {
-        Self::STRIP
-            .iter()
-            .position(|found| *found == self)
-            .unwrap_or(0)
-    }
 }
 
 /// The colour a product's tile is filled with.

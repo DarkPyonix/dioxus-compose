@@ -26,6 +26,7 @@ const PAGE_MEASURE: f32 = 420.0;
 /// how far apart two things sit rather than how large a picture is.
 const TILE_HEIGHT: f32 = 168.0;
 const CAROUSEL_HEIGHT: f32 = 200.0;
+const STRIP_HEIGHT: f32 = 56.0;
 const HERO_HEIGHT: f32 = 300.0;
 
 /// The destinations along the bottom.
@@ -73,7 +74,15 @@ impl Destination {
 }
 
 /// The picture of a garment, which is a fill and a name because it cannot be a photograph.
-fn tile(product: &Product, height: f32, on_open: EventHandler<u32>) -> Element {
+///
+/// `named` is false in the grid, where the cell writes the name and the price underneath
+/// and the tile would otherwise say both twice.
+///
+/// The button is here because a tile cannot be tapped. `Modifier::Clickable` exists on the
+/// wire, but no container widget exposes it, so the only thing in the vocabulary that
+/// carries a press is a `Button`. The reference has no button: the picture itself is the
+/// control.
+fn tile(product: &Product, height: f32, named: bool, on_open: EventHandler<u32>) -> Element {
     let (fill, ink) = product.tint.pair();
     let id = product.id;
     rsx! {
@@ -87,19 +96,21 @@ fn tile(product: &Product, height: f32, on_open: EventHandler<u32>) -> Element {
                 fill_max_width: true,
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Xs,
-                Text {
-                    text: product.name,
-                    type_role: TypeRole::Subtitle,
-                    color: Paint::Role(ink),
-                    max_lines: 1,
-                    overflow: TextOverflow::Ellipsis,
-                }
-                Text {
-                    text: product.support,
-                    type_role: TypeRole::Caption,
-                    color: Paint::Role(ink),
-                    max_lines: 1,
-                    overflow: TextOverflow::Ellipsis,
+                if named {
+                    Text {
+                        text: product.name,
+                        type_role: TypeRole::Subtitle,
+                        color: Paint::Role(ink),
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
+                    Text {
+                        text: product.support,
+                        type_role: TypeRole::Caption,
+                        color: Paint::Role(ink),
+                        max_lines: 1,
+                        overflow: TextOverflow::Ellipsis,
+                    }
                 }
                 Button {
                     text: "View",
@@ -113,12 +124,16 @@ fn tile(product: &Product, height: f32, on_open: EventHandler<u32>) -> Element {
 }
 
 /// One cell of the two-up grid: the tile, then the name, support and price under it.
+///
+/// No weight of its own. The cell's parent in the grid is a `Column`, where weight is
+/// vertical, and a vertical weight inside a column that is measuring its own height comes
+/// out as a height of zero. The width share belongs to the wrapper in the row above.
 fn grid_cell(product: &Product, on_open: EventHandler<u32>) -> Element {
     rsx! {
         Column {
-            weight: 1.0,
+            fill_max_width: true,
             space_role: SpaceRole::Xs,
-            {tile(product, TILE_HEIGHT, on_open)}
+            {tile(product, TILE_HEIGHT, false, on_open)}
             Text {
                 text: product.name,
                 type_role: TypeRole::BodyStrong,
@@ -194,23 +209,42 @@ fn catalogue_screen(
                             width: PAGE_MEASURE * 0.62,
                             fill_max_height: true,
                             padding_role: SpaceRole::Xs,
-                            {tile(&CATALOGUE[position], CAROUSEL_HEIGHT, on_open)}
+                            {tile(&CATALOGUE[position], CAROUSEL_HEIGHT, true, on_open)}
                         }
                     }
                 },
             }
 
-            Tabs {
+            // A strip that runs off the edge, not a segmented control.
+            //
+            // `Tabs` divides the width it is given equally between its children and does
+            // not scroll, so five categories on a phone is five segments of seventy dp,
+            // and a button inside one carries its own horizontal padding: every label
+            // broke into a column of single letters. The reference's own strip runs past
+            // the right edge with the last category half shown, which is this.
+            LazyRow {
                 fill_max_width: true,
-                selected_index: category().index(),
-                for choice in Category::STRIP {
-                    Button {
-                        key: "{choice.label()}",
-                        text: choice.label(),
-                        variant: ButtonVariant::Text,
-                        on_click: move |_| category.set(choice),
+                height: STRIP_HEIGHT,
+                item_count: Category::STRIP.len(),
+                key_of: move |position: usize| Category::STRIP[position].label().to_owned(),
+                item: move |position: usize| {
+                    let choice = Category::STRIP[position];
+                    rsx! {
+                        dioxus_compose::Box {
+                            padding_role: SpaceRole::Xs,
+                            alignment: Alignment::Center,
+                            Button {
+                                text: choice.label(),
+                                variant: if choice == category() {
+                                    ButtonVariant::Filled
+                                } else {
+                                    ButtonVariant::Text
+                                },
+                                on_click: move |_| category.set(choice),
+                            }
+                        }
                     }
-                }
+                },
             }
 
             Column {
@@ -903,7 +937,10 @@ mod tests {
             "the garment's page has no way back"
         );
         assert!(
-            screen.latest_texts().iter().any(|text| text == "New"),
+            screen
+                .latest_texts()
+                .iter()
+                .any(|text| text.starts_with("Let's find")),
             "going back did not bring the catalogue with it"
         );
         dioxus_compose::window::reset_window_size();
@@ -985,9 +1022,10 @@ mod tests {
     fn fr14_the_catalogue_is_recorded_in_the_system_it_ships() {
         sample_frames::record_in("Store", &[DesignSystem::Cupertino], app, |screen| {
             assert_eq!(
-                screen.fill_lists(4),
-                1,
-                "the catalogue should hold exactly one windowing list, the carousel"
+                screen.fill_lists(6),
+                2,
+                "the catalogue should hold two windowing lists, the carousel and the \
+                 category strip, or the picture is of a screen with a hole in it"
             );
         });
     }
@@ -997,7 +1035,7 @@ mod tests {
     #[test]
     fn fr14_a_garment_page_is_recorded() {
         sample_frames::record_in("StoreProduct", &[DesignSystem::Cupertino], app, |screen| {
-            screen.fill_lists(4);
+            screen.fill_lists(6);
             assert!(screen.press("View"), "no garment on the catalogue opens");
         });
     }
