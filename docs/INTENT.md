@@ -218,6 +218,35 @@ macOS 26과 iOS 26은 같은 재질을 쓰지만 같은 방식으로 쓰지 않�
 - **설정만으로 막지 않고 코드로도 막습니다.** codegen은 자기가 컴파일된 크레이트 디렉터리와 cargo가 실행 시점에 알려 준 크레이트 디렉터리가 다르면 아무것도 쓰지 않고 두 경로를 찍으며 실패합니다. 설정이 다시 어긋나도 남의 트리에 쓰는 대신 멈춥니다.
 - **초록의 신뢰성도 같은 문제입니다.** 오염되는 것은 쓰기만이 아닙니다. 다른 워크트리에서 컴파일된 테스트 바이너리는 그 워크트리의 벡터 파일과 픽스처를 읽습니다. 그렇게 얻은 통과는 이 워크트리에 대한 사실이 아닙니다.
 
+### D15. iOS의 Liquid Glass는 시스템에게 받아 온다. UIKit을 Kotlin이 직접 몬다
+
+FR-14.1-2가 이미 기록했듯 Liquid Glass는 Compose가 그릴 수 있는 효과가 아닙니다. 시스템이 네이티브 탭 바, 네이티브 내비게이션 바, 네이티브 툴바에만 입히고, Compose 표면 안에서 부르는 API는 없습니다. 그러므로 iOS에서 진짜 유리를 얻는 방법은 하나뿐입니다. **그 크롬을 우리가 그리지 말고, 시스템의 것을 가져다 쓰는 것입니다.**
+
+JetBrains의 안내([ios-liquid-glass](https://kotlinlang.org/docs/multiplatform/ios-liquid-glass.html))는 1순위로 네이티브 SwiftUI 셸을 권합니다. **채택하지 않습니다.** 이 저장소는 Swift 파일을 한 개도 두지 않습니다.
+
+- 렌더러는 Kotlin/Native 정적 라이브러리로 나가고 Rust Host가 그것을 링크합니다(D3, PR-2). SwiftUI 셸은 소비자의 앱마다 우리가 쓴 Swift 소스와 그것을 컴파일할 Xcode 타깃을 하나씩 더 요구합니다. "설치는 `Cargo.toml` 한 줄"이라는 D10의 약속이 그 자리에서 깨집니다.
+- 셸이 SwiftUI라면 탭과 화면 제목, 뒤로 가기가 Swift 코드에 적힙니다. Rust가 UI를 기술한다는 것(C4, D1)이 정확히 그만큼 사실이 아니게 됩니다.
+
+같은 문서가 끝에 두는 **대안 1을 취합니다. `UITabBarController`와 `UINavigationController`를 Kotlin에서 명령형으로 몹니다.** Objective-C 상호 운용은 Kotlin/Native 언어 기능이고 `platform.UIKit` 바인딩은 툴체인이 SDK에서 만들어 함께 배포하는 것이므로, 여기에는 우리가 손으로 쓴 브리지 코드가 없습니다. C3이 금지하는 것은 손으로 쓴 JNI/cinterop 글루이고, 컴파일러가 만든 플랫폼 바인딩은 그것이 아닙니다. 렌더러의 iOS 진입점은 이미 `UIApplicationMain`과 `UIWindow`를 직접 부르고 있으므로 문은 이미 열려 있습니다.
+
+**Host는 아무것도 새로 말하지 않습니다.** Host가 보내는 것은 FR-21이 정한 `Navigation` 선언 하나 그대로이고, 그것을 시스템 탭 바로 그릴지 Compose로 그릴지는 Renderer의 판단입니다. 이것은 FR-21.2가 막대/레일/서랍을 Renderer가 고르게 한 것과 같은 결정의 연장입니다. 경계에 위젯 태그도 속성 태그도 늘지 않습니다.
+
+**판정은 실행 시점의 OS 버전입니다.** `NSProcessInfo.processInfo.isOperatingSystemAtLeastVersion(26.0.0)`이 참일 때만 네이티브 셸을 세웁니다.
+
+- **버전이 실제 조건이기 때문입니다.** 우리가 고르는 것은 메서드 하나가 아니라 셸 전체입니다. `respondsToSelector:` 탐침은 "이 메서드가 있는가"에만 답하는데, 정작 가장 중요한 것(시스템이 `UITabBar`에 유리를 알아서 입히는 것)은 셀렉터가 아니라 OS의 그리기 동작이라 탐침으로 물을 수 있는 대상이 아닙니다.
+- **문자열을 쪼개지 않기 때문입니다.** `UIDevice.currentDevice.systemVersion`은 `"26.0"`, `"26"`, 베타 표기가 모두 올 수 있는 문자열이고, 그것을 숫자로 비교하는 코드를 우리가 또 써야 합니다. `isOperatingSystemAtLeastVersion`은 Apple이 이미 써 둔 같은 비교입니다.
+- **셀렉터 확인은 버리지 않고 자리를 옮깁니다.** 버전 게이트가 셸을 고르고, iOS 26에서만 존재하는 개별 속성(`tabBarMinimizeBehavior`)은 호출 직전에 `respondsToSelector:`로 한 번 더 막습니다. 게이트는 "어느 셸인가"에, 탐침은 "이 다듬기를 할 수 있는가"에 답합니다.
+- **iOS 26 미만은 지금 있는 것을 그대로 씁니다.** 그 아래에는 받아 올 시스템 유리가 없으므로 네이티브 셸이 사 오는 것이 없고, 대신 검증된 적 없는 두 번째 레이아웃 경로가 사용자 앞에 놓입니다. Compose로 그린 근사(FR-14.1-2의 1번 항목)가 다른 모든 플랫폼에서 돌고 있는 바로 그 경로입니다.
+- **SDK는 런타임 판정의 대상이 아닙니다.** iOS 26 기기라도 앱이 26 이전 SDK로 빌드되었으면 시스템은 예전 크롬을 그립니다. 그것은 소비자 앱의 Xcode 설정이지 우리가 실행 중에 고칠 수 있는 것이 아니고, 그 경우에도 네이티브 셸은 여전히 진짜 `UITabBarController`이므로 틀린 화면이 아니라 유리가 없는 화면이 됩니다. 툴체인 쪽 요건(`platform.UIKit` 바인딩에 `UITabBarMinimizeBehavior`가 있을 것)은 컴파일이 답하므로 런타임 검사가 필요 없습니다.
+
+**macOS는 그린 근사를 그대로 유지합니다. 조사한 결과이지 미룬 것이 아닙니다.**
+
+데스크톱 렌더러는 GraalVM native-image로 빌드하는 `jvm/app`입니다. Objective-C 상호 운용이 없으므로 AppKit에 닿으려면 손으로 쓴 네이티브 글루가 필요하고, 그것은 C3이 금지합니다. 남는 길은 AWT의 macOS 피어가 이미 읽어 주는 클라이언트 속성뿐인데, `sun.lwawt.macosx.CPlatformWindow`가 읽는 목록은 다음이 전부입니다.
+
+`apple.awt.brushMetalLook`, `apple.awt.draggableWindowBackground`, `apple.awt.documentModalSheet`, `apple.awt.fullscreenable`, `apple.awt.fullWindowContent`, `apple.awt.transparentTitleBar`, `apple.awt.windowTitleVisible`, `apple.awt.windowAccessibilityElement`.
+
+**vibrancy도 material도 없습니다.** `NSVisualEffectView`나 `NSGlassEffectView`를 창에 붙이는 속성은 이 목록에 없고, 따라서 JDK를 고치지 않고 Java 쪽에서 부를 방법이 없습니다. macOS에서 진짜 재질을 얻는 유일한 경로는 그 뷰를 직접 만드는 네이티브 코드이며, 그것이 C3에 걸립니다.
+
 ## 4. 폐기한 대안
 
 | 대안 | 폐기 이유 |
@@ -247,6 +276,11 @@ macOS 26과 iOS 26은 같은 재질을 쓰지만 같은 방식으로 쓰지 않�
 | 워크트리 전체가 `target/` 하나를 공유 | Cargo가 path 패키지의 유닛 해시에 경로를 넣지 않아, 내용이 같은 두 워크트리가 캐시 항목 하나가 됩니다. 컴파일 시점에 박힌 절대 경로가 먼저 빌드한 쪽 것이 되어 한 체크아웃의 빌드가 다른 체크아웃의 파일을 말없이 덮어씁니다 (D13) |
 | 워크트리마다 `RUSTFLAGS`를 달리해 유닛 해시를 가르기 | 의존성까지 전부 따로 빌드되어 공유로 얻으려던 절약이 사라집니다. 게다가 `target/debug/<이름>`으로 끌어올려지는 최종 산출물의 경로는 여전히 겹칩니다 |
 | `target/` 공유를 유지하고 소스 트리로 쓰는 것만 막기 | 오염되는 것은 쓰기만이 아닙니다. 다른 워크트리에서 컴파일된 테스트 바이너리는 그 워크트리의 픽스처를 읽고 통과합니다. 쓰기를 막으면 눈에 보이는 사고만 사라지고 틀린 초록은 남습니다 |
+| iOS에 네이티브 SwiftUI 셸을 두기 | JetBrains가 1순위로 권하지만 Swift 소스와 Xcode 타깃이 소비자 앱마다 하나씩 생깁니다. "`Cargo.toml` 한 줄"(D10)이 깨지고, 탭과 화면 제목이 Rust가 아니라 Swift에 적히게 됩니다(C4) |
+| iOS 26 판정을 `UIDevice.systemVersion` 문자열 비교로 | `"26.0"`, `"26"`, 베타 표기를 우리가 숫자로 쪼개게 됩니다. `NSProcessInfo.isOperatingSystemAtLeastVersion`이 같은 비교를 이미 하고 있습니다 |
+| iOS 26 판정을 `respondsToSelector:`만으로 | 고르는 대상이 메서드가 아니라 셸 전체입니다. 시스템이 `UITabBar`에 유리를 입히는 동작은 셀렉터가 아니라서 탐침으로 물을 수 없습니다 |
+| macOS에서 AWT 클라이언트 속성으로 vibrancy 켜기 | `sun.lwawt.macosx.CPlatformWindow`가 읽는 여덟 개 속성에 재질 관련 항목이 없습니다. `brushMetalLook`, `fullWindowContent`, `transparentTitleBar` 등 창틀에 관한 것뿐입니다 (D15) |
+| macOS에서 `NSVisualEffectView`를 직접 붙이기 | 데스크톱 렌더러는 native-image로 빌드하는 JVM 코드라 Objective-C 상호 운용이 없습니다. 손으로 쓴 네이티브 글루가 되고 C3에 걸립니다 (D15) |
 
 ## 5. 알려진 비용
 

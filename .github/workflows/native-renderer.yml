@@ -478,6 +478,14 @@ jobs:
       - name: Simulator smoke test (PR-2)
         run: ./dioxus-compose-renderer/desktop/scripts/ios-smoke-test.sh --screenshot "${RUNNER_TEMP}/ios-smoke.png"
 
+      - name: Simulator screenshot of the system's navigation chrome
+        # The default smoke tree has no navigation, so the screenshot above shows none of
+        # the chrome iOS 26 draws as Liquid Glass. This run declares two destinations,
+        # which is what the renderer turns into a UITabBarController and a title bar.
+        run: |
+          ./dioxus-compose-renderer/desktop/scripts/ios-smoke-test.sh \
+            --navigation --screenshot "${RUNNER_TEMP}/ios-navigation.png"
+
       - name: Package the iOS renderer as an XCFramework
         # Both slices in one bundle, which is the only form Xcode links directly. A bare
         # .a would make every consumer pick the right slice by hand and would break the
@@ -514,13 +522,17 @@ jobs:
             ${{ steps.package.outputs.name }}.tar.gz.sha256
           retention-days: 7
 
-      - name: Upload the simulator screenshot
-        # The one artifact a human can judge without a Mac to hand.
+      - name: Upload the simulator screenshots
+        # The one artifact a human can judge without a Mac to hand. Whether the bars are
+        # really made of glass cannot be asserted, only looked at, so the navigation shot
+        # is uploaded beside the plain one.
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-screenshot
-          path: ${{ runner.temp }}/ios-smoke.png
+          path: |
+            ${{ runner.temp }}/ios-smoke.png
+            ${{ runner.temp }}/ios-navigation.png
           retention-days: 7
 
   # Everything below runs only for a version tag, and only after every platform above has
