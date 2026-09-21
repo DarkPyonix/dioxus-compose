@@ -76,9 +76,17 @@ class ThemeResolutionTest {
     }
 
     @Test
-    fun fr14_3_adaptive_falls_back_where_the_system_is_not_implemented() {
+    fun fr14_3_adaptive_follows_the_linux_desktop_session() {
         val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Fluent)
-        listOf(HostPlatform.LinuxGnome, HostPlatform.LinuxKde, HostPlatform.LinuxOther, HostPlatform.Unknown)
+        assertEquals(DesignSystem.Gnome, resolveTheme(adaptive, HostPlatform.LinuxGnome, false).system)
+        assertEquals(DesignSystem.Breeze, resolveTheme(adaptive, HostPlatform.LinuxKde, false).system)
+        assertEquals(DesignSystem.Deepin, resolveTheme(adaptive, HostPlatform.LinuxOther, false).system)
+    }
+
+    @Test
+    fun fr14_3_adaptive_falls_back_where_a_platform_has_no_look_of_its_own() {
+        val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Fluent)
+        listOf(HostPlatform.Unknown)
             .forEach { platform ->
                 assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, platform, false).system)
             }

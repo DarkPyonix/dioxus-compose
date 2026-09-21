@@ -62,9 +62,11 @@ class BreezeDesignSystem private constructor(
         // Breeze puts white on the highlight, which measures under three to one against
         // this blue. Dark ink keeps the same blue and stays readable at small sizes.
         ColorRole.OnPrimary -> Color(0xFF06222E)
-        // Breeze "positive" teal, its second accent.
+        // Breeze "positive" teal, its second accent. Dark ink again, for the same reason
+        // as the highlight: white on this green measures about two to one, which is under
+        // the bound for a label on an accent fill.
         ColorRole.Secondary -> Color(0xFF16A085)
-        ColorRole.OnSecondary -> Color(0xFFFFFFFF)
+        ColorRole.OnSecondary -> Color(0xFF03201B)
         // View background: the white of a list or an entry.
         ColorRole.Surface -> Color(0xFFFCFCFC)
         ColorRole.OnSurface -> Color(0xFF232629)
@@ -99,7 +101,9 @@ class BreezeDesignSystem private constructor(
         ColorRole.Background -> Color(0xFF232629)
         ColorRole.OnBackground -> Color(0xFFFCFCFC)
         ColorRole.Outline -> Color(0xFF4D5155)
-        ColorRole.OutlineVariant -> Color(0xFF31363B)
+        // A step lighter than SurfaceVariant. The two carried the same value, so the
+        // quieter of the two lines vanished on any container filled with the variant.
+        ColorRole.OutlineVariant -> Color(0xFF3F4449)
         ColorRole.Error -> Color(0xFFED8079)
         ColorRole.SurfaceContainer -> Color(0xFF1B1E20)
         ColorRole.OnError -> Color(0xFF2A0806)

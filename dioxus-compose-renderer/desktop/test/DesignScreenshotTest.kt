@@ -26,8 +26,8 @@ private const val SHOWCASE_WIDTH = 520
 private const val SHOWCASE_HEIGHT = 1700
 
 /**
- * Renders the design showcase for each system and writes a PNG, so the three systems can
- * be compared by eye. Whether they really look different is not something an assertion
+ * Renders the design showcase for each system and writes a PNG, so the systems can be
+ * compared by eye. Whether they really look different is not something an assertion
  * settles. Enabled only when `DXC_SCREENSHOT_DIR` is set, because it writes files.
  */
 @OptIn(ExperimentalTestApi::class)

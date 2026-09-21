@@ -208,8 +208,8 @@ class AssetDeliveryTest {
     }
 
     /**
-     * The same registration comes out as each system's own icon. If the three agreed on
-     * everything, an icon would be one drawing wearing three names.
+     * The same registration comes out as each system's own icon. If the systems agreed on
+     * everything, an icon would be one drawing wearing several names.
      */
     @Test
     fun fr16_one_icon_role_is_drawn_to_each_systems_own_metrics() {
@@ -223,11 +223,15 @@ class AssetDeliveryTest {
         }
 
         assertEquals(styles.size, styles.distinct().size, "each system draws its own icons")
-        assertEquals(
-            styles.size,
-            styles.map { it.cap }.distinct().size,
+        // Not one cap per system: Compose has three stroke ends and there are more systems
+        // than that, so the most that can be asked is that the sets do not all end alike.
+        assertTrue(
+            styles.map { it.cap }.distinct().size > 1,
             "the shape of a stroke's end is the most recognisable difference between the sets",
         )
-        assertNotEquals(styles[0].size, styles[1].size, "the optical sizes differ too")
+        assertTrue(
+            styles.map { it.size }.distinct().size > 1,
+            "the optical sizes differ too",
+        )
     }
 }

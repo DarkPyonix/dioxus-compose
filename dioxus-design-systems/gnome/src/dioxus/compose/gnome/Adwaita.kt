@@ -76,8 +76,11 @@ class GnomeDesignSystem private constructor(
         ColorRole.OutlineVariant -> Color(0xFFE6E3E1)
         // red 3, the destructive colour.
         ColorRole.Error -> Color(0xFFE01B24)
-        // The view layer, raised off the window background.
-        ColorRole.SurfaceContainer -> Color(0xFFFFFFFF)
+        // sidebar_bg_color. An Adwaita card in light is white with a hairline around it,
+        // and white on window_bg_color is five parts of grey: the border is what you
+        // actually see. A role that has to be visible on the page on its own cannot be
+        // that, so the layer is the grey Adwaita already puts beside a view.
+        ColorRole.SurfaceContainer -> Color(0xFFEBEBEB)
         ColorRole.OnError -> Color(0xFFFFFFFF)
     }
 
@@ -96,7 +99,8 @@ class GnomeDesignSystem private constructor(
         ColorRole.OutlineVariant -> Color(0xFF3A3A3A)
         // red 1. The darker destructive red loses too much contrast on a dark window.
         ColorRole.Error -> Color(0xFFFF7B63)
-        ColorRole.SurfaceContainer -> Color(0xFF1E1E1E)
+        // A step lighter than window_bg_color, which is how dark Adwaita raises a layer.
+        ColorRole.SurfaceContainer -> Color(0xFF303030)
         ColorRole.OnError -> Color(0xFF2A0A06)
     }
 
