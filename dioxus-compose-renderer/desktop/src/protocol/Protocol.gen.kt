@@ -1454,12 +1454,12 @@ object DesignTokens {
             0xfff1f1f1.toInt(), // SurfaceContainer
             0xff7a5bd6.toInt(), // Tertiary
             0xffffffff.toInt(), // OnTertiary
-            0xffd3e7ff.toInt(), // PrimaryContainer
-            0xff00366e.toInt(), // OnPrimaryContainer
-            0xfffae4c6.toInt(), // SecondaryContainer
-            0xff4a3001.toInt(), // OnSecondaryContainer
-            0xffe4dcfa.toInt(), // TertiaryContainer
-            0xff2c1f63.toInt(), // OnTertiaryContainer
+            0xffd8ecff.toInt(), // PrimaryContainer
+            0xff00407f.toInt(), // OnPrimaryContainer
+            0xfffdf0e1.toInt(), // SecondaryContainer
+            0xff79501e.toInt(), // OnSecondaryContainer
+            0xffebe6f8.toInt(), // TertiaryContainer
+            0xff3d2d6b.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff3ba2ff.toInt(), // Primary
@@ -1479,12 +1479,12 @@ object DesignTokens {
             0xff2a2a2a.toInt(), // SurfaceContainer
             0xff9f8ae3.toInt(), // Tertiary
             0xff1d0f45.toInt(), // OnTertiary
-            0xff0d3355.toInt(), // PrimaryContainer
-            0xffcfe3fb.toInt(), // OnPrimaryContainer
-            0xff4a3517.toInt(), // SecondaryContainer
-            0xfff8e2c5.toInt(), // OnSecondaryContainer
-            0xff362b5e.toInt(), // TertiaryContainer
-            0xffe1d9f7.toInt(), // OnTertiaryContainer
+            0xff203547.toInt(), // PrimaryContainer
+            0xff9dd0ff.toInt(), // OnPrimaryContainer
+            0xff473928.toInt(), // SecondaryContainer
+            0xffffdcb1.toInt(), // OnSecondaryContainer
+            0xff343042.toInt(), // TertiaryContainer
+            0xffcfc4f1.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(40.0f, 600, 50.0f, 0.0f, false), // Display

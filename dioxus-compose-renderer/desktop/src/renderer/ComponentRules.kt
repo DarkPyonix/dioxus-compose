@@ -1397,6 +1397,7 @@ internal object GnomeRules : ComponentRules {
                 container = theme.color(ColorRole.Primary),
                 pressedContainer = lerp(theme.color(ColorRole.Primary), Color.Black, PRESS_SHADE),
                 content = theme.color(ColorRole.OnPrimary),
+                shape = theme.shape(ShapeRole.Full),
             )
 
             // The standard button: grey, not a tinted accent, which is the visible
@@ -1440,6 +1441,7 @@ internal object GnomeRules : ComponentRules {
         return when (role) {
             // A boxed list: the view white, a 12 dp corner and a single line around it.
             ContainerRole.Card -> base.copy(
+                shape = theme.shape(ShapeRole.Medium),
                 borderWidth = 1.dp,
                 borderColor = hairline,
             )
