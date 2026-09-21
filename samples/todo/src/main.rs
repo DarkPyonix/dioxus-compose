@@ -18,6 +18,16 @@ use store::{Filter, Task};
 const BULK_COUNT: usize = 5_000;
 
 fn app() -> Element {
+    let window = use_window_size();
+    // A list of one line items read across 1200dp is a list nobody can scan: the eye has
+    // to travel from the title to the actions and back for every row. Past an expanded
+    // window the screen stops widening and centres, and the page shows either side.
+    let measure = if window.is_expanded() {
+        Some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+    } else {
+        None
+    };
+    let stacked = window.is_compact();
     let mut tasks = use_signal(store::load);
     let mut next_id = use_signal(|| {
         tasks
@@ -92,6 +102,162 @@ fn app() -> Element {
         .collect();
     let rows = visible.clone();
 
+    let list = rsx! {
+        // An empty list explains itself rather than leaving a blank half window
+        // that could just as well be a screen that failed to draw. It replaces the
+        // list rather than sitting above it, so it gets the whole of the space the
+        // list would have taken.
+        if rows.is_empty() {
+            dioxus_compose::Box {
+                fill_max_width: true,
+                weight: 1.0,
+                alignment: Alignment::Center,
+                Text {
+                    text: match filter() {
+                        Filter::All => "No tasks yet. Add one above.",
+                        Filter::Active => "Nothing left to do under this filter.",
+                        Filter::Done => "Nothing has been completed yet.",
+                    },
+                    type_role: TypeRole::Body,
+                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                }
+            }
+        } else {
+        // The list is one grouped container, not a stack of cards. A task is a row
+        // in a list of tasks, and a card each would say that every task is a
+        // separate document. What separates one row from the next is a hairline.
+        Surface {
+            fill_max_width: true,
+            weight: 1.0,
+        LazyColumn {
+            fill_max_width: true,
+            fill_max_height: true,
+            item_count: rows.len(),
+            key_of: move |position: usize| keys[position].clone(),
+            item: move |position: usize| {
+                let index = rows[position];
+                let previous = position.checked_sub(1).map(|above| rows[above]);
+                let next = rows.get(position + 1).copied();
+                let task = tasks.read()[index].clone();
+                let editing_this = editing() == Some(task.id);
+                let last = position + 1 == rows.len();
+                rsx! {
+                    Column {
+                        fill_max_width: true,
+                        Row {
+                            fill_max_width: true,
+                            padding_role: SpaceRole::Xs,
+                            space_role: SpaceRole::Xs,
+                            alignment: Alignment::CenterStart,
+                            // A ballot box reads as something you can tick. Ticking
+                            // it colours the mark rather than putting a container
+                            // behind it: a filled box around one row's first
+                            // column would weigh more than the row it belongs to.
+                            Button {
+                                text: if task.done { "\u{2611}" } else { "\u{2610}" },
+                                variant: ButtonVariant::Text,
+                                color: if task.done {
+                                    Paint::Role(ColorRole::Primary)
+                                } else {
+                                    Paint::Role(ColorRole::Outline)
+                                },
+                                on_click: move |_| {
+                                    tasks.write()[index].done = !task.done;
+                                    store::save(&tasks.read());
+                                },
+                            }
+                            // The title takes the weight, so the actions sit at the
+                            // far end of every row and line up down the list.
+                            if editing_this {
+                                TextField {
+                                    weight: 1.0,
+                                    placeholder: task.title.clone(),
+                                    on_value_change: move |value| edit_draft.set(value),
+                                    on_submit: move |value: String| commit_edit(value),
+                                    on_focus_lost: move |_| commit_edit(edit_draft()),
+                                }
+                                Button {
+                                    text: "Save",
+                                    variant: ButtonVariant::Filled,
+                                    on_click: move |_| commit_edit(edit_draft()),
+                                }
+                            } else {
+                                Text {
+                                    text: task.title.clone(),
+                                    weight: 1.0,
+                                    type_role: TypeRole::Body,
+                                    color: if task.done {
+                                        Paint::Role(ColorRole::OutlineVariant)
+                                    } else {
+                                        Paint::Role(ColorRole::OnSurface)
+                                    },
+                                    max_lines: 1,
+                                    overflow: TextOverflow::Ellipsis,
+                                }
+                                // On a phone the two worded actions become their marks: a
+                                // pencil and a cross are the same two actions, and at
+                                // 400dp the words leave the title no room at all.
+                                Button {
+                                    text: if stacked { "\u{270e}" } else { "Edit" },
+                                    variant: ButtonVariant::Text,
+                                    on_click: move |_| {
+                                        edit_draft.set(String::new());
+                                        editing.set(Some(task.id));
+                                    },
+                                }
+                            }
+                            // Reordering is a minor, repeatable adjustment, so the
+                            // arrows are drawn in the quiet ink rather than in the
+                            // accent. Four actions in the accent would all shout
+                            // equally, and the one that deletes would shout no
+                            // louder than the one that nudges a row up by one.
+                            Button {
+                                text: "\u{2191}",
+                                variant: ButtonVariant::Text,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                enabled: previous.is_some(),
+                                on_click: move |_| {
+                                    if let Some(above) = previous {
+                                        swap_tasks(index, above);
+                                    }
+                                },
+                            }
+                            Button {
+                                text: "\u{2193}",
+                                variant: ButtonVariant::Text,
+                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                enabled: next.is_some(),
+                                on_click: move |_| {
+                                    if let Some(below) = next {
+                                        swap_tasks(index, below);
+                                    }
+                                },
+                            }
+                            // Deleting a task cannot be undone, and the error role
+                            // is how every one of these design systems says so.
+                            Button {
+                                text: if stacked { "\u{2715}" } else { "Delete" },
+                                variant: ButtonVariant::Text,
+                                color: Paint::Role(ColorRole::Error),
+                                on_click: move |_| {
+                                    tasks.write().remove(index);
+                                    store::save(&tasks.read());
+                                },
+                            }
+                        }
+                        // The hairline belongs between two rows, so the last row
+                        // does not draw one against the container's edge.
+                        if !last {
+                            Separator {}
+                        }
+                    }
+                }
+            },
+        }
+        }
+        }
+    };
+
     rsx! {
         Column {
             fill_max_width: true,
@@ -109,8 +275,13 @@ fn app() -> Element {
                 }
             }
 
-            Column {
+            dioxus_compose::Box {
                 fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+            Column {
+                fill_max_width: measure.is_none(),
+                width: measure,
                 fill_max_height: true,
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Md,
@@ -152,16 +323,23 @@ fn app() -> Element {
                         }
                     }
                     Spacer { weight: 1.0 }
+                    // Clearing throws work away, so it says so in the same colour the
+                    // row's own Delete uses.
                     Button {
-                        text: "Clear completed",
+                        text: if stacked { "Clear" } else { "Clear completed" },
                         variant: ButtonVariant::Text,
+                        color: Paint::Role(ColorRole::Error),
                         on_click: move |_| {
                             tasks.write().retain(|task| !task.done);
                             store::save(&tasks.read());
                         },
                     }
                     Button {
-                        text: "Add {BULK_COUNT} tasks",
+                        text: if stacked {
+                            format!("+{BULK_COUNT}")
+                        } else {
+                            format!("Add {BULK_COUNT} tasks")
+                        },
                         variant: ButtonVariant::Tonal,
                         on_click: move |_| {
                             let start = next_id();
@@ -183,133 +361,10 @@ fn app() -> Element {
                     }
                 }
 
-                // An empty list explains itself rather than leaving a blank half window
-                // that could just as well be a screen that failed to draw. It replaces the
-                // list rather than sitting above it, so it gets the whole of the space the
-                // list would have taken.
-                if rows.is_empty() {
-                    dioxus_compose::Box {
-                        fill_max_width: true,
-                        weight: 1.0,
-                        alignment: Alignment::Center,
-                        Text {
-                            text: match filter() {
-                                Filter::All => "No tasks yet. Add one above.",
-                                Filter::Active => "Nothing left to do under this filter.",
-                                Filter::Done => "Nothing has been completed yet.",
-                            },
-                            type_role: TypeRole::Body,
-                            color: Paint::Role(ColorRole::OnSurfaceVariant),
-                        }
-                    }
-                } else {
-                // Every row is a Surface of its own, which is what separates one task from
-                // the next without a divider the design systems do not all draw.
-                LazyColumn {
-                    fill_max_width: true,
-                    weight: 1.0,
-                    item_count: rows.len(),
-                    key_of: move |position: usize| keys[position].clone(),
-                    item: move |position: usize| {
-                        let index = rows[position];
-                        let previous = position.checked_sub(1).map(|above| rows[above]);
-                        let next = rows.get(position + 1).copied();
-                        let task = tasks.read()[index].clone();
-                        let editing_this = editing() == Some(task.id);
-                        rsx! {
-                            Surface {
-                                fill_max_width: true,
-                                Row {
-                                    fill_max_width: true,
-                                    space_role: SpaceRole::Sm,
-                                    alignment: Alignment::CenterStart,
-                                    // A ballot box reads as something you can tick. The
-                                    // filled variant is the second half of the same
-                                    // statement, so a completed task is legible at a
-                                    // glance rather than by reading the glyph.
-                                    Button {
-                                        text: if task.done { "\u{2611}" } else { "\u{2610}" },
-                                        variant: if task.done {
-                                            ButtonVariant::Tonal
-                                        } else {
-                                            ButtonVariant::Text
-                                        },
-                                        on_click: move |_| {
-                                            tasks.write()[index].done = !task.done;
-                                            store::save(&tasks.read());
-                                        },
-                                    }
-                                    // The title takes the weight, so the actions sit at the
-                                    // far end of every row and line up down the list.
-                                    if editing_this {
-                                        TextField {
-                                            weight: 1.0,
-                                            placeholder: task.title.clone(),
-                                            on_value_change: move |value| edit_draft.set(value),
-                                            on_submit: move |value: String| commit_edit(value),
-                                            on_focus_lost: move |_| commit_edit(edit_draft()),
-                                        }
-                                        Button {
-                                            text: "Save",
-                                            variant: ButtonVariant::Filled,
-                                            on_click: move |_| commit_edit(edit_draft()),
-                                        }
-                                    } else {
-                                        Text {
-                                            text: task.title.clone(),
-                                            weight: 1.0,
-                                            type_role: TypeRole::Body,
-                                            color: if task.done {
-                                                Paint::Role(ColorRole::OutlineVariant)
-                                            } else {
-                                                Paint::Role(ColorRole::OnSurface)
-                                            },
-                                            max_lines: 1,
-                                            overflow: TextOverflow::Ellipsis,
-                                        }
-                                        Button {
-                                            text: "Edit",
-                                            variant: ButtonVariant::Text,
-                                            on_click: move |_| {
-                                                edit_draft.set(String::new());
-                                                editing.set(Some(task.id));
-                                            },
-                                        }
-                                    }
-                                    Button {
-                                        text: "\u{2191}",
-                                        variant: ButtonVariant::Text,
-                                        enabled: previous.is_some(),
-                                        on_click: move |_| {
-                                            if let Some(above) = previous {
-                                                swap_tasks(index, above);
-                                            }
-                                        },
-                                    }
-                                    Button {
-                                        text: "\u{2193}",
-                                        variant: ButtonVariant::Text,
-                                        enabled: next.is_some(),
-                                        on_click: move |_| {
-                                            if let Some(below) = next {
-                                                swap_tasks(index, below);
-                                            }
-                                        },
-                                    }
-                                    Button {
-                                        text: "Delete",
-                                        variant: ButtonVariant::Text,
-                                        on_click: move |_| {
-                                            tasks.write().remove(index);
-                                            store::save(&tasks.read());
-                                        },
-                                    }
-                                }
-                            }
-                        }
-                    },
-                }
-                }
+                // List and detail. Narrower than a desktop window the list is the whole
+                // width and the editor is the row itself.
+                {list}
+            }
             }
         }
     }
@@ -561,6 +616,89 @@ mod tests {
 
     /// The claim the "Add 5000" button exists to let a person check by hand, asserted so
     /// it cannot quietly stop being true. A window of twenty out of five thousand tasks
+    /// Every string the screen holds after the Renderer reports a window of this width.
+    fn texts_at(width_dp: f32) -> Vec<String> {
+        saved_list();
+        dioxus_compose::window::reset_window_size();
+        let mut screen = Screen::new();
+        screen.request_range(0, WINDOW);
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 900.0,
+                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        encode_event(&event, &mut screen.event).expect("the resize did not encode");
+        let event_bytes = screen.event.clone();
+        let (batch, _) = screen
+            .host
+            .dispatch_event(&event_bytes)
+            .expect("the resize failed");
+        let decoded = decode_batch(batch).expect("the resize batch did not decode");
+        screen.mock.apply(&decoded);
+        let texts = screen.mock.texts.values().cloned().collect();
+        dioxus_compose::window::reset_window_size();
+        texts
+    }
+
+    /// The widths the screen asks for after the Renderer reports a window of this width.
+    fn widths_at(width_dp: f32) -> Vec<f32> {
+        saved_list();
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        host.rebuild().expect("the first frame failed to encode");
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 900.0,
+                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).expect("the resize did not encode");
+        let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
+        let widths = decode_batch(batch)
+            .expect("the resize batch did not decode")
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetModifier {
+                    modifier: dioxus_compose::Modifier::Width(width),
+                    ..
+                } => Some(*width),
+                _ => None,
+            })
+            .collect();
+        dioxus_compose::window::reset_window_size();
+        widths
+    }
+
+    /// A phone spells the row's two worded actions as marks and shortens the bulk
+    /// actions, because at 400dp the words leave the title no room. A desktop window
+    /// stops the screen widening and centres it, because a one line item read across
+    /// 1200dp cannot be scanned.
+    #[test]
+    fn fr20_the_screen_shortens_on_a_phone_and_stops_widening_on_a_desktop() {
+        let narrow = texts_at(420.0);
+        assert!(narrow.iter().any(|text| text == "\u{2715}"), "{narrow:?}");
+        assert!(!narrow.iter().any(|text| text == "Delete"));
+        assert!(narrow.iter().any(|text| text == "Clear"));
+
+        let wide = texts_at(1200.0);
+        assert!(wide.iter().any(|text| text == "Delete"), "{wide:?}");
+        assert!(wide.iter().any(|text| text == "Clear completed"));
+
+        assert!(widths_at(420.0).is_empty());
+        assert!(
+            widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+            "the screen did not take a measure"
+        );
+    }
+
     /// costs widgets in proportion to the twenty. This is the test that fails the day
     /// windowing degrades into building everything.
     #[test]
@@ -568,10 +706,11 @@ mod tests {
         let mut screen = Screen::new();
         screen.request_range(4_000, WINDOW);
 
-        // A row is a handful of widgets: its surface, the row inside it, the toggle, the
-        // title and four buttons. The screen's own chrome is a fixed handful on top of
-        // that. What matters is that the total tracks the window and not the list behind it.
-        const PER_ROW: usize = 8;
+        // A row is a handful of widgets: the column holding it, the row itself, the
+        // toggle, the title, four buttons and the hairline under it. The screen's own
+        // chrome is a fixed handful on top of that. What matters is that the total tracks
+        // the window and not the list behind it.
+        const PER_ROW: usize = 10;
         const CHROME: usize = 40;
         let nodes = screen.mock.node_count();
         assert_eq!(screen.mock.live_task_titles().len(), WINDOW);

@@ -28,8 +28,8 @@ pub use schema::{
 };
 pub use widgets::{
     Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
-    KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Spacer, Surface, Tabs,
-    Text, TextField, TimePicker, Tooltip, TopAppBar,
+    KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Separator, Spacer,
+    Surface, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{WindowSize, use_window_size, window_size};
 
@@ -43,9 +43,9 @@ pub mod prelude {
         ColorScheme, Column, DatePicker, DesignSystem, Dialog, DrawCommand, DrawList, Dropdown,
         Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
         LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
-        ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField, TextOverflow,
-        Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, component,
-        launch, rsx, use_window_size,
+        Separator, ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField,
+        TextOverflow, Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass,
+        component, launch, rsx, use_window_size,
     };
     pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
     pub use dioxus_hooks::*;
@@ -137,8 +137,12 @@ pub mod elements {
             overflow
         ]
     );
-    element!(textfield, "TextField", [placeholder, enabled, multiline]);
-    element!(button, "Button", [text, enabled, variant]);
+    element!(
+        textfield,
+        "TextField",
+        [placeholder, enabled, multiline, type_role]
+    );
+    element!(button, "Button", [text, enabled, variant, color]);
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.
     element!(spacer, "Spacer", []);

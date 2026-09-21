@@ -35,7 +35,24 @@ not this one. Enter sends; Shift+Enter starts a new line."
     }]
 }
 
+/// The widest a thread is allowed to be, per class.
+///
+/// A line of text stops being readable somewhere around sixty to eighty characters, and a
+/// window twice that wide does not make it more readable, it makes it worse. So the thread
+/// stops growing and centres itself instead. The two bounds are the class boundaries
+/// themselves: a medium window reads at the width a medium window starts at, and an
+/// expanded one at the width an expanded one starts at.
+fn thread_width(window: &WindowSize) -> Option<f32> {
+    match window.class {
+        WindowSizeClass::Compact => None,
+        WindowSizeClass::Medium => Some(WindowSizeClass::MEDIUM_MIN_WIDTH_DP),
+        WindowSizeClass::Expanded => Some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+    }
+}
+
 fn app() -> Element {
+    let window = use_window_size();
+    let measure = thread_width(&window);
     // Shared with the assistant thread, so it is a sync signal rather than the usual one.
     // Writing it from the worker marks this scope dirty through a channel the scheduler
     // owns, and the Host asks for the frame.
@@ -110,8 +127,15 @@ fn app() -> Element {
                 }
             }
 
-            Column {
+            // On a narrow window the thread is the window. On anything wider it is a
+            // column of its own, centred, with the page showing either side of it.
+            dioxus_compose::Box {
                 fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+            Column {
+                fill_max_width: measure.is_none(),
+                width: measure,
                 fill_max_height: true,
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Md,
@@ -123,6 +147,12 @@ fn app() -> Element {
                     key_of: move |index: usize| keys[index].clone(),
                     item: move |index: usize| {
                         let message = messages.read()[index].clone();
+                        // A name over every bubble is a name repeated once per line. The
+                        // side and the fill already say who is speaking, so the name is
+                        // printed once at the head of a run and the rest of the run is
+                        // read as the same speaker still talking.
+                        let starts_a_run = index == 0
+                            || messages.read()[index - 1].from_user != message.from_user;
                         // Who said it should be readable without reading, so it is the side
                         // the bubble sits on and the colour it is filled with, with the
                         // name left as confirmation rather than as the only clue. Both
@@ -139,7 +169,15 @@ fn app() -> Element {
                             // message and the next is padding on the row that holds it.
                             dioxus_compose::Box {
                                 fill_max_width: true,
-                                padding_role: SpaceRole::Xs,
+                                // Consecutive messages from one speaker sit close
+                                // together and a change of speaker gets more air, which is
+                                // what makes a conversation read as turns rather than as
+                                // an evenly spaced column of boxes.
+                                padding_role: if starts_a_run {
+                                    SpaceRole::Sm
+                                } else {
+                                    SpaceRole::Xs
+                                },
                                 alignment: if message.from_user {
                                     Alignment::CenterEnd
                                 } else {
@@ -152,10 +190,12 @@ fn app() -> Element {
                                     } else {
                                         Alignment::CenterStart
                                     },
-                                    Text {
-                                        text: if message.from_user { "You" } else { "Assistant" },
-                                        type_role: TypeRole::Label,
-                                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                    if starts_a_run {
+                                        Text {
+                                            text: if message.from_user { "You" } else { "Assistant" },
+                                            type_role: TypeRole::Caption,
+                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                        }
                                     }
                                     // The bubble sizes to its text, so a short reply is a
                                     // short bubble. Its corner is the design system's
@@ -212,6 +252,7 @@ fn app() -> Element {
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -568,8 +609,56 @@ mod tests {
         );
     }
 
-    /// The hundredth keystroke has to cost what the third one cost. A per-event buffer that
-    /// is grown rather than reused shows up here as a count that climbs.
+    /// The widths a thread takes, read back off the wire after the Renderer reports a
+    /// window of the given width.
+    fn widths_at(width_dp: f32) -> Vec<f32> {
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        host.rebuild().expect("the first frame failed to encode");
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 900.0,
+                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).expect("the resize did not encode");
+        let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
+        let widths = decode_batch(batch)
+            .expect("the resize batch did not decode")
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetModifier {
+                    modifier: dioxus_compose::Modifier::Width(width),
+                    ..
+                } => Some(*width),
+                _ => None,
+            })
+            .collect();
+        dioxus_compose::window::reset_window_size();
+        widths
+    }
+
+    /// A wide window does not get a wide thread. The column stops at the reading measure
+    /// for its class and the page shows either side of it, and a narrow window keeps the
+    /// full width because there is nothing to give back.
+    #[test]
+    fn fr20_the_thread_stops_growing_once_the_window_is_wide() {
+        assert!(
+            widths_at(420.0).is_empty(),
+            "a compact window should not size the thread"
+        );
+        assert!(widths_at(700.0).contains(&dioxus_compose::WindowSizeClass::MEDIUM_MIN_WIDTH_DP));
+        assert!(
+            widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+        );
+    }
+
+    /// The hundredth keystroke has to cost what the third one cost. A per-event buffer
+    /// that is grown rather than reused shows up here as a count that climbs.
     #[test]
     fn nfr9_allocations_do_not_grow_across_repeated_interactions() {
         let mut screen = Screen::new();
