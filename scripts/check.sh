@@ -48,6 +48,15 @@ if rustup target list --installed | grep -qx aarch64-linux-android; then
 else
     echo "skipping the Android target (rustup target add aarch64-linux-android)"
 fi
+# The same for the browser's shims, which are behind cfg(target_family = "wasm"). The
+# renderer feature is off because a browser links no renderer: the generated web shims
+# install the renderer API from the entry point the page calls.
+if rustup target list --installed | grep -qx wasm32-unknown-unknown; then
+    cargo clippy -p dioxus-compose --no-default-features \
+        --target wasm32-unknown-unknown -- -D warnings
+else
+    echo "skipping the wasm target (rustup target add wasm32-unknown-unknown)"
+fi
 # What docs.rs does: the feature is on and there is no network to fetch a renderer with.
 # The documentation still has to build.
 DOCS_RS=1 cargo check -p dioxus-compose --all-features

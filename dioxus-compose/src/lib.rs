@@ -7,6 +7,14 @@ pub mod boundary;
 #[cfg(target_os = "android")]
 #[path = "boundary_jni.gen.rs"]
 mod boundary_jni;
+/// Generated wasm shims. Compiled only for the browser, where the page owns the loop and
+/// the Renderer's module owns the one linear memory both halves read.
+#[cfg(target_family = "wasm")]
+#[path = "boundary_wasm.gen.rs"]
+mod boundary_wasm;
+#[cfg(target_family = "wasm")]
+#[doc(hidden)]
+pub use boundary_wasm::web_start as __web_start;
 #[doc(hidden)]
 pub mod codegen;
 pub mod drawing;
@@ -65,6 +73,42 @@ macro_rules! android_main {
             $crate::LaunchBuilder::new()
                 .with_mode($crate::LoopMode::Platform)
                 .launch($app);
+        }
+    };
+}
+
+/// Declares the browser entry point for an application's wasm module.
+///
+/// A page has no library loader and no `main` of its own to run: the Renderer's module
+/// owns the loop and calls this once both wasm modules exist, and it answers with the
+/// address of the block the Host lends the Renderer.
+///
+/// The export is here rather than in this crate because a wasm module cannot be linked
+/// with an undefined symbol the way an ELF shared library can. Android's cdylib imports
+/// `dioxus_compose_android_main` from the application and the dynamic linker resolves it
+/// at load time; a browser refuses to instantiate a module whose imports are not all
+/// supplied, so the entry point is defined where the root component is.
+///
+/// ```ignore
+/// dioxus_compose::web_main!(app);
+/// ```
+#[macro_export]
+macro_rules! web_main {
+    ($app:path) => {
+        #[cfg(target_family = "wasm")]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+            $crate::__web_start($app)
+        }
+
+        /// Off the web there is no page to call this and no shared memory to report an
+        /// address in, but it stays defined so that a build for the machine you are
+        /// working on still compiles the component rather than leaving it unreferenced.
+        #[cfg(not(target_family = "wasm"))]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+            let _: fn() -> $crate::Element = $app;
+            0
         }
     };
 }

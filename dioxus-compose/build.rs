@@ -40,6 +40,16 @@ fn main() {
         return;
     }
 
+    // A browser resolves nothing at load time: a wasm import nobody supplies stops the
+    // module from being instantiated whether or not anything calls it. So the Host declares
+    // no renderer symbols there and the generated web shims install the renderer API from
+    // `dioxus_compose_host_web_start` instead, before anything can ask for a frame.
+    let target_family =
+        std::env::var("CARGO_CFG_TARGET_FAMILY").expect("Cargo sets CARGO_CFG_TARGET_FAMILY");
+    if target_family.split(',').any(|family| family == "wasm") {
+        return;
+    }
+
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").expect("Cargo sets CARGO_CFG_TARGET_OS");
     if !matches!(target_os.as_str(), "macos" | "windows" | "linux") {
         // iOS links the XCFramework through Xcode and the web build resolves its imports

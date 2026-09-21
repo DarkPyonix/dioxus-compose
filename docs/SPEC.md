@@ -1181,7 +1181,7 @@ dioxus_compose_host_dispatch_event: click 1
 - 핸드셰이크와 초기 배치(180바이트, 8레코드)가 양쪽에서 바이트 단위로 동일합니다.
 - 시뮬레이터에서 버튼을 탭하면 `dispatch_event`가 Rust 핸들러까지 도달합니다. `simctl`에 탭 명령이 없어 이 확인은 자동화되지 않습니다. `ios-smoke-test.sh --await-click`으로 사람이 실행합니다. CI는 이 플래그 없이 기동과 렌더링까지만 증명합니다.
 - iOS에는 isolate가 없어 `@CName`이 공개 심볼을 Kotlin 함수에 직접 붙입니다. isolate 심이 하던 나머지 역할은 Kotlin/Native 런타임과 `NSThread.isMainThread` 검사가 대신합니다.
-- Android와 Web은 아직 검증되지 않았습니다. 네 타깃이 모두 확인되면 `Done`으로 올립니다.
+- Web은 검증되었습니다(PR-6의 검증 절). 같은 다섯 개 논리 연산이 브라우저에서도 그대로 서고, 초기 배치와 클릭 왕복이 공유 메모리 위에서 돕니다. Android만 기기나 에뮬레이터에서 미확인이며, 그것이 확인되면 `Done`으로 올립니다.
 
 ### PR-3 스레드 규칙 (`Agreed`)
 - VirtualDom, 사용자 컴포넌트, 모든 `dioxus_compose_host_*` 호출은 Renderer UI 스레드에서만 실행합니다. 그래서 락이 필요 없습니다.
@@ -1249,7 +1249,7 @@ dioxus_compose_host_dispatch_event: click 1
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
 - 구현 상태(2026-09-22): 경계 심 생성, 생명주기와 `Resync`, Activity 호스팅, cdylib 빌드가 들어왔습니다. 심은 `aarch64-linux-android`로 컴파일되고, cdylib이 내보내는 JNI 심벌은 컴파일된 Kotlin 클래스가 native로 선언한 이름과 정확히 일치합니다. 수용 기준 1~3은 모두 기기나 에뮬레이터에서만 확인할 수 있어 아직 미검증이고, 5.1의 수용 기준 4(크레이트가 Kotlin 소스를 품고 Maven 좌표 없이 APK가 빌드되는 것)는 아직 착수 전입니다.
 
-### PR-6 Web 경계 (`Agreed`)
+### PR-6 Web 경계 (`Done`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입니다. 2026-09-20 실측으로 확정했습니다(`experiments/web-interop/`).
 
 - **메모리: Kotlin이 소유합니다.** Kotlin/Wasm 모듈은 항상 자기 메모리를 정의해 export하며, 외부 메모리를 import하는 경로가 없습니다. 따라서 Rust가 `--import-memory`로 그 메모리를 가져다 씁니다. PR-4의 arena는 양쪽이 제자리에서 읽습니다. 복사는 없습니다.
@@ -1258,7 +1258,54 @@ Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입�
 - **메모리 공유를 택합니다.** 프레임 예산을 지배하는 것은 PR-4의 복사 회피이지 호출 오버헤드가 아닙니다. 프레임당 경계 호출 3회 기준 약 36ns이며, PR-5가 Android에서 이미 수용한 JNI 호출 비용(약 115ns)보다 한 자릿수 작습니다. D8이 거부한 React Native 브리지와는 성격이 다릅니다. 직렬화도, 비동기 큐도, 스레드 홉도, 데이터 복사도 없습니다.
 - 구현 시 주의: Kotlin 메모리는 0페이지로 시작하므로 Rust 인스턴스화 전에 JS가 `memory.grow()`를 해야 합니다. Rust의 데이터 세그먼트와 Kotlin `kotlin.wasm.unsafe` 할당자가 같은 주소 공간을 쓰므로 `--global-base`로 영역을 분리합니다.
 - 실측(Safari 26.5, Apple silicon): 같은 모듈 호출 0.30ns, wasm 직접 바인딩 1.45ns, JS forwarder 12.05ns, Kotlin에서 메모리 읽기 0.977ns/byte.
-- 남은 확인: V8과 SpiderMonkey에서 같은 수치가 나오는지 재측정해야 합니다.
+- **방향에 따라 비용이 다릅니다.** forwarder를 거치는 것은 Renderer에서 Host로 가는 호출뿐입니다. 반대 방향, 곧 Host가 프레임을 요청하는 `request_frame`은 Rust의 wasm import를 Kotlin이 `@WasmExport`로 내놓은 함수에 직접 묶으므로 JS가 없습니다. Rust가 나중에 인스턴스화되고 그 시점에 Kotlin export는 이미 존재하기 때문입니다.
+- **주소 영역을 상수로 못박습니다.** 0부터 `WEB_RUST_REGION_BASE`(4MiB) 미만은 Kotlin `kotlin.wasm.unsafe` 할당자의 것이고, 그 위는 Rust의 데이터와 스택과 힙입니다. Rust는 `--global-base`로 그 자리에 놓입니다. Renderer는 할당자가 준 주소가 경계 아래인지 시작할 때 확인하고, 아니면 경계 호출을 시작하지 않습니다. 두 할당자가 같은 주소를 쓰면 화면이 조용히 틀리는 것으로 끝나므로, 겹침은 자라기 전에 잡아야 합니다.
+- 경계 함수 목록은 PR-2 그대로입니다. 여기에 Rust wasm 모듈은 `dioxus_compose_host_web_start`를 하나 더 export합니다. 경계 연산이 아니라, 라이브러리 로더가 없는 환경에서 Android의 `JNI_OnLoad`가 하던 일(루트 컴포넌트 등록과 RendererApi 설치)을 놓을 자리입니다.
+- **`web_start`는 Host가 Renderer에게 빌려주는 블록의 주소를 돌려줍니다.** 앞 16바이트가 `MutationBatch` out 레코드이고, 그 뒤 4KiB가 이벤트 버퍼입니다. Host가 소유하는 이유는 Renderer가 붙잡아 둘 수 없기 때문입니다. `kotlin.wasm.unsafe`의 할당자는 `withScopedMemoryAllocator` 블록 안에서만 살아 있어서, 프레임을 넘겨 쓸 주소를 얻는 방법이 없습니다. 호출마다 스코프를 열면 정상 상태 할당 0회(NFR-9)를 잃습니다. 그래서 두 버퍼는 Rust 영역에 정적으로 놓이고, Renderer는 주소만 기억합니다. 0이 돌아오면 Host가 없는 것이고, Renderer는 경계 호출을 시작하지 않습니다.
+- **forwarder는 Kotlin `@JsFun` 선언입니다.** 경계 함수마다 하나씩, 인자를 그대로 넘기는 고정 형태의 JS 화살표 함수를 코드젠이 생성합니다(`(a, b, c) => host.symbol(a, b, c)`). 실측한 12.05ns가 바로 이 모양입니다. 별도의 `@WasmImport` 모듈을 두는 길은 같은 순환에 걸립니다. Kotlin의 import는 인스턴스화 시점에 채워져야 하는데 그때 Rust는 아직 없습니다.
+- **인스턴스화 순서**를 페이지가 정합니다. 코드젠이 만든 로더 모듈이 `web.mjs`보다 먼저 평가되어 Rust 모듈을 `compileStreaming`으로 컴파일해 둡니다. 그다음 Kotlin 모듈이 인스턴스화되면서 메모리가 생기고, Kotlin `main`이 로더를 한 번 불러 그 메모리 위에 Rust를 동기로 인스턴스화합니다(`new WebAssembly.Instance`). 이 시점에 Kotlin export가 이미 있으므로 `dioxus_compose_renderer_request_frame`은 wasm export 객체를 그대로 넘겨 직접 바인딩합니다. Renderer 쪽에 새 진입점은 없습니다.
+- 수용 기준(M7):
+  1. Kotlin이 정의해 export한 메모리 하나를 Rust가 import하고, 한쪽이 쓴 arena를 다른 쪽이 제자리에서 읽습니다. 복사한 바이트가 없습니다.
+  2. 이벤트 하나가 경계 호출 2회로 끝납니다(PR-4와 같은 기준).
+  3. forwarder의 호출당 비용을 실측해 기록합니다.
+  4. M0 화면이 데스크톱과 같은 Rust 소스로 브라우저에 뜨고, 클릭이 Rust에 도달하며, Rust의 상태 변경이 화면에 반영됩니다.
+  5. 생성된 Kotlin 선언, 생성된 forwarder, Rust의 wasm glue가 모두 같은 스키마에서 나옵니다. 손으로 쓴 glue는 없습니다(FR-7).
+
+**검증 (2026-09-22, Chrome for Testing 149 / V8, Apple silicon)**
+
+`dioxus-compose-renderer/web/test/WebBoundaryTest.kt`가 Kotlin/Wasm 테스트 러너가 이미 띄우는
+브라우저 안에서 경계를 직접 돕니다. 대상은 실물입니다. 생성된 forwarder, 생성된 wasm 심, 생성된
+인스턴스화, 그리고 양쪽이 제자리에서 읽는 `WebAssembly.Memory` 하나입니다. Host는 데스크톱과 같은
+Rust 소스(`examples/web_demo.rs`)를 `--import-memory --global-base=4194304 --initial-memory=8388608`로
+링크한 것입니다.
+
+```
+pr6 forwarder cost: 12.15 ns/call across the boundary, 0.44 ns/call in this module
+```
+
+- **수용 기준 1 충족.** 초기 배치가 트리를 만들고 오류 없이 디코드됩니다. 한쪽이 쓴 arena를 다른 쪽이
+  제자리에서 읽은 것이고, 복사한 바이트는 없습니다. 링크된 모듈이 메모리를 정의하지 않고 import하는
+  것은 `scripts/tests/web-host-imports.test.sh`가 확인합니다.
+- **수용 기준 2 충족.** PR-4의 기준은 Host 쪽 `boundary_call_cost.rs`가 지키고, 브라우저에서는
+  텍스트 변경과 클릭이 Rust 핸들러에 도달해 바뀐 상태가 배치로 돌아오는 것을 확인했습니다
+  (`pr6_a_click_reaches_the_host_and_its_state_change_comes_back`).
+- **수용 기준 3 충족.** 경계 호출 **12.15 / 12.29 / 12.75 ns**(3회 측정, 각 200만 회 호출 7세트의
+  최선값), 같은 루프를 모듈 안에서 돌린 값 **0.39~0.44 ns**. Safari 26.5의 12.05ns와 같은 자리이므로
+  두 번째 엔진에서도 수치가 유지됩니다. 프레임당 경계 호출 3회는 약 37ns이고, 16.7ms 프레임에서
+  0.0002%입니다.
+- **수용 기준 5 충족.** 생성된 Kotlin 선언, 생성된 forwarder와 인스턴스화, Rust의 wasm 심이 모두
+  `BOUNDARY_SCHEMA`와 그 옆의 메모리 상수에서 나옵니다. `dioxus-compose/tests/web_boundary.rs`가
+  체크인된 세 파일이 오늘 생성되는 것과 같은지, forwarder가 인자를 넘기는 것 외에 아무것도 하지
+  않는지, 양쪽 인자 개수가 맞는지를 지킵니다.
+- **수용 기준 4 충족.** `web/scripts/screenshot.sh`가 페이지를 띄워 사진을 찍습니다. 처음 뜬 화면에
+  데스크톱과 같은 트리(`dioxus-compose chat`, `Write a message` 자리표시자, Material 3 `Send` 버튼)가
+  그려지고, 필드에 타이핑한 뒤 버튼을 누르면 Rust 핸들러가 signal에 넣은 문장이 필드 위에 새 `Text`로
+  나타납니다. 필드의 글자가 남는 것은 D5대로 `TextField`가 uncontrolled이기 때문이며 데스크톱과 같습니다.
+  스크립트는 Kotlin 테스트 하네스가 이미 내려받은 Playwright와 브라우저, 툴체인이 들고 있는 Node를
+  빌려 쓰므로 디스플레이도 네이티브 빌드도 필요하지 않습니다.
+- 남은 확인: SpiderMonkey에서 재측정. V8은 이 측정으로 닫혔습니다.
+- CI는 여전히 wasm 테스트를 돌리지 않습니다. 러너가 잘린 skiko 모듈을 받아 브라우저 하네스가 뜨지
+  않기 때문이고, 경계 테스트 자체는 이제 의미가 있으므로 그 문제가 풀리면 바로 켤 수 있습니다.
 
 ### PR-7 명명 규칙 (`Agreed`)
 각 언어 생태계의 관례를 따릅니다. 한쪽 관례를 다른 쪽에 억지로 맞추지 않습니다.

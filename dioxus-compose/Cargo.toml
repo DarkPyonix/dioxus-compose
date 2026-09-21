@@ -51,7 +51,11 @@ dioxus-signals.workspace = true
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
 
-[dev-dependencies]
+# Criterion is not built for the browser. Its default features pull in rayon, which
+# refuses to compile for a wasm target, and building the Host as a wasm module compiles
+# dev-dependencies because an example is a dev target. The benchmarks only ever run on the
+# machine that records their numbers.
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 criterion = "0.7"
 
 [[bench]]
@@ -66,4 +70,11 @@ required-features = ["native-renderer"]
 # the generated shims registers this example's root component before anything draws.
 [[example]]
 name = "android_demo"
+crate-type = ["cdylib"]
+
+# The browser's Host is a wasm module the page fetches. It has no `main` either: the
+# Renderer's module owns the loop, and `web_main!` registers this example's root component
+# from the entry point the page calls once both modules exist.
+[[example]]
+name = "web_demo"
 crate-type = ["cdylib"]
