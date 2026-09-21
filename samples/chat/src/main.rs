@@ -123,10 +123,12 @@ fn app() -> Element {
                     key_of: move |index: usize| keys[index].clone(),
                     item: move |index: usize| {
                         let message = messages.read()[index].clone();
-                        // Who said it is the side it sits on and the colour it is painted
-                        // in, not a word above it. Both come from roles, so the user's
-                        // bubble is the accent colour of whichever design system is
-                        // running and the reply is that system's quiet surface.
+                        // Who said it should be readable without reading, so it is the side
+                        // the bubble sits on and the colour it is filled with, with the
+                        // name left as confirmation rather than as the only clue. Both
+                        // colours are roles, so the user's bubble is the accent of
+                        // whichever design system is running and the reply is that
+                        // system's quiet surface.
                         let (fill, ink) = if message.from_user {
                             (ColorRole::Primary, ColorRole::OnPrimary)
                         } else {

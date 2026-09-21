@@ -183,6 +183,10 @@ fn app() -> Element {
                     }
                 }
 
+                // An empty list explains itself rather than leaving a blank half window
+                // that could just as well be a screen that failed to draw. It replaces the
+                // list rather than sitting above it, so it gets the whole of the space the
+                // list would have taken.
                 if rows.is_empty() {
                     dioxus_compose::Box {
                         fill_max_width: true,
@@ -198,8 +202,7 @@ fn app() -> Element {
                             color: Paint::Role(ColorRole::OnSurfaceVariant),
                         }
                     }
-                }
-
+                } else {
                 // Every row is a Surface of its own, which is what separates one task from
                 // the next without a divider the design systems do not all draw.
                 LazyColumn {
@@ -305,6 +308,7 @@ fn app() -> Element {
                             }
                         }
                     },
+                }
                 }
             }
         }
