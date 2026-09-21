@@ -99,7 +99,7 @@ A unified sample draws the design the reference specifies rather than the one th
 it is running on happens to be set to, so each entry below records which colour scheme its
 reference actually shows. The sample says that scheme in its own `main`, and what is
 written here is where that value comes from. Read the picture, not the habit: two of the
-seven are dark designs, and a third is dark on the screen it is mostly about.
+seven are dark designs, and one of those two is a sheet whose other screens are light.
 
 ### 5. Minimal
 - Minimal Design Playground
