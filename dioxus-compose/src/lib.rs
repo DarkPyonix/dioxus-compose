@@ -7,6 +7,11 @@ pub mod boundary;
 #[cfg(target_os = "android")]
 #[path = "boundary_jni.gen.rs"]
 mod boundary_jni;
+/// Generated wasm shims. Compiled only for the browser, where the page owns the loop and
+/// the Renderer's module owns the one linear memory both halves read.
+#[cfg(target_family = "wasm")]
+#[path = "boundary_wasm.gen.rs"]
+mod boundary_wasm;
 #[doc(hidden)]
 pub mod codegen;
 pub mod drawing;
@@ -62,6 +67,27 @@ macro_rules! android_main {
     ($app:path) => {
         #[unsafe(no_mangle)]
         pub extern "C" fn dioxus_compose_android_main() {
+            $crate::LaunchBuilder::new()
+                .with_mode($crate::LoopMode::Platform)
+                .launch($app);
+        }
+    };
+}
+
+/// Declares the browser entry point for an application's wasm module.
+///
+/// A page has no library loader and no `main` of its own to run: the Renderer's module
+/// owns the loop, and the root component is registered from the generated
+/// `dioxus_compose_host_web_start`, which the page calls once both modules exist.
+///
+/// ```ignore
+/// dioxus_compose::web_main!(app);
+/// ```
+#[macro_export]
+macro_rules! web_main {
+    ($app:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_web_main() {
             $crate::LaunchBuilder::new()
                 .with_mode($crate::LoopMode::Platform)
                 .launch($app);

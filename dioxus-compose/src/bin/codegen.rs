@@ -1,9 +1,11 @@
 use dioxus_compose::codegen::{
     ANDROID_BRIDGE_RELATIVE_PATH, ANDROID_FAST_NATIVE_RELATIVE_PATH, EVENT_VECTOR_RELATIVE_PATH,
     GENERATED_RELATIVE_PATH, JNI_RUST_RELATIVE_PATH, MUTATION_VECTOR_RELATIVE_PATH,
-    VECTOR_DESCRIPTION_RELATIVE_PATH, generate_android_bridge_kotlin, generate_event_vector,
+    VECTOR_DESCRIPTION_RELATIVE_PATH, WASM_RUST_RELATIVE_PATH, WEB_BRIDGE_RELATIVE_PATH,
+    WEB_LOADER_RELATIVE_PATH, generate_android_bridge_kotlin, generate_event_vector,
     generate_fast_native_kotlin, generate_jni_rust, generate_kotlin, generate_mutation_vector,
-    generate_vector_description,
+    generate_vector_description, generate_wasm_rust, generate_web_bridge_kotlin,
+    generate_web_loader_js,
 };
 use std::path::{Path, PathBuf};
 
@@ -47,6 +49,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     write(
         manifest_dir.join(ANDROID_FAST_NATIVE_RELATIVE_PATH),
         generate_fast_native_kotlin().as_bytes(),
+    )?;
+    // All three of the web boundary's halves come from the same schema: the shims, the
+    // declarations that call them, and the page that wires the two modules together.
+    write(
+        manifest_dir.join(WASM_RUST_RELATIVE_PATH),
+        generate_wasm_rust().as_bytes(),
+    )?;
+    write(
+        manifest_dir.join(WEB_BRIDGE_RELATIVE_PATH),
+        generate_web_bridge_kotlin().as_bytes(),
+    )?;
+    write(
+        manifest_dir.join(WEB_LOADER_RELATIVE_PATH),
+        generate_web_loader_js().as_bytes(),
     )?;
     Ok(())
 }

@@ -7,8 +7,10 @@ use crate::schema::{
     ANDROID_BRIDGE_CLASS, BOUNDARY_SCHEMA, BoundaryOp, BoundaryParam, Color, ColorRole,
     ColorScheme, DesignSystem, EVENT_SCHEMA, EventPayloadType, FieldSchema, FieldSlot, FieldType,
     KEY_SCHEMA, Key, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PROTOCOL_VERSION, Paint, PropertyKind,
-    ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme, WIDGET_SCHEMA,
-    WINDOW_SIZE_CLASS_SCHEMA, WidgetKind,
+    ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme, WEB_BATCH_BYTES,
+    WEB_BATCH_FIELDS, WEB_EVENT_BUFFER_BYTES, WEB_EVENT_BUFFER_OFFSET, WEB_HOST_GLOBAL,
+    WEB_LOADER_GLOBAL, WEB_RENDERER_IMPORT_MODULE, WEB_RUST_REGION_BASE, WEB_START_SYMBOL,
+    WIDGET_SCHEMA, WINDOW_SIZE_CLASS_SCHEMA, WidgetKind,
 };
 use crate::tokens::DESIGN_TOKENS;
 use crate::{EventPayload, Modifier};
@@ -1852,6 +1854,10 @@ fn rustfmt(source: String) -> String {
         return source;
     };
     let written = stdin.write_all(source.as_bytes());
+    // Closing the pipe is what tells rustfmt the input has ended, so the drop is the
+    // point of the statement rather than tidiness. `ChildStdin` has no `Drop` on wasm,
+    // where `std::process` is a stub, and clippy sees the call there and not the reason.
+    #[allow(clippy::drop_non_drop)]
     drop(stdin);
     let Ok(output) = child.wait_with_output() else {
         return source;
@@ -2093,5 +2099,575 @@ fn screaming_snake_case(name: &str) -> String {
         }
         output.push(character.to_ascii_uppercase());
     }
+    output
+}
+
+// ---------------------------------------------------------------------------------------
+// Web bindings.
+//
+// Three files, one table. The Kotlin forwarder declarations, the page's loader module and
+// the Rust wasm shims are renderings of `BOUNDARY_SCHEMA` and of the memory constants
+// beside it, so the argument order, the symbol names and the record layout cannot drift
+// apart. A browser would not report the drift: an import that nobody satisfies stops the
+// module from being instantiated, and an offset read four bytes off draws a wrong screen.
+// ---------------------------------------------------------------------------------------
+
+/// Generated Rust, compiled into the cdylib only when the target is wasm.
+pub const WASM_RUST_RELATIVE_PATH: &str = "src/boundary_wasm.gen.rs";
+/// Generated Kotlin. The Kotlin Toolchain compiles the module's `src` tree by convention.
+pub const WEB_BRIDGE_RELATIVE_PATH: &str =
+    "../dioxus-compose-renderer/web/src/bridge/HostBridge.gen.kt";
+/// Generated JavaScript, in the module's resource tree, which is copied next to `web.mjs`.
+pub const WEB_LOADER_RELATIVE_PATH: &str =
+    "../dioxus-compose-renderer/web/resources/dioxus-compose-host.gen.mjs";
+
+const WEB_KOTLIN_PACKAGE: &str = "dioxus.compose.ui.platform";
+
+/// The file name the loader fetches the Host from, next to itself.
+pub const WEB_HOST_WASM_NAME: &str = "dioxus_compose_host.wasm";
+
+/// How much shared memory the Host's module declares it needs.
+///
+/// The Kotlin module's memory starts at zero pages, so the page has to grow it to at least
+/// the minimum the Host's imported memory declares before the two types match. The number
+/// is fixed here and passed to the Host's linker as `--initial-memory`, so the loader and
+/// the link agree by construction rather than by the loader guessing.
+pub const WEB_MEMORY_MIN_PAGES: u32 = 128;
+
+/// The wasm symbol for one logical operation on the web.
+///
+/// Every argument is an `i32`, because that is what crosses a JavaScript forwarder without
+/// anything being built to carry it.
+fn web_symbol(op_name: &str) -> String {
+    format!("dioxus_compose_host_web_{}", snake_case(op_name))
+}
+
+/// The Kotlin name for it. Compose conventions, so camelCase.
+fn web_kotlin_name(op_name: &str) -> String {
+    format!("host{op_name}")
+}
+
+/// The arguments one operation takes on the web, in order, as (name, Kotlin type).
+///
+/// A byte range is an address and a length. A frame timestamp is split into its low and
+/// high halves rather than passed as a `Long`, because a `Long` reaches JavaScript as a
+/// `BigInt`, and that is a heap allocation on the one call that happens every frame.
+fn web_parameters(op: &BoundaryOp) -> Vec<String> {
+    let mut parameters = Vec::new();
+    for param in op.params {
+        match param {
+            BoundaryParam::Bytes { name } => {
+                parameters.push((*name).to_owned());
+                parameters.push(format!("{name}Length"));
+            }
+            BoundaryParam::Nanos { name } => {
+                parameters.push(format!("{name}Low"));
+                parameters.push(format!("{name}High"));
+            }
+        }
+    }
+    if op.returns_batch || op.name == "ReleaseBatch" {
+        parameters.push("out".to_owned());
+    }
+    parameters
+}
+
+/// Emits the Kotlin half of the web boundary: one forwarder per operation, the shared
+/// memory constants both sides read the batch record with, and the export a Host worker
+/// calls to ask for a frame.
+pub fn generate_web_bridge_kotlin() -> String {
+    let mut output = String::new();
+    output.push_str("// Generated by `cargo run -p dioxus-compose --bin codegen`. DO NOT EDIT.\n");
+    output.push_str(
+        "@file:OptIn(\n    \
+         kotlin.js.ExperimentalWasmJsInterop::class,\n    \
+         kotlin.wasm.ExperimentalWasmInterop::class,\n)\n\n",
+    );
+    writeln!(output, "package {WEB_KOTLIN_PACKAGE}\n").unwrap();
+    output.push_str("import kotlin.wasm.WasmExport\n\n");
+    output.push_str(
+        r#"// The web boundary.
+//
+// One WebAssembly.Memory holds both modules. The Kotlin module defines and exports it,
+// because a Kotlin/Wasm module cannot import one, and the Host's module is linked against
+// it, so a batch is read where the Host wrote it and no byte of it is copied.
+//
+// Every call below goes through a JavaScript arrow function of a fixed shape, measured at
+// about 12ns. It is there because the two halves of the wiring cannot both be had: a wasm
+// import bound straight to a wasm export costs 1.5ns but has to be supplied before the
+// Kotlin module is instantiated, and the memory it would need to share does not exist
+// until that instantiation. The forwarder passes its arguments on and does nothing else:
+// no encoding, no copy, no queue.
+//
+// The other direction has no JavaScript on it. The page hands the Host's instantiation the
+// function object Kotlin exports below, and the engine binds that edge as a wasm call.
+
+"#,
+    );
+
+    writeln!(
+        output,
+        "/**\n \
+         * The first address that belongs to the Host's module.\n \
+         *\n \
+         * Below it is this module's `kotlin.wasm.unsafe` allocator; at and above it are the\n \
+         * Host's data, stack and heap. Two allocators hand out addresses in one memory, and an\n \
+         * overlap does not crash, it draws the wrong screen, so every address that crosses is\n \
+         * checked against this line.\n \
+         */\n\
+         const val RUST_REGION_BASE: Int = {WEB_RUST_REGION_BASE}\n"
+    )
+    .unwrap();
+
+    output.push_str(
+        "/**\n \
+         * The batch record the Host writes, field by field.\n \
+         *\n \
+         * A wasm32 `#[repr(C)]` layout: two four byte fields and then an eight byte one, which\n \
+         * the padding before it puts at 8. The Host's generated shims assert this against the\n \
+         * layout its compiler chose, so a disagreement stops that build.\n \
+         */\n",
+    );
+    for field in WEB_BATCH_FIELDS {
+        writeln!(output, "/** {}. */", field.description).unwrap();
+        writeln!(
+            output,
+            "const val BATCH_{}_OFFSET: Int = {}",
+            screaming_snake_case(field.name),
+            field.offset
+        )
+        .unwrap();
+    }
+    writeln!(
+        output,
+        "\n/** How long that record is, padding included. */\nconst val BATCH_BYTES: Int = {WEB_BATCH_BYTES}\n"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "/**\n \
+         * Where the event buffer starts inside the block the Host lends this side.\n \
+         *\n \
+         * The out record comes first and the event buffer follows it. Both belong to the Host,\n \
+         * because `kotlin.wasm.unsafe` only hands out addresses inside a scope and this side\n \
+         * needs two buffers that outlive every scope it could open.\n \
+         */\n\
+         const val EVENT_BUFFER_OFFSET: Int = {WEB_EVENT_BUFFER_OFFSET}\n"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "/** How much room there is to encode one event into. */\nconst val EVENT_BUFFER_BYTES: Int = {WEB_EVENT_BUFFER_BYTES}\n"
+    )
+    .unwrap();
+
+    for op in BOUNDARY_SCHEMA {
+        let parameters = web_parameters(op);
+        let arguments = parameters.join(", ");
+        writeln!(output, "/** `{}`, which calls `{}`. */", op.name, op.symbol).unwrap();
+        writeln!(
+            output,
+            "@JsFun(\"({arguments}) => globalThis.{WEB_HOST_GLOBAL}.{}({arguments})\")",
+            web_symbol(op.name)
+        )
+        .unwrap();
+        let declared: Vec<String> = parameters
+            .iter()
+            .map(|name| format!("{name}: Int"))
+            .collect();
+        writeln!(
+            output,
+            "external fun {}({}): Int\n",
+            web_kotlin_name(op.name),
+            declared.join(", ")
+        )
+        .unwrap();
+    }
+
+    writeln!(
+        output,
+        "/**\n \
+         * Instantiates the Host on this module's memory and answers with the address of the\n \
+         * block it lends back. Zero means there is no Host on this page.\n \
+         *\n \
+         * Called once, from `main`, which is the first moment at which both halves exist: the\n \
+         * memory was created by this module's own instantiation, and the loader compiled the\n \
+         * Host's module before that started. `wasmExports` is the name the generated import\n \
+         * object holds them under, and it is set before `main` runs.\n \
+         */\n\
+         @JsFun(\n    \
+         \"() => globalThis.{WEB_LOADER_GLOBAL} \" +\n        \
+         \"? globalThis.{WEB_LOADER_GLOBAL}.instantiate(wasmExports) : 0\"\n\
+         )\n\
+         external fun installHost(): Int\n"
+    )
+    .unwrap();
+
+    writeln!(
+        output,
+        "/**\n \
+         * Called by the Host when work done off the frame loop needs one.\n \
+         *\n \
+         * A browser tab is one thread, so this arrives on the same thread that will answer it.\n \
+         * It only bumps a counter the frame clock observes, so any number of requests between\n \
+         * two frames become one frame. The page also calls it once after the Host is installed,\n \
+         * which is what gets the first tree drawn.\n \
+         */\n\
+         @WasmExport(\"dioxus_compose_renderer_request_frame\")\n\
+         fun onFrameRequested() {{\n    \
+         FrameRequests.request()\n\
+         }}"
+    )
+    .unwrap();
+    output
+}
+
+/// Emits the page's half: the module that compiles the Host before the Renderer's own
+/// module is evaluated, and instantiates it on the Renderer's memory afterwards.
+pub fn generate_web_loader_js() -> String {
+    let mut output = String::new();
+    output.push_str("// Generated by `cargo run -p dioxus-compose --bin codegen`. DO NOT EDIT.\n");
+    output.push_str(
+        r#"//
+// The page's half of the web boundary.
+//
+// `WebAssembly.instantiate` wants every import before it will give you an instance, and
+// the two modules each hold what the other needs: the Renderer's module defines the one
+// linear memory, which the Host imports, and the Host exports the functions the Renderer
+// calls. Nothing breaks that cycle inside wasm, so the page breaks it in three steps.
+//
+//   1. This module is evaluated before the Renderer's, and compiles the Host. Compiling
+//      needs no imports.
+//   2. The Renderer's module is instantiated, which is what creates the memory.
+//   3. The Renderer's `main` calls `instantiate` below, which is synchronous, because the
+//      module was already compiled in step 1.
+//
+// By step 3 the Renderer's exports exist, so the Host's frame request is bound to the
+// exported function object itself and the engine treats that edge as a wasm call. The
+// other direction, Renderer to Host, is the generated arrow functions in the Kotlin
+// bridge, and they pass their arguments on and do nothing else.
+
+"#,
+    );
+    writeln!(output, "const HOST_WASM = './{WEB_HOST_WASM_NAME}';").unwrap();
+    writeln!(
+        output,
+        "/** What the Host's module declares as the minimum size of the memory it imports. */"
+    )
+    .unwrap();
+    writeln!(output, "const MEMORY_MIN_PAGES = {WEB_MEMORY_MIN_PAGES};").unwrap();
+    writeln!(output, "const WASM_PAGE_BYTES = 65536;").unwrap();
+    writeln!(
+        output,
+        "/** The first address that belongs to the Host. Its own block has to be above it. */"
+    )
+    .unwrap();
+    writeln!(output, "const RUST_REGION_BASE = {WEB_RUST_REGION_BASE};\n").unwrap();
+
+    output.push_str(
+        r#"let compiled = null;
+try {
+  compiled = await WebAssembly.compileStreaming(
+    fetch(new URL(HOST_WASM, import.meta.url)),
+  );
+} catch (error) {
+  // No Host on this page, which is a page serving the renderer on its own. The renderer
+  // falls back to its scripted development host, and this says why on the console rather
+  // than leaving an empty screen to be puzzled over.
+  console.info(
+    `dioxus-compose: no Host module beside this page (${HOST_WASM}: ${error}). ` +
+      'The renderer will draw its development host instead.',
+  );
+}
+
+"#,
+    );
+    writeln!(output, "globalThis.{WEB_LOADER_GLOBAL} = {{").unwrap();
+    output.push_str(
+        r#"  /**
+   * Instantiates the Host on the Renderer's memory.
+   *
+   * Returns the address of the block the Host lends back: the batch record the Renderer
+   * reads a reply out of, and the buffer it encodes an event into. Zero when there is no
+   * Host, which is the answer the Renderer treats as "run the development host".
+   */
+  instantiate(exports) {
+    if (compiled === null) return 0;
+    const memory = exports.memory;
+    const pages = memory.buffer.byteLength / WASM_PAGE_BYTES;
+    // The Renderer's memory starts at zero pages and the Host's import declares a
+    // minimum, so the two types do not match until this has run.
+    if (pages < MEMORY_MIN_PAGES) memory.grow(MEMORY_MIN_PAGES - pages);
+"#,
+    );
+    writeln!(
+        output,
+        "    const host = new WebAssembly.Instance(compiled, {{"
+    )
+    .unwrap();
+    output.push_str("      env: { memory },\n");
+    writeln!(output, "      {WEB_RENDERER_IMPORT_MODULE}: {{").unwrap();
+    output.push_str(
+        "        // The exported function object itself, not a closure around it: bound this\n\
+         \x20       // way the engine builds no JavaScript frame for the call.\n",
+    );
+    output.push_str(
+        "        dioxus_compose_renderer_request_frame:\n          \
+         exports.dioxus_compose_renderer_request_frame,\n",
+    );
+    output.push_str("      },\n    }).exports;\n");
+    writeln!(output, "    globalThis.{WEB_HOST_GLOBAL} = host;").unwrap();
+    writeln!(output, "    const block = host.{WEB_START_SYMBOL}();").unwrap();
+    output.push_str(
+        r#"    if (block < RUST_REGION_BASE) {
+      // Either the Host could not start, or its data landed in the half of the memory the
+      // Renderer's allocator uses. The second one would draw a wrong screen instead of
+      // failing, so neither is allowed to become the first boundary call.
+"#,
+    );
+    writeln!(output, "      globalThis.{WEB_HOST_GLOBAL} = undefined;").unwrap();
+    output.push_str(
+        r#"      throw new Error(
+        `dioxus-compose: the Host reported its boundary block at ${block}, which is not ` +
+          `inside the region above ${RUST_REGION_BASE} that it was linked into. ` +
+          'Check that the Host was linked with --global-base and --import-memory.',
+      );
+    }
+    return block;
+  },
+};
+"#,
+    );
+    output
+}
+
+/// Emits the Rust half of the web boundary: one wasm shim per operation, the block the
+/// Host lends the Renderer, and the entry point a page uses in place of a library loader.
+pub fn generate_wasm_rust() -> String {
+    let mut output = String::new();
+    output.push_str("// Generated by `cargo run -p dioxus-compose --bin codegen`. DO NOT EDIT.\n");
+    output.push_str(
+        r#"//! The wasm shims for the web boundary.
+//!
+//! The Renderer owns the one linear memory and this module imports it, so a batch is read
+//! where it was written. That leaves the addresses: every argument below is an address or a
+//! length in that shared memory, and both buffers a call names belong to this side, because
+//! the Renderer has no allocator that can hold memory from one frame to the next.
+//!
+//! Every argument is 32 bits wide. A 64 bit one would reach the forwarder as a `BigInt`,
+//! which is a heap allocation on the call that happens every frame, so a frame timestamp
+//! arrives as its two halves and is put back together here.
+
+use crate::boundary::{
+    MutationBatch, RendererApi, STATUS_OK, STATUS_PROTOCOL_ERROR, install_renderer_api,
+};
+use crate::schema::{
+    WEB_BATCH_BYTES, WEB_EVENT_BUFFER_BYTES, WEB_EVENT_BUFFER_OFFSET, WEB_RUST_REGION_BASE,
+};
+use std::ffi::c_int;
+use std::mem::{offset_of, size_of};
+
+unsafe extern "C" {
+    /// Defined by the application's cdylib through `dioxus_compose::web_main!`. It
+    /// registers the root component before the Renderer's first init call.
+    fn dioxus_compose_web_main();
+}
+
+"#,
+    );
+    writeln!(
+        output,
+        "#[link(wasm_import_module = \"{WEB_RENDERER_IMPORT_MODULE}\")]"
+    )
+    .unwrap();
+    output.push_str(
+        r#"unsafe extern "C" {
+    /// Bound to the function the Renderer exports, with no JavaScript in between: the page
+    /// hands the exported function object straight to this module's instantiation, which it
+    /// can because this module is instantiated second.
+    fn dioxus_compose_renderer_request_frame();
+}
+
+/// The record layout the generated Kotlin reads a reply out of.
+///
+/// Written down on the Kotlin side as constants and checked here against what this
+/// compiler actually chose. A layout that disagreed would not fail anywhere else: the
+/// Renderer would read four bytes at the wrong offset and draw whatever they happened to
+/// mean.
+const _: () = {
+    assert!(size_of::<MutationBatch>() == WEB_BATCH_BYTES as usize);
+"#,
+    );
+    for field in WEB_BATCH_FIELDS {
+        let member = match field.name {
+            "Address" => "ptr",
+            "Length" => "len",
+            "Result" => "result",
+            other => panic!("no MutationBatch member is named {other}"),
+        };
+        writeln!(
+            output,
+            "    assert!(offset_of!(MutationBatch, {member}) == {});",
+            field.offset
+        )
+        .unwrap();
+    }
+    output.push_str("};\n\n");
+
+    output.push_str(
+        r#"/// What the Host lends the Renderer, once, for the life of the page.
+///
+/// The Renderer cannot own either buffer. `kotlin.wasm.unsafe` hands out addresses that
+/// are only valid inside the scope that asked for them, and opening a scope per call is
+/// the steady-state allocation the frame budget does not have. So both sit here, in this
+/// module's region, and the Renderer keeps the address.
+#[repr(C)]
+struct BoundaryBlock {
+    /// Where a call writes what it did. The Renderer reads it and releases it on the same
+    /// call stack.
+    out: MutationBatch,
+    /// Where the Renderer encodes one event before the call that carries it.
+    event: [u8; WEB_EVENT_BUFFER_BYTES as usize],
+}
+
+/// A browser tab is one thread, and the Renderer needs this address to stay where it is
+/// between calls, so it is a static rather than a thread local.
+static mut BLOCK: BoundaryBlock = BoundaryBlock {
+    out: MutationBatch {
+        ptr: std::ptr::null(),
+        len: 0,
+        result: 0,
+    },
+    event: [0; WEB_EVENT_BUFFER_BYTES as usize],
+};
+
+/// Where the Renderer is told the event buffer starts, against where it really starts.
+const _: () = assert!(offset_of!(BoundaryBlock, event) == WEB_EVENT_BUFFER_OFFSET as usize);
+
+/// The page owns the loop, so the Host never runs one.
+extern "C" fn platform_run() -> c_int {
+    STATUS_OK as c_int
+}
+
+extern "C" fn request_frame() {
+    // SAFETY: the page supplied this import from the Renderer's exports before this
+    // module was instantiated, so there is a function here to call.
+    unsafe { dioxus_compose_renderer_request_frame() };
+}
+
+/// Whether an address the Renderer passed is one this side lent it.
+///
+/// Every buffer a call names is in this module's region. An address below the region is
+/// either the Renderer allocator's, which would mean the two allocators have grown into
+/// each other, or a stray number, and neither is worth reading or writing through.
+fn lent(address: u32) -> bool {
+    address >= WEB_RUST_REGION_BASE
+}
+
+"#,
+    );
+
+    for op in BOUNDARY_SCHEMA {
+        write!(output, "{}", wasm_shim(op)).unwrap();
+    }
+
+    writeln!(
+        output,
+        r#"/// Starts the Host and reports where the block it lends the Renderer sits.
+///
+/// A page has no library loader, so this is where the work `JNI_OnLoad` does on Android
+/// goes: install the renderer API, then let the application register its root component.
+/// Zero means the block is not somewhere the Renderer may read, and the Renderer makes no
+/// boundary call at all in that case.
+#[unsafe(no_mangle)]
+pub extern "C" fn {WEB_START_SYMBOL}() -> u32 {{
+    let _ = install_renderer_api(RendererApi {{
+        run: platform_run,
+        request_frame,
+    }});
+    // SAFETY: the application's cdylib defines this symbol.
+    unsafe {{ dioxus_compose_web_main() }};
+    let address = (&raw const BLOCK) as usize as u32;
+    if lent(address) {{ address }} else {{ 0 }}
+}}"#
+    )
+    .unwrap();
+    rustfmt(output)
+}
+
+fn wasm_shim(op: &BoundaryOp) -> String {
+    let mut output = String::new();
+    writeln!(output, "/// `{}`, which calls `{}`.", op.name, op.symbol).unwrap();
+    output.push_str("#[unsafe(no_mangle)]\npub extern \"C\" fn ");
+    write!(output, "{}(", web_symbol(op.name)).unwrap();
+    let parameters = web_parameters(op);
+    let declared: Vec<String> = parameters
+        .iter()
+        .map(|name| format!("{}: u32", snake_case(name)))
+        .collect();
+    writeln!(output, "{}) -> i32 {{", declared.join(", ")).unwrap();
+
+    // Anything that is an address has to be inside this module's region before it is read
+    // or written through, and a zero-length range names no address at all.
+    let mut guards: Vec<String> = Vec::new();
+    let mut arguments: Vec<String> = Vec::new();
+    let mut bindings: Vec<String> = Vec::new();
+    for param in op.params {
+        match param {
+            BoundaryParam::Bytes { name } => {
+                let address = snake_case(name);
+                let length = snake_case(&format!("{name}Length"));
+                guards.push(format!("({length} == 0 || lent({address}))"));
+                arguments.push(format!("{address} as *const u8"));
+                arguments.push(length);
+            }
+            BoundaryParam::Nanos { name } => {
+                let low = snake_case(&format!("{name}Low"));
+                let high = snake_case(&format!("{name}High"));
+                bindings.push(format!(
+                    "    let {} = (u64::from({high}) << 32) | u64::from({low});",
+                    snake_case(name)
+                ));
+                arguments.push(snake_case(name));
+            }
+        }
+    }
+    let takes_out = op.returns_batch || op.name == "ReleaseBatch";
+    if takes_out {
+        guards.push("lent(out)".to_owned());
+        arguments.push("out as *mut MutationBatch".to_owned());
+    }
+    // Refused before anything is worked out from the arguments, so that a call that will
+    // not happen costs nothing.
+    if !guards.is_empty() {
+        let condition = if guards.len() == 1 {
+            guards[0].clone()
+        } else {
+            guards.join(" && ")
+        };
+        writeln!(output, "    if !({condition}) {{").unwrap();
+        output.push_str("        return STATUS_PROTOCOL_ERROR;\n    }\n");
+    }
+    for binding in bindings {
+        writeln!(output, "{binding}").unwrap();
+    }
+
+    let call = format!("crate::boundary::{}({})", op.symbol, arguments.join(", "));
+    if op.symbol == "dioxus_compose_host_shutdown" {
+        writeln!(output, "    {call};").unwrap();
+        output.push_str("    STATUS_OK\n}\n\n");
+        return output;
+    }
+    output.push_str(
+        "    // SAFETY: every address above was checked to be inside this module's region,\n\
+         \x20   // which is where the only buffers the Renderer can name live.\n",
+    );
+    if op.returns_batch {
+        writeln!(output, "    unsafe {{ {call} }}").unwrap();
+    } else {
+        writeln!(output, "    unsafe {{ {call} }};").unwrap();
+        output.push_str("    STATUS_OK\n");
+    }
+    output.push_str("}\n\n");
     output
 }

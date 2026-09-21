@@ -1220,3 +1220,97 @@ pub const BOUNDARY_SCHEMA: &[BoundaryOp] = &[
 /// The JVM class the Android shims bind to. The Kotlin file is generated under the same
 /// name, so the two sides cannot drift.
 pub const ANDROID_BRIDGE_CLASS: &str = "dioxus/compose/ui/platform/HostBridge";
+
+// ---------------------------------------------------------------------------------------
+// The browser's shared linear memory.
+//
+// One `WebAssembly.Memory` holds both modules' data. The Kotlin module defines and exports
+// it, because a Kotlin/Wasm module has no way to import one, and the Rust module is linked
+// with `--import-memory` so that the arena the Host writes is the arena the Renderer reads.
+// Nothing below crosses the boundary as data: these are the addresses and offsets both
+// generated halves are written against.
+// ---------------------------------------------------------------------------------------
+
+/// The first address that belongs to the Rust module.
+///
+/// Below it is the Kotlin module's `kotlin.wasm.unsafe` allocator; at and above it are the
+/// Rust module's data, stack and heap, which the linker is told with `--global-base`. Two
+/// allocators handing out addresses in one memory is the hazard: an overlap does not crash,
+/// it draws the wrong screen, so the Renderer checks which side of this line its own
+/// addresses fall on before it makes the first boundary call.
+pub const WEB_RUST_REGION_BASE: u32 = 4 * 1024 * 1024;
+
+/// One field of the `MutationBatch` record the Host writes into the shared memory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WebBatchField {
+    /// PascalCase, so the generated Kotlin constant reads as a name rather than an offset.
+    pub name: &'static str,
+    pub offset: u32,
+    pub width: u32,
+    pub description: &'static str,
+}
+
+/// `MutationBatch` as a wasm32 target lays it out.
+///
+/// The offsets are written down rather than read from `offset_of!` because codegen runs on
+/// the machine that generates, not the machine that runs: a 64-bit host makes the same
+/// `#[repr(C)]` struct 24 bytes with an 8 byte pointer. The generated wasm glue asserts
+/// this table against the real layout, so a compiler that disagrees stops that build
+/// instead of producing a Renderer that reads the wrong four bytes.
+pub const WEB_BATCH_FIELDS: &[WebBatchField] = &[
+    WebBatchField {
+        name: "Address",
+        offset: 0,
+        width: 4,
+        description: "where the batch starts, as an address in the shared memory",
+    },
+    WebBatchField {
+        name: "Length",
+        offset: 4,
+        width: 4,
+        description: "the batch's length in bytes",
+    },
+    WebBatchField {
+        name: "Result",
+        offset: 8,
+        width: 8,
+        description: "the handler's synchronous result",
+    },
+];
+
+/// How long that record is, including the padding `#[repr(C)]` adds before the result.
+pub const WEB_BATCH_BYTES: u32 = 16;
+
+/// How much room the Host lends the Renderer to encode one event into.
+///
+/// The same figure the Android connection allocates for the same job. An event that would
+/// not fit is refused by the encoder rather than truncated.
+pub const WEB_EVENT_BUFFER_BYTES: u32 = 4096;
+
+/// Where the event buffer starts inside the block `dioxus_compose_host_web_start` reports.
+///
+/// The out record comes first, at offset zero, and the event buffer follows it.
+pub const WEB_EVENT_BUFFER_OFFSET: u32 = WEB_BATCH_BYTES;
+
+/// The extra Host export a browser needs, because a page has no library loader.
+///
+/// It does what `JNI_OnLoad` does on Android, registering the root component and installing
+/// the renderer API, and it answers with the address of the block above.
+pub const WEB_START_SYMBOL: &str = "dioxus_compose_host_web_start";
+
+/// The wasm import module the Host's frame request comes from.
+///
+/// This direction has no JavaScript on it: the page hands Kotlin's exported function object
+/// straight to the Rust instantiation, which the engine binds as a wasm-to-wasm call. It can,
+/// because Rust is instantiated second and Kotlin's exports already exist by then.
+pub const WEB_RENDERER_IMPORT_MODULE: &str = "dioxus_compose_renderer";
+
+/// The global the generated forwarders read the Host's exports off.
+///
+/// A `@JsFun` body is inlined into the import object module Kotlin generates, so the only
+/// name it can reach the loader through is a property of the global object.
+pub const WEB_HOST_GLOBAL: &str = "__dioxusComposeHost";
+
+/// The global the loader module publishes itself under, for the one call that starts the
+/// Host: Kotlin's `main` asks for it once and never again.
+pub const WEB_LOADER_GLOBAL: &str = "__dioxusComposeHostLoader";
