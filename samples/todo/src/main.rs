@@ -19,7 +19,14 @@ const BULK_COUNT: usize = 5_000;
 
 fn app() -> Element {
     let window = use_window_size();
-    let one_line_controls = window.is_expanded();
+    // A list of one line items read across 1200dp is a list nobody can scan: the eye has
+    // to travel from the title to the actions and back for every row. Past an expanded
+    // window the screen stops widening and centres, and the page shows either side.
+    let measure = if window.is_expanded() {
+        Some(WindowSizeClass::EXPANDED_MIN_WIDTH_DP)
+    } else {
+        None
+    };
     let stacked = window.is_compact();
     let mut tasks = use_signal(store::load);
     let mut next_id = use_signal(|| {
@@ -268,8 +275,13 @@ fn app() -> Element {
                 }
             }
 
-            Column {
+            dioxus_compose::Box {
                 fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::TopCenter,
+            Column {
+                fill_max_width: measure.is_none(),
+                width: measure,
                 fill_max_height: true,
                 padding_role: SpaceRole::Lg,
                 space_role: SpaceRole::Md,
@@ -352,6 +364,7 @@ fn app() -> Element {
                 // List and detail. Narrower than a desktop window the list is the whole
                 // width and the editor is the row itself.
                 {list}
+            }
             }
         }
     }
@@ -631,26 +644,58 @@ mod tests {
         texts
     }
 
-    /// A phone shows the list; a desktop window shows the list and the task beside it. The
-    /// row's worded actions become marks on a phone, where the words leave the title no
-    /// room.
+    /// The widths the screen asks for after the Renderer reports a window of this width.
+    fn widths_at(width_dp: f32) -> Vec<f32> {
+        saved_list();
+        dioxus_compose::window::reset_window_size();
+        let mut host = Host::new(app);
+        host.rebuild().expect("the first frame failed to encode");
+        let event = HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp,
+                height_dp: 900.0,
+                class: dioxus_compose::WindowSizeClass::from_width_dp(width_dp),
+            },
+        };
+        let mut bytes = Vec::new();
+        encode_event(&event, &mut bytes).expect("the resize did not encode");
+        let (batch, _) = host.dispatch_event(&bytes).expect("the resize failed");
+        let widths = decode_batch(batch)
+            .expect("the resize batch did not decode")
+            .iter()
+            .filter_map(|mutation| match mutation {
+                Mutation::SetModifier {
+                    modifier: dioxus_compose::Modifier::Width(width),
+                    ..
+                } => Some(*width),
+                _ => None,
+            })
+            .collect();
+        dioxus_compose::window::reset_window_size();
+        widths
+    }
+
+    /// A phone spells the row's two worded actions as marks and shortens the bulk
+    /// actions, because at 400dp the words leave the title no room. A desktop window
+    /// stops the screen widening and centres it, because a one line item read across
+    /// 1200dp cannot be scanned.
     #[test]
-    fn fr20_the_screen_splits_on_a_wide_window_and_shortens_on_a_narrow_one() {
+    fn fr20_the_screen_shortens_on_a_phone_and_stops_widening_on_a_desktop() {
         let narrow = texts_at(420.0);
         assert!(narrow.iter().any(|text| text == "\u{2715}"), "{narrow:?}");
         assert!(!narrow.iter().any(|text| text == "Delete"));
-        assert!(
-            !narrow
-                .iter()
-                .any(|text| text.starts_with("Choose Edit on a task"))
-        );
+        assert!(narrow.iter().any(|text| text == "Clear"));
 
         let wide = texts_at(1200.0);
         assert!(wide.iter().any(|text| text == "Delete"), "{wide:?}");
+        assert!(wide.iter().any(|text| text == "Clear completed"));
+
+        assert!(widths_at(420.0).is_empty());
         assert!(
-            wide.iter()
-                .any(|text| text.starts_with("Choose Edit on a task")),
-            "the detail pane is missing: {wide:?}"
+            widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+            "the screen did not take a measure"
         );
     }
 
