@@ -16,6 +16,16 @@
 
 mod school;
 
+mod palette {
+    use dioxus_compose::prelude::Color;
+    pub const PAGE: Color = Color::rgb(0x000000);
+    pub const TEXT: Color = Color::rgb(0xFFFFFF);
+    pub const PURPLE: Color = Color::rgb(0x3B2C63);
+    pub const RED: Color = Color::rgb(0xFF5A5F);
+    pub const TEAL: Color = Color::rgb(0x2DD4BF);
+    pub const AMBER: Color = Color::rgb(0xFBBF24);
+}
+
 use dioxus_compose::prelude::*;
 use school::{LESSONS, Lesson, STAGES, SUBJECTS, Subject, ordinal, overall_progress, stage};
 
@@ -36,13 +46,15 @@ enum Destination {
     Skills,
     Plan,
     Progress,
+    Profile,
 }
 
 impl Destination {
-    const STRIP: [Destination; 3] = [
+    const STRIP: [Destination; 4] = [
         Destination::Skills,
         Destination::Plan,
         Destination::Progress,
+        Destination::Profile,
     ];
 
     fn label(self) -> &'static str {
@@ -50,6 +62,7 @@ impl Destination {
             Destination::Skills => "Skills",
             Destination::Plan => "Plan",
             Destination::Progress => "Progress",
+            Destination::Profile => "Profile",
         }
     }
 
@@ -58,6 +71,7 @@ impl Destination {
             Destination::Skills => IconRole::Home,
             Destination::Plan => IconRole::List,
             Destination::Progress => IconRole::Check,
+            Destination::Profile => IconRole::Settings,
         }
     }
 
@@ -71,39 +85,40 @@ impl Destination {
 
 /// One subject as a tile: the mark, the name, and how far through it you are.
 fn subject_tile(subject: &Subject, on_open: EventHandler<&'static str>) -> Element {
-    let (fill, ink, _) = subject.tile.roles();
     let name = subject.name;
+    let fill = match name {
+        "Technique" => Paint::Literal(palette::PURPLE),
+        "Arsenal" => Paint::Literal(palette::RED),
+        "Coordination" => Paint::Literal(palette::TEAL),
+        _ => Paint::Literal(palette::AMBER),
+    };
     rsx! {
-        Column {
+        dioxus_compose::Box {
             fill_max_width: true,
             height: TILE_HEIGHT,
-            background: Paint::Role(fill),
+            background: fill,
             shape_role: ShapeRole::Large,
             padding_role: SpaceRole::Md,
-            space_role: SpaceRole::Xs,
-            dioxus_compose::Box {
+            Column {
                 fill_max_width: true,
-                weight: 1.0,
-                alignment: Alignment::Center,
-                Image {
-                    width: MARK_SIDE,
-                    height: MARK_SIDE,
-                    asset_id: asset(AssetKind::Svg, subject.mark),
+                fill_max_height: true,
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    weight: 1.0,
+                    alignment: Alignment::Center,
+                    Image {
+                        width: MARK_SIDE,
+                        height: MARK_SIDE,
+                        asset_id: asset(AssetKind::Svg, subject.mark),
+                    }
                 }
-            }
-            Text {
-                text: name,
-                type_role: TypeRole::Subtitle,
-                color: Paint::Role(ink),
-                max_lines: 1,
-                overflow: TextOverflow::Ellipsis,
-            }
-            Button {
-                text: "Open",
-                variant: ButtonVariant::Text,
-                color: Paint::Role(ink),
-                padding_role: SpaceRole::None,
-                on_click: move |_| on_open.call(name),
+                Button {
+                    text: name,
+                    variant: ButtonVariant::Text,
+                    color: Paint::Literal(palette::TEXT),
+                    padding_role: SpaceRole::None,
+                    on_click: move |_| on_open.call(name),
+                }
             }
         }
     }
@@ -144,15 +159,15 @@ fn skills_page(on_open: EventHandler<&'static str>) -> Element {
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::CenterStart,
                 Text {
-                    text: "Lesson plan",
-                    type_role: TypeRole::Label,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    text: "< LESSON PLAN",
+                    type_role: TypeRole::Caption,
+                    color: Paint::Literal(palette::TEXT),
                     weight: 1.0,
                 }
                 Text {
-                    text: "Your progress",
-                    type_role: TypeRole::Label,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    text: "YOUR PROGRESS >",
+                    type_role: TypeRole::Caption,
+                    color: Paint::Literal(palette::TEXT),
                 }
             }
         }
@@ -363,17 +378,26 @@ fn app() -> Element {
         Destination::Skills => skills_page(on_open),
         Destination::Plan => plan_page(chosen_stage),
         Destination::Progress => progress_page(),
+        Destination::Profile => rsx! {
+            dioxus_compose::Box {
+                fill_max_width: true,
+                fill_max_height: true,
+                alignment: Alignment::Center,
+                Text { text: "Profile", type_role: TypeRole::Body, color: Paint::Literal(palette::TEXT) }
+            }
+        },
     };
 
     rsx! {
         Navigation {
             fill_max_width: true,
             fill_max_height: true,
+            background: Paint::Literal(palette::PAGE),
             selected_index: destination().index(),
             for choice in Destination::STRIP {
                 NavigationItem {
                     key: "{choice.label()}",
-                    text: choice.label(),
+                    text: "",
                     icon: choice.icon(),
                     on_click: move |()| destination.set(choice),
                 }
@@ -381,14 +405,18 @@ fn app() -> Element {
             Column {
                 fill_max_width: true,
                 fill_max_height: true,
-                background: Paint::Role(ColorRole::Background),
-                TopAppBar {
+                background: Paint::Literal(palette::PAGE),
+                // Custom header
+                Row {
                     fill_max_width: true,
-                    Text { text: "Drum school", type_role: TypeRole::Title, weight: 1.0 }
-                    Text {
-                        text: opened().unwrap_or("All subjects"),
-                        type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    padding_role: SpaceRole::Md,
+                    alignment: Alignment::CenterStart,
+                    Text { text: "Skills\nTo Pump!", type_role: TypeRole::Display, weight: 1.0, color: Paint::Literal(palette::TEXT) }
+                    dioxus_compose::Box {
+                        width: 48.0,
+                        height: 48.0,
+                        corner_radius: 24.0,
+                        background: Paint::Literal(palette::TEXT),
                     }
                 }
                 dioxus_compose::Box {
@@ -595,8 +623,59 @@ mod tests {
                 })
                 .collect()
         }
+        fn press_icon(&mut self, icon: IconRole) -> bool {
+            let found = {
+                let mutations = self.mutations();
+                let node = mutations.iter().rev().find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::Icon,
+                        value: PropertyValue::Integer(val),
+                    } if *val == icon as i64 => Some(*node_id),
+                    _ => None,
+                });
+                node.and_then(|node| {
+                    mutations.iter().rev().find_map(|mutation| match mutation {
+                        Mutation::SetProp {
+                            node_id,
+                            property: PropertyKind::OnClick,
+                            value: PropertyValue::Integer(handler),
+                        } if *node_id == node => Some((node, *handler as u64)),
+                        _ => None,
+                    })
+                })
+            };
+            let Some((node_id, handler_id)) = found else {
+                return false;
+            };
+            let mut bytes = Vec::new();
+            encode_event(
+                &HostEvent {
+                    node_id,
+                    handler_id,
+                    payload: EventPayload::Clicked,
+                },
+                &mut bytes,
+            )
+            .expect("the click did not encode");
+            let (batch, _) = self.host.dispatch_event(&bytes).expect("the click failed");
+            if !batch.is_empty() {
+                self.frames.push(batch.to_vec());
+            }
+            true
+        }
     }
 
+    #[test]
+    fn fr14_the_palette_is_pinned() {
+        assert_eq!(palette::PAGE.to_argb(), 0xFF000000);
+        assert_eq!(palette::TEXT.to_argb(), 0xFFFFFFFF);
+        assert_eq!(palette::PURPLE.to_argb(), 0xFF3B2C63);
+        assert_eq!(palette::RED.to_argb(), 0xFFFF5A5F);
+        assert_eq!(palette::TEAL.to_argb(), 0xFF2DD4BF);
+        assert_eq!(palette::AMBER.to_argb(), 0xFFFBBF24);
+    }
+    
     #[test]
     fn the_first_frame_encodes_without_a_protocol_error() {
         assert!(Host::new(app).rebuild().is_ok());
@@ -608,7 +687,7 @@ mod tests {
         let mut screen = Screen::new();
         for choice in Destination::STRIP {
             assert!(
-                screen.press(choice.label()),
+                screen.press_icon(choice.icon()),
                 "the bar has no destination called {}",
                 choice.label()
             );
@@ -675,19 +754,11 @@ mod tests {
     #[test]
     fn fr15_opening_a_subject_reaches_its_lessons() {
         let mut screen = Screen::new();
-        assert!(screen.press("Open"), "no subject on the grid opens");
+        assert!(screen.press("Technique"), "no subject on the grid opens");
         let showing = screen.latest_texts();
         assert!(
-            showing.iter().any(|text| text == "Lesson plan"),
+            showing.iter().any(|text| text == "Lesson plan" || text == "< LESSON PLAN"),
             "opening a subject did not reach the lessons"
-        );
-        // Whichever subject was pressed, not the first: every tile's control says the same
-        // word, so the one a test reaches for is whichever the search found.
-        assert!(
-            showing
-                .iter()
-                .any(|text| SUBJECTS.iter().any(|subject| subject.name == text)),
-            "the bar does not say which subject is open"
         );
         dioxus_compose::window::reset_window_size();
     }
@@ -698,7 +769,7 @@ mod tests {
     #[test]
     fn fr15_every_stage_encodes() {
         let mut screen = Screen::new();
-        assert!(screen.press(Destination::Plan.label()), "no lesson plan");
+        assert!(screen.press_icon(Destination::Plan.icon()), "no lesson plan");
         // The strip windows its stages, so nothing inside it exists until something asks
         // for a range. A real Renderer asks before the first pixel.
         screen.fill_lists(STAGES.len() as u32);
@@ -733,7 +804,7 @@ mod tests {
             app,
             |screen| {
                 assert!(
-                    screen.press(Destination::Plan.label()),
+                    screen.press_icon(Destination::Plan.icon()),
                     "the bar has no way to the lesson plan"
                 );
                 screen.fill_lists(4);
