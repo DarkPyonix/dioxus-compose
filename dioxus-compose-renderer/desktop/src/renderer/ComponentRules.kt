@@ -20,6 +20,7 @@ import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.WindowSizeClass
 
 /**
  * Material 3 rules: elevation, button variants and motion.
@@ -219,17 +220,86 @@ internal object Material3Rules : ComponentRules {
 }
 
 /**
- * Cupertino rules: elevation, button variants and motion.
+ * Apple's rules: Liquid Glass, the design language macOS 26 and iOS 26 draw.
  *
- * Reference: Apple Human Interface Guidelines, "Materials", "Buttons" and "Motion", 2024.
+ * Reference: Apple Human Interface Guidelines, "Materials", "Liquid Glass", "Buttons" and
+ * "Motion", 2026 revision, the same revision the generated token table cites.
  *
- * Shadows are wide and faint rather than layered, the emphasised button is flat with no
- * shadow at all, and the press feedback is a dim, not a ripple.
+ * Four things separate this from the flat fills it replaced, and all four are drawn here
+ * rather than described: surfaces are a translucent tint over whatever the application
+ * drew behind them, their edges are lit along the top and shaded along the bottom,
+ * corners are continuous rather than circular and inner corners are cut concentric with
+ * the container they sit in, and depth comes from layers overlapping instead of from a
+ * stack of shadows.
+ *
+ * What is not drawn, and is not claimed: the material does not sample the desktop behind
+ * the window. That needs a platform compositing view outside the Compose surface.
+ *
+ * Where the glass goes depends on the window. macOS 26 puts it on chrome, the sidebars
+ * and toolbars and the title bar area, over document content that stays opaque; a phone
+ * sized window carries it onto the content surfaces too. A window that is glass from edge
+ * to edge is wrong at both sizes, so the size class decides, and [glassRoles] is where
+ * that decision lives.
  */
-internal object CupertinoRules : ComponentRules {
+internal object LiquidGlassRules : ComponentRules {
+
+    /**
+     * Which container roles are glass in a window of this class.
+     *
+     * Compact is a phone: the floating control surfaces are glass as well as the chrome.
+     * Medium and Expanded are a desktop window, where a card or a plain surface is the
+     * document being read and has to stay opaque behind its text.
+     */
+    private fun isGlass(role: ContainerRole, sizeClass: WindowSizeClass): Boolean = when (role) {
+        // Chrome, at every size.
+        ContainerRole.TopAppBar, ContainerRole.Menu, ContainerRole.Dialog, ContainerRole.Tooltip -> true
+        // Content, glass only where the screen is small enough that there is no separate
+        // chrome to speak of.
+        ContainerRole.Card, ContainerRole.Surface -> sizeClass == WindowSizeClass.Compact
+    }
+
+    /**
+     * The material for one container role: glass where this window puts glass, and a flat
+     * fill everywhere else.
+     *
+     * [backdrop] is what the surface expects to sit over, which is what decides how the
+     * translucent tint will actually read once composited. [content] is the colour that
+     * will be drawn on top, and is what the opaque fallback has to stay legible against.
+     */
+    private fun material(
+        role: ContainerRole,
+        container: Color,
+        content: Color,
+        theme: ResolvedTheme,
+    ): SurfaceMaterial = if (isGlass(role, theme.sizeClass)) {
+        LiquidGlass.material(
+            dark = theme.dark,
+            // A menu or a tooltip is small and sits over anything, so it has to win
+            // against a busy backdrop. A bar or a card covers a known surface and can
+            // afford to let more of it through.
+            prominence = when (role) {
+                ContainerRole.Menu, ContainerRole.Tooltip, ContainerRole.Dialog -> GlassProminence.Regular
+                else -> GlassProminence.Clear
+            },
+            backdrop = container,
+            content = content,
+        )
+    } else {
+        SurfaceMaterial.Opaque(container)
+    }
+
+    /** A continuous corner at the radius this system's table gives [role]. */
+    private fun continuous(role: ShapeRole, theme: ResolvedTheme): Shape {
+        val radius = theme.radius(role)
+        return if (radius.value >= CAPSULE_RADIUS) CapsuleShape else ContinuousCornerShape(radius)
+    }
+
     override fun elevation(modifier: Modifier, elevation: Dp, shape: Shape, theme: ResolvedTheme): Modifier {
         if (elevation.value <= 0f) return modifier
         // One soft shadow spread over roughly twice the requested height, at a low alpha.
+        // Glass gets its depth from layers tinting each other rather than from a stack of
+        // shadows, so the shadow that remains is there to lift the layer off the page and
+        // nothing more.
         return modifier.shadow(
             elevation = elevation * SPREAD,
             shape = shape,
@@ -244,15 +314,15 @@ internal object CupertinoRules : ComponentRules {
             container = Color.Transparent,
             pressedContainer = Color.Transparent,
             content = theme.color(ColorRole.Primary),
-            // HIG presses dim the whole control instead of layering a colour on it.
+            // A press dims the whole control rather than layering a colour on it.
             pressedContentAlpha = PRESSED_ALPHA,
             borderWidth = 0.dp,
             borderColor = Color.Transparent,
             pressedBorderColor = Color.Transparent,
             topHighlight = null,
-            // The continuous curvature of a HIG capsule is approximated by the Medium
-            // radius; see the note in the Renderer README about squircle support.
-            shape = theme.shape(ShapeRole.Medium),
+            // Since iOS 26 a button is a capsule, and the capsule is a continuous curve
+            // rather than a half circle glued onto two straight lines.
+            shape = CapsuleShape,
             horizontalPadding = theme.space(SpaceRole.Md),
             verticalPadding = theme.space(SpaceRole.Sm),
             minHeight = 34.dp,
@@ -268,6 +338,8 @@ internal object CupertinoRules : ComponentRules {
                 content = theme.color(ColorRole.OnPrimary),
             )
 
+            // A glass button: the surface tint rather than a solid grey, with the lit edge
+            // that tells it apart from a flat chip.
             ButtonVariant.Tonal -> base.copy(
                 container = theme.color(ColorRole.SurfaceVariant),
                 pressedContainer = theme.color(ColorRole.OutlineVariant),
@@ -287,15 +359,15 @@ internal object CupertinoRules : ComponentRules {
     }
 
     /**
-     * HIG containers: grouped content sits on a slightly different surface rather than
-     * casting a shadow, bars are separated by a hairline, and only what floats over the
-     * screen is raised at all.
+     * The containers: chrome is glass, grouped content is a surface with a continuous
+     * corner, and a bar is separated from what it covers by a hairline rather than by a
+     * shadow.
      */
     override fun container(role: ContainerRole, theme: ResolvedTheme): ContainerStyle {
         val base = ContainerStyle(
             container = theme.color(ColorRole.Surface),
             content = theme.color(ColorRole.OnSurface),
-            shape = theme.shape(ShapeRole.Medium),
+            shape = continuous(ShapeRole.Medium, theme),
             elevation = 0.dp,
             borderWidth = 0.dp,
             borderColor = Color.Transparent,
@@ -305,11 +377,12 @@ internal object CupertinoRules : ComponentRules {
             scrim = Color.Transparent,
             typeRole = TypeRole.Body,
         )
-        return when (role) {
-            // A grouped box: no shadow, just a different surface and a generous corner.
+        val styled = when (role) {
+            // A grouped box: no shadow, a different surface and a generous continuous
+            // corner.
             ContainerRole.Card -> base.copy(
                 container = theme.color(ColorRole.SurfaceVariant),
-                shape = theme.shape(ShapeRole.Large),
+                shape = continuous(ShapeRole.Large, theme),
             )
 
             // A `Surface` is a panel: a layer raised off the page, holding the page's own
@@ -319,9 +392,10 @@ internal object CupertinoRules : ComponentRules {
             // and could not be seen against the page it sat on.
             ContainerRole.Surface -> base.copy(container = theme.color(ColorRole.SurfaceContainer))
 
-            // A navigation bar is flush with the content and divided by a hairline.
+            // A toolbar. Glass at every size, because this is the piece macOS 26 makes
+            // glass over opaque content.
             ContainerRole.TopAppBar -> base.copy(
-                shape = theme.shape(ShapeRole.None),
+                shape = continuous(ShapeRole.None, theme),
                 verticalPadding = theme.space(SpaceRole.Sm),
                 separator = theme.color(ColorRole.OutlineVariant),
                 typeRole = TypeRole.BodyStrong,
@@ -329,48 +403,57 @@ internal object CupertinoRules : ComponentRules {
 
             // An alert: centred, heavily rounded, over a dimmed screen.
             ContainerRole.Dialog -> base.copy(
-                shape = theme.shape(ShapeRole.Large),
+                shape = continuous(ShapeRole.Large, theme),
                 horizontalPadding = theme.space(SpaceRole.Lg),
                 verticalPadding = theme.space(SpaceRole.Lg),
                 scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
             )
 
             ContainerRole.Menu -> base.copy(
+                shape = continuous(ShapeRole.Medium, theme),
                 elevation = 2.dp,
                 horizontalPadding = 0.dp,
                 verticalPadding = theme.space(SpaceRole.Xs),
-                borderWidth = 1.dp,
-                borderColor = theme.color(ColorRole.OutlineVariant),
             )
 
-            // A help tag: a light chip with a hairline, not an inverted one.
+            // A help tag: a light chip, not an inverted one.
             ContainerRole.Tooltip -> base.copy(
-                shape = theme.shape(ShapeRole.Small),
-                borderWidth = 1.dp,
-                borderColor = theme.color(ColorRole.OutlineVariant),
+                shape = continuous(ShapeRole.Small, theme),
                 horizontalPadding = theme.space(SpaceRole.Sm),
                 verticalPadding = theme.space(SpaceRole.Xs),
                 typeRole = TypeRole.Caption,
             )
         }
+        return styled.copy(material = material(role, styled.container, styled.content, theme))
     }
 
-    /** A segmented control: the selection is a filled segment inside a track. */
-    override fun tabs(theme: ResolvedTheme): TabsStyle = TabsStyle(
-        container = theme.color(ColorRole.SurfaceVariant),
-        shape = theme.shape(ShapeRole.Medium),
-        selectedContent = theme.color(ColorRole.OnSurface),
-        unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
-        selectedContainer = theme.color(ColorRole.Surface),
-        selectedShape = theme.shape(ShapeRole.Small),
-        indicator = Color.Transparent,
-        indicatorHeight = 0.dp,
-        indicatorShape = theme.shape(ShapeRole.None),
-        indicatorFillsTab = true,
-        horizontalPadding = theme.space(SpaceRole.Md),
-        verticalPadding = theme.space(SpaceRole.Xs),
-        typeRole = TypeRole.Body,
-    )
+    /**
+     * A segmented control: the selection is a filled segment inside a track.
+     *
+     * The selected segment's corner is cut concentric with the track's, so the gap
+     * between the two outlines is the same all the way round instead of pinching at the
+     * corners. This is the smallest place the concentric rule shows, and the easiest to
+     * see once you know to look.
+     */
+    override fun tabs(theme: ResolvedTheme): TabsStyle {
+        val inset = theme.space(SpaceRole.Xs)
+        val track = theme.radius(ShapeRole.Medium)
+        return TabsStyle(
+            container = theme.color(ColorRole.SurfaceVariant),
+            shape = ContinuousCornerShape(track),
+            selectedContent = theme.color(ColorRole.OnSurface),
+            unselectedContent = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContainer = theme.color(ColorRole.Surface),
+            selectedShape = ContinuousCornerShape(concentricRadius(track, inset)),
+            indicator = Color.Transparent,
+            indicatorHeight = 0.dp,
+            indicatorShape = continuous(ShapeRole.None, theme),
+            indicatorFillsTab = true,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            verticalPadding = inset,
+            typeRole = TypeRole.Body,
+        )
+    }
 
     /**
      * SF Symbols metrics: a lighter stroke on a 22 dp grid, with rounded ends and joins.
@@ -403,6 +486,9 @@ internal object CupertinoRules : ComponentRules {
     private const val AMBIENT_ALPHA = 0.08f
     private const val SPOT_ALPHA = 0.12f
     private const val SPREAD = 2f
+
+    /** The radius at which the table means "a pill", not a corner of that size. */
+    private const val CAPSULE_RADIUS = 1000.0f
 }
 
 /**

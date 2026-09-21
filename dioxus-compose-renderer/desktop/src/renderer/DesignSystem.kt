@@ -21,6 +21,7 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.TypeToken
+import dioxus.compose.protocol.WindowSizeClass
 import java.lang.System
 
 /**
@@ -74,6 +75,7 @@ private fun linuxDesktop(xdgCurrentDesktop: String?, desktopSession: String?): H
 internal fun adaptiveSystem(platform: HostPlatform, fallback: DesignSystem): DesignSystem =
     when (platform) {
         HostPlatform.Android -> DesignSystem.Material3
+        // The Apple slot, which since macOS 26 and iOS 26 draws Liquid Glass.
         HostPlatform.MacOs, HostPlatform.Ios -> DesignSystem.Cupertino
         HostPlatform.Windows -> DesignSystem.Fluent
         // A browser has no design language of its own, so the choice is arbitrary; Fluent 2
@@ -96,6 +98,15 @@ class ResolvedTheme(
     val tokens: DesignTokenTable,
     val rules: ComponentRules,
     val dark: Boolean,
+    /**
+     * The class of window this theme is being resolved for.
+     *
+     * A design system is allowed to answer differently at different widths, and Apple's
+     * does: macOS 26 puts glass on chrome over opaque document content, while a phone
+     * sized window carries it much further. Nothing on the wire says this; the Renderer
+     * already measures the window for `WindowSizeChanged`, and this is the same reading.
+     */
+    val sizeClass: WindowSizeClass = WindowSizeClass.Compact,
 ) {
     fun color(role: ColorRole): Color = Color(tokens.color(role, dark))
 
@@ -224,6 +235,18 @@ data class ContainerStyle(
     val separator: Color?,
     val scrim: Color,
     val typeRole: TypeRole,
+    /**
+     * What the container is made of, when the design system has an opinion beyond a flat
+     * colour.
+     *
+     * Null means [container] is painted straight on, which is what Material 3, Fluent and
+     * the Linux systems mean by a surface. Apple's system answers with glass for the
+     * roles that are glass in the window it is drawing into, and with
+     * [SurfaceMaterial.Opaque] for the rest; a role that is glass here draws the
+     * translucent tint and the lit edge instead of [container], and falls back to the
+     * stored opaque colour when the reader has asked for reduced transparency.
+     */
+    val material: SurfaceMaterial? = null,
 )
 
 /**
@@ -351,6 +374,7 @@ fun resolveTheme(
     theme: Theme?,
     platform: HostPlatform,
     systemDark: Boolean,
+    sizeClass: WindowSizeClass = WindowSizeClass.Compact,
 ): ResolvedTheme {
     val system = when {
         theme == null -> adaptiveSystem(platform, DesignSystem.Material3)
@@ -362,12 +386,12 @@ fun resolveTheme(
         ColorScheme.Dark -> true
         ColorScheme.FollowSystem -> systemDark
     }
-    return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark)
+    return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark, sizeClass)
 }
 
 internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {
     DesignSystem.Material3 -> Material3Rules
-    DesignSystem.Cupertino -> CupertinoRules
+    DesignSystem.Cupertino -> LiquidGlassRules
     DesignSystem.Fluent -> FluentRules
 }
 

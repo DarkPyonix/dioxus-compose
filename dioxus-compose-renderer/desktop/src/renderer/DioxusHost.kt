@@ -18,8 +18,10 @@ import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.design.LocalDesignTheme
+import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.resolveTheme
+import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.node.TableError
@@ -29,6 +31,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.isSystemInDarkTheme
 
 /**
@@ -172,8 +176,16 @@ fun DioxusContent(
     // where nobody installs one, Compose's own answer is correct and is used.
     val observedDark = LocalSystemDarkObserver.current?.invoke() ?: isSystemInDarkTheme()
     val systemDark = systemDarkOverride ?: observedDark
-    val theme = resolveTheme(host.table.theme, platform, systemDark)
-    CompositionLocalProvider(LocalDesignTheme provides theme) {
+    // The window's size class is part of the theme, not only of the layout. A design
+    // system is allowed to answer a role differently on a phone and on a desktop, and
+    // Apple's does. It starts Compact because that is what a Host assumes before anything
+    // has been measured, and the first measurement below corrects it.
+    var sizeClass by remember(host) { mutableStateOf(WindowSizeClass.Compact) }
+    val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass)
+    CompositionLocalProvider(
+        LocalDesignTheme provides theme,
+        LocalReduceTransparency provides reduceTransparency,
+    ) {
         // The background fills the whole window and the inset is applied inside it. Putting
         // the inset outside instead leaves the window's own background showing through the
         // strip the title bar used to occupy, which reads as a leftover title bar rather
@@ -186,7 +198,9 @@ fun DioxusContent(
         val density = LocalDensity.current
         val measured = Modifier.onSizeChanged { size ->
             with(density) {
-                reporter.report(size.width.toDp().value, size.height.toDp().value, host)
+                val widthDp = size.width.toDp().value
+                reporter.report(widthDp, size.height.toDp().value, host)
+                sizeClass = windowSizeClassOf(widthDp)
             }
         }
         Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
@@ -205,6 +219,26 @@ fun DioxusContent(
  * `ColorScheme.FollowSystem` reads the platform; nothing else consults this.
  */
 var systemDarkOverride: Boolean? = null
+
+/**
+ * Whether the reader has asked the system for reduced transparency.
+ *
+ * Every glass surface draws its opaque fallback instead when this is true, and the blur
+ * pass that fed it disappears with it, so the setting removes the cost as well as the
+ * look.
+ *
+ * It is read once, from `DXC_REDUCE_TRANSPARENCY` in the environment or the
+ * `dioxus.compose.reduceTransparency` system property, either of which counts as set when
+ * it is anything other than "0" or "false". A platform that can query the accessibility
+ * setting directly assigns to this at startup instead; a platform that cannot leaves the
+ * reader with a way to say so, which is better than no way at all.
+ */
+var reduceTransparency: Boolean = run {
+    val raw = System.getenv("DXC_REDUCE_TRANSPARENCY")
+        ?: System.getProperty("dioxus.compose.reduceTransparency")
+        ?: return@run false
+    !raw.equals("0", ignoreCase = true) && !raw.equals("false", ignoreCase = true)
+}
 
 /**
  * How to find out whether the system is in dark mode, when the platform knows better than
