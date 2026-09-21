@@ -864,7 +864,7 @@ tag 12, 32바이트: handler_id: u64, text: (offset, len), action: (offset, len)
 **8번은 아직입니다.** Renderer의 `ComponentRules` 구현은 현재 셋(Material 3, Cupertino, Fluent)이고, GNOME/Breeze/Deepin은 다른 작업에서 들어오는 중입니다. 세 멤버 전부 토큰 표에서 유도한 기본 구현을 가지므로 그 셋이 합류할 때 컴파일이 깨지지 않고 각자의 색으로 나오지만, "여섯 시스템 전부"는 그 작업이 합쳐진 뒤에 확인해야 합니다. 그때까지 이 요구사항은 `Done`이 아닙니다.
 
 
-### FR-22 샘플 애플리케이션의 참조 구현 (`Draft`)
+### FR-22 샘플 애플리케이션의 참조 구현 (`Agreed`)
 
 샘플 네 개는 어휘가 실제로 쓸 만한지 확인하는 장치입니다. 지금까지 확인한 것은 "위젯이 동작하는가"였고, "이 어휘로 사람들이 실제로 쓰는 화면을 말할 수 있는가"는 확인하지 않았습니다. 그래서 샘플마다 참조 디자인을 못 박고, 그 화면이 나오는지를 기준으로 삼습니다. 참조 이미지는 `docs/references/design-systems/README.md`의 "Sample Apps"에 있습니다.
 
@@ -903,6 +903,27 @@ tag 12, 32바이트: handler_id: u64, text: (offset, len), action: (offset, len)
 6. 할 일의 제목이 두 줄이고, Compact에서 작성이 시트로 물러납니다.
 7. 네 샘플이 여섯 디자인 시스템 × 두 색 구성 × 세 폭 전부에서 기록되고 그려집니다(`scripts/sample-shots.sh`).
 8. 샘플 소스 어디에도 16진수 색 리터럴이 없습니다.
+
+#### 22.4 지금까지 확인된 것
+
+| 기준 | 확인 방법 |
+|---|---|
+| 1 | `fr22_the_memory_keys_store_and_recall`, `fr22_clearing_the_entry_leaves_the_memory_alone`, `fr22_the_memory_row_stands_between_the_reading_area_and_the_keys` |
+| 2 | `fr20_the_keypad_is_one_shape_and_the_tape_is_what_moves`, `fr20_the_tape_stands_beside_the_keypad_on_a_desktop_window`. 높이 비율 자체는 사진으로 봅니다 |
+| 3 | `fr22_the_page_opens_with_the_document_name`, `fr22_the_file_controls_are_behind_a_sheet`, `fr22_the_document_list_stands_beside_the_page_on_a_desktop_window`, `fr22_a_new_document_keeps_the_one_that_was_open` |
+| 4 | `fr22_the_conversations_are_the_destination_set`, `fr22_an_empty_conversation_says_what_it_is_in_the_middle` |
+| 5 | `fr22_the_composer_is_one_rounded_bar_holding_the_send` |
+| 6 | `fr22_the_screen_is_headed_by_what_it_is_showing`, `fr22_the_composer_moves_into_a_sheet_on_a_phone` |
+| 7 | `scripts/sample-shots.sh`가 180장을 씁니다(샘플 4 + 채팅 설정 시트 × 시스템 6 × 구성 2 × 폭 3) |
+| 8 | `scripts/tests/samples-speak-in-roles.test.sh` |
+
+**"참조처럼 보이는가"는 테스트가 답할 수 없습니다.** 위 목록은 구조를 고정할 뿐이고, 닮았는지는 사진을 봐야 압니다. 그래서 `Done`이 아닙니다. 남은 것은 여섯 디자인 시스템 전부에서 네 화면을 눈으로 확인하는 일입니다.
+
+아직 참조와 다른 것으로 알려진 부분:
+
+- **연산자 키의 색.** 세 계산기 참조가 서로 다릅니다. Windows는 등호만 강조색이고 나머지 연산자는 숫자와 같은 회색, Deepin은 회색 키에 강조색 글리프, macOS는 연산자 전부가 주황입니다. `ButtonVariant` 넷으로는 "숫자와 다르고 등호와도 다른 세 번째 키"를 말할 수 없어서, 지금은 연산자와 등호가 모두 `Filled`입니다. 다섯 번째 변형을 만들기 전에 다른 화면에서도 필요한지 봐야 합니다.
+- **할 일 목록의 행.** Dribbble 참조는 카드 하나에 제목, 메타 줄, 진행률이 들어가고, macOS 참조는 구분선으로 나뉜 목록 하나입니다. 지금은 후자입니다.
+- **Gemini의 사이드바 색과 배경 그라데이션.** 그라데이션은 `Paint`에 없고(FR-13.1), 사이드바의 반투명 색조는 디자인 시스템이 정하는 탐색 컨테이너 색입니다.
 
 ### FR-11 스키마 확장 (서드파티 위젯) (`Agreed`)
 스키마에 없는 Compose 컴포넌트는 **E1 확장 스키마 패키지**로 추가합니다. 확장은 런타임 플러그인이 아니라 Host와 Renderer의 소스 빌드에 함께 들어가는 한 쌍입니다. Rust 쪽 선언이 위젯 태그, 속성 태그, 타입이 붙은 Dioxus 컴포넌트를 소유하고, Kotlin 쪽 구현이 그 태그와 속성을 실제 `@Composable` 호출로 해석합니다.
