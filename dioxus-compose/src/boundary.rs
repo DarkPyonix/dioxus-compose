@@ -204,6 +204,9 @@ impl Host {
         // behind would put the two sides out of step, because the Renderer reports only
         // differences.
         crate::window::reset_window_size();
+        // Messages queued against a Host that is going away would otherwise be said by
+        // the one replacing it, out of any context that made them make sense.
+        crate::message::reset_messages();
         Self {
             theme,
             dom: VirtualDom::new(app),
@@ -220,6 +223,7 @@ impl Host {
         // SetProp for every node in the tree.
         self.renderer.set_theme(self.theme);
         self.dom.rebuild(&mut self.renderer);
+        self.flush_messages();
         self.arm_scheduler_wake();
         self.renderer.finish_frame()
     }
@@ -242,6 +246,26 @@ impl Host {
             crate::window::publish(crate::window::WindowSize::new(width_dp, height_dp, class));
             self.renderer.begin_frame();
             self.dom.render_immediate(&mut self.renderer);
+            self.flush_messages();
+            self.arm_scheduler_wake();
+            return Ok((self.renderer.finish_frame()?, 0));
+        }
+        // The action on a transient message. It belongs to no node, because the message is
+        // not in the tree, so it is found by its handler id alone and the event carries the
+        // "no node" id the Renderer uses for anything the tree does not own.
+        let message_action = match event.payload {
+            EventPayload::Clicked => crate::message::take_action(event.handler_id),
+            _ => None,
+        };
+        if let Some(action) = message_action {
+            if event.node_id != 0 {
+                return Err(ProtocolError::InvalidValueKind(0));
+            }
+            let _dispatch_guard = EventDispatchGuard::enter();
+            action.call(());
+            self.renderer.begin_frame();
+            self.dom.render_immediate(&mut self.renderer);
+            self.flush_messages();
             self.arm_scheduler_wake();
             return Ok((self.renderer.finish_frame()?, 0));
         }
@@ -283,6 +307,7 @@ impl Host {
         self.dom.runtime().handle_event(name, event_data, element);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
+        self.flush_messages();
         self.arm_scheduler_wake();
         let result = i64::from(key_event.is_some_and(|event| event.consumed()));
         Ok((self.renderer.finish_frame()?, result))
@@ -295,6 +320,7 @@ impl Host {
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
         self.flush_pending_appends();
+        self.flush_messages();
         self.arm_scheduler_wake();
         self.renderer.finish_frame()
     }
@@ -319,6 +345,22 @@ impl Host {
         }
         // Repeated calls collapse into one frame request; see `request_frame_from_worker`.
         request_frame_from_worker();
+    }
+
+    /// Writes whatever the tree asked to say during this call into the batch it produced.
+    ///
+    /// A message therefore arrives in the same call as the change it is about, which is
+    /// what makes "deleted" and the row disappearing one frame rather than two.
+    fn flush_messages(&mut self) {
+        let renderer = &mut self.renderer;
+        crate::message::drain(|message| {
+            renderer.show_message(
+                message.handler_id,
+                &message.text,
+                &message.action,
+                message.duration,
+            );
+        });
     }
 
     fn flush_pending_appends(&mut self) {
@@ -785,6 +827,7 @@ mod tests {
                     | Mutation::AppendText { .. }
                     | Mutation::RegisterAsset { .. }
                     | Mutation::ReleaseAsset { .. }
+                    | Mutation::ShowMessage { .. }
                     | Mutation::SetTheme(_) => {}
                 }
             }

@@ -20,6 +20,7 @@ import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.TypeRole
+import dioxus.compose.protocol.WindowSizeClass
 
 /**
  * Material 3 rules: elevation, button variants and motion.
@@ -187,6 +188,95 @@ internal object Material3Rules : ComponentRules {
     )
 
     /**
+     * Material draws its own controls: `androidx.compose.material3` is already here, and a
+     * hand-written copy of a filled box with a tick would only be a worse one.
+     */
+    override val controlWidgets: ControlWidgets get() = Material3ControlWidgets
+
+    /**
+     * Material's controls: a filled box with a tick, a ring with a dot, and a wide track
+     * whose thumb travels across it. The unchecked states are outlined rather than
+     * filled, which is what makes a checked one read as a deliberate choice.
+     *
+     * The colours here are what [Material3ControlWidgets] hands the library, and the
+     * divider is drawn from them directly. The dimensions are the library's own.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val outline = theme.color(ColorRole.Outline)
+        val primary = theme.color(ColorRole.Primary)
+        return ControlsStyle(
+            checkbox = ToggleStyle(
+                size = 18.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 2.dp,
+                shape = theme.shape(ShapeRole.ExtraSmall),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = Color.Transparent,
+                mark = primary,
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 2.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 10.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // Material's switch is the widest of the three: a 52 by 32 track carrying a
+            // thumb that nearly fills its height.
+            switch = ToggleStyle(
+                size = 32.dp,
+                container = theme.color(ColorRole.SurfaceVariant),
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = outline,
+                border = outline,
+                borderWidth = 2.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 24.dp,
+                trackWidth = 52.dp,
+                trackHeight = 32.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 4.dp,
+                track = theme.color(ColorRole.SurfaceVariant),
+                activeTrack = primary,
+                thumbSize = 20.dp,
+                thumb = primary,
+                thumbBorder = Color.Transparent,
+                thumbBorderWidth = 0.dp,
+                // Material marks the stops of a stepped slider on the track itself.
+                tick = theme.color(ColorRole.OnPrimary),
+            ),
+            progress = ProgressStyle(
+                thickness = 4.dp,
+                track = theme.color(ColorRole.SurfaceVariant),
+                indicator = primary,
+                diameter = 40.dp,
+                rounded = true,
+                periodMillis = 1_200,
+            ),
+            divider = DividerStyle(
+                thickness = 1.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 0.dp,
+            ),
+        )
+    }
+
+    /**
      * Material Symbols metrics: a 24 dp grid, a 2 dp stem and flat ends.
      *
      * Every role is drawn to the same weight, which is what makes a row of them line up.
@@ -212,7 +302,75 @@ internal object Material3Rules : ComponentRules {
         tooltipDelayMillis = 500,
     )
 
+
+    /**
+     * Material's navigation set: a bar of destinations at the bottom of a phone-shaped
+     * window, a rail beside a tablet-shaped one, a drawer standing open on a desktop.
+     *
+     * The mark is the pill Material 3 puts behind the selected icon, which is the single
+     * thing that reads most as Material in a row of destinations.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnSurface),
+            indicator = theme.color(ColorRole.SurfaceVariant),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.Pill,
+            // Material's bars sit flush against the content and are separated by tone.
+            separator = null,
+            barHeight = 80.dp,
+            railWidth = 80.dp,
+            drawerWidth = 280.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            labelInRail = true,
+            typeRole = TypeRole.Label,
+        )
+
+    /** A bottom sheet with a drag handle, or a side sheet once there is room for one. */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 1.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.OutlineVariant),
+        widthFraction = 0.4f,
+        heightFraction = 0.5f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /** A snackbar: the inverse surface, low and to the leading side, with four seconds. */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.OnSurface),
+        content = theme.color(ColorRole.Surface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        elevation = 6.dp,
+        placement = MessagePlacement.BottomStart,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        // The two durations Material documents for a snackbar.
+        shortMillis = 4_000,
+        longMillis = 10_000,
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.32f
+    private const val DISABLED_ALPHA = 0.38f
     private const val STATE_LAYER_ALPHA = 0.12f
     private const val TONE_FULL_DP = 24f
     private const val MAX_TONE = 0.14f
@@ -373,6 +531,88 @@ internal object CupertinoRules : ComponentRules {
     )
 
     /**
+     * HIG controls: the checkmark sits in a filled circle rather than a square, the
+     * switch is a tall capsule with a pale thumb that nearly fills it, and a slider shows
+     * no tick marks, because a stepped iOS slider still reads as continuous.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val primary = theme.color(ColorRole.Primary)
+        val surface = theme.color(ColorRole.Surface)
+        return ControlsStyle(
+            // A circle, not a box, which is the clearest difference from Material here.
+            checkbox = ToggleStyle(
+                size = 22.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = theme.color(ColorRole.Outline),
+                borderWidth = 1.5.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 22.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = theme.color(ColorRole.OnPrimary),
+                markUnchecked = Color.Transparent,
+                border = theme.color(ColorRole.Outline),
+                borderWidth = 1.5.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 8.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // 51 by 31, the proportions Apple's switch has always had.
+            switch = ToggleStyle(
+                size = 31.dp,
+                container = theme.color(ColorRole.SurfaceVariant),
+                containerChecked = primary,
+                mark = surface,
+                markUnchecked = surface,
+                border = Color.Transparent,
+                borderWidth = 0.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 27.dp,
+                trackWidth = 51.dp,
+                trackHeight = 31.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 4.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                activeTrack = primary,
+                // A large pale thumb that sits over the track rather than in it.
+                thumbSize = 28.dp,
+                thumb = surface,
+                thumbBorder = theme.color(ColorRole.OutlineVariant),
+                thumbBorderWidth = 0.5.dp,
+                tick = null,
+            ),
+            progress = ProgressStyle(
+                thickness = 3.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                indicator = primary,
+                diameter = 20.dp,
+                rounded = true,
+                periodMillis = 1_000,
+            ),
+            // A hairline held back from the leading edge, the way a grouped list rules
+            // between its rows.
+            divider = DividerStyle(
+                thickness = 0.5.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 16.dp,
+            ),
+        )
+    }
+
+    /**
      * SF Symbols metrics: a lighter stroke on a 22 dp grid, with rounded ends and joins.
      * The rounded terminal is the single thing that reads most as Apple's icon set.
      */
@@ -398,7 +638,82 @@ internal object CupertinoRules : ComponentRules {
         tooltipDelayMillis = 1000,
     )
 
+
+    /**
+     * A tab bar at the bottom of a phone, a sidebar once the window is wide enough.
+     *
+     * The tab bar marks its selection with colour alone, which is what Apple does; the
+     * sidebar marks it with a rounded fill, which is also what Apple does. One style
+     * expresses both because the size class is what it is answering about.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle {
+        val presentation = when (sizeClass) {
+            WindowSizeClass.Compact -> NavigationPresentation.Bar
+            WindowSizeClass.Medium -> NavigationPresentation.Rail
+            WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+        }
+        val bar = presentation == NavigationPresentation.Bar
+        return NavigationStyle(
+            presentation = presentation,
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.Primary),
+            indicator = if (bar) Color.Transparent else theme.color(ColorRole.SurfaceVariant),
+            indicatorShape = theme.shape(ShapeRole.Medium),
+            indicatorKind = if (bar) NavigationIndicator.None else NavigationIndicator.Pill,
+            // A tab bar and a sidebar are both divided from the content by a hairline.
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 50.dp,
+            railWidth = 76.dp,
+            drawerWidth = 260.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Xs),
+            labelInRail = true,
+            typeRole = TypeRole.Caption,
+        )
+    }
+
+    /** A card sheet pulled up over a dimmed screen, with the grabber along its top edge. */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Large),
+        // Apple's sheets are not raised by a shadow, they cover.
+        elevation = 0.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        handle = theme.color(ColorRole.Outline),
+        widthFraction = 0.38f,
+        heightFraction = 0.55f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 0.dp,
+        borderColor = Color.Transparent,
+    )
+
+    /**
+     * A banner rather than a snackbar: a light capsule at the top, with a hairline and no
+     * inverted surface. Apple has no snackbar, and drawing one here would be the Material
+     * answer wearing Apple's colours.
+     */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Large),
+        elevation = 2.dp,
+        placement = MessagePlacement.TopEnd,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 3_000,
+        longMillis = 8_000,
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.4f
+    private const val DISABLED_ALPHA = 0.38f
     private const val PRESSED_ALPHA = 0.6f
     private const val AMBIENT_ALPHA = 0.08f
     private const val SPOT_ALPHA = 0.12f
@@ -566,6 +881,87 @@ internal object FluentRules : ComponentRules {
     )
 
     /**
+     * Fluent controls: everything is stroked. A checkbox is a 20 dp box with a hairline,
+     * a radio button is a ring the dot sits inside, the toggle is short and narrow, and
+     * the slider's thumb is a ring rather than a disc.
+     */
+    override fun controls(theme: ResolvedTheme): ControlsStyle {
+        val outline = theme.color(ColorRole.Outline)
+        val primary = theme.color(ColorRole.Primary)
+        val onPrimary = theme.color(ColorRole.OnPrimary)
+        return ControlsStyle(
+            checkbox = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = onPrimary,
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.Small),
+                thumbSize = 0.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            radioButton = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = Color.Transparent,
+                mark = primary,
+                markUnchecked = Color.Transparent,
+                border = outline,
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 10.dp,
+                trackWidth = 0.dp,
+                trackHeight = 0.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            // 40 by 20 with a small thumb: the shortest toggle of the three.
+            switch = ToggleStyle(
+                size = 20.dp,
+                container = Color.Transparent,
+                containerChecked = primary,
+                mark = onPrimary,
+                markUnchecked = theme.color(ColorRole.OnSurfaceVariant),
+                border = outline,
+                borderWidth = 1.dp,
+                shape = theme.shape(ShapeRole.Full),
+                thumbSize = 12.dp,
+                trackWidth = 40.dp,
+                trackHeight = 20.dp,
+                disabledAlpha = DISABLED_ALPHA,
+            ),
+            slider = SliderStyle(
+                trackHeight = 4.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                activeTrack = primary,
+                // The ring: a surface-filled thumb with a thick accent stroke.
+                thumbSize = 20.dp,
+                thumb = theme.color(ColorRole.Surface),
+                thumbBorder = primary,
+                thumbBorderWidth = 4.dp,
+                tick = null,
+            ),
+            progress = ProgressStyle(
+                thickness = 3.dp,
+                track = theme.color(ColorRole.OutlineVariant),
+                indicator = primary,
+                diameter = 32.dp,
+                // Fluent's bars end square, which is part of why they read as crisper.
+                rounded = false,
+                periodMillis = 800,
+            ),
+            divider = DividerStyle(
+                thickness = 1.dp,
+                color = theme.color(ColorRole.OutlineVariant),
+                inset = 0.dp,
+            ),
+        )
+    }
+
+    /**
      * Fluent icon metrics: a 20 dp grid, a 1.5 dp stroke and square ends, which is what
      * keeps a command bar's icons reading as one set with its text.
      */
@@ -591,6 +987,74 @@ internal object FluentRules : ComponentRules {
         tooltipDelayMillis = 300,
     )
 
+
+    /**
+     * One `NavigationView`, in its three display modes: minimal at the bottom, compact as a
+     * narrow rail, expanded as a pane of labelled rows.
+     *
+     * Fluent marks the selection with a short bar along the leading edge of the row rather
+     * than a fill, and the pane is ruled off from the content.
+     */
+    override fun navigation(sizeClass: WindowSizeClass, theme: ResolvedTheme): NavigationStyle =
+        NavigationStyle(
+            presentation = when (sizeClass) {
+                WindowSizeClass.Compact -> NavigationPresentation.Bar
+                WindowSizeClass.Medium -> NavigationPresentation.Rail
+                WindowSizeClass.Expanded -> NavigationPresentation.Drawer
+            },
+            container = theme.color(ColorRole.SurfaceContainer),
+            content = theme.color(ColorRole.OnSurfaceVariant),
+            selectedContent = theme.color(ColorRole.OnSurface),
+            indicator = theme.color(ColorRole.Primary),
+            indicatorShape = theme.shape(ShapeRole.Full),
+            indicatorKind = NavigationIndicator.LeadingEdgeBar,
+            separator = theme.color(ColorRole.OutlineVariant),
+            barHeight = 56.dp,
+            railWidth = 48.dp,
+            drawerWidth = 320.dp,
+            itemSpacing = theme.space(SpaceRole.Xs),
+            itemPadding = theme.space(SpaceRole.Sm),
+            // A compact rail is icons only: Fluent puts the label in the flyout instead.
+            labelInRail = false,
+            typeRole = TypeRole.Body,
+        )
+
+    /** A layer, so the sheet carries the stroke every Fluent layer carries. */
+    override fun sheet(sizeClass: WindowSizeClass, theme: ResolvedTheme): SheetStyle = SheetStyle(
+        edge = if (sizeClass == WindowSizeClass.Compact) SheetEdge.Bottom else SheetEdge.End,
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        shape = theme.shape(ShapeRole.Medium),
+        elevation = 8.dp,
+        scrim = Color.Black.copy(alpha = SCRIM_ALPHA),
+        // Fluent's sheets are not dragged about, so there is no grabber to draw.
+        handle = null,
+        widthFraction = 0.36f,
+        heightFraction = 0.5f,
+        padding = theme.space(SpaceRole.Lg),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+    )
+
+    /** A teaching tip: a stroked layer in the corner the notifications come from. */
+    override fun message(theme: ResolvedTheme): MessageStyle = MessageStyle(
+        container = theme.color(ColorRole.SurfaceContainer),
+        content = theme.color(ColorRole.OnSurface),
+        actionContent = theme.color(ColorRole.Primary),
+        shape = theme.shape(ShapeRole.Medium),
+        elevation = 8.dp,
+        placement = MessagePlacement.TopEnd,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        verticalPadding = theme.space(SpaceRole.Sm),
+        inset = theme.space(SpaceRole.Md),
+        shortMillis = 4_000,
+        longMillis = 9_000,
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.OutlineVariant),
+        typeRole = TypeRole.Body,
+    )
+
     private const val SCRIM_ALPHA = 0.3f
+    private const val DISABLED_ALPHA = 0.38f
     private const val PRESS_SHADE = 0.12f
 }

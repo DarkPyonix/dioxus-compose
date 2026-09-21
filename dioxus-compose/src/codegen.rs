@@ -122,6 +122,22 @@ data class Theme(
     }
 
     data class ReleaseAsset(val assetId: Int) : Mutation
+
+    /**
+     * One sentence to say to the user, with an optional thing to do about it.
+     *
+     * It names no node because it is not in the tree. The Host says it once; how long it
+     * stays, where it sits and what happens when a second one arrives while the first is
+     * still up are the Renderer's to decide.
+     *
+     * `handlerId` is 0 when the message has no action, and `action` is then empty.
+     */
+    data class ShowMessage(
+        val handlerId: Long,
+        val text: String,
+        val action: String,
+        val duration: MessageDuration,
+    ) : Mutation
 }
 
 "#,
@@ -147,7 +163,7 @@ data class Theme(
                 output.push_str(", val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean");
             }
             EventPayloadType::Range => output.push_str(", val start: Int, val count: Int"),
-            EventPayloadType::Integer => output.push_str(", val value: Long"),
+            EventPayloadType::Double => output.push_str(", val value: Double"),
             EventPayloadType::WindowSize => {
                 output.push_str(
                     ", val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass",
@@ -190,6 +206,7 @@ object Protocol {
     private const val TAG_SET_THEME = 9
     private const val TAG_REGISTER_ASSET = 10
     private const val TAG_RELEASE_ASSET = 11
+    private const val TAG_SHOW_MESSAGE = 12
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -337,6 +354,15 @@ object Protocol {
                         requireRecordLength(length, 8, offset)
                         Mutation.ReleaseAsset(readU32(batch, base, available, offset + 4).toInt())
                     }
+                    TAG_SHOW_MESSAGE -> {
+                        requireRecordLength(length, 32, offset)
+                        Mutation.ShowMessage(
+                            readU64(batch, base, available, offset + 4),
+                            readString(batch, base, available, offset + 12),
+                            readString(batch, base, available, offset + 20),
+                            messageDuration(readU16(batch, base, available, offset + 28), offset + 28),
+                        )
+                    }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
                 }
                 onMutation(mutation)
@@ -388,7 +414,7 @@ object Protocol {
             }
             EventPayloadType::KeyDown
             | EventPayloadType::Range
-            | EventPayloadType::Integer
+            | EventPayloadType::Double
             | EventPayloadType::WindowSize => {
                 writeln!(
                     output,
@@ -411,7 +437,7 @@ object Protocol {
             EventPayloadType::ProtocolError => 28,
             EventPayloadType::KeyDown => 20,
             EventPayloadType::Range => 24,
-            EventPayloadType::Integer => 24,
+            EventPayloadType::Double => 24,
             EventPayloadType::WindowSize => 28,
         };
         writeln!(
@@ -499,10 +525,10 @@ object Protocol {
                 output.push_str("                    out.putInt(event.count)\n");
                 output.push_str("                }\n");
             }
-            EventPayloadType::Integer => {
+            EventPayloadType::Double => {
                 writeln!(
                     output,
-                    "                is HostEvent.{} -> out.putLong(event.value)",
+                    "                is HostEvent.{} -> out.putDouble(event.value)",
                     event.name
                 )
                 .unwrap();
@@ -1081,6 +1107,14 @@ pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
             bytes: &[0x89, b'P', b'N', b'G'],
         },
         Mutation::ReleaseAsset { asset_id: 5 },
+        // A message with an action, so both sides agree on the one record that is not a
+        // node: two string references, a duration and a handler id.
+        Mutation::ShowMessage {
+            handler_id: 77,
+            text: "삭제했습니다",
+            action: "Undo",
+            duration: crate::schema::MessageDuration::Long,
+        },
     ];
     let mut encoder = BatchEncoder::default();
     for mutation in &mutations {
@@ -1141,7 +1175,7 @@ pub fn generate_event_vector() -> Result<Vec<u8>, ProtocolError> {
         HostEvent {
             node_id: 11,
             handler_id: 17,
-            payload: EventPayload::ValueChanged(-19_723),
+            payload: EventPayload::ValueChanged(-19_723.5),
         },
         HostEvent {
             node_id: 0,
@@ -1170,9 +1204,9 @@ pub fn generate_vector_description() -> String {
   "byteOrder": "little-endian",
   "mutations": {{
     "file": "mutations.bin",
-    "description": "One batch covering every record, property value, modifier layout, drawing command and asset",
-    "recordCount": 32,
-    "strings": ["안녕", "compose", " token"],
+    "description": "One batch covering every record, property value, modifier layout, drawing command, asset and message",
+    "recordCount": 33,
+    "strings": ["안녕", "compose", " token", "삭제했습니다", "Undo"],
     "assets": [{{ "assetId": 5, "kind": "Png", "bytes": "89504e47" }}]
   }},
   "events": {{
@@ -1186,7 +1220,7 @@ pub fn generate_vector_description() -> String {
       {{ "type": "ProtocolError", "offset": 90, "length": 35, "nodeId": 0, "handlerId": 0, "code": 9, "message": "bad tag" }},
       {{ "type": "KeyDown", "offset": 125, "length": 20, "nodeId": 9, "handlerId": 15, "key": "Enter", "shiftKey": true, "ctrlKey": true, "altKey": true, "metaKey": true }},
       {{ "type": "RangeRequested", "offset": 145, "length": 24, "nodeId": 10, "handlerId": 16, "start": 100, "count": 20 }},
-      {{ "type": "ValueChanged", "offset": 169, "length": 24, "nodeId": 11, "handlerId": 17, "value": -19723 }},
+      {{ "type": "ValueChanged", "offset": 169, "length": 24, "nodeId": 11, "handlerId": 17, "value": -19723.5 }},
       {{ "type": "WindowSizeChanged", "offset": 193, "length": 28, "nodeId": 0, "handlerId": 0, "widthDp": 840.0, "heightDp": 600.0, "sizeClass": "Expanded" }}
     ]
   }}

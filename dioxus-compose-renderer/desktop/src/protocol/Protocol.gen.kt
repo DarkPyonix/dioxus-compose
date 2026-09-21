@@ -7,9 +7,9 @@ import java.nio.ByteOrder
 import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Progress }
 
 enum class Key { Enter }
 
@@ -39,7 +39,9 @@ enum class ColorScheme { Light, Dark, FollowSystem }
 
 enum class AssetKind { Png, Jpeg, Svg, VectorIcon }
 
-enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More }
+enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, Home, List, Inbox }
+
+enum class MessageDuration { Short, Long }
 
 sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
@@ -214,6 +216,22 @@ sealed interface Mutation {
     }
 
     data class ReleaseAsset(val assetId: Int) : Mutation
+
+    /**
+     * One sentence to say to the user, with an optional thing to do about it.
+     *
+     * It names no node because it is not in the tree. The Host says it once; how long it
+     * stays, where it sits and what happens when a second one arrives while the first is
+     * still up are the Renderer's to decide.
+     *
+     * `handlerId` is 0 when the message has no action, and `action` is then empty.
+     */
+    data class ShowMessage(
+        val handlerId: Long,
+        val text: String,
+        val action: String,
+        val duration: MessageDuration,
+    ) : Mutation
 }
 
 sealed interface HostEvent {
@@ -227,7 +245,7 @@ sealed interface HostEvent {
     data class ProtocolError(override val nodeId: Int, override val handlerId: Long, val code: Int, val message: String) : HostEvent
     data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent
     data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
-    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Long) : HostEvent
+    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Double) : HostEvent
     data class WindowSizeChanged(override val nodeId: Int, override val handlerId: Long, val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass) : HostEvent
 }
 
@@ -235,7 +253,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 7851656791429325612L
+    const val SCHEMA_HASH: Long = -5207856961091751405L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -250,6 +268,7 @@ object Protocol {
     private const val TAG_SET_THEME = 9
     private const val TAG_REGISTER_ASSET = 10
     private const val TAG_RELEASE_ASSET = 11
+    private const val TAG_SHOW_MESSAGE = 12
     private const val ENVELOPE_LENGTH = 12
 
     private const val VALUE_NONE = 0
@@ -397,6 +416,15 @@ object Protocol {
                         requireRecordLength(length, 8, offset)
                         Mutation.ReleaseAsset(readU32(batch, base, available, offset + 4).toInt())
                     }
+                    TAG_SHOW_MESSAGE -> {
+                        requireRecordLength(length, 32, offset)
+                        Mutation.ShowMessage(
+                            readU64(batch, base, available, offset + 4),
+                            readString(batch, base, available, offset + 12),
+                            readString(batch, base, available, offset + 20),
+                            messageDuration(readU16(batch, base, available, offset + 28), offset + 28),
+                        )
+                    }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
                 }
                 onMutation(mutation)
@@ -451,7 +479,7 @@ object Protocol {
                 is HostEvent.ProtocolError -> 5
                 is HostEvent.KeyDown -> 6
                 is HostEvent.RangeRequested -> 7
-                is HostEvent.ValueChanged -> 8
+                is HostEvent.ValueChanged -> 16
                 is HostEvent.WindowSizeChanged -> 17
             }
             out.putShort(tag.toShort())
@@ -481,7 +509,7 @@ object Protocol {
                     out.putInt(event.start)
                     out.putInt(event.count)
                 }
-                is HostEvent.ValueChanged -> out.putLong(event.value)
+                is HostEvent.ValueChanged -> out.putDouble(event.value)
                 is HostEvent.WindowSizeChanged -> {
                     out.putFloat(event.widthDp)
                     out.putFloat(event.heightDp)
@@ -531,6 +559,12 @@ object Protocol {
         9 -> WidgetKind.ScrollColumn
         10 -> WidgetKind.Image
         11 -> WidgetKind.Icon
+        12 -> WidgetKind.Checkbox
+        13 -> WidgetKind.RadioButton
+        14 -> WidgetKind.Switch
+        15 -> WidgetKind.Slider
+        16 -> WidgetKind.ProgressIndicator
+        17 -> WidgetKind.Divider
         18 -> WidgetKind.Card
         19 -> WidgetKind.Surface
         20 -> WidgetKind.Dialog
@@ -543,6 +577,9 @@ object Protocol {
         27 -> WidgetKind.DatePicker
         28 -> WidgetKind.TimePicker
         29 -> WidgetKind.Dropdown
+        30 -> WidgetKind.Navigation
+        31 -> WidgetKind.NavigationItem
+        32 -> WidgetKind.Sheet
         100 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -575,6 +612,11 @@ object Protocol {
         25 -> PropertyKind.Alignment
         26 -> PropertyKind.Variant
         28 -> PropertyKind.Asset
+        32 -> PropertyKind.Checked
+        33 -> PropertyKind.Steps
+        34 -> PropertyKind.Determinate
+        35 -> PropertyKind.Circular
+        36 -> PropertyKind.Vertical
         40 -> PropertyKind.Open
         41 -> PropertyKind.OnDismiss
         42 -> PropertyKind.SelectedIndex
@@ -582,6 +624,7 @@ object Protocol {
         51 -> PropertyKind.Value
         52 -> PropertyKind.Min
         53 -> PropertyKind.Max
+        60 -> PropertyKind.Icon
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -726,7 +769,16 @@ object Protocol {
         6 -> IconRole.Check
         7 -> IconRole.Settings
         8 -> IconRole.More
+        9 -> IconRole.Home
+        10 -> IconRole.List
+        11 -> IconRole.Inbox
         else -> throw ProtocolException("unknown IconRole tag $tag", offset)
+    }
+
+    private fun messageDuration(tag: Int, offset: Int): MessageDuration = when (tag) {
+        1 -> MessageDuration.Short
+        2 -> MessageDuration.Long
+        else -> throw ProtocolException("unknown MessageDuration tag $tag", offset)
     }
 
     private fun paint(bits: Long, offset: Int): Paint {

@@ -2,7 +2,7 @@
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
-use dioxus_compose::{Host, Modifier, PropertyKind, WidgetKind};
+use dioxus_compose::{Host, PropertyKind, WidgetKind};
 
 fn titled_text() -> Element {
     rsx! {
@@ -161,43 +161,50 @@ fn fr13_button_label_colour_is_sent_as_a_role() {
     );
 }
 
-/// A Separator is a full-width hairline filled with `OutlineVariant`, so a grouped list
-/// is written in roles alone rather than with a thickness and a colour of its own.
+/// A Separator is one Divider, so the weight of the rule, its colour and how far it is held
+/// back from the edge are the design system's answer rather than a constant in this crate.
 #[test]
-fn fr13_separator_is_a_hairline_filled_with_the_quiet_edge() {
+fn fr13_separator_is_one_divider_so_the_design_system_sets_its_weight() {
     let mut host = Host::new(separated_rows);
     let batch = host.rebuild().unwrap().to_vec();
     let mutations = decode_batch(&batch).unwrap();
-    let hairline = mutations
+
+    let divider = mutations
         .iter()
         .find_map(|mutation| match mutation {
             Mutation::Create {
                 node_id,
-                widget: WidgetKind::Spacer,
+                widget: WidgetKind::Divider,
             } => Some(*node_id),
             _ => None,
         })
-        .expect("the separator is drawn as a Spacer");
+        .expect("the separator is drawn as a Divider");
+
     let modifiers: Vec<_> = mutations
         .iter()
         .filter_map(|mutation| match mutation {
             Mutation::SetModifier {
                 node_id, modifier, ..
-            } if *node_id == hairline => Some(modifier.clone()),
+            } if *node_id == divider => Some(modifier.clone()),
             _ => None,
         })
         .collect();
     assert!(
-        modifiers.contains(&Modifier::Height(1.0)),
-        "the separator is not a hairline: {modifiers:?}"
+        modifiers.is_empty(),
+        "a separator that named its own thickness or colour would be deciding for the \
+         design system: {modifiers:?}"
     );
+
     assert!(
-        modifiers.contains(&Modifier::Background(Paint::Role(
-            ColorRole::OutlineVariant
-        ))),
-        "the separator does not use the quiet edge: {modifiers:?}"
+        !mutations.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::Create {
+                widget: WidgetKind::Spacer,
+                ..
+            }
+        )),
+        "the hand-drawn hairline is gone, so no Spacer stands in for the rule"
     );
-    assert!(modifiers.contains(&Modifier::FillMaxWidth));
 }
 
 /// ScrollColumn is a widget of its own, at wire tag 9.

@@ -5,6 +5,7 @@
 //! writes one file per burst. Loading happens once, in `main`, before the renderer loop
 //! starts, so there is no UI thread to block yet.
 
+use dioxus_compose::IconRole;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 use std::sync::mpsc::{Sender, channel};
@@ -32,6 +33,24 @@ impl Filter {
             Filter::All => "All",
             Filter::Active => "Active",
             Filter::Done => "Done",
+        }
+    }
+
+    /// Where this filter sits in the destination set, which is also where `STRIP` has it.
+    pub fn index(self) -> usize {
+        match self {
+            Filter::All => 0,
+            Filter::Active => 1,
+            Filter::Done => 2,
+        }
+    }
+
+    /// What the destination for this filter means, so the Renderer can draw its own icon.
+    pub fn icon(self) -> IconRole {
+        match self {
+            Filter::All => IconRole::List,
+            Filter::Active => IconRole::Inbox,
+            Filter::Done => IconRole::Check,
         }
     }
 

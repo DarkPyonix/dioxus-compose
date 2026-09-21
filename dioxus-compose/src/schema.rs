@@ -51,7 +51,9 @@ pub enum EventPayloadType {
     ProtocolError,
     KeyDown,
     Range,
-    Integer,
+    /// One `f64`. Every value-carrying widget shares it, so the same concept has one
+    /// name on the wire whether the value counts days or slides between two ends.
+    Double,
     WindowSize,
 }
 
@@ -65,13 +67,13 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,open,on_dismiss,selected_index,commands,value,min,max;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
     "windowsizeclasses=Compact,Medium,Expanded;",
-    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset"
+    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset,ShowMessage"
 );
 
 const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
@@ -182,7 +184,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::ProtocolError => 2,
                 EventPayloadType::KeyDown => 3,
                 EventPayloadType::Range => 4,
-                EventPayloadType::Integer => 5,
+                EventPayloadType::Double => 5,
                 EventPayloadType::WindowSize => 6,
             }],
         );
@@ -258,6 +260,15 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     ScrollColumn = 9,
     Image = 10,
     Icon = 11,
+    // The selection controls and the indicators. Each one emits a state and a role and
+    // nothing about how it is drawn: the tick, the track, the thumb and the sweep of an
+    // indeterminate bar are the design system's.
+    Checkbox = 12,
+    RadioButton = 13,
+    Switch = 14,
+    Slider = 15,
+    ProgressIndicator = 16,
+    Divider = 17,
     Card = 18,
     Surface = 19,
     Dialog = 20,
@@ -271,6 +282,16 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     DatePicker = 27,
     TimePicker = 28,
     Dropdown = 29,
+    // One declaration, three presentations. The Renderer picks a bottom bar, a rail or a
+    // permanent drawer from the width it has already measured, so the same tree looks
+    // native on a phone and on a desktop without the Host branching on the size class.
+    Navigation = 30,
+    // One destination. Its label and its icon are properties rather than children,
+    // because a child tree would fix the arrangement the presentations need to differ in.
+    NavigationItem = 31,
+    // A temporary surface that slides in from an edge of the screen. Which edge is the
+    // Renderer's decision, for the same reason the navigation presentation is.
+    Sheet = 32,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -474,6 +495,19 @@ define_wire_enum!(ICON_ROLE_SCHEMA, IconRole {
     Check = 6,
     Settings = 7,
     More = 8,
+    // The meanings a set of destinations needs before any other: where the application
+    // starts, the list it is mostly about, and what has arrived.
+    Home = 9,
+    List = 10,
+    Inbox = 11,
+});
+
+// How long a transient message stays on screen. Closed, and deliberately short: a message
+// that has to be acknowledged is a `Dialog`, so there is no indefinite duration. What the
+// two names mean in milliseconds is the design system's decision.
+define_wire_enum!(MESSAGE_DURATION_SCHEMA, MessageDuration {
+    Short = 1,
+    Long = 2,
 });
 
 // The design systems of phase one. Later ones append variants here and nowhere else: a new
@@ -545,6 +579,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
         name: "IconRole",
         variants: ICON_ROLE_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "MessageDuration",
+        variants: MESSAGE_DURATION_SCHEMA,
     },
 ];
 
@@ -918,6 +956,18 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     // The id of an asset the Host registered. Image and Icon carry nothing else: the
     // bytes were copied into the Renderer's cache once, at registration.
     Asset = 28,
+    // Whether a toggle is on. One boolean for all three of them: a selected radio button
+    // and a switch that is on are the same fact, and the schema names a concept once.
+    Checked = 32,
+    // Discrete stops between a slider's two ends. Zero leaves it continuous.
+    Steps = 33,
+    // Whether a progress indicator knows how far along it is. When it does not, `Value`
+    // is not read at all.
+    Determinate = 34,
+    // Which of the two forms a progress indicator takes. It picks a shape, not a size.
+    Circular = 35,
+    // A divider's axis, which is the only thing a divider carries.
+    Vertical = 36,
     // Whether an overlay is showing. The Renderer owns the state; this seeds it and
     // carries changes that came from outside the Renderer.
     Open = 40,
@@ -925,13 +975,17 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     SelectedIndex = 42,
     // The Canvas drawing command list, a byte blob in the batch arena.
     Commands = 50,
-    // The picker's current value, as an epoch integer in the widget's own unit: days
-    // since 1970-01-01 for a date, minutes since midnight for a time, the chosen position
-    // for a Dropdown.
+    // The control's current value, in the widget's own unit: an epoch day count for a
+    // date, minutes since midnight for a time, the chosen position for a Dropdown, a
+    // position between the ends for a Slider, a fraction for a ProgressIndicator. One tag,
+    // because "this control's value" is one concept whichever widget holds it.
     Value = 51,
     // The ends of the selectable range, in the same unit as `Value`.
     Min = 52,
     Max = 53,
+    // The meaning of the icon a destination carries, as an `IconRole` tag. Tag 0 is "not
+    // sent", so a destination without an icon is label only.
+    Icon = 60,
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -956,9 +1010,13 @@ pub enum EventPayload<'a> {
         start: u32,
         count: u32,
     },
-    /// A picker's new value, in the widget's own epoch unit. The Renderer decided how the
-    /// user picked it, so nothing about calendars, wheels or clocks crosses here.
-    ValueChanged(i64),
+    /// A control's new value, in the widget's own unit: an epoch count for a picker, a
+    /// position for a slider, 0.0 or 1.0 for a toggle. The Renderer decided how the user
+    /// reached it, so nothing about calendars, wheels, tracks or thumbs crosses here.
+    ///
+    /// One `f64` holds all of them: integers up to 2^53 survive it exactly, so splitting
+    /// the event in two would only give the same concept two names.
+    ValueChanged(f64),
     /// The window moved into a different size class. The Renderer measures the root
     /// content and sends this only when the class changes, never on every layout pass.
     WindowSizeChanged {
@@ -1006,8 +1064,9 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
     },
     EventSchema {
         name: "ValueChanged",
-        tag: 8,
-        payload: EventPayloadType::Integer,
+        // Tags 8 to 15 are reserved for the pointer gesture events.
+        tag: 16,
+        payload: EventPayloadType::Double,
     },
     EventSchema {
         name: "WindowSizeChanged",

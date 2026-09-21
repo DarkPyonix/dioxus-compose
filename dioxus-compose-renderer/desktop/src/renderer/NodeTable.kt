@@ -5,6 +5,8 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import dioxus.compose.foundation.ChromeInsets
+import dioxus.compose.foundation.MessageQueue
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
@@ -87,6 +89,22 @@ class NodeTable {
      */
     val assets: AssetCache = AssetCache()
 
+    /**
+     * The transient messages the Host has asked to say.
+     *
+     * Not part of the node tree, because a message is not part of the tree: it has a
+     * lifetime rather than a position, and that lifetime is owned here.
+     */
+    val messages: MessageQueue = MessageQueue()
+
+    /**
+     * What the screen's own chrome is using along the window's edges.
+     *
+     * Only a message reads it, and only so that it does not cover the destinations it is
+     * drawn over. It is not part of the tree and never crosses the boundary.
+     */
+    val insets: ChromeInsets = ChromeInsets()
+
     private var revision = 0L
 
     /** Null until the Host sends its first `SetTheme` record. */
@@ -126,6 +144,15 @@ class NodeTable {
                 assets.register(mutation.assetId, mutation.kind, mutation.bytes)?.let(errors::add)
 
             is Mutation.ReleaseAsset -> assets.release(mutation.assetId)?.let(errors::add)
+
+            // A sentence to say, not a node to draw. It joins the line; how long it stays
+            // and what happens to the one behind it is decided on this side.
+            is Mutation.ShowMessage -> messages.post(
+                mutation.handlerId,
+                mutation.text,
+                mutation.action,
+                mutation.duration,
+            )
         }
     }
 
@@ -313,12 +340,13 @@ class NodeTable {
                 -> true
 
                 // A Tooltip's text is the explanation it shows, and its description in the
-                // accessibility tree.
+                // accessibility tree. A destination's is its label.
                 PropertyKind.Text ->
                     widget == WidgetKind.Text ||
                         widget == WidgetKind.Button ||
                         widget == WidgetKind.TextField ||
-                        widget == WidgetKind.Tooltip
+                        widget == WidgetKind.Tooltip ||
+                        widget == WidgetKind.NavigationItem
 
                 // Note: SpacerProps has width and height in the Rust schema, but there are
                 // no matching PropertyKind variants, so a Spacer can only be sized with
@@ -368,22 +396,53 @@ class NodeTable {
                     widget == WidgetKind.Image || widget == WidgetKind.Icon
 
                 // The pickers carry a value and the ends of the range it may take, in the
-                // widget's own unit. Nothing here says how the value should be picked.
+                // widget's own unit; a slider carries a position between the same two
+                // ends. Nothing here says how the value should be reached.
                 PropertyKind.Value,
                 PropertyKind.Min,
                 PropertyKind.Max,
-                -> widget == WidgetKind.DatePicker || widget == WidgetKind.TimePicker
+                -> widget == WidgetKind.DatePicker ||
+                    widget == WidgetKind.TimePicker ||
+                    widget == WidgetKind.Slider ||
+                    // An indicator's value is how far along it is, and it has no range.
+                    (property == PropertyKind.Value && widget == WidgetKind.ProgressIndicator)
+
+                // One boolean for the three toggles: a selected radio button and a switch
+                // that is on are the same fact.
+                PropertyKind.Checked ->
+                    widget == WidgetKind.Checkbox ||
+                        widget == WidgetKind.RadioButton ||
+                        widget == WidgetKind.Switch
+
+                PropertyKind.Steps -> widget == WidgetKind.Slider
+
+                PropertyKind.Determinate,
+                PropertyKind.Circular,
+                -> widget == WidgetKind.ProgressIndicator
+
+                PropertyKind.Vertical -> widget == WidgetKind.Divider
 
                 // The overlays seed the Renderer's own open state; the tab strip seeds its
                 // own selection. Neither is read back every frame.
-                PropertyKind.Open -> widget == WidgetKind.Dialog || widget == WidgetKind.Menu
+                PropertyKind.Open -> widget == WidgetKind.Dialog ||
+                    widget == WidgetKind.Menu ||
+                    // A sheet is an overlay on the same terms as a dialog.
+                    widget == WidgetKind.Sheet
                 // A Dropdown's selection is a position in its own children, the same thing
                 // a tab strip's selection is.
                 PropertyKind.SelectedIndex ->
-                    widget == WidgetKind.Tabs || widget == WidgetKind.Dropdown
+                    widget == WidgetKind.Tabs ||
+                        widget == WidgetKind.Dropdown ||
+                        // Which destination of a set is the current one, counted over the
+                        // destinations rather than over all the children.
+                        widget == WidgetKind.Navigation
                 // Drawing commands belong to the Canvas alone: no other widget draws
                 // anything the Host described command by command.
                 PropertyKind.Commands -> widget == WidgetKind.Canvas
+
+                // The meaning of a destination's icon. A meaning, never a picture: the
+                // artwork is the design system's.
+                PropertyKind.Icon -> widget == WidgetKind.NavigationItem
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.
