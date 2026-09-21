@@ -6,9 +6,12 @@
 //! state is one set of flags and the test harness runs them on several threads.
 
 use dioxus_compose::boundary::STATUS_OK;
+use dioxus_compose::codegen::{
+    generate_android_bridge_kotlin, generate_fast_native_kotlin, generate_jni_rust,
+};
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch, encode_event};
-use dioxus_compose::schema::EventPayload;
+use dioxus_compose::schema::{BOUNDARY_SCHEMA, EventPayload};
 use dioxus_compose::{Host, RendererApi, install_renderer_api, request_frame_from_worker};
 use std::ffi::c_int;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -137,5 +140,62 @@ fn pr4_the_batch_lies_inside_the_reported_arena() {
     assert!(
         batch_start + batch_len <= base + capacity,
         "the batch runs past the end of the arena"
+    );
+}
+
+/// Both halves of the boundary are generated from one table, so they cannot drift, and
+/// what is checked in has to be what the generator produces today.
+#[test]
+fn pr5_generated_shims_match_the_boundary_schema() {
+    let rust = generate_jni_rust();
+    let kotlin = generate_android_bridge_kotlin();
+    for op in BOUNDARY_SCHEMA {
+        let symbol = format!(
+            "Java_dioxus_compose_ui_platform_HostBridge_native{}",
+            op.name
+        );
+        assert!(rust.contains(&symbol), "missing shim for {}", op.name);
+        assert!(rust.contains(op.symbol), "shim does not call {}", op.symbol);
+        assert!(
+            kotlin.contains(&format!("external fun native{}(", op.name)),
+            "missing declaration for {}",
+            op.name
+        );
+        assert_eq!(
+            op.fast,
+            kotlin.contains(&format!("@FastNative\nexternal fun native{}(", op.name)),
+            "the fast annotation on {} does not match the schema",
+            op.name
+        );
+    }
+    // The batch is read where it lies, so the shims map the arena and copy nothing.
+    assert!(rust.contains("new_direct_byte_buffer"));
+    assert!(!rust.contains("copy_from_slice"));
+    // A worker thread attaches to the JavaVM once and stays attached.
+    assert!(rust.contains("attach_current_thread_permanently"));
+
+    assert_eq!(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/boundary_jni.gen.rs"
+        )),
+        rust,
+        "generated JNI shims are stale; run `cargo run -p dioxus-compose --bin codegen`",
+    );
+    assert_eq!(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../dioxus-compose-renderer/android/src/bridge/HostBridge.gen.kt"
+        )),
+        kotlin,
+        "generated Kotlin bridge is stale; run `cargo run -p dioxus-compose --bin codegen`",
+    );
+    assert_eq!(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../dioxus-compose-renderer/android/src/bridge/FastNative.gen.kt"
+        )),
+        generate_fast_native_kotlin(),
+        "the generated annotation is stale; run `cargo run -p dioxus-compose --bin codegen`",
     );
 }

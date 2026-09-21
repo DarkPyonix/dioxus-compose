@@ -39,6 +39,15 @@ cargo test --workspace
 # headless or documentation build gets it. That build has to compile, and the tests that
 # assert it does not quietly pretend to have a renderer only exist in it.
 cargo test -p dioxus-compose --no-default-features
+# The generated JNI shims are behind cfg(target_os = "android"), so nothing above compiles
+# them. The staleness test proves the checked-in file is what the generator writes; this
+# proves the generator writes something that builds. Skipped where the target is missing,
+# because adding it is a download and this gate is meant to run anywhere.
+if rustup target list --installed | grep -qx aarch64-linux-android; then
+    cargo clippy -p dioxus-compose --target aarch64-linux-android -- -D warnings
+else
+    echo "skipping the Android target (rustup target add aarch64-linux-android)"
+fi
 # What docs.rs does: the feature is on and there is no network to fetch a renderer with.
 # The documentation still has to build.
 DOCS_RS=1 cargo check -p dioxus-compose --all-features

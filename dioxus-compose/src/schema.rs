@@ -1102,3 +1102,88 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         payload: EventPayloadType::None,
     },
 ];
+
+/// One argument of a boundary operation.
+///
+/// The set is deliberately tiny, because only primitives, pointers and lengths cross the
+/// boundary. Every platform binding can then be generated from the same list.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BoundaryParam {
+    /// A readable byte range. It arrives as a direct byte buffer and a length on Android,
+    /// as a pointer and a length on desktop.
+    Bytes { name: &'static str },
+    /// A 64-bit platform frame timestamp.
+    Nanos { name: &'static str },
+}
+
+impl BoundaryParam {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Bytes { name } | Self::Nanos { name } => name,
+        }
+    }
+}
+
+/// One logical boundary operation, stated without saying which side calls it.
+///
+/// `symbol` is the Host's C export. Every platform binding, the GraalVM function
+/// declarations, the Android shims and the browser forwarders, is a rendering of this
+/// table, which is why none of them is written by hand.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BoundaryOp {
+    /// Direction-neutral name, in PascalCase.
+    pub name: &'static str,
+    pub symbol: &'static str,
+    pub params: &'static [BoundaryParam],
+    /// Whether the operation answers with a mutation batch.
+    pub returns_batch: bool,
+    /// Whether the call may skip the runtime's thread state transition on Android. That
+    /// is only sound for a call that cannot run long, because the thread stays runnable
+    /// and the garbage collector cannot suspend it while the call is in flight. A call
+    /// that runs the VirtualDom can run long.
+    pub fast: bool,
+}
+
+pub const BOUNDARY_SCHEMA: &[BoundaryOp] = &[
+    BoundaryOp {
+        name: "Init",
+        symbol: "dioxus_compose_host_init",
+        params: &[BoundaryParam::Bytes { name: "handshake" }],
+        returns_batch: true,
+        fast: false,
+    },
+    BoundaryOp {
+        name: "DispatchEvent",
+        symbol: "dioxus_compose_host_dispatch_event",
+        params: &[BoundaryParam::Bytes { name: "event" }],
+        returns_batch: true,
+        fast: false,
+    },
+    BoundaryOp {
+        name: "RenderFrame",
+        symbol: "dioxus_compose_host_render_frame",
+        params: &[BoundaryParam::Nanos {
+            name: "frameTimeNanos",
+        }],
+        returns_batch: true,
+        fast: false,
+    },
+    BoundaryOp {
+        name: "ReleaseBatch",
+        symbol: "dioxus_compose_host_release_batch",
+        params: &[],
+        returns_batch: false,
+        fast: true,
+    },
+    BoundaryOp {
+        name: "Shutdown",
+        symbol: "dioxus_compose_host_shutdown",
+        params: &[],
+        returns_batch: false,
+        fast: false,
+    },
+];
+
+/// The JVM class the Android shims bind to. The Kotlin file is generated under the same
+/// name, so the two sides cannot drift.
+pub const ANDROID_BRIDGE_CLASS: &str = "dioxus/compose/ui/platform/HostBridge";

@@ -45,6 +45,12 @@ dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
 dioxus-signals.workspace = true
 
+# The Android shims are generated against jni-rs. Nothing here is linked into a desktop,
+# iOS or web build, and the alternative bindings generators were rejected for their
+# per-call cost.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
 [dev-dependencies]
 criterion = "0.7"
 

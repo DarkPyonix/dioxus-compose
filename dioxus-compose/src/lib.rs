@@ -1,6 +1,11 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod boundary;
+/// Generated JNI shims. Compiled only for Android, where the Host is a cdylib that the
+/// Kotlin Activity loads.
+#[cfg(target_os = "android")]
+#[path = "boundary_jni.gen.rs"]
+mod boundary_jni;
 #[doc(hidden)]
 pub mod codegen;
 pub mod drawing;
@@ -36,6 +41,27 @@ pub use widgets::{
     Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{WindowSize, use_window_size, window_size};
+
+/// Declares the Android entry point for an application's cdylib.
+///
+/// Android has no `main`: the Kotlin Activity owns the process and the frame loop, so the
+/// root component is registered from `JNI_OnLoad`, which the generated shims reach through
+/// the symbol this macro defines.
+///
+/// ```ignore
+/// dioxus_compose::android_main!(app);
+/// ```
+#[macro_export]
+macro_rules! android_main {
+    ($app:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_android_main() {
+            $crate::LaunchBuilder::new()
+                .with_mode($crate::LoopMode::Platform)
+                .launch($app);
+        }
+    };
+}
 
 pub mod prelude {
     pub use crate as dioxus_elements;
