@@ -11,7 +11,7 @@ use dioxus_compose::codegen::{
 };
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch, encode_event};
-use dioxus_compose::schema::{BOUNDARY_SCHEMA, EventPayload};
+use dioxus_compose::schema::{BOUNDARY_SCHEMA, BoundaryParam, EventPayload};
 use dioxus_compose::{Host, RendererApi, install_renderer_api, request_frame_from_worker};
 use std::ffi::c_int;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -198,4 +198,81 @@ fn pr5_generated_shims_match_the_boundary_schema() {
         generate_fast_native_kotlin(),
         "the generated annotation is stale; run `cargo run -p dioxus-compose --bin codegen`",
     );
+}
+
+/// The two halves have to agree on how many arguments each call takes and on how many
+/// slots the reply has. A mismatch is not a compile error on either side: it is an
+/// unsatisfied link at the first call, on a device, after everything else looked fine.
+#[test]
+fn pr5_both_halves_agree_on_the_argument_and_slot_counts() {
+    let rust = generate_jni_rust();
+    let kotlin = generate_android_bridge_kotlin();
+
+    for op in BOUNDARY_SCHEMA {
+        // Bytes arrive as a buffer and a length, everything else as one argument, and a
+        // call that answers with a batch takes the reply array as well.
+        let expected: usize = op
+            .params
+            .iter()
+            .map(|param| match param {
+                BoundaryParam::Bytes { .. } => 2,
+                BoundaryParam::Nanos { .. } => 1,
+            })
+            .sum::<usize>()
+            + usize::from(op.returns_batch);
+
+        let declaration = format!("external fun native{}(", op.name);
+        let kotlin_arguments = signature_after(&kotlin, &declaration, ')');
+        assert_eq!(
+            arguments_in(&kotlin_arguments),
+            expected,
+            "{} takes {expected} arguments in Kotlin",
+            op.name
+        );
+
+        let shim = format!(
+            "pub extern \"system\" fn Java_dioxus_compose_ui_platform_HostBridge_native{}(",
+            op.name
+        );
+        let rust_arguments = signature_after(&rust, &shim, ')');
+        // The environment and the class are the JNI calling convention, not arguments of
+        // the operation, so they do not appear on the Kotlin side.
+        assert_eq!(
+            arguments_in(&rust_arguments),
+            expected + 2,
+            "{} takes {expected} arguments plus the JNI pair in the shim",
+            op.name
+        );
+    }
+
+    let slots = format!("pub const OUT_SLOTS: usize = {};", OUT_SLOT_COUNT);
+    assert!(
+        rust.contains(&slots),
+        "the shims write {OUT_SLOT_COUNT} slots"
+    );
+    assert!(
+        kotlin.contains(&format!("const val OUT_SLOTS: Int = {OUT_SLOT_COUNT}")),
+        "the caller sizes its reply array for {OUT_SLOT_COUNT} slots"
+    );
+}
+
+/// The batch offset, its length, the handler result, and the arena's address and capacity.
+const OUT_SLOT_COUNT: usize = 5;
+
+/// The text between `opening` and the first `closing` after it.
+fn signature_after(source: &str, opening: &str, closing: char) -> String {
+    let start = source
+        .find(opening)
+        .unwrap_or_else(|| panic!("no `{opening}` in the generated source"))
+        + opening.len();
+    let rest = &source[start..];
+    let end = rest.find(closing).expect("unterminated argument list");
+    rest[..end].to_owned()
+}
+
+fn arguments_in(signature: &str) -> usize {
+    signature
+        .split(',')
+        .filter(|argument| !argument.trim().is_empty())
+        .count()
 }
