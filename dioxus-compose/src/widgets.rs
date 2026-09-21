@@ -9,8 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, ColorRole, Paint, ShapeRole, SpaceRole, TextAlign,
-    TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, Paint, ShapeRole, SpaceRole,
+    TextAlign, TextOverflow, TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -1036,6 +1036,142 @@ pub fn Dropdown(
             onchange: move |event: dioxus_core::Event<i64>| {
                 on_change.call((*event.data()).max(0) as usize)
             },
+            {children}
+        }
+    }
+}
+
+/// A set of destinations with one of them selected, plus the screen they lead to.
+///
+/// The children that are `NavigationItem` are the destinations; every other child is the
+/// content of the selected screen. Splitting by kind rather than by index means a
+/// destination that only exists under some condition does not force the Host to keep two
+/// lists in step by hand.
+///
+/// **Nothing here says bar, rail or drawer.** The Renderer has already measured the window,
+/// so it chooses: a bar across the bottom of a phone-shaped window, a rail down the side of
+/// a tablet-shaped one, a drawer standing open on a desktop. Asking the Host to choose
+/// would mean the width travelling up, a whole VirtualDom pass, and a tree of destinations
+/// being destroyed and rebuilt every time the window crossed a boundary, to arrive at the
+/// same three layouts the Renderer can reach by moving the nodes it already has.
+///
+/// `selected_index` counts destinations, not children. It seeds the Renderer's selection
+/// and moves it when the change came from somewhere other than a tap; a tap moves the
+/// selection in the Renderer and reports it by firing that destination's own `on_click`.
+#[component]
+pub fn Navigation(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    #[props(default)] selected_index: usize,
+    children: Element,
+) -> Element {
+    rsx! {
+        navigation {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            selected_index: selected_index as i64,
+            {children}
+        }
+    }
+}
+
+/// One destination inside a [`Navigation`].
+///
+/// The label and the icon are properties rather than a child tree, because the three
+/// presentations disagree about how they go together: a bottom bar stacks a small label
+/// under the icon, a rail may drop the label entirely, a drawer sets the label beside the
+/// icon and left-aligns the row. A `Column { Icon, Text }` handed over as children would
+/// have settled that question in the Host, where the window's width is not known.
+///
+/// The icon is a meaning, never a picture: `IconRole::Inbox` comes out as this design
+/// system's inbox.
+#[component]
+pub fn NavigationItem(
+    #[props(default)] text: String,
+    #[props(default)] icon: Option<IconRole>,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_click: EventHandler<()>,
+) -> Element {
+    rsx! {
+        navigationitem {
+            text,
+            icon: opt_role(icon),
+            enabled,
+            onclick: move |_| on_click.call(()),
+        }
+    }
+}
+
+/// A temporary surface that slides in from an edge, holding whatever its children are.
+///
+/// It is a `Dialog` in every way that crosses the boundary: `open` seeds the Renderer's own
+/// open state and carries a change that came from elsewhere, and `on_dismiss` says once
+/// that the user asked to close it. The drag itself does not cross: while the sheet is
+/// being pulled about, Rust hears nothing, and only a drag that ends in a dismissal is
+/// reported, once.
+///
+/// Which edge it comes from is the Renderer's decision, made from the width it measured:
+/// up from the bottom in a narrow window, in from the side in a wide one. There is no
+/// property that could ask for one of them, for the same reason there is none that can ask
+/// a date picker for a wheel.
+#[component]
+pub fn Sheet(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    #[props(default)] open: bool,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    children: Element,
+) -> Element {
+    rsx! {
+        sheet {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            open,
+            ondismiss: move |_| on_dismiss.call(()),
             {children}
         }
     }

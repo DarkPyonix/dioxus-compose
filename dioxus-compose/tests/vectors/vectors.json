@@ -1,12 +1,12 @@
 {
   "format": "dioxus-compose protocol vectors v1",
-  "schemaHashUnsigned": "7851656791429325612",
+  "schemaHashUnsigned": "15737360206645348160",
   "byteOrder": "little-endian",
   "mutations": {
     "file": "mutations.bin",
-    "description": "One batch covering every record, property value, modifier layout, drawing command and asset",
-    "recordCount": 32,
-    "strings": ["안녕", "compose", " token"],
+    "description": "One batch covering every record, property value, modifier layout, drawing command, asset and message",
+    "recordCount": 33,
+    "strings": ["안녕", "compose", " token", "삭제했습니다", "Undo"],
     "assets": [{ "assetId": 5, "kind": "Png", "bytes": "89504e47" }]
   },
   "events": {
