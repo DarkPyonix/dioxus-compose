@@ -49,8 +49,22 @@ pub fn artifact_file_name(crate_version: &str, target: &str) -> String {
 }
 
 /// The platform target used in artifact names, built from Cargo's target triple parts.
+///
+/// Cargo and the release artifacts do not spell architectures the same way, and joining
+/// the two halves raw quietly produced names no release ever had: Cargo says `x86_64`
+/// where the artifacts say `x64`, and `aarch64` on Linux where they say `arm64`. It was
+/// right on exactly one platform, macOS, where the two spellings agree, and that is the
+/// platform everything was checked on. Everywhere else it sent people to a download link
+/// for a file that does not exist.
 pub fn artifact_target(target_os: &str, target_arch: &str) -> String {
-    format!("{target_os}-{target_arch}")
+    let arch = match (target_os, target_arch) {
+        // Apple's own name for its silicon, which is what the macOS artifact carries.
+        ("macos", "aarch64") => "aarch64",
+        (_, "aarch64") => "arm64",
+        (_, "x86_64") => "x64",
+        _ => target_arch,
+    };
+    format!("{target_os}-{arch}")
 }
 
 /// Where the Renderer was found, and which version file (if any) vouched for it.
