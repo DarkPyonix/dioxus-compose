@@ -19,8 +19,8 @@ mod widgets;
 pub mod window;
 
 pub use boundary::{
-    Host, LaunchBuilder, MutationBatch, RendererApi, demo_theme, install_renderer_api, launch,
-    request_frame_from_worker,
+    Host, LaunchBuilder, MutationBatch, RendererApi, demo_theme, demo_theme_for,
+    install_renderer_api, launch, request_frame_from_worker,
 };
 pub use dioxus_core::{Element, VirtualDom};
 // `Props` goes out with `component` because `#[component]` expands into a

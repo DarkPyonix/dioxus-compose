@@ -1160,9 +1160,23 @@ mod tests {
 /// Mac, so everything was Cupertino.
 ///
 /// `DXC_DESIGN` names the system. Anything else, including nothing, adapts to the host.
+/// `DXC_SCHEME` names `light` or `dark`; anything else leaves the reader's own setting
+/// alone.
 pub fn demo_theme() -> Theme {
+    demo_theme_for(Theme::adaptive(crate::schema::DesignSystem::Material3))
+}
+
+/// The same, for a demonstration that has a theme of its own to start from.
+///
+/// A sample whose design is one particular design system in one particular colour scheme
+/// says so, and that declaration is the sample. But the machine it is being looked at on
+/// can only draw one of the seven at a time, so without a way to point it somewhere else
+/// the other six are never seen. This keeps the sample's own theme as the answer and lets
+/// the two variables override the part they name, so what is on screen is either the
+/// design the sample chose or exactly the one that was asked for.
+pub fn demo_theme_for(theme: Theme) -> Theme {
     use crate::schema::DesignSystem;
-    match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
+    let theme = match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
         Ok("material3") => Theme::unified(DesignSystem::Material3),
         Ok("cupertino") => Theme::unified(DesignSystem::Cupertino),
         Ok("fluent") => Theme::unified(DesignSystem::Fluent),
@@ -1172,21 +1186,56 @@ pub fn demo_theme() -> Theme {
         // Spelled both ways, because the name is two words everywhere it is written down
         // and nobody remembers which one a shell variable wants.
         Ok("liquidglass") | Ok("liquid-glass") => Theme::unified(DesignSystem::LiquidGlass),
-        _ => Theme::adaptive(DesignSystem::Material3),
+        // Naming a system replaces the sample's design system but keeps its colour
+        // scheme, so asking to see one design does not also change how light it is.
+        _ => return with_scheme_override(theme),
+    }
+    .with_color_scheme(theme.color_scheme);
+    with_scheme_override(theme)
+}
+
+/// Applies `DXC_SCHEME` if it names one of the two schemes.
+fn with_scheme_override(theme: Theme) -> Theme {
+    match std::env::var("DXC_SCHEME").as_deref().map(str::trim) {
+        Ok("light") => theme.with_color_scheme(crate::schema::ColorScheme::Light),
+        Ok("dark") => theme.with_color_scheme(crate::schema::ColorScheme::Dark),
+        _ => theme,
     }
 }
 
 #[cfg(test)]
 mod demo_theme_tests {
     use super::*;
-    use crate::schema::{DESIGN_SYSTEM_SCHEMA, DesignSystem};
+    use crate::schema::{ColorScheme, DESIGN_SYSTEM_SCHEMA, DesignSystem};
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Held for the length of any test that sets one of the variables.
+    ///
+    /// The variables belong to the process, not to the test, so two of these running at
+    /// once read each other's settings and fail on a value neither of them asked for.
+    static ENVIRONMENT: Mutex<()> = Mutex::new(());
+
+    /// Clears both variables and keeps everyone else out until the guard is dropped.
+    fn exclusive_environment() -> MutexGuard<'static, ()> {
+        let guard = ENVIRONMENT
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        // SAFETY: the lock makes this the only thread touching the environment, and the
+        // variables are read only by the functions called under the same lock.
+        unsafe {
+            std::env::remove_var("DXC_DESIGN");
+            std::env::remove_var("DXC_SCHEME");
+        }
+        guard
+    }
 
     /// Named for what it defends: a sample that cannot be pointed at a design system
     /// leaves five of the six unseen on any one machine.
     #[test]
     fn fr14_a_named_design_system_is_unified_and_anything_else_adapts() {
-        // SAFETY: the test process is single threaded here and the variable is read only
-        // by this function, which is called below.
+        let _environment = exclusive_environment();
+        // SAFETY: `exclusive_environment` holds the lock, so nothing else is reading or
+        // writing these while this runs.
         for (name, system) in [
             ("material3", DesignSystem::Material3),
             ("cupertino", DesignSystem::Cupertino),
@@ -1215,6 +1264,55 @@ mod demo_theme_tests {
 
         unsafe { std::env::remove_var("DXC_DESIGN") };
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
+    }
+
+    /// Named for what it defends: a machine set to dark draws every sample dark, so a
+    /// design that is meant to be read light cannot be looked at at all without this.
+    #[test]
+    fn fr14_a_named_colour_scheme_is_pinned_and_anything_else_is_left_alone() {
+        let _environment = exclusive_environment();
+        // SAFETY: as above.
+        for (name, scheme) in [("light", ColorScheme::Light), ("dark", ColorScheme::Dark)] {
+            unsafe { std::env::set_var("DXC_SCHEME", name) };
+            assert_eq!(
+                demo_theme().color_scheme,
+                scheme,
+                "{name} is not selectable"
+            );
+        }
+
+        unsafe { std::env::set_var("DXC_SCHEME", "nonsense") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::FollowSystem);
+
+        unsafe { std::env::remove_var("DXC_SCHEME") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::FollowSystem);
+    }
+
+    /// A sample that names its own theme keeps it, and each variable overrides only the
+    /// half it names. Asking to see Liquid Glass must not also throw away the colour
+    /// scheme the design was drawn for.
+    #[test]
+    fn fr14_a_samples_own_theme_survives_everything_the_variables_do_not_name() {
+        let _environment = exclusive_environment();
+        let sample = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+        assert_eq!(demo_theme_for(sample), sample);
+
+        unsafe { std::env::set_var("DXC_DESIGN", "liquidglass") };
+        assert_eq!(
+            demo_theme_for(sample),
+            Theme::unified(DesignSystem::LiquidGlass).with_color_scheme(ColorScheme::Light)
+        );
+
+        unsafe { std::env::set_var("DXC_SCHEME", "dark") };
+        assert_eq!(
+            demo_theme_for(sample),
+            Theme::unified(DesignSystem::LiquidGlass).with_color_scheme(ColorScheme::Dark)
+        );
+
+        unsafe {
+            std::env::remove_var("DXC_DESIGN");
+            std::env::remove_var("DXC_SCHEME");
+        };
     }
 }
 
