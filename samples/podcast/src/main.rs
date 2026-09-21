@@ -418,7 +418,7 @@ fn new_page(
 
             Text {
                 text: "Podcasts You May Like",
-                type_role: TypeRole::BodyStrong,
+                type_role: TypeRole::Subtitle,
                 color: palette::INK,
             }
             Column {
