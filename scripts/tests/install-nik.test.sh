@@ -99,3 +99,25 @@ if (( failures )); then
     exit 1
 fi
 echo "all install-nik.sh tests passed"
+
+# The Windows job downloads NIK itself rather than using the installer, because the
+# installer is a shell script and the runner is PowerShell. Two places naming the same
+# version is two places to forget, so they are checked against each other here: a Windows
+# renderer built from a different NIK than the macOS one is a difference nobody chose.
+repo_root="$(cd "$script_dir/../.." && pwd)"
+workflow="$repo_root/.github/workflows/native-renderer.yml"
+if [[ -f "$workflow" ]]; then
+    jdk_in_script="$(grep -o 'NIK_JDK_BUILD="[^"]*"' "$repo_root/scripts/install-nik.sh" | cut -d'"' -f2)"
+    vm_in_script="$(grep -o 'NIK_VM_BUILD="[^"]*"' "$repo_root/scripts/install-nik.sh" | cut -d'"' -f2)"
+    jdk_in_workflow="$(grep -o "\\\$jdk = '[^']*'" "$workflow" | head -1 | cut -d"'" -f2)"
+    vm_in_workflow="$(grep -o "\\\$vm = '[^']*'" "$workflow" | head -1 | cut -d"'" -f2)"
+    if [[ -n "$jdk_in_workflow" ]]; then
+        if [[ "$jdk_in_script" != "$jdk_in_workflow" || "$vm_in_script" != "$vm_in_workflow" ]]; then
+            echo "fail  the installer and the Windows job pin different NIK builds" >&2
+            echo "      installer: $vm_in_script / $jdk_in_script" >&2
+            echo "      workflow:  $vm_in_workflow / $jdk_in_workflow" >&2
+            exit 1
+        fi
+        echo "ok    the installer and the Windows job pin the same NIK build"
+    fi
+fi

@@ -37,7 +37,7 @@ Rust에서 Compose API를 직접 호출하지 않습니다. GraalVM `@CEntryPoin
 
 | 플랫폼 | 방식 |
 |---|---|
-| 데스크톱 | native-image `--shared`. **macOS에서는 Liberica NIK Full이 필요합니다**: upstream GraalVM은 Darwin에서 AWT 지원을 건너뜁니다(oracle/graal#13272, 2026-09 기준 open). NIK는 AWT를 정적 링크합니다 |
+| 데스크톱 | native-image `--shared`, 세 플랫폼 모두 **Liberica NIK Full**. macOS에서는 선택의 여지가 없었습니다: upstream GraalVM은 Darwin에서 AWT 지원을 건너뜁니다(oracle/graal#13272, 2026-09 기준 open). Windows는 upstream도 AWT를 지원하지만 **JDK DLL 열두 개를 이미지 옆에 내놓는 방식**이라 애플리케이션마다 그것을 전부 들고 다녀야 했습니다(2026-09-23 실측: 배포물 16개 파일). NIK는 같은 라이브러리를 `lib/static/<플랫폼>/`에 정적 아카이브로 싣고, 그것이 macOS 배포물이 4개인 이유입니다. 2026-09-23에 Windows를 NIK으로 옮겼습니다 |
 | iOS | Kotlin/Native `-produce static` + `@CName` C 심볼 |
 | Android | 대상 플랫폼. ART라서 native-image가 불가능합니다. Kotlin/Android 앱이 Rust cdylib을 로드하고, 생성된 JNI 심을 씁니다(D9) |
 | Web | 대상 플랫폼. Compose wasmJs + Dioxus wasm. 브라우저에서 실행하는 것이라 앱이 웹뷰를 내장하는 것과는 다르고 C1에 해당하지 않습니다. 메모리는 공유하고 호출만 생성된 JS forwarder를 거칩니다(SPEC PR-6) |

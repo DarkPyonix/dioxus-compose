@@ -115,14 +115,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install upstream GraalVM 25
-        # Upstream GraalVM supports AWT on Windows. Liberica NIK is a macOS requirement only.
-        uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '25'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          native-image-job-reports: 'true'
+      - name: Install Liberica NIK 25 Full
+        # The same toolchain as macOS. Upstream GraalVM also supports AWT here, and that is
+        # what this used to install, but it supports it by emitting a dozen JDK DLLs beside
+        # the image for every application to carry. NIK ships those libraries as static
+        # archives under lib\static\windows-amd64, so they link in and stop being files.
+        #
+        # Versions are the two the macOS installer pins, kept in step by
+        # scripts/tests/install-nik.test.sh.
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $jdk = '25.0.4.1+2'
+          $vm = '25.0.4.1+1'
+          $archive = "bellsoft-liberica-vm-full-openjdk$jdk-$vm-windows-amd64.zip"
+          $url = "https://github.com/bell-sw/LibericaNIK/releases/download/$vm-$jdk/$archive"
+          Write-Host "downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $archive
+          Expand-Archive -Path $archive -DestinationPath "$env:RUNNER_TEMP\nik" -Force
+          $home_dir = (Get-ChildItem "$env:RUNNER_TEMP\nik" -Directory | Select-Object -First 1).FullName
+          if (-not (Test-Path "$home_dir\bin\native-image.cmd")) {
+            throw "no bin\native-image.cmd under $home_dir"
+          }
+          if (-not (Test-Path "$home_dir\lib\static\windows-amd64\awt.lib")) {
+            throw "no static AWT under $home_dir, which is the whole reason for using NIK here"
+          }
+          "GRAALVM_HOME=$home_dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "JAVA_HOME=$home_dir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Build the Windows renderer
         shell: powershell
