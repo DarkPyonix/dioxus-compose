@@ -84,6 +84,10 @@ cd "$tree"
 # cd alone was not enough, so the path is stated where the run can read it.
 prompt="Your working directory is $tree, and you are already in it. Every command you run, every file you edit and every git operation happens there. Never run a command against $repo, never cd out of your worktree, and never switch the branch of any checkout but your own: another worker is committing in that one. If a path you want is not under $tree, you are in the wrong place.
 
+You do not build the renderer. Not \`./kotlin build\`, not \`./kotlin test\`, not Amper or Gradle or dx or native-image, and nothing under dioxus-compose-renderer/*/scripts/. Those builds reach outside your worktree into caches every run on this machine shares, they take tens of minutes each, and several of them at once is what brought this machine down. Whoever merges your branch runs them. Write the Kotlin and write its tests; you will not see them go green, and that is the arrangement, not an oversight. Cargo inside your own worktree is yours and is expected.
+
+You do not decide that part of your task is out of scope. If the task says to implement something, implement it. You may not narrow it, defer it, call it future work or a later version, leave a TODO where the feature should be, or write that judgement into this project's planning documents as if it were settled. If you believe something is wrong or impossible, deliver everything else in full and say so in your final report, naming what you did not do and why. Silence about a thing you skipped is the failure; disagreeing out loud is not.
+
 $prompt"
 # stream-json, not plain text. With plain `-p` the output arrives in one lump when the
 # run finishes, so the log sits at zero bytes for an hour and there is no way to tell a

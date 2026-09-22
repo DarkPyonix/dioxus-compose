@@ -1,0 +1,151 @@
+<#
+.SYNOPSIS
+Measures what a dioxus-compose application costs in memory on Windows.
+
+.DESCRIPTION
+The companion to measure-memory.sh, which does the same on macOS. The two do not print the
+same metric, because the two systems do not have the same one, and pretending otherwise
+would invite a comparison that means nothing.
+
+macOS is measured by physical footprint. The nearest thing here is the PRIVATE WORKING SET:
+the pages this process has in RAM that no other process shares. It is what Task Manager's
+"Memory" column shows, so a number from this script is a number you can see in Task Manager.
+Working set and commit are printed beside it because they answer different questions, and
+because a gap between them is itself a finding.
+
+The window's size is reported with every sample. The window surface scales with its area,
+so a measurement that does not say how big the window was cannot be compared with anything.
+On macOS this caught a run where the window never reached the size it was asked for and the
+number was 40MB out.
+
+.PARAMETER Exe
+The application to measure. A sample from a release works, and so does
+target\release\examples\memory_probe.exe, which takes DXC_PROBE_WIDTH, DXC_PROBE_HEIGHT and
+DXC_PROBE_ROWS and is the one that isolates what the window costs from what the content
+costs.
+
+.PARAMETER Width
+.PARAMETER Height
+Passed to the probe. Ignored by an application that sets its own window size.
+
+.PARAMETER Rows
+How many rows of six buttons the probe draws. 0 is an empty window.
+
+.PARAMETER Settle
+Seconds to wait before the first sample. The renderer finishes starting and the first frame
+lands well before this; shorter measurements have come out low.
+
+.PARAMETER Samples
+How many samples to take. The median is reported, because one sample lands anywhere.
+
+.EXAMPLE
+.\measure-memory.ps1 -Exe .\target\release\examples\memory_probe.exe -Width 800 -Height 600 -Rows 0
+
+.EXAMPLE
+.\measure-memory.ps1 -Exe .\sample-todo.exe
+#>
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)][string]$Exe,
+    [int]$Width = 800,
+    [int]$Height = 600,
+    [int]$Rows = 0,
+    [int]$Settle = 15,
+    [int]$Samples = 5
+)
+
+$ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path $Exe)) {
+    Write-Error "no executable at $Exe"
+    exit 1
+}
+
+# GetWindowRect, so the report says how big the window actually was rather than how big it
+# was asked to be.
+if (-not ('DxcWin32' -as [type])) {
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public class DxcWin32 {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+}
+'@
+}
+
+$env:DXC_PROBE_WIDTH = $Width
+$env:DXC_PROBE_HEIGHT = $Height
+$env:DXC_PROBE_ROWS = $Rows
+
+Write-Host "starting $Exe"
+$process = Start-Process -FilePath $Exe -PassThru
+try {
+    Start-Sleep -Seconds $Settle
+    if ($process.HasExited) {
+        Write-Error "the process exited before it could be measured (code $($process.ExitCode))"
+        exit 1
+    }
+
+    # The private working set, from the performance counter rather than from the Process
+    # object: PrivateMemorySize64 is commit, which counts pages that were never brought
+    # into RAM, and reads high.
+    $instance = [System.IO.Path]::GetFileNameWithoutExtension($Exe)
+    $privateSamples = @()
+    $workingSamples = @()
+    $commitSamples = @()
+    for ($i = 0; $i -lt $Samples; $i++) {
+        $process.Refresh()
+        $workingSamples += $process.WorkingSet64
+        $commitSamples += $process.PrivateMemorySize64
+        try {
+            $counter = Get-Counter "\Process V2($instance*)\Working Set - Private" -ErrorAction Stop
+            $privateSamples += ($counter.CounterSamples | Select-Object -First 1).CookedValue
+        } catch {
+            # Older builds have no Process V2 counter set. The Process counter is the same
+            # number without the instance disambiguation, which only matters when two of
+            # these are running at once.
+            try {
+                $counter = Get-Counter "\Process($instance)\Working Set - Private" -ErrorAction Stop
+                $privateSamples += ($counter.CounterSamples | Select-Object -First 1).CookedValue
+            } catch {
+                $privateSamples += 0
+            }
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    $rect = New-Object DxcWin32+RECT
+    $size = 'unknown'
+    if ($process.MainWindowHandle -ne 0 -and [DxcWin32]::GetWindowRect($process.MainWindowHandle, [ref]$rect)) {
+        $size = "$($rect.Right - $rect.Left)x$($rect.Bottom - $rect.Top)"
+    }
+
+    function Median($values) {
+        $sorted = $values | Sort-Object
+        return $sorted[[int]($sorted.Count / 2)]
+    }
+    $private = Median $privateSamples
+    $working = Median $workingSamples
+    $commit = Median $commitSamples
+
+    Write-Host ''
+    Write-Host "exe            $Exe"
+    Write-Host "window         $size (asked for ${Width}x${Height})"
+    Write-Host "rows           $Rows"
+    Write-Host ("private ws     {0:N1} MB   <- compare this one" -f ($private / 1MB))
+    Write-Host ("working set    {0:N1} MB" -f ($working / 1MB))
+    Write-Host ("commit         {0:N1} MB" -f ($commit / 1MB))
+    if ($private -eq 0) {
+        Write-Host ''
+        Write-Host "the private working set counter was unavailable, so only the two below are real."
+        Write-Host "run this in an elevated shell, or read the Memory column in Task Manager instead."
+    }
+} finally {
+    if (-not $process.HasExited) {
+        $process.Kill()
+        $process.WaitForExit(5000) | Out-Null
+    }
+}
