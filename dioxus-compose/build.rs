@@ -18,6 +18,12 @@ use renderer_dir::{
 /// with no renderer in it, which is one of the cases the Host is loud about at run time.
 const DOCS_RS_ENV: &str = "DOCS_RS";
 
+/// Where an Android application's Gradle project keeps the Kotlin it compiles.
+const ANDROID_KOTLIN_DIR_ENV: &str = "DIOXUS_COMPOSE_ANDROID_KOTLIN_DIR";
+
+/// Where the crate carries that Kotlin, relative to the crate root.
+const ANDROID_KOTLIN_DIR: &str = "android-kotlin";
+
 fn main() {
     // Set when a renderer is actually linked into this build, which is not the same thing
     // as the feature being on: docs.rs turns the feature on and links nothing.
@@ -49,7 +55,15 @@ fn main() {
         // Host, and both install their entry points at load time. Declaring the desktop
         // renderer's symbols instead leaves the loader looking for something that does
         // not exist, which on Android stops the library opening at all.
-        RendererLinkage::Installed | RendererLinkage::None => return,
+        RendererLinkage::Installed | RendererLinkage::None => {
+            // Android is also where the renderer's Kotlin has to reach the application's
+            // own Gradle build, because ART compiles it rather than us. Everywhere else
+            // the Kotlin was frozen ahead of time into a library.
+            if target_os == "android" {
+                unpack_android_kotlin();
+            }
+            return;
+        }
         // iOS links the XCFramework through Xcode. Cargo does not link the renderer, but
         // the symbols are there by the time anything runs, so the Host must call them
         // rather than take its no-renderer path.
@@ -271,4 +285,59 @@ fn wget(url: &str, destination: &Path) -> Result<(), FetchError> {
         4 => FetchError::Unreachable(format!("wget could not reach the network: {detail}")),
         _ => FetchError::Failed(format!("wget exited {code}: {detail}")),
     })
+}
+
+/// The Android renderer's Kotlin, copied into the Gradle project that is building this.
+///
+/// Android is the one platform where the Kotlin cannot travel as a compiled artifact. The
+/// desktop ships a native-image shared library and iOS a Kotlin/Native archive; Android
+/// runs on ART, so the Kotlin is compiled by the application's own Gradle build and has
+/// to be there in source form when it runs. dx's template accepts Maven coordinates and
+/// nothing else for dependencies, so handing it a compiled library is not possible even
+/// if one existed.
+///
+/// `DIOXUS_COMPOSE_ANDROID_KOTLIN_DIR` says where the Gradle project's Kotlin source
+/// directory is. dx sets it, or a person building by hand does. Without it this does
+/// nothing and says so once: a cargo build of the crate on its own is a perfectly
+/// ordinary thing to do and is not the moment to fail.
+fn unpack_android_kotlin() {
+    println!("cargo:rerun-if-env-changed={ANDROID_KOTLIN_DIR_ENV}");
+    let Some(destination) = std::env::var_os(ANDROID_KOTLIN_DIR_ENV) else {
+        println!(
+            "cargo:warning=dioxus-compose: {ANDROID_KOTLIN_DIR_ENV} is not set, so the \
+             renderer's Kotlin was not unpacked. An Android application needs it in its \
+             own source directory, because ART compiles it rather than us."
+        );
+        return;
+    };
+    let destination = PathBuf::from(destination);
+    let staged = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ANDROID_KOTLIN_DIR);
+    if !staged.is_dir() {
+        panic!(
+            "\n\ndioxus-compose: the Android Kotlin is missing from this copy of the \
+             crate.\n\nIt should be at {}. A checkout regenerates it with \
+             scripts/stage-android-kotlin.sh; a published crate carries it.\n\n",
+            staged.display()
+        );
+    }
+    println!("cargo:rerun-if-changed={}", staged.display());
+    if let Err(error) = copy_tree(&staged, &destination) {
+        panic!("\n\ndioxus-compose: could not put the renderer's Kotlin into {}: {error}\n\n",
+            destination.display());
+    }
+}
+
+/// Every file under `from`, into the same shape under `to`.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
