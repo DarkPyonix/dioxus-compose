@@ -187,6 +187,11 @@ impl ComposeRenderer {
         self.write(Mutation::SetTheme(theme));
     }
 
+    /// The root window record. Written once per rebuild, never per frame.
+    pub fn set_window(&mut self, window: crate::schema::Window) {
+        self.write(Mutation::SetWindow(window));
+    }
+
     pub fn set_text_node(&mut self, node_id: u32, text: &str, selection: Option<crate::Selection>) {
         self.write(Mutation::SetText {
             node_id,

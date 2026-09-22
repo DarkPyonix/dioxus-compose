@@ -43,10 +43,10 @@ pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use message::{Message, show_message};
 pub use schema::{
-    Alignment, Arrangement, AssetKind, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
-    EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint, PropertyKind,
-    SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole,
-    WidgetKind, WindowSizeClass,
+    Alignment, Arrangement, AssetKind, ButtonVariant, Chrome, Color, ColorRole, ColorScheme,
+    DesignSystem, EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint,
+    PropertyKind, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
+    TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
     Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
@@ -129,6 +129,11 @@ pub mod prelude {
         Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
         show_message, use_window_size,
     };
+    // Under its own name, and the one thing in this list that could shadow something a
+    // reader already has: an application that draws its own `Window` component would find
+    // this one instead. It is here because the alternative is a fully qualified path in
+    // every `main`, and because `Chrome` beside it is meaningless on its own.
+    pub use crate::schema::{Chrome, Window};
     // The crates `rsx!` expands into references to, under the names it expands into. A
     // consumer who added only `dioxus-compose` does not have `dioxus_core` or
     // `dioxus_signals` in their dependency graph by name, so without these the macro

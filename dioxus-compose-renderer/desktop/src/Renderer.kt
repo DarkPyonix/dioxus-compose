@@ -17,6 +17,11 @@ import androidx.compose.ui.window.application
 import kotlinx.coroutines.delay
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.HostConnection
+import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.unit.DpSize
+import dioxus.compose.protocol.Chrome
+import dioxus.compose.runtime.DioxusHost
+import dioxus.compose.runtime.rememberStartedDioxusHost
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.runtime.LocalSystemDarkObserver
 import dioxus.compose.runtime.LocalWindowActions
@@ -32,17 +37,48 @@ import dioxus.compose.runtime.LocalWindowActions
  */
 internal fun runRenderer(
     autoExitMillis: Long? = null,
-    chrome: WindowChrome = WindowChrome.Modern,
     connection: () -> HostConnection,
+) {
+    // The Host is started before there is a window, because what the window should look
+    // like is in the first batch and a window cannot be told afterwards: whether it is
+    // decorated is settled when it is created. `dioxus_compose_host_init` answers with
+    // that batch, so asking early costs nothing and needs no argument on any boundary
+    // function.
+    val host = DioxusHost(connection())
+    host.start()
+    val asked = host.table.window
+    val chrome = when (asked?.chrome) {
+        Chrome.System -> WindowChrome.System
+        // A Host that sent nothing is a Host from an older schema, and the handshake
+        // would already have refused that, so this is the ordinary modern case.
+        else -> WindowChrome.Modern
+    }
+    runRendererWithHost(host, asked, chrome, autoExitMillis)
+}
+
+private fun runRendererWithHost(
+    host: DioxusHost,
+    asked: dioxus.compose.protocol.Window?,
+    chrome: WindowChrome,
+    autoExitMillis: Long?,
 ) = application(exitProcessOnExit = false) {
     // Undecorated everywhere the platform will not hand us a transparent title bar, which
     // is everywhere except macOS. There we keep the real one and make it see through, so
     // the close, minimise and zoom buttons stay the system's own.
     val undecorated = chrome == WindowChrome.Modern && !platformDrawsWindowButtons
+    // A measurement of zero means the application did not ask, so the choice stays the
+    // window's own rather than becoming a window of no size.
+    val state = if (asked != null && asked.width > 0 && asked.height > 0) {
+        rememberWindowState(size = DpSize(asked.width.dp, asked.height.dp))
+    } else {
+        rememberWindowState()
+    }
     Window(
         onCloseRequest = ::exitApplication,
         title = "DioxusCompose",
         undecorated = undecorated,
+        resizable = asked?.resizable ?: true,
+        state = state,
     ) {
         // AWT reads the macOS client properties when the peer is realised, so this runs
         // once the window exists rather than as a constructor argument.
@@ -78,7 +114,7 @@ internal fun runRenderer(
                     WindowDraggableArea(Modifier.fillMaxWidth().height(caption.height)) {}
                 }
                 DioxusContent(
-                    rememberDioxusHost(remember { connection() }),
+                    rememberStartedDioxusHost(host),
                     Modifier.fillMaxSize(),
                     // Content runs under the caption on purpose, but a widget sitting
                     // where the window buttons are would leave both unusable. The strip

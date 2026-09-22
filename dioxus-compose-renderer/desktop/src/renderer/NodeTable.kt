@@ -11,6 +11,7 @@ import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.Theme
+import dioxus.compose.protocol.Window
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 
@@ -111,6 +112,10 @@ class NodeTable {
     var theme: Theme? by mutableStateOf(null)
         private set
 
+    /** Null until the Host sends its first `SetWindow` record. */
+    var window: Window? by mutableStateOf(null)
+        private set
+
     /** Top-level nodes, in creation order until the Host parents them. */
     val roots: List<Int> get() = rootChildren
 
@@ -138,6 +143,7 @@ class NodeTable {
         assets.clear()
         messages.clear()
         theme = null
+        window = null
         revision = 0
     }
 
@@ -154,6 +160,11 @@ class NodeTable {
             // One record changes the whole tree's appearance. `DioxusContent`
             // resolves it into tokens and rules, and Compose invalidates the readers.
             is Mutation.SetTheme -> theme = mutation.theme
+            // Read before there is a window to apply it to. The platform layer asks for
+            // this out of the first batch and builds the window from it, so by the time
+            // the batch is applied the window already looks the way it says. Keeping it
+            // here as well is what lets a later rebuild change it.
+            is Mutation.SetWindow -> window = mutation.window
             // The bytes are read here, once, and never again: what a frame carries is the
             // id. A kind this Renderer cannot read, or a release of something that was
             // never registered, is reported and the rest of the batch still applies.

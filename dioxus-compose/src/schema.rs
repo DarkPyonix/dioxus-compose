@@ -73,7 +73,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
     "windowsizeclasses=Compact,Medium,Expanded;",
-    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,RegisterAsset,ReleaseAsset,ShowMessage"
+    "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,SetWindow,RegisterAsset,ReleaseAsset,ShowMessage"
 );
 
 const fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
@@ -626,6 +626,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
         name: "MessageDuration",
         variants: MESSAGE_DURATION_SCHEMA,
     },
+    RoleEnumSchema {
+        name: "Chrome",
+        variants: CHROME_SCHEMA,
+    },
 ];
 
 /// Every place that takes a colour takes a `Paint`, so colour is expressed once.
@@ -657,6 +661,79 @@ impl Paint {
             PAINT_KIND_LITERAL => Some(Self::Literal(Color(value))),
             _ => None,
         }
+    }
+}
+
+// How the window wears its title bar.
+//
+// `Modern` runs content into the title bar area and is the default, because every desktop
+// platform now expects it and a window with a separate system bar looks a decade old.
+//
+// `System` is the platform's ordinary bar, and it is kept deliberately. Some tool-shaped
+// applications want one, and more importantly it is where an application goes when
+// `Modern` turns out to be wrong on some machine: a default with no way out of it is a
+// default that strands people.
+define_wire_enum!(CHROME_SCHEMA, Chrome {
+    Modern = 1,
+    System = 2,
+});
+
+/// What an application may decide about its own window.
+///
+/// The window belongs to the Renderer, so this is short and stays short. What is here is
+/// what an application knows and the Renderer cannot guess: what the window is called and
+/// how large it should open. Nothing here names a colour or a corner, because those are
+/// the design system's, and nothing here is read more than once.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Window {
+    pub chrome: Chrome,
+    /// Zero means the Renderer chooses, which is what an application that said nothing
+    /// gets. A size is in the same density independent pixels gestures are measured in.
+    pub width: u16,
+    pub height: u16,
+    pub min_width: u16,
+    pub min_height: u16,
+    pub resizable: bool,
+}
+
+impl Window {
+    pub const fn new() -> Self {
+        Self {
+            chrome: Chrome::Modern,
+            width: 0,
+            height: 0,
+            min_width: 0,
+            min_height: 0,
+            resizable: true,
+        }
+    }
+
+    pub const fn with_chrome(mut self, chrome: Chrome) -> Self {
+        self.chrome = chrome;
+        self
+    }
+
+    pub const fn with_size(mut self, width: u16, height: u16) -> Self {
+        self.width = width;
+        self.height = height;
+        self
+    }
+
+    pub const fn with_min_size(mut self, width: u16, height: u16) -> Self {
+        self.min_width = width;
+        self.min_height = height;
+        self
+    }
+
+    pub const fn resizable(mut self, resizable: bool) -> Self {
+        self.resizable = resizable;
+        self
+    }
+}
+
+impl Default for Window {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

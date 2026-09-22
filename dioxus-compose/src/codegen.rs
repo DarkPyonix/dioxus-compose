@@ -73,6 +73,22 @@ data class Theme(
     val adaptive: Boolean,
 )
 
+/**
+ * What the application asked of its own window.
+ *
+ * A zero measurement means the application did not ask, so the choice is the Renderer's.
+ * This arrives in the first batch, which the Renderer reads before it stands the window
+ * up; a platform where the window is not ours ignores it.
+ */
+data class Window(
+    val chrome: Chrome,
+    val width: Int,
+    val height: Int,
+    val minWidth: Int,
+    val minHeight: Int,
+    val resizable: Boolean,
+)
+
 "#,
     );
 
@@ -118,6 +134,7 @@ data class Theme(
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
     data class SetTheme(val theme: Theme) : Mutation
+    data class SetWindow(val window: Window) : Mutation
 
     /**
      * The bytes of one asset. `kind` is the raw wire tag rather than an [AssetKind],
@@ -223,6 +240,7 @@ object Protocol {
     private const val TAG_REGISTER_ASSET = 10
     private const val TAG_RELEASE_ASSET = 11
     private const val TAG_SHOW_MESSAGE = 12
+    private const val TAG_SET_WINDOW = 13
     private const val ENVELOPE_LENGTH = 12
 
     /**
@@ -362,6 +380,23 @@ object Protocol {
                                 designSystem(readU16(batch, base, available, offset + 6), offset + 6),
                                 colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
                                 adaptive == 1,
+                            ),
+                        )
+                    }
+                    TAG_SET_WINDOW -> {
+                        requireRecordLength(length, 16, offset)
+                        val resizable = readU16(batch, base, available, offset + 14)
+                        if (resizable > 1) {
+                            throw ProtocolException("invalid resizable flag $resizable", offset + 14)
+                        }
+                        Mutation.SetWindow(
+                            Window(
+                                chrome(readU16(batch, base, available, offset + 4), offset + 4),
+                                readU16(batch, base, available, offset + 6),
+                                readU16(batch, base, available, offset + 8),
+                                readU16(batch, base, available, offset + 10),
+                                readU16(batch, base, available, offset + 12),
+                                resizable == 1,
                             ),
                         )
                     }
