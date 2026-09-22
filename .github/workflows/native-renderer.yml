@@ -134,6 +134,22 @@ jobs:
         shell: powershell
         run: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
 
+      # A run artifact, which is a different thing from the release asset below: it belongs
+      # to this run, lasts a fortnight, and is not published anywhere. The release asset
+      # stays tag-only, which is right.
+      #
+      # It exists because a renderer built from the current schema was otherwise
+      # unobtainable between releases. Anyone working on Windows had the choice of
+      # installing GraalVM and Visual Studio Build Tools, or using the last release's
+      # renderer and watching it fail the schema handshake, which is what an empty window
+      # on Windows turned out to be.
+      - name: Keep the distribution as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-windows-x64
+          path: dioxus-compose-renderer/build/native-image/dist
+          retention-days: 14
+
       - name: Package the distribution for a release
         id: package
         if: startsWith(github.ref, 'refs/tags/v')
