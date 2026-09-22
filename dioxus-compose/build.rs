@@ -452,23 +452,29 @@ package {package}
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.ui.platform.DioxusRuntime
+import dioxus.compose.ui.platform.installSystemChrome
 
 class MainActivity : ComponentActivity() {{
     override fun onCreate(savedInstanceState: Bundle?) {{
-        enableEdgeToEdge()
+        // The window draws under the system's strips with nothing of the system's own
+        // over them, and the renderer decides whether the clock and the gesture bar are
+        // dark or light against what it drew.
+        installSystemChrome(this)
         super.onCreate(savedInstanceState)
         DioxusRuntime.load("{library}")
         val host = DioxusRuntime.host()
         val view = ComposeView(this)
         view.setContent {{
-            DioxusContent(host, Modifier.fillMaxSize().safeDrawingPadding())
+            // The whole window. Where the system bars are is the renderer's to decide:
+            // a bar that opens the tree grows up into the status bar and a navigation
+            // grows down into the gesture bar, and whatever is left over is kept off the
+            // page there.
+            DioxusContent(host, Modifier.fillMaxSize())
         }}
         setContentView(view)
     }}

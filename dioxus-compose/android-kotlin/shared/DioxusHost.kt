@@ -9,6 +9,11 @@ import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.safeDrawing
+import dioxus.compose.design.NavigationPresentation
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.CompositionLocalProvider
@@ -18,6 +23,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dioxus.compose.foundation.HostMessages
+import dioxus.compose.foundation.systemChrome
 import androidx.compose.ui.graphics.Color
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.Modifier as ProtocolModifier
@@ -242,15 +248,40 @@ fun DioxusContent(
     // window's caption, so the strip the window buttons sit in belongs to it rather than
     // to the page underneath it. Otherwise the page keeps it and the content starts below
     // the buttons.
-    val barIsCaption = caption.height > 0.dp && host.table.opensWithABar(host.roots)
+    // The strips a phone's system draws in. Zero on a desktop, where a title bar is the
+    // caption above instead. The keyboard is excluded: the renderer moves the field that
+    // is being typed into itself, and taking the keyboard's height off the whole page as
+    // well would move everything else twice.
+    val bars = with(LocalDensity.current) {
+        val safe = WindowInsets.safeDrawing.exclude(WindowInsets.ime)
+        SystemBars(top = safe.getTop(this).toDp(), bottom = safe.getBottom(this).toDp())
+    }
+    val barIsCaption = (caption.height > 0.dp || bars.top > 0.dp) &&
+        host.table.opensWithABar(host.roots)
+    // A navigation showing a bar along the bottom grows into the bottom strip, so the page
+    // must not stop short of it as well. The same question the navigation itself asks,
+    // asked here because the page is laid out before anything inside it.
+    val navigationTakesTheBottom = bars.bottom > 0.dp &&
+        theme.rules.navigation(sizeClass, theme).presentation == NavigationPresentation.Bar &&
+        host.table.opensWithANavigation(host.roots)
+    val (pageTop, pageBottom) = pageInsets(caption, bars, barIsCaption, navigationTakesTheBottom)
+    // The clock and the gesture bar are drawn by the system over what this window drew, so
+    // they follow the theme that was resolved rather than the device's setting. A light
+    // application on a device in dark mode otherwise gets white icons on its own white
+    // bar.
+    LaunchedEffect(theme.dark) { systemChrome?.setDarkIcons(!theme.dark) }
     val captionStyle = theme.rules.caption(theme)
     // How much room the buttons take and at which end. The platform's own are at the
     // leading edge and the renderer's are wherever this design system puts them, so the
     // bar cannot assume either.
+    // The bar is given the strip above it as well as the caption's own height. The two
+    // are not the same shape: window buttons sit on the bar's row and a status bar sits
+    // above it, so they are handed over separately.
+    val strip = caption.copy(insetTop = bars.top)
     val barCaption = when {
         !barIsCaption -> WindowCaption.None
-        LocalWindowActions.current == null -> caption
-        else -> caption.copy(
+        LocalWindowActions.current == null -> strip
+        else -> strip.copy(
             buttonsWidth = captionStyle.buttonWidth * 3 +
                 captionStyle.spacing * 2 +
                 captionStyle.edgePadding * 2,
@@ -261,6 +292,7 @@ fun DioxusContent(
         LocalDesignTheme provides theme,
         LocalReduceTransparency provides reduceTransparency,
         LocalWindowCaption provides barCaption,
+        LocalSystemBars provides bars,
     ) {
         // The background fills the whole window and the inset is applied inside it. Putting
         // the inset outside instead leaves the window's own background showing through the
@@ -268,7 +300,7 @@ fun DioxusContent(
         // than as content extending underneath one.
         CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
             Box(modifier.then(measured).background(host.table.windowFill(host.roots, theme))) {
-                Box(Modifier.padding(top = if (barIsCaption) 0.dp else caption.height)) {
+                Box(Modifier.padding(top = pageTop, bottom = pageBottom)) {
                     host.roots.forEach { rootId ->
                         androidx.compose.runtime.key(rootId) {
                             RenderNode(rootId, host.table, host)
@@ -359,6 +391,15 @@ data class WindowCaption(
      * and then draw them over its other end.
      */
     val buttonsAtStart: Boolean = true,
+    /**
+     * A strip directly above the bar that the bar's surface covers and its content starts
+     * below.
+     *
+     * A phone's status bar, which is a different shape of problem from [height]: window
+     * buttons share the bar's row and a clock does not, so a bar that treated the two the
+     * same would draw its title through the time.
+     */
+    val insetTop: Dp = 0.dp,
 ) {
     companion object {
         /** No strip to avoid: a system title bar, or a platform without one. */
@@ -414,6 +455,29 @@ internal fun NodeTable.opensWithABar(roots: List<Int>): Boolean {
 }
 
 /**
+ * True when a navigation holding the whole page is what the tree opens with.
+ *
+ * The one that owns the window, rather than one nested inside part of a screen. Only that
+ * one draws a bar along the bottom edge of the window, and only that bar should grow into
+ * the strip the system's gesture bar sits in: a nested one has content below it and would
+ * leave a gap in the middle of the screen.
+ */
+internal fun NodeTable.opensWithANavigation(roots: List<Int>): Boolean {
+    var id = roots.firstOrNull() ?: return false
+    repeat(BAR_SEARCH_DEPTH) {
+        val node = node(id) ?: return false
+        when (node.widget) {
+            WidgetKind.Navigation -> return true
+            // The same wrappers the search above passes through, for the same reason:
+            // they are not things the reader sees.
+            WidgetKind.Column, WidgetKind.Box -> id = node.children.firstOrNull() ?: return false
+            else -> return false
+        }
+    }
+    return false
+}
+
+/**
  * The colour the whole window is painted, before the content is laid out inside it.
  *
  * The root's own fill where it named one, and the theme's background where it did not.
@@ -455,4 +519,47 @@ var reduceTransparency: Boolean = run {
         ?: System.getProperty("dioxus.compose.reduceTransparency")
         ?: return@run false
     !raw.equals("0", ignoreCase = true) && !raw.equals("false", ignoreCase = true)
+}
+
+/**
+ * The strips of the window the system draws its own things in.
+ *
+ * A phone's status bar and its navigation bar, and the home indicator on the platforms
+ * that have one. Zero on a desktop, where the window is the whole of what the application
+ * draws in and a title bar is the [WindowCaption] above instead.
+ *
+ * This is deliberately not applied as padding around everything. An application that stops
+ * short of both strips leaves the system's own background showing through them, which is
+ * the grey band under a phone's gesture bar that no other application on the device has.
+ * The window's fill is drawn edge to edge and then these are handed to whichever part of
+ * the tree should grow into them.
+ */
+data class SystemBars(val top: Dp = 0.dp, val bottom: Dp = 0.dp) {
+    companion object {
+        /** A window with nothing over it. */
+        val None = SystemBars()
+    }
+}
+
+/** What the bottom strip is, for the part of the tree that grows into it. */
+val LocalSystemBars = staticCompositionLocalOf { SystemBars.None }
+
+/**
+ * How far the page has to start and stop short of the edges of the window.
+ *
+ * Whatever a strip is given to is not the page's concern, which is what the two booleans
+ * say. A bar that opens the tree takes the top strip and paints its own surface behind the
+ * status bar, the way every application on a phone does. A navigation showing a bar along
+ * the bottom takes the bottom strip for the same reason. What is left over is the page's,
+ * because content running under a clock or a gesture bar is unreadable.
+ */
+internal fun pageInsets(
+    caption: WindowCaption,
+    bars: SystemBars,
+    barTakesTheTop: Boolean,
+    navigationTakesTheBottom: Boolean,
+): Pair<Dp, Dp> {
+    val top = if (barTakesTheTop) 0.dp else caption.height + bars.top
+    val bottom = if (navigationTakesTheBottom) 0.dp else bars.bottom
+    return top to bottom
 }

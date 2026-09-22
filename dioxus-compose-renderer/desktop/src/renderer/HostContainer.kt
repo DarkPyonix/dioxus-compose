@@ -165,6 +165,11 @@ internal fun HostTopAppBar(
                 .padding(
                     start = if (caption.buttonsAtStart) caption.buttonsWidth else 0.dp,
                     end = if (caption.buttonsAtStart) 0.dp else caption.buttonsWidth,
+                    // A phone's status bar. The decoration above paints through it, so
+                    // the bar's own colour runs to the top edge of the screen and only
+                    // its content starts below the clock. Padding outside the decoration
+                    // instead would leave the page showing above the bar.
+                    top = caption.insetTop,
                 ),
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,

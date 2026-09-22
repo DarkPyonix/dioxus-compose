@@ -45,6 +45,7 @@ import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.runtime.LocalSystemBars
 import dioxus.compose.runtime.LocalWindowSizeClass
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.paintProp
@@ -138,7 +139,11 @@ internal fun HostNavigation(
     // the bottom is using or it would cover the destinations.
     val barHeight = when {
         shell != null -> shell.stripHeight.dp
-        style.presentation == NavigationPresentation.Bar -> style.barHeight
+        // Including the strip it grows into, because a message placed above the bar has
+        // to clear what is on the screen rather than what the design system nominally
+        // asked for.
+        style.presentation == NavigationPresentation.Bar ->
+            style.barHeight + LocalSystemBars.current.bottom
         else -> 0.dp
     }
     DisposableEffect(table, barHeight) {
@@ -191,8 +196,14 @@ internal fun HostNavigation(
                 Modifier
                     .testTag(navigationStripTestTag(node.id))
                     .fillMaxWidth()
-                    .height(style.barHeight)
-                    .background(style.container),
+                    .background(style.container)
+                    // The strip the system's gesture bar sits in belongs to this bar: its
+                    // own colour runs to the bottom edge of the window and the
+                    // destinations sit above the gesture bar rather than under it. A bar
+                    // that stopped short would leave a band of the system's own
+                    // background below it that no other application on the device has.
+                    .height(style.barHeight + LocalSystemBars.current.bottom)
+                    .padding(bottom = LocalSystemBars.current.bottom),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
