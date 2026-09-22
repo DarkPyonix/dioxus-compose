@@ -760,6 +760,12 @@ pub fn Tabs(
     #[props(default)] padding: Option<f32>,
     #[props(default)] padding_role: Option<SpaceRole>,
     #[props(default)] background: Option<Paint>,
+    /// The colour of the mark that shows which tab is selected.
+    ///
+    /// The design system decides where this is unset, which is what an adaptive
+    /// application wants. A unified one names it, because its reference may have no
+    /// accent at all and a system asked the question answers with its own.
+    #[props(default)] color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] border_width: Option<f32>,
@@ -778,6 +784,7 @@ pub fn Tabs(
             padding: opt_dp(padding),
             padding_role: opt_role(padding_role),
             background: opt_paint(background),
+            color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             border_width: opt_dp(border_width),
@@ -808,6 +815,16 @@ pub fn TopAppBar(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// The window's title, where this bar is the window's own caption.
+    ///
+    /// A property rather than a child, because the Renderer has to be able to find it.
+    /// Three design systems centre the window title and put everything else at the
+    /// leading edge, and a bar whose children are an arbitrary tree gives the Renderer no
+    /// way to tell which of them is the title. Where the bar is not the caption, or the
+    /// design system puts its title at the start, this draws in the same place a first
+    /// child would.
+    #[props(default)]
+    title: String,
     children: Element,
 ) -> Element {
     rsx! {
@@ -825,6 +842,7 @@ pub fn TopAppBar(
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
+            text: title,
             {children}
         }
     }
@@ -1364,6 +1382,12 @@ pub fn Slider(
     #[props(default)] padding: Option<f32>,
     #[props(default)] padding_role: Option<SpaceRole>,
     #[props(default)] background: Option<Paint>,
+    /// The colour of the part of the track that has been filled in, and of the thumb.
+    ///
+    /// The design system decides where this is unset, which is what an adaptive
+    /// application wants. A unified one names it, because its reference may have no
+    /// accent at all and a system asked the question answers with its own.
+    #[props(default)] color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] border_width: Option<f32>,
@@ -1386,6 +1410,7 @@ pub fn Slider(
             padding: opt_dp(padding),
             padding_role: opt_role(padding_role),
             background: opt_paint(background),
+            color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             border_width: opt_dp(border_width),

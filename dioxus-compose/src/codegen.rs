@@ -765,8 +765,27 @@ object Protocol {
         val length = lengthLong.toInt()
         requireRange(available, offset, length, referenceOffset)
         val copy = ByteArray(length)
-        batch.get(base + offset, copy, 0, length)
+        copyOut(batch, base + offset, copy, length)
         return copy
+    }
+
+    /**
+     * Copies a range of the arena into an array.
+     *
+     * The absolute bulk read that says the same thing in one call, `get(index, array,
+     * offset, length)`, arrived in Java 13 and is not in every Android runtime this has to
+     * run on. So the read goes through the buffer's own position, which every version has,
+     * and puts it back afterwards: the arena is read from one thread and a position left
+     * where the last read ended would make the next one read the wrong bytes.
+     *
+     * Nothing is allocated. A `duplicate()` would avoid touching the position and costs an
+     * object per call on a path that runs per string in every batch.
+     */
+    private fun copyOut(batch: ByteBuffer, at: Int, into: ByteArray, length: Int) {
+        val mark = batch.position()
+        batch.position(at)
+        batch.get(into, 0, length)
+        batch.position(mark)
     }
 
     /**
@@ -797,7 +816,7 @@ object Protocol {
         }
         requireUtf8(batch, base + offset, length, offset)
         val scratch = stringBytes(length)
-        batch.get(base + offset, scratch, 0, length)
+        copyOut(batch, base + offset, scratch, length)
         return String(scratch, 0, length, StandardCharsets.UTF_8)
     }
 
@@ -1792,32 +1811,6 @@ pub extern "system" fn ARENA_SYMBOL(mut env: JNIEnv<'_>, _class: JClass<'_>) -> 
     }
 }
 
-/// An empty call, so the cost of the transition itself can be measured.
-#[unsafe(no_mangle)]
-pub extern "system" fn "#,
-    );
-    write!(output, "{}", jni_symbol("Noop")).unwrap();
-    output.push_str(
-        r#"(
-    _env: JNIEnv<'_>,
-    _class: JClass<'_>,
-) -> jint {
-    STATUS_OK
-}
-
-/// The same call again, reached through the annotation that skips the transition.
-#[unsafe(no_mangle)]
-pub extern "system" fn "#,
-    );
-    write!(output, "{}", jni_symbol("NoopFast")).unwrap();
-    output.push_str(
-        r#"(
-    _env: JNIEnv<'_>,
-    _class: JClass<'_>,
-) -> jint {
-    STATUS_OK
-}
-
 /// Runs on `System.loadLibrary`, before any boundary call.
 ///
 /// # Safety
@@ -2071,13 +2064,6 @@ pub fn generate_android_bridge_kotlin() -> String {
  * arena is a new allocation, and the old view points at freed memory.
  */
 external fun nativeArenaBuffer(): ByteBuffer?
-
-/** An empty call, for measuring the cost of the transition on its own. */
-external fun nativeNoop(): Int
-
-/** The same call through the annotation that skips the thread state transition. */
-@FastNative
-external fun nativeNoopFast(): Int
 
 /**
  * Called from a Host worker thread through JNI.

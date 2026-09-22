@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/build-sample-apks.sh [--debug] [output-directory] [abi ...]
+# Usage: ./scripts/build-sample-apks.sh [--debug] [output-directory]
 #
-# One APK per sample.
+# One APK per sample, built the way anyone else would build one.
 #
-# The Android module hosts one application at a time: its Activity loads a library under
-# a single name, and which sample that is comes from the build rather than from Kotlin.
-# So this is a loop that builds the sample's cdylib, builds the APK around it, and moves
-# the result aside under the sample's own name before the next one overwrites it.
+# `dx build --platform android` is the whole thing. It generates the Gradle project, and
+# this crate's build script puts the renderer's Kotlin into it and generates the Activity
+# that hosts it, so a sample's own Dioxus.toml says nothing about the renderer at all.
+#
+# That is the point of building them this way. An earlier version of this script put each
+# sample's library into the renderer's own Android module and built that instead, which
+# produced APKs by a route no user takes: it proved that the renderer works on Android and
+# said nothing about whether anyone else could get there.
 #
 # A sample that does not build is skipped and named at the end. Eleven samples do not all
 # have to work for the ten that do to be worth shipping.
@@ -15,20 +19,34 @@ set -uo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-profile_flag=
-profile_name=release
+profile=--release
 output=
-abis=()
 for argument in "$@"; do
     case "$argument" in
-        --debug) profile_flag=--debug; profile_name=debug ;;
+        --debug) profile= ;;
         -*) echo "unknown option $argument" >&2; exit 2 ;;
-        *) if [[ -z "$output" ]]; then output="$argument"; else abis+=("$argument"); fi ;;
+        *) output="$argument" ;;
     esac
 done
 output="${output:-$repo_root/target/sample-apks}"
 case "$output" in /*) ;; *) output="$PWD/$output" ;; esac
-[[ ${#abis[@]} -gt 0 ]] || abis=(arm64-v8a)
+
+command -v dx >/dev/null || {
+    echo "dx is not on PATH. It is what builds an Android application here:" >&2
+    echo "  cargo install dioxus-cli" >&2
+    exit 1
+}
+# Android Gradle 8.7 runs jlink to make a system image and that fails on a JDK newer than
+# 21. The failure names jlink and a cache directory and never mentions the JDK, so the
+# version is checked here instead of being discovered an hour later.
+if [[ -n "${JAVA_HOME:-}" ]]; then
+    java_version="$("$JAVA_HOME/bin/java" -version 2>&1 | head -1 | sed -E 's/.*"([0-9]+).*/\1/')"
+    if [[ "$java_version" -gt 21 ]]; then
+        echo "JAVA_HOME is Java $java_version. The Android Gradle plugin's jlink step" >&2
+        echo "fails above 21, so point JAVA_HOME at a 17 or 21 JDK." >&2
+        exit 1
+    fi
+fi
 
 mkdir -p "$output"
 built=()
@@ -42,28 +60,16 @@ for manifest in samples/*/Cargo.toml; do
     [[ -f "samples/$sample/src/main.rs" ]] || continue
     echo "== $sample"
 
-    if ! ./dioxus-compose-renderer/android/scripts/build-host.sh \
-        ${profile_flag:+$profile_flag} --sample "$sample" "${abis[@]}"; then
-        skipped+=("$sample (host)")
+    if ! dx build --package "sample-$sample" --platform android ${profile:+$profile}; then
+        skipped+=("$sample")
         continue
     fi
-
-    # The APK is rebuilt from nothing each time. Amper keeps the packaged libraries in an
-    # intermediate directory its own up-to-date check does not tie to this file, so a
-    # second sample would otherwise ship the first one's library: that is how an Android
-    # build here once ran three times with the same stale code in it.
-    rm -rf dioxus-compose-renderer/build/tasks/_android_buildAndroid*
-    if ! (cd dioxus-compose-renderer && ./kotlin build -m android); then
-        skipped+=("$sample (apk)")
-        continue
-    fi
-
-    apk="$(find dioxus-compose-renderer/build/tasks -name '*.apk' -print -quit)"
+    apk="$(find target/dx/sample-$sample -name '*.apk' -print -quit)"
     if [[ -z "$apk" ]]; then
         skipped+=("$sample (no apk)")
         continue
     fi
-    cp "$apk" "$output/$sample-android-${abis[0]}.apk"
+    cp "$apk" "$output/$sample-android-arm64-v8a.apk"
     built+=("$sample")
 done
 

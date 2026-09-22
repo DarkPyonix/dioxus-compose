@@ -261,17 +261,25 @@ jobs:
           "$sdk/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006"
           echo "ANDROID_NDK_HOME=$sdk/ndk/27.1.12297006" >> "$GITHUB_ENV"
 
-      - name: Cache the Kotlin toolchain and Maven dependencies
+      - name: Cache Gradle and Maven dependencies
+        # Gradle, not the Kotlin toolchain: an application's Kotlin is compiled by its own
+        # Gradle build here rather than by ours.
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cache/JetBrains/Kotlin
+            ~/.gradle/caches
+            ~/.gradle/wrapper
             ~/.m2/repository
-          key: kotlin-android-${{ hashFiles('dioxus-compose-renderer/**/module.yaml') }}
-          restore-keys: kotlin-android-
+          key: gradle-android-${{ hashFiles('dioxus-compose/android-kotlin/**') }}
+          restore-keys: gradle-android-
+
+      - name: Install the Dioxus CLI
+        # The samples are built the way anyone else would build them. Pinned, so that an
+        # upstream release cannot change what a tagged sample release was built with.
+        run: cargo install dioxus-cli --version 0.7.10 --locked
 
       - name: Build an APK for every sample
-        run: ./scripts/build-sample-apks.sh artifacts arm64-v8a
+        run: ./scripts/build-sample-apks.sh artifacts
 
       - name: Checksum
         run: |

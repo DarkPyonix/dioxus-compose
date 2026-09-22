@@ -17,8 +17,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 pattern='SPEC|FR-[0-9]|NFR-[0-9]|PR-[0-9]|INTENT'
 
 # Paths that legitimately name the documents: the publishing script decides which files to
-# strip, and its test asserts on those names.
-exempt='^(scripts/publish-main\.sh|scripts/tests/publish-main\.test\.sh|scripts/tests/no-spec-citations\.test\.sh|scripts/tests/planning-docs\.test\.sh)$'
+# strip, its test asserts on those names, and one test reads the requirements document
+# itself to check that every test it names is real.
+exempt='^(scripts/publish-main\.sh|scripts/tests/publish-main\.test\.sh|scripts/tests/no-spec-citations\.test\.sh|scripts/tests/planning-docs\.test\.sh|scripts/tests/spec-cites-real-tests\.test\.sh)$'
 
 files=()
 while IFS= read -r file; do

@@ -119,6 +119,20 @@ class ByteBuffer private constructor(
         return this
     }
 
+    /**
+     * Bulk read from the position, which is the form every runtime has.
+     *
+     * The absolute one above says the same thing in one call and is the better fit for a
+     * codec whose position belongs to the record walk, but it arrived in Java 13 and is
+     * not on every Android runtime the generated code has to compile against. So the
+     * generated code uses this one and moves the position itself.
+     */
+    fun get(destination: ByteArray, destinationOffset: Int, length: Int): ByteBuffer {
+        get(position, destination, destinationOffset, length)
+        position += length
+        return this
+    }
+
     private fun readBits(index: Int, width: Int): Long {
         var value = 0L
         for (step in 0 until width) {

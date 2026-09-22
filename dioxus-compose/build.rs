@@ -18,6 +18,26 @@ use renderer_dir::{
 /// with no renderer in it, which is one of the cases the Host is loud about at run time.
 const DOCS_RS_ENV: &str = "DOCS_RS";
 
+/// Where an Android application's Gradle project keeps the Kotlin it compiles.
+const ANDROID_KOTLIN_DIR_ENV: &str = "DIOXUS_COMPOSE_ANDROID_KOTLIN_DIR";
+
+/// Where the crate carries that Kotlin, relative to the crate root.
+const ANDROID_KOTLIN_DIR: &str = "android-kotlin";
+
+/// The package an Android application's generated Activity belongs to.
+const ANDROID_PACKAGE_ENV: &str = "DIOXUS_COMPOSE_ANDROID_PACKAGE";
+
+/// Where dx says to put generated Kotlin, and the package it belongs to.
+///
+/// The names are wry's: dx sets them for every Android build so that wry can generate the
+/// Activity that hosts its webview. We draw with Compose and have no webview in us, but
+/// the two values say the same thing either way, which is the whole Gradle project this
+/// build is part of. Reading them is what makes an APK come out of `dx build` with
+/// nothing written in `Dioxus.toml` about us.
+const DX_KOTLIN_DIR_ENV: &str = "WRY_ANDROID_KOTLIN_FILES_OUT_DIR";
+const DX_PACKAGE_ENV: &str = "WRY_ANDROID_PACKAGE";
+const DX_LIBRARY_ENV: &str = "WRY_ANDROID_LIBRARY";
+
 fn main() {
     // Set when a renderer is actually linked into this build, which is not the same thing
     // as the feature being on: docs.rs turns the feature on and links nothing.
@@ -49,7 +69,15 @@ fn main() {
         // Host, and both install their entry points at load time. Declaring the desktop
         // renderer's symbols instead leaves the loader looking for something that does
         // not exist, which on Android stops the library opening at all.
-        RendererLinkage::Installed | RendererLinkage::None => return,
+        RendererLinkage::Installed | RendererLinkage::None => {
+            // Android is also where the renderer's Kotlin has to reach the application's
+            // own Gradle build, because ART compiles it rather than us. Everywhere else
+            // the Kotlin was frozen ahead of time into a library.
+            if target_os == "android" {
+                unpack_android_kotlin();
+            }
+            return;
+        }
         // iOS links the XCFramework through Xcode. Cargo does not link the renderer, but
         // the symbols are there by the time anything runs, so the Host must call them
         // rather than take its no-renderer path.
@@ -271,4 +299,217 @@ fn wget(url: &str, destination: &Path) -> Result<(), FetchError> {
         4 => FetchError::Unreachable(format!("wget could not reach the network: {detail}")),
         _ => FetchError::Failed(format!("wget exited {code}: {detail}")),
     })
+}
+
+/// The Android renderer's Kotlin, copied into the Gradle project that is building this.
+///
+/// Android is the one platform where the Kotlin cannot travel as a compiled artifact. The
+/// desktop ships a native-image shared library and iOS a Kotlin/Native archive; Android
+/// runs on ART, so the Kotlin is compiled by the application's own Gradle build and has
+/// to be there in source form when it runs. dx's template accepts Maven coordinates and
+/// nothing else for dependencies, so handing it a compiled library is not possible even
+/// if one existed.
+///
+/// `DIOXUS_COMPOSE_ANDROID_KOTLIN_DIR` says where the Gradle project's Kotlin source
+/// directory is. dx sets it, or a person building by hand does. Without it this does
+/// nothing and says so once: a cargo build of the crate on its own is a perfectly
+/// ordinary thing to do and is not the moment to fail.
+fn unpack_android_kotlin() {
+    println!("cargo:rerun-if-env-changed={ANDROID_KOTLIN_DIR_ENV}");
+    println!("cargo:rerun-if-env-changed={DX_KOTLIN_DIR_ENV}");
+    let Some((destination, package)) = android_gradle_kotlin() else {
+        println!(
+            "cargo:warning=dioxus-compose: neither {ANDROID_KOTLIN_DIR_ENV} nor \
+             {DX_KOTLIN_DIR_ENV} is set, so the renderer's Kotlin was not unpacked. An \
+             Android application needs it in its own source directory, because ART \
+             compiles it rather than us."
+        );
+        return;
+    };
+    let staged = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ANDROID_KOTLIN_DIR);
+    if !staged.is_dir() {
+        panic!(
+            "\n\ndioxus-compose: the Android Kotlin is missing from this copy of the \
+             crate.\n\nIt should be at {}. A checkout regenerates it with \
+             scripts/stage-android-kotlin.sh; a published crate carries it.\n\n",
+            staged.display()
+        );
+    }
+    println!("cargo:rerun-if-changed={}", staged.display());
+    if let Err(error) = copy_tree(&staged, &destination) {
+        panic!(
+            "\n\ndioxus-compose: could not put the renderer's Kotlin into {}: {error}\n\n",
+            destination.display()
+        );
+    }
+    write_android_activity(&destination, package);
+    add_compose_to_gradle(&destination);
+}
+
+/// Puts Compose into the application module's generated build file.
+///
+/// `destination` is the Gradle source root, so the module's own directory is three levels
+/// above it: `<module>/src/main/kotlin`. The CLI regenerates both files on every build, so
+/// this runs every time rather than once, and it runs before Gradle does because the
+/// project is written before this crate is compiled.
+///
+/// A project that does not look like the one the CLI generates is left alone. Someone
+/// building by hand has their own build file and it is not this crate's to rewrite.
+fn add_compose_to_gradle(destination: &Path) {
+    let Some(module_dir) = destination
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+    else {
+        return;
+    };
+    let module_path = module_dir.join("build.gradle.kts");
+    let Some(root_dir) = module_dir.parent() else {
+        return;
+    };
+    let root_path = root_dir.join("build.gradle.kts");
+    // The application's tooling regenerates both files on every build, so the build has
+    // to run again whenever they change or a rebuild would leave them as the template
+    // wrote them and nothing would compile against Compose.
+    println!("cargo:rerun-if-changed={}", module_path.display());
+    println!("cargo:rerun-if-changed={}", root_path.display());
+    let (Ok(module), Ok(root)) = (
+        std::fs::read_to_string(&module_path),
+        std::fs::read_to_string(&root_path),
+    ) else {
+        return;
+    };
+    let Some((module_text, root_text)) = renderer_dir::with_compose(&module, &root) else {
+        return;
+    };
+    for (path, text) in [(module_path, Some(module_text)), (root_path, root_text)] {
+        let Some(text) = text else { continue };
+        if let Err(error) = std::fs::write(&path, text) {
+            panic!(
+                "\n\ndioxus-compose: could not put Compose into {}: {error}\n\n",
+                path.display()
+            );
+        }
+    }
+}
+
+fn android_gradle_kotlin() -> Option<(PathBuf, Option<String>)> {
+    println!("cargo:rerun-if-env-changed={ANDROID_PACKAGE_ENV}");
+    println!("cargo:rerun-if-env-changed={DX_PACKAGE_ENV}");
+    let read = |name: &str| std::env::var(name).ok();
+    renderer_dir::android_gradle_kotlin(
+        read(ANDROID_KOTLIN_DIR_ENV).as_deref(),
+        read(ANDROID_PACKAGE_ENV).as_deref(),
+        read(DX_KOTLIN_DIR_ENV).as_deref(),
+        read(DX_PACKAGE_ENV).as_deref(),
+    )
+}
+
+/// The Activity the application starts at, in the package its own tooling expects.
+///
+/// Generated rather than shipped. The tooling fixes the package a generated project uses
+/// and writes the application id into a build config alias, so an Activity handed over as
+/// a static file would sit in the wrong package and never be found. The one the renderer
+/// carries is in this crate's own package, which is right for this repository's own
+/// application and wrong for everyone else's.
+///
+/// `DIOXUS_COMPOSE_ANDROID_PACKAGE` names the package. Without it nothing is written,
+/// which is what a project supplying its own Activity wants: it has one already, and a
+/// second in the same package would not compile.
+fn write_android_activity(destination: &Path, package: Option<String>) {
+    let Some(package) = package else {
+        return;
+    };
+    // Into the package's own directory, which is where the Kotlin compiler looks for it
+    // and where dx put the one it generates. Ours replaces that one: dx writes an Activity
+    // that extends wry's, and there is no webview in this application to extend it with.
+    let mut path = destination.to_path_buf();
+    for component in package.split('.') {
+        path = path.join(component);
+    }
+    if let Err(error) = std::fs::create_dir_all(&path) {
+        panic!(
+            "\n\ndioxus-compose: could not make {} for the generated Activity: \
+             {error}\n\n",
+            path.display()
+        );
+    }
+    let path = path.join("MainActivity.kt");
+    // The file name of the application's own cdylib, without the `lib` prefix and the
+    // extension. It is the application's to choose and its tooling knows it, so the
+    // Activity carries the answer rather than the runtime guessing at one.
+    println!("cargo:rerun-if-env-changed={DX_LIBRARY_ENV}");
+    let library = std::env::var(DX_LIBRARY_ENV).unwrap_or_else(|_| "main".to_owned());
+    let source = format!(
+        r#"// Generated by dioxus-compose. DO NOT EDIT.
+//
+// The Android host. Kotlin owns the process and the frame loop: this Activity puts a
+// ComposeView on screen and the interpreter draws the Host's tree inside it. Rust runs as
+// a cdylib in the same process and never starts a loop of its own.
+//
+// The Host outlives the Activity, so a configuration change recomposes and nothing else.
+package {package}
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ComposeView
+import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.ui.platform.DioxusRuntime
+import dioxus.compose.ui.platform.installSystemChrome
+
+class MainActivity : ComponentActivity() {{
+    override fun onCreate(savedInstanceState: Bundle?) {{
+        // The window draws under the system's strips with nothing of the system's own
+        // over them, and the renderer decides whether the clock and the gesture bar are
+        // dark or light against what it drew.
+        installSystemChrome(this)
+        super.onCreate(savedInstanceState)
+        DioxusRuntime.load("{library}")
+        val host = DioxusRuntime.host()
+        val view = ComposeView(this)
+        view.setContent {{
+            // The whole window. Where the system bars are is the renderer's to decide:
+            // a bar that opens the tree grows up into the status bar and a navigation
+            // grows down into the gesture bar, and whatever is left over is kept off the
+            // page there.
+            DioxusContent(host, Modifier.fillMaxSize())
+        }}
+        setContentView(view)
+    }}
+
+    override fun onStart() {{
+        super.onStart()
+        DioxusRuntime.start()
+    }}
+
+    override fun onStop() {{
+        DioxusRuntime.stop()
+        super.onStop()
+    }}
+}}
+"#
+    );
+    if let Err(error) = std::fs::write(&path, source) {
+        panic!(
+            "\n\ndioxus-compose: could not write the Activity to {}: {error}\n\n",
+            path.display()
+        );
+    }
+}
+
+/// Every file under `from`, into the same shape under `to`.
+fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }

@@ -66,12 +66,6 @@ harness = false
 name = "desktop_demo"
 required-features = ["native-renderer"]
 
-# The Android application is a cdylib. The Kotlin Activity loads it, and `JNI_OnLoad` in
-# the generated shims registers this example's root component before anything draws.
-[[example]]
-name = "android_demo"
-crate-type = ["cdylib"]
-
 # The browser's Host is a wasm module the page fetches. It has no `main` either: the
 # Renderer's module owns the loop, and `web_main!` registers this example's root component
 # from the entry point the page calls once both modules exist.

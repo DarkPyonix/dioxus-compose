@@ -979,3 +979,114 @@ pub fn renderer_linkage(target_os: &str, target_family: &str, mock: bool) -> Ren
         _ => RendererLinkage::Provided,
     }
 }
+
+/// Where an Android application's Gradle project keeps the Kotlin it compiles, and the
+/// package the generated Activity belongs to.
+///
+/// Two ways in. `ours` and `ours_package` are this crate's own variables, set by someone
+/// driving a build by hand. `dx_dir` and `dx_package` are what the Dioxus CLI exports for
+/// every Android build: they carry wry's names, because the CLI sets them so that wry can
+/// generate the Activity hosting its webview. We draw with Compose and have no webview,
+/// but the two values say the same thing either way, which is the Gradle project this
+/// build is part of. Reading them is what lets an APK come out of `dx build` with nothing
+/// written about this crate in `Dioxus.toml`.
+///
+/// The CLI names a directory inside the package, since it generates one file into one
+/// package. This crate carries dozens of files across a dozen packages, so the source root
+/// is what it needs, and that is the named directory with the package's own components
+/// removed. Counting components rather than looking for a directory called `kotlin` keeps
+/// this right for a project whose source root is named something else.
+pub fn android_gradle_kotlin(
+    ours: Option<&str>,
+    ours_package: Option<&str>,
+    dx_dir: Option<&str>,
+    dx_package: Option<&str>,
+) -> Option<(PathBuf, Option<String>)> {
+    if let Some(ours) = ours {
+        return Some((PathBuf::from(ours), ours_package.map(str::to_owned)));
+    }
+    let package = dx_package?;
+    let mut root = PathBuf::from(dx_dir?);
+    for _ in package.split('.') {
+        root = root.parent()?.to_path_buf();
+    }
+    Some((root, Some(package.to_owned())))
+}
+
+/// The Compose libraries the renderer's Kotlin is written against.
+///
+/// They are androidx's, on mavenCentral already, so this declares coordinates rather than
+/// republishing anything. The versions belong here rather than in an application's own
+/// build file because it is the renderer that is written against them, and an application
+/// that had to name them would be guessing at what its dependency needs.
+pub const ANDROID_COMPOSE_DEPENDENCIES: [&str; 4] = [
+    "androidx.activity:activity-compose:1.9.3",
+    "androidx.compose.ui:ui:1.7.5",
+    "androidx.compose.foundation:foundation:1.7.5",
+    "androidx.compose.material3:material3:1.3.1",
+];
+
+/// The Gradle plugin that compiles `@Composable`, which Kotlin 2.0 made compulsory.
+const COMPOSE_PLUGIN_ID: &str = "org.jetbrains.kotlin.plugin.compose";
+
+/// Puts Compose into an application module's generated `build.gradle.kts`.
+///
+/// The Dioxus CLI generates this file and offers `gradle_plugins` for adding to it, but
+/// the entries are escaped before they reach the file, so there is no way to write a
+/// plugin with a version through it and a Kotlin compiler plugin is exactly what Compose
+/// needs. An application that could not get past that would have to keep a patched build
+/// file of its own, which is the hand-written glue this project exists to avoid.
+///
+/// Returns None when there is nothing to do, so that a rewrite of an unchanged file is
+/// not mistaken for a change.
+pub fn with_compose(module: &str, root: &str) -> Option<(String, Option<String>)> {
+    let kotlin = kotlin_gradle_plugin_version(root)?;
+    let mut module_text = module.to_owned();
+    if !module.contains(COMPOSE_PLUGIN_ID) {
+        let plugins = module.find("plugins {")?;
+        let after = module[plugins..].find('\n')? + plugins + 1;
+        module_text.insert_str(after, &format!("    id(\"{COMPOSE_PLUGIN_ID}\")\n"));
+    }
+    let missing: Vec<&str> = ANDROID_COMPOSE_DEPENDENCIES
+        .iter()
+        .copied()
+        .filter(|coordinate| !module_text.contains(coordinate))
+        .collect();
+    if !missing.is_empty() {
+        // The last `dependencies {` in the file, because `buildscript` has one of its own
+        // in some templates and the module's own block is what takes `implementation`.
+        let block = module_text.rfind("dependencies {")?;
+        let after = module_text[block..].find('\n')? + block + 1;
+        let lines: String = missing
+            .iter()
+            .map(|coordinate| format!("    implementation(\"{coordinate}\")\n"))
+            .collect();
+        module_text.insert_str(after, &lines);
+    }
+    // The plugin is applied by id with no version, so the jar has to be on the build's
+    // own classpath. The version is the one the template already pinned for Kotlin: the
+    // two are released together and a mismatch is refused at configuration time.
+    let classpath = format!("org.jetbrains.kotlin:compose-compiler-gradle-plugin:{kotlin}");
+    let root_text = if root.contains(&classpath) {
+        None
+    } else {
+        let anchor = root.find("classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin")?;
+        let after = root[anchor..].find('\n')? + anchor + 1;
+        let mut text = root.to_owned();
+        text.insert_str(after, &format!("        classpath(\"{classpath}\")\n"));
+        Some(text)
+    };
+    if module_text == module && root_text.is_none() {
+        return None;
+    }
+    Some((module_text, root_text))
+}
+
+/// The Kotlin version the generated project pinned for its own plugin.
+fn kotlin_gradle_plugin_version(root: &str) -> Option<String> {
+    let marker = "org.jetbrains.kotlin:kotlin-gradle-plugin:";
+    let at = root.find(marker)? + marker.len();
+    let rest = &root[at..];
+    let end = rest.find(['"', '\''])?;
+    Some(rest[..end].to_owned())
+}
