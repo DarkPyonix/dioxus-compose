@@ -123,7 +123,26 @@ private fun runRendererWithHost(
                     // the bar instead.
                     caption = caption,
                 )
+                // Last, so they sit over the content. A window with no system frame has
+                // no system resize either, and a desktop window that cannot be resized by
+                // its edges is not one. macOS never gets them: it keeps its real title
+                // bar and the system does this.
+                if (undecorated && (asked?.resizable ?: true)) {
+                    WindowResizeEdges(
+                        window,
+                        minWidth = asked?.minWidth?.takeIf { it > 0 } ?: MIN_WINDOW_SIDE,
+                        minHeight = asked?.minHeight?.takeIf { it > 0 } ?: MIN_WINDOW_SIDE,
+                    )
+                }
             }
         }
     }
 }
+
+/**
+ * How small a window may get when the application named no minimum.
+ *
+ * Not zero. A window dragged to nothing is a window nobody can find again, and the
+ * platforms that need these grips are the ones with no system frame to stop at.
+ */
+private const val MIN_WINDOW_SIDE = 240
