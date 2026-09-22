@@ -1122,6 +1122,17 @@ tag 12, 32바이트: handler_id: u64, text: (offset, len), action: (offset, len)
 
 **2026-09-22: 샘플이 일곱 플랫폼 전부에서 돕니다.** 데스크톱 넷(macOS arm64, Linux x64, Linux arm64, Windows x64)과 Android, iOS 시뮬레이터, 브라우저입니다. statistics 샘플을 iOS 시뮬레이터와 Android 에뮬레이터와 Chromium에서 각각 띄워 같은 세이지와 주황과 파우더 블루가 나오는 것을 확인했습니다. 통합 샘플이 플랫폼과 무관하게 같은 디자인을 그린다는 것이 이것으로 처음 실증됐습니다.
 
+**2026-09-23: 그러나 일곱 플랫폼 중 여섯이 사용자가 겪을 경로로 만들어진 것이 아니었습니다.** Android 하나를 지적받고 나머지를 전부 확인한 결과입니다. 샘플은 "사용자가 쓰는 방식으로 쓴 것"이어야 하는데, 릴리스 아티팩트는 저장소 안에만 있는 스크립트로 만들었습니다. 그래서 배포한 것이 사용자가 만들 것과 다르고, 사용자 경로가 깨져 있어도 아무도 모릅니다. 실제로 셋이 깨져 있었습니다.
+
+| 플랫폼 | 릴리스를 만든 방법 | `dx`로 했을 때 | 상태 |
+|---|---|---|---|
+| Android | 우리 Amper 모듈에 cdylib을 넣어 빌드 | `dx build --platform android`로 APK가 나오고 에뮬레이터에서 같은 화면을 그림 | 2026-09-23 고침 |
+| 데스크톱 | `cargo build` 뒤 `scripts/bundle-renderer.sh`로 렌더러를 옆에 넣고 install name 수정 | `.app`이 나오고 이 기계에서는 뜨지만, 렌더러 dylib을 빌드 트리의 절대 경로로 참조함 | 만들어지기는 하나 남에게 줄 수 없음 |
+| iOS | `build-sample-ios.sh`가 `xcrun clang`으로 직접 링크하고 Info.plist를 직접 씀 | `dx build --platform ios` 링크 실패. `dioxus_compose_renderer_run`과 `..._request_frame`이 undefined | 사용자 경로 없음 |
+| 웹 | 우리 Amper 빌드와 `build-sample-pages.sh` | `dx build --platform web`이 **성공을 보고하고** 뜨지 않는 페이지를 냄. Rust 모듈이 `dioxus_compose_renderer`를 import하는데 그것을 주는 모듈이 산출물에 없음 | 사용자 경로 없음, 게다가 조용히 실패 |
+
+세 가지가 남습니다. 데스크톱은 번들이 자기 완결적이어야 합니다(`bundle-renderer.sh`가 하는 일이 크레이트 쪽으로 들어가야 하고, 저장소 스크립트로 남아 있으면 크레이트만 쓰는 사람에게는 없는 것입니다). iOS는 `dx`가 만드는 바이너리에 렌더러 아카이브가 링크되어야 합니다. 웹은 `dx`의 산출물에 Kotlin/Wasm 모듈과 그 둘을 싣는 페이지가 없습니다.
+
 이를 위해 샘플은 라이브러리가 되고 데스크톱 바이너리는 그 한 줄이 됐습니다. Android의 Activity와 브라우저 페이지는 프로세스와 프레임 루프를 자기가 소유하므로 우리 `main`을 부를 자리가 없고, iOS는 렌더러가 정적 아카이브라 애플리케이션 자체가 라이브러리입니다.
 
 iOS는 시뮬레이터용만 냅니다. 기기용 번들은 Apple이 발급한 인증서와 그 기기를 지목하는 프로비저닝 프로파일로 서명해야 하고 자체 서명은 거부됩니다.
