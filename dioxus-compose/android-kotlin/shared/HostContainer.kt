@@ -1,5 +1,11 @@
 package dioxus.compose.foundation
 
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.ui.text.style.TextOverflow
+import dioxus.compose.design.CaptionTitleAlignment
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.TypeRole
+import dioxus.compose.ui.textStyle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -163,7 +169,32 @@ internal fun HostTopAppBar(
             horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Sm)),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            node.children.forEach { childId -> key(childId) { BarChild(childId, table, dispatcher) } }
+            val title = node.text(PropertyKind.Text)
+            val centred = caption.height > 0.dp &&
+                theme.rules.caption(theme).titleAlignment == CaptionTitleAlignment.Center
+            if (title.isNotEmpty() && centred) {
+                // Centred in the window rather than between the bar's other children.
+                // GNOME, Breeze and Deepin all put the window title in the middle of the
+                // caption and everything else at the leading edge, and a title that
+                // drifted as buttons were added beside it would not be that. A Box over
+                // the row is the only way to centre against the window while the rest of
+                // the row lays out normally.
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        node.children.forEach { childId ->
+                            key(childId) { RenderNode(childId, table, dispatcher) }
+                        }
+                    }
+                    BarTitle(node, title, theme)
+                }
+            } else {
+                if (title.isNotEmpty()) {
+                    BarTitle(node, title, theme)
+                }
+                node.children.forEach { childId ->
+                    key(childId) { BarChild(childId, table, dispatcher) }
+                }
+            }
         }
         val separator = style.separator
         if (separator != null) {
@@ -185,3 +216,19 @@ private fun RowScope.BarChild(childId: Int, table: NodeTable, dispatcher: EventD
 
 /** The thinnest line that still draws on every density. */
 private val HAIRLINE = 1.dp
+
+/**
+ * The window's title, as its own bar draws it.
+ *
+ * Its rung is the design system's, not the application's: a window title is the one piece
+ * of text in a bar whose size is decided by the platform rather than by what it says.
+ */
+@Composable
+private fun BarTitle(node: Node, title: String, theme: ResolvedTheme) {
+    BasicText(
+        text = title,
+        style = node.textStyle(theme, TypeRole.Subtitle),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}

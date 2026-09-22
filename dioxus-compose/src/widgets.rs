@@ -808,6 +808,16 @@ pub fn TopAppBar(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// The window's title, where this bar is the window's own caption.
+    ///
+    /// A property rather than a child, because the Renderer has to be able to find it.
+    /// Three design systems centre the window title and put everything else at the
+    /// leading edge, and a bar whose children are an arbitrary tree gives the Renderer no
+    /// way to tell which of them is the title. Where the bar is not the caption, or the
+    /// design system puts its title at the start, this draws in the same place a first
+    /// child would.
+    #[props(default)]
+    title: String,
     children: Element,
 ) -> Element {
     rsx! {
@@ -825,6 +835,7 @@ pub fn TopAppBar(
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
+            text: title,
             {children}
         }
     }

@@ -374,7 +374,12 @@ class NodeTable {
                         widget == WidgetKind.Button ||
                         widget == WidgetKind.TextField ||
                         widget == WidgetKind.Tooltip ||
-                        widget == WidgetKind.NavigationItem
+                        widget == WidgetKind.NavigationItem ||
+                        // A bar's is the window's title, where that bar is the window's
+                        // caption. It is a property rather than a child because three
+                        // design systems centre it, and a bar whose children are an
+                        // arbitrary tree gives no way to tell which of them to centre.
+                        widget == WidgetKind.TopAppBar
 
                 // Note: SpacerProps has width and height in the Rust schema, but there are
                 // no matching PropertyKind variants, so a Spacer can only be sized with

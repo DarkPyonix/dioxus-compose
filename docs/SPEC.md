@@ -484,7 +484,13 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 | Breeze | 거의 각진 모서리, 가운데 제목, 오른쪽 작은 창 버튼, 연한 파랑 선택 행, `#3DAEE9` | 캡션 규칙 추가 | 팔레트와 모양. Breeze 이름 색을 이미 씁니다. 다크 창 색은 참조에서 정확한 단계를 읽을 수 없어 그대로 둡니다 |
 | Deepin | 중립 회색(따뜻하지 않음), 흰 창에 회색 사이드바, 큰 창 반경, 강조 파랑 선택 행, 오른쪽 맨 글리프 창 버튼 | 팔레트 전체를 중립으로, 페이지를 흰색으로 패널을 회색 우물로, Medium 반경 10으로, 캡션 규칙 추가 | 두 번째 강조색(amber). Deepin 자체 읽기 화면의 두 번째 계열에서 읽었습니다 |
 
-**상단 바의 제목 정렬은 아직 표현되지 않습니다.** GNOME과 Breeze와 Deepin은 창 제목을 가운데에 두고 나머지는 앞쪽에 둡니다. `CaptionStyle.titleAlignment`가 그 값을 담지만, `TopAppBar`의 자식은 Host가 보낸 임의의 트리여서 "제목"에 해당하는 노드를 렌더러가 집어낼 방법이 없습니다. 이것을 표현하려면 FR-15.2에 제목 슬롯이 필요하고, 그것은 위젯 어휘의 변경이므로 따로 다룹니다.
+**상단 바의 제목 정렬(2026-09-22 구현).** GNOME과 Breeze와 Deepin은 창 제목을 가운데에 두고 나머지는 앞쪽에 둡니다. `CaptionStyle.titleAlignment`가 그 값을 담고 있었지만 아무도 읽지 않았습니다. `TopAppBar`의 자식이 Host가 보낸 임의의 트리여서 어느 것이 "제목"인지 렌더러가 집어낼 수 없었기 때문입니다.
+
+`TopAppBar`가 `title`을 속성으로 받습니다. 자식이 아니라 속성인 이유가 그것입니다. 새 위젯도 새 이벤트도 없고, 이미 있는 `PropertyKind::Text`를 바가 마저 받는 것뿐입니다.
+
+- **가운데 정렬은 바의 다른 자식들 사이가 아니라 창을 기준으로 합니다.** 옆에 버튼이 붙을 때마다 제목이 밀린다면 그것은 창 제목을 가운데 둔 것이 아닙니다.
+- 수용 기준: GNOME에서 제목의 중심이 바의 중심과 일치합니다(`fr15_2_a_bar_centres_its_title_where_the_design_system_asks`). **(통과)**
+- 수용 기준: Material 3에서 제목이 바의 다른 자식보다 앞에 섭니다(`fr15_2_a_bar_leads_with_its_title_where_the_design_system_asks`). **(통과)**
 
 #### 14.9 iOS 26의 네이티브 Liquid Glass 셸 (`Agreed`)
 

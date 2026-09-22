@@ -314,6 +314,11 @@ fn top_app_bar_app() -> Element {
 
 /// The bar's height, spacing and separation are the design system's rules, so the widget
 /// sends its content and nothing else.
+///
+/// Its title is content. It is a property rather than a child because the Renderer has to
+/// be able to find it, since three design systems centre the window title and a bar whose
+/// children are an arbitrary tree gives no way to tell which of them to centre. What the
+/// bar still must not send is anything about how it looks.
 #[test]
 fn fr15_top_app_bar_carries_only_its_content() {
     let mut host = Host::new(top_app_bar_app);
@@ -321,10 +326,18 @@ fn fr15_top_app_bar_carries_only_its_content() {
     let records = records(&batch);
     let bar = node_of(&records, WidgetKind::TopAppBar);
     assert_eq!(children_of(&records, bar).len(), 2);
+    let styling: Vec<_> = records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(node_id, kind, _) if *node_id == bar && *kind != PropertyKind::Text => {
+                Some(*kind)
+            }
+            _ => None,
+        })
+        .collect();
     assert!(
-        !records
-            .iter()
-            .any(|record| matches!(record, Record::Prop(node_id, _, _) if *node_id == bar)),
+        styling.is_empty(),
+        "the bar sent {styling:?}, and how it looks is the design system's to decide"
     );
 }
 

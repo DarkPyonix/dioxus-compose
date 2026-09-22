@@ -310,7 +310,7 @@ pub mod elements {
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
     element!(tabs, "Tabs", [selected_index]);
-    element!(topappbar, "TopAppBar", []);
+    element!(topappbar, "TopAppBar", [text]);
     element!(lazyrow, "LazyRow", [item_count]);
     element!(tooltip, "Tooltip", [text]);
     // The command list is a byte blob, so it is one attribute and one SetProp. An
