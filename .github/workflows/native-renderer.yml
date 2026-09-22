@@ -287,7 +287,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri libegl1 \
             fonts-noto-cjk xvfb xauth dbus-x11
 
       - name: Cache the Kotlin toolchain and Maven dependencies
@@ -374,7 +374,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri libegl1 \
             fonts-noto-cjk xvfb xauth dbus-x11
 
       - name: Cache the Kotlin toolchain and Maven dependencies

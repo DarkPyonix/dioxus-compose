@@ -115,7 +115,8 @@ jobs:
           # travelling beside it, in place of the absolute path this runner built with.
           sudo apt-get install -y build-essential zlib1g-dev pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri fonts-noto-cjk \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri libegl1 \
+            fonts-noto-cjk \
             patchelf xvfb xauth dbus-x11
 
       - name: Cache the Kotlin toolchain and Maven dependencies
@@ -250,10 +251,15 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install the NDK
-        run: sdkmanager --install "ndk;27.1.12297006"
+        # The runner already has an Android SDK with its licences accepted, so the setup
+        # action is a second one that tries to accept them again and fails inside
+        # sdkmanager. Only the NDK is missing, and the SDK that is here can fetch it.
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          "$sdk/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.1.12297006"
+          echo "ANDROID_NDK_HOME=$sdk/ndk/27.1.12297006" >> "$GITHUB_ENV"
 
       - name: Cache the Kotlin toolchain and Maven dependencies
         uses: actions/cache@v4
@@ -265,8 +271,6 @@ jobs:
           restore-keys: kotlin-android-
 
       - name: Build an APK for every sample
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
         run: ./scripts/build-sample-apks.sh artifacts arm64-v8a
 
       - name: Checksum
