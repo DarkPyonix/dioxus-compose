@@ -36,7 +36,7 @@
 
 ## 3. 기능 요구사항
 
-### FR-1 노드 트리 구성 (`Agreed`)
+### FR-1 노드 트리 구성 (`Done`)
 Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭제, 이동할 수 있어야 합니다.
 - Host는 부모마다 그 아래에 선 것들을 **순서대로** 들고 있습니다. 그 목록에는 Renderer가 그린 노드, Dioxus 플레이스홀더, 그리고 템플릿의 동적 자식이 채워지기 전까지 서 있는 표식이 함께 들어갑니다. 인덱스에 세는 것은 그린 노드뿐입니다.
 - 빈 분기(`if false`)와 빈 반복은 Dioxus 플레이스홀더를 남깁니다. 플레이스홀더는 Compose 트리의 노드가 아니라서 node id 0을 싣고, Host는 그 자리에 `Insert`를 보내지 않습니다. 대신 목록에서 자기 자리를 지키고, 그 분기가 채워질 때 보내는 `Insert`가 그 자리를 싣습니다. 플레이스홀더는 모두 node id가 같으므로 node id로 구분하면 서로의 자리를 덮어씁니다. **엘리먼트별로** 구분합니다.
@@ -48,17 +48,17 @@ Host는 Mutation 시퀀스로 Renderer의 노드 트리를 생성, 수정, 삭�
 - 수용 기준: 리스트 아이템 안의 `Menu`가 열려 있을 때만 항목을 선언해도, 항목들은 앵커 다음 자리부터 자기 메뉴 아래에 붙습니다. 메뉴를 열고 닫기를 되풀이하고 리스트의 윈도가 그 위를 오간 뒤에도 같습니다. **(2026-09-22 통과)**
 - 수용 기준: 앵커보다 먼저 도착한 `Menu`의 항목들이 배치를 순서대로 적용한 Renderer의 트리에서 앵커 뒤에 섭니다. **(2026-09-22 통과)**
 
-### FR-2 스키마 기반 렌더링 (`Agreed`)
+### FR-2 스키마 기반 렌더링 (`Done`)
 Renderer는 스키마에 정의된 위젯 타입만 해석해서 해당 Compose 컴포저블로 렌더링합니다.
 - 최소 스키마(M0): `Column`, `Row`, `Box`, `Text`, `TextField`, `Button`, `Spacer`, `LazyColumn`(FR-8)
 - 디자인 확장: `ScrollColumn`. 값 모델은 FR-13, 테마는 FR-14를 따릅니다
 - 수용 기준: 스키마에 없는 타입이나 속성을 받으면 크래시하지 않고 `ProtocolError` 이벤트를 보냅니다.
 
-### FR-3 이벤트 전달 (`Agreed`)
+### FR-3 이벤트 전달 (`Done`)
 사용자 입력은 `(node_id, handler_id, payload)` 형태로 Host 핸들러를 **동기로 직접 호출**합니다(PR-1). 핸들러는 반환값을 돌려줄 수 있습니다. 클로저는 경계를 넘지 않습니다.
 - 수용 기준: Button 클릭이 등록된 Rust 핸들러를 정확히 한 번 호출합니다.
 
-### FR-4 상태 갱신 반영 (`Agreed`)
+### FR-4 상태 갱신 반영 (`Done`)
 Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드만 recomposition합니다.
 - 수용 기준: Text 하나의 내용을 바꿀 때 전송되는 Mutation은 `SetProp` 1건입니다. 형제 노드는 recomposition되지 않습니다(recomposition 카운터로 확인).
 
@@ -68,7 +68,7 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - Host가 값을 바꿀 때는 명시적 명령 `SetText(node_id, text, selection)`을 씁니다. Renderer는 IME 조합이 진행 중이면 조합이 끝날 때까지 적용을 미룹니다.
 - 수용 기준: §6 IME 체크리스트를 통과합니다. **핵심 5개 항목은 2026-09-21 native-image 빌드에서 확인했습니다.** 나머지 4개(멀티라인 Enter 처리, 한글 혼합 붙여넣기, 일본어/중국어 후보창 위치, TextChanged 중 조합 유지)는 미확인이므로 `Done`이 아닙니다.
 
-### FR-6 Dioxus 렌더러 (`Agreed`)
+### FR-6 Dioxus 렌더러 (`Done`)
 `dioxus-core` VirtualDom의 `Mutations`를 프로토콜 Mutation으로 변환하는 렌더러를 제공합니다.
 - 사용자 코드는 `rsx!`와 훅만으로 작성하고, 프로토콜을 직접 다루지 않습니다.
 - 수용 기준: M0 화면을 `rsx!` 컴포넌트로 재작성했을 때 동일하게 동작합니다.

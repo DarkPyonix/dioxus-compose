@@ -961,7 +961,12 @@ mod tests {
     }
 
     #[test]
-    fn builds_m0_tree_from_rsx() {
+    /// The M0 screen written as `rsx!` produces the same tree the protocol describes.
+    ///
+    /// Named after the requirement now. It was the only test standing behind FR-6 and it
+    /// did not say so, so counting the tests named for each requirement reported none
+    /// and the requirement looked unimplemented.
+    fn fr6_an_rsx_component_builds_the_same_tree() {
         let mut dom = VirtualDom::new(app);
         let mut renderer = ComposeRenderer::new();
         dom.rebuild(&mut renderer);
