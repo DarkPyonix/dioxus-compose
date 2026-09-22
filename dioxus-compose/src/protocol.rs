@@ -19,6 +19,7 @@ const TAG_SET_THEME: u16 = 9;
 const TAG_REGISTER_ASSET: u16 = 10;
 const TAG_RELEASE_ASSET: u16 = 11;
 const TAG_SHOW_MESSAGE: u16 = 12;
+const TAG_SET_WINDOW: u16 = 13;
 const ENVELOPE_LEN: usize = 12;
 /// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
 const MIN_RECORD_LEN: usize = 8;
@@ -83,6 +84,14 @@ pub enum Mutation<'a> {
     },
     /// The root theme. Sent once as the first record of the initial batch.
     SetTheme(Theme),
+    /// What the application asked of its own window.
+    ///
+    /// Written once per rebuild beside the theme, and read by the Renderer before it
+    /// stands the window up: `dioxus_compose_host_init` answers with the first batch, so
+    /// the setting is in hand before there is a window to apply it to. Platforms where
+    /// the window is not ours ignore it, which is not an error but an absence of anywhere
+    /// to put it.
+    SetWindow(crate::schema::Window),
     /// Hands the Renderer the bytes of one asset. The Renderer copies them into its own
     /// cache inside this call, because the batch buffer is only valid for the call that
     /// carries it and an image has to outlive the frame that draws it.
@@ -505,6 +514,15 @@ impl BatchEncoder {
                 self.put_u16(theme.color_scheme as u16);
                 self.put_u16(u16::from(theme.adaptive));
             }
+            Mutation::SetWindow(window) => {
+                self.begin_record(TAG_SET_WINDOW, 12);
+                self.put_u16(window.chrome as u16);
+                self.put_u16(window.width);
+                self.put_u16(window.height);
+                self.put_u16(window.min_width);
+                self.put_u16(window.min_height);
+                self.put_u16(u16::from(window.resizable));
+            }
         }
         self.record_count = self
             .record_count
@@ -699,6 +717,22 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     color_scheme: ColorScheme::try_from(color_scheme)
                         .map_err(|()| ProtocolError::InvalidTheme(color_scheme))?,
                     adaptive: adaptive == 1,
+                })
+            }
+            TAG_SET_WINDOW if len == 16 => {
+                let chrome = read_u16(bytes, payload)?;
+                let resizable = read_u16(bytes, payload + 10)?;
+                if resizable > 1 {
+                    return Err(ProtocolError::InvalidValueKind(resizable));
+                }
+                Mutation::SetWindow(crate::schema::Window {
+                    chrome: crate::schema::Chrome::try_from(chrome)
+                        .map_err(|()| ProtocolError::InvalidValueKind(chrome))?,
+                    width: read_u16(bytes, payload + 2)?,
+                    height: read_u16(bytes, payload + 4)?,
+                    min_width: read_u16(bytes, payload + 6)?,
+                    min_height: read_u16(bytes, payload + 8)?,
+                    resizable: resizable == 1,
                 })
             }
             TAG_REGISTER_ASSET if len == 20 => {

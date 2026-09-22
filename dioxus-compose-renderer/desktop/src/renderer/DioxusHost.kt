@@ -173,6 +173,20 @@ fun rememberDioxusHost(connection: HostConnection): DioxusHost {
 }
 
 /**
+ * The same, for a Host that was already started outside composition.
+ *
+ * The platform layer starts one before it builds the window, because what the window
+ * should look like is in the first batch and a window cannot be told after it exists: its
+ * decoration is fixed when it is created. Starting it again here would be the Host's
+ * second init, which the boundary answers with an error rather than a tree.
+ */
+@Composable
+fun rememberStartedDioxusHost(host: DioxusHost): DioxusHost {
+    DisposableEffect(host) { onDispose { host.shutdown() } }
+    return host
+}
+
+/**
  * Draws the Host's tree and runs the frame loop.
  *
  * Frame requests coming from Host worker threads coalesce into at most one `render_frame`

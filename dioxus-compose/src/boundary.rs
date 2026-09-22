@@ -206,6 +206,7 @@ pub struct Host {
     /// resync, which is the one thing a diff against a lost node table cannot answer.
     app: fn() -> Element,
     theme: Theme,
+    window: crate::schema::Window,
     dom: VirtualDom,
     renderer: ComposeRenderer,
     frame_waker: Waker,
@@ -237,6 +238,7 @@ impl Host {
         Self {
             app,
             theme,
+            window: launched_window(),
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
             frame_waker: Waker::from(Arc::new(FrameWake)),
@@ -250,6 +252,10 @@ impl Host {
         // values, so switching theme or colour scheme costs this one record rather than a
         // SetProp for every node in the tree.
         self.renderer.set_theme(self.theme);
+        // Beside the theme, and for the same reason: it is about the window rather than
+        // any node in it, and it is settled once rather than every frame. The Renderer
+        // reads it out of this batch before it stands the window up.
+        self.renderer.set_window(self.window);
         self.dom.rebuild(&mut self.renderer);
         self.flush_messages();
         self.arm_scheduler_wake();
@@ -561,12 +567,21 @@ static APP: Mutex<Option<fn() -> Element>> = Mutex::new(None);
 /// Chosen by `LaunchBuilder::with_theme`, read once when the Host is built.
 static THEME: Mutex<Theme> = Mutex::new(Theme::unified(crate::schema::DesignSystem::Material3));
 
+/// Chosen by `LaunchBuilder::with_window`, read once when the Host is built.
+static WINDOW: Mutex<crate::schema::Window> = Mutex::new(crate::schema::Window::new());
+
 thread_local! {
     static HOST: HostSlot = const { HostSlot(RefCell::new(None)) };
 }
 
 fn launched_app() -> Option<fn() -> Element> {
     APP.lock().map_or(None, |app| *app)
+}
+
+fn launched_window() -> crate::schema::Window {
+    WINDOW
+        .lock()
+        .map_or_else(|error| *error.into_inner(), |window| *window)
 }
 
 fn launched_theme() -> Theme {
@@ -579,6 +594,7 @@ fn launched_theme() -> Theme {
 pub struct LaunchBuilder {
     mode: LoopMode,
     theme: Theme,
+    window: crate::schema::Window,
 }
 
 impl Default for LaunchBuilder {
@@ -586,6 +602,7 @@ impl Default for LaunchBuilder {
         Self {
             mode: LoopMode::Renderer,
             theme: Theme::default(),
+            window: crate::schema::Window::new(),
         }
     }
 }
@@ -605,6 +622,18 @@ impl LaunchBuilder {
     /// Material 3.
     pub fn with_theme(mut self, theme: Theme) -> Self {
         self.theme = theme;
+        self
+    }
+
+    /// What the application asks of its own window: its size, and whether it wears the
+    /// platform's title bar or has content run into it.
+    ///
+    /// Not calling this gets a modern window that the Renderer sizes. The window belongs
+    /// to the Renderer and most of what it looks like is the design system's, so what can
+    /// be said here is short on purpose: nothing names a colour, a corner, or where the
+    /// window buttons go.
+    pub fn with_window(mut self, window: crate::schema::Window) -> Self {
+        self.window = window;
         self
     }
 
@@ -630,6 +659,9 @@ impl LaunchBuilder {
         }
         if let Ok(mut slot) = THEME.lock() {
             *slot = self.theme;
+        }
+        if let Ok(mut slot) = WINDOW.lock() {
+            *slot = self.window;
         }
         // Under `LoopMode::Platform` the platform owns the loop and calls in through the
         // boundary when it is ready. There is nothing to run and nothing to fail.
@@ -927,7 +959,8 @@ mod tests {
                     | Mutation::RegisterAsset { .. }
                     | Mutation::ReleaseAsset { .. }
                     | Mutation::ShowMessage { .. }
-                    | Mutation::SetTheme(_) => {}
+                    | Mutation::SetTheme(_)
+                    | Mutation::SetWindow(_) => {}
                 }
             }
         }

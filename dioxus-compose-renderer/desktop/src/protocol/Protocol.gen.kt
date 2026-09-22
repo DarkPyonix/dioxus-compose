@@ -42,6 +42,8 @@ enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, 
 
 enum class MessageDuration { Short, Long }
 
+enum class Chrome { Modern, System }
+
 enum class LoopMode(val wire: Byte) {
     /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
     Renderer(0),
@@ -62,6 +64,22 @@ data class Theme(
     val fallback: DesignSystem,
     val colorScheme: ColorScheme,
     val adaptive: Boolean,
+)
+
+/**
+ * What the application asked of its own window.
+ *
+ * A zero measurement means the application did not ask, so the choice is the Renderer's.
+ * This arrives in the first batch, which the Renderer reads before it stands the window
+ * up; a platform where the window is not ours ignores it.
+ */
+data class Window(
+    val chrome: Chrome,
+    val width: Int,
+    val height: Int,
+    val minWidth: Int,
+    val minHeight: Int,
+    val resizable: Boolean,
 )
 
 sealed interface PropertyValue {
@@ -211,6 +229,7 @@ sealed interface Mutation {
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
     data class SetTheme(val theme: Theme) : Mutation
+    data class SetWindow(val window: Window) : Mutation
 
     /**
      * The bytes of one asset. `kind` is the raw wire tag rather than an [AssetKind],
@@ -271,7 +290,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -5889412385586475505L
+    const val SCHEMA_HASH: Long = 1493067490765879670L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -287,6 +306,7 @@ object Protocol {
     private const val TAG_REGISTER_ASSET = 10
     private const val TAG_RELEASE_ASSET = 11
     private const val TAG_SHOW_MESSAGE = 12
+    private const val TAG_SET_WINDOW = 13
     private const val ENVELOPE_LENGTH = 12
 
     /**
@@ -426,6 +446,23 @@ object Protocol {
                                 designSystem(readU16(batch, base, available, offset + 6), offset + 6),
                                 colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
                                 adaptive == 1,
+                            ),
+                        )
+                    }
+                    TAG_SET_WINDOW -> {
+                        requireRecordLength(length, 16, offset)
+                        val resizable = readU16(batch, base, available, offset + 14)
+                        if (resizable > 1) {
+                            throw ProtocolException("invalid resizable flag $resizable", offset + 14)
+                        }
+                        Mutation.SetWindow(
+                            Window(
+                                chrome(readU16(batch, base, available, offset + 4), offset + 4),
+                                readU16(batch, base, available, offset + 6),
+                                readU16(batch, base, available, offset + 8),
+                                readU16(batch, base, available, offset + 10),
+                                readU16(batch, base, available, offset + 12),
+                                resizable == 1,
                             ),
                         )
                     }
@@ -836,6 +873,12 @@ object Protocol {
         1 -> MessageDuration.Short
         2 -> MessageDuration.Long
         else -> throw ProtocolException("unknown MessageDuration tag $tag", offset)
+    }
+
+    private fun chrome(tag: Int, offset: Int): Chrome = when (tag) {
+        1 -> Chrome.Modern
+        2 -> Chrome.System
+        else -> throw ProtocolException("unknown Chrome tag $tag", offset)
     }
 
     private fun paint(bits: Long, offset: Int): Paint {
