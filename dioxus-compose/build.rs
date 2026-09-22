@@ -322,8 +322,10 @@ fn unpack_android_kotlin() {
     }
     println!("cargo:rerun-if-changed={}", staged.display());
     if let Err(error) = copy_tree(&staged, &destination) {
-        panic!("\n\ndioxus-compose: could not put the renderer's Kotlin into {}: {error}\n\n",
-            destination.display());
+        panic!(
+            "\n\ndioxus-compose: could not put the renderer's Kotlin into {}: {error}\n\n",
+            destination.display()
+        );
     }
 }
 
