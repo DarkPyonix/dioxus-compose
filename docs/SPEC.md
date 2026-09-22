@@ -1290,13 +1290,20 @@ dioxus_compose_host_dispatch_event: click 1
 - iOS에는 isolate가 없어 `@CName`이 공개 심볼을 Kotlin 함수에 직접 붙입니다. isolate 심이 하던 나머지 역할은 Kotlin/Native 런타임과 `NSThread.isMainThread` 검사가 대신합니다.
 - Web은 검증되었습니다(PR-6의 검증 절). 같은 다섯 개 논리 연산이 브라우저에서도 그대로 서고, 초기 배치와 클릭 왕복이 공유 메모리 위에서 돕니다. **Android는 2026-09-22 API 36 에뮬레이터에서 확인했습니다.** 같은 다섯 연산이 생성된 JNI 심을 통해 서고, 화면이 그려지며, 워커의 프레임 요청이 경계를 넘어옵니다. 호출당 비용도 그 자리에서 쟀습니다(PR-5의 수용 기준 1).
 
-### PR-3 스레드 규칙 (`Agreed`)
+### PR-3 스레드 규칙 (`Done`)
 - VirtualDom, 사용자 컴포넌트, 모든 `dioxus_compose_host_*` 호출은 Renderer UI 스레드에서만 실행합니다. 그래서 락이 필요 없습니다.
 - **UI 스레드에서 도메인 작업을 금지합니다.** 네트워크, 파일 I/O, 프로세스 관리 같은 작업은 Host 워커 스레드(tokio 등)에서 돌립니다. 워커는 Dioxus signal로 상태를 갱신하고, Host가 내부에서 `request_frame`을 호출합니다. 사용자 코드는 경계 함수를 직접 부르지 않습니다.
 - `request_frame`은 여러 번 불러도 다음 프레임에 `render_frame` 1회로 합쳐집니다. Compose frame clock(`withFrameNanos`) 안에서 실행됩니다.
 - macOS에서 `dioxus_compose_renderer_run`은 프로세스 메인 스레드에서 호출해야 합니다(AppKit 요구사항).
 - Android: Host 워커 스레드는 `request_frame`을 부르기 위해 JavaVM에 **1회 영구 attach**합니다. 호출마다 attach하는 것은 금지합니다. `@FastNative`/`@CriticalNative`는 짧은 호출에만 허용합니다.
 - 프레임 예산은 NFR-9를 따릅니다.
+- 수용 기준: 여러 번의 `request_frame`이 다음 프레임의 `render_frame` 한 번으로 합쳐집니다(`pr3_frame_request_applies_exactly_one_frame_batch`). **(통과)**
+- 수용 기준: 워커의 요청이 Compose의 프레임 클록 안에서 처리됩니다(`pr3_a_frame_request_reaches_the_frame_clock`). **(통과)**
+- 수용 기준: 프레임 사이에 놓친 요청이 다음 요청을 삼키지 않습니다(`pr3_a_missed_frame_request_does_not_silence_the_next`). **(통과)**
+- 수용 기준: Host의 초기화가 `launch`를 부른 스레드가 아니라 Renderer의 UI 스레드에서 돕니다(`pr3_init_runs_on_a_different_thread_than_launch`). **(통과)**
+- Android의 워커 attach는 2026-09-22 에뮬레이터에서 간접 확인했습니다. 스트리밍이 초당 100회 신호를 보내는 동안 화면이 계속 갱신되었고, 호출마다 attach했다면 그 비용이 드러났을 것입니다. 직접 계측은 하지 않았습니다.
+
+기준을 2026-09-22에 적었습니다. 그 전까지 이 항목에는 수용 기준이 없었고, 네 테스트는 그보다 먼저 있었습니다.
 
 ### PR-4 배치 버퍼와 인코딩 (`Done`)
 원칙: **같은 프로세스 안이므로 직렬화, 복사, 경계 호출 횟수를 최소화합니다.** 버퍼는 큐가 아니라 **한 번의 호출에서 Mutation 여러 개를 넘기는 인자**입니다.
