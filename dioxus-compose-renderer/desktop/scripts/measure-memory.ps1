@@ -206,6 +206,26 @@ try {
         Write-Host "the private working set counter was unavailable, so only the two below are real."
         Write-Host "run this in an elevated shell, or read the Memory column in Task Manager instead."
     }
+
+    # Always, not only when the process died. An application that comes up with an empty
+    # window is still running, and the reason it drew nothing is in here: the renderer says
+    # so on stderr when it cannot reach the Host's functions. A measurement of a window
+    # that never drew anything is a measurement of nothing, and that has already been
+    # mistaken for a memory number once.
+    $said = Get-Content $stdout, $stderr -ErrorAction SilentlyContinue
+    if ($said) {
+        Write-Host ''
+        Write-Host 'the application said:'
+        $said | ForEach-Object { Write-Host "  $_" }
+    }
+
+    if ($size -ne 'unknown' -and $size -ne "${Width}x${Height}") {
+        Write-Host ''
+        Write-Host "the window is $size and $Width x $Height was asked for."
+        Write-Host "The size travels in the first batch from the Host, so a window that"
+        Write-Host "ignored it is a window that received no batch at all. Nothing was drawn"
+        Write-Host "and this number is not a measurement of an application."
+    }
 } finally {
     if (-not $process.HasExited) {
         $process.Kill()
