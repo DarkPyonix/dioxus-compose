@@ -609,10 +609,24 @@ pub fn app() -> Element {
 // which is what a real application wants.
 /// Runs the sample as a program of its own. The desktop binary is one line of this.
 pub fn launch() {
+    prepare();
+    launch_builder().launch(app);
+}
+
+/// How this sample is configured, in one place because three entry points need it.
+///
+/// The theme above all: a sample that names one and then reaches a platform through an
+/// entry point that makes its own builder is a sample that draws the same screens in a
+/// different design system depending on where it runs.
+fn launch_builder() -> dioxus_compose::LaunchBuilder {
+    dioxus_compose::LaunchBuilder::new().with_theme(dioxus_compose::demo_theme())
+}
+
+/// What has to happen before the first frame, on every platform rather than only on the
+/// one with a `main`. An Android Activity and a browser page reach the application
+/// through their own entry points, and neither of them runs the desktop binary.
+fn prepare() {
     store::start_saver();
-    dioxus_compose::LaunchBuilder::new()
-        .with_theme(dioxus_compose::demo_theme())
-        .launch(app);
 }
 
 // The platforms where the sample is not a program. Android's Activity and the browser's
@@ -622,8 +636,20 @@ pub fn launch() {
 // Both are declared unconditionally. Each macro compiles into nothing that runs off its
 // own platform, and gating them here instead would mean a desktop build never checks that
 // this sample can still be built for the other two.
-dioxus_compose::android_main!(app);
-dioxus_compose::web_main!(app);
+dioxus_compose::android_main!(
+    {
+        prepare();
+        launch_builder()
+    },
+    app
+);
+dioxus_compose::web_main!(
+    {
+        prepare();
+        launch_builder()
+    },
+    app
+);
 
 #[cfg(test)]
 mod tests {

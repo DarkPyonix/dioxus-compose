@@ -185,14 +185,17 @@ pub extern "C" fn dioxus_compose_host_web_shutdown() -> i32 {
 /// module cannot be linked with an undefined symbol the way an ELF shared library can: an
 /// import nobody satisfies stops the module from being instantiated, so this crate's own
 /// module must not name a function only an application can define.
-pub fn web_start(app: fn() -> Element) -> u32 {
+///
+/// The builder comes from the application rather than being made here, because
+/// everything an application settles before it launches, its theme above all, is settled
+/// on a builder. Making one here would mean a page ignored the theme its own desktop
+/// binary uses and drew the same screens in a different design system.
+pub fn web_start(builder: LaunchBuilder, app: fn() -> Element) -> u32 {
     let _ = install_renderer_api(RendererApi {
         run: platform_run,
         request_frame,
     });
-    let status = LaunchBuilder::new()
-        .with_mode(LoopMode::Platform)
-        .try_launch(app);
+    let status = builder.with_mode(LoopMode::Platform).try_launch(app);
     if status != STATUS_OK {
         return 0;
     }
