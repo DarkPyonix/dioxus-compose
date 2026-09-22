@@ -28,15 +28,25 @@ case "$output" in /*) ;; *) output="$PWD/$output" ;; esac
 web_dir="$repo_root/dioxus-compose-renderer/web"
 renderer_out="$repo_root/dioxus-compose-renderer/build/tasks/_web_buildWasmJs"
 
+# The runtime the toolchain unpacks here refuses to overwrite itself, so a second build
+# in the same tree fails on a file that is already correct.
+rm -rf "$repo_root/dioxus-compose-renderer/build/temp/skiko-js-wasm-runtime"
+
 echo "==> building the renderer's module once"
 (cd "$repo_root/dioxus-compose-renderer" && ./kotlin build -p wasmJs -m web) ||
     { echo "the renderer's wasm module did not build" >&2; exit 1; }
 
-# Whatever the toolchain called the output directory this time. Naming it exactly would
-# be a guess that breaks on the next Amper release, and the search is cheap.
-bundle="$(find "$repo_root/dioxus-compose-renderer/build" -name '*.wasm' -path '*web*' \
-    -not -path '*resources*' -print -quit 2>/dev/null)"
-bundle_dir="$(dirname "${bundle:-$renderer_out}")"
+# The directory the toolchain assembled, not the sources it assembled it from. The page
+# in `resources/` is a template with a `{{kotlin.scripts}}` placeholder where the script
+# tags go, so copying that one gives a page that loads nothing and sits on a spinner.
+# Which directory it is depends on the toolchain version, so it is found rather than
+# named.
+bundle_dir="$(dirname "$(find "$repo_root/dioxus-compose-renderer/build/tasks" \
+    -name 'index.html' -path '*web*' -not -path '*node_modules*' -print -quit 2>/dev/null)")"
+[[ -d "$bundle_dir" && -f "$bundle_dir/index.html" ]] ||
+    { echo "the renderer's page bundle is not where this looked" >&2; exit 1; }
+grep -q '{{kotlin.scripts}}' "$bundle_dir/index.html" &&
+    { echo "the page found is the template rather than the built one" >&2; exit 1; }
 
 mkdir -p "$output"
 built=()
@@ -57,11 +67,10 @@ for manifest in samples/*/Cargo.toml; do
     page="$output/$sample"
     rm -rf "$page"
     mkdir -p "$page"
-    cp -R "$bundle_dir/." "$page/" 2>/dev/null || true
+    cp -R "$bundle_dir/." "$page/"
+    # The Host's module is the one thing that differs per sample, and the bundle carries
+    # whichever one was built last, so it is overwritten with this sample's.
     cp "$web_dir/resources/dioxus_compose_host.wasm" "$page/"
-    cp "$web_dir/resources/dioxus-compose-host.gen.mjs" "$page/"
-    cp "$web_dir/resources/index.html" "$page/"
-    cp "$web_dir/resources/styles.css" "$page/" 2>/dev/null || true
     built+=("$sample")
 done
 
