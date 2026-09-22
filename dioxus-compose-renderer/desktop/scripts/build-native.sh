@@ -92,28 +92,28 @@ memory_args=("-R:MaxHeapSize=64m"
              "-R:MaxHeapFree=4m"
              "-R:MaximumYoungGenerationSizePercent=25")
 
-# Graphics memory is deliberately not configured here, and this records why so that the
-# next person does not spend another build finding out.
+# Graphics memory is the largest block of the footprint and Skiko has the knob for it, so
+# the image is built to let that knob be turned.
 #
-# The graphics surfaces are the largest block of the footprint (about 22MB of the measured
-# total), and Skiko does expose two knobs: `skiko.buffering=DOUBLE` drops
-# the Metal drawable count from three to two, and `skiko.gpu.resourceCacheLimit` caps Skia's
-# GPU resource cache. Measured on the JVM (2026-09-20, M1), DOUBLE is worth about 1.9MB:
-# IOSurface falls from 9584KB in 9 regions to 7696KB in 7.
+# Measured 2026-09-23 on an empty window: graphics and the window surface are 4.9MB at
+# 400x300, 22.1MB at 800x600 and 53.8MB at 1600x1200, which is the surface scaling with the
+# window and nothing else. At 800x600 on a 2x display one buffer is 7.7MB, so 22MB is three
+# of them. `skiko.buffering=DOUBLE` takes the Metal drawable count from three to two.
 #
-# They cannot be set from this script. Skiko reads them through System.getProperty at run
-# time, and passing `-D` to native-image only sets the property for the build JVM: a shared
-# library has no command line, so nothing carries the value into the image. A rebuild with
-# `-Dskiko.buffering=DOUBLE` measured byte for byte identical to one without it. This
-# GraalVM has no option that bakes a runtime system property either, and
-# `--initialize-at-build-time` for SkikoProperties is not a substitute: its static
-# initialiser snapshots the whole System.getProperties() table, which would freeze the build
-# machine's java.home and user.home into the shipped artifact.
+# The property could not be set. Skiko reads it through System.getProperty, and
+# `SkikoProperties` is a Kotlin object whose initialiser runs while the image is built, so
+# it captures the build machine's properties and a value written at startup arrives too
+# late. Passing `-D` to native-image does not help either: that sets the property for the
+# build JVM, and a shared library has no command line to carry one into the image.
 #
-# The fix belongs in desktop/src/RuntimeLayout.kt, whose configureRuntimeLayout already sets
-# skiko.library.path and skiko.data.path at run time before Skiko initialises. Adding the
-# two properties there (guarded on getProperty being null, so an operator can override) is
-# the supported way to get this 1.9MB. That file is owned by another engineer.
+# Initialising that one class at run time is the fix. Its initialiser then runs in the
+# process that is going to draw, and reads what RuntimeLayout.kt set moments earlier
+# alongside skiko.library.path, which has always worked for exactly this reason.
+#
+# Not `--initialize-at-build-time` for it, which is what a previous note proposed: that
+# freezes the whole System.getProperties() table into the artifact, including the build
+# machine's java.home and user.home.
+initialisation_args=("--initialize-at-run-time=org.jetbrains.skiko.SkikoProperties")
 
 # Locale data and reachable code are already as small as they can safely go.
 # `-H:IncludeLocales=en,ko` is the minimum the product supports and ko is not removable:
@@ -122,7 +122,16 @@ memory_args=("-R:MaxHeapSize=64m"
 # image code and read-only image heap land in __TEXT and clean __DATA, which the physical
 # footprint does not count; only the 7.6MB of dirty __DATA does. Shrinking reachable code
 # mostly shrinks the 65MB on disk, not the resident cost.
+# An experiment can put a compiler of its own in front of the real one, to watch the link
+# that produces the library. Unset, nothing changes and native-image finds cc itself.
+probe_args=()
+if [[ -n "${DXC_NATIVE_COMPILER:-}" ]]; then
+    probe_args+=("--native-compiler-path=$DXC_NATIVE_COMPILER")
+fi
+
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
+    ${probe_args[@]+"${probe_args[@]}"} \
+    "${initialisation_args[@]}" \
     --shared \
     -cp "$classpath" \
     -o "$LIBRARY_NAME" \
