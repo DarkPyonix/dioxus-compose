@@ -1394,6 +1394,7 @@ dioxus_compose_host_dispatch_event: click 1
   - 심링크는 해소해서 담습니다. `android/src`의 대부분은 데스크톱 렌더러를 가리키는 심링크이고(그래서 인터프리터 사본이 하나입니다), `cargo package`는 심링크를 담지 못합니다.
   - `scripts/tests/android-kotlin-travels.test.sh`가 두 가지를 봅니다. 담긴 사본이 렌더러와 같은지, 그리고 패키지 목록에 들어 있는지입니다. 사본이 뒤처지면 애플리케이션이 Host보다 낡은 인터프리터를 컴파일하고 핸드셰이크가 거부합니다.
   - **남은 절반은 dx로 실제 APK를 만들어 보는 것입니다.** `MainActivity` 생성과 dx 템플릿과의 결합은 아직 없습니다. 이 항목이 `Done`이 되려면 dx로 만든 프로젝트가 우리 좌표 없이 빌드되는 것을 봐야 합니다.
+  - **`sample-v0.1.1`의 APK는 이 경로로 만든 것이 아닙니다.** 우리 Amper 모듈(`dioxus-compose-renderer/android`)에 샘플의 cdylib을 넣어 빌드했습니다. 그것이 증명하는 것은 Android에서 렌더러와 Host가 동작한다는 것이고, 사용자가 겪을 경로가 동작한다는 것은 아닙니다. 두 가지가 어긋납니다. 배포한 APK가 사용자가 만들 APK와 다른 방식으로 나오고, 검증하라고 적어 둔 경로는 검증되지 않은 채 남습니다. 샘플은 "사용자가 쓰는 방식으로 쓴 것"이어야 하므로(FR-22), 다음 샘플 릴리스의 APK는 dx로 만듭니다.
 
 ### PR-6 Web 경계 (`Done`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입니다. 2026-09-20 실측으로 확정했습니다(`experiments/web-interop/`).
