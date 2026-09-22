@@ -515,13 +515,14 @@ impl BatchEncoder {
                 self.put_u16(u16::from(theme.adaptive));
             }
             Mutation::SetWindow(window) => {
-                self.begin_record(TAG_SET_WINDOW, 12);
+                self.begin_record(TAG_SET_WINDOW, 20);
                 self.put_u16(window.chrome as u16);
                 self.put_u16(window.width);
                 self.put_u16(window.height);
                 self.put_u16(window.min_width);
                 self.put_u16(window.min_height);
                 self.put_u16(u16::from(window.resizable));
+                self.put_string_ref(window.title)?;
             }
         }
         self.record_count = self
@@ -719,7 +720,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     adaptive: adaptive == 1,
                 })
             }
-            TAG_SET_WINDOW if len == 16 => {
+            TAG_SET_WINDOW if len == 24 => {
                 let chrome = read_u16(bytes, payload)?;
                 let resizable = read_u16(bytes, payload + 10)?;
                 if resizable > 1 {
@@ -733,6 +734,14 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     min_width: read_u16(bytes, payload + 6)?,
                     min_height: read_u16(bytes, payload + 8)?,
                     resizable: resizable == 1,
+                    // Leaked on purpose, once per window. The record's owner is the
+                    // window, the window outlives the batch it arrived in, and there is
+                    // one of these per process.
+                    title: Box::leak(
+                        read_string(bytes, payload + 12, records_len)?
+                            .to_owned()
+                            .into_boxed_str(),
+                    ),
                 })
             }
             TAG_REGISTER_ASSET if len == 20 => {

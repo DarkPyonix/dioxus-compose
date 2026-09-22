@@ -687,6 +687,12 @@ define_wire_enum!(CHROME_SCHEMA, Chrome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Window {
     pub chrome: Chrome,
+    /// What the window calls itself.
+    ///
+    /// Empty means the application said nothing, and the renderer uses its own name for
+    /// it. It is not decoration: a desktop lists windows by this, and a window with no
+    /// title of its own is listed under whatever the renderer happened to be called.
+    pub title: &'static str,
     /// Zero means the Renderer chooses, which is what an application that said nothing
     /// gets. A size is in the same density independent pixels gestures are measured in.
     pub width: u16,
@@ -700,12 +706,20 @@ impl Window {
     pub const fn new() -> Self {
         Self {
             chrome: Chrome::Modern,
+            title: "",
             width: 0,
             height: 0,
             min_width: 0,
             min_height: 0,
             resizable: true,
         }
+    }
+
+    /// Names the window. A literal, because this is read once before the window is stood
+    /// up and never again, so there is nothing for a computed title to change.
+    pub const fn with_title(mut self, title: &'static str) -> Self {
+        self.title = title;
+        self
     }
 
     pub const fn with_chrome(mut self, chrome: Chrome) -> Self {

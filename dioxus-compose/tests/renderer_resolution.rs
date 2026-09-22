@@ -1437,3 +1437,31 @@ fn nfr11_the_profile_directory_is_three_levels_above_out_dir() {
         std::path::Path::new("/w/target/release/deps")
     );
 }
+
+/// A window says what the application called it.
+///
+/// Every window this ever opened was listed on the desktop as "DioxusCompose", which is
+/// the library's name and no application's. Windows Task Manager shows one row per
+/// top-level window under the process, labelled with its title, so the row under
+/// sample-todo.exe read DioxusCompose.
+#[test]
+fn fr19_3_a_window_carries_the_title_it_was_given() {
+    use dioxus_compose::protocol::{BatchEncoder, Mutation};
+    let window = dioxus_compose::schema::Window::new().with_title("Todo");
+    assert_eq!(window.title, "Todo");
+
+    let mut encoder = BatchEncoder::with_capacity(64, 64, 4);
+    encoder
+        .encode(&Mutation::SetWindow(window))
+        .expect("the record encodes");
+    let bytes = encoder.finish().expect("the batch finishes");
+    let decoded = dioxus_compose::protocol::decode_batch(bytes).expect("the batch decodes");
+    let Some(Mutation::SetWindow(round_tripped)) = decoded.first() else {
+        panic!("the batch holds something other than the window: {decoded:?}");
+    };
+    assert_eq!(
+        round_tripped.title, "Todo",
+        "the title did not survive the boundary, so the renderer has nothing to name the \
+         window with"
+    );
+}

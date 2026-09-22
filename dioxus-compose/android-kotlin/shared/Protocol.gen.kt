@@ -75,6 +75,14 @@ data class Theme(
  */
 data class Window(
     val chrome: Chrome,
+    /**
+     * What the window calls itself.
+     *
+     * Empty means the application said nothing and the renderer uses its own name. A
+     * desktop lists windows by this, so a window with no title of its own is listed
+     * under whatever the renderer happened to be called.
+     */
+    val title: String,
     val width: Int,
     val height: Int,
     val minWidth: Int,
@@ -450,7 +458,7 @@ object Protocol {
                         )
                     }
                     TAG_SET_WINDOW -> {
-                        requireRecordLength(length, 16, offset)
+                        requireRecordLength(length, 24, offset)
                         val resizable = readU16(batch, base, available, offset + 14)
                         if (resizable > 1) {
                             throw ProtocolException("invalid resizable flag $resizable", offset + 14)
@@ -458,6 +466,7 @@ object Protocol {
                         Mutation.SetWindow(
                             Window(
                                 chrome(readU16(batch, base, available, offset + 4), offset + 4),
+                                readString(batch, base, available, offset + 16),
                                 readU16(batch, base, available, offset + 6),
                                 readU16(batch, base, available, offset + 8),
                                 readU16(batch, base, available, offset + 10),
