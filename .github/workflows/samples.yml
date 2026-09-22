@@ -316,7 +316,8 @@ jobs:
           built=0
           for manifest in samples/*/Cargo.toml; do
             sample="$(basename "$(dirname "$manifest")")"
-            [[ -f "samples/$sample/src/lib.rs" ]] || continue
+            # An application rather than a library: every sample is a library now.
+            [[ -f "samples/$sample/src/main.rs" ]] || continue
             if ./dioxus-compose-renderer/desktop/scripts/build-sample-ios.sh "$sample" --release; then
               tar -czf "artifacts/$sample-ios-simulator.tar.gz" \
                 -C dioxus-compose-renderer/build/ios/samples "sample-$sample.app"

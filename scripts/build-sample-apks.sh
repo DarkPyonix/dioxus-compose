@@ -36,7 +36,10 @@ skipped=()
 
 for manifest in samples/*/Cargo.toml; do
     sample="$(basename "$(dirname "$manifest")")"
-    [[ -f "samples/$sample/src/lib.rs" ]] || continue
+    # An application rather than a library. Every sample is a library now, so a lib.rs
+    # no longer tells them apart: `frames` is the one the others record their screens
+    # through and it has no application in it. The binary is what says so.
+    [[ -f "samples/$sample/src/main.rs" ]] || continue
     echo "== $sample"
 
     if ! ./dioxus-compose-renderer/android/scripts/build-host.sh \

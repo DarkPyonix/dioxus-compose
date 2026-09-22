@@ -29,7 +29,7 @@ web_dir="$repo_root/dioxus-compose-renderer/web"
 renderer_out="$repo_root/dioxus-compose-renderer/build/tasks/_web_buildWasmJs"
 
 echo "==> building the renderer's module once"
-(cd "$repo_root/dioxus-compose-renderer" && ./kotlin build -p wasmJs --include-module web) ||
+(cd "$repo_root/dioxus-compose-renderer" && ./kotlin build -p wasmJs -m web) ||
     { echo "the renderer's wasm module did not build" >&2; exit 1; }
 
 # Whatever the toolchain called the output directory this time. Naming it exactly would
@@ -44,7 +44,10 @@ skipped=()
 
 for manifest in samples/*/Cargo.toml; do
     sample="$(basename "$(dirname "$manifest")")"
-    [[ -f "samples/$sample/src/lib.rs" ]] || continue
+    # An application rather than a library. Every sample is a library now, so a lib.rs
+    # no longer tells them apart: `frames` is the one the others record their screens
+    # through and it has no application in it. The binary is what says so.
+    [[ -f "samples/$sample/src/main.rs" ]] || continue
     echo "== $sample"
     if ! ./dioxus-compose-renderer/web/scripts/build-host.sh ${profile_flag:+$profile_flag} \
         --sample "$sample"; then
