@@ -396,6 +396,14 @@ pub fn Button(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(into)] text: String,
+    /// The meaning of the glyph on it, never a picture: `IconRole::Search` comes out as
+    /// this design system's search icon.
+    ///
+    /// With a `text` beside it the button shows both. With `text` empty it is the glyph
+    /// alone, which is what every one of the reference toolbars is made of, and the role
+    /// is what names it for assistive technology.
+    #[props(default)]
+    icon: Option<IconRole>,
     #[props(default = true)] enabled: bool,
     #[props(default)] variant: Option<ButtonVariant>,
     /// The label's colour, for the rare button whose meaning is not the variant's.
@@ -421,6 +429,7 @@ pub fn Button(
             fill_max_width,
             fill_max_height,
             text,
+            icon: opt_role(icon),
             enabled,
             variant: role(variant),
             color: opt_paint(color),
@@ -1570,6 +1579,14 @@ pub fn NavigationItem(
     #[props(default)] fill_max_height: bool,
     #[props(default)] text: String,
     #[props(default)] icon: Option<IconRole>,
+    /// The colour of this destination's icon and label, in both states.
+    ///
+    /// The design system decides what selected looks like where this is not set, which is
+    /// what an adaptive application wants. A unified one names it, because its reference
+    /// may have no accent in the bar at all and a system asked the question answers with
+    /// its own.
+    #[props(default)]
+    color: Option<Paint>,
     #[props(default = true)] enabled: bool,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
@@ -1590,6 +1607,7 @@ pub fn NavigationItem(
             fill_max_height,
             text,
             icon: opt_role(icon),
+            color: opt_paint(color),
             enabled,
             onclick: move |_| on_click.call(()),
         }

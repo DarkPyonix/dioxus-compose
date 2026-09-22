@@ -3,8 +3,6 @@
 //! No prices in floating point. A price is a whole number of cents and is formatted once,
 //! which is the only way a catalogue adds up to the same total twice.
 
-use dioxus_compose::prelude::*;
-
 /// The strip across the top of the catalogue.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Category {
@@ -26,7 +24,7 @@ impl Category {
 
     pub fn label(self) -> &'static str {
         match self {
-            Category::New => "New",
+            Category::New => "New Releases",
             Category::Women => "Women",
             Category::Men => "Men",
             Category::Kids => "Kids",
@@ -44,10 +42,10 @@ impl Category {
 /// sample demonstrates, that a picture crosses the boundary once and is drawn by id
 /// afterwards, is the same either way.
 ///
-/// A picture carries its own colours. That is what makes it a picture rather than a fill,
-/// and it is the one exception to the rule the rest of this sample keeps: the card behind
-/// the garment, the name under it and the price beside it are all roles, so everything
-/// except the artwork still follows the reader into dark.
+/// A picture carries its own colours, and so does everything round it: this shop is one
+/// reference picture rather than a screen that follows the machine it is running on, so
+/// the card behind the garment, the name under it and the price beside it are the
+/// literals in `palette`.
 static TEE: &[u8] = include_bytes!("../assets/tee.svg");
 static TANK: &[u8] = include_bytes!("../assets/tank.svg");
 static JACKET: &[u8] = include_bytes!("../assets/jacket.svg");
@@ -60,35 +58,21 @@ static KIT: &[u8] = include_bytes!("../assets/kit.svg");
 /// than a garment.
 pub static HERO: &[u8] = include_bytes!("../assets/hero.svg");
 
-/// The colour the card behind a garment is filled with.
+/// The carousel at the top of the catalogue, in the order it turns.
 ///
-/// The picture is the picture; this is the card it sits on, and the ink the card promises
-/// to carry for the name and the price written over it. Three accent containers, which is
-/// what those roles exist for: quiet fills that read as relatives of one another.
+/// Its own list rather than whatever is on the shelf below it. The shelf changes with the
+/// category and the carousel does not: the reference draws the season's scene first, the
+/// garments it is about after it, and four dots under all of them whichever category is
+/// being browsed.
 ///
-/// A literal colour was the other option and is worse. A literal is a colour the design
-/// system never sees, so the shop would keep its pastel cards when the reader asked for
-/// dark and the text on them would stop being readable.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Tint {
-    First,
-    Second,
-    Third,
+/// A function rather than a table, because every entry here is the address of a `static`
+/// and a `static` table of those is not something a constant can be built from.
+pub fn featured() -> [&'static [u8]; FEATURED] {
+    [HERO, TEE, JACKET, KIT]
 }
 
-impl Tint {
-    /// The fill, and the ink that fill promises to carry.
-    pub fn pair(self) -> (ColorRole, ColorRole) {
-        match self {
-            Tint::First => (ColorRole::PrimaryContainer, ColorRole::OnPrimaryContainer),
-            Tint::Second => (
-                ColorRole::SecondaryContainer,
-                ColorRole::OnSecondaryContainer,
-            ),
-            Tint::Third => (ColorRole::TertiaryContainer, ColorRole::OnTertiaryContainer),
-        }
-    }
-}
+/// How many slides the carousel turns through, which is how many dots sit under it.
+pub const FEATURED: usize = 4;
 
 /// One thing for sale.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,7 +81,6 @@ pub struct Product {
     pub name: &'static str,
     pub support: &'static str,
     pub cents: u32,
-    pub tint: Tint,
     pub category: Category,
     /// Tenths of a star, so the rating adds up and rounds the same way every time.
     pub rating: u32,
@@ -116,7 +99,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Swoosh T-Shirt",
         support: "Women's light support",
         cents: 9500,
-        tint: Tint::First,
         category: Category::New,
         picture: TEE,
         rating: 50,
@@ -126,7 +108,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Pro Dri-Fit",
         support: "Men's tank top",
         cents: 7000,
-        tint: Tint::Second,
         category: Category::New,
         picture: TANK,
         rating: 44,
@@ -136,7 +117,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Windrunner",
         support: "Women's running jacket",
         cents: 12000,
-        tint: Tint::Third,
         category: Category::Women,
         picture: JACKET,
         rating: 47,
@@ -146,7 +126,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Tempo Short",
         support: "Women's 3 inch brief",
         cents: 4500,
-        tint: Tint::First,
         category: Category::Women,
         picture: SHORTS,
         rating: 41,
@@ -156,7 +135,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Flex Jogger",
         support: "Men's tapered fit",
         cents: 8500,
-        tint: Tint::Second,
         category: Category::Men,
         picture: JOGGER,
         rating: 46,
@@ -166,7 +144,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Court Vision",
         support: "Men's training tee",
         cents: 5500,
-        tint: Tint::Third,
         category: Category::Men,
         picture: TEE,
         rating: 39,
@@ -176,7 +153,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Little Runner",
         support: "Kids' all-weather set",
         cents: 6000,
-        tint: Tint::First,
         category: Category::Kids,
         picture: KIT,
         rating: 48,
@@ -186,7 +162,6 @@ pub const CATALOGUE: [Product; 8] = [
         name: "Legacy Hoodie",
         support: "Last season, half price",
         cents: 4000,
-        tint: Tint::Third,
         category: Category::Sale,
         picture: HOODIE,
         rating: 43,
@@ -231,11 +206,10 @@ fn thousands(value: u32) -> String {
 
 /// Five glyphs, filled up to the rating and hollow after it.
 ///
-/// A row of five icons is what the reference draws, and an icon cannot be placed from
-/// application code: the `Icon` widget takes an id the Host registered, and `IconRole` only
-/// reaches the tree through a navigation destination. Characters are what is left, and they
-/// are sized by the type ladder like any other text, so they at least follow the design
-/// system's scale.
+/// A row of five icons is what the reference draws, and the closed set of icon meanings
+/// has no star in it: a meaning is drawn by every design system, and a star rating is not
+/// a meaning any of them owns. Characters are what is left, and they are sized by the type
+/// ladder like any other text, so they at least follow the design system's scale.
 pub fn stars(rating: u32) -> String {
     let filled = (rating + 5) / 10;
     let mut out = String::with_capacity(5 * 3);
@@ -277,11 +251,18 @@ pub fn total(lines: &[BagLine]) -> u32 {
 mod tests {
     use super::*;
 
+    /// Every slide the carousel turns to is a picture the shop actually holds, and the
+    /// four of them are four different pictures. Two dots showing the same drawing reads
+    /// as a carousel that is stuck.
     #[test]
-    fn fr13_every_product_uses_a_role_rather_than_a_colour() {
-        for product in CATALOGUE {
-            let (fill, ink) = product.tint.pair();
-            assert_ne!(fill, ink, "{} fills and inks with one role", product.name);
+    fn fr22_the_carousel_turns_through_four_different_pictures() {
+        let slides = featured();
+        assert_eq!(slides.len(), FEATURED);
+        for (index, slide) in slides.iter().enumerate() {
+            assert!(!slide.is_empty(), "slide {index} has no picture");
+            for other in &slides[index + 1..] {
+                assert_ne!(slide, other, "two slides are the same picture");
+            }
         }
     }
 

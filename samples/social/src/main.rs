@@ -9,6 +9,7 @@
 //! illustrated cards. `THEME` says both.
 
 mod courses;
+mod palette;
 
 use courses::{Course, Shelf, course, on, sessions_label};
 use dioxus_compose::prelude::*;
@@ -92,30 +93,38 @@ fn hero_card(found: &Course, size: (f32, f32), on_open: EventHandler<u32>) -> El
                 fill_max_height: true,
                 asset_id: asset(AssetKind::Svg, found.palette.scene()),
             }
+            // The caption sits inside the picture rather than in a strip under it, over
+            // a band of the page's own ink. That is what the reference does, and it is
+            // what makes the card one thing instead of a photograph with a label stuck
+            // to the bottom of it.
             Row {
                 fill_max_width: true,
-                background: Paint::Role(ColorRole::Surface),
+                background: Paint::Literal(palette::SCRIM),
                 padding_role: SpaceRole::Md,
                 space_role: SpaceRole::Sm,
                 alignment: Alignment::CenterStart,
+                Button {
+                    text: "\u{25b6}",
+                    variant: ButtonVariant::Filled,
+                    shape_role: ShapeRole::Full,
+                    background: Paint::Literal(palette::SCRIM_BADGE),
+                    color: Paint::Literal(palette::ON_ART),
+                    on_click: move |_| on_open.call(id),
+                }
                 Column {
                     weight: 1.0,
                     Text {
                         text: found.title,
                         type_role: TypeRole::Subtitle,
+                        color: Paint::Literal(palette::ON_ART),
                         max_lines: 2,
                         overflow: TextOverflow::Ellipsis,
                     }
                     Text {
-                        text: sessions_label(found),
+                        text: sessions_label(found).to_uppercase(),
                         type_role: TypeRole::Caption,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        color: Paint::Literal(palette::ON_ART_MUTED),
                     }
-                }
-                Button {
-                    text: "\u{25b6}",
-                    variant: ButtonVariant::Filled,
-                    on_click: move |_| on_open.call(id),
                 }
             }
         }
@@ -129,28 +138,42 @@ fn tile_card(found: &Course, on_open: EventHandler<u32>) -> Element {
         Column {
             fill_max_width: true,
             space_role: SpaceRole::Xs,
-            Image {
+            // The badge is how a card opens, and where the reference puts it: a round
+            // play button standing on the illustration's lower left rather than a link
+            // underneath in the design system's accent.
+            dioxus_compose::Box {
                 fill_max_width: true,
                 height: TILE.1,
                 shape_role: ShapeRole::Medium,
-                asset_id: asset(AssetKind::Svg, found.palette.scene()),
+                alignment: Alignment::BottomStart,
+                Image {
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    asset_id: asset(AssetKind::Svg, found.palette.scene()),
+                }
+                Button {
+                    text: "\u{25b6}",
+                    variant: ButtonVariant::Filled,
+                    shape_role: ShapeRole::Full,
+                    background: Paint::Literal(palette::SCRIM_BADGE),
+                    color: Paint::Literal(palette::ON_ART),
+                    on_click: move |_| on_open.call(id),
+                }
             }
+            // The meta reads above the title, uppercase and in the quiet green the
+            // reference uses for it. Under the title it would read as a footnote; above
+            // it, it is the label the card is filed under, which is what it is.
             Text {
-                text: sessions_label(found),
+                text: sessions_label(found).to_uppercase(),
                 type_role: TypeRole::Caption,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                color: Paint::Literal(palette::META),
             }
             Text {
                 text: found.title,
                 type_role: TypeRole::Body,
+                color: Paint::Literal(palette::INK),
                 max_lines: 2,
                 overflow: TextOverflow::Ellipsis,
-            }
-            Button {
-                text: "Start",
-                variant: ButtonVariant::Text,
-                padding_role: SpaceRole::None,
-                on_click: move |_| on_open.call(id),
             }
         }
     }
@@ -211,7 +234,7 @@ fn shelf_page(
                 Text {
                     text: strapline,
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    color: Paint::Literal(palette::MUTED),
                 }
             }
 
@@ -220,7 +243,7 @@ fn shelf_page(
             Text {
                 text: "Recommended for you",
                 type_role: TypeRole::Label,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                color: Paint::Literal(palette::MUTED),
             }
             {grid(rest, on_open)}
 
@@ -229,7 +252,7 @@ fn shelf_page(
             Text {
                 text: "Recommended category",
                 type_role: TypeRole::Label,
-                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                color: Paint::Literal(palette::MUTED),
             }
             {hero_card(items[items.len() - 1], WIDE, on_open)}
         }
@@ -243,7 +266,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
         Column {
             fill_max_width: true,
             fill_max_height: true,
-            background: Paint::Role(quiet),
+            background: Paint::Literal(quiet),
 
             dioxus_compose::Box {
                 fill_max_width: true,
@@ -274,12 +297,12 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                 Text {
                     text: found.title,
                     type_role: TypeRole::Headline,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                 }
                 Text {
                     text: sessions_label(found),
                     type_role: TypeRole::Body,
-                    color: Paint::Role(ink),
+                    color: Paint::Literal(ink),
                 }
                 Column {
                     fill_max_width: true,
@@ -288,7 +311,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                         Row {
                             key: "{number}",
                             fill_max_width: true,
-                            background: Paint::Role(ColorRole::SurfaceContainer),
+                            background: Paint::Literal(palette::CARD),
                             shape_role: ShapeRole::Medium,
                             padding_role: SpaceRole::Md,
                             space_role: SpaceRole::Sm,
@@ -301,7 +324,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                             Text {
                                 text: "{found.minutes} min",
                                 type_role: TypeRole::Caption,
-                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                color: Paint::Literal(palette::MUTED),
                             }
                         }
                     }
@@ -311,7 +334,7 @@ fn course_page(found: &Course, on_back: EventHandler<()>) -> Element {
                     text: "Begin",
                     fill_max_width: true,
                     variant: ButtonVariant::Filled,
-                    background: Paint::Role(strong),
+                    background: Paint::Literal(strong),
                     on_click: move |_| {
                         Message::new("Playback is not part of this sample").show();
                     },
@@ -380,6 +403,8 @@ fn app() -> Element {
             for choice in Destination::STRIP {
                 NavigationItem {
                     key: "{choice.label()}",
+                    // The reference's bar is the page's own ink rather than an accent.
+                    color: Paint::Literal(palette::INK),
                     text: choice.label(),
                     icon: choice.icon(),
                     on_click: move |()| destination.set(choice),
@@ -388,7 +413,7 @@ fn app() -> Element {
             Column {
                 fill_max_width: true,
                 fill_max_height: true,
-                background: Paint::Role(ColorRole::Background),
+                background: Paint::Literal(palette::PAGE),
                 dioxus_compose::Box {
                     fill_max_width: true,
                     fill_max_height: true,
@@ -430,6 +455,10 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The mark on the badge that opens a course. Named because two tests press it and a
+    /// glyph nobody types is not something to spell twice.
+    const PLAY: &str = "\u{25b6}";
 
     use courses::COURSES;
     use dioxus_compose::Host;
@@ -627,7 +656,11 @@ mod tests {
     #[test]
     fn fr15_a_course_opens_and_closes() {
         let mut screen = Screen::new();
-        assert!(screen.press("Start"), "no card on the shelf opens");
+        assert!(
+            screen.press(PLAY),
+            "no card on the shelf opens: the badge that opens one is the play mark on \
+             its illustration"
+        );
         assert!(
             screen
                 .latest_texts()
@@ -693,7 +726,11 @@ mod tests {
             &sample_frames::as_designed(THEME, &sample_frames::APPLE),
             app,
             |screen| {
-                assert!(screen.press("Start"), "no card on the shelf opens");
+                assert!(
+                    screen.press(PLAY),
+                    "no card on the shelf opens: the badge that opens one is the play \
+                     mark on its illustration"
+                );
             },
         );
     }

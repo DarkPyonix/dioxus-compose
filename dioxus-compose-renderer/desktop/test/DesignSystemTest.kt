@@ -30,6 +30,7 @@ import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.design.HostPlatform
+import dioxus.compose.design.adaptiveSystem
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.resolveTheme
 import dioxus.compose.runtime.DioxusContent
@@ -126,6 +127,17 @@ class ThemeResolutionTest {
         assertEquals(HostPlatform.LinuxOther, detectHostPlatform("Linux", null, null, null))
         assertEquals(HostPlatform.MacOs, detectHostPlatform("Mac OS X", null, null, null))
         assertEquals(HostPlatform.Windows, detectHostPlatform("Windows 11", null, null, null))
+    }
+
+    /**
+     * A browser tab reports `web` and nothing else, because the machine underneath is not
+     * what decides. The same page opened on a Mac and on a Windows box has to look the
+     * same, so the platform is the browser rather than what it is running on.
+     */
+    @Test
+    fun pr6_a_browser_reports_itself_as_the_web_platform() {
+        assertEquals(HostPlatform.Web, detectHostPlatform("web", null, null, null))
+        assertEquals(DesignSystem.Fluent, adaptiveSystem(HostPlatform.Web, DesignSystem.Material3))
     }
 
     /**

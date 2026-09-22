@@ -9,7 +9,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
@@ -23,12 +25,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.paintProp
+import dioxus.compose.ui.role
 import dioxus.compose.ui.textStyle
 import dioxus.compose.ui.variant
 
@@ -91,10 +98,19 @@ internal fun HostButton(
     // control fades rather than each variant naming a disabled colour, so a design system
     // owes one number instead of four and the faded colours are still its own.
     val available = if (enabled) Modifier else Modifier.alpha(style.disabledAlpha)
+    // A Host that named its own Background has already had it applied to this node's
+    // modifier chain, so painting the variant's fill here would cover it. The shape, the
+    // border, the resting height and the padding still come from the design system: only
+    // the colour is the application's, which is the rule a Container already follows.
+    //
+    // A unified sample is what needs it. Its reference names a mint chip and a white
+    // pill, and asking for a variant instead hands the question to whichever design
+    // system is active, which answers with its own accent.
+    val ownFill = node.setsOwnBackground()
     val decorated = theme.rules
         .elevation(clickable.then(available), elevation, style.shape, theme)
         .clip(style.shape)
-        .background(container, style.shape)
+        .then(if (ownFill) Modifier else Modifier.background(container, style.shape))
         .then(
             if (style.borderWidth.value > 0f) {
                 Modifier.border(style.borderWidth, borderColor, style.shape)
@@ -110,10 +126,32 @@ internal fun HostButton(
     // destructive action is the case that needs it: it is a plain button in every design
     // system, and what marks it is that its label is the error colour.
     val content = node.paintProp(PropertyKind.Color)?.let { theme.color(it) } ?: style.content
-    val label = node.textStyle(theme, style.typeRole)
-        .copy(color = content.copy(alpha = content.alpha * contentAlpha))
-    Box(decorated, contentAlignment = Alignment.Center) {
-        BasicText(text = node.text(PropertyKind.Text), style = label)
+    val tint = content.copy(alpha = content.alpha * contentAlpha)
+    val label = node.textStyle(theme, style.typeRole).copy(color = tint)
+    val text = node.text(PropertyKind.Text)
+    val icon = node.role(PropertyKind.Icon, IconRole.entries.toTypedArray())
+    // A button with a glyph and no word is still a button with a name. The role is what
+    // the glyph means, so it is what the name is made of, and assistive technology never
+    // meets an unnamed control.
+    val named = if (icon != null && text.isEmpty()) {
+        decorated.semantics { contentDescription = icon.name }
+    } else {
+        decorated
+    }
+    Box(named, contentAlignment = Alignment.Center) {
+        if (icon == null) {
+            BasicText(text = text, style = label)
+        } else {
+            Row(
+                // The gap between the glyph and the word is the design system's smallest step,
+                // so a dense language sets them closer than a roomy one does.
+                horizontalArrangement = Arrangement.spacedBy(theme.space(SpaceRole.Xs)),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RoleIcon(icon, tint, theme)
+                if (text.isNotEmpty()) BasicText(text = text, style = label)
+            }
+        }
     }
 }
 

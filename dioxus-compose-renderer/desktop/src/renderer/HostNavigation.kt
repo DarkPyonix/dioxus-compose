@@ -38,6 +38,7 @@ import dioxus.compose.design.NavigationIndicator
 import dioxus.compose.design.NavigationPresentation
 import dioxus.compose.design.NavigationStyle
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.PropertyKind
@@ -46,6 +47,7 @@ import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.runtime.LocalWindowSizeClass
 import dioxus.compose.ui.node.Node
+import dioxus.compose.ui.paintProp
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.node.nodeTestTag
@@ -107,12 +109,74 @@ internal fun HostNavigation(
         }
     }
 
+    // Where the platform has a strip of its own worth more than the one drawn here, it
+    // gets the destinations and this side draws only the screen. The question is asked of
+    // whatever is installed, and on the platforms where nothing is, the answer is no and
+    // the code below is unchanged.
+    //
+    // Only the bar is offered. A rail and a drawer are laid out beside the screen and take
+    // their width out of it, so handing them to a chrome that sits outside the Compose
+    // surface would leave the screen the full window wide with the strip on top of it.
+    //
+    // And only a navigation that is a root of the tree. The platform's chrome belongs to
+    // the window, and there is one of it: a navigation nested inside some part of the
+    // screen would take the window's bar away from whatever owns it, and two of them would
+    // take turns. A nested one keeps the bar drawn here, where it can sit inside the part
+    // of the screen it actually belongs to.
+    //
+    // And only where Apple's design language was asked for. The chrome the shell stands up
+    // is Apple's, drawn by Apple; putting it under an application that asked for Material 3
+    // or Fluent would answer a question nobody asked. An application on this platform that
+    // said nothing gets Apple's anyway, because the default theme follows the platform.
+    val apple = theme.system == DesignSystem.Cupertino || theme.system == DesignSystem.LiquidGlass
+    val offered = style.presentation == NavigationPresentation.Bar &&
+        node.id in table.roots &&
+        apple
+    val shell = platformNavigationShell?.takeIf { it.drawsStrip && offered }
+
     // A message is drawn over the whole window, so it has to be told what the bar along
     // the bottom is using or it would cover the destinations.
-    val barHeight = if (style.presentation == NavigationPresentation.Bar) style.barHeight else 0.dp
+    val barHeight = when {
+        shell != null -> shell.stripHeight.dp
+        style.presentation == NavigationPresentation.Bar -> style.barHeight
+        else -> 0.dp
+    }
     DisposableEffect(table, barHeight) {
         table.insets.bottom = barHeight
         onDispose { table.insets.bottom = 0.dp }
+    }
+
+    if (shell != null) {
+        val handed = destinations.mapNotNull { childId ->
+            table.node(childId)?.let { destination ->
+                ShellDestination(
+                    nodeId = childId,
+                    label = destination.text(PropertyKind.Text),
+                    icon = destination.role(PropertyKind.Icon, IconRole.entries.toTypedArray()),
+                    enabled = destination.flag(PropertyKind.Enabled, default = true),
+                )
+            }
+        }
+        // Two effects rather than one. Handing the destinations over happens again every
+        // time they or the selection change, and tapping a destination changes the
+        // selection, so putting the teardown in the same effect would take the strip down
+        // and put it back up on every tap.
+        DisposableEffect(shell, handed, selected) {
+            shell.present(handed, selected) { index ->
+                handed.getOrNull(index)?.let { choose(index, it.nodeId) }
+            }
+            onDispose {}
+        }
+        DisposableEffect(shell) {
+            onDispose { shell.dismiss() }
+        }
+        // The strip along the bottom is not padded away: the screen runs under it, which
+        // is what gives a bar made of glass something to refract. A title bar is padded
+        // away, because it is opaque enough at the top that content under it is lost.
+        Box(modifier.padding(top = shell.titleHeight.dp)) {
+            Screen(content, table, dispatcher)
+        }
+        return
     }
 
     when (style.presentation) {
@@ -224,7 +288,16 @@ internal fun Destination(
     val search = role == IconRole.Search &&
         presentation == NavigationPresentation.Drawer &&
         style.searchContainer != null
-    val tint = if (selected && !search) style.selectedContent else style.content
+    // The design system decides what "selected" looks like, unless the node names a
+    // colour itself. A unified sample is what needs the exception: its reference bar is
+    // white icons on black with no accent anywhere, and asking the active system instead
+    // puts its own accent on the selected one.
+    //
+    // The named colour is used for both states. A destination that says what colour it is
+    // is saying it about itself, not about half of itself, and a sample wanting the two
+    // states apart says so by giving each destination its own colour.
+    val named = node.paintProp(PropertyKind.Color)?.let { theme.color(it) }
+    val tint = named ?: if (selected && !search) style.selectedContent else style.content
     val showLabel = label.isNotEmpty() &&
         (presentation != NavigationPresentation.Rail || style.labelInRail)
     val pill = selected && !search && style.indicatorKind == NavigationIndicator.Pill

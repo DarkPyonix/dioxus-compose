@@ -1228,3 +1228,46 @@ impl Drop for TempDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
+
+/// Who resolves the renderer's symbols, per target.
+///
+/// The Android answer is the one this exists for. It used to fall in with iOS, because
+/// the rule was written as "desktop or not", and the Host declared the desktop renderer's
+/// C symbols for it. iOS really does have them by the time anything runs; Android's
+/// renderer is Kotlin in ART and has no native symbol of that name, so the library could
+/// not be opened at all and the application died in `onCreate` on every launch.
+#[test]
+fn pr5_android_does_not_declare_the_desktop_renderers_symbols() {
+    use renderer_dir::{RendererLinkage, renderer_linkage};
+
+    assert_eq!(
+        renderer_linkage("android", "unix", false),
+        RendererLinkage::Installed,
+        "Android installs its entry points from JNI_OnLoad, so declaring them here \
+         leaves a symbol the loader cannot find and the process dies before it starts"
+    );
+    assert_eq!(
+        renderer_linkage("ios", "unix", false),
+        RendererLinkage::Provided,
+        "iOS links the XCFramework through Xcode, so the symbols are real by the time \
+         anything runs"
+    );
+    for desktop in ["macos", "windows", "linux"] {
+        assert_eq!(
+            renderer_linkage(desktop, "unix", false),
+            RendererLinkage::Linked,
+            "{desktop} links the shared library through Cargo"
+        );
+    }
+    assert_eq!(
+        renderer_linkage("unknown", "wasm", false),
+        RendererLinkage::Installed,
+        "a browser resolves nothing at load time, so the generated web shims install the \
+         entry points before anything can ask for a frame"
+    );
+    assert_eq!(
+        renderer_linkage("macos", "unix", true),
+        RendererLinkage::None,
+        "a mock build draws nothing, so there is nothing to link"
+    );
+}

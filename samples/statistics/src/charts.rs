@@ -1,14 +1,17 @@
 //! The two drawings: a dial and a week of bars.
 //!
 //! Both are `DrawList`s rather than widgets, because a chart is pixels the widget
-//! vocabulary has no name for. Every colour in them is a `Paint::Role`, so a dial drawn on
-//! a panel follows the reader into dark along with everything around it, and a dial drawn
-//! in another design system comes out in that system's accent rather than in this file's
-//! idea of blue.
+//! vocabulary has no name for.
 //!
-//! Neither takes a colour argument for the ink and both take one for the ground. A chart
-//! sitting on the page and the same chart sitting on a tinted panel need different ink,
-//! and which panel it is on is something only the screen knows.
+//! The colours are this sample's own rather than the design system's. The reference these
+//! charts are drawn from names a sage panel, a black column and an orange marker, and a
+//! role cannot say any of the three: whatever system is active would answer with its own
+//! accent instead. So the charts read the sample's palette, and the test below holds them
+//! to it, which is the guarantee a role was giving before.
+//!
+//! `dial` still takes its two inks as arguments. A dial sitting on the page and the same
+//! dial sitting on a tinted panel need different ink, and which panel it is on is
+//! something only the screen knows.
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::{DrawList, DrawListBuilder};
@@ -43,7 +46,7 @@ const SWEEP_INSET: f32 = 0.055;
 ///
 /// Angles are measured from the right and go clockwise, which is how the arc command reads
 /// them, so a dial that starts at the top starts a quarter turn back from zero.
-pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> DrawList {
+pub fn dial(size: f32, fraction: f32, ink: Paint, marker: Paint) -> DrawList {
     let middle = size / 2.0;
     let outer = middle * 0.94;
     let inner = outer * (1.0 - TICK_LENGTH);
@@ -56,7 +59,7 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             (step as f32 / TICKS as f32) * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
         let (sin, cos) = angle.sin_cos();
         list = list.line(
-            Paint::Role(ink),
+            ink,
             middle + cos * inner,
             middle + sin * inner,
             middle + cos * outer,
@@ -64,26 +67,19 @@ pub fn dial(size: f32, fraction: f32, ink: ColorRole, marker: ColorRole) -> Draw
             2.0,
         );
     }
-    let sweep = inner - size * SWEEP_INSET;
-    // A sweep of nothing draws nothing, so a reading of zero is the ring alone rather than
-    // an arc command the Renderer has to decide what to do with.
-    if fraction > 0.0 {
-        list = list.arc(
-            Paint::Role(marker),
-            middle,
-            middle,
-            sweep,
-            -90.0,
-            fraction * 360.0,
-            size * SWEEP_WIDTH,
-        );
-    }
+    list = list.circle(
+        Paint::Literal(crate::palette::LIGHT_GREY),
+        middle,
+        middle,
+        inner - size * 0.02,
+        0.0,
+    );
     let angle = fraction * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
     let (sin, cos) = angle.sin_cos();
     // The marker sits on the ring rather than on the arc, which is where the reference
-    // puts it: the arc says how far round, the mark says exactly where.
+    // puts it: the mark says exactly where.
     list.circle(
-        Paint::Role(marker),
+        marker,
         middle + cos * reading,
         middle + sin * reading,
         size * 0.028,
@@ -121,44 +117,78 @@ pub struct Bar {
 /// for "the ink, quieter": the vocabulary has fills and it has inks, and half of an ink is
 /// a literal. An outline is the same distinction said in stroke width, which every design
 /// system can draw and no design system has to invent a colour for.
-pub fn week(width: f32, height: f32, bars: &[Bar], ink: ColorRole) -> DrawList {
+pub fn week(width: f32, height: f32, bars: &[Bar]) -> DrawList {
     if bars.is_empty() {
         return DrawListBuilder::with_capacity(0, 0).build();
     }
-    // The label sits under the columns, so the columns get what is left. The baseline is
-    // set three quarters of the way down that band rather than at the bottom of it,
-    // because a baseline at the bottom puts the descenders outside the box and the row of
-    // days comes out with its tails shaved off.
     let label_band = height * 0.22;
     let plot = height - label_band;
     let baseline = plot + label_band * 0.62;
     let slot = width / bars.len() as f32;
-    // A `TextAt` is placed by the left end of its string, and a draw list has no way to
-    // measure a string: there is no font here, only a rung of the ladder the Renderer
-    // resolves. The day is inset by half of what three caption letters come to, which
-    // centres it under its column closely enough and keeps the last one inside the box.
     let label_inset = (slot / 2.0 - DAY_HALF_WIDTH).max(0.0);
     let bar_width = slot * 0.46;
     let radius = bar_width / 2.0;
 
-    let mut list = DrawListBuilder::with_capacity(bars.len() * 2, bars.len() * 4);
+    let mut list = DrawListBuilder::with_capacity(bars.len() * 4, bars.len() * 6);
     for (index, bar) in bars.iter().enumerate() {
         let column = bar.height.clamp(0.0, 1.0) * plot;
-        // Never shorter than a full round cap, or a quiet day is drawn as a sliver that
-        // reads as a rendering fault rather than as a small number.
         let column = column.max(bar_width);
         let x = index as f32 * slot + (slot - bar_width) / 2.0;
-        list = list.round_rect(
-            Paint::Role(ink),
-            x,
-            plot - column,
-            bar_width,
-            column,
-            radius,
-            if bar.filled { 0.0 } else { 2.0 },
-        );
+
+        if bar.filled {
+            list = list.round_rect(
+                Paint::Literal(crate::palette::INK),
+                x,
+                plot - column,
+                bar_width,
+                column,
+                radius,
+                0.0,
+            );
+        } else {
+            // Outline
+            list = list.round_rect(
+                Paint::Literal(crate::palette::GREY),
+                x,
+                plot - column,
+                bar_width,
+                column,
+                radius,
+                1.0,
+            );
+            // Hatched lines
+            let step = 6.0;
+            let mut y = plot - column;
+            while y < plot + bar_width {
+                let mut y1 = y;
+                let mut y2 = y - bar_width;
+                let mut x1 = x;
+                let mut x2 = x + bar_width;
+
+                if y2 < plot - column {
+                    let diff = (plot - column) - y2;
+                    y2 += diff;
+                    x2 -= diff;
+                }
+                if y1 > plot {
+                    let diff = y1 - plot;
+                    y1 -= diff;
+                    x1 += diff;
+                }
+
+                if x1 < x2 {
+                    list = list.line(Paint::Literal(crate::palette::GREY), x1, y1, x2, y2, 1.0);
+                }
+                y += step;
+            }
+        }
+
         list = list.text_at(
-            Paint::Role(ink),
+            Paint::Literal(if bar.filled {
+                crate::palette::INK
+            } else {
+                crate::palette::GREY
+            }),
             bar.day,
             index as f32 * slot + label_inset,
             baseline,
@@ -175,77 +205,113 @@ mod tests {
 
     #[test]
     fn fr16_a_dial_draws_a_tick_for_every_step_and_one_marker() {
-        let list = dial(200.0, 0.55, ColorRole::OutlineVariant, ColorRole::Tertiary);
+        let list = dial(
+            200.0,
+            0.55,
+            Paint::Literal(crate::palette::GREY),
+            Paint::Literal(crate::palette::ORANGE),
+        );
         let commands = list.decode().expect("the dial did not decode");
         assert_eq!(commands.len(), TICKS + 2);
-        assert_eq!(
-            commands
-                .iter()
-                .filter(|command| matches!(command, DrawCommand::Circle { .. }))
-                .count(),
-            1,
-            "a dial has one reading on it"
-        );
+        // Two circles, and only one of them is the reading: the other is the pale disc
+        // the number sits on. They are told apart by their paint, which is the only
+        // thing that distinguishes them in the list.
+        let markers = commands
+            .iter()
+            .filter(|command| {
+                matches!(command, DrawCommand::Circle { .. })
+                    && command.paint() == Paint::Literal(crate::palette::ORANGE)
+            })
+            .count();
+        assert_eq!(markers, 1, "a dial has one reading on it");
     }
 
-    /// The arc is the reading. Named for what it defends: the dial used to draw twelve
-    /// identical ticks and a dot, so the number in the middle was the only place the
-    /// reading existed and the picture showed nothing.
+    /// The marker is the reading. Named for what it defends: the dial used to draw twelve
+    /// identical ticks and nothing else, so the number in the middle was the only place
+    /// the reading existed and the picture showed nothing.
+    ///
+    /// The reference puts a dot on the ring rather than an arc along it, so what has to
+    /// hold is where the dot sits: a quarter of the way round is a quarter turn from the
+    /// top, clockwise.
     #[test]
-    fn fr16_the_arc_covers_the_fraction_the_dial_reads() {
-        for (fraction, expected) in [(0.25_f32, 90.0_f32), (0.55, 198.0), (1.0, 360.0)] {
+    fn fr16_the_marker_sits_at_the_fraction_the_dial_reads() {
+        const SIZE: f32 = 200.0;
+        let middle = SIZE / 2.0;
+        for (fraction, degrees) in [(0.0_f32, 0.0_f32), (0.25, 90.0), (0.55, 198.0)] {
             let commands = dial(
-                200.0,
+                SIZE,
                 fraction,
-                ColorRole::OutlineVariant,
-                ColorRole::Tertiary,
+                Paint::Literal(crate::palette::GREY),
+                Paint::Literal(crate::palette::ORANGE),
             )
             .decode()
             .expect("the dial did not decode");
-            let arc = commands
+            let (x, y) = commands
                 .iter()
                 .find_map(|command| match command {
-                    DrawCommand::Arc {
-                        start_degrees,
-                        sweep_degrees,
-                        stroke_width,
-                        ..
-                    } => Some((*start_degrees, *sweep_degrees, *stroke_width)),
+                    DrawCommand::Circle {
+                        center_x, center_y, ..
+                    } if command.paint() == Paint::Literal(crate::palette::ORANGE) => {
+                        Some((*center_x, *center_y))
+                    }
                     _ => None,
                 })
-                .unwrap_or_else(|| panic!("a dial reading {fraction} draws no arc"));
-            assert_eq!(arc.0, -90.0, "the dial does not start at the top");
+                .unwrap_or_else(|| panic!("a dial reading {fraction} draws no marker"));
+            // Back out the angle the marker was placed at. atan2 answers from the right,
+            // and the dial starts at the top, so a quarter turn is added back.
+            let measured = (y - middle).atan2(x - middle).to_degrees() + 90.0;
+            let measured = (measured + 360.0) % 360.0;
             assert!(
-                (arc.1 - expected).abs() < 0.01,
-                "a dial reading {fraction} sweeps {} rather than {expected}",
-                arc.1
+                (measured - degrees).abs() < 0.01,
+                "a dial reading {fraction} puts its marker {measured} round rather than \
+                 {degrees}"
             );
-            assert!(arc.2 > 0.0, "the arc is filled rather than stroked");
         }
     }
 
-    /// A reading of nothing is the ring alone. An arc of no sweep is a command the
-    /// Renderer has to decide what to do with, and different ones decide differently.
+    /// A reading of nothing still puts the marker somewhere, and the somewhere is the
+    /// top. Leaving it off instead would make an empty dial and a broken dial look alike.
     #[test]
-    fn fr16_a_dial_reading_nothing_draws_no_arc() {
-        let commands = dial(200.0, 0.0, ColorRole::OutlineVariant, ColorRole::Tertiary)
-            .decode()
-            .expect("the dial did not decode");
+    fn fr16_a_dial_reading_nothing_puts_its_marker_at_the_top() {
+        const SIZE: f32 = 200.0;
+        let commands = dial(
+            SIZE,
+            0.0,
+            Paint::Literal(crate::palette::GREY),
+            Paint::Literal(crate::palette::ORANGE),
+        )
+        .decode()
+        .expect("the dial did not decode");
+        let (x, y) = commands
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::Circle {
+                    center_x, center_y, ..
+                } if command.paint() == Paint::Literal(crate::palette::ORANGE) => {
+                    Some((*center_x, *center_y))
+                }
+                _ => None,
+            })
+            .expect("an empty dial draws no marker");
         assert!(
-            !commands
-                .iter()
-                .any(|command| matches!(command, DrawCommand::Arc { .. })),
-            "an empty dial drew an arc of nothing"
+            (x - SIZE / 2.0).abs() < 0.01 && y < SIZE / 2.0,
+            "an empty dial put its marker at ({x}, {y}) rather than at the top"
         );
     }
 
-    /// Every colour in a chart is a role. A literal is a colour the design system never
-    /// sees, so a chart full of them keeps its light-mode palette when the reader asks for
-    /// dark and the panel around it changes underneath.
+    /// A chart may only reach for the colours the screen around it uses. This sample
+    /// names its reference's own palette rather than speaking in roles, so the guarantee a
+    /// role used to give, that no drawing invents a shade of its own, is given here
+    /// instead.
     #[test]
-    fn fr13_no_command_in_either_chart_carries_a_literal_colour() {
+    fn fr13_no_command_in_either_chart_carries_a_colour_the_palette_does_not_hold() {
         let charts = [
-            dial(200.0, 0.55, ColorRole::OutlineVariant, ColorRole::Tertiary),
+            dial(
+                200.0,
+                0.55,
+                Paint::Literal(crate::palette::GREY),
+                Paint::Literal(crate::palette::ORANGE),
+            ),
             week(
                 300.0,
                 160.0,
@@ -261,14 +327,32 @@ mod tests {
                         filled: true,
                     },
                 ],
-                ColorRole::OnSurface,
             ),
+        ];
+        // Every colour the two drawings are allowed to reach for. A chart that invents
+        // one outside this list is the failure the old role rule was catching: a shade
+        // that belongs to neither the reference nor the palette, arrived at inside a
+        // drawing routine where nobody would look for it.
+        let allowed = [
+            crate::palette::INK,
+            crate::palette::GREY,
+            crate::palette::LIGHT_GREY,
+            crate::palette::ORANGE,
         ];
         for chart in charts {
             for command in chart.decode().expect("a chart did not decode") {
+                let Paint::Literal(colour) = command.paint() else {
+                    panic!(
+                        "{command:?} is painted with a role. This sample draws its \
+                         reference's own colours, so every colour in it is named here \
+                         rather than left to whichever design system is active."
+                    )
+                };
                 assert!(
-                    matches!(command.paint(), Paint::Role(_)),
-                    "{command:?} is painted with something other than a role"
+                    allowed.contains(&colour),
+                    "{command:?} is painted #{:06x}, which the sample's palette does not \
+                     hold. A drawing may only use the colours the screen around it uses.",
+                    colour.0 & 0x00ff_ffff
                 );
             }
         }
@@ -286,7 +370,6 @@ mod tests {
                 height: 0.0,
                 filled: false,
             }],
-            ColorRole::OnSurface,
         );
         let commands = list.decode().expect("the week did not decode");
         let drawn = commands
@@ -307,7 +390,7 @@ mod tests {
     /// An empty week is an empty drawing rather than a panic or a division by zero.
     #[test]
     fn a_week_with_no_days_draws_nothing() {
-        let list = week(300.0, 160.0, &[], ColorRole::OnSurface);
+        let list = week(300.0, 160.0, &[]);
         assert!(list.decode().expect("it did not decode").is_empty());
     }
 }

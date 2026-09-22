@@ -18,7 +18,9 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dioxus.compose.foundation.HostMessages
+import androidx.compose.ui.graphics.Color
 import dioxus.compose.protocol.ColorRole
+import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
@@ -28,6 +30,7 @@ import dioxus.compose.design.CaptionSide
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
+import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.resolveTheme
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
@@ -221,9 +224,10 @@ fun DioxusContent(
         }
     }
     val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass)
-    // A tree that opens with a bar makes that bar the window's caption, so the strip the
-    // window buttons sit in belongs to the bar rather than to the page underneath it.
-    // Otherwise the page keeps it and the content starts below the buttons.
+    // A tree that opens with a bar, a picture or a colour of its own makes that the
+    // window's caption, so the strip the window buttons sit in belongs to it rather than
+    // to the page underneath it. Otherwise the page keeps it and the content starts below
+    // the buttons.
     val barIsCaption = caption.height > 0.dp && host.table.opensWithABar(host.roots)
     val captionStyle = theme.rules.caption(theme)
     // How much room the buttons take and at which end. The platform's own are at the
@@ -249,7 +253,7 @@ fun DioxusContent(
         // strip the title bar used to occupy, which reads as a leftover title bar rather
         // than as content extending underneath one.
         CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
-            Box(modifier.then(measured).background(theme.color(ColorRole.Background))) {
+            Box(modifier.then(measured).background(host.table.windowFill(host.roots, theme))) {
                 Box(Modifier.padding(top = if (barIsCaption) 0.dp else caption.height)) {
                     host.roots.forEach { rootId ->
                         androidx.compose.runtime.key(rootId) {
@@ -372,14 +376,42 @@ internal fun NodeTable.opensWithABar(roots: List<Int>): Boolean {
         val node = node(id) ?: return false
         when (node.widget) {
             WidgetKind.TopAppBar -> return true
+            // A picture at the top of the window is the same case as a bar: it is what
+            // the reader sees across the top, and leaving a strip of page colour above it
+            // reads as a title bar nobody asked for.
+            WidgetKind.Image -> return true
             // A Column stacks its children, so its first child is the top of the window.
             // A Box stacks them front to back, and a bar drawn first is chrome the rest
             // of the screen scrolls under, which is the same thing here.
+            //
+            // A wrapper is passed through whether or not it paints a background. Its
+            // colour is the page's, and the page is exactly what should start below the
+            // window buttons rather than run under them; what it holds decides instead.
             WidgetKind.Column, WidgetKind.Box -> id = node.children.firstOrNull() ?: return false
+            // Nothing else takes it. A shell that paints itself, a Navigation holding a
+            // whole page for instance, is the page rather than a strip across the top of
+            // it, and handing it the caption puts its first line of text under the window
+            // buttons. What its colour should do is fill the window, which is a separate
+            // question answered by windowFill below.
             else -> return false
         }
     }
     return false
+}
+
+/**
+ * The colour the whole window is painted, before the content is laid out inside it.
+ *
+ * The root's own fill where it named one, and the theme's background where it did not.
+ * Painting the theme's background regardless leaves an application that holds its own
+ * palette with a page in its colour and a strip along the top in the design system's,
+ * which reads as a leftover title bar. This is the rule a container already follows, that
+ * the fill the application named wins, applied to the window.
+ */
+internal fun NodeTable.windowFill(roots: List<Int>, theme: ResolvedTheme): Color {
+    val root = roots.firstOrNull()?.let(::node)
+    val own = root?.modifiers?.firstNotNullOfOrNull { it as? ProtocolModifier.Background }
+    return own?.let { theme.color(it.paint) } ?: theme.color(ColorRole.Background)
 }
 
 /**

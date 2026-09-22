@@ -167,10 +167,49 @@ impl Screen {
         lists.len()
     }
 
-    /// Presses the button carrying this label, if the screen has one.
-    ///
-    /// A recording that has to open something before it is worth looking at says so in the
-    /// language of the screen rather than in node ids.
+    pub fn press_icon(&mut self, icon: dioxus_compose::schema::IconRole) -> bool {
+        let found = {
+            let mutations = self.mutations();
+            let node = mutations.iter().find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Icon,
+                    value: PropertyValue::Integer(val),
+                } if *val == icon as i64 => Some(*node_id),
+                _ => None,
+            });
+            node.and_then(|node| {
+                mutations.iter().find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnClick,
+                        value: PropertyValue::Integer(id),
+                    } if *node_id == node => Some((node, *id as u64)),
+                    _ => None,
+                })
+            })
+        };
+        let Some((node_id, handler_id)) = found else {
+            return false;
+        };
+        let mut bytes = Vec::new();
+        encode_event(
+            &HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::Clicked,
+            },
+            &mut bytes,
+        )
+        .expect("the click did not encode");
+        let (batch, _) = self.host.dispatch_event(&bytes).expect("the click failed");
+        if !batch.is_empty() {
+            self.frames.push(batch.to_vec());
+        }
+        true
+    }
+
+    /// Finds what says `label` and presses it.
     pub fn press(&mut self, label: &str) -> bool {
         let found = {
             let mutations = self.mutations();
@@ -191,6 +230,74 @@ impl Screen {
                     } if *node_id == node => Some((node, *id as u64)),
                     _ => None,
                 })
+            })
+        };
+        let Some((node_id, handler_id)) = found else {
+            return false;
+        };
+        self.dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        });
+        true
+    }
+
+    /// Presses the control placed beside this label.
+    ///
+    /// A card whose face is a picture has no button carrying its words: what takes the
+    /// press is a `Button` with no label, sitting over the picture, and the name is a
+    /// `Text` beside it. So the label is looked up, and the press is whatever under the
+    /// container that label was placed in answers a click.
+    pub fn press_beside(&mut self, label: &str) -> bool {
+        let found = {
+            let mutations = self.mutations();
+            let named = mutations.iter().rev().find_map(|mutation| match mutation {
+                Mutation::SetProp {
+                    node_id,
+                    property: PropertyKind::Text,
+                    value: PropertyValue::String(text),
+                } if *text == label => Some(*node_id),
+                _ => None,
+            });
+            named.and_then(|named| {
+                let parents: Vec<(u32, u32)> = mutations
+                    .iter()
+                    .filter_map(|mutation| match mutation {
+                        Mutation::Insert {
+                            parent_id, node_id, ..
+                        } => Some((*node_id, *parent_id)),
+                        _ => None,
+                    })
+                    .collect();
+                let handler = |node: u32| {
+                    mutations.iter().rev().find_map(|mutation| match mutation {
+                        Mutation::SetProp {
+                            node_id,
+                            property: PropertyKind::OnClick,
+                            value: PropertyValue::Integer(id),
+                        } if *node_id == node => Some(*id as u64),
+                        _ => None,
+                    })
+                };
+                let parent = parents
+                    .iter()
+                    .rev()
+                    .find_map(|(child, owner)| (*child == named).then_some(*owner))?;
+                let mut family = vec![parent];
+                while let Some(next) = family.pop() {
+                    if next != named {
+                        if let Some(id) = handler(next) {
+                            return Some((next, id));
+                        }
+                    }
+                    family.extend(
+                        parents
+                            .iter()
+                            .filter_map(|(child, owner)| (*owner == next).then_some(*child)),
+                    );
+                }
+                None
             })
         };
         let Some((node_id, handler_id)) = found else {

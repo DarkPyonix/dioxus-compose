@@ -46,6 +46,11 @@ internal fun detectHostPlatform(
     val os = osName.lowercase()
     return when {
         androidRuntime?.contains("Android", ignoreCase = true) == true -> HostPlatform.Android
+        // The browser has no operating system to report. Its shim for this property answers
+        // `web`, which is the only way a tab can say what it is: `navigator.platform` names
+        // the machine underneath, so a browser on a Mac would come out as macOS and take
+        // Cupertino, and the same page on Windows would take Fluent.
+        os == "web" -> HostPlatform.Web
         os.contains("mac") || os.contains("darwin") -> HostPlatform.MacOs
         os.contains("ios") -> HostPlatform.Ios
         os.contains("win") -> HostPlatform.Windows
