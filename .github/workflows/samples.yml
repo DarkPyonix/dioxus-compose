@@ -230,9 +230,155 @@ jobs:
           name: samples-${{ matrix.target }}
           path: artifacts/
 
+
+  android:
+    name: android
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup target add aarch64-linux-android
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install the NDK
+        run: sdkmanager --install "ndk;27.1.12297006"
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-android-${{ hashFiles('dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: kotlin-android-
+
+      - name: Build an APK for every sample
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_SDK_ROOT }}/ndk/27.1.12297006
+        run: ./scripts/build-sample-apks.sh artifacts arm64-v8a
+
+      - name: Checksum
+        run: |
+          cd artifacts
+          sha256sum *.apk > SHA256SUMS-android
+          cat SHA256SUMS-android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: samples-android
+          path: artifacts/
+
+  ios:
+    name: ios-simulator
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup target add aarch64-apple-ios-sim
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-ios-${{ hashFiles('dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: kotlin-ios-
+
+      - name: Build the renderer for the simulator
+        run: ./dioxus-compose-renderer/desktop/scripts/build-ios.sh --target simulator
+
+      - name: Wrap every sample in an application bundle
+        # Simulator only. A bundle for a device has to be signed by a certificate Apple
+        # issued against a profile naming that device, and there is none here.
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p artifacts
+          built=0
+          for manifest in samples/*/Cargo.toml; do
+            sample="$(basename "$(dirname "$manifest")")"
+            [[ -f "samples/$sample/src/lib.rs" ]] || continue
+            if ./dioxus-compose-renderer/desktop/scripts/build-sample-ios.sh "$sample" --release; then
+              tar -czf "artifacts/$sample-ios-simulator.tar.gz" \
+                -C dioxus-compose-renderer/build/ios/samples "sample-$sample.app"
+              built=$((built + 1))
+            else
+              echo "::warning title=Sample skipped::$sample did not build for the iOS simulator"
+            fi
+          done
+          [[ $built -gt 0 ]] || { echo "::error::no sample built for iOS"; exit 1; }
+          cd artifacts && shasum -a 256 *.tar.gz > SHA256SUMS-ios-simulator
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: samples-ios-simulator
+          path: artifacts/
+
+  web:
+    name: web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal && rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-web-${{ hashFiles('dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: kotlin-web-
+
+      - name: Build a page for every sample
+        run: ./scripts/build-sample-pages.sh pages
+
+      - name: Pack the pages as one archive
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          tar -czf artifacts/samples-web.tar.gz -C pages .
+          cd artifacts && sha256sum samples-web.tar.gz > SHA256SUMS-web
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: samples-web
+          path: artifacts/
+
   release:
     name: Attach the samples to the release
-    needs: build
+    needs: [build, android, ios, web]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -259,14 +405,20 @@ jobs:
           {
             echo "Sample applications, one archive per sample per platform."
             echo
-            echo "Each archive contains the program and the renderer library it was linked"
-            echo "against; run it from the extracted directory. Verify with"
-            echo '`shasum -a 256 -c SHA256SUMS-<platform>`.'
+            echo "A desktop archive contains the program and the renderer library it was"
+            echo "linked against; run it from the extracted directory. Android ships an"
+            echo "APK per sample. iOS ships a simulator bundle per sample, because a"
+            echo "bundle for a device has to be signed by a certificate Apple issued"
+            echo "against a profile naming that device. The web archive is every sample"
+            echo "as a page, with an index linking them."
+            echo
+            echo 'Verify with `shasum -a 256 -c SHA256SUMS-<platform>`.'
             echo
             echo "Built in this release:"
             echo
-            for archive in artifacts/*.tar.gz; do
-              echo "- $(basename "$archive" .tar.gz)"
+            for archive in artifacts/*.tar.gz artifacts/*.apk; do
+              [ -e "$archive" ] || continue
+              echo "- $(basename "$archive")"
             done
             echo
             echo "A sample that does not build on a platform is skipped rather than"

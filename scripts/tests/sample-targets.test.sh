@@ -13,6 +13,11 @@
 # A sample cannot be built for a platform the renderer is not published for, so this
 # checks one direction as an error and the other as an error too: a published renderer
 # with no samples is a platform whose users get a library and no examples.
+#
+# Only the desktop matrix is compared. Android, iOS and the browser are jobs of their own
+# rather than matrix rows, because on those a sample is not a program: it is a library an
+# Activity loads, an executable the renderer is linked into, or a module a page fetches.
+# That they exist at all is checked below instead.
 set -uo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -47,7 +52,23 @@ elif [[ "$published" != "$built" ]]; then
         "no examples, or an archive that cannot find a renderer to run against."
 fi
 
+# The three that are not desktop platforms. Each is a job rather than a matrix row, and
+# each was missing from the first sample release, so their absence is worth an assertion
+# rather than a reader's memory.
+for job in android ios web; do
+    if ! grep -qE "^  $job:$" .github/workflows/samples.yml; then
+        fail "the samples are not built for $job" \
+            "It is a job of its own rather than a matrix row, because there a sample is" \
+            "not a program. Without it that platform ships a library and no examples."
+    fi
+done
+
+if ! grep -q "needs: \[build, android, ios, web\]" .github/workflows/samples.yml; then
+    fail "the release does not wait for every platform" \
+        "A release attached before a platform finishes is a release missing it."
+fi
+
 if [[ $failures -eq 0 ]]; then
-    echo "ok    samples are built for every published target"
+    echo "ok    samples are built for every published target and every other platform"
 fi
 exit "$failures"
