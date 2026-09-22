@@ -129,10 +129,14 @@ Host 측 규칙:
 - 핸들러 실행 중에 Renderer를 동기로 호출하지 않습니다(재진입 금지). 상태만 바꾸고 프레임 요청으로 넘깁니다.
 - 수용 기준: 멀티라인 TextField에서 Enter는 제출되고 줄바꿈이 생기지 않으며, Shift+Enter는 줄바꿈만 생기고 제출되지 않습니다. 한글 조합 중 Enter는 조합만 확정합니다.
 
-### FR-10 Modifier 값 모델 (`Agreed`)
+### FR-10 Modifier 값 모델 (`Done`)
 Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]`. Renderer는 이를 `Modifier` 체인으로 재구성합니다.
+- 수용 기준: 스키마의 모든 Modifier 변형이 인코딩 후 디코딩해도 같습니다(`fr10_every_modifier_variant_in_the_vector_round_trips`). **(통과)**
+- 수용 기준: 값 리스트가 순서대로 Compose 체인으로 다시 서고, 순서가 결과에 반영됩니다(`fr10_modifier_list_rebuilds_the_compose_chain`). **(통과)**
 
-### FR-13 디자인 프리미티브 (`Agreed`)
+기준을 2026-09-22에 적었습니다. 그 전까지 이 항목에는 수용 기준이 하나도 없었고, 기준 없는 요구사항은 검증할 것이 없어서 영원히 `Agreed`에 머무릅니다. 두 테스트는 그 전부터 있었습니다.
+
+### FR-13 디자인 프리미티브 (`Done`)
 위젯만으로는 디자인을 할 수 없습니다. 스키마에 **값 모델**이 필요합니다. 값은 고정 레이아웃 레코드(PR-4)를 넘어야 하므로, Modifier 한 변형이 쓸 수 있는 공간은 `(tag: u16, first: u64, second: u64)`뿐입니다. 아래 프리미티브는 모두 이 한도 안에 들어갑니다.
 
 원칙: **역할(role)을 우선하고 리터럴은 탈출구로 둡니다.** 역할은 FR-14의 디자인 시스템이 해석하고, 리터럴은 그대로 그립니다.
