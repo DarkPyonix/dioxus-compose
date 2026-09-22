@@ -97,6 +97,9 @@ $rendererDir = $null
 foreach ($candidate in @(
     $RendererDir,
     $env:DIOXUS_COMPOSE_RENDERER_DIR,
+    # The build script copies the renderer next to the executables, so the first place to
+    # look is where the executable actually is.
+    (Split-Path $Exe -Parent),
     (Join-Path $repoRoot 'dioxus-compose-renderer\build\native-image\dist\bin'),
     (Join-Path $repoRoot 'dioxus-compose-renderer\build\native-image\dist\lib')
 )) {

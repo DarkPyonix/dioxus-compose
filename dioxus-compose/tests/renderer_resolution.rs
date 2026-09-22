@@ -1389,3 +1389,51 @@ fn pr5_compose_is_added_to_a_generated_gradle_project() {
          and Gradle would configure again for nothing"
     );
 }
+
+/// A sample that asked for the platform's design says so on the wire.
+#[test]
+fn fr14_an_adaptive_sample_sends_an_adaptive_theme() {
+    let theme = dioxus_compose::demo_theme();
+    assert!(
+        theme.adaptive,
+        "the theme a sample launches with is fixed to {:?}, so it draws the same design \
+         on every platform",
+        theme.design_system
+    );
+}
+
+/// On Windows the renderer has to sit beside whatever is about to run.
+///
+/// A DLL is found on the loader's search path and nowhere else, and the directory the
+/// executable is in is on it. Telling the person building to put a directory on PATH
+/// instead made adding this crate two steps rather than one, and it broke something that
+/// has nothing to do with drawing: the code generator in this package links the renderer
+/// only because it shares a package with it, and it died on startup before generating a
+/// line.
+///
+/// Cargo does not tell a build script where binaries land. OUT_DIR does, three levels up,
+/// and this is the arithmetic that says so.
+#[test]
+fn nfr11_the_profile_directory_is_three_levels_above_out_dir() {
+    let out_dir = std::path::Path::new("/w/target/release/build/dioxus-compose-1a2b3c/out");
+    let profile = out_dir
+        .parent()
+        .and_then(std::path::Path::parent)
+        .and_then(std::path::Path::parent)
+        .expect("a build directory has three levels above its out directory");
+    assert_eq!(
+        profile,
+        std::path::Path::new("/w/target/release"),
+        "binaries land in the profile directory, and anything else puts the renderer \
+         somewhere no loader looks"
+    );
+    // Examples and tests land beside it rather than in it, so both are written to as well.
+    assert_eq!(
+        profile.join("examples"),
+        std::path::Path::new("/w/target/release/examples")
+    );
+    assert_eq!(
+        profile.join("deps"),
+        std::path::Path::new("/w/target/release/deps")
+    );
+}

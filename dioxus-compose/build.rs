@@ -190,17 +190,21 @@ fn main() {
         }
         // Windows has no rpath and no name inside the file that the loader consults: a
         // DLL is found on the loader's search path and nowhere else. The other platforms
-        // are handled by naming the library after where it sits, which does nothing here,
-        // so this is the one platform where the application's author has a step to take.
-        // Saying it is the whole of the fix until a Windows machine is available to check
-        // the alternative on, which is copying tens of megabytes beside every profile's
-        // executable.
-        println!(
-            "cargo:warning=dioxus-compose: on Windows the renderer is found through the \
-             loader's search path. Put {} on PATH, or copy its contents next to the \
-             executable, or the program will not start.",
-            lib_dir.display()
-        );
+        // name the library after where it sits, which does nothing here.
+        //
+        // Telling the person building to put a directory on PATH was the whole of the fix
+        // and it was not enough. It makes adding this crate to a Cargo.toml two steps
+        // instead of one, and it breaks things that have nothing to do with drawing: the
+        // code generator in this package links the renderer only because it lives in the
+        // same package, and on Windows it died on startup with STATUS_DLL_NOT_FOUND
+        // before it had generated a line.
+        //
+        // The loader searches the directory the executable is in, so the renderer is put
+        // there. Cargo does not tell a build script where that is, but OUT_DIR is
+        // `<target>/<profile>/build/<crate>-<hash>/out`, so three levels up is the
+        // profile directory where binaries land, and `examples/` and `deps/` beside it
+        // are where examples and tests land.
+        copy_renderer_beside_executables(&lib_dir);
         return;
     }
 
@@ -526,6 +530,62 @@ class MainActivity : ComponentActivity() {{
 }
 
 /// Every file under `from`, into the same shape under `to`.
+/// Puts the renderer where a Windows loader will find it: beside the executables.
+///
+/// Best effort. A failure here is a program that does not start, which is loud, and
+/// stopping the build over it would be worse: a cargo build that cannot write into its
+/// own target directory has a problem this cannot fix.
+fn copy_renderer_beside_executables(lib_dir: &Path) {
+    let Some(out_dir) = std::env::var_os("OUT_DIR") else { return };
+    let out_dir = PathBuf::from(out_dir);
+    let Some(profile_dir) = out_dir
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+    else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(lib_dir) else { return };
+    // The renderer, Skia, the AWT libraries, and the data files they read by name.
+    let wanted: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file()
+                && matches!(
+                    path.extension().and_then(|e| e.to_str()),
+                    Some("dll") | Some("dat") | Some("bfc")
+                )
+        })
+        .collect();
+    for directory in [
+        profile_dir.to_path_buf(),
+        profile_dir.join("examples"),
+        profile_dir.join("deps"),
+    ] {
+        if std::fs::create_dir_all(&directory).is_err() {
+            continue;
+        }
+        for source in &wanted {
+            let Some(name) = source.file_name() else { continue };
+            let destination = directory.join(name);
+            // Only when it is missing or older. These are tens of megabytes and every
+            // build would otherwise copy them three times.
+            let copy = match (source.metadata(), destination.metadata()) {
+                (Ok(from), Ok(to)) => match (from.modified(), to.modified()) {
+                    (Ok(from), Ok(to)) => from > to,
+                    _ => true,
+                },
+                (Ok(_), Err(_)) => true,
+                _ => false,
+            };
+            if copy {
+                let _ = std::fs::copy(source, &destination);
+            }
+        }
+    }
+}
+
 fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
