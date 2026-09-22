@@ -56,9 +56,48 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (-not (Test-Path $Exe)) {
-    Write-Error "no executable at $Exe"
+# The repository root, found by walking up from this script until the workspace manifest
+# turns up. Cargo puts its output there rather than next to whatever directory you happened
+# to type the command in, which is the first thing that goes wrong when running this.
+$repoRoot = $PSScriptRoot
+while ($repoRoot -and -not (Test-Path (Join-Path $repoRoot 'Cargo.toml'))) {
+    $repoRoot = Split-Path $repoRoot -Parent
+}
+
+$resolved = $null
+foreach ($candidate in @($Exe, (Join-Path $repoRoot $Exe))) {
+    if ($candidate -and (Test-Path $candidate)) { $resolved = (Resolve-Path $candidate).Path; break }
+}
+if (-not $resolved) {
+    Write-Host "no executable at $Exe"
+    if ($repoRoot) {
+        Write-Host ""
+        Write-Host "cargo builds into the workspace root, not the directory you ran it from."
+        Write-Host "The probe is at:"
+        Write-Host "  $repoRoot\target\release\examples\memory_probe.exe"
+        Write-Host "and a sample at:"
+        Write-Host "  $repoRoot\target\release\sample-todo.exe"
+    }
     exit 1
+}
+$Exe = $resolved
+
+# The renderer is a DLL found on the loader's search path and nowhere else, so an
+# application started without it on PATH does not open a window and this would report that
+# as a process which exited before it could be measured. The same three places the build
+# script looks, in the same order.
+if (-not $env:PATH.Contains('dioxus-compose\renderer')) {
+    $rendererDirs = @(
+        $env:DIOXUS_COMPOSE_RENDERER_DIR,
+        (Join-Path $repoRoot 'dioxus-compose-renderer\build\native-image\dist\bin'),
+        (Join-Path $env:LOCALAPPDATA 'dioxus-compose\renderer\v0.0.0\windows-x64\bin')
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    if ($rendererDirs) {
+        $env:PATH = "$($rendererDirs[0]);$env:PATH"
+        Write-Host "renderer       $($rendererDirs[0])"
+    } else {
+        Write-Host "no renderer found. The application will not start without one on PATH."
+    }
 }
 
 # GetWindowRect, so the report says how big the window actually was rather than how big it
@@ -85,7 +124,10 @@ $process = Start-Process -FilePath $Exe -PassThru
 try {
     Start-Sleep -Seconds $Settle
     if ($process.HasExited) {
-        Write-Error "the process exited before it could be measured (code $($process.ExitCode))"
+        Write-Host "the process exited after $Settle seconds with code $($process.ExitCode)."
+        Write-Host "It never got far enough to be measured. The usual cause is the renderer"
+        Write-Host "not being on PATH, which this script tries to fix and says so when it"
+        Write-Host "cannot. Run the executable from a terminal to see what it printed."
         exit 1
     }
 
