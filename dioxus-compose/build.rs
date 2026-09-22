@@ -570,11 +570,27 @@ fn read_hash(path: &Path) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-/// Puts the renderer where a Windows loader will find it: beside the executables.
+/// Puts the renderer where a Windows loader and AWT will both find it.
 ///
-/// Best effort. A failure here is a program that does not start, which is loud, and
-/// stopping the build over it would be worse: a cargo build that cannot write into its
-/// own target directory has a problem this cannot fix.
+/// Two separate requirements, and satisfying only the first is worse than satisfying
+/// neither, because the program then starts and dies later with a message about a file
+/// nobody asked for.
+///
+/// The loader searches the directory the executable is in, so the libraries are copied
+/// there flat. That alone is what a program needs in order to start, and it is what the
+/// code generator in this package needs, which links the renderer only because it shares a
+/// package with it and died on startup before generating a line.
+///
+/// AWT then wants a distribution around it. The renderer sets `java.home` to the parent of
+/// wherever it was loaded from, and AWT resolves its own libraries against `java.home/bin`.
+/// A flat copy beside an executable in `target/release/examples` therefore sends AWT to
+/// `target/release/bin`, which is a directory nobody made. So the distribution is copied
+/// whole, keeping `bin` and `lib`, into the parent of each place an executable lands.
+///
+/// Cargo does not tell a build script where binaries land. OUT_DIR is
+/// `<target>/<profile>/build/<crate>-<hash>/out`, so three levels up is the profile
+/// directory, `examples/` and `deps/` beside it are where examples and tests land, and the
+/// parents of those two are the profile directory and the target directory.
 fn copy_renderer_beside_executables(lib_dir: &Path) {
     let Some(out_dir) = std::env::var_os("OUT_DIR") else { return };
     let out_dir = PathBuf::from(out_dir);
@@ -585,43 +601,59 @@ fn copy_renderer_beside_executables(lib_dir: &Path) {
     else {
         return;
     };
-    let Ok(entries) = std::fs::read_dir(lib_dir) else { return };
-    // The renderer, Skia, the AWT libraries, and the data files they read by name.
-    let wanted: Vec<PathBuf> = entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.is_file()
-                && matches!(
-                    path.extension().and_then(|e| e.to_str()),
-                    Some("dll") | Some("dat") | Some("bfc")
-                )
-        })
-        .collect();
+
+    // Flat, for the loader: every executable's own directory.
     for directory in [
         profile_dir.to_path_buf(),
         profile_dir.join("examples"),
         profile_dir.join("deps"),
     ] {
-        if std::fs::create_dir_all(&directory).is_err() {
+        copy_newer_files(lib_dir, &directory);
+    }
+
+    // Whole, for AWT: the parent of every executable's directory. The distribution root is
+    // the parent of the directory the libraries are in, which is `bin` on Windows and
+    // `lib` everywhere else.
+    let Some(distribution) = lib_dir.parent() else { return };
+    let mut roots = vec![profile_dir.to_path_buf()];
+    if let Some(target_dir) = profile_dir.parent() {
+        roots.push(target_dir.to_path_buf());
+    }
+    for root in roots {
+        for child in ["bin", "lib"] {
+            let source = distribution.join(child);
+            if source.is_dir() {
+                copy_newer_files(&source, &root.join(child));
+            }
+        }
+    }
+}
+
+/// Copies the files of one directory into another, skipping what is already newer there.
+///
+/// These are tens of megabytes and they are copied into five places, so every build would
+/// otherwise move half a gigabyte to no purpose.
+fn copy_newer_files(from: &Path, to: &Path) {
+    let Ok(entries) = std::fs::read_dir(from) else { return };
+    if std::fs::create_dir_all(to).is_err() {
+        return;
+    }
+    for entry in entries.flatten() {
+        let source = entry.path();
+        if !source.is_file() {
             continue;
         }
-        for source in &wanted {
-            let Some(name) = source.file_name() else { continue };
-            let destination = directory.join(name);
-            // Only when it is missing or older. These are tens of megabytes and every
-            // build would otherwise copy them three times.
-            let copy = match (source.metadata(), destination.metadata()) {
-                (Ok(from), Ok(to)) => match (from.modified(), to.modified()) {
-                    (Ok(from), Ok(to)) => from > to,
-                    _ => true,
-                },
-                (Ok(_), Err(_)) => true,
-                _ => false,
-            };
-            if copy {
-                let _ = std::fs::copy(source, &destination);
-            }
+        let destination = to.join(entry.file_name());
+        let newer = match (source.metadata(), destination.metadata()) {
+            (Ok(from), Ok(to)) => match (from.modified(), to.modified()) {
+                (Ok(from), Ok(to)) => from > to,
+                _ => true,
+            },
+            (Ok(_), Err(_)) => true,
+            _ => false,
+        };
+        if newer {
+            let _ = std::fs::copy(&source, &destination);
         }
     }
 }
