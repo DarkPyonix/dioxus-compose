@@ -59,12 +59,27 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
-      - name: Put the MSVC toolchain in front of the one Git ships
+      - name: Take Git's coreutils out of the linker's way
         # Git for Windows carries a coreutils `link` in usr/bin, and a bash step finds it
-        # before the linker, so every Rust build dies at `extra operand`. This puts the
-        # real toolchain's directories on PATH ahead of it.
+        # before the MSVC linker, so every Rust build dies at `extra operand` before
+        # reaching a single sample.
+        #
+        # Renaming that one file rather than rearranging PATH, and rather than reaching
+        # for an action that sets up the whole developer environment: the runner already
+        # has a working MSVC toolchain that cargo finds on its own, and the only thing
+        # wrong is one name being shadowed. Setting up a second environment to fix one
+        # shadowed name is how `VsDevCmd.bat failed to initialise the x64 compiler
+        # environment` happened.
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        shell: bash
+        run: |
+          set -euo pipefail
+          shadow="/c/Program Files/Git/usr/bin/link.exe"
+          if [ -f "$shadow" ]; then
+            mv "$shadow" "$shadow.coreutils"
+            echo "moved the coreutils link out of the way"
+          fi
+          echo "link.exe now resolves to: $(command -v link || echo 'nothing on PATH')"
 
       - name: Install Liberica NIK 25 Full
         if: runner.os == 'macOS'
