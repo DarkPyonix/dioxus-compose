@@ -871,6 +871,7 @@ fn launch_builder() -> dioxus_compose::LaunchBuilder {
 // this sample can still be built for the other two.
 dioxus_compose::android_main!({ launch_builder() }, app);
 dioxus_compose::web_main!({ launch_builder() }, app);
+dioxus_compose::ios_main!(launch);
 
 #[cfg(test)]
 mod tests {

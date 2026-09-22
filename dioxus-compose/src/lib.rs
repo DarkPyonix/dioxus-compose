@@ -78,6 +78,28 @@ macro_rules! android_main {
     };
 }
 
+/// Declares the entry point an iOS application starts at.
+///
+/// iOS is the one platform where the application is the library: the renderer is a
+/// Kotlin/Native archive and the two are linked into a single executable, so there is no
+/// Activity to load anything and no page to fetch anything. What there is instead is a
+/// `main`, and a `main` in an application bundle has to be C, so this exports the launch
+/// under a name that C can call.
+///
+/// ```ignore
+/// dioxus_compose::ios_main!(launch);
+/// ```
+#[macro_export]
+macro_rules! ios_main {
+    ($launch:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_ios_main() -> i32 {
+            $launch();
+            0
+        }
+    };
+}
+
 /// Declares the browser entry point for an application's wasm module.
 ///
 /// A page has no library loader and no `main` of its own to run: the Renderer's module

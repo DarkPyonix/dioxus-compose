@@ -650,6 +650,7 @@ dioxus_compose::web_main!(
     },
     app
 );
+dioxus_compose::ios_main!(launch);
 
 #[cfg(test)]
 mod tests {

@@ -47,6 +47,11 @@ private fun symbolName(role: IconRole?): String? = when (role) {
     IconRole.Home -> "house"
     IconRole.List -> "list.bullet"
     IconRole.Inbox -> "tray"
+    // What a window's own bar needs rather than a destination. A tab bar will not show
+    // either of them, but the mapping is exhaustive on purpose: a role with no answer
+    // here is a role somebody added without deciding what iOS draws for it.
+    IconRole.Menu -> "line.3.horizontal"
+    IconRole.History -> "clock.arrow.circlepath"
     null -> null
 }
 
