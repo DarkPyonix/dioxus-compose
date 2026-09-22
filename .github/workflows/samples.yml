@@ -59,6 +59,13 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
+      - name: Put the MSVC toolchain in front of the one Git ships
+        # Git for Windows carries a coreutils `link` in usr/bin, and a bash step finds it
+        # before the linker, so every Rust build dies at `extra operand`. This puts the
+        # real toolchain's directories on PATH ahead of it.
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Install Liberica NIK 25 Full
         if: runner.os == 'macOS'
         run: ./scripts/install-nik.sh --github-env
@@ -80,7 +87,7 @@ jobs:
           # travelling beside it, in place of the absolute path this runner built with.
           sudo apt-get install -y build-essential zlib1g-dev pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 fonts-noto-cjk patchelf
+            libfontconfig1-dev libfreetype6-dev libgl1 fonts-noto-cjk patchelf xvfb
 
       - name: Cache the Kotlin toolchain and Maven dependencies
         uses: actions/cache@v4
@@ -93,7 +100,18 @@ jobs:
           restore-keys: kotlin-${{ matrix.target }}-
 
       - name: Build the renderer
+        # Linux gets its own step rather than a branch inside one. The Windows command is
+        # a PowerShell invocation with backslashes in it, and running that through bash
+        # to reach an `if` would eat them.
+        if: runner.os != 'Linux'
         run: ${{ matrix.renderer }}
+
+      - name: Build the renderer under a virtual display
+        # The Linux build starts a Compose JVM to collect reachability metadata, and that
+        # needs a display even though nobody looks at it. The script says so itself when
+        # DISPLAY is unset, and says to do exactly this.
+        if: runner.os == 'Linux'
+        run: xvfb-run -a ${{ matrix.renderer }}
 
       - name: Build every sample against it
         # A sample that does not build is skipped rather than allowed to end the run. The
@@ -114,6 +132,13 @@ jobs:
           : > skipped.txt
           for manifest in samples/*/Cargo.toml; do
             app="$(basename "$(dirname "$manifest")")"
+            # Only the ones that are programs. `frames` is a library the others record
+            # their screens through, so it builds and then has no binary to ship, which
+            # is not a failure and must not be reported as one.
+            if [[ ! -f "samples/$app/src/main.rs" ]]; then
+              echo "-- $app is a library, not an application"
+              continue
+            fi
             echo "== sample-$app"
             if cargo build --release -p "sample-$app" --features dioxus-compose/native-renderer; then
               echo "$app" >> built.txt
