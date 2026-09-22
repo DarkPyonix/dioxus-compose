@@ -115,6 +115,49 @@ memory_args=("-R:MaxHeapSize=64m"
 # machine's java.home and user.home.
 initialisation_args=("--initialize-at-run-time=org.jetbrains.skiko.SkikoProperties")
 
+# Skia inside the image rather than beside it, when an archive has been built for it.
+#
+# Off unless DXC_STATIC_SKIKO names one, because the interface the feature uses to do it
+# lives under com.oracle.svm.core, is documented nowhere, and is not promised to survive a
+# GraalVM release. When it is on, the archive is put on the linker's library path and the
+# feature is added; the dylib beside the renderer is then unnecessary and the staging step
+# below says so.
+static_skiko_args=()
+if [[ -n "${DXC_STATIC_SKIKO:-}" ]]; then
+    [[ -f "$DXC_STATIC_SKIKO" ]] || die "no archive at $DXC_STATIC_SKIKO" \
+        "experiments/static-library/build-static-skiko.sh builds one."
+    static_skiko_dir="$(cd "$(dirname "$DXC_STATIC_SKIKO")" && pwd)"
+    static_skiko_args=(
+        "--features=dioxus.compose.ui.platform.StaticSkikoFeature"
+        "-Ddioxus.compose.staticSkiko=true"
+        "-H:CLibraryPath=$static_skiko_dir"
+        # Every member, not only the ones something refers to. A JNI entry point is
+        # reached by name at run time and nothing in the image refers to it by symbol, so
+        # ordinary archive semantics drop the member that defines it and the library
+        # fails to load with the first such name in it. The AWT archive above is forced
+        # in for the same reason.
+        "-H:NativeLinkerOption=-Wl,-force_load,$DXC_STATIC_SKIKO"
+    )
+    # The entry points belonging to other platforms. Skiko declares every platform's
+    # native methods everywhere and compiles only this one's, which is invisible while the
+    # library is loaded by name at run time and fatal once it is linked in: macOS binds
+    # every symbol at load, so the first Direct3D declaration kills the process before
+    # anything is drawn. experiments/static-library/generate-foreign-stubs.sh writes them.
+    foreign_stubs="$static_skiko_dir/foreign-stubs.o"
+    [[ -f "$foreign_stubs" ]] || die "no $foreign_stubs" \
+        "experiments/static-library/generate-foreign-stubs.sh writes the source for it."
+    static_skiko_args+=(
+        "-H:NativeLinkerOption=$foreign_stubs"
+        # The three packages the feature reaches into are not exported by the builder
+        # module, which is the module system saying what the comment on the feature says:
+        # this is not an API. `-J` passes a flag to the builder's own JVM.
+        "-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.core.jdk=ALL-UNNAMED"
+        "-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.hosted=ALL-UNNAMED"
+        "-J--add-exports=org.graalvm.nativeimage.builder/com.oracle.svm.hosted.c=ALL-UNNAMED"
+    )
+    echo "==> linking Skia into the image from $DXC_STATIC_SKIKO"
+fi
+
 # Locale data and reachable code are already as small as they can safely go.
 # `-H:IncludeLocales=en,ko` is the minimum the product supports and ko is not removable:
 # Korean input is a headline requirement of this project. Neither shows up in the footprint
@@ -132,6 +175,7 @@ fi
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
     ${probe_args[@]+"${probe_args[@]}"} \
     "${initialisation_args[@]}" \
+    ${static_skiko_args[@]+"${static_skiko_args[@]}"} \
     --shared \
     -cp "$classpath" \
     -o "$LIBRARY_NAME" \

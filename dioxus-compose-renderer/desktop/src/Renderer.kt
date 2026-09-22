@@ -75,7 +75,10 @@ private fun runRendererWithHost(
     }
     Window(
         onCloseRequest = ::exitApplication,
-        title = "DioxusCompose",
+        // The application's own name where it gave one. A desktop lists windows by their
+        // title, and every window this ever opened was listed as the renderer's name,
+        // which is the library's name and not any application's.
+        title = asked?.title?.takeIf { it.isNotEmpty() } ?: "DioxusCompose",
         undecorated = undecorated,
         resizable = asked?.resizable ?: true,
         state = state,
