@@ -104,7 +104,10 @@ jobs:
         # left by an earlier run.
         shell: bash
         env:
-          DIOXUS_COMPOSE_RENDERER_DIR: ${{ matrix.dist }}
+          # Absolute. A build script runs with its crate directory as the working
+          # directory, not the workspace root, so a relative path here points at
+          # dioxus-compose/dioxus-compose-renderer/... and finds nothing.
+          DIOXUS_COMPOSE_RENDERER_DIR: ${{ github.workspace }}/${{ matrix.dist }}
         run: |
           set -uo pipefail
           : > built.txt
