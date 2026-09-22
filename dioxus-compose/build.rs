@@ -163,6 +163,7 @@ fn main() {
     }
 
     let lib_dir = renderer.lib_dir;
+    check_schema_agreement(&lib_dir);
     println!("cargo:rerun-if-changed={}", lib_dir.display());
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-cfg=renderer_linked");
@@ -530,6 +531,45 @@ class MainActivity : ComponentActivity() {{
 }
 
 /// Every file under `from`, into the same shape under `to`.
+/// Stops the build when the renderer was generated from a different schema than this
+/// crate.
+///
+/// The two sides check this at the first boundary call and that check works, but it runs
+/// at run time: the program builds, starts, opens a window and draws nothing, and the
+/// report comes back as a white window rather than as two artifacts that do not match.
+/// Both numbers are already on disk while there is still a build to stop.
+fn check_schema_agreement(lib_dir: &Path) {
+    let renderer_hash = read_hash(&lib_dir.join("..").join("schema-hash.txt"))
+        .or_else(|| read_hash(&lib_dir.join("schema-hash.txt")));
+    let ours = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema-hash.txt");
+    println!("cargo:rerun-if-changed={}", ours.display());
+    let crate_hash = read_hash(&ours);
+    match renderer_dir::schema_agreement(renderer_hash.as_deref(), crate_hash.as_deref()) {
+        renderer_dir::SchemaAgreement::Same | renderer_dir::SchemaAgreement::Unknown => {}
+        renderer_dir::SchemaAgreement::Different {
+            renderer,
+            crate_hash,
+        } => panic!(
+            "\n\ndioxus-compose: this renderer was generated from a different schema than \
+             this crate.\n\n  renderer: {renderer}\n  crate:    {crate_hash}\n\nA program \
+             built from the two would compile, start, open a window and draw nothing, \
+             because the first call across the boundary is refused.\n\nThe renderer at \
+             {} is the one to replace. A published renderer only matches the crate \
+             version it was published with, so a checkout whose schema has moved needs one \
+             built from that checkout: run the renderer build for this platform, or point \
+             DIOXUS_COMPOSE_RENDERER_DIR at one that was.\n\n",
+            lib_dir.display()
+        ),
+    }
+}
+
+fn read_hash(path: &Path) -> Option<String> {
+    std::fs::read_to_string(path)
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
 /// Puts the renderer where a Windows loader will find it: beside the executables.
 ///
 /// Best effort. A failure here is a program that does not start, which is loud, and

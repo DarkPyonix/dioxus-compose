@@ -1465,3 +1465,44 @@ fn fr19_3_a_window_carries_the_title_it_was_given() {
          window with"
     );
 }
+
+/// A renderer from another schema is caught while there is still a build to stop.
+///
+/// The handshake at the first boundary call catches it too, and too late to be read
+/// correctly: the program builds, starts, opens a window and draws nothing, and the report
+/// that comes back is a white window rather than two artifacts that do not match. That is
+/// exactly how it was reported.
+#[test]
+fn nfr10_a_renderer_from_another_schema_is_caught_at_build_time() {
+    use renderer_dir::{SchemaAgreement, schema_agreement};
+
+    assert_eq!(
+        schema_agreement(Some("0x14b870f8e4c8b976"), Some("0x14b870f8e4c8b976\n")),
+        SchemaAgreement::Same,
+        "trailing whitespace from a file is not a disagreement"
+    );
+    assert_eq!(
+        schema_agreement(Some("0X14B870F8E4C8B976"), Some("0x14b870f8e4c8b976")),
+        SchemaAgreement::Same,
+        "the same number written in two cases is the same number"
+    );
+    assert!(matches!(
+        schema_agreement(Some("0x6c56ae4445f42b7f"), Some("0x14b870f8e4c8b976")),
+        SchemaAgreement::Different { .. }
+    ));
+
+    // A distribution built before the hash was written beside it, or a checkout that has
+    // not run codegen. Refusing to build against a renderer that might be perfectly
+    // compatible would be worse than the problem being solved.
+    for pair in [
+        (None, Some("0x14b870f8e4c8b976")),
+        (Some("0x14b870f8e4c8b976"), None),
+        (Some(""), Some("0x14b870f8e4c8b976")),
+    ] {
+        assert_eq!(
+            schema_agreement(pair.0, pair.1),
+            SchemaAgreement::Unknown,
+            "a missing answer is not a wrong one"
+        );
+    }
+}

@@ -1090,3 +1090,44 @@ fn kotlin_gradle_plugin_version(root: &str) -> Option<String> {
     let end = rest.find(['"', '\''])?;
     Some(rest[..end].to_owned())
 }
+
+/// What a renderer distribution and this crate say about the schema they were built from.
+#[derive(Debug, Eq, PartialEq)]
+pub enum SchemaAgreement {
+    /// The two were generated from the same schema.
+    Same,
+    /// One of them does not say, so the question cannot be answered here.
+    Unknown,
+    /// They disagree, and a program built from this pair opens a window and draws nothing.
+    Different { renderer: String, crate_hash: String },
+}
+
+/// Compares the schema hash beside the renderer with the one beside this crate.
+///
+/// The handshake at the first boundary call already catches this. It catches it at run
+/// time, which is late enough to be mistaken for something else: the program builds,
+/// starts, opens a window and stays empty, and the report comes back as a white window
+/// rather than as two mismatched artifacts. Both numbers are on disk at build time.
+///
+/// A distribution built before this file existed does not carry one, and neither does a
+/// crate that has not run codegen. That is Unknown, not Different: refusing to build
+/// against an older renderer that might be perfectly compatible would be worse than the
+/// problem.
+pub fn schema_agreement(renderer_hash: Option<&str>, crate_hash: Option<&str>) -> SchemaAgreement {
+    let (Some(renderer), Some(crate_hash)) = (renderer_hash, crate_hash) else {
+        return SchemaAgreement::Unknown;
+    };
+    let renderer = renderer.trim();
+    let crate_hash = crate_hash.trim();
+    if renderer.is_empty() || crate_hash.is_empty() {
+        return SchemaAgreement::Unknown;
+    }
+    if renderer.eq_ignore_ascii_case(crate_hash) {
+        SchemaAgreement::Same
+    } else {
+        SchemaAgreement::Different {
+            renderer: renderer.to_owned(),
+            crate_hash: crate_hash.to_owned(),
+        }
+    }
+}

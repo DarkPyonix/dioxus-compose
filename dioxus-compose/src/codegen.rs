@@ -20,10 +20,24 @@ use std::fmt::Write as _;
 /// add another source root, so generated Kotlin lives inside `src`.
 pub const GENERATED_RELATIVE_PATH: &str =
     "../dioxus-compose-renderer/desktop/src/protocol/Protocol.gen.kt";
+/// The schema's hash, as a line of text beside the crate.
+///
+/// The renderer carries the same number, compiled into it, and the two are compared when
+/// the first call crosses the boundary. That comparison happens at run time, which is
+/// late: a renderer built from another schema produces a program that builds, starts,
+/// opens a window and draws nothing. The build script reads this file and the one in the
+/// renderer's distribution so the disagreement is reported while there is still a build to
+/// stop.
+pub const SCHEMA_HASH_RELATIVE_PATH: &str = "schema-hash.txt";
 pub const MUTATION_VECTOR_RELATIVE_PATH: &str = "tests/vectors/mutations.bin";
 pub const EVENT_VECTOR_RELATIVE_PATH: &str = "tests/vectors/events.bin";
 pub const VECTOR_DESCRIPTION_RELATIVE_PATH: &str = "tests/vectors/vectors.json";
 const KOTLIN_PACKAGE: &str = "dioxus.compose.protocol";
+
+/// The schema's hash on its own line, for the file the build script compares.
+pub fn generate_schema_hash() -> String {
+    format!("{SCHEMA_HASH:#018x}\n")
+}
 
 pub fn generate_kotlin() -> String {
     let mut output = String::new();

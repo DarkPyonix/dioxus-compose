@@ -206,3 +206,16 @@ mv "$lib"/*.h "$DIST_DIR/include/" 2>/dev/null || true
 rm -f "$lib"/*.md
 
 ls -la "$lib"
+
+# The schema this renderer was generated from, written beside it, so a build script that
+# pairs a program with this distribution can see the two disagree before the program runs.
+# The handshake catches it as well, but by then the window is open and empty, which is what
+# a white window on Windows turned out to be.
+schema_hash_decimal="$(
+    grep -o 'const val SCHEMA_HASH: Long = -\?[0-9]*' \
+        "$NATIVE_DIR/src/protocol/Protocol.gen.kt" |
+        grep -o -- '-\?[0-9]*$'
+)"
+# printf rather than awk. The hash fills all 64 bits and awk works in doubles, which
+# rounded one off by 118 and produced a file that disagreed with itself.
+printf '0x%016x\n' "$schema_hash_decimal" > "$DIST_DIR/schema-hash.txt"
