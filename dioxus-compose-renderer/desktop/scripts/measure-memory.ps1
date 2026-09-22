@@ -51,7 +51,8 @@ param(
     [int]$Height = 600,
     [int]$Rows = 0,
     [int]$Settle = 15,
-    [int]$Samples = 5
+    [int]$Samples = 5,
+    [string]$RendererDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -83,36 +84,53 @@ if (-not $resolved) {
 $Exe = $resolved
 
 # The renderer is a DLL found on the loader's search path and nowhere else, so an
-# application started without it on PATH does not open a window and this would report that
-# as a process which exited before it could be measured. The same three places the build
-# script looks, in the same order.
-if (-not $env:PATH.Contains('dioxus-compose\renderer')) {
-    $rendererDirs = @(
-        $env:DIOXUS_COMPOSE_RENDERER_DIR,
-        (Join-Path $repoRoot 'dioxus-compose-renderer\build\native-image\dist\bin'),
-        (Join-Path $env:LOCALAPPDATA 'dioxus-compose\renderer\v0.0.0\windows-x64\bin')
-    ) | Where-Object { $_ -and (Test-Path $_) }
-    if ($rendererDirs) {
-        $env:PATH = "$($rendererDirs[0]);$env:PATH"
-        Write-Host "renderer       $($rendererDirs[0])"
-    } else {
-        Write-Host "no renderer found. The application will not start without one on PATH."
+# application started without it on PATH prints that it cannot find it and exits. Guessing
+# the path was not good enough: the first attempt checked three likely places, found none
+# of them, and the run died anyway. So this looks for the file itself.
+# The native image is named with a `lib` prefix on every platform, because that is what
+# the import library beside it carries and what the crate links against. Both spellings
+# are accepted so a rename does not turn this into a silent no-match.
+$rendererDlls = @('libdioxus_compose_renderer.dll', 'dioxus_compose_renderer.dll')
+$searched = @()
+$rendererDir = $null
+
+foreach ($candidate in @(
+    $RendererDir,
+    $env:DIOXUS_COMPOSE_RENDERER_DIR,
+    (Join-Path $repoRoot 'dioxus-compose-renderer\build\native-image\dist\bin'),
+    (Join-Path $repoRoot 'dioxus-compose-renderer\build\native-image\dist\lib')
+)) {
+    if (-not $candidate) { continue }
+    $searched += $candidate
+    foreach ($name in $rendererDlls) {
+        if (Test-Path (Join-Path $candidate $name)) { $rendererDir = $candidate; break }
+    }
+    if ($rendererDir) { break }
+}
+
+# The cache the build script unpacks into. Its version and target are in the path, and
+# hardcoding either goes stale, so the DLL is searched for instead.
+if (-not $rendererDir) {
+    $cacheRoot = Join-Path $env:LOCALAPPDATA 'dioxus-compose'
+    $searched += "$cacheRoot (searched)"
+    if (Test-Path $cacheRoot) {
+        $found = Get-ChildItem -Path $cacheRoot -Include $rendererDlls -Recurse -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($found) { $rendererDir = $found.DirectoryName }
     }
 }
 
-# GetWindowRect, so the report says how big the window actually was rather than how big it
-# was asked to be.
-if (-not ('DxcWin32' -as [type])) {
-    Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-public class DxcWin32 {
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT { public int Left, Top, Right, Bottom; }
-    [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
-}
-'@
+if ($rendererDir) {
+    $env:PATH = "$rendererDir;$env:PATH"
+    Write-Host "renderer       $rendererDir"
+} else {
+    Write-Host ("no " + ($rendererDlls -join ' or ') + " found.")
+    Write-Host "The application will not start without one on PATH. Looked in:"
+    $searched | ForEach-Object { Write-Host "  $_" }
+    Write-Host ''
+    Write-Host 'cargo build prints the directory it unpacked the renderer into. Pass that'
+    Write-Host 'with -RendererDir, or put it on PATH yourself.'
+    exit 1
 }
 
 $env:DXC_PROBE_WIDTH = $Width
@@ -120,14 +138,17 @@ $env:DXC_PROBE_HEIGHT = $Height
 $env:DXC_PROBE_ROWS = $Rows
 
 Write-Host "starting $Exe"
-$process = Start-Process -FilePath $Exe -PassThru
+$stdout = [System.IO.Path]::GetTempFileName()
+$stderr = [System.IO.Path]::GetTempFileName()
+$process = Start-Process -FilePath $Exe -PassThru `
+    -RedirectStandardOutput $stdout -RedirectStandardError $stderr
 try {
     Start-Sleep -Seconds $Settle
     if ($process.HasExited) {
         Write-Host "the process exited after $Settle seconds with code $($process.ExitCode)."
-        Write-Host "It never got far enough to be measured. The usual cause is the renderer"
-        Write-Host "not being on PATH, which this script tries to fix and says so when it"
-        Write-Host "cannot. Run the executable from a terminal to see what it printed."
+        Write-Host "It never got far enough to be measured. What it printed:"
+        Write-Host ""
+        Get-Content $stdout, $stderr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $_" }
         exit 1
     }
 
