@@ -15,34 +15,52 @@ import dioxus.compose.runtime.DioxusHost
  */
 object DioxusRuntime {
     /**
-     * The application's cdylib. It is the Rust side of the app: it links this crate,
-     * declares its root component through `dioxus_compose::android_main!`, and carries the
-     * generated JNI shims and `JNI_OnLoad` with it.
+     * The application's cdylib, once it has been named.
+     *
+     * It is the Rust side of the app: it links this crate, declares its root component
+     * through `dioxus_compose::android_main!`, and carries the generated JNI shims and
+     * `JNI_OnLoad` with it. Its file name is the application's to choose, which is why it
+     * is not a constant here: an application built by the Dioxus CLI gets one name, a
+     * Gradle project put together by hand another.
      */
-    private const val LIBRARY = "android_demo"
+    private var library: String? = null
 
     private val connection = AndroidHostConnection()
     private var host: DioxusHost? = null
 
-    init {
+    /**
+     * Loads the application's cdylib. The generated Activity calls this before anything
+     * else, with the name the build gave it.
+     *
+     * Loading more than once is the ordinary case rather than a mistake: an Activity is
+     * recreated for a configuration change and the process is not. The second call is the
+     * runtime's own no-op.
+     */
+    fun load(name: String) {
         try {
-            System.loadLibrary(LIBRARY)
+            System.loadLibrary(name)
         } catch (missing: UnsatisfiedLinkError) {
             // The default message names the library and the directories it looked in,
-            // which leaves the reader with a file name and no way to get the file. What
-            // produces it is one script, so the message says so.
+            // which leaves the reader with a file name and no way to get the file. So the
+            // message says what produces it.
             throw UnsatisfiedLinkError(
-                "lib$LIBRARY.so is not in this APK, so there is no Host to draw with. " +
-                    "Build it with android/scripts/build-host.sh, which writes it into " +
-                    "android/jniLibs/<abi>/ where the APK picks it up. " +
+                "lib$name.so is not in this APK, so there is no Host to draw with. It is " +
+                    "the Rust side of this application, built for an Android target and " +
+                    "packaged under lib/<abi>/ in the APK. " +
                     "(${missing.message})",
             )
         }
+        library = name
     }
 
     /** The Host, started on first use and kept until the process ends. */
     fun host(): DioxusHost {
         host?.let { return it }
+        checkNotNull(library) {
+            "no cdylib has been loaded, so the boundary functions this is about to call " +
+                "are not in the process yet. An Activity calls DioxusRuntime.load() with " +
+                "the name of the application's own library before asking for the Host."
+        }
         val created = DioxusHost(connection)
         created.start()
         host = created

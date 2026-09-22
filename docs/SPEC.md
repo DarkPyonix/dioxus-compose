@@ -1390,11 +1390,17 @@ dioxus_compose_host_dispatch_event: click 1
 - **수용 기준 2는 이 자리에서 잴 수 없습니다(2026-09-22).** 스트리밍 자체는 돕니다. 화면에서 점이 계속 늘어나는 것과 다크모드 전환 내내 멈추지 않는 것을 확인했으므로, 워커의 프레임 요청이 JNI 경계를 계속 넘어온다는 것까지는 압니다. 확인되지 않은 것은 그 프레임이 제때 그려지는지입니다.
 
   `dumpsys gfxinfo`는 렌더링된 프레임을 0건으로 보고합니다. 창 없는 에뮬레이터에서는 합성이 일어나지 않기 때문입니다. 창을 띄운 에뮬레이터라면 숫자는 나오겠지만, 그것은 호스트 맥의 컴포지터를 잰 값이지 기기의 값이 아닙니다. 끊김이 없다는 주장을 그 숫자로 세우면 측정하지 않은 것을 측정했다고 적는 셈입니다. 이 항목은 기기가 필요합니다.
-- **5.1의 수용 기준 4는 절반 충족입니다(2026-09-22).** 크레이트가 Kotlin 소스 53개를 품고, `cargo package`가 그것을 담는 것을 확인했습니다. Android 타깃으로 빌드하면 빌드 스크립트가 `DIOXUS_COMPOSE_ANDROID_KOTLIN_DIR`이 가리키는 Gradle 소스 디렉터리에 그것을 풀어놓습니다. Maven 좌표는 하나도 필요하지 않습니다.
-  - 심링크는 해소해서 담습니다. `android/src`의 대부분은 데스크톱 렌더러를 가리키는 심링크이고(그래서 인터프리터 사본이 하나입니다), `cargo package`는 심링크를 담지 못합니다.
-  - `scripts/tests/android-kotlin-travels.test.sh`가 두 가지를 봅니다. 담긴 사본이 렌더러와 같은지, 그리고 패키지 목록에 들어 있는지입니다. 사본이 뒤처지면 애플리케이션이 Host보다 낡은 인터프리터를 컴파일하고 핸드셰이크가 거부합니다.
-  - **남은 절반은 dx로 실제 APK를 만들어 보는 것입니다.** `MainActivity` 생성과 dx 템플릿과의 결합은 아직 없습니다. 이 항목이 `Done`이 되려면 dx로 만든 프로젝트가 우리 좌표 없이 빌드되는 것을 봐야 합니다.
-  - **`sample-v0.1.1`의 APK는 이 경로로 만든 것이 아닙니다.** 우리 Amper 모듈(`dioxus-compose-renderer/android`)에 샘플의 cdylib을 넣어 빌드했습니다. 그것이 증명하는 것은 Android에서 렌더러와 Host가 동작한다는 것이고, 사용자가 겪을 경로가 동작한다는 것은 아닙니다. 두 가지가 어긋납니다. 배포한 APK가 사용자가 만들 APK와 다른 방식으로 나오고, 검증하라고 적어 둔 경로는 검증되지 않은 채 남습니다. 샘플은 "사용자가 쓰는 방식으로 쓴 것"이어야 하므로(FR-22), 다음 샘플 릴리스의 APK는 dx로 만듭니다.
+- **5.1의 수용 기준 4는 2026-09-23 충족했습니다.** `dx build --platform android`로 minimal 샘플의 APK가 나왔고, 에뮬레이터에서 데스크톱과 같은 화면을 그렸습니다. 샘플의 `Dioxus.toml`에는 이 크레이트에 관한 항목이 하나도 없습니다. 의존성에 `dioxus-compose`를 적은 것이 전부입니다.
+  - **dx가 알려 주는 것을 읽습니다.** dx는 Android 빌드마다 `WRY_ANDROID_KOTLIN_FILES_OUT_DIR`, `WRY_ANDROID_PACKAGE`, `WRY_ANDROID_LIBRARY`를 내보냅니다. 이름은 wry의 것입니다. dx가 wry의 webview를 띄울 Activity를 생성하라고 주는 값이기 때문입니다. 우리는 Compose로 그리고 webview가 없지만, 세 값이 가리키는 것은 어느 쪽이든 같습니다. 이 빌드가 속한 Gradle 프로젝트, 그 안의 패키지, 그리고 애플리케이션 자신의 cdylib 이름입니다. 이것을 읽는 것이 사용자가 아무것도 적지 않아도 되는 이유입니다.
+  - **dx는 한 패키지의 디렉터리를 알려 주고 우리는 열두 패키지를 풉니다.** 그래서 알려 준 디렉터리에서 패키지 성분 수만큼 올라간 곳이 소스 루트입니다. `kotlin`이라는 이름을 찾는 대신 성분을 세는 것은 소스 루트 이름이 다른 프로젝트에서도 맞기 위해서입니다.
+  - **Compose는 빌드 스크립트가 생성된 Gradle 파일에 넣습니다.** dx의 `gradle_plugins` 항목은 파일에 닿기 전에 이스케이프되므로 버전이 붙은 플러그인을 적을 방법이 없고, Kotlin 2.0에서 `@Composable`을 컴파일하려면 컴파일러 플러그인이 반드시 필요합니다. 그래서 모듈의 `build.gradle.kts`에는 플러그인과 androidx 좌표를, 루트에는 그 플러그인의 classpath를 더합니다. 버전은 템플릿이 이미 고정해 둔 Kotlin 버전을 읽어서 씁니다. 둘은 같이 릴리스되고 어긋나면 구성 단계에서 거부됩니다. 넣을 것이 없으면 아무것도 쓰지 않으므로 매 빌드가 Gradle을 다시 구성하게 만들지 않습니다. **이것은 dx가 고치는 편이 옳은 자리입니다.** 생성된 파일을 우리가 손보는 것이므로, `gradle_plugins`가 버전을 받게 되면 이 보정은 없어져야 합니다.
+  - **생성된 파일은 매 빌드 다시 쓰이므로 `rerun-if-changed`로 걸어 둡니다.** 걸지 않으면 두 번째 빌드에서 빌드 스크립트가 캐시되어 보정이 사라지고, Compose를 하나도 못 찾는 에러가 수십 개 납니다. 실제로 그렇게 한 번 났습니다.
+  - **cdylib 이름은 애플리케이션의 것입니다.** 런타임이 `android_demo`를 상수로 들고 있어서 dx가 만든 APK가 `libandroid_demo.so`를 찾다가 죽었습니다. 지금은 생성된 Activity가 `DioxusRuntime.load(name)`으로 이름을 넘깁니다.
+  - **크레이트의 `MainActivity.kt`와 `AndroidManifest.xml`은 따라가지 않습니다.** 둘 다 이 저장소 자신의 Android 애플리케이션 것이지 렌더러의 것이 아닙니다. 따라가면 남의 프로젝트에 Activity가 둘이 되고 매니페스트가 두 번 선언됩니다.
+  - **`ByteBuffer.get(index, array, offset, length)`는 Java 13의 것입니다.** 우리 Amper 모듈은 더 높은 compileSdk로 빌드해서 통과했지만, dx 템플릿의 compileSdk 34에서는 후보가 없다고 거부됩니다. 생성 코드가 버퍼 자신의 position을 거쳐 읽고 되돌려 놓도록 바꿨습니다. `duplicate()`는 배치마다 문자열 수만큼 객체를 만들므로 쓰지 않습니다.
+  - **로컬 도구 사슬 메모.** AGP 8.7의 `jlink` 변환은 JDK 25에서 실패합니다. `JAVA_HOME`이 21을 가리켜야 빌드가 끝납니다. 이것은 우리 쪽 문제가 아니라 AGP와 JDK의 조합입니다.
+  - `scripts/tests/android-kotlin-travels.test.sh`가 담긴 사본이 렌더러와 같은지와 패키지 목록에 들어 있는지를 봅니다. 사본이 뒤처지면 애플리케이션이 Host보다 낡은 인터프리터를 컴파일하고 핸드셰이크가 거부합니다.
+  - **`sample-v0.1.1`의 APK는 이 경로로 만든 것이 아닙니다.** 우리 Amper 모듈(`dioxus-compose-renderer/android`)에 샘플의 cdylib을 넣어 빌드한 것이고, 그것이 증명하는 것은 Android에서 렌더러와 Host가 동작한다는 것이지 사용자가 겪을 경로가 동작한다는 것은 아닙니다. 다음 샘플 릴리스의 APK는 dx로 만듭니다.
 
 ### PR-6 Web 경계 (`Done`)
 Rust(wasm32)와 Kotlin/Wasm 모듈을 연결합니다. `LoopMode::Platform`입니다. 2026-09-20 실측으로 확정했습니다(`experiments/web-interop/`).

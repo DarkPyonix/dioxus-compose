@@ -1300,3 +1300,90 @@ fn pr5_the_generated_activity_belongs_to_the_package_it_was_given() {
         "the Activity carries no MainActivity, and that is the class the manifest names"
     );
 }
+
+/// An APK comes out of the Dioxus CLI with nothing written about this crate.
+///
+/// The CLI exports where a generated Activity goes and which package it belongs to. Those
+/// two values are all this crate needs to put its Kotlin into the application's own build,
+/// and reading them is the difference between "add a dependency" and "add a dependency and
+/// then export two variables nobody told you about".
+#[test]
+fn pr5_an_android_build_finds_the_gradle_source_root_from_the_cli() {
+    let (root, package) = renderer_dir::android_gradle_kotlin(
+        None,
+        None,
+        Some("/tmp/app/app/src/main/kotlin/dev/dioxus/main"),
+        Some("dev.dioxus.main"),
+    )
+    .expect("the CLI said where its Kotlin goes");
+    assert_eq!(
+        root,
+        std::path::Path::new("/tmp/app/app/src/main/kotlin"),
+        "the CLI names the directory of one package and this crate fills a dozen, so the \
+         source root is what it unpacks into"
+    );
+    assert_eq!(package.as_deref(), Some("dev.dioxus.main"));
+}
+
+/// Driving the build by hand wins over what the CLI said.
+#[test]
+fn pr5_an_android_build_prefers_the_directory_it_was_given() {
+    let (root, package) = renderer_dir::android_gradle_kotlin(
+        Some("/elsewhere/kotlin"),
+        Some("com.example.app"),
+        Some("/tmp/app/app/src/main/kotlin/dev/dioxus/main"),
+        Some("dev.dioxus.main"),
+    )
+    .expect("a directory was named");
+    assert_eq!(root, std::path::Path::new("/elsewhere/kotlin"));
+    assert_eq!(package.as_deref(), Some("com.example.app"));
+}
+
+/// An ordinary `cargo build` of the crate on its own unpacks nothing.
+#[test]
+fn pr5_a_build_outside_an_android_project_unpacks_nothing() {
+    assert!(
+        renderer_dir::android_gradle_kotlin(None, None, None, None).is_none(),
+        "there is no Gradle project here, and inventing a directory to write Kotlin into \
+         would put it somewhere nobody asked for"
+    );
+}
+
+/// Compose reaches the generated build file, both halves of it.
+///
+/// The compiler plugin and the libraries are two separate edits to two different blocks,
+/// and an application with only one of them fails to compile with an error that names
+/// neither.
+#[test]
+fn pr5_compose_is_added_to_a_generated_gradle_project() {
+    let module = "plugins {\n    id(\"com.android.application\")\n}\n\n\
+                  dependencies {\n    implementation(\"androidx.webkit:webkit:1.13.0\")\n}\n";
+    let root = "buildscript {\n    dependencies {\n        \
+                classpath(\"com.android.tools.build:gradle:8.7.0\")\n        \
+                classpath(\"org.jetbrains.kotlin:kotlin-gradle-plugin:2.0.20\")\n    }\n}\n";
+    let (module_text, root_text) =
+        renderer_dir::with_compose(module, root).expect("there was something to add");
+    assert!(
+        module_text.contains("id(\"org.jetbrains.kotlin.plugin.compose\")"),
+        "Kotlin 2.0 compiles no @Composable without this plugin:\n{module_text}"
+    );
+    for coordinate in renderer_dir::ANDROID_COMPOSE_DEPENDENCIES {
+        assert!(
+            module_text.contains(coordinate),
+            "{coordinate} is missing, so the renderer's own Kotlin has nothing to \
+             compile against:\n{module_text}"
+        );
+    }
+    let root_text = root_text.expect("the plugin's jar has to reach the build's classpath");
+    assert!(
+        root_text.contains("compose-compiler-gradle-plugin:2.0.20"),
+        "the version has to follow the one the project already pinned for Kotlin, \
+         because the two are released together:\n{root_text}"
+    );
+    // Running twice is one build, so a project that already has all of it is left alone.
+    assert!(
+        renderer_dir::with_compose(&module_text, &root_text).is_none(),
+        "a second pass found something to change, so every build would rewrite the file \
+         and Gradle would configure again for nothing"
+    );
+}

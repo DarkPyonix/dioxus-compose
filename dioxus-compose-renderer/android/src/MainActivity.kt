@@ -25,6 +25,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        DioxusRuntime.load("android_demo")
         val host = DioxusRuntime.host()
         val view = ComposeView(this)
         view.setContent {
