@@ -108,8 +108,32 @@ DIOXUS_COMPOSE_RENDERER_DIR=$PWD/dioxus-compose-renderer/build/native-image/dist
   cargo run -p sample-calculator
 ```
 
-Pushing a `sample-v*` tag builds all of them for every desktop platform and attaches the
-binaries to a GitHub Release.
+## The other platforms
+
+A sample is a library with a one line binary in front of it, because only the desktop
+runs a `main` of ours. Android's Activity and a browser page each own the process and the
+frame loop and reach the application through an entry point instead, and on iOS the
+renderer is a static archive linked into the application, so there the application is the
+library.
+
+```
+./scripts/build-sample-apks.sh                  # an APK per sample
+./scripts/build-sample-pages.sh                 # a browser page per sample, plus an index
+./dioxus-compose-renderer/desktop/scripts/build-sample-ios.sh calculator
+```
+
+Everything a sample settles before it launches is in one `launch_builder()` that all
+three entry points share, so a page and an APK draw the same design its desktop binary
+does. An entry point that made its own builder would drop the theme, and seven of the
+eleven samples name one.
+
+iOS is the simulator only. A bundle for a device has to be signed by a certificate Apple
+issued, against a provisioning profile naming that device, and a self-signed one is
+refused; the simulator does not check.
+
+Pushing a `sample-v*` tag builds all of them for all seven platforms and attaches the
+results to a GitHub Release: four desktop archives, an APK, a simulator bundle, and the
+pages as one archive.
 
 ## Pictures
 
