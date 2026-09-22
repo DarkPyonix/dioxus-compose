@@ -88,7 +88,7 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - 체크아웃 경계: `codegen_tree.rs`가 codegen 바이너리를 다른 `CARGO_MANIFEST_DIR`로 실행해서 그 디렉터리가 비어 있는 채로 남는지, 종료 코드와 메시지가 두 경로를 말하는지 확인합니다.
 - 스키마 해시: `boundary_hardening.rs`의 `nfr7_init_with_a_wrong_schema_hash_returns_a_status`가 불일치 핸드셰이크에서 `init`이 실패 상태를 돌려주는지 보고, iOS 쪽은 `ProtocolBufferTest.pr4_handshake_carries_the_schema_hash_the_host_checks`가 Host가 검사하는 그 해시를 핸드셰이크에 싣는지 봅니다.
 
-### FR-8 LazyColumn 윈도잉 (`Agreed`)
+### FR-8 LazyColumn 윈도잉 (`Done`)
 - Host는 아이템 총 개수와 안정적인 key를 알립니다.
 - Renderer는 보이는 범위를 `RangeRequested`로 요청하고, Host는 **요청받은 구간만 정확히** 생성합니다. Host가 구간을 넓히지 않습니다.
 - **선읽기 버퍼는 Renderer가 소유합니다.** Renderer가 가시 범위에 버퍼를 더한 값을 `start`, `count`로 보냅니다. 스크롤 위치가 Renderer에 있으므로(D5) 얼마나 미리 읽을지 아는 쪽도 Renderer입니다. Host가 따로 버퍼를 더하면 Renderer는 받은 서브트리가 전체 목록의 몇 번째 자리에 놓이는지 알 수 없습니다. `start`가 곧 첫 아이템의 전역 인덱스라는 것이 이 규칙의 핵심입니다.
@@ -97,12 +97,12 @@ Host 상태가 변경되면 변경분만 전송하고, Renderer는 해당 노드
 - 와이어: `RangeRequested`는 이벤트 태그 7(24바이트, `start: u32`, `count: u32`)입니다. Host는 `item_count`, `item_key`, `on_range_requested` 속성으로 선언합니다.
 - **목록은 뷰포트입니다.** Host가 높이를 정해주지 않았다면(`height`, `size`, `fill_max_height`, 그리고 세로로 쌓는 부모 아래의 `weight`) Renderer는 목록에 주어진 높이를 채웁니다. 자기 아이템 높이로 줄어든 목록은 다시 커질 수 없습니다. 요청하는 구간이 지금 높이로 결정되기 때문입니다. `Row` 아래의 `weight`는 너비의 몫이므로 높이를 정하지 않습니다(13.4).
 - **크기가 0인 아이템은 목록의 끝이 아니라 빈 자리입니다.** 보이는 자리는 실제로 자리를 차지하는 것만 셉니다. 화면에 있는 윈도우가 아무것도 그리지 않으면 그 윈도우를 그대로 둡니다. 그러지 않으면 크기 0 아이템이 모두 보이는 것으로 보고되어 컬렉션 전체 크기의 구간을 요청하고, 두 윈도우가 프레임마다 서로를 대체하면서 아무것도 그려지지 않습니다.
-- 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(Host 측 통과: 가시 20 + 버퍼 4 요청에 아이템 28개)**
+- 수용 기준: 아이템 10,000개 목록에서 생성된 노드 수가 가시 범위와 버퍼에 비례합니다. **(통과: Host 측은 가시 20 + 버퍼 4 요청에 아이템 28개. Renderer 측은 2026-09-22 확인, `fr8_the_visible_range_is_requested_and_only_that_window_exists`와 `fr8_the_request_widens_the_visible_range_by_the_buffer`와 `fr8_the_window_is_drawn_at_the_requested_global_offset`이 창 바깥이 존재하지 않는 것까지 봅니다)**
 - 수용 기준: 화면 높이를 채우는 `Row` 안의 `LazyColumn`은 `weight`만 받은 경우에도 Row가 주는 높이를 채웁니다. 아이템이 모두 크기 0인 목록은 한 윈도우에 정착하고 경계 호출을 되풀이하지 않습니다. **(2026-09-21 통과)**
 
-### FR-9 스트리밍 텍스트 (`Agreed`)
+### FR-9 스트리밍 텍스트 (`Done`)
 긴 텍스트가 점진적으로 늘어나는 경우를 위해 Text 노드에 `AppendText` 명령을 둡니다(태그 8, 16바이트). 전체 문자열이 아니라 늘어난 꼬리만 보냅니다. Host는 추가분을 모아 프레임당 노드별 1건으로 flush하며, flush 지점은 `render_frame`입니다.
-- 수용 기준: 초당 100회 추가되는 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다. **(Host 측 통과: 36KB 텍스트에서 배치 64바이트 미만, 스트리밍 프레임 p99 125ns)**
+- 수용 기준: 초당 100회 추가되는 스트리밍 중에도 스크롤과 입력이 끊기지 않습니다. **(통과: Host 측은 36KB 텍스트에서 배치 64바이트 미만, 스트리밍 프레임 p99 125ns. Renderer 측은 2026-09-22 확인, `fr9_only_the_tail_is_sent_and_the_node_keeps_what_it_had`와 `fr9_append_text_grows_the_node_without_recomposing_anything_else`가 꼬리만 받아 붙이고 형제를 다시 그리지 않는 것을 봅니다)**
 
 ### FR-12 이벤트 소비(consume) (`Agreed`)
 Dioxus 0.7의 이벤트 핸들러는 반환값이 없습니다. 그래서 핸들러가 **이벤트 객체에 소비 표시를 남기고**, 경계가 그 값을 읽어 `MutationBatch.result`로 돌려줍니다. 웹의 `preventDefault()`, Compose의 `PointerInputChange.consume()`과 같은 모델입니다.
