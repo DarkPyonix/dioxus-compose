@@ -165,6 +165,11 @@ fn controls_group(
                             Slider {
                                 weight: 1.0,
                                 value: reading(),
+                                // The sheet is ink on paper and has no accent in it, so
+                                // the filled part of the track is ink too. Left unsaid,
+                                // the design system answers with a blue that belongs to
+                                // it rather than to this design.
+                                color: Paint::Role(ColorRole::OnSurface),
                                 on_change: move |value| reading.set(value),
                             }
                             Text { text: "A", type_role: TypeRole::Title }
@@ -578,6 +583,15 @@ pub fn app() -> Element {
                                         key: "{choice.label()}",
                                         text: choice.label(),
                                         variant: ButtonVariant::Text,
+                                        // A text button is the design system's accent by
+                                        // default, which is the one colour this sheet does
+                                        // not have. The chosen segment is ink and the rest
+                                        // is the quieter grey beside it.
+                                        color: Paint::Role(if choice == group() {
+                                            ColorRole::OnSurface
+                                        } else {
+                                            ColorRole::OnSurfaceVariant
+                                        }),
                                         on_click: move |_| group.set(choice),
                                     }
                                 }

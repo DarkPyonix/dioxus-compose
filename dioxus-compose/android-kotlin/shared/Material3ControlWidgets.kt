@@ -14,6 +14,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import dioxus.compose.protocol.ColorRole
 
 /**
@@ -94,11 +95,12 @@ internal object Material3ControlWidgets : ControlWidgets {
         range: ClosedFloatingPointRange<Float>,
         steps: Int,
         enabled: Boolean,
+        named: Color?,
         onChange: (Float) -> Unit,
         modifier: Modifier,
         theme: ResolvedTheme,
     ) {
-        val primary = theme.color(ColorRole.Primary)
+        val primary = named ?: theme.color(ColorRole.Primary)
         Slider(
             value = value,
             onValueChange = onChange,

@@ -93,6 +93,10 @@ interface ControlWidgets {
      * [onChange] is not optional the way a toggle's is. A slider that has been dragged has
      * moved whether or not the Host asked to hear about it, and the caller is what decides
      * whether that movement leaves the Renderer.
+     *
+     * [named] colours the part that has been filled in and the thumb with it, where the
+     * application said what those should look like. It is null in the ordinary case and
+     * the design system answers instead, which is what an adaptive application wants.
      */
     @Composable
     fun Slider(
@@ -100,6 +104,7 @@ interface ControlWidgets {
         range: ClosedFloatingPointRange<Float>,
         steps: Int,
         enabled: Boolean,
+        named: Color?,
         onChange: (Float) -> Unit,
         modifier: Modifier,
         theme: ResolvedTheme,
@@ -250,11 +255,14 @@ internal object DrawnControlWidgets : ControlWidgets {
         range: ClosedFloatingPointRange<Float>,
         steps: Int,
         enabled: Boolean,
+        named: Color?,
         onChange: (Float) -> Unit,
         modifier: Modifier,
         theme: ResolvedTheme,
     ) {
         val style = theme.rules.controls(theme).slider
+        val active = named ?: style.activeTrack
+        val knob = named ?: style.thumb
         val min = range.start
         val max = range.endInclusive
         val span = (max - min).takeIf { it > 0f }
@@ -304,7 +312,7 @@ internal object DrawnControlWidgets : ControlWidgets {
                         cornerRadius = radius,
                     )
                     drawRoundRect(
-                        color = style.activeTrack,
+                        color = active,
                         topLeft = Offset(left, trackTop),
                         size = Size(usable * fraction, trackHeight),
                         cornerRadius = radius,
@@ -323,7 +331,7 @@ internal object DrawnControlWidgets : ControlWidgets {
                         }
                     }
                     val centre = Offset(left + usable * fraction, size.height / 2f)
-                    drawCircle(style.thumb, radius = thumb / 2f, center = centre)
+                    drawCircle(knob, radius = thumb / 2f, center = centre)
                     if (style.thumbBorderWidth.value > 0f) {
                         val border = style.thumbBorderWidth.toPx()
                         drawCircle(

@@ -288,7 +288,7 @@ pub mod elements {
     // The position a drag is passing through is the Renderer's, like scroll and focus, so
     // following a finger costs no boundary call. `value` seeds it and carries a change
     // that came from somewhere else.
-    element!(slider, "Slider", [value, min, max, steps, enabled]);
+    element!(slider, "Slider", [value, min, max, steps, enabled, color]);
     // `determinate` says whether `value` means anything and `circular` picks the form. How
     // fast an indeterminate indicator travels is motion, and motion is the design system's.
     element!(
@@ -309,7 +309,7 @@ pub mod elements {
     element!(menu, "Menu", [open]);
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
-    element!(tabs, "Tabs", [selected_index]);
+    element!(tabs, "Tabs", [selected_index, color]);
     element!(topappbar, "TopAppBar", [text]);
     element!(lazyrow, "LazyRow", [item_count]);
     element!(tooltip, "Tooltip", [text]);

@@ -412,7 +412,16 @@ class NodeTable {
                     // a child tree, so there is no Text node underneath to colour instead.
                     (
                         property == PropertyKind.Color &&
-                            (widget == WidgetKind.Icon || widget == WidgetKind.NavigationItem)
+                            (
+                                widget == WidgetKind.Icon ||
+                                    widget == WidgetKind.NavigationItem ||
+                                    // A tab strip's selection mark, and a slider's
+                                    // filled track and thumb. Both are drawn rather
+                                    // than written, so there is no Text underneath to
+                                    // colour instead.
+                                    widget == WidgetKind.Tabs ||
+                                    widget == WidgetKind.Slider
+                                )
                         )
 
                 PropertyKind.Arrangement,

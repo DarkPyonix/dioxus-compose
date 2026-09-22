@@ -1,5 +1,6 @@
 package dioxus.compose.foundation
 
+import dioxus.compose.ui.paintProp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,10 @@ internal fun HostTabs(
     theme: ResolvedTheme,
 ) {
     val style = theme.rules.tabs(theme)
+    // The design system decides what the selected tab looks like unless the application
+    // named a colour. A unified one does, because its reference may have no accent in
+    // the strip at all and asking the active system puts one there.
+    val named = node.paintProp(PropertyKind.Color)?.let { theme.color(it) }
     val fromHost = (node.property(PropertyKind.SelectedIndex) as? PropertyValue.Integer)
         ?.value
         ?.toInt()
@@ -73,6 +78,7 @@ internal fun HostTabs(
                     index = index,
                     childId = childId,
                     selected = index == selected,
+                    named = named,
                     style = style,
                     table = table,
                     dispatcher = dispatcher,
@@ -95,13 +101,25 @@ private fun Tab(
     index: Int,
     childId: Int,
     selected: Boolean,
+    named: Color?,
     style: TabsStyle,
     table: NodeTable,
     dispatcher: EventDispatcher,
     modifier: Modifier,
     onSelect: () -> Unit,
 ) {
-    val container = if (selected) style.selectedContainer else Color.Transparent
+    // Which shape carries the selection is the design system's choice: Material draws a
+    // bar under the tab, a segmented control fills the segment itself, and each leaves the
+    // other's slot empty. So a named colour goes to whichever one is drawn, and naming one
+    // says the same thing under every system rather than colouring nothing under half of
+    // them.
+    val marksWithIndicator = style.indicatorHeight.value > 0f
+    val selectedFill = if (marksWithIndicator) {
+        style.selectedContainer
+    } else {
+        named ?: style.selectedContainer
+    }
+    val container = if (selected) selectedFill else Color.Transparent
     Column(
         modifier
             .clickable(role = Role.Tab, onClick = onSelect)
@@ -111,7 +129,7 @@ private fun Tab(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         RenderNode(childId, table, dispatcher)
-        if (style.indicatorHeight.value > 0f) {
+        if (marksWithIndicator) {
             // The mark keeps its height when the tab is not selected, so selecting a tab
             // moves a colour rather than resizing the strip.
             val width = if (style.indicatorFillsTab) {
@@ -123,7 +141,9 @@ private fun Tab(
                 width
                     .height(style.indicatorHeight)
                     .clip(style.indicatorShape)
-                    .background(if (selected) style.indicator else Color.Transparent),
+                    .background(
+                        if (selected) named ?: style.indicator else Color.Transparent,
+                    ),
             )
         }
     }

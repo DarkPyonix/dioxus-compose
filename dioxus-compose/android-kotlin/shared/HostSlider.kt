@@ -12,6 +12,7 @@ import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.intProp
+import dioxus.compose.ui.paintProp
 import dioxus.compose.ui.node.Node
 import kotlin.math.roundToInt
 
@@ -44,6 +45,9 @@ internal fun HostSlider(
     // Zero means continuous, which is also what an absent property means.
     val steps = (node.intProp(PropertyKind.Steps) ?: 0L).toInt().coerceAtLeast(0)
     val fromHost = (node.number(PropertyKind.Value) ?: min).coerceIn(min, max)
+    // Null unless the application said what the filled track should look like, and the
+    // design system answers where it is.
+    val named = node.paintProp(PropertyKind.Color)?.let { theme.color(it) }
 
     var current by remember(node.id) { mutableFloatStateOf(fromHost) }
     LaunchedEffect(node.id, fromHost) { current = fromHost }
@@ -63,6 +67,7 @@ internal fun HostSlider(
         range = min..max,
         steps = steps,
         enabled = enabled,
+        named = named,
         onChange = report,
         modifier = modifier,
         theme = theme,

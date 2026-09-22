@@ -760,6 +760,12 @@ pub fn Tabs(
     #[props(default)] padding: Option<f32>,
     #[props(default)] padding_role: Option<SpaceRole>,
     #[props(default)] background: Option<Paint>,
+    /// The colour of the mark that shows which tab is selected.
+    ///
+    /// The design system decides where this is unset, which is what an adaptive
+    /// application wants. A unified one names it, because its reference may have no
+    /// accent at all and a system asked the question answers with its own.
+    #[props(default)] color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] border_width: Option<f32>,
@@ -778,6 +784,7 @@ pub fn Tabs(
             padding: opt_dp(padding),
             padding_role: opt_role(padding_role),
             background: opt_paint(background),
+            color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             border_width: opt_dp(border_width),
@@ -1375,6 +1382,12 @@ pub fn Slider(
     #[props(default)] padding: Option<f32>,
     #[props(default)] padding_role: Option<SpaceRole>,
     #[props(default)] background: Option<Paint>,
+    /// The colour of the part of the track that has been filled in, and of the thumb.
+    ///
+    /// The design system decides where this is unset, which is what an adaptive
+    /// application wants. A unified one names it, because its reference may have no
+    /// accent at all and a system asked the question answers with its own.
+    #[props(default)] color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] border_width: Option<f32>,
@@ -1397,6 +1410,7 @@ pub fn Slider(
             padding: opt_dp(padding),
             padding_role: opt_role(padding_role),
             background: opt_paint(background),
+            color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             border_width: opt_dp(border_width),
