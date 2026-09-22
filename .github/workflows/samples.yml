@@ -44,11 +44,20 @@ jobs:
             renderer: ./dioxus-compose-renderer/desktop/scripts/build-native.sh
             dist: dioxus-compose-renderer/build/native-image/dist/lib
           - runner: ubuntu-24.04
-            target: linux-x86_64
+            target: linux-x64
             renderer: ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
             dist: dioxus-compose-renderer/build/native-image-linux/dist/lib
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
+            renderer: ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+            dist: dioxus-compose-renderer/build/native-image-linux/dist/lib
+            # Community rather than the Oracle build: there is no free Oracle GraalVM for
+            # Linux on arm64, which is the same reason the renderer's own workflow pins
+            # this pair for this runner and no other.
+            distribution: graalvm-community
+            java-version: '25.0.1'
           - runner: windows-2022
-            target: windows-x86_64
+            target: windows-x64
             renderer: powershell .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
             # `dist`, not `dist/lib`. Windows puts the DLL in `dist\bin` and the JDK's
             # font configuration in `dist\lib`, because AWT reads that from java.home and
@@ -94,8 +103,8 @@ jobs:
         if: runner.os != 'macOS'
         uses: graalvm/setup-graalvm@v1
         with:
-          java-version: '25'
-          distribution: 'graalvm'
+          java-version: ${{ matrix.java-version || '25' }}
+          distribution: ${{ matrix.distribution || 'graalvm' }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Linux AWT, Skia and font dependencies
@@ -106,7 +115,8 @@ jobs:
           # travelling beside it, in place of the absolute path this runner built with.
           sudo apt-get install -y build-essential zlib1g-dev pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 fonts-noto-cjk patchelf xvfb
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri fonts-noto-cjk \
+            patchelf xvfb xauth dbus-x11
 
       - name: Cache the Kotlin toolchain and Maven dependencies
         uses: actions/cache@v4
