@@ -12,7 +12,10 @@ publish = false
 [lib]
 name = "sample_minimal"
 path = "src/lib.rs"
-crate-type = ["rlib", "cdylib"]
+# The staticlib is iOS. There the renderer is a Kotlin/Native archive and the two are
+# linked into one executable, so the sample cannot be a shared library: a cdylib would
+# have to resolve the renderer's symbols at link time and they are not there yet.
+crate-type = ["rlib", "cdylib", "staticlib"]
 bench = false
 
 [dependencies]
