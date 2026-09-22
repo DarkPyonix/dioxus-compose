@@ -47,8 +47,9 @@ fn fr11_typed_extension_uses_fixed_layout_mutations() {
     }
     // The theme, the window, the node and its one property. Every record is a whole
     // number of eight bytes with its length in its own header, which is what lets a
-    // reader walk the batch without knowing what any of it means.
-    assert_eq!(lengths, [12, 16, 12, 24]);
+    // reader walk the batch without knowing what any of it means. The window's record is
+    // the longer of the two twenty-fours because it carries the window's title.
+    assert_eq!(lengths, [12, 24, 12, 24]);
 
     let mut zero_host = Host::new(zero_progress_app);
     let zero_batch = zero_host.rebuild().unwrap().to_vec();
