@@ -71,15 +71,21 @@ frame loop, and the Rust Host is a cdylib it loads. The two sides meet at JNI, a
 halves of that boundary are generated from the Rust schema, so the symbol names and the
 argument order cannot drift apart.
 
+This module is a library and has no application in it. An Android application is built by
+the Dioxus CLI, which generates the Gradle project; the `dioxus-compose` crate's build
+script unpacks this Kotlin into it and generates the Activity that hosts it, with that
+application's own package and library name.
+
 ```bash
-./android/scripts/build-host.sh             # the Rust Host as libandroid_demo.so, arm64-v8a
-./android/scripts/build-host.sh --debug x86_64   # for an Intel emulator
-./kotlin build -p android                   # the APK
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+    dx build --package sample-minimal --platform android --release
+./kotlin build -m android                   # this module on its own, a compile check
 ```
 
-The library goes into `android/jniLibs/<abi>/`, which the APK picks up. It is built against
-the module's `minSdk`, because a library compiled for a newer API level will not load on an
-older device.
+The JDK matters: the Android Gradle plugin runs `jlink` and that fails above Java 21.
+
+Building an application any other way is how this repository once shipped sample APKs by a
+route no user takes, so there is deliberately no second way to do it here.
 
 See the root [README](../README.md) for prerequisites and the
 [guide](http://darkpyonix.dev/dioxus-compose/) for everything else.

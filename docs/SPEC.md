@@ -1377,13 +1377,16 @@ dioxus_compose_host_dispatch_event: click 1
 - dx의 Gradle 템플릿은 `gradle_dependencies` 항목을 `implementation("...")`로 감싸므로 **Maven 좌표만** 받습니다. 크레이트에 AAR을 넣어도 Gradle에 알릴 방법이 없어서, 컴파일된 아티팩트가 아니라 소스를 배포합니다.
 - 같은 템플릿이 `sourceSets { main { java.srcDirs("src/main/kotlin", ...) } }`를 선언하므로, 거기 놓인 `.kt`는 사용자 앱과 함께 컴파일됩니다. wry가 Kotlin을 생성해 넣는 것과 같은 경로입니다.
 - **Compose와 androidx는 좌표로 선언합니다.** 남의 라이브러리이고 mavenCentral에 이미 있으므로 우리가 배포하지 않습니다.
-- **MainActivity는 생성합니다.** dx 템플릿은 패키지를 `dev.dioxus.main`으로 고정하고 앱 id는 `BuildConfig` 별칭에만 씁니다. 정적 파일로 주면 그 치환을 못 받으므로, 빌드 스크립트가 앱 id를 받아 만들어냅니다. `WryActivity` 대신 `ComponentActivity`를 상속하고 `setContent`로 렌더러를 띄웁니다.
+- **MainActivity는 생성합니다.** dx 템플릿은 패키지를 `dev.dioxus.main`으로 고정하고 앱 id는 `BuildConfig` 별칭에만 씁니다. 정적 파일로 주면 그 치환을 못 받으므로, 빌드 스크립트가 dx가 알려 주는 패키지와 라이브러리 이름으로 만들어냅니다. dx가 생성해 둔 것(wry의 Activity를 상속합니다)을 덮어쓰고, `ComponentActivity`를 상속해 `setContent`로 렌더러를 띄웁니다.
 - 수용 기준(M6)에 추가합니다: **4. 사용자가 `Dioxus.toml`에 우리 좌표를 적지 않고도 APK가 빌드됩니다.** Kotlin 소스가 자동으로 들어가고 Maven 의존성이 없어야 통과입니다.
 - 수용 기준(M6):
   1. 일반 JNI와 `@FastNative`의 호출당 비용을 실측합니다. 공개 수치(약 115ns, 약 35ns)와 비교해 기록합니다.
   2. M0 화면을 같은 Rust 소스로 띄우고, 초당 100회 추가되는 스트리밍 중 프레임 끊김이 없음을 Macrobenchmark `FrameTimingMetric`으로 확인합니다.
   3. 화면 회전, 다크모드 전환, 홈→복귀, `am kill` 후 복귀에서 크래시가 없습니다.
 - 구현 상태(2026-09-22): 경계 심 생성, 생명주기와 `Resync`, Activity 호스팅, cdylib 빌드가 들어왔습니다. 심은 `aarch64-linux-android`로 컴파일되고, cdylib이 내보내는 JNI 심벌은 컴파일된 Kotlin 클래스가 native로 선언한 이름과 정확히 일치합니다.
+- **2026-09-23: Android 모듈에서 애플리케이션을 지웠습니다.** `MainActivity.kt`, `AndroidManifest.xml`, 런처 리소스, `jniLibs`, `android/scripts/build-host.sh`, `android_demo` 예제입니다. 모듈은 `lib`가 되어 "Android 툴체인에서 Kotlin이 컴파일된다"만 말합니다. 애플리케이션을 하나 들고 있던 것이 **샘플 APK를 사용자가 밟지 않는 경로로 만들게 한 원인**이었습니다. 두 경로가 있으면 우리는 항상 우리 쪽을 쓰게 되고, 사용자 경로는 깨져도 아무도 모릅니다.
+  - `scripts/build-sample-apks.sh`는 이제 `dx build --platform android`를 돕니다. minimal 샘플로 다시 확인했습니다. Activity도 manifest도 없는 상태에서 APK가 나오고 에뮬레이터에서 같은 화면을 그립니다.
+  - 크레이트가 실어 나르는 Kotlin에는 Activity도 manifest도 없어야 합니다. `pr5_no_application_of_ours_travels_with_the_renderer`가 그것을 봅니다.
 - **수용 기준 3은 2026-09-22 API 36 에뮬레이터에서 통과했습니다.** 화면 회전, 다크모드 전환, 홈에서 복귀는 모두 크래시 없이 **같은 프로세스가 유지**되었고(위 생명주기 항목이 규정한 대로 Compose만 재구성되고 노드 테이블은 남습니다), 백그라운드로 보낸 뒤 `am kill`한 다음 다시 띄운 것도 새 프로세스로 정상 동작했습니다. `FATAL EXCEPTION`은 한 건도 없습니다. 다크모드는 실제로 팔레트가 바뀌는 것까지 화면으로 확인했고, 그 동안 Rust 워커의 스트리밍이 끊기지 않았으므로 워커의 프레임 요청이 JNI 경계를 계속 넘어온다는 것도 같이 확인됩니다.
 - **이 검증에서 결함이 하나 나왔습니다.** Rust cdylib이 `dioxus_compose_renderer_run`을 선언하고 있어서 `dlopen`이 실패하고 `onCreate`에서 매번 죽었습니다. 빌드 스크립트가 타깃을 데스크톱과 그 외로만 갈라서 Android를 iOS와 같이 취급했기 때문입니다. iOS는 Xcode가 그 심벌을 실제로 링크하지만 Android의 렌더러는 ART 안의 Kotlin이라 그런 네이티브 심벌이 없습니다. Android는 `JNI_OnLoad`에서 진입점을 설치하므로 브라우저와 같은 갈래입니다. 빌드 스크립트는 테스트로 컴파일되지 않아 이 규칙이 어디에서도 검증되지 않고 있었고, 지금은 테스트가 닿는 모듈로 나와 있습니다.
 - **수용 기준 1은 2026-09-22 API 36 에뮬레이터에서 쟀습니다.** 빈 shim을 워밍업 20만 번 뒤 200만 번씩 불러서 전환 비용만 뽑은 값입니다.
@@ -1398,6 +1401,8 @@ dioxus_compose_host_dispatch_event: click 1
   이 수치가 프레임 예산에서 뜻하는 바: 120Hz의 프레임당 8.33ms에 대해 경계 호출은 프레임당 몇 번뿐이고(`RenderFrame` 한 번, 입력이 있으면 `DispatchEvent` 한 번, `ReleaseBatch` 한 번), 다섯 번으로 잡아도 505ns로 예산의 0.006%입니다. 호출당 비용이 아니라 호출 횟수가 문제가 될 자리인데, 배치를 복사하지 않고 오프셋과 길이만 건네는 것과 워커의 프레임 요청이 카운터 하나로 합쳐지는 것이 그 횟수를 눌러 둡니다.
 
   `@FastNative`가 붙는 것은 `ReleaseBatch`뿐입니다. 이 어노테이션은 스레드를 runnable로 둔 채 호출하므로 그동안 GC가 그 스레드를 멈출 수 없고, `RenderFrame`과 `DispatchEvent`는 안에서 VirtualDom이 도는 호출이라 GC를 붙잡아 두는 대가가 아끼는 100ns보다 비쌉니다.
+
+  **2026-09-23: 측정 하네스는 지웠습니다.** 빈 shim 두 개(`nativeNoop`, `nativeNoopFast`)와 그것을 부르던 `JniCallCost`, 그리고 그것을 띄우던 Activity입니다. 위 수치는 남지만 다시 재려면 하네스를 새로 만들어야 합니다. 벤치마크를 `bridge/`에 둔 탓에 **모든 사용자 APK에 200만 회 루프와 빈 JNI 진입점 두 개가 실려 가고 있었고**, 그 상태로 두는 것이 실기 재측정 편의보다 나쁘다고 판단했습니다. 실기 측정이 필요해지면 그때 애플리케이션 쪽에 하네스를 만듭니다.
 - **수용 기준 2는 이 자리에서 잴 수 없습니다(2026-09-22).** 스트리밍 자체는 돕니다. 화면에서 점이 계속 늘어나는 것과 다크모드 전환 내내 멈추지 않는 것을 확인했으므로, 워커의 프레임 요청이 JNI 경계를 계속 넘어온다는 것까지는 압니다. 확인되지 않은 것은 그 프레임이 제때 그려지는지입니다.
 
   `dumpsys gfxinfo`는 렌더링된 프레임을 0건으로 보고합니다. 창 없는 에뮬레이터에서는 합성이 일어나지 않기 때문입니다. 창을 띄운 에뮬레이터라면 숫자는 나오겠지만, 그것은 호스트 맥의 컴포지터를 잰 값이지 기기의 값이 아닙니다. 끊김이 없다는 주장을 그 숫자로 세우면 측정하지 않은 것을 측정했다고 적는 셈입니다. 이 항목은 기기가 필요합니다.

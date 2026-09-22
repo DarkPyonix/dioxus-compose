@@ -498,17 +498,6 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
-        // Two files at the top of that tree belong to this repository's own Android
-        // application rather than to the renderer. The Activity is generated per
-        // application, because the package and the library name are the application's,
-        // and the manifest is written by the application's own tooling. Copying either
-        // would put a second Activity in someone else's project and declare it twice.
-        if matches!(
-            entry.file_name().to_str(),
-            Some("MainActivity.kt") | Some("AndroidManifest.xml")
-        ) {
-            continue;
-        }
         let target = to.join(entry.file_name());
         if entry.file_type()?.is_dir() {
             copy_tree(&entry.path(), &target)?;

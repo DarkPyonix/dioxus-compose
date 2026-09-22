@@ -1811,32 +1811,6 @@ pub extern "system" fn ARENA_SYMBOL(mut env: JNIEnv<'_>, _class: JClass<'_>) -> 
     }
 }
 
-/// An empty call, so the cost of the transition itself can be measured.
-#[unsafe(no_mangle)]
-pub extern "system" fn "#,
-    );
-    write!(output, "{}", jni_symbol("Noop")).unwrap();
-    output.push_str(
-        r#"(
-    _env: JNIEnv<'_>,
-    _class: JClass<'_>,
-) -> jint {
-    STATUS_OK
-}
-
-/// The same call again, reached through the annotation that skips the transition.
-#[unsafe(no_mangle)]
-pub extern "system" fn "#,
-    );
-    write!(output, "{}", jni_symbol("NoopFast")).unwrap();
-    output.push_str(
-        r#"(
-    _env: JNIEnv<'_>,
-    _class: JClass<'_>,
-) -> jint {
-    STATUS_OK
-}
-
 /// Runs on `System.loadLibrary`, before any boundary call.
 ///
 /// # Safety
@@ -2090,13 +2064,6 @@ pub fn generate_android_bridge_kotlin() -> String {
  * arena is a new allocation, and the old view points at freed memory.
  */
 external fun nativeArenaBuffer(): ByteBuffer?
-
-/** An empty call, for measuring the cost of the transition on its own. */
-external fun nativeNoop(): Int
-
-/** The same call through the annotation that skips the thread state transition. */
-@FastNative
-external fun nativeNoopFast(): Int
 
 /**
  * Called from a Host worker thread through JNI.

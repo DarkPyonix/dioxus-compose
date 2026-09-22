@@ -1,8 +1,6 @@
 *.iml
 .kotlin
 build/
-# The Rust Host, built by android/scripts/build-host.sh.
-android/jniLibs/
 .DS_Store
 captures
 **/module.xcodeproj/*

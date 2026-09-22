@@ -1272,32 +1272,34 @@ fn pr5_android_does_not_declare_the_desktop_renderers_symbols() {
     );
 }
 
-/// The Activity is written into the package the application's own tooling uses.
+/// The Kotlin that travels is the renderer and nothing else.
 ///
-/// Generated rather than shipped, because that tooling fixes the package a generated
-/// project uses and writes the application id into a build config alias. An Activity
-/// handed over as a static file sits in this crate's package instead, which is right for
-/// this repository's own application and wrong for everyone else's, and a class in the
-/// wrong package is one the manifest never finds.
+/// No Activity and no manifest. Both are the application's, and its own tooling writes
+/// them: the Activity is generated per application because the package and the library
+/// name come from that application's build. A copy of this repository's own Activity
+/// travelling with the renderer would put a second one into someone else's project and
+/// declare a launcher twice, and holding one here is how this repository came to ship
+/// sample APKs built by a route no user takes.
 #[test]
-fn pr5_the_generated_activity_belongs_to_the_package_it_was_given() {
+fn pr5_no_application_of_ours_travels_with_the_renderer() {
     let staged = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("android-kotlin");
-    let shipped = staged.join("MainActivity.kt");
     assert!(
-        shipped.is_file(),
-        "the crate carries no Activity at {}, so there is nothing for an Android build \
-         to start at",
-        shipped.display()
+        staged.is_dir(),
+        "the crate carries no Android Kotlin at {}, so an Android application has no \
+         interpreter to compile",
+        staged.display()
     );
-    let source = std::fs::read_to_string(&shipped).expect("the Activity is readable");
+    for unwanted in ["MainActivity.kt", "AndroidManifest.xml"] {
+        assert!(
+            !staged.join(unwanted).exists(),
+            "{unwanted} is in the tree that travels to an application, and it belongs to \
+             whichever application is being built rather than to the renderer"
+        );
+    }
     assert!(
-        source.contains("package dioxus.compose"),
-        "the Activity the crate carries is not in this crate's own package, so the copy \
-         staged from the renderer is not the one that was staged"
-    );
-    assert!(
-        source.contains("class MainActivity"),
-        "the Activity carries no MainActivity, and that is the class the manifest names"
+        staged.join("shared").join("NodeTable.kt").is_file(),
+        "the interpreter is missing from the staged tree, so what travels is not the \
+         renderer"
     );
 }
 

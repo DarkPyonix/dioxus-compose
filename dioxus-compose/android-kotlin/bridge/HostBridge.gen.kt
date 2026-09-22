@@ -52,13 +52,6 @@ external fun nativeShutdown(): Int
  */
 external fun nativeArenaBuffer(): ByteBuffer?
 
-/** An empty call, for measuring the cost of the transition on its own. */
-external fun nativeNoop(): Int
-
-/** The same call through the annotation that skips the thread state transition. */
-@FastNative
-external fun nativeNoopFast(): Int
-
 /**
  * Called from a Host worker thread through JNI.
  *
