@@ -50,7 +50,11 @@ jobs:
           - runner: windows-2022
             target: windows-x86_64
             renderer: powershell .\dioxus-compose-renderer\desktop\scripts\build-native-windows.ps1
-            dist: dioxus-compose-renderer/build/native-image/dist/lib
+            # `dist`, not `dist/lib`. Windows puts the DLL in `dist\bin` and the JDK's
+            # font configuration in `dist\lib`, because AWT reads that from java.home and
+            # the renderer sets java.home to `dist`. The search order looks in a given
+            # directory and then in its `bin` and `lib`, so naming the parent finds both.
+            dist: dioxus-compose-renderer/build/native-image/dist
     steps:
       - uses: actions/checkout@v4
         with:
@@ -189,16 +193,19 @@ jobs:
             [[ -n "$app" ]] || continue
             stage="staging/$app"
             mkdir -p "$stage"
+            cp -R "${{ matrix.dist }}/." "$stage/"
             if [[ "${{ runner.os }}" == "Windows" ]]; then
-              cp "target/release/sample-$app.exe" "$stage/"
+              # The executable goes in beside the DLL rather than above it. Windows
+              # searches the directory the executable is in, and the renderer's DLL lives
+              # in `bin` because AWT reads its font configuration from the `lib` next to
+              # it: the renderer sets java.home to their parent, so the two have to stay
+              # where they are and the program comes to them.
+              cp "target/release/sample-$app.exe" "$stage/bin/"
             else
               cp "target/release/sample-$app" "$stage/"
-            fi
-            cp -R "${{ matrix.dist }}/." "$stage/"
-            # Windows is already done by the copy: a DLL is found on the loader's search
-            # path, which the executable's own directory is on, and no name inside either
-            # file is consulted.
-            if [[ "${{ runner.os }}" != "Windows" ]]; then
+              # Everywhere else the library records the absolute path it was built at,
+              # which means nothing on the machine this is unpacked on, so each executable
+              # is pointed at the copy travelling with it.
               ./scripts/bundle-renderer.sh "$stage/sample-$app" .
             fi
             tar -czf "artifacts/$app-${{ matrix.target }}.tar.gz" -C staging "$app"
