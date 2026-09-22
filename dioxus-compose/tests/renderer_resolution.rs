@@ -1271,3 +1271,32 @@ fn pr5_android_does_not_declare_the_desktop_renderers_symbols() {
         "a mock build draws nothing, so there is nothing to link"
     );
 }
+
+/// The Activity is written into the package the application's own tooling uses.
+///
+/// Generated rather than shipped, because that tooling fixes the package a generated
+/// project uses and writes the application id into a build config alias. An Activity
+/// handed over as a static file sits in this crate's package instead, which is right for
+/// this repository's own application and wrong for everyone else's, and a class in the
+/// wrong package is one the manifest never finds.
+#[test]
+fn pr5_the_generated_activity_belongs_to_the_package_it_was_given() {
+    let staged = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("android-kotlin");
+    let shipped = staged.join("MainActivity.kt");
+    assert!(
+        shipped.is_file(),
+        "the crate carries no Activity at {}, so there is nothing for an Android build \
+         to start at",
+        shipped.display()
+    );
+    let source = std::fs::read_to_string(&shipped).expect("the Activity is readable");
+    assert!(
+        source.contains("package dioxus.compose"),
+        "the Activity the crate carries is not in this crate's own package, so the copy \
+         staged from the renderer is not the one that was staged"
+    );
+    assert!(
+        source.contains("class MainActivity"),
+        "the Activity carries no MainActivity, and that is the class the manifest names"
+    );
+}
