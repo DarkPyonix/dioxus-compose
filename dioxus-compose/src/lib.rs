@@ -68,11 +68,34 @@ pub use window::{WindowSize, use_window_size, window_size};
 #[macro_export]
 macro_rules! android_main {
     ($app:path) => {
+        $crate::android_main!($crate::LaunchBuilder::new(), $app);
+    };
+    ($builder:expr, $app:path) => {
         #[unsafe(no_mangle)]
         pub extern "C" fn dioxus_compose_android_main() {
-            $crate::LaunchBuilder::new()
-                .with_mode($crate::LoopMode::Platform)
-                .launch($app);
+            $builder.with_mode($crate::LoopMode::Platform).launch($app);
+        }
+    };
+}
+
+/// Declares the entry point an iOS application starts at.
+///
+/// iOS is the one platform where the application is the library: the renderer is a
+/// Kotlin/Native archive and the two are linked into a single executable, so there is no
+/// Activity to load anything and no page to fetch anything. What there is instead is a
+/// `main`, and a `main` in an application bundle has to be C, so this exports the launch
+/// under a name that C can call.
+///
+/// ```ignore
+/// dioxus_compose::ios_main!(launch);
+/// ```
+#[macro_export]
+macro_rules! ios_main {
+    ($launch:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_ios_main() -> i32 {
+            $launch();
+            0
         }
     };
 }
@@ -95,10 +118,13 @@ macro_rules! android_main {
 #[macro_export]
 macro_rules! web_main {
     ($app:path) => {
+        $crate::web_main!($crate::LaunchBuilder::new(), $app);
+    };
+    ($builder:expr, $app:path) => {
         #[cfg(target_family = "wasm")]
         #[unsafe(no_mangle)]
         pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
-            $crate::__web_start($app)
+            $crate::__web_start($builder, $app)
         }
 
         /// Off the web there is no page to call this and no shared memory to report an
@@ -108,6 +134,7 @@ macro_rules! web_main {
         #[unsafe(no_mangle)]
         pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
             let _: fn() -> $crate::Element = $app;
+            let _ = $builder;
             0
         }
     };

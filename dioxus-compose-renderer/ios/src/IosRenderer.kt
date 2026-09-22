@@ -2,6 +2,7 @@ package dioxus.compose.ui.platform
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.window.ComposeUIViewController
 import kotlinx.cinterop.ObjCObjectBase.OverrideInit
@@ -68,7 +69,11 @@ private class RendererAppDelegate : UIResponder, UIApplicationDelegateProtocol {
         val content = ComposeUIViewController {
             DioxusContent(
                 rememberDioxusHost(remember { hostConnectionFactory() }),
-                Modifier.fillMaxSize(),
+                // Inside the safe area, as the Android host already does. Without it the
+                // first line of an application sits under the status bar and the last
+                // under the home indicator, which is what a screenshot of the statistics
+                // sample showed: its title was drawn through the clock.
+                Modifier.fillMaxSize().safeDrawingPadding(),
             )
         }
         // Where the system draws its own chrome as Liquid Glass, the container that can

@@ -55,6 +55,14 @@ fn main() {
         // rather than take its no-renderer path.
         RendererLinkage::Provided => {
             println!("cargo:rustc-cfg=renderer_linked");
+            // Same reason as macOS below, and the same Mach-O. Xcode links the renderer
+            // into the application, so the symbols are real by the time anything runs,
+            // but a shared library built here has to be allowed to leave them open.
+            // Without this every iOS build of this crate fails at its own cdylib, which
+            // is not even the artifact an iOS application uses.
+            if target_os == "ios" {
+                println!("cargo:rustc-link-arg-cdylib=-Wl,-undefined,dynamic_lookup");
+            }
             return;
         }
         RendererLinkage::Linked => {}
