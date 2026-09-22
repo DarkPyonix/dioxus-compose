@@ -60,6 +60,41 @@ under `docs/`.
    working pulls the files out from under it. Work has been lost that way. Give a
    background agent its own worktree and leave that checkout alone until it finishes.
 
+## Background agents
+
+These bind the agent and whoever dispatches it equally. Both have been broken by the
+person writing the task prompt, not by the agent reading it, so
+`scripts/tests/agent-launchers.test.sh` checks that all three launchers state them and
+the launchers inject them ahead of whatever the prompt says.
+
+1. **A background agent never builds the renderer.** Not `./kotlin build`, not
+   `./kotlin test`, not Amper, Gradle, dx or native-image, and nothing under
+   `dioxus-compose-renderer/*/scripts/`. Those builds reach outside the worktree into
+   caches every checkout on the machine shares (`~/.m2`, `~/.cache/JetBrains/Kotlin`,
+   Gradle's), they cost tens of minutes each, and six agents were once told to run them
+   and did, at the same time, which took the machine down.
+
+   **Do not write a build command into a task prompt.** That is how it happened: the
+   ban was spoken and never written down, so the next prompt asked for exactly the
+   thing the ban forbade.
+
+   An agent writes the Kotlin and writes its tests without watching them go green.
+   Whoever merges the branch runs the renderer build and the Kotlin tests. That is a
+   real cost and it is the deal: the Kotlin side is verified at the merge, not in the
+   worktree. Cargo inside the agent's own worktree is fine and expected, because every
+   worktree has its own `target/`.
+
+2. **A background agent never decides that part of its task is out of scope.** If the
+   task says implement it, it gets implemented. No narrowing, no deferring, no "future
+   work", no "1.1", no TODO standing in for the feature, and above all no writing that
+   judgement into SPEC or INTENT as though it were settled. A whole section of the SPEC
+   had to be withdrawn because exclusions accumulated that nobody had asked for.
+
+   Disagreeing is allowed and wanted. Deliver everything else in full, then say in the
+   final report what was not done and why. The failure is the silence, not the
+   disagreement: a gap nobody mentions is found later by someone who assumed it was
+   there.
+
 ## Writing
 
 1. **Never use em dashes.** Not in docs, code comments, commit messages, pull request text or UI copy. Use a comma, a colon, parentheses, or start a new sentence. Hyphens in compound words and en dashes in numeric ranges are fine.
