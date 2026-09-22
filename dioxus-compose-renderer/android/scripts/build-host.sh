@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Builds the Rust Host as an Android cdylib and puts it where the APK expects it.
-# Usage: ./build-host.sh [--debug] [abi ...]
+# Usage: ./build-host.sh [--debug] [--sample <name>] [abi ...]
 #
 # The default ABI is arm64-v8a, which is what a modern device and an Apple silicon
 # emulator both run. Pass `x86_64` as well for an Intel emulator.
+#
+# With no --sample this builds the vertical slice, which is the example the renderer's own
+# tests use. With one it builds that sample's library instead: a sample is an rlib for its
+# desktop binary and a cdylib here, because an Activity owns the process and there is no
+# `main` of ours to run. Either way the result is copied in under the one name the Activity
+# loads, so the Kotlin side does not have to know which application it is hosting.
 #
 # The NDK comes from ANDROID_NDK_HOME, or from the newest one under the SDK.
 
@@ -15,9 +21,17 @@ repo_root="$(cd "$module_dir/../.." && pwd)"
 
 profile=release
 profile_dir=release
+sample=
 abis=()
+expecting_sample=false
 for argument in "$@"; do
+    if [[ "$expecting_sample" == true ]]; then
+        sample="$argument"
+        expecting_sample=false
+        continue
+    fi
     case "$argument" in
+        --sample) expecting_sample=true; continue ;;
         --debug) profile=dev; profile_dir=debug ;;
         *) abis+=("$argument") ;;
     esac
@@ -69,14 +83,30 @@ for abi in "${abis[@]}"; do
         exit 1
     fi
     upper_target="$(echo "$target" | tr 'a-z-' 'A-Z_')"
+    if [[ -n "$sample" ]]; then
+        selector=(--package "sample-$sample" --lib)
+        built="$target_dir/$target/$profile_dir/libsample_${sample//-/_}.so"
+    else
+        selector=(--example android_demo)
+        built="$target_dir/$target/$profile_dir/examples/libandroid_demo.so"
+    fi
     env "CARGO_TARGET_${upper_target}_LINKER=$linker" \
         "CC_${target}=$linker" \
         "AR_${target}=$toolchain/llvm-ar" \
         cargo build --manifest-path "$repo_root/Cargo.toml" \
-        --profile "$profile" --example android_demo --target "$target"
+        --profile "$profile" "${selector[@]}" --target "$target"
+
+    [[ -f "$built" ]] || {
+        echo "no cdylib at $built" >&2
+        echo "  a sample reaches Android through its library, so it needs a [lib] with" >&2
+        echo "  crate-type including cdylib, and dioxus_compose::android_main!(app)." >&2
+        exit 1
+    }
 
     destination="$module_dir/jniLibs/$abi"
     mkdir -p "$destination"
-    cp "$target_dir/$target/$profile_dir/examples/libandroid_demo.so" "$destination/"
+    # Under the name the Activity loads, whatever it was built from. The Kotlin side names
+    # one library, so the application it hosts is decided here rather than there.
+    cp "$built" "$destination/libandroid_demo.so"
     echo "built $destination/libandroid_demo.so"
 done

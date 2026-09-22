@@ -6,6 +6,15 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+# Three shapes of the same sample. The rlib is what the binary and the tests use; the
+# cdylib is what an Android Activity loads and what a browser page fetches, because
+# neither of those platforms runs a `main` of ours.
+[lib]
+name = "sample_todo"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+bench = false
+
 [dependencies]
 dioxus-compose = { path = "../../dioxus-compose" }
 dioxus-hooks.workspace = true
