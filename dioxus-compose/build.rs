@@ -189,6 +189,23 @@ fn main() {
         for name in HOST_EXPORTS {
             println!("cargo:rustc-link-arg=/EXPORT:{name}");
         }
+        // A window application, not a console one.
+        //
+        // Without this the executable is linked for the console subsystem, so double
+        // clicking it opens a terminal beside the window and closing that terminal kills
+        // the application. The first person to run a sample on Windows reported exactly
+        // that, and it is the default for a Rust binary rather than anything anyone chose.
+        //
+        // `mainCRTStartup` because the entry point is still Rust's `main`. Changing the
+        // subsystem alone would send the loader looking for `WinMain`, which does not
+        // exist here.
+        //
+        // What this would otherwise cost is the reason the renderer attaches to a parent
+        // console at startup: a GUI subsystem process has no standard error, and the
+        // messages that explain an empty window would go nowhere. Started from a terminal
+        // it writes there as before; started from Explorer there is no terminal to open.
+        println!("cargo:rustc-link-arg=/SUBSYSTEM:WINDOWS");
+        println!("cargo:rustc-link-arg=/ENTRY:mainCRTStartup");
         // Windows has no rpath and no name inside the file that the loader consults: a
         // DLL is found on the loader's search path and nowhere else. The other platforms
         // name the library after where it sits, which does nothing here.

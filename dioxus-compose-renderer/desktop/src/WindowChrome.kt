@@ -25,8 +25,21 @@ import javax.swing.RootPaneContainer
  *   ourselves would be the most visible way to fail at looking native: their placement,
  *   hover behaviour, full screen transition and accessibility labels all belong to the
  *   system, and an imitation drifts from the real thing on the next OS release.
- * - Windows and Linux get an undecorated window and we paint the caption, because neither
- *   offers an equivalent of the macOS client properties through AWT.
+ * - Windows keeps its real title bar too, for now. An undecorated window there is not
+ *   just a window without a title bar: it loses the drop shadow, the resize border and
+ *   Snap Layouts, all of which the frame provides and none of which we can draw. The
+ *   application that reported this said the borders looked crude, and they were.
+ *
+ *   The end state is the one VS Code and Windows Terminal use: keep the frame and take
+ *   the caption area into the client area, by handling `WM_NCCALCSIZE` without removing
+ *   the caption and `WM_NCHITTEST` for drag and resize, with
+ *   `DwmExtendFrameIntoClientArea` for the shadow. That needs the window procedure
+ *   subclassed through the HWND, which is native code on a platform this repository
+ *   cannot run, and four attempts at unverifiable Windows work in one day were enough.
+ *   Until then the system bar is a worse look and a working window, which is the better
+ *   of the two.
+ * - Linux gets an undecorated window and we paint the caption, because it offers no
+ *   equivalent of the macOS client properties through AWT.
  */
 internal enum class WindowChrome {
     /** Content extends into the title bar area. The default. */
@@ -37,13 +50,30 @@ internal enum class WindowChrome {
 }
 
 /**
+ * True on macOS, where the title bar can be made transparent through AWT.
+ *
+ * The name is a parameter so a test can ask about a platform it is not running on. The
+ * alternative is a test that only checks the machine it happens to be on, which for a
+ * decision that differs per platform checks the one case nobody was worried about.
+ */
+internal fun isMacOs(osName: String = System.getProperty("os.name").orEmpty()): Boolean =
+    osName.startsWith("Mac")
+
+/** True on Windows, where the frame is kept because losing it costs more than it saves. */
+internal fun isWindows(osName: String = System.getProperty("os.name").orEmpty()): Boolean =
+    osName.startsWith("Windows")
+
+/**
  * True when this platform keeps its system window buttons under [WindowChrome.Modern].
  *
- * Only macOS does. Everywhere else the caption is ours to draw, so the renderer has to
- * supply buttons as well as insets.
+ * macOS, because its buttons stay while the bar goes transparent. Windows, because its
+ * frame stays whole: an undecorated window there loses the shadow, the resize border and
+ * Snap Layouts along with the bar. Linux is the remaining case where the caption is ours
+ * to draw, so the renderer supplies buttons as well as insets.
  */
-internal val platformDrawsWindowButtons: Boolean
-    get() = System.getProperty("os.name").orEmpty().startsWith("Mac")
+internal fun platformDrawsWindowButtons(
+    osName: String = System.getProperty("os.name").orEmpty(),
+): Boolean = isMacOs(osName) || isWindows(osName)
 
 /**
  * Applies [chrome] to an already created window.
@@ -63,7 +93,7 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
     captionHeight(window)
     if (chrome == WindowChrome.System) return
     val root: JRootPane = (window as? RootPaneContainer)?.rootPane ?: return
-    if (platformDrawsWindowButtons) {
+    if (isMacOs()) {
         root.putClientProperty("apple.awt.fullWindowContent", true)
         root.putClientProperty("apple.awt.transparentTitleBar", true)
         root.putClientProperty("apple.awt.windowTitleVisible", false)
@@ -87,8 +117,14 @@ internal fun applyWindowChrome(window: AwtWindow, chrome: WindowChrome) {
  * A window that kept its ordinary title bar has no such strip: the system already drew
  * the bar above the content, and there is nothing to run underneath.
  */
-internal fun windowCaption(window: AwtWindow?, chrome: WindowChrome): WindowCaption =
-    if (chrome == WindowChrome.System) {
+internal fun windowCaption(
+    window: AwtWindow?,
+    chrome: WindowChrome,
+    osName: String = System.getProperty("os.name").orEmpty(),
+): WindowCaption =
+    // A window whose bar the system drew has no strip for content to run under, whether
+    // it asked for that bar or kept it because removing it costs more than it saves.
+    if (chrome == WindowChrome.System || isWindows(osName)) {
         WindowCaption.None
     } else {
         WindowCaption(height = captionHeight(window), buttonsWidth = systemWindowButtonsWidth)
@@ -106,7 +142,7 @@ internal fun windowCaption(window: AwtWindow?, chrome: WindowChrome): WindowCapt
  * undoes it.
  */
 internal fun windowActions(window: AwtWindow?, chrome: WindowChrome): WindowActions? {
-    if (chrome == WindowChrome.System || platformDrawsWindowButtons) return null
+    if (chrome == WindowChrome.System || platformDrawsWindowButtons()) return null
     val frame = window as? Frame ?: return null
     return WindowActions(
         minimise = { frame.extendedState = frame.extendedState or Frame.ICONIFIED },
@@ -132,7 +168,7 @@ internal fun windowActions(window: AwtWindow?, chrome: WindowChrome): WindowActi
 private fun captionHeight(window: AwtWindow?): Dp {
     measuredCaptionHeight?.let { return it }
     val measured = window?.insets?.top?.takeIf { it > 0 }?.dp
-    val height = measured ?: if (platformDrawsWindowButtons) 28.dp else 32.dp
+    val height = measured ?: if (platformDrawsWindowButtons()) 28.dp else 32.dp
     measuredCaptionHeight = height
     return height
 }
@@ -141,4 +177,4 @@ private var measuredCaptionHeight: Dp? = null
 
 /** The horizontal room the system window buttons occupy, for a caption to lay out around. */
 internal val systemWindowButtonsWidth
-    get() = if (platformDrawsWindowButtons) 78.dp else 0.dp
+    get() = if (isMacOs()) 78.dp else 0.dp

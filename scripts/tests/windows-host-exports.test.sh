@@ -64,3 +64,32 @@ if [[ "$failures" -gt 0 ]]; then
     exit 1
 fi
 echo "ok    $(echo "$exported" | wc -l | tr -d ' ') host functions are exported, looked up and defined alike"
+
+# A window application, not a console one.
+#
+# A Rust binary links for the console subsystem by default, so double clicking a sample
+# opened a terminal beside the window and closing that terminal killed the application.
+# Changing the subsystem alone is not enough: the loader would then look for WinMain, and
+# the entry point here is still Rust's main.
+#
+# And it cannot be done without the other half. A window-subsystem process has no standard
+# error, so every diagnostic the renderer writes would go nowhere, including the one that
+# says the renderer was built from a different schema. That message is what finally
+# explained an empty window on Windows after it had been blamed on two other things.
+for expected in "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup"; do
+    grep -q -- "$expected" "$build_script" || {
+        echo "fail  the Windows link does not pass $expected" >&2
+        echo "      without both, a sample either opens a terminal beside its window or" >&2
+        echo "      fails to start at all" >&2
+        exit 1
+    }
+done
+
+shim_attaches="$(grep -c 'AttachConsole' "$shim" || true)"
+[[ "$shim_attaches" -gt 0 ]] || {
+    echo "fail  the renderer does not attach to a parent console on Windows" >&2
+    echo "      The window subsystem leaves the process without a standard error, so the" >&2
+    echo "      messages explaining a window that drew nothing would go nowhere." >&2
+    exit 1
+}
+echo "ok    the Windows link makes a window application that can still be run from a terminal"
