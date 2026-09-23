@@ -73,24 +73,24 @@ class LiquidGlassTest {
     }
 
     /**
-     * The Apple slot stays Cupertino, and the glass system is chosen by name.
+     * The Apple slot is glass, and the flat system is chosen by name.
      *
-     * Both languages belong to that platform, and which one an application wants is the
-     * application's decision rather than the protocol's. Adaptive picking glass for every
-     * Mac would take that decision away from every application that never mentioned it.
+     * Adaptive says the application did not choose and the machine's own language is
+     * used. macOS 26 and iOS 26 draw themselves in glass, so answering with the previous
+     * generation's language would be a choice the application never made.
      */
     @Test
-    fun fr14_1_3_adaptive_keeps_the_flat_apple_system_and_glass_is_named() {
+    fun fr14_1_3_adaptive_takes_the_apple_slot_for_glass_and_the_flat_system_is_named() {
         assertEquals(
-            DesignSystem.Cupertino,
+            DesignSystem.LiquidGlass,
             adaptiveSystem(HostPlatform.MacOs, DesignSystem.Material3),
         )
         assertEquals(
-            DesignSystem.Cupertino,
+            DesignSystem.LiquidGlass,
             adaptiveSystem(HostPlatform.Ios, DesignSystem.Material3),
         )
         val theme = resolveTheme(theme = null, platform = HostPlatform.MacOs, systemDark = false)
-        assertEquals(DesignSystem.Cupertino, theme.system)
+        assertEquals(DesignSystem.LiquidGlass, theme.system)
 
         assertEquals(
             DesignSystem.LiquidGlass,

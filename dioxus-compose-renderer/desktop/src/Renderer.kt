@@ -64,10 +64,11 @@ private fun runRendererWithHost(
     chrome: WindowChrome,
     autoExitMillis: Long?,
 ) = application(exitProcessOnExit = false) {
-    // Undecorated everywhere the platform will not hand us a transparent title bar, which
-    // is everywhere except macOS. There we keep the real one and make it see through, so
-    // the close, minimise and zoom buttons stay the system's own.
-    val undecorated = chrome == WindowChrome.Modern && !platformDrawsWindowButtons()
+    // Undecorated only where the system will not let the window keep its frame and give
+    // up the bar. macOS makes the real bar transparent; Windows keeps the frame and hands
+    // the caption strip to the client area. Linux has neither, so the whole decoration
+    // goes and every part of it is drawn here, including the resize edges.
+    val undecorated = chrome == WindowChrome.Modern && !platformKeepsSystemFrame()
     // A measurement of zero means the application did not ask, so the choice stays the
     // window's own rather than becoming a window of no size.
     val state = if (asked != null && asked.width > 0 && asked.height > 0) {
