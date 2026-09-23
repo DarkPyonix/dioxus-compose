@@ -292,7 +292,28 @@ $StaticAwtLibraries = @(
     "awt.lib", "jawt.lib", "java.lib", "fontmanager.lib", "freetype.lib", "lcms.lib",
     "javajpeg.lib", "javaaccessbridge.lib", "mlib_image.lib"
 )
+# The Windows libraries those archives call into.
+#
+# A DLL carries its own imports, so nothing had to say this while AWT arrived as
+# awt.dll. A static archive does not: every Win32 call in it becomes an unresolved symbol
+# for whoever links it, and the first attempt failed with 162 of them, from GDI drawing
+# (Arc, Ellipse, StrokePath) through common controls (SetWindowSubclass) to printing and
+# the common dialogs.
+#
+# This is the set OpenJDK itself links libawt, fontmanager and the accessibility bridge
+# against. Naming a library that turns out to be unnecessary costs nothing at run time,
+# because an import library only pulls in what is referenced; missing one fails at link
+# time with the symbol named, which is a safe way to be wrong.
+$WindowsSystemLibraries = @(
+    "gdi32.lib", "user32.lib", "kernel32.lib", "advapi32.lib", "comctl32.lib",
+    "comdlg32.lib", "shell32.lib", "shlwapi.lib", "ole32.lib", "oleaut32.lib",
+    "uuid.lib", "winspool.lib", "imm32.lib", "msimg32.lib", "winmm.lib", "delayimp.lib"
+)
+
 $StaticLinkerArgs = @()
+foreach ($Name in $WindowsSystemLibraries) {
+    $StaticLinkerArgs += "-H:NativeLinkerOption=$Name"
+}
 foreach ($Name in $StaticAwtLibraries) {
     $Path = Join-Path $StaticDir $Name
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
