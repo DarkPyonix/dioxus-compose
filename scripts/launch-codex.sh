@@ -85,6 +85,8 @@ You do not build the renderer. Not \`./kotlin build\`, not \`./kotlin test\`, no
 
 You do not decide that part of your task is out of scope. If the task says to implement something, implement it. You may not narrow it, defer it, call it future work or a later version, leave a TODO where the feature should be, or write that judgement into this project's planning documents as if it were settled. If you believe something is wrong or impossible, deliver everything else in full and say so in your final report, naming what you did not do and why. Silence about a thing you skipped is the failure; disagreeing out loud is not.
 
+You do not change what this project promises. docs/SPEC.md, docs/INTENT.md and PROJECT.md are not yours to edit: not a requirement, not an acceptance criterion, not a decision, not an open question. If your task cannot be done as specified, or the specification looks wrong, do everything else in full and say so in your final report. Never rewrite the requirement so that your code satisfies it. That has happened, and what it produced was a requirement describing whatever the code already did.
+
 $prompt"
 # stream-json, not plain text. With plain `-p` the output arrives in one lump when the
 # run finishes, so the log sits at zero bytes for an hour and there is no way to tell a

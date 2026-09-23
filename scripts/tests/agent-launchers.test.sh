@@ -46,10 +46,20 @@ for launcher in "${launchers[@]}"; do
         note "$launcher does not forbid a run narrowing its own task"
     grep -q 'say so in your final report' "$launcher" ||
         note "$launcher does not tell a run to report what it did not do"
+
+    # The planning documents. A run that cannot meet a requirement and edits the
+    # requirement leaves a document that records whatever the code already did, and the
+    # loss is invisible afterwards because the document agrees with the code.
+    grep -q 'You do not change what this project promises' "$launcher" ||
+        note "$launcher does not forbid a run editing SPEC, INTENT or PROJECT"
+    for document in docs/SPEC.md docs/INTENT.md PROJECT.md; do
+        grep -q "$document" "$launcher" ||
+            note "$launcher does not name $document as out of a run's hands"
+    done
 done
 
 if [[ "$failures" -gt 0 ]]; then
     echo "$failures problem(s) in the agent launchers" >&2
     exit 1
 fi
-echo "ok: all ${#launchers[@]} launchers state the working directory, the build ban and the scope rule"
+echo "ok: all ${#launchers[@]} launchers state the working directory, the build ban, the scope rule and the planning documents"

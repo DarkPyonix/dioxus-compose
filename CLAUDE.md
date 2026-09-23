@@ -18,11 +18,27 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 
 ## Spec Driven Development
 
-1. **SPEC is the source of truth.** Before implementing a behavior, find its SPEC ID. If none exists, add or amend the SPEC first, in a separate commit.
-2. If code and SPEC disagree, fix the code. If the SPEC is wrong, fix the SPEC first and explain why.
-3. Decision changes go to `docs/INTENT.md` first, then SPEC, then code.
-4. When a requirement's acceptance criteria are verified, update its status (`Draft` → `Agreed` → `Done`) in the same change that proves it.
-5. Resolved open questions are removed from `PROJECT.md` and recorded as decisions in INTENT/SPEC.
+1. **SPEC is the source of truth.** Before implementing a behavior, find its SPEC ID. If none exists, stop and ask for one rather than writing the behaviour and a requirement for it in the same breath (2). Once it is agreed, it lands in its own commit, before the code.
+2. **Never edit `docs/SPEC.md`, `docs/INTENT.md` or `PROJECT.md` without being asked to.**
+   Not a requirement, not an acceptance criterion, not a decision, not a status. Propose
+   the change, say what it costs and what it buys, and wait. This holds even when the
+   change looks like a correction, and it holds hardest when the code cannot do what the
+   document says: the requirement is not the thing that gives way.
+
+   This is written down because it happened. FR-19.2 says a bar's content sits on the same
+   line as the window buttons. The code left a measured 15 pixel step, the way to fix it
+   looked unreachable, and the rule was rewritten to describe what the code already did.
+   The reachability was wrong as well, so the rewrite traded a real requirement for a
+   false reason. A requirement that moves whenever the code cannot meet it records nothing.
+
+   Fixing an ID that points at a renamed test, or a link that has rotted, is not this.
+   Changing what the project promises is.
+3. If code and SPEC disagree, fix the code. If the SPEC is wrong, say so and ask; do not
+   edit it and carry on.
+4. Decision changes go to `docs/INTENT.md` first, then SPEC, then code, and the decision
+   itself is the owner's to make (2).
+5. When a requirement's acceptance criteria are verified, update its status (`Draft` → `Agreed` → `Done`) in the same change that proves it. A status is a statement about evidence, so this one follows the evidence rather than needing to be asked for; every other edit to those documents does.
+6. Resolved open questions are removed from `PROJECT.md` and recorded as decisions in INTENT/SPEC, once the question has actually been answered by the person who asked it.
 
 ## Branches
 
