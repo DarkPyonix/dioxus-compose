@@ -175,23 +175,20 @@ fn main() {
         // The directive travels inside the rlib now, in the `.drectve` section that the
         // MSVC linker reads out of every object it links. See `EXPORT_DIRECTIVES` in
         // src/boundary.rs.
-        // A window application, not a console one.
+        // The subsystem is not set here, and the reason is the same one the export
+        // directive ran into: a build script's link arguments reach this package's own
+        // targets and stop. Setting it here broke the crate's own cdylib, which has no
+        // `main` for `/ENTRY:mainCRTStartup` to point at, and would not have reached a
+        // single application even if it had worked.
         //
-        // Without this the executable is linked for the console subsystem, so double
-        // clicking it opens a terminal beside the window and closing that terminal kills
-        // the application. The first person to run a sample on Windows reported exactly
-        // that, and it is the default for a Rust binary rather than anything anyone chose.
+        // An application says it for itself, with `#![windows_subsystem = "windows"]` at
+        // the top of its `main.rs`. That is one line, it is the ordinary way to do it in
+        // Rust, and the samples here carry it. Without it a window application also opens
+        // a console, and closing that console kills it.
         //
-        // `mainCRTStartup` because the entry point is still Rust's `main`. Changing the
-        // subsystem alone would send the loader looking for `WinMain`, which does not
-        // exist here.
-        //
-        // What this would otherwise cost is the reason the renderer attaches to a parent
-        // console at startup: a GUI subsystem process has no standard error, and the
-        // messages that explain an empty window would go nowhere. Started from a terminal
-        // it writes there as before; started from Explorer there is no terminal to open.
-        println!("cargo:rustc-link-arg=/SUBSYSTEM:WINDOWS");
-        println!("cargo:rustc-link-arg=/ENTRY:mainCRTStartup");
+        // The renderer attaches to a parent console at startup so that saying it costs no
+        // diagnostics: run from a terminal the messages still appear, run from Explorer
+        // there is no terminal to open.
         // Windows has no rpath and no name inside the file that the loader consults: a
         // DLL is found on the loader's search path and nowhere else. The other platforms
         // name the library after where it sits, which does nothing here.
