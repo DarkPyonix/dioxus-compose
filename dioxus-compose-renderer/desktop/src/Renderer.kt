@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toAwtImage
+import dioxus.compose.ui.node.Asset
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -86,6 +88,28 @@ private fun runRendererWithHost(
         // AWT reads the macOS client properties when the peer is realised, so this runs
         // once the window exists rather than as a constructor argument.
         LaunchedEffect(chrome) { applyWindowChrome(window, chrome) }
+
+        // The application's own picture, once the asset it named has arrived.
+        //
+        // The two come from the same batch but not at the same moment: the window is stood
+        // up from the batch before the batch is applied, so the id is known here first and
+        // the bitmap a little later. The cache is a snapshot state map, so reading it in
+        // composition subscribes to it and the effect runs again when the picture lands.
+        //
+        // Nothing happens where the application named nothing, which leaves the toolkit's
+        // own icon. Every window this project opened wore that one until now, and on
+        // Windows it is visible in the list Task Manager draws under a process.
+        val iconId = asked?.icon ?: 0
+        val icon = if (iconId == 0) {
+            null
+        } else {
+            (host.table.assets.asset(iconId) as? Asset.Raster)?.bitmap
+        }
+        LaunchedEffect(icon) {
+            if (icon != null) {
+                window.iconImage = icon.toAwtImage()
+            }
+        }
 
         // The tracing agent writes its output only on a clean shutdown, so unattended
         // metadata collection needs the window to close by itself.

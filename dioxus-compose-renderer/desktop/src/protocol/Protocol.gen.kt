@@ -83,6 +83,15 @@ data class Window(
      * under whatever the renderer happened to be called.
      */
     val title: String,
+    /**
+     * The picture the window wears, as an asset id, or zero for none.
+     *
+     * An id rather than a path or a name: a path is a fact about the machine the
+     * application was built on, and a name asks the toolkit to find something it may not
+     * have. Zero leaves the toolkit's own icon, which is what every window here wore
+     * until this existed.
+     */
+    val icon: Int,
     val width: Int,
     val height: Int,
     val minWidth: Int,
@@ -458,7 +467,7 @@ object Protocol {
                         )
                     }
                     TAG_SET_WINDOW -> {
-                        requireRecordLength(length, 24, offset)
+                        requireRecordLength(length, 28, offset)
                         val resizable = readU16(batch, base, available, offset + 14)
                         if (resizable > 1) {
                             throw ProtocolException("invalid resizable flag $resizable", offset + 14)
@@ -467,6 +476,7 @@ object Protocol {
                             Window(
                                 chrome(readU16(batch, base, available, offset + 4), offset + 4),
                                 readString(batch, base, available, offset + 16),
+                                readU32(batch, base, available, offset + 24).toInt(),
                                 readU16(batch, base, available, offset + 6),
                                 readU16(batch, base, available, offset + 8),
                                 readU16(batch, base, available, offset + 10),
