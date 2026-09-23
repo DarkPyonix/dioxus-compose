@@ -106,3 +106,24 @@ shim_attaches="$(grep -c 'AttachConsole' "$shim" || true)"
     exit 1
 }
 echo "ok    the Windows link makes a window application that can still be run from a terminal"
+
+# Windows scales a window it thinks does not understand scaling: it renders at 96 DPI and
+# stretches the result, which is why an application on a scaled display looks soft while
+# everything around it is sharp. There is no such mechanism on macOS, so this is a defect
+# that can only be seen on the platform it belongs to, and only by someone looking.
+#
+# It has to be declared before anything creates a window, which is why the check is that
+# it happens in the entry point rather than merely somewhere in the file.
+grep -q 'dioxus_compose_declare_dpi_awareness' "$shim" || {
+    echo "fail  the renderer does not declare DPI awareness on Windows" >&2
+    echo "      Windows renders an unaware window at 96 DPI and stretches it, so the" >&2
+    echo "      application looks blurred against everything else on a scaled display." >&2
+    exit 1
+}
+grep -A 4 'int32_t dioxus_compose_renderer_run(void) {' "$shim" |
+    grep -q 'dioxus_compose_declare_dpi_awareness();' || {
+    echo "fail  DPI awareness is declared somewhere other than the entry point" >&2
+    echo "      It has no effect once a window or a device context exists." >&2
+    exit 1
+}
+echo "ok    the renderer says it draws at the display's real resolution"

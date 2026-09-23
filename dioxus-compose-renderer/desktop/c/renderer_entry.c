@@ -250,9 +250,62 @@ static void dioxus_compose_attach_parent_console(void) {
 }
 #endif
 
+/**
+ * Says this process draws at the display's real resolution.
+ *
+ * Windows assumes a program does not understand scaling unless it says otherwise. For one
+ * that does not, it renders the window at 96 DPI and stretches the result to the size the
+ * display asks for, which is why an application on a scaled screen looks soft while
+ * everything around it is sharp. There is no such mechanism on macOS, so this never showed
+ * up there.
+ *
+ * Looked up rather than called directly, because the call this wants arrived in Windows 10
+ * 1703 and linking it would refuse to start on anything older. The two fallbacks are the
+ * same statement in the vocabulary of their own era.
+ *
+ * Must happen before anything creates a window or a device context, which is why it is the
+ * first thing in the entry point rather than part of setting the window up.
+ */
+static void dioxus_compose_declare_dpi_awareness(void) {
+    // The context type and its values are spelled out here rather than taken from the
+    // SDK headers, where they appear only above a certain WINVER. The value is the one
+    // the documentation gives for per-monitor v2.
+    typedef void *dxc_dpi_context;
+    const dxc_dpi_context per_monitor_v2 = (dxc_dpi_context)(intptr_t)-4;
+
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (user32 != NULL) {
+        typedef BOOL(WINAPI * set_context_fn)(dxc_dpi_context);
+        set_context_fn set_context =
+            (set_context_fn)(void *)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
+        if (set_context != NULL && set_context(per_monitor_v2)) {
+            return;
+        }
+    }
+
+    // Windows 8.1 knew about per-monitor scaling but not about the window moving between
+    // monitors with different ones.
+    HMODULE shcore = LoadLibraryW(L"shcore.dll");
+    if (shcore != NULL) {
+        typedef HRESULT(WINAPI * set_awareness_fn)(int);
+        set_awareness_fn set_awareness =
+            (set_awareness_fn)(void *)GetProcAddress(shcore, "SetProcessDpiAwareness");
+        if (set_awareness != NULL && set_awareness(2) == S_OK) {
+            FreeLibrary(shcore);
+            return;
+        }
+        FreeLibrary(shcore);
+    }
+
+    // Everything older: one scale for the whole desktop, which is still sharper than
+    // being stretched.
+    SetProcessDPIAware();
+}
+
 int32_t dioxus_compose_renderer_run(void) {
 #ifdef _WIN32
     dioxus_compose_attach_parent_console();
+    dioxus_compose_declare_dpi_awareness();
     static LONG started;
     if (InterlockedExchange(&started, 1)) {
         return RUN_ALREADY_RUNNING;
