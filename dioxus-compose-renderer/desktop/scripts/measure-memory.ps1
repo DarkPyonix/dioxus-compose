@@ -57,6 +57,25 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# GetWindowRect, so the report says how big the window actually was rather than how big it
+# was asked to be. A measurement that cannot say that is not comparable with anything, and
+# on macOS a run once came out 40MB low because the window never reached the size it was
+# given.
+#
+# Declared once per session: the type stays loaded, and Add-Type refuses to define it twice.
+if (-not ('DxcWin32' -as [type])) {
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public class DxcWin32 {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left, Top, Right, Bottom; }
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+}
+'@
+}
+
 # The repository root, found by walking up from this script until the workspace manifest
 # turns up. Cargo puts its output there rather than next to whatever directory you happened
 # to type the command in, which is the first thing that goes wrong when running this.
