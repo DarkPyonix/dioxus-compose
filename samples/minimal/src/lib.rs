@@ -638,7 +638,24 @@ pub fn launch() {
 /// entry point that makes its own builder is a sample that draws the same screens in a
 /// different design system depending on where it runs.
 fn launch_builder() -> dioxus_compose::LaunchBuilder {
+    // The name the window carries. A desktop lists windows by it, so a window that said
+    // nothing was listed under whatever the renderer happened to be called, and every
+    // sample here was listed as DioxusCompose until this line existed.
     dioxus_compose::LaunchBuilder::new().with_theme(dioxus_compose::demo_theme_for(THEME))
+        .with_window(
+            dioxus_compose::schema::Window::new()
+                .with_title("Minimal")
+                // The mark this sample draws on its own page, so the window in a task
+                // list and the window on screen are recognisably the same application.
+                // Registered like any other picture: the bytes travel and the renderer
+                // refers to them by id, because a path would be a fact about the machine
+                // this was built on and a name would ask the toolkit to find something it
+                // may not have.
+                .with_icon(dioxus_compose::asset::asset(
+                    AssetKind::Png,
+                    include_bytes!("../assets/icon.png"),
+                )),
+        )
 }
 
 // The platforms where the sample is not a program. Android's Activity and the browser's
