@@ -248,7 +248,6 @@ static void dioxus_compose_attach_parent_console(void) {
     (void)freopen_s(&stream, "CONOUT$", "w", stderr);
     (void)freopen_s(&stream, "CONOUT$", "w", stdout);
 }
-#endif
 
 /**
  * Says this process draws at the display's real resolution.
@@ -307,6 +306,7 @@ static void dioxus_compose_declare_dpi_awareness(void) {
     // being stretched.
     SetProcessDPIAware();
 }
+#endif
 
 int32_t dioxus_compose_renderer_run(void) {
 #ifdef _WIN32
