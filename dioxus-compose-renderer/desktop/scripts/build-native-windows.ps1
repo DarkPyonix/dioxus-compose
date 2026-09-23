@@ -280,9 +280,17 @@ if (-not (Test-Path -LiteralPath $StaticDir -PathType Container)) {
         "GRAALVM_HOME=$GraalHome looks like an upstream GraalVM rather than Liberica NIK."
     )
 }
+# What AWT reaches, and nothing else. Java Sound is not on the list: it wants MIDI and
+# DirectSound from the Windows SDK, the link fails on `__imp_midiInOpen` and
+# `DirectSoundCreate`, and a renderer that draws a window has no use for either. The same
+# reasoning applies to anything else that turns out to need a system library: ask whether
+# the renderer uses it before reaching for the import library.
+#
+# A missing one fails at link time with the symbol named, which is a safe way to be wrong.
+# An extra one costs size and can fail like Java Sound did.
 $StaticAwtLibraries = @(
     "awt.lib", "jawt.lib", "java.lib", "fontmanager.lib", "freetype.lib", "lcms.lib",
-    "javajpeg.lib", "javaaccessbridge.lib", "jsound.lib", "mlib_image.lib"
+    "javajpeg.lib", "javaaccessbridge.lib", "mlib_image.lib"
 )
 $StaticLinkerArgs = @()
 foreach ($Name in $StaticAwtLibraries) {
@@ -396,8 +404,7 @@ foreach ($Name in $RuntimeFiles) {
 # twelve files bigger than it should be.
 $ShouldBeLinkedIn = @(
     "awt.dll", "jawt.dll", "java.dll", "jvm.dll", "fontmanager.dll", "freetype.dll",
-    "lcms.dll", "javajpeg.dll", "jsound.dll", "javaaccessbridge.dll", "mlib_image.dll",
-    "splashscreen.dll"
+    "lcms.dll", "javajpeg.dll", "javaaccessbridge.dll", "mlib_image.dll", "splashscreen.dll"
 )
 $StillDynamic = $ShouldBeLinkedIn | Where-Object { Test-Path -LiteralPath (Join-Path $BinDir $_) -PathType Leaf }
 if ($StillDynamic) {

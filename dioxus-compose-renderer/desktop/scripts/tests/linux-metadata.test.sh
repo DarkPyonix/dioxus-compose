@@ -69,12 +69,28 @@ grep -q -- '-Os' "$linux_build"
 absent 'windows-metadata' "$linux_build" \
     "That overlay is a list of sun.awt.windows classes, none of which exist on Linux"
 
-# Windows keeps its two configuration directories and now preserves java.desktop as well.
-# Curated metadata got that image past Toolkit.getDefaultToolkit and into the next
+# Windows keeps its two configuration directories. It used to preserve java.desktop as
+# well, which is what got that image past Toolkit.getDefaultToolkit and into the next
 # reflective lookup, where Swing asks UIManager for a ComponentUI by name and finds no look
 # and feel class in the image.
+#
+# It does not preserve the module any more, because it builds with NIK now and links the
+# JDK's desktop libraries in rather than shipping them beside it, which is what lets the
+# same accessibility feature macOS uses register what is actually reached. Preserving a
+# whole JDK module was the reason the Windows image was 101.6MB against macOS's 70.5MB.
+#
+# So what is required here is that ONE of the two answers is present, the way the Linux
+# check above is written: either the module is preserved, or the feature that registers
+# the reached classes is on. Neither would be an image that cannot start.
 grep -q 'ConfigurationFileDirectories=$MetadataDir,$ResourceMetadataDir' "$windows_build"
-grep -q -- '-H:Preserve=module=java.desktop' "$windows_build"
+if ! grep -q -- '-H:Preserve=module=java.desktop' "$windows_build" &&
+    ! grep -q 'AccessibilityReachabilityFeature' "$windows_build"; then
+    echo "fail  the Windows build neither preserves java.desktop nor registers the" >&2
+    echo "      classes AWT reaches. One of the two has to be true or the image cannot" >&2
+    echo "      start: Swing looks a look and feel up by class name, and a class nobody" >&2
+    echo "      references is not in the image." >&2
+    exit 1
+fi
 
 python3 - "$shared_metadata" <<'PY'
 import json
