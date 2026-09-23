@@ -28,6 +28,7 @@
 #include <limits.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <unistd.h>
 #endif
 
 typedef struct graal_isolate_t graal_isolate_t;
@@ -42,6 +43,10 @@ void dioxus_compose_renderer_request_frame_impl(graal_isolatethread_t *thread);
 int32_t dioxus_compose_renderer_run(void);
 
 #ifdef __APPLE__
+#include <dispatch/dispatch.h>
+#include <objc/message.h>
+#include <objc/runtime.h>
+
 void dioxus_compose_prepare_main_thread(void);
 void dioxus_compose_park_main_thread(atomic_bool *finished);
 void dioxus_compose_stop_main_thread(void);
@@ -482,6 +487,116 @@ static DWORD WINAPI dxc_reclaim_caption(LPVOID unused) {
 }
 #endif
 
+#ifdef __APPLE__
+/*
+ * Bringing the window buttons down to the bar's line.
+ *
+ * A bar that is the window's caption puts its content on the same line as the close,
+ * minimise and zoom buttons, which is what macOS itself does. macOS makes that line by
+ * moving the buttons, not by moving the toolbar: a window with a unified toolbar has its
+ * buttons centred in the taller title bar. There is no way to ask for that from Java. The
+ * AWT peer reads eight client properties and none of them is this one, so a window built
+ * through AWT alone leaves the buttons centred in the standard 28 point bar while the
+ * bar's content sits lower, and on the calculator that was a 15 pixel step.
+ *
+ * So it is asked for here, through the Objective-C runtime, in the same file and the same
+ * spirit as the Windows window procedure a few hundred lines up. What may not be written
+ * by hand is the shim between the Host and the Renderer, which is generated; the renderer
+ * talking to its own window is not that.
+ *
+ * Only windows that asked for modern chrome are touched. Kotlin says so by setting
+ * `apple.awt.fullWindowContent`, which the peer turns into the full size content view
+ * style, so the style mask is the message: a window that kept the ordinary title bar
+ * never gets one.
+ */
+
+// From NSWindow.h. Unified is the one that puts the title and the toolbar on one line,
+// which is the line the buttons are then centred on.
+enum { DXC_TOOLBAR_STYLE_UNIFIED = 3 };
+// NSWindowStyleMaskFullSizeContentView.
+enum { DXC_FULL_SIZE_CONTENT_VIEW = 1 << 15 };
+
+static id dxc_send(id self, const char *selector) {
+    return ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName(selector));
+}
+
+static id dxc_send_class(const char *name, const char *selector) {
+    Class type = objc_getClass(name);
+    if (type == NULL) {
+        return NULL;
+    }
+    return ((id (*)(Class, SEL))objc_msgSend)(type, sel_registerName(selector));
+}
+
+/** Puts a unified toolbar on one window, which is what moves its buttons. */
+static void dxc_unify_window(id window) {
+    long mask = ((long (*)(id, SEL))objc_msgSend)(window, sel_registerName("styleMask"));
+    if ((mask & DXC_FULL_SIZE_CONTENT_VIEW) == 0) {
+        return;
+    }
+    if (dxc_send(window, "toolbar") != NULL) {
+        return;
+    }
+    id identifier = ((id (*)(Class, SEL, const char *))objc_msgSend)(
+        objc_getClass("NSString"), sel_registerName("stringWithUTF8String:"),
+        "dioxus-compose");
+    id toolbar = dxc_send_class("NSToolbar", "alloc");
+    if (toolbar == NULL || identifier == NULL) {
+        return;
+    }
+    toolbar = ((id (*)(id, SEL, id))objc_msgSend)(
+        toolbar, sel_registerName("initWithIdentifier:"), identifier);
+    if (toolbar == NULL) {
+        return;
+    }
+    // The toolbar is empty and stays empty. Its job is to make the title bar the height a
+    // toolbar gives it, so the buttons are centred there; everything in the bar is drawn
+    // by the renderer underneath, through the full size content view.
+    ((void (*)(id, SEL, signed char))objc_msgSend)(
+        toolbar, sel_registerName("setShowsBaselineSeparator:"), 0);
+    ((void (*)(id, SEL, id))objc_msgSend)(window, sel_registerName("setToolbar:"), toolbar);
+    ((void (*)(id, SEL, long))objc_msgSend)(
+        window, sel_registerName("setToolbarStyle:"), DXC_TOOLBAR_STYLE_UNIFIED);
+}
+
+/** Runs on the main thread, because AppKit is only safe there. */
+static void dxc_unify_all_windows(void *unused) {
+    (void)unused;
+    id app = dxc_send_class("NSApplication", "sharedApplication");
+    if (app == NULL) {
+        return;
+    }
+    id windows = dxc_send(app, "windows");
+    if (windows == NULL) {
+        return;
+    }
+    unsigned long count =
+        ((unsigned long (*)(id, SEL))objc_msgSend)(windows, sel_registerName("count"));
+    for (unsigned long i = 0; i < count; i++) {
+        id window = ((id (*)(id, SEL, unsigned long))objc_msgSend)(
+            windows, sel_registerName("objectAtIndex:"), i);
+        if (window != NULL) {
+            dxc_unify_window(window);
+        }
+    }
+}
+
+static void *dxc_unify_titlebars(void *unused) {
+    (void)unused;
+    // The window is created by AWT, on AWT's thread, some time after this returns control
+    // to Kotlin, and the client property that marks it arrives when the peer is realised.
+    // There is no callback to wait on that would not mean a bridge from Kotlin into this
+    // file, so this asks repeatedly for a while and then stops. A window that never
+    // appears leaves nothing running.
+    for (int attempt = 0; attempt < 600; attempt++) {
+        dispatch_async_f(dispatch_get_main_queue(), NULL, dxc_unify_all_windows);
+        usleep(50 * 1000);
+    }
+    return NULL;
+}
+#endif
+
+
 int32_t dioxus_compose_renderer_run(void) {
 #ifdef _WIN32
     dioxus_compose_attach_parent_console();
@@ -526,8 +641,13 @@ int32_t dioxus_compose_renderer_run(void) {
     copy_path(run.library_dir, sizeof run.library_dir, dirname(library_path));
 #endif
 
+
 #ifdef __APPLE__
     dioxus_compose_prepare_main_thread();
+    pthread_t unifier;
+    if (pthread_create(&unifier, NULL, dxc_unify_titlebars, NULL) == 0) {
+        pthread_detach(unifier);
+    }
     pthread_t thread;
     if (pthread_create(&thread, NULL, renderer_thread, &run) != 0) {
         return RUN_THREAD_FAILED;
