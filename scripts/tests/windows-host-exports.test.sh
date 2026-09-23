@@ -81,22 +81,22 @@ echo "ok    $(echo "$exported" | wc -l | tr -d ' ') host functions are exported,
 # A window application, not a console one.
 #
 # A Rust binary links for the console subsystem by default, so double clicking a sample
-# opened a terminal beside the window and closing that terminal killed the application.
-# Changing the subsystem alone is not enough: the loader would then look for WinMain, and
-# the entry point here is still Rust's main.
+# opened a terminal beside the window and closing that terminal killed it.
 #
-# And it cannot be done without the other half. A window-subsystem process has no standard
-# error, so every diagnostic the renderer writes would go nowhere, including the one that
-# says the renderer was built from a different schema. That message is what finally
-# explained an empty window on Windows after it had been blamed on two other things.
-for expected in "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup"; do
-    grep -q -- "$expected" dioxus-compose/build.rs || {
-        echo "fail  the Windows link does not pass $expected" >&2
-        echo "      without both, a sample either opens a terminal beside its window or" >&2
-        echo "      fails to start at all" >&2
-        exit 1
-    }
+# The application has to say this, not the library. Setting it from this crate's build
+# script reached this package's own targets and no application at all, and broke the
+# crate's own cdylib on the way: `/ENTRY:mainCRTStartup` points at a `main` a library does
+# not have. So every sample carries the attribute, and anyone building on this crate has
+# to as well.
+missing=()
+for main in samples/*/src/main.rs; do
+    grep -q 'windows_subsystem = "windows"' "$main" || missing+=("$main")
 done
+if [[ "${#missing[@]}" -gt 0 ]]; then
+    echo "fail  ${#missing[@]} sample(s) would open a console beside their window:" >&2
+    printf '        %s\n' "${missing[@]}" >&2
+    exit 1
+fi
 
 shim_attaches="$(grep -c 'AttachConsole' "$shim" || true)"
 [[ "$shim_attaches" -gt 0 ]] || {
