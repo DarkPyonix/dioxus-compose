@@ -223,8 +223,36 @@ static void *renderer_thread(void *arg) {
     return NULL;
 }
 
+#ifdef _WIN32
+/**
+ * Writes to the terminal this was started from, where there is one.
+ *
+ * The executable is linked for the window subsystem, so double clicking it does not open a
+ * console beside the window. That is what anyone expects of an application and it costs
+ * something: a process with no console has no standard error, and the messages that
+ * explain an empty window, a renderer built from another schema among them, would go
+ * nowhere.
+ *
+ * Attaching to the parent's console gives both. Started from a terminal, it writes there
+ * as it always did. Started from Explorer there is no parent console, AttachConsole fails,
+ * and nothing is opened.
+ */
+static void dioxus_compose_attach_parent_console(void) {
+    if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
+        return;
+    }
+    // The streams were opened against a console that did not exist, so they are reopened
+    // against the one just attached. Failures are ignored: the alternative to writing a
+    // diagnostic is not writing one, and refusing to draw over it would be worse.
+    FILE *stream = NULL;
+    (void)freopen_s(&stream, "CONOUT$", "w", stderr);
+    (void)freopen_s(&stream, "CONOUT$", "w", stdout);
+}
+#endif
+
 int32_t dioxus_compose_renderer_run(void) {
 #ifdef _WIN32
+    dioxus_compose_attach_parent_console();
     static LONG started;
     if (InterlockedExchange(&started, 1)) {
         return RUN_ALREADY_RUNNING;
