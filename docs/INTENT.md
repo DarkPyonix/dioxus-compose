@@ -262,13 +262,19 @@ JetBrains의 안내([ios-liquid-glass](https://kotlinlang.org/docs/multiplatform
 - **iOS 26 미만은 지금 있는 것을 그대로 씁니다.** 그 아래에는 받아 올 시스템 유리가 없으므로 네이티브 셸이 사 오는 것이 없고, 대신 검증된 적 없는 두 번째 레이아웃 경로가 사용자 앞에 놓입니다. Compose로 그린 근사(FR-14.1-2의 1번 항목)가 다른 모든 플랫폼에서 돌고 있는 바로 그 경로입니다.
 - **SDK는 런타임 판정의 대상이 아닙니다.** iOS 26 기기라도 앱이 26 이전 SDK로 빌드되었으면 시스템은 예전 크롬을 그립니다. 그것은 소비자 앱의 Xcode 설정이지 우리가 실행 중에 고칠 수 있는 것이 아니고, 그 경우에도 네이티브 셸은 여전히 진짜 `UITabBarController`이므로 틀린 화면이 아니라 유리가 없는 화면이 됩니다. 툴체인 쪽 요건(`platform.UIKit` 바인딩에 `UITabBarMinimizeBehavior`가 있을 것)은 컴파일이 답하므로 런타임 검사가 필요 없습니다.
 
-**macOS는 그린 근사를 그대로 유지합니다. 조사한 결과이지 미룬 것이 아닙니다.**
+**2026-09-24 정정: macOS에서도 AppKit에 닿습니다.** 아래 문단은 "AppKit에 닿으려면 손으로 쓴 네이티브 글루가 필요하고 그것은 C3이 금지한다"고 적고 있었습니다. 두 번째 절이 틀렸습니다.
 
-데스크톱 렌더러는 GraalVM native-image로 빌드하는 `jvm/app`입니다. Objective-C 상호 운용이 없으므로 AppKit에 닿으려면 손으로 쓴 네이티브 글루가 필요하고, 그것은 C3이 금지합니다. 남는 길은 AWT의 macOS 피어가 이미 읽어 주는 클라이언트 속성뿐인데, `sun.lwawt.macosx.CPlatformWindow`가 읽는 목록은 다음이 전부입니다.
+**C3이 금지하는 것은 Host와 Renderer 사이의 손으로 쓴 경계 심입니다.** 그 경계는 스키마에서 생성되어야 하고, 그것이 C3의 내용입니다. 렌더러가 자기 창에 대고 쓰는 플랫폼 코드는 그 경계가 아닙니다. 같은 파일(`desktop/c/renderer_entry.c`)이 이미 Windows에서 DPI 인식을 선언하고 창 절차를 바꿔 끼워 캡션을 되찾고 있으며, 그것을 글루로 본 적이 없습니다. macOS에서 Objective-C 런타임으로 `NSWindow`에 닿는 것은 같은 종류의 코드입니다.
+
+틀린 판단이 실제로 비용을 냈습니다. FR-19.2는 바의 내용이 창 버튼과 같은 줄에 놓인다고 정하는데, AWT만으로는 신호등을 내릴 수 없어 2026-09-24 계산기 실측에서 15px 어긋나 있었습니다. 그리고 그때 저는 요구사항을 코드에 맞춰 낮추려 했습니다. 못 하는 이유가 사실은 없었기 때문에 그 시도 자체가 근거를 잃습니다.
+
+**그래서 `NSWindow.toolbarStyle`을 씁니다.** 통합 툴바를 붙이면 AppKit이 신호등을 바 중앙으로 내려 주고, 그것이 macOS 26이 같은 줄을 만드는 방법입니다. 아래 목록은 여전히 사실이며, 뜻하는 바만 달라집니다. AWT를 통해 닿을 수 있는 것이 그것뿐이지, 우리가 닿을 수 있는 것이 그것뿐인 것은 아닙니다.
+
+데스크톱 렌더러는 GraalVM native-image로 빌드하는 `jvm/app`입니다. Objective-C 상호 운용이 없으므로 Java 쪽에서 AppKit을 부를 수는 없고, AWT의 macOS 피어가 읽어 주는 클라이언트 속성이 Java에서 닿는 전부입니다. `sun.lwawt.macosx.CPlatformWindow`가 읽는 목록은 다음이 전부입니다(JDK 25에서 직접 확인).
 
 `apple.awt.brushMetalLook`, `apple.awt.draggableWindowBackground`, `apple.awt.documentModalSheet`, `apple.awt.fullscreenable`, `apple.awt.fullWindowContent`, `apple.awt.transparentTitleBar`, `apple.awt.windowTitleVisible`, `apple.awt.windowAccessibilityElement`.
 
-**vibrancy도 material도 없습니다.** `NSVisualEffectView`나 `NSGlassEffectView`를 창에 붙이는 속성은 이 목록에 없고, 따라서 JDK를 고치지 않고 Java 쪽에서 부를 방법이 없습니다. macOS에서 진짜 재질을 얻는 유일한 경로는 그 뷰를 직접 만드는 네이티브 코드이며, 그것이 C3에 걸립니다.
+**vibrancy도 material도 이 목록에는 없습니다.** `NSVisualEffectView`나 `NSGlassEffectView`를 창에 붙이는 속성은 없으므로 Java 쪽에서 부를 방법이 없습니다. 그 뷰를 세우려면 네이티브 코드가 필요하고, 위 정정에 따라 그것은 금지된 것이 아니라 아직 하지 않은 것입니다. FR-29가 그 작업입니다.
 
 ## 4. 폐기한 대안
 
