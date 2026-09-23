@@ -273,14 +273,20 @@ static void dioxus_compose_declare_dpi_awareness(void) {
     typedef void *dxc_dpi_context;
     const dxc_dpi_context per_monitor_v2 = (dxc_dpi_context)(intptr_t)-4;
 
-    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    // Loaded rather than looked up. user32 is almost always in the process already, but
+    // this runs before anything has drawn, and a GetModuleHandle that came back empty
+    // would silently drop to the older call and leave a per-monitor display on one
+    // scale.
+    HMODULE user32 = LoadLibraryW(L"user32.dll");
     if (user32 != NULL) {
         typedef BOOL(WINAPI * set_context_fn)(dxc_dpi_context);
         set_context_fn set_context =
             (set_context_fn)(void *)GetProcAddress(user32, "SetProcessDpiAwarenessContext");
         if (set_context != NULL && set_context(per_monitor_v2)) {
+            FreeLibrary(user32);
             return;
         }
+        FreeLibrary(user32);
     }
 
     // Windows 8.1 knew about per-monitor scaling but not about the window moving between

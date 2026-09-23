@@ -89,6 +89,27 @@ private fun runRendererWithHost(
         // once the window exists rather than as a constructor argument.
         LaunchedEffect(chrome) { applyWindowChrome(window, chrome) }
 
+        // What the window believes the display's scale is, on request.
+        //
+        // Declaring that this process understands scaling is one half; the toolkit picking
+        // that up is the other, and the difference between them is invisible from a
+        // screenshot. A blurred window and a window drawn sharp at the wrong size look
+        // alike in a description, and "it still looks soft" is not something the next
+        // change can be aimed at.
+        //
+        // Off unless asked for, because this is a diagnostic and not a log line.
+        if (System.getenv("DXC_REPORT_SCALE") != null) {
+            LaunchedEffect(Unit) {
+                val transform = window.graphicsConfiguration?.defaultTransform
+                val density = window.graphicsConfiguration?.device?.displayMode
+                System.err.println(
+                    "dioxus-compose: display scale x=${transform?.scaleX} y=${transform?.scaleY}" +
+                        ", mode ${density?.width}x${density?.height}" +
+                        ", window ${window.width}x${window.height}",
+                )
+            }
+        }
+
         // The application's own picture, once the asset it named has arrived.
         //
         // The two come from the same batch but not at the same moment: the window is stood
