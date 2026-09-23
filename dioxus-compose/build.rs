@@ -545,7 +545,18 @@ fn check_schema_agreement(lib_dir: &Path) {
     println!("cargo:rerun-if-changed={}", ours.display());
     let crate_hash = read_hash(&ours);
     match renderer_dir::schema_agreement(renderer_hash.as_deref(), crate_hash.as_deref()) {
-        renderer_dir::SchemaAgreement::Same | renderer_dir::SchemaAgreement::Unknown => {}
+        renderer_dir::SchemaAgreement::Same => {}
+        // A distribution published before renderers began carrying their schema hash. It
+        // may match and it may not, and the first anyone knows either way is a window that
+        // opens and stays empty, which has been reported as several other things. Saying
+        // so here costs a line and saves that.
+        renderer_dir::SchemaAgreement::Unknown => println!(
+            "cargo:warning=dioxus-compose: the renderer at {} does not say which schema it \
+             was built from, so this build cannot tell whether the two agree. If the \
+             window comes up empty, that is why: use a renderer built from this source \
+             tree, or set DIOXUS_COMPOSE_RENDERER_DIR to one.",
+            lib_dir.display()
+        ),
         renderer_dir::SchemaAgreement::Different {
             renderer,
             crate_hash,

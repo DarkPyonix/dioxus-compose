@@ -145,6 +145,29 @@ if (-not $rendererDir) {
 if ($rendererDir) {
     $env:PATH = "$rendererDir;$env:PATH"
     Write-Host "renderer       $rendererDir"
+
+    # Windows looks in the executable's own directory before anything on PATH, and the
+    # crate's build script copies the renderer it linked against to exactly there. So a
+    # renderer named here loses to that copy, silently, and the measurement is of whatever
+    # was linked rather than of what was asked for.
+    #
+    # The renderer is chosen at build time, not at run time. Saying so is the only useful
+    # thing this can do about it.
+    $besideExe = Split-Path $Exe -Parent
+    if ($rendererDir -ne $besideExe) {
+        $shadowing = $rendererDlls | Where-Object { Test-Path -LiteralPath (Join-Path $besideExe $_) }
+        if ($shadowing) {
+            Write-Host ''
+            Write-Host "a renderer is already sitting next to the executable, and Windows"
+            Write-Host "loads that one before anything on PATH. What you named here will be"
+            Write-Host "ignored. To measure a particular renderer, build against it:"
+            Write-Host ""
+            Write-Host "  `$env:DIOXUS_COMPOSE_RENDERER_DIR = '$rendererDir'"
+            Write-Host "  cargo clean -p dioxus-compose"
+            Write-Host "  cargo build --release --example memory_probe --features native-renderer"
+            Write-Host ''
+        }
+    }
 } else {
     Write-Host ("no " + ($rendererDlls -join ' or ') + " found.")
     Write-Host "The application will not start without one on PATH. Looked in:"
