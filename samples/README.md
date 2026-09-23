@@ -22,7 +22,7 @@ one declaration is a phone screen, a tablet screen and a desktop window.
 | `chat` | Google Gemini | Conversations as a destination set, scrollback, a composer where Enter sends and Shift+Enter starts a new line, and a reply streamed in from a worker thread |
 
 The four above are **adaptive**: they take whichever design system the platform picks, so
-the same declaration is a Material 3 screen on Android and a Cupertino one on a Mac. The
+the same declaration is a Material 3 screen on Android and a Liquid Glass one on a Mac. The
 ones below are **unified**. Each names one design system and draws the same way
 everywhere, which is what an application does when the design is the product rather than
 the platform's convention. All of them are rebuilds of published iOS designs, so all of

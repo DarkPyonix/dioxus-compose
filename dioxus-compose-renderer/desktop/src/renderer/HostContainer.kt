@@ -3,6 +3,7 @@ package dioxus.compose.foundation
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.ui.text.style.TextOverflow
 import dioxus.compose.design.CaptionTitleAlignment
+import dioxus.compose.runtime.captionRow
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.ui.textStyle
@@ -15,7 +16,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
@@ -154,13 +154,12 @@ internal fun HostTopAppBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                // The bar is the window's caption where the tree opens with one: at
-                // least as tall as the strip the window buttons sit in, and starting
-                // clear of them. Its content shares that row rather than stacking under
-                // it, because a desktop toolbar sits on the same line as the window
-                // buttons and a bar that began below them would be twice as tall for
-                // nothing.
-                .heightIn(min = caption.height)
+                // The bar is the window's caption where the tree opens with one, so its
+                // content and the window buttons are laid out against the same strip.
+                // Content that fits the strip shares the buttons' line; content that does
+                // not starts below it, because the one platform that keeps its own buttons
+                // fixes where they sit and offers no way to bring them down to meet it.
+                .captionRow(caption.height)
                 .containerDecoration(node, style, theme)
                 .padding(
                     start = if (caption.buttonsAtStart) caption.buttonsWidth else 0.dp,
