@@ -25,19 +25,14 @@ import javax.swing.RootPaneContainer
  *   ourselves would be the most visible way to fail at looking native: their placement,
  *   hover behaviour, full screen transition and accessibility labels all belong to the
  *   system, and an imitation drifts from the real thing on the next OS release.
- * - Windows keeps its real title bar too, for now. An undecorated window there is not
- *   just a window without a title bar: it loses the drop shadow, the resize border and
- *   Snap Layouts, all of which the frame provides and none of which we can draw. The
- *   application that reported this said the borders looked crude, and they were.
- *
- *   The end state is the one VS Code and Windows Terminal use: keep the frame and take
- *   the caption area into the client area, by handling `WM_NCCALCSIZE` without removing
- *   the caption and `WM_NCHITTEST` for drag and resize, with
- *   `DwmExtendFrameIntoClientArea` for the shadow. That needs the window procedure
- *   subclassed through the HWND, which is native code on a platform this repository
- *   cannot run, and four attempts at unverifiable Windows work in one day were enough.
- *   Until then the system bar is a worse look and a working window, which is the better
- *   of the two.
+ * - Windows keeps its real frame and gives up only the caption, which is what VS Code and
+ *   Windows Terminal do. An undecorated window there is not just a window without a title
+ *   bar: it loses the drop shadow, the resize border and Snap Layouts, all of which the
+ *   frame provides and none of which we can draw. The application that reported this said
+ *   the borders looked crude, and they were. So the frame stays whole and the native
+ *   entry point takes the caption strip into the client area, leaving the buttons and the
+ *   title for this file to draw. Unlike macOS the buttons are ours, because the system's
+ *   went with the strip.
  * - Linux gets an undecorated window and we paint the caption, because it offers no
  *   equivalent of the macOS client properties through AWT.
  */
@@ -64,16 +59,44 @@ internal fun isWindows(osName: String = System.getProperty("os.name").orEmpty())
     osName.startsWith("Windows")
 
 /**
+ * True when the window keeps the frame the system gave it under [WindowChrome.Modern].
+ *
+ * macOS keeps it and makes the bar transparent. Windows keeps it and takes only the
+ * caption strip into the client area, because the same frame is also the drop shadow, the
+ * resize border and Snap Layouts. Linux has no way to ask for either, so the window is
+ * undecorated there and everything across the top is drawn.
+ */
+internal fun platformKeepsSystemFrame(
+    osName: String = System.getProperty("os.name").orEmpty(),
+): Boolean = isMacOs(osName) || isWindows(osName)
+
+/**
  * True when this platform keeps its system window buttons under [WindowChrome.Modern].
  *
- * macOS, because its buttons stay while the bar goes transparent. Windows, because its
- * frame stays whole: an undecorated window there loses the shadow, the resize border and
- * Snap Layouts along with the bar. Linux is the remaining case where the caption is ours
- * to draw, so the renderer supplies buttons as well as insets.
+ * macOS only. Its buttons stay put while the bar goes transparent, and imitating them
+ * would be the most visible way to fail at looking native. Windows keeps its frame but
+ * not its caption, so its buttons leave with the strip they sat in and the renderer draws
+ * a set, as it already does on Linux.
  */
 internal fun platformDrawsWindowButtons(
     osName: String = System.getProperty("os.name").orEmpty(),
-): Boolean = isMacOs(osName) || isWindows(osName)
+): Boolean = isMacOs(osName)
+
+/**
+ * The caption strip Windows gives up, and the room its three buttons take at the trailing
+ * edge.
+ *
+ * Fixed rather than measured, because the native side has to agree with it: it answers
+ * the hit test for this strip and has to know which part of it is buttons that take
+ * ordinary clicks and which part drags the window. A decorated frame's top inset is the
+ * caption plus the resize border, which is not the number either side wants.
+ *
+ * The room for the buttons is reserved on the native side rather than here, because the
+ * design system decides how wide its own three are and the hit test cannot wait for that.
+ * It reserves the widest any design system draws, so a narrower set leaves a little of
+ * the strip draggable that could have been clickable, and never the reverse.
+ */
+internal val windowsCaptionHeight = 32.dp
 
 /**
  * Applies [chrome] to an already created window.
@@ -122,12 +145,14 @@ internal fun windowCaption(
     chrome: WindowChrome,
     osName: String = System.getProperty("os.name").orEmpty(),
 ): WindowCaption =
-    // A window whose bar the system drew has no strip for content to run under, whether
-    // it asked for that bar or kept it because removing it costs more than it saves.
-    if (chrome == WindowChrome.System || isWindows(osName)) {
+    // A window whose bar the system drew has no strip for content to run under.
+    if (chrome == WindowChrome.System) {
         WindowCaption.None
     } else {
-        WindowCaption(height = captionHeight(window), buttonsWidth = systemWindowButtonsWidth)
+        WindowCaption(
+            height = captionHeight(window, osName),
+            buttonsWidth = systemWindowButtonsWidth(osName),
+        )
     }
 
 /**
@@ -165,7 +190,13 @@ internal fun windowActions(window: AwtWindow?, chrome: WindowChrome): WindowActi
  * the chrome is applied and remembers it. Where there is nothing to ask, the fallbacks are
  * each platform's standard height.
  */
-private fun captionHeight(window: AwtWindow?): Dp {
+private fun captionHeight(
+    window: AwtWindow?,
+    osName: String = System.getProperty("os.name").orEmpty(),
+): Dp {
+    // Windows is told rather than asked. The native side answers the hit test for this
+    // same strip, and a measured inset there is the caption plus the resize border.
+    if (isWindows(osName)) return windowsCaptionHeight
     measuredCaptionHeight?.let { return it }
     val measured = window?.insets?.top?.takeIf { it > 0 }?.dp
     val height = measured ?: if (platformDrawsWindowButtons()) 28.dp else 32.dp
@@ -176,5 +207,6 @@ private fun captionHeight(window: AwtWindow?): Dp {
 private var measuredCaptionHeight: Dp? = null
 
 /** The horizontal room the system window buttons occupy, for a caption to lay out around. */
-internal val systemWindowButtonsWidth
-    get() = if (isMacOs()) 78.dp else 0.dp
+internal fun systemWindowButtonsWidth(
+    osName: String = System.getProperty("os.name").orEmpty(),
+): Dp = if (isMacOs(osName)) 78.dp else 0.dp
