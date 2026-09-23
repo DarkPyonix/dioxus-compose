@@ -33,20 +33,27 @@ Three things had to be right and each failed first:
   and the first Direct3D declaration kills the process before anything is drawn.
   `generate-foreign-stubs.sh` writes the 62 of them.
 
+- **The loader no longer looks for the file.** Skiko's desktop loader does not use
+  `System.loadLibrary`: it reads `skiko.library.path` or unpacks the library out of the jar,
+  then calls `System.load` with an absolute path, so it failed on the missing file however
+  the image was linked. Android is the one platform where it calls `System.loadLibrary`,
+  and that is the call a built-in library replaces.
+
+  `desktop/src/StaticSkikoLoader.java` substitutes the one private method that finds and
+  opens the file. Skiko's `loadOnce` is a lock, then that method, then its own
+  initialisation, then the lock is released and marked done, so replacing only that leaves
+  the locking, the once-only guarantee and the initialisation as skiko's.
+
+- **2026-09-24: a window drew with no Skia file on disk.** The minimal sample ran from a
+  distribution whose `lib/` held the renderer and the two AWT forwarders and nothing else.
+
 ## What is in the way
 
-Skiko's desktop loader does not use `System.loadLibrary`. It reads `skiko.library.path` and
-calls `System.load` with an absolute path, so it fails on the missing file however the
-image is linked. Android is the one platform where it calls `System.loadLibrary`, and that
-is the call a built-in library replaces.
-
-So the remaining step is to stop that loader from running, which means substituting it in
-the image. Substitutions live under `com.oracle.svm.core.annotate`, which is another
-internal interface, so the honest options are:
-
-- substitute `LibraryLoader` in the image, accepting a second unstable dependency, or
-- ask skiko for a way to say the library is already present, which is the same shape as the
-  Android branch it already has.
+Windows only, and the ICU data table. Skiko's Windows loader unpacks `icudtl.dat`, 10MB,
+alongside the library, and the substitution above skips that with the rest of the lookup.
+A data file is not something linking absorbs. macOS does not have it at all, because the
+macOS Skia build carries ICU inside `libicu.a`, so the answer is in Skia's build
+configuration rather than here.
 
 Nothing here is on by default. An ordinary build loads Skia from the file beside it exactly
 as before.
