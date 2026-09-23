@@ -27,15 +27,6 @@ const ANDROID_KOTLIN_DIR: &str = "android-kotlin";
 /// The package an Android application's generated Activity belongs to.
 const ANDROID_PACKAGE_ENV: &str = "DIOXUS_COMPOSE_ANDROID_PACKAGE";
 
-/// The functions the Renderer calls back into, which Windows has to be told to export.
-const HOST_EXPORTS: [&str; 5] = [
-    "dioxus_compose_host_init",
-    "dioxus_compose_host_dispatch_event",
-    "dioxus_compose_host_render_frame",
-    "dioxus_compose_host_release_batch",
-    "dioxus_compose_host_shutdown",
-];
-
 /// Where dx says to put generated Kotlin, and the package it belongs to.
 ///
 /// The names are wry's: dx sets them for every Android build so that wry can generate the
@@ -172,23 +163,18 @@ fn main() {
         // MSVC links against the import library the native image produced beside the DLL,
         // and it carries the same `lib` prefix the image was named with.
         println!("cargo:rustc-link-lib=dylib=libdioxus_compose_renderer");
-        // The Renderer calls back into the Host, and on this platform it finds those
-        // functions with GetProcAddress against the running executable. GetProcAddress
-        // reads the export table, and an executable has none unless the link is told to
-        // make one: `#[unsafe(no_mangle)] pub extern "C"` puts a symbol in the object
-        // file, which is what the loader needs on Unix and is not what this needs.
+        // The exports the Renderer looks up are not asked for here.
         //
-        // Without these the renderer loads, the window opens, and every call back into
-        // the Host returns -1, so no mutations ever arrive and the window stays the
-        // colour it was cleared to. That is what a white window on Windows was.
+        // They were, with `/EXPORT:` link arguments, and that reached this package's own
+        // binaries and nothing else: Cargo does not pass a dependency's link arguments on
+        // to whatever depends on it. So every application built on this crate linked with
+        // no export table, the Renderer could not reach back into it, and the window came
+        // up empty. It looked like it worked because the only Windows binaries anyone had
+        // run were this package's own examples.
         //
-        // The Unix half of this is `--export-dynamic` below. Both say the same thing in
-        // their own platform's words, so the list here is the same five functions, and
-        // scripts/tests/windows-host-exports.test.sh checks it against the ones the
-        // renderer actually asks for.
-        for name in HOST_EXPORTS {
-            println!("cargo:rustc-link-arg=/EXPORT:{name}");
-        }
+        // The directive travels inside the rlib now, in the `.drectve` section that the
+        // MSVC linker reads out of every object it links. See `EXPORT_DIRECTIVES` in
+        // src/boundary.rs.
         // A window application, not a console one.
         //
         // Without this the executable is linked for the console subsystem, so double

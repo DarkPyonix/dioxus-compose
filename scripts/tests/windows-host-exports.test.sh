@@ -16,7 +16,10 @@ set -uo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
-build_script=dioxus-compose/build.rs
+# The directive lives in the crate rather than in the build script, because a build
+# script's link arguments reach that package's own binaries and stop there, and the
+# binaries that matter belong to whoever depends on this one.
+build_script=dioxus-compose/src/boundary.rs
 shim=dioxus-compose-renderer/desktop/c/renderer_entry.c
 host=dioxus-compose/src/boundary.rs
 
@@ -24,9 +27,19 @@ for file in "$build_script" "$shim" "$host"; do
     [[ -f "$file" ]] || { echo "fail  $file is missing" >&2; exit 1; }
 done
 
+# The section is what carries the names into a consumer's link. Without it the names
+# below agree with each other and reach no binary anybody runs.
+grep -q '\.drectve' "$build_script" || {
+    echo "fail  the export directive is not in a .drectve section" >&2
+    echo "      A build script's link arguments stop at this package's own binaries," >&2
+    echo "      so an application built on this crate would link with no export table" >&2
+    echo "      and its window would come up empty." >&2
+    exit 1
+}
+
 # What the build script asks the linker to export.
-exported="$(grep -oE '"dioxus_compose_host_[a-z_]+"' "$build_script" |
-    tr -d '"' | sort -u)"
+exported="$(grep -oE '/EXPORT:dioxus_compose_host_[a-z_]+' "$build_script" |
+    sed 's|/EXPORT:||' | sort -u)"
 # What the shim looks up. `LOAD_HOST_EXPORT(init, ...)` means dioxus_compose_host_init.
 # The macro's own definition names its parameter `field`, so only the call sites count.
 looked_up="$(grep -oE '^ *LOAD_HOST_EXPORT\([a-z_]+' "$shim" |
@@ -77,7 +90,7 @@ echo "ok    $(echo "$exported" | wc -l | tr -d ' ') host functions are exported,
 # says the renderer was built from a different schema. That message is what finally
 # explained an empty window on Windows after it had been blamed on two other things.
 for expected in "/SUBSYSTEM:WINDOWS" "/ENTRY:mainCRTStartup"; do
-    grep -q -- "$expected" "$build_script" || {
+    grep -q -- "$expected" dioxus-compose/build.rs || {
         echo "fail  the Windows link does not pass $expected" >&2
         echo "      without both, a sample either opens a terminal beside its window or" >&2
         echo "      fails to start at all" >&2

@@ -1421,6 +1421,44 @@ static BOUNDARY_EXPORTS: BoundaryExports = BoundaryExports([
     dioxus_compose_host_shutdown as *const (),
 ]);
 
+/// The same five names, as a linker directive the object file carries.
+///
+/// The Renderer finds these with GetProcAddress against the running executable, which
+/// reads the PE export table, and an executable has no export table unless the link is
+/// told to make one. The build script asks for that with `/EXPORT:` arguments, and those
+/// reach the binaries of this package and no further: Cargo does not pass a dependency's
+/// link arguments on to whatever depends on it.
+///
+/// So every application built on this crate linked without an export table, the Renderer
+/// could not reach back into it, and the window came up empty. It looked like it worked
+/// because the only Windows binaries anyone had run were this package's own examples.
+///
+/// `.drectve` is how an object file carries linker arguments of its own. The MSVC linker
+/// reads that section out of every object it links, so the directive travels inside the
+/// rlib and applies wherever the rlib ends up.
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+const EXPORT_DIRECTIVES: &str = concat!(
+    " /EXPORT:dioxus_compose_host_init",
+    " /EXPORT:dioxus_compose_host_dispatch_event",
+    " /EXPORT:dioxus_compose_host_render_frame",
+    " /EXPORT:dioxus_compose_host_release_batch",
+    " /EXPORT:dioxus_compose_host_shutdown",
+);
+
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+#[used]
+#[unsafe(link_section = ".drectve")]
+static EXPORT_DIRECTIVE_BYTES: [u8; EXPORT_DIRECTIVES.len()] = {
+    let source = EXPORT_DIRECTIVES.as_bytes();
+    let mut bytes = [0u8; EXPORT_DIRECTIVES.len()];
+    let mut index = 0;
+    while index < source.len() {
+        bytes[index] = source[index];
+        index += 1;
+    }
+    bytes
+};
+
 /// Never read. Being referenced is the entire contract.
 struct BoundaryExports(#[allow(dead_code)] [*const (); 5]);
 
