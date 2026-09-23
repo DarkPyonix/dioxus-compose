@@ -353,6 +353,20 @@ foreach ($Name in $RuntimeFiles) {
     }
 }
 
+# The schema this renderer was generated from, written beside it, so a build script that
+# pairs a program with this distribution can see the two disagree before the program runs.
+# The handshake catches it as well, but by then the window is open and empty, which is what
+# a white window on Windows turned out to be.
+$SchemaHashLine = Select-String -Path (Join-Path $ProjectDir "desktop\src\protocol\Protocol.gen.kt") `
+    -Pattern 'const val SCHEMA_HASH: Long = (-?\d+)' | Select-Object -First 1
+if (-not $SchemaHashLine) {
+    Fail "no SCHEMA_HASH in the generated protocol" @("Run cargo run --bin codegen.")
+}
+$SchemaHash = [int64]$SchemaHashLine.Matches[0].Groups[1].Value
+# Formatted as unsigned, because the hash fills all 64 bits and the other side writes it
+# the same way.
+"0x{0:x16}" -f $SchemaHash | Set-Content -Path (Join-Path $DistDir "schema-hash.txt") -Encoding ASCII
+
 # Keep headers and diagnostic reports out of the runtime bin directory.
 $IncludeDir = Join-Path $DistDir "include"
 New-Item -ItemType Directory -Force -Path $IncludeDir | Out-Null
