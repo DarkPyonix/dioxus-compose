@@ -80,7 +80,10 @@ private fun linuxDesktop(xdgCurrentDesktop: String?, desktopSession: String?): H
 internal fun adaptiveSystem(platform: HostPlatform, fallback: DesignSystem): DesignSystem =
     when (platform) {
         HostPlatform.Android -> DesignSystem.Material3
-        HostPlatform.MacOs, HostPlatform.Ios -> DesignSystem.Cupertino
+        // Apple's current language, the one macOS 26 and iOS 26 draw themselves in.
+        // Cupertino is the previous one and is still current vocabulary elsewhere, so it
+        // stays reachable, but an app that did not choose gets what the machine uses.
+        HostPlatform.MacOs, HostPlatform.Ios -> DesignSystem.LiquidGlass
         HostPlatform.Windows -> DesignSystem.Fluent
         // A browser has no design language of its own, so the choice is arbitrary; Fluent 2
         // is the documented default and an app can say `unified` to be explicit.

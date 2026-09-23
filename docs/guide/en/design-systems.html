@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Design systems · dioxus-compose guide</title>
-<meta name="description" content="Design primitives and design systems (SPEC FR-13, FR-14): colour, type, shape and spacing roles, Material 3 / Apple HIG / WinUI Fluent, and the unified and adaptive theme modes. Specified, not yet implemented.">
+<meta name="description" content="Design primitives and design systems (SPEC FR-13, FR-14): colour, type, shape and spacing roles, Material 3 / Cupertino / WinUI Fluent, and the unified and adaptive theme modes. Specified, not yet implemented.">
 <link rel="alternate" hreflang="en" href="design-systems.html">
 <link rel="alternate" hreflang="ko" href="../ko/design-systems.html">
 <link rel="alternate" hreflang="x-default" href="design-systems.html">
@@ -184,7 +184,7 @@
     <h2 id="systems">Seven systems, one widget tree (FR-14)</h2>
     <p>
       A design system here is a pair: a token table and a set of component rules. There are seven systems implemented:
-      <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong>, <strong>WinUI/Fluent&nbsp;2</strong>,
+      <strong>Material&nbsp;3</strong>, <strong>Cupertino</strong>, <strong>WinUI/Fluent&nbsp;2</strong>,
       <strong>GNOME</strong>, <strong>Breeze</strong>, <strong>Deepin</strong>, and <strong>Liquid Glass</strong>.
       The same <code>rsx!</code> drawn under a different system is <em>meant</em> to look different; that is the feature, not a bug to file.
     </p>
@@ -232,7 +232,7 @@
         <thead><tr><th scope="col">Platform</th><th scope="col">What <code>adaptive</code> picks</th></tr></thead>
         <tbody>
           <tr><td>Android</td><td>Material 3</td></tr>
-          <tr><td>macOS, iOS</td><td>Apple HIG</td></tr>
+          <tr><td>macOS, iOS</td><td>Liquid Glass</td></tr>
           <tr><td>Windows</td><td>WinUI/Fluent 2</td></tr>
           <tr><td>Linux (GNOME)</td><td>GNOME 50 <span class="pill planned">Planned</span></td></tr>
           <tr><td>Linux (KDE)</td><td>KDE Breeze <span class="pill planned">Planned</span></td></tr>
