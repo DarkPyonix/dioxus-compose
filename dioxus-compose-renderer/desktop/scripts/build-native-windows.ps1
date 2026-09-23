@@ -7,17 +7,14 @@
 #
 # Distribution layout:
 #   build\native-image\dist\
-#     bin\libdioxus_compose_renderer.dll  renderer, with the JDK's desktop libraries in it
+#     bin\libdioxus_compose_renderer.dll  renderer and GraalVM AWT DLLs
 #     bin\skiko-windows-x64.dll           Skia loaded by Skiko by path
 #     bin\icudtl.dat                      Skia ICU data
 #     lib\fontconfig.bfc                  AWT font configuration
 #
-# Windows builds with Liberica NIK, the same toolchain as macOS. Upstream GraalVM also
-# supports AWT here, and that is what this used to use, but it supports it by emitting a
-# dozen JDK DLLs beside the image for every application to carry. NIK ships those same
-# libraries as static archives, so they link in and stop being files. It still does not
-# need a placeholder toolkit DLL, a JAWT forwarder, JNI_OnLoad_osxui or an AppKit
-# main-thread pump: AWT creates and owns the Win32 event-dispatch thread.
+# Windows uses upstream GraalVM's supported AWT path. It does not need Liberica NIK, a
+# placeholder toolkit DLL, a JAWT forwarder, JNI_OnLoad_osxui, force-loaded AWT archives,
+# or an AppKit main-thread pump. AWT creates and owns the Win32 event-dispatch thread.
 [CmdletBinding()]
 param()
 
@@ -111,10 +108,8 @@ if ([string]::IsNullOrWhiteSpace($GraalHome)) {
 }
 if ([string]::IsNullOrWhiteSpace($GraalHome)) {
     Fail "GRAALVM_HOME is not set" @(
-        "Install Liberica NIK 25 Full, then set GRAALVM_HOME.",
-        "The same toolchain builds every desktop platform. Upstream GraalVM works here too,",
-        "but it carries AWT as a dozen JDK DLLs the application has to ship beside it, and",
-        "NIK carries the same libraries as static archives that link into the image."
+        "Install upstream GraalVM for JDK 25 with native-image, then set GRAALVM_HOME.",
+        "Liberica NIK is not required on Windows because upstream GraalVM supports AWT there."
     )
 }
 if (-not (Test-Path -LiteralPath $GraalHome -PathType Container)) {
@@ -262,74 +257,12 @@ if ($LASTEXITCODE -ne 0) {
 # PE/COFF requires the Host boundary to resolve at DLL link time. renderer_entry.obj supplies
 # forwarding definitions that use GetProcAddress on the host executable. Only the two public
 # Renderer functions are exported from the DLL.
-# The JDK's own desktop libraries, linked in rather than shipped beside the image.
-#
-# Upstream GraalVM's Windows AWT path emits a dozen DLLs next to the library (awt, jawt,
-# java, jvm, fontmanager, freetype, lcms, javajpeg, jsound, javaaccessbridge, mlib_image,
-# splashscreen) and every application has to carry all of them. NIK ships the same
-# libraries as static archives under lib\static, which is what the macOS build already
-# force-loads, so the same thing can be done here and the DLLs stop existing.
-#
-# Forced rather than linked normally, for the reason the macOS build records: a JNI entry
-# point is reached by name at run time and nothing in the image refers to it by symbol, so
-# ordinary archive semantics drop the member that defines it.
-$StaticDir = Join-Path $GraalHome "lib\static\windows-amd64"
-if (-not (Test-Path -LiteralPath $StaticDir -PathType Container)) {
-    Fail "no static JDK libraries at $StaticDir" @(
-        "This is what NIK has and upstream GraalVM does not.",
-        "GRAALVM_HOME=$GraalHome looks like an upstream GraalVM rather than Liberica NIK."
-    )
-}
-# What AWT reaches, and nothing else. Java Sound is not on the list: it wants MIDI and
-# DirectSound from the Windows SDK, the link fails on `__imp_midiInOpen` and
-# `DirectSoundCreate`, and a renderer that draws a window has no use for either. The same
-# reasoning applies to anything else that turns out to need a system library: ask whether
-# the renderer uses it before reaching for the import library.
-#
-# A missing one fails at link time with the symbol named, which is a safe way to be wrong.
-# An extra one costs size and can fail like Java Sound did.
-$StaticAwtLibraries = @(
-    "awt.lib", "jawt.lib", "java.lib", "fontmanager.lib", "freetype.lib", "lcms.lib",
-    "javajpeg.lib", "javaaccessbridge.lib", "mlib_image.lib"
-)
-# The Windows libraries those archives call into.
-#
-# A DLL carries its own imports, so nothing had to say this while AWT arrived as
-# awt.dll. A static archive does not: every Win32 call in it becomes an unresolved symbol
-# for whoever links it, and the first attempt failed with 162 of them, from GDI drawing
-# (Arc, Ellipse, StrokePath) through common controls (SetWindowSubclass) to printing and
-# the common dialogs.
-#
-# This is the set OpenJDK itself links libawt, fontmanager and the accessibility bridge
-# against. Naming a library that turns out to be unnecessary costs nothing at run time,
-# because an import library only pulls in what is referenced; missing one fails at link
-# time with the symbol named, which is a safe way to be wrong.
-$WindowsSystemLibraries = @(
-    "gdi32.lib", "user32.lib", "kernel32.lib", "advapi32.lib", "comctl32.lib",
-    "comdlg32.lib", "shell32.lib", "shlwapi.lib", "ole32.lib", "oleaut32.lib",
-    "uuid.lib", "winspool.lib", "imm32.lib", "msimg32.lib", "winmm.lib", "delayimp.lib"
-)
-
-$StaticLinkerArgs = @()
-foreach ($Name in $WindowsSystemLibraries) {
-    $StaticLinkerArgs += "-H:NativeLinkerOption=$Name"
-}
-foreach ($Name in $StaticAwtLibraries) {
-    $Path = Join-Path $StaticDir $Name
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        Fail "missing $Path" @("NIK 25 Full is the distribution that carries these.")
-    }
-    # The MSVC linker's whole-archive switch, which is what -force_load spells on macOS.
-    $StaticLinkerArgs += "-H:NativeLinkerOption=/WHOLEARCHIVE:$Path"
-}
-
 $NativeImageArgs = @(
     "--shared",
     "-cp", $Classpath,
     "-o", $LibraryName,
     "--no-fallback",
     "--features=dioxus.compose.ui.platform.ImeReachabilityFeature",
-    "--features=dioxus.compose.ui.platform.AccessibilityReachabilityFeature",
     "-Djava.awt.headless=false",
     "-H:IncludeLocales=en,ko",
     "-Os",
@@ -342,10 +275,11 @@ $NativeImageArgs = @(
     # its own root pane. Chasing that one class at a time costs a CI run each. This is the
     # recipe Native Image uses for its own non-headless desktop image, and it registers
     # for JNI as well as reflection, so it covers both failures at once.
+    "-H:Preserve=module=java.desktop",
     "-H:NativeLinkerOption=$RendererObject",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"
-) + $StaticLinkerArgs
+)
 # Through an argument file, not the command line. The runtime classpath alone is tens of
 # kilobytes of Maven cache paths and Windows caps a command line at 32767 characters, so
 # passing it directly fails with "The command line is too long." before native-image runs.
@@ -404,68 +338,18 @@ foreach ($Name in $FontFiles) {
     Copy-Item -LiteralPath $Source -Destination (Join-Path $LibDir $Name)
 }
 
-# What an application actually has to carry. The JDK's desktop DLLs are not in this list
-# any more: they are linked into the image from NIK's static archives, the same way the
-# macOS build has always done it. Anything still emitted beside the library is checked for
-# below and reported, because a DLL appearing here again means the static link silently
-# stopped working and every application would start shipping it without anyone deciding to.
+# Upstream GraalVM emits these beside the shared library on its supported Windows AWT path.
+# Their presence replaces every Darwin-only placeholder, forwarder, and force-load workaround.
 $RuntimeFiles = @(
-    "$LibraryName.dll", "$LibraryName.lib", "skiko-windows-x64.dll", "icudtl.dat"
+    "$LibraryName.dll", "$LibraryName.lib", "awt.dll", "fontmanager.dll", "freetype.dll",
+    "java.dll", "javaaccessbridge.dll", "javajpeg.dll", "jawt.dll", "jvm.dll", "lcms.dll",
+    "skiko-windows-x64.dll", "icudtl.dat"
 )
 foreach ($Name in $RuntimeFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $BinDir $Name) -PathType Leaf)) {
         Fail "native-image did not stage $Name in $BinDir" @(
             "This is unverified output naming. Record the directory listing before changing the script."
         )
-    }
-}
-
-# Whether the renderer actually depends on the JDK's desktop DLLs.
-#
-# native-image copies them beside the library whether or not they are needed, so their
-# presence proves nothing and their absence cannot be asked for. What matters is the import
-# table: a renderer that names awt.dll there needs the file at run time, and one that does
-# not has the code inside it.
-#
-# Checked rather than assumed, because a whole-archive argument that stopped reaching the
-# linker would otherwise show up as every application shipping nine files it was told it
-# would not have to.
-# Written the long way round: the job runs Windows PowerShell 5.1, which has no
-# null-conditional operator.
-$DumpBinCommand = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
-$DumpBin = $null
-if ($DumpBinCommand) {
-    $DumpBin = $DumpBinCommand.Source
-}
-if (-not $DumpBin) {
-    Fail "dumpbin.exe is not on PATH" @(
-        "It comes with the MSVC tools this script already imported the environment of.",
-        "Without it there is no way to tell a statically linked renderer from one that",
-        "silently went back to loading the JDK's DLLs."
-    )
-}
-$Dependents = & $DumpBin /nologo /dependents (Join-Path $BinDir "$LibraryName.dll") | Out-String
-$ShouldBeLinkedIn = @(
-    "awt.dll", "jawt.dll", "java.dll", "jvm.dll", "fontmanager.dll", "freetype.dll",
-    "lcms.dll", "javajpeg.dll", "jsound.dll", "javaaccessbridge.dll", "mlib_image.dll",
-    "splashscreen.dll"
-)
-$StillImported = $ShouldBeLinkedIn | Where-Object { $Dependents -match [regex]::Escape($_) }
-if ($StillImported) {
-    Fail "the renderer still imports the JDK desktop libraries: $($StillImported -join ', ')" @(
-        "They are meant to be linked in from NIK's lib\static\windows-amd64 archives.",
-        "Either GRAALVM_HOME is an upstream GraalVM rather than NIK, or the whole-archive",
-        "link arguments stopped reaching the linker."
-    )
-}
-
-# Nothing imports them, so they are not part of the distribution. Left in place they would
-# be nine files every application carries for no reason, which is the whole point of the
-# change that put them in the image.
-foreach ($Name in $ShouldBeLinkedIn) {
-    $Path = Join-Path $BinDir $Name
-    if (Test-Path -LiteralPath $Path -PathType Leaf) {
-        Remove-Item -LiteralPath $Path
     }
 }
 
