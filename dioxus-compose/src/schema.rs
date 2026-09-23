@@ -693,6 +693,13 @@ pub struct Window {
     /// it. It is not decoration: a desktop lists windows by this, and a window with no
     /// title of its own is listed under whatever the renderer happened to be called.
     pub title: &'static str,
+    /// The picture the window wears, as an asset id, or zero for none.
+    ///
+    /// An id rather than a path or a name, because a path is a fact about the machine the
+    /// application was built on and a name asks the toolkit to find something it may not
+    /// have. Registering the bytes and referring to them is what every other picture in
+    /// this protocol does.
+    pub icon: u32,
     /// Zero means the Renderer chooses, which is what an application that said nothing
     /// gets. A size is in the same density independent pixels gestures are measured in.
     pub width: u16,
@@ -707,6 +714,7 @@ impl Window {
         Self {
             chrome: Chrome::Modern,
             title: "",
+            icon: 0,
             width: 0,
             height: 0,
             min_width: 0,
@@ -719,6 +727,12 @@ impl Window {
     /// up and never again, so there is nothing for a computed title to change.
     pub const fn with_title(mut self, title: &'static str) -> Self {
         self.title = title;
+        self
+    }
+
+    /// Dresses the window in an asset that was registered with [`AssetKind::Png`].
+    pub const fn with_icon(mut self, asset_id: u32) -> Self {
+        self.icon = asset_id;
         self
     }
 
