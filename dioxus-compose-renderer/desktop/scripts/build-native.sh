@@ -189,12 +189,19 @@ fi
     "${memory_args[@]}" \
     "${linker_args[@]}")
 
-skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-macos-$skiko_arch" | head -1)"
-[[ -n "$skiko_jar" ]] || die \
-    "no skiko-awt-runtime-macos-$skiko_arch jar on the runtime classpath" \
-    "Skia ships inside that jar and is staged next to the library." \
-    "Check $CLASSPATH_FILE and the compose dependency in desktop/module.yaml."
-unzip -q -o -j "$skiko_jar" "libskiko-macos-$skiko_arch.dylib" -d "$lib"
+# Skia goes beside the library, unless this build put it inside. Staging it anyway would
+# leave the one file the whole exercise exists to remove, and would hide a substitution
+# that had stopped working: the loader would find the file and the image would look fine.
+if [[ -z "${DXC_STATIC_SKIKO:-}" ]]; then
+    skiko_jar="$(tr ':' '\n' <<< "$classpath" | grep "skiko-awt-runtime-macos-$skiko_arch" | head -1)"
+    [[ -n "$skiko_jar" ]] || die \
+        "no skiko-awt-runtime-macos-$skiko_arch jar on the runtime classpath" \
+        "Skia ships inside that jar and is staged next to the library." \
+        "Check $CLASSPATH_FILE and the compose dependency in desktop/module.yaml."
+    unzip -q -o -j "$skiko_jar" "libskiko-macos-$skiko_arch.dylib" -d "$lib"
+else
+    rm -f "$lib/libskiko-macos-$skiko_arch.dylib"
+fi
 cc -dynamiclib -O2 -arch "$arch" -install_name @rpath/libjawt.dylib \
     -o "$lib/libjawt.dylib" "$NATIVE_DIR/c/jawt_forwarder.c"
 cc -dynamiclib -O2 -arch "$arch" -install_name @rpath/libawt_lwawt.dylib \
