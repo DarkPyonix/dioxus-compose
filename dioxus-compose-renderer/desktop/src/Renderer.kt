@@ -121,6 +121,10 @@ private fun runRendererWithHost(
         // Nothing happens where the application named nothing, which leaves the toolkit's
         // own icon. Every window this project opened wore that one until now, and on
         // Windows it is visible in the list Task Manager draws under a process.
+        //
+        // Handed to WindowIcon rather than set on this window, because this window is not
+        // the only one. A dialog or a popup that will not fit inside its parent becomes a
+        // platform window of its own, and one set here would leave those wearing the cup.
         val iconId = asked?.icon ?: 0
         val icon = if (iconId == 0) {
             null
@@ -128,9 +132,7 @@ private fun runRendererWithHost(
             (host.table.assets.asset(iconId) as? Asset.Raster)?.bitmap
         }
         LaunchedEffect(icon) {
-            if (icon != null) {
-                window.iconImage = icon.toAwtImage()
-            }
+            WindowIcon.use(icon?.toAwtImage())
         }
 
         // The tracing agent writes its output only on a clean shutdown, so unattended
