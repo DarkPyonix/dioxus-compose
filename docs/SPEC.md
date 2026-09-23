@@ -324,10 +324,10 @@ Compose Multiplatform은 Liquid Glass를 그릴 수 없습니다. JetBrains가 �
 
 와이어 태그는 **`LiquidGlass = 7`**입니다. 참조 문서(`docs/references/design-systems/README.md`)가 Liquid Glass를 세 번째로 세지만 태그는 추가만 허용되므로(20.1) Deepin 다음에 붙습니다. 목록의 순서와 태그 번호는 서로 다른 것입니다.
 
-**`adaptive`는 바뀌지 않습니다.** macOS와 iOS 자리는 계속 Cupertino입니다. Liquid Glass는 이름을 대고 고릅니다.
+**`adaptive`의 macOS와 iOS 자리는 Liquid Glass입니다**(INTENT D13). `adaptive`가 약속하는 것은 "앱이 고르지 않고 기계가 실제로 쓰는 것을 따른다"이고, macOS 26과 iOS 26의 기계가 쓰는 것은 Liquid Glass입니다. Cupertino는 사라지지 않고, 이름을 대고 고릅니다.
 
 ```rust
-LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::LiquidGlass)).launch(app);
+LaunchBuilder::new().with_theme(Theme::unified(DesignSystem::Cupertino)).launch(app);
 ```
 
 샘플에서는 `DXC_DESIGN=liquidglass`(또는 `liquid-glass`)로 고릅니다(14.3).
@@ -385,7 +385,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 | 플랫폼 | `adaptive`가 고르는 시스템 |
 |---|---|
 | Android | Material 3 |
-| macOS, iOS | Cupertino |
+| macOS, iOS | Liquid Glass |
 | Windows | WinUI/Fluent 2 |
 | Linux (GNOME) | GNOME 50 |
 | Linux (KDE) | KDE Breeze |
@@ -397,7 +397,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - 위 표가 적용됩니다. `fallback` 인자는 자기 디자인 언어가 없는 플랫폼(판별 불가 포함)이 쓰므로 여전히 필수입니다.
 - **GNOME 50 주의**: 버전을 명시한 것은 GNOME의 디자인 언어가 릴리스마다 바뀌기 때문입니다. 참조한 문서와 버전은 토큰 테이블의 `reference` 문자열에 남아 있습니다.
 - **Deepin 주의**: 토큰값과 스타일 규칙만 참조합니다. 아이콘 세트와 전용 폰트는 별도 라이선스가 걸리므로 가져다 쓰지 않습니다.
-- **Liquid Glass는 표에 없습니다.** `adaptive`가 고르지 않습니다(14.1-3). macOS와 iOS 자리는 Cupertino이고, Liquid Glass는 `unified`로 이름을 대고 고릅니다. 두 언어 모두 그 플랫폼의 것이며 어느 쪽을 기본으로 둘지는 앱의 결정입니다.
+- **Cupertino는 표에 없습니다.** `adaptive`가 고르지 않습니다(14.1-3). macOS와 iOS 자리는 Liquid Glass이고, Cupertino는 `unified`로 이름을 대고 고릅니다. 두 언어 모두 그 플랫폼의 것이며, 이름을 대지 않았을 때 나오는 쪽이 그 기계가 지금 쓰는 언어여야 합니다.
 - **`DXC_DESIGN`으로 샘플의 시스템을 고릅니다.** 값은 `material3`, `cupertino`, `fluent`, `gnome`, `breeze`, `deepin`, `liquidglass`(`liquid-glass`도 같음)이고, 그 밖의 값과 설정하지 않음은 `adaptive`입니다. `DXC_SCHEME`은 같은 이유로 `light`와 `dark`를 받습니다. 한 대의 기계에서 일곱 시스템을 전부 눈으로 확인할 방법이 기본 경로에 없으면 여섯은 보이지 않은 채 남습니다.
 - 명암(`ColorScheme`)은 `Light | Dark | FollowSystem`이고 기본은 `FollowSystem`입니다. 시스템 설정 변화는 Renderer가 먼저 알고 스스로 반영합니다. Host는 관여하지 않습니다(D5).
 - **`Theme::unified`은 명암을 고정하지 않습니다.** `unified`가 말하는 축은 "어느 디자인 시스템인가" 하나이고, 명암은 별개의 축입니다. 디자인이 라이트나 다크 한쪽으로 정해져 있는 앱은 `.with_color_scheme(...)`으로 그렇게 말합니다. 한 줄 더 쓰는 쪽을 고른 이유는 셋입니다.
@@ -1211,7 +1211,7 @@ iOS는 시뮬레이터용만 냅니다. 기기용 번들은 Apple이 발급한 �
 
 두 축이 동시에 움직입니다.
 
-- **디자인은 플랫폼을 따릅니다.** 샘플은 디자인 시스템을 고르지 않습니다(FR-14의 `Theme::adaptive`). 같은 선언이 macOS에서 Cupertino로, Windows에서 Fluent로, Linux에서 GNOME/Breeze/Deepin으로 나옵니다. 계산기의 참조가 셋(Windows, macOS, Deepin)인 것은 그래서 모순이 아닙니다. **한 선언의 세 가지 결과**를 찍은 사진입니다.
+- **디자인은 플랫폼을 따릅니다.** 샘플은 디자인 시스템을 고르지 않습니다(FR-14의 `Theme::adaptive`). 같은 선언이 macOS에서 Liquid Glass로, Windows에서 Fluent로, Linux에서 GNOME/Breeze/Deepin으로 나옵니다. 계산기의 참조가 셋(Windows, macOS, Deepin)인 것은 그래서 모순이 아닙니다. **한 선언의 세 가지 결과**를 찍은 사진입니다.
 - **레이아웃은 창 크기 클래스를 따릅니다.** 샘플은 `use_window_size()`(FR-20)만 읽습니다. 목적지 집합이 막대인지 레일인지 서랍인지, 시트가 어느 가장자리에서 오는지는 Renderer가 정합니다(FR-21).
 
 #### 22.1 샘플별 참조와 형태

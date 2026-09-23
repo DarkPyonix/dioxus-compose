@@ -70,11 +70,20 @@ class ThemeResolutionTest {
     @Test
     fun fr14_3_adaptive_follows_the_host_platform() {
         val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Material3)
-        assertEquals(DesignSystem.Cupertino, resolveTheme(adaptive, HostPlatform.MacOs, false).system)
-        assertEquals(DesignSystem.Cupertino, resolveTheme(adaptive, HostPlatform.Ios, false).system)
+        assertEquals(DesignSystem.LiquidGlass, resolveTheme(adaptive, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.LiquidGlass, resolveTheme(adaptive, HostPlatform.Ios, false).system)
         assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, HostPlatform.Windows, false).system)
         assertEquals(DesignSystem.Material3, resolveTheme(adaptive, HostPlatform.Android, false).system)
         assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, HostPlatform.Web, false).system)
+    }
+
+    @Test
+    fun fr14_3_cupertino_is_still_reachable_by_name() {
+        // Apple's two languages are both current. Adaptive answers with the one the
+        // machine is actually running, and an app that wants the other one says so.
+        val named = theme(DesignSystem.Cupertino)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(named, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(named, HostPlatform.Ios, false).system)
     }
 
     @Test
@@ -100,7 +109,7 @@ class ThemeResolutionTest {
         // Material 3, which meant a Windows machine with no theme set drew a Material
         // window and nothing in the default path ever exercised platform adaptation.
         assertEquals(DesignSystem.Fluent, resolveTheme(null, HostPlatform.Windows, false).system)
-        assertEquals(DesignSystem.Cupertino, resolveTheme(null, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.LiquidGlass, resolveTheme(null, HostPlatform.MacOs, false).system)
         assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Android, false).system)
         // Material 3 remains the fallback where a platform has no look of its own.
         assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Unknown, false).system)

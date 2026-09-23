@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>디자인 시스템 · dioxus-compose 가이드</title>
-<meta name="description" content="디자인 프리미티브와 디자인 시스템(SPEC FR-13, FR-14). 색·타입·모양·간격 역할, Material 3 / Apple HIG / WinUI Fluent, unified과 adaptive 테마 모드. 명세만 있고 아직 구현되지 않았습니다.">
+<meta name="description" content="디자인 프리미티브와 디자인 시스템(SPEC FR-13, FR-14). 색·타입·모양·간격 역할, Material 3 / Cupertino / WinUI Fluent, unified과 adaptive 테마 모드. 명세만 있고 아직 구현되지 않았습니다.">
 <link rel="alternate" hreflang="en" href="../en/design-systems.html">
 <link rel="alternate" hreflang="ko" href="design-systems.html">
 <link rel="alternate" hreflang="x-default" href="../en/design-systems.html">
@@ -183,7 +183,7 @@
     <h2 id="systems">일곱 가지 시스템, 하나의 위젯 트리 (FR-14)</h2>
     <p>
       여기서 디자인 시스템은 <strong>토큰 테이블 + 컴포넌트 규칙</strong> 한 쌍입니다. 구현된 시스템은
-      <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong>, <strong>WinUI/Fluent&nbsp;2</strong>,
+      <strong>Material&nbsp;3</strong>, <strong>Cupertino</strong>, <strong>WinUI/Fluent&nbsp;2</strong>,
       <strong>GNOME</strong>, <strong>Breeze</strong>, <strong>Deepin</strong>, <strong>Liquid Glass</strong>의 일곱 가지입니다.
       같은 <code>rsx!</code>가 시스템에 따라 다르게 보이는 것은 정상 동작입니다. 버그로 접수할 일이 아닙니다.
     </p>
@@ -229,7 +229,7 @@
         <thead><tr><th scope="col">플랫폼</th><th scope="col"><code>adaptive</code>가 고르는 시스템</th></tr></thead>
         <tbody>
           <tr><td>Android</td><td>Material 3</td></tr>
-          <tr><td>macOS, iOS</td><td>Apple HIG</td></tr>
+          <tr><td>macOS, iOS</td><td>Liquid Glass</td></tr>
           <tr><td>Windows</td><td>WinUI/Fluent 2</td></tr>
           <tr><td>Linux (GNOME)</td><td>GNOME 50 <span class="pill planned">계획</span></td></tr>
           <tr><td>Linux (KDE)</td><td>KDE Breeze <span class="pill planned">계획</span></td></tr>
