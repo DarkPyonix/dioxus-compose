@@ -420,20 +420,53 @@ foreach ($Name in $RuntimeFiles) {
     }
 }
 
-# The JDK DLLs the static link is supposed to have made unnecessary. If one is here, the
-# link did not take, and the difference is invisible until an application ships a folder
-# twelve files bigger than it should be.
+# Whether the renderer actually depends on the JDK's desktop DLLs.
+#
+# native-image copies them beside the library whether or not they are needed, so their
+# presence proves nothing and their absence cannot be asked for. What matters is the import
+# table: a renderer that names awt.dll there needs the file at run time, and one that does
+# not has the code inside it.
+#
+# Checked rather than assumed, because a whole-archive argument that stopped reaching the
+# linker would otherwise show up as every application shipping nine files it was told it
+# would not have to.
+# Written the long way round: the job runs Windows PowerShell 5.1, which has no
+# null-conditional operator.
+$DumpBinCommand = Get-Command dumpbin.exe -ErrorAction SilentlyContinue
+$DumpBin = $null
+if ($DumpBinCommand) {
+    $DumpBin = $DumpBinCommand.Source
+}
+if (-not $DumpBin) {
+    Fail "dumpbin.exe is not on PATH" @(
+        "It comes with the MSVC tools this script already imported the environment of.",
+        "Without it there is no way to tell a statically linked renderer from one that",
+        "silently went back to loading the JDK's DLLs."
+    )
+}
+$Dependents = & $DumpBin /nologo /dependents (Join-Path $BinDir "$LibraryName.dll") | Out-String
 $ShouldBeLinkedIn = @(
     "awt.dll", "jawt.dll", "java.dll", "jvm.dll", "fontmanager.dll", "freetype.dll",
-    "lcms.dll", "javajpeg.dll", "javaaccessbridge.dll", "mlib_image.dll", "splashscreen.dll"
+    "lcms.dll", "javajpeg.dll", "jsound.dll", "javaaccessbridge.dll", "mlib_image.dll",
+    "splashscreen.dll"
 )
-$StillDynamic = $ShouldBeLinkedIn | Where-Object { Test-Path -LiteralPath (Join-Path $BinDir $_) -PathType Leaf }
-if ($StillDynamic) {
-    Fail "the JDK desktop libraries were emitted as DLLs: $($StillDynamic -join ', ')" @(
+$StillImported = $ShouldBeLinkedIn | Where-Object { $Dependents -match [regex]::Escape($_) }
+if ($StillImported) {
+    Fail "the renderer still imports the JDK desktop libraries: $($StillImported -join ', ')" @(
         "They are meant to be linked in from NIK's lib\static\windows-amd64 archives.",
         "Either GRAALVM_HOME is an upstream GraalVM rather than NIK, or the whole-archive",
-        "link arguments above stopped reaching the linker."
+        "link arguments stopped reaching the linker."
     )
+}
+
+# Nothing imports them, so they are not part of the distribution. Left in place they would
+# be nine files every application carries for no reason, which is the whole point of the
+# change that put them in the image.
+foreach ($Name in $ShouldBeLinkedIn) {
+    $Path = Join-Path $BinDir $Name
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        Remove-Item -LiteralPath $Path
+    }
 }
 
 # Keep headers and diagnostic reports out of the runtime bin directory.
