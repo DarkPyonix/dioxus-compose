@@ -623,7 +623,20 @@ fn launch_builder() -> dioxus_compose::LaunchBuilder {
     // nothing was listed under whatever the renderer happened to be called, and every
     // sample here was listed as DioxusCompose until this line existed.
     dioxus_compose::LaunchBuilder::new().with_theme(dioxus_compose::demo_theme())
-        .with_window(dioxus_compose::schema::Window::new().with_title("Todo"))
+        .with_window(
+            dioxus_compose::schema::Window::new()
+                .with_title("Todo")
+                // Without one the window wears the toolkit's picture, which on
+                // Windows is the Java coffee cup, wherever the system lists
+                // windows. The bytes travel as an asset and the renderer refers
+                // to them by id: a path would be a fact about the machine this
+                // was built on, and a name would ask the toolkit to find
+                // something it may not have.
+                .with_icon(dioxus_compose::asset::asset(
+                    dioxus_compose::schema::AssetKind::Png,
+                    include_bytes!("../assets/icon.png"),
+                )),
+        )
 }
 
 /// What has to happen before the first frame, on every platform rather than only on the
