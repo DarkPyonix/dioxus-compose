@@ -24,6 +24,7 @@ import dioxus.compose.design.ToggleRole
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostLazyGrid
 import dioxus.compose.foundation.HostScaffold
 import dioxus.compose.foundation.HostContainerColumn
 import dioxus.compose.foundation.HostDialog
@@ -132,6 +133,11 @@ fun RenderNode(
         WidgetKind.Button -> HostButton(node, modifier, dispatcher, theme)
         WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
         WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
+
+        // The same window as a list, rounded to whole rows because a row is what a grid
+        // lays out. How many items a row holds is the grid's own answer where the screen
+        // gave a minimum width instead of a count.
+        WidgetKind.LazyGrid -> HostLazyGrid(node, modifier, table, dispatcher)
         // Drawing commands rather than children: the size comes from the modifier chain
         // and the commands are read from the node's one property.
         WidgetKind.Canvas -> HostCanvas(node, modifier, theme)

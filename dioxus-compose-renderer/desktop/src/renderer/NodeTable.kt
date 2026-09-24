@@ -390,7 +390,9 @@ class NodeTable {
 
                 // Windowing properties belong to the lazy container alone.
                 PropertyKind.ItemCount ->
-                    widget == WidgetKind.LazyColumn || widget == WidgetKind.LazyRow
+                    widget == WidgetKind.LazyColumn ||
+                        widget == WidgetKind.LazyRow ||
+                        widget == WidgetKind.LazyGrid
                 PropertyKind.ItemKey -> true
 
                 // Design primitives, resolved against the design system's token table when
@@ -497,6 +499,11 @@ class NodeTable {
                 // Which part of a screen's frame a subtree fills. Only the wrapper a
                 // Scaffold puts around a slot carries it.
                 PropertyKind.Slot -> widget == WidgetKind.ScaffoldSlot
+
+                // How wide a grid's columns are, said as a count or as a minimum.
+                PropertyKind.Columns,
+                PropertyKind.MinColumnWidth,
+                -> widget == WidgetKind.LazyGrid
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.

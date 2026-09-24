@@ -51,7 +51,7 @@ pub use schema::{
 };
 pub use widgets::{
     Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
-    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyRow, Menu, Navigation, NavigationItem,
+    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
     ProgressIndicator, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, Separator, Sheet,
     Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
@@ -151,7 +151,7 @@ pub mod prelude {
         Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Checkbox, Color,
         ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
         DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
-        LazyColumn, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
+        LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
         Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
         RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
         Spacer,
@@ -348,6 +348,10 @@ pub mod elements {
     // slots, and what each slot becomes is decided where the window's width is known.
     element!(scaffold, "Scaffold", []);
     element!(scaffoldslot, "ScaffoldSlot", [slot]);
+    // A grid whose window is the list's, unchanged. The two ways of saying how wide a column is
+    // are separate attributes because they are separate questions: a count the screen
+    // insists on, or a width below which the Renderer drops one.
+    element!(lazygrid, "LazyGrid", [item_count, columns, min_column_width]);
 
     #[doc(hidden)]
     pub mod completions {
@@ -355,6 +359,7 @@ pub mod elements {
         pub enum CompleteWithBraces {
             column {},
             scaffold {},
+            lazygrid {},
             scaffoldslot {},
             row {},
             composebox {},

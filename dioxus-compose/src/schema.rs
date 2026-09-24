@@ -69,8 +69,8 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved;",
@@ -303,6 +303,12 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     // an application may put any tree in a slot and the Renderer has to know which slot
     // it is looking at without reading into it.
     ScaffoldSlot = 34,
+    // A lazy grid. The windowing protocol is the list's, unchanged: the Renderer asks for a
+    // range of items and the Host materialises exactly that range. What the grid adds is
+    // that the Renderer rounds the range it asks for to whole rows, because a row is what
+    // it lays out, and how many items a row holds is its own decision when the columns
+    // were given as a minimum width rather than a count.
+    LazyGrid = 35,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -1182,6 +1188,12 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     Icon = 60,
     // Which slot of a Scaffold this subtree fills.
     Slot = 61,
+    // How many columns a grid has, where the screen said a number.
+    Columns = 62,
+    // How narrow a column may get before the grid drops one, where the screen said a
+    // width instead of a number. The Renderer divides its own width by this, which is the
+    // same kind of judgement as a size class and for the same reason is not the Host's.
+    MinColumnWidth = 63,
 });
 
 #[derive(Clone, Debug, PartialEq)]

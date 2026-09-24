@@ -1786,3 +1786,80 @@ pub fn Scaffold(
         }
     }
 }
+
+/// A grid that only builds the rows it can show.
+///
+/// The windowing protocol is `LazyColumn`'s, unchanged: the Renderer asks for a range of
+/// items and this materialises exactly that range. What a grid adds is that the range
+/// arrives rounded to whole rows, because a row is what the Renderer lays out.
+///
+/// How wide a column is can be said two ways, and they are different questions. `columns`
+/// is a count the screen insists on. `min_column_width` is a width below which a column
+/// may not fall, and the Renderer divides its own width by it: that is the same judgement
+/// as a size class, made where the width is known, so the Host does not make it.
+///
+/// Saying both is saying the count, because a count leaves nothing for the width to
+/// decide.
+#[component]
+pub fn LazyGrid(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// A fixed number of columns.
+    #[props(default)]
+    columns: Option<u32>,
+    /// The narrowest a column may be, where the count is the Renderer's to work out.
+    #[props(default)]
+    min_column_width: Option<f32>,
+    item_count: usize,
+    #[props(default)] key_of: Option<Callback<usize, String>>,
+    item: Callback<usize, Element>,
+) -> Element {
+    let mut range = use_signal(|| (0_usize, 0_usize));
+    let (start, count) = range();
+    let first = start.min(item_count);
+    let last = first.saturating_add(count).min(item_count);
+    rsx! {
+        lazygrid {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            item_count: item_count as i64,
+            columns: columns.map(i64::from),
+            min_column_width: min_column_width.map(f64::from),
+            onrangerequest: move |event: dioxus_core::Event<RangeRequest>| {
+                let requested = event.data();
+                range.set((requested.start(), requested.count()));
+            },
+            for index in first..last {
+                {
+                    let item_key = key_of
+                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
+                    rsx! {
+                        composebox { key: "{item_key}", item_key, {item.call(index)} }
+                    }
+                }
+            }
+        }
+    }
+}
