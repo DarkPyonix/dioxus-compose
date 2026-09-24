@@ -45,10 +45,21 @@ internal enum class ScaffoldFrame {
  * Read off the navigation presentation rather than decided again here. The design system
  * has already answered "bar, rail or drawer" for this width, and a frame that disagreed
  * with it would put a rail down the side and still leave room for a bar at the bottom.
+ *
+ * [destinationsCanTurn] is what the bottom slot holds. `Navigation` is one declaration
+ * that the renderer draws as a bar, a rail or a drawer, so a wide window can stand it on
+ * end. A bar an application drew itself is a row, and a row laid down the leading edge is
+ * a row on its side: it keeps its own width, takes the page's, and leaves a screen with a
+ * strip of icons across the top and nothing under it. That is what the shop and the
+ * podcast player drew the first time this ran.
  */
-internal fun scaffoldFrame(presentation: NavigationPresentation): ScaffoldFrame =
-    when (presentation) {
-        NavigationPresentation.Bar -> ScaffoldFrame.Stacked
+internal fun scaffoldFrame(
+    presentation: NavigationPresentation,
+    destinationsCanTurn: Boolean,
+): ScaffoldFrame =
+    when {
+        !destinationsCanTurn -> ScaffoldFrame.Stacked
+        presentation == NavigationPresentation.Bar -> ScaffoldFrame.Stacked
         else -> ScaffoldFrame.SideBySide
     }
 
@@ -82,7 +93,6 @@ internal fun HostScaffold(
     theme: ResolvedTheme,
 ) {
     val sizeClass = LocalWindowSizeClass.current
-    val frame = scaffoldFrame(theme.rules.navigation(sizeClass, theme).presentation)
 
     val slots = node.children.mapNotNull { id ->
         val child = table.node(id) ?: return@mapNotNull null
@@ -92,6 +102,10 @@ internal fun HostScaffold(
 
     val topBar = slots[SlotRole.TopBar]
     val bottomBar = slots[SlotRole.BottomBar]
+    val frame = scaffoldFrame(
+        theme.rules.navigation(sizeClass, theme).presentation,
+        destinationsCanTurn = bottomBar?.let { holdsANavigation(it, table) } == true,
+    )
     val floatingAction = slots[SlotRole.FloatingAction]
     val content = slots[SlotRole.Content]
 
@@ -142,6 +156,16 @@ internal fun HostScaffold(
         }
     }
 }
+
+/**
+ * Whether what fills a slot is a navigation, which is the one thing here that can be a
+ * bar at one width and a strip down the edge at another.
+ *
+ * Only the slot's own children are looked at. A navigation nested somewhere inside a page
+ * belongs to that part of the page, not to the window.
+ */
+internal fun holdsANavigation(slot: Node, table: NodeTable): Boolean =
+    slot.children.any { table.node(it)?.widget == WidgetKind.Navigation }
 
 /** Which slot a `ScaffoldSlot` node says it is. */
 internal fun slotOf(node: Node): SlotRole? =

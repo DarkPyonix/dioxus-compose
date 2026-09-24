@@ -36,6 +36,7 @@ import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.design.FieldStyle
+import dioxus.compose.design.forHeight
 import dioxus.compose.design.FieldUnderline
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.runtime.EventDispatcher
@@ -150,7 +151,7 @@ internal fun HostTextField(node: Node, modifier: Modifier, dispatcher: EventDisp
     // The frame is the design system's, not the Host's: a fill, a line, room inside, and
     // whatever each of them changes when the caret arrives. Focus is read here rather than
     // reported, so none of that transition crosses the boundary.
-    val frame = theme.rules.field(theme)
+    val frame = theme.rules.field(theme).forHeight(multiline, theme)
 
     BasicTextField(
         value = value,

@@ -623,6 +623,24 @@ data class FieldUnderline(
  * Focus is Renderer state, so the second half of every pair is reached without a boundary
  * call and the Host never learns that the caret moved.
  */
+/**
+ * The shape a field of this height should actually wear.
+ *
+ * A capsule is a shape for something one line tall. Liquid Glass asks for one, which is
+ * right for a search field and wrong for a page: a full corner on an editor that fills
+ * the window puts a radius of half the window on it, and the notepad drew its document
+ * as an enormous lozenge with the first line of text cut off by the curve.
+ *
+ * Only the fully round corner is capped, and only where the field takes more than a line.
+ * Everything else a design system asked for is left exactly as it asked.
+ */
+internal fun FieldStyle.forHeight(multiline: Boolean, theme: ResolvedTheme): FieldStyle =
+    if (multiline && shape == theme.shape(ShapeRole.Full)) {
+        copy(shape = theme.shape(ShapeRole.Large))
+    } else {
+        this
+    }
+
 data class FieldStyle(
     val container: Color,
     val containerFocused: Color,

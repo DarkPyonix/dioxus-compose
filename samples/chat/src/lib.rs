@@ -336,249 +336,256 @@ pub fn app() -> Element {
         .map_or(0, |index| index + usize::from(show_search));
 
     rsx! {
-    dioxus_compose::Box {
-        fill_max_width: true,
-        fill_max_height: true,
-
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
-
-            // Floating buttons at the top
-            Row {
-                fill_max_width: true,
-                padding_role: SpaceRole::Md,
-                alignment: Alignment::CenterStart,
-                // Window buttons sit on the page, so just a little spacer if needed,
-                // but we'll just put the menu button.
-                Button {
-                    text: "\u{2630}",
-                    variant: ButtonVariant::Tonal,
-                    shape_role: ShapeRole::Full,
-                    on_click: move |_| search_open.set(true),
-                }
-                Spacer { weight: 1.0 }
-                Card {
-                    shape_role: ShapeRole::Full,
-                    Row {
-                        Button {
-                            text: "+",
-                            variant: ButtonVariant::Text,
-                            on_click: move |_| {
-                                let id = next_conversation();
-                                next_conversation.set(id + 1);
-                                conversations.write().push(Conversation {
-                                    id,
-                                    title: String::new(),
-                                });
-                                current.set(id);
-                            },
-                        }
-                        Button {
-                            text: "\u{2026}",
-                            variant: ButtonVariant::Text,
-                            on_click: move |_| settings_open.set(true),
-                        }
-                    }
-                }
-            }
-
-            if busy {
-                ProgressIndicator { determinate: false }
-            }
-
+        // A frame with only its page filled. This screen has no bar and no destinations:
+        // its controls float over the page, which is what its reference does, and the
+        // window buttons sit on the page beside them. What the frame is for here is the
+        // inset, so the page starts clear of the caption without this screen working out
+        // where the caption is.
+        Scaffold {
             dioxus_compose::Box {
                 fill_max_width: true,
                 fill_max_height: true,
-                alignment: Alignment::TopCenter,
+
                 Column {
-                    fill_max_width: measure.is_none(),
-                    width: measure,
+                    fill_max_width: true,
                     fill_max_height: true,
-                    background: Paint::Role(ColorRole::SurfaceContainer),
-                    padding_role: SpaceRole::Md,
-                    space_role: SpaceRole::Md,
+
+                    // Floating buttons at the top
+                    Row {
+                        fill_max_width: true,
+                        padding_role: SpaceRole::Md,
+                        alignment: Alignment::CenterStart,
+                        // Window buttons sit on the page, so just a little spacer if needed,
+                        // but we'll just put the menu button.
+                        Button {
+                            text: "\u{2630}",
+                            variant: ButtonVariant::Tonal,
+                            shape_role: ShapeRole::Full,
+                            on_click: move |_| search_open.set(true),
+                        }
+                        Spacer { weight: 1.0 }
+                        Card {
+                            shape_role: ShapeRole::Full,
+                            Row {
+                                Button {
+                                    text: "+",
+                                    variant: ButtonVariant::Text,
+                                    on_click: move |_| {
+                                        let id = next_conversation();
+                                        next_conversation.set(id + 1);
+                                        conversations.write().push(Conversation {
+                                            id,
+                                            title: String::new(),
+                                        });
+                                        current.set(id);
+                                    },
+                                }
+                                Button {
+                                    text: "\u{2026}",
+                                    variant: ButtonVariant::Text,
+                                    on_click: move |_| settings_open.set(true),
+                                }
+                            }
+                        }
+                    }
+
+                    if busy {
+                        ProgressIndicator { determinate: false }
+                    }
 
                     dioxus_compose::Box {
                         fill_max_width: true,
-                        weight: 1.0,
-                        alignment: Alignment::Center,
-                        LazyColumn {
-                            fill_max_width: true,
+                        fill_max_height: true,
+                        alignment: Alignment::TopCenter,
+                        Column {
+                            fill_max_width: measure.is_none(),
+                            width: measure,
                             fill_max_height: true,
-                            item_count: count,
-                            key_of: move |index: usize| keys[index].clone(),
-                            item: move |position: usize| {
-                                let index = rows[position];
-                                let message = messages.read()[index].clone();
-                                let starts_a_run = position == 0
-                                    || messages.read()[rows[position - 1]].from_user != message.from_user;
-                                let (fill, ink) = if message.from_user {
-                                    (ColorRole::Primary, ColorRole::OnPrimary)
-                                } else {
-                                    (ColorRole::SurfaceVariant, ColorRole::OnSurfaceVariant)
-                                };
-                                rsx! {
-                                    dioxus_compose::Box {
-                                        fill_max_width: true,
-                                        padding_role: if starts_a_run {
-                                            SpaceRole::Sm
+                            background: Paint::Role(ColorRole::SurfaceContainer),
+                            padding_role: SpaceRole::Md,
+                            space_role: SpaceRole::Md,
+
+                            dioxus_compose::Box {
+                                fill_max_width: true,
+                                weight: 1.0,
+                                alignment: Alignment::Center,
+                                LazyColumn {
+                                    fill_max_width: true,
+                                    fill_max_height: true,
+                                    item_count: count,
+                                    key_of: move |index: usize| keys[index].clone(),
+                                    item: move |position: usize| {
+                                        let index = rows[position];
+                                        let message = messages.read()[index].clone();
+                                        let starts_a_run = position == 0
+                                            || messages.read()[rows[position - 1]].from_user != message.from_user;
+                                        let (fill, ink) = if message.from_user {
+                                            (ColorRole::Primary, ColorRole::OnPrimary)
                                         } else {
-                                            SpaceRole::Xs
-                                        },
-                                        alignment: if message.from_user {
-                                            Alignment::CenterEnd
-                                        } else {
-                                            Alignment::CenterStart
-                                        },
-                                        Column {
-                                            space_role: SpaceRole::Xs,
-                                            alignment: if message.from_user {
-                                                Alignment::CenterEnd
-                                            } else {
-                                                Alignment::CenterStart
-                                            },
-                                            if starts_a_run {
-                                                Text {
-                                                    text: if message.from_user { "You" } else { "Assistant" },
-                                                    type_role: TypeRole::Caption,
-                                                    color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                                }
-                                            }
-                                            Column {
-                                                background: Paint::Role(fill),
-                                                shape_role: ShapeRole::Large,
-                                                padding_role: SpaceRole::Md,
-                                                Text {
-                                                    text: if message.streaming {
-                                                        format!("{}\u{2589}", message.text)
+                                            (ColorRole::SurfaceVariant, ColorRole::OnSurfaceVariant)
+                                        };
+                                        rsx! {
+                                            dioxus_compose::Box {
+                                                fill_max_width: true,
+                                                padding_role: if starts_a_run {
+                                                    SpaceRole::Sm
+                                                } else {
+                                                    SpaceRole::Xs
+                                                },
+                                                alignment: if message.from_user {
+                                                    Alignment::CenterEnd
+                                                } else {
+                                                    Alignment::CenterStart
+                                                },
+                                                Column {
+                                                    space_role: SpaceRole::Xs,
+                                                    alignment: if message.from_user {
+                                                        Alignment::CenterEnd
                                                     } else {
-                                                        message.text.clone()
+                                                        Alignment::CenterStart
                                                     },
-                                                    type_role: TypeRole::Body,
-                                                    color: Paint::Role(ink),
+                                                    if starts_a_run {
+                                                        Text {
+                                                            text: if message.from_user { "You" } else { "Assistant" },
+                                                            type_role: TypeRole::Caption,
+                                                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                                        }
+                                                    }
+                                                    Column {
+                                                        background: Paint::Role(fill),
+                                                        shape_role: ShapeRole::Large,
+                                                        padding_role: SpaceRole::Md,
+                                                        Text {
+                                                            text: if message.streaming {
+                                                                format!("{}\u{2589}", message.text)
+                                                            } else {
+                                                                message.text.clone()
+                                                            },
+                                                            type_role: TypeRole::Body,
+                                                            color: Paint::Role(ink),
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+                                    },
+                                }
+                                if count == 0 {
+                                    {opening_greeting()}
+                                }
+                            }
+
+                            Card {
+                                fill_max_width: true,
+                                shape_role: ShapeRole::Full,
+                                padding_role: SpaceRole::Sm,
+                                Row {
+                                    fill_max_width: true,
+                                    space_role: SpaceRole::Sm,
+                                    alignment: Alignment::CenterStart,
+                                    Button {
+                                        text: "+",
+                                        variant: ButtonVariant::Outlined,
+                                        shape_role: ShapeRole::Full,
+                                        on_click: move |_| {},
+                                    }
+                                    TextField {
+                                        weight: 1.0,
+                                        multiline: true,
+                                        placeholder: if crowded {
+                                            "Message"
+                                        } else {
+                                            "Message. Enter sends, Shift+Enter starts a new line"
+                                        },
+                                        on_value_change: move |value| draft.set(value),
+                                        on_submit: move |value: String| send(value),
+                                    }
+                                    Menu {
+                                        expanded: length_open(),
+                                        on_dismiss: move |_| length_open.set(false),
+                                        anchor: rsx! {
+                                            Button {
+                                                text: settings().length.label(),
+                                                variant: ButtonVariant::Text,
+                                                color: Paint::Role(ColorRole::OnSurfaceVariant),
+                                                on_click: move |_| length_open.set(true),
+                                            }
+                                        },
+                                        for length in Length::ALL {
+                                            Button {
+                                                key: "{length.label()}",
+                                                text: length.label(),
+                                                variant: ButtonVariant::Text,
+                                                fill_max_width: true,
+                                                on_click: move |_| {
+                                                    length_open.set(false);
+                                                    settings.set(Settings { length, ..settings() });
+                                                },
+                                            }
+                                        }
+                                    }
+                                    Button {
+                                        text: "\u{1f3a4}",
+                                        variant: ButtonVariant::Text,
+                                        on_click: move |_| {},
+                                    }
+                                    Button {
+                                        text: "\u{2191}",
+                                        variant: ButtonVariant::Filled,
+                                        shape_role: ShapeRole::Full,
+                                        on_click: move |_| send(draft()),
                                     }
                                 }
-                            },
-                        }
-                        if count == 0 {
-                            {opening_greeting()}
+                            }
                         }
                     }
+                }
 
-                    Card {
+                Sheet {
+                    open: settings_open(),
+                    on_dismiss: move |_| settings_open.set(false),
+                    fill_max_width: true,
+                    {settings_panel(
+                        settings(),
+                        EventHandler::new(move |next| settings.set(next)),
+                        EventHandler::new(move |()| settings_open.set(false)),
+                    )}
+                }
+
+                Sheet {
+                    open: search_open(),
+                    on_dismiss: move |_| search_open.set(false),
+                    fill_max_width: true,
+                    Column {
                         fill_max_width: true,
-                        shape_role: ShapeRole::Full,
-                        padding_role: SpaceRole::Sm,
+                        space_role: SpaceRole::Md,
                         Row {
                             fill_max_width: true,
-                            space_role: SpaceRole::Sm,
                             alignment: Alignment::CenterStart,
+                            Text { text: "Search conversations", type_role: TypeRole::Subtitle, weight: 1.0 }
                             Button {
-                                text: "+",
-                                variant: ButtonVariant::Outlined,
-                                shape_role: ShapeRole::Full,
-                                on_click: move |_| {},
-                            }
-                            TextField {
-                                weight: 1.0,
-                                multiline: true,
-                                placeholder: if crowded {
-                                    "Message"
-                                } else {
-                                    "Message. Enter sends, Shift+Enter starts a new line"
-                                },
-                                on_value_change: move |value| draft.set(value),
-                                on_submit: move |value: String| send(value),
-                            }
-                            Menu {
-                                expanded: length_open(),
-                                on_dismiss: move |_| length_open.set(false),
-                                anchor: rsx! {
-                                    Button {
-                                        text: settings().length.label(),
-                                        variant: ButtonVariant::Text,
-                                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                                        on_click: move |_| length_open.set(true),
-                                    }
-                                },
-                                for length in Length::ALL {
-                                    Button {
-                                        key: "{length.label()}",
-                                        text: length.label(),
-                                        variant: ButtonVariant::Text,
-                                        fill_max_width: true,
-                                        on_click: move |_| {
-                                            length_open.set(false);
-                                            settings.set(Settings { length, ..settings() });
-                                        },
-                                    }
-                                }
-                            }
-                            Button {
-                                text: "\u{1f3a4}",
-                                variant: ButtonVariant::Text,
-                                on_click: move |_| {},
-                            }
-                            Button {
-                                text: "\u{2191}",
+                                text: "Done",
                                 variant: ButtonVariant::Filled,
-                                shape_role: ShapeRole::Full,
-                                on_click: move |_| send(draft()),
+                                on_click: move |_| search_open.set(false),
+                            }
+                        }
+                        TextField {
+                            fill_max_width: true,
+                            placeholder: "Search conversations",
+                            on_value_change: move |value| search_query.set(value),
+                        }
+                        if !search_query().is_empty() {
+                            Button {
+                                text: "Clear search",
+                                fill_max_width: true,
+                                variant: ButtonVariant::Text,
+                                on_click: move |_| search_query.set(String::new()),
                             }
                         }
                     }
                 }
             }
-        }
-
-        Sheet {
-            open: settings_open(),
-            on_dismiss: move |_| settings_open.set(false),
-            fill_max_width: true,
-            {settings_panel(
-                settings(),
-                EventHandler::new(move |next| settings.set(next)),
-                EventHandler::new(move |()| settings_open.set(false)),
-            )}
-        }
-
-        Sheet {
-            open: search_open(),
-            on_dismiss: move |_| search_open.set(false),
-            fill_max_width: true,
-            Column {
-                fill_max_width: true,
-                space_role: SpaceRole::Md,
-                Row {
-                    fill_max_width: true,
-                    alignment: Alignment::CenterStart,
-                    Text { text: "Search conversations", type_role: TypeRole::Subtitle, weight: 1.0 }
-                    Button {
-                        text: "Done",
-                        variant: ButtonVariant::Filled,
-                        on_click: move |_| search_open.set(false),
-                    }
-                }
-                TextField {
-                    fill_max_width: true,
-                    placeholder: "Search conversations",
-                    on_value_change: move |value| search_query.set(value),
-                }
-                if !search_query().is_empty() {
-                    Button {
-                        text: "Clear search",
-                        fill_max_width: true,
-                        variant: ButtonVariant::Text,
-                        on_click: move |_| search_query.set(String::new()),
-                    }
-                }
-            }
-        }
-    }    }
+        }    }
 }
 
 // Samples are demonstrations, so they let you see any of the design systems rather than
