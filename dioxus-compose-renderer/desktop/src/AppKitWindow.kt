@@ -418,9 +418,15 @@ internal fun runAppKitSpike() {
         }
         window.describeTo(elements)
     }
+    // Kept rather than left to the scene. What a scene picks for itself is the toolkit's
+    // queue, and the Host this renderer talks to is on this thread and invisible from
+    // there: a list asking for the rows it is about to show asked from a thread with no
+    // Host and was told nothing had been initialised.
+    val work = FrameDispatcher()
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
         size = size,
+        coroutineContext = work,
         platformContext = NativePlatformContext({ size }, textInput, semantics),
     )
     // The application's own tree, drawn by the same interpreter the toolkit path uses.
@@ -441,6 +447,10 @@ internal fun runAppKitSpike() {
             // all. Waiting the frame's length rather than sleeping afterwards, because a
             // window with nothing happening should rest rather than spin.
             pumpWindowEvents(FRAME_SECONDS)
+            // Before the events and before the drawing. What is waiting here is the
+            // scene's own work, and a list that asked for rows on the last frame wants
+            // them in hand before this one is measured.
+            work.runPending()
             var heard = false
             var drew = false
             for (event in drainWindowEvents()) {
