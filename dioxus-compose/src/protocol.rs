@@ -158,6 +158,7 @@ const EVENT_WINDOW_SIZE_CHANGED: u16 = 17;
 const EVENT_RESYNC: u16 = 18;
 const EVENT_LIFECYCLE_START: u16 = 19;
 const EVENT_LIFECYCLE_STOP: u16 = 20;
+const EVENT_DESIGN_SYSTEM_RESOLVED: u16 = 21;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -219,6 +220,14 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 height_dp: f32::from_bits(read_u32(bytes, 20)?),
                 class,
             }
+        }
+        EVENT_DESIGN_SYSTEM_RESOLVED if record_len == 20 => {
+            let raw = read_u32(bytes, 16)?;
+            let system = u16::try_from(raw)
+                .ok()
+                .and_then(|tag| crate::schema::DesignSystem::try_from(tag).ok())
+                .ok_or(ProtocolError::InvalidValueKind(raw as u16))?;
+            crate::schema::EventPayload::DesignSystemResolved(system)
         }
         EVENT_RESYNC if record_len == 16 => crate::schema::EventPayload::Resync,
         EVENT_LIFECYCLE_START if record_len == 16 => crate::schema::EventPayload::LifecycleStart,
@@ -282,6 +291,16 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.extend_from_slice(&u32::from(u16::from(class)).to_le_bytes());
         return Ok(());
     }
+    if let crate::schema::EventPayload::DesignSystemResolved(system) = event.payload {
+        output.extend_from_slice(&EVENT_DESIGN_SYSTEM_RESOLVED.to_le_bytes());
+        output.extend_from_slice(&20_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        // The tag in a word, which keeps the record a multiple of four the way every
+        // other record here is.
+        output.extend_from_slice(&u32::from(u16::from(system)).to_le_bytes());
+        return Ok(());
+    }
     if let crate::schema::EventPayload::RangeRequested { start, count } = event.payload {
         output.extend_from_slice(&EVENT_RANGE_REQUESTED.to_le_bytes());
         output.extend_from_slice(&24_u16.to_le_bytes());
@@ -309,7 +328,8 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         crate::schema::EventPayload::KeyDown { .. }
         | crate::schema::EventPayload::RangeRequested { .. }
         | crate::schema::EventPayload::ValueChanged(_)
-        | crate::schema::EventPayload::WindowSizeChanged { .. } => unreachable!(),
+        | crate::schema::EventPayload::WindowSizeChanged { .. }
+        | crate::schema::EventPayload::DesignSystemResolved(_) => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());

@@ -25,6 +25,7 @@ pub mod renderer;
 pub mod schema;
 pub mod tokens;
 mod widgets;
+pub mod design;
 pub mod window;
 
 pub use asset::asset;
@@ -54,6 +55,7 @@ pub use widgets::{
     ProgressIndicator, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, Separator, Sheet,
     Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
+pub use design::{design_system, use_design_system};
 pub use window::{WindowSize, use_window_size, window_size};
 
 /// Declares the Android entry point for an application's cdylib.
@@ -155,7 +157,7 @@ pub mod prelude {
         Spacer,
         Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
         Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
-        show_message, use_window_size,
+        show_message, use_design_system, use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find

@@ -37,6 +37,21 @@ const ROWS: [[&str; 4]; 5] = [
     ["\u{00b1}", "0", ".", "="],
 ];
 
+/// The same pad as Apple's, which is not the same pad.
+///
+/// Apple's calculator has no memory row and no `C`: the top row is erase, clear
+/// everything, percent and divide, and the memory keys live behind a menu rather than on
+/// the face. Windows' has `C` and six memory keys across the pad. Both are calculators
+/// and neither is a restyling of the other, which is why this is the one place in this
+/// sample that reads which design system is running rather than asking for a role.
+const APPLE_ROWS: [[&str; 4]; 5] = [
+    ["\u{232b}", "AC", "%", "\u{00f7}"],
+    ["7", "8", "9", "\u{00d7}"],
+    ["4", "5", "6", "\u{2212}"],
+    ["1", "2", "3", "+"],
+    ["\u{00b1}", "0", ".", "="],
+];
+
 /// A keypad is a field of keys, so every key has a surface and the three kinds of key are
 /// told apart by which surface they get.
 ///
@@ -73,8 +88,8 @@ fn color_for(label: &str) -> Option<Paint> {
     is_content_key(label).then_some(Paint::Role(ColorRole::OnSurface))
 }
 
-/// The keypad, in the shape the window has room for.
-fn keypad(press: EventHandler<&'static str>) -> Element {
+/// The keypad, in the shape this platform's calculator has.
+fn keypad(apple: bool, press: EventHandler<&'static str>) -> Element {
     // Every row an equal share of the height, every key an equal share of its row. Weight
     // is what makes this a grid rather than five lines of differently sized buttons.
     rsx! {
@@ -82,7 +97,7 @@ fn keypad(press: EventHandler<&'static str>) -> Element {
             fill_max_width: true,
             fill_max_height: true,
             space_role: SpaceRole::Xs,
-            for (index , row) in ROWS.iter().enumerate() {
+            for (index , row) in if apple { APPLE_ROWS } else { ROWS }.iter().enumerate() {
                 Row {
                     key: "row-{index}",
                     fill_max_width: true,
@@ -273,6 +288,13 @@ const TAPE_SHARE: f32 = 2.0;
 
 pub fn app() -> Element {
     let window = use_window_size();
+    // The one thing on this screen that a role cannot answer. Apple's calculator and
+    // Windows' differ in which keys exist, not in how the same keys are painted, so this
+    // reads the system the Renderer resolved the theme to and nothing else about it.
+    let apple = matches!(
+        use_design_system(),
+        DesignSystem::Cupertino | DesignSystem::LiquidGlass
+    );
     let mut calculator = use_signal(Calculator::new);
     let mut entries = use_signal(Vec::<TapeEntry>::new);
     let mut next_entry = use_signal(|| 1_u64);
@@ -390,12 +412,16 @@ pub fn app() -> Element {
                             alignment: Alignment::BottomCenter,
                             {readout(status, display)}
                         }
-                        {memory_row(memory_set, EventHandler::new(press))}
+                        // Apple's calculator has no memory row on its face, so there is
+                        // none here when Apple's language is what is running.
+                        if !apple {
+                            {memory_row(memory_set, EventHandler::new(press))}
+                        }
                         dioxus_compose::Box {
                             fill_max_width: true,
                             weight: KEYPAD_SHARE,
                             alignment: Alignment::BottomCenter,
-                            {keypad(EventHandler::new(press))}
+                            {keypad(apple, EventHandler::new(press))}
                         }
                     }
                 }
@@ -449,6 +475,14 @@ fn launch_builder() -> dioxus_compose::LaunchBuilder {
         .with_window(
             dioxus_compose::schema::Window::new()
                 .with_title("Calculator")
+                // A calculator is a tall narrow window on all three of the machines this
+                // is a rebuild of, and for the same reason on each: the keys are a grid
+                // four across, and a window wider than that grid needs to be does not
+                // give a key back, it stretches it. Left at the renderer's own default
+                // this opened at 800 by 600 and drew the keys as wide lozenges, which is
+                // the one shape none of the three references has.
+                .with_size(380, 620)
+                .with_min_size(320, 480)
                 // Without one the window wears the toolkit's picture, which on
                 // Windows is the Java coffee cup, wherever the system lists
                 // windows. The bytes travel as an asset and the renderer refers

@@ -92,7 +92,7 @@ class InterpreterTest {
             waitForIdle()
 
             val errors = connection.events.filterIsInstance<HostEvent.ProtocolError>()
-            assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.events}")
+            assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.nodeEvents}")
             onNodeWithTag(nodeTestTag(LEFT)).assertTextEquals("left")
         }
 
@@ -118,7 +118,7 @@ class InterpreterTest {
         waitForIdle()
 
         val errors = connection.events.filterIsInstance<HostEvent.ProtocolError>()
-        assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.events}")
+        assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.nodeEvents}")
         assertEquals(TableError.CYCLIC_INSERT, errors.first().code)
         assertEquals(
             listOf(LEFT, RIGHT, BUTTON),
@@ -266,7 +266,7 @@ class InterpreterTest {
 
         assertEquals(
             listOf(HostEvent.Clicked(BUTTON, CLICK_HANDLER)),
-            connection.events,
+            connection.nodeEvents,
         )
     }
 

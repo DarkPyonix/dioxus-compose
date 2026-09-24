@@ -55,6 +55,8 @@ pub enum EventPayloadType {
     /// name on the wire whether the value counts days or slides between two ends.
     Double,
     WindowSize,
+    /// One `u16`: the tag of the design system the Renderer resolved the theme to.
+    DesignSystem,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -71,7 +73,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved;",
     "windowsizeclasses=Compact,Medium,Expanded;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,SetWindow,RegisterAsset,ReleaseAsset,ShowMessage"
 );
@@ -186,6 +188,7 @@ const fn schema_hash() -> u64 {
                 EventPayloadType::Range => 4,
                 EventPayloadType::Double => 5,
                 EventPayloadType::WindowSize => 6,
+                EventPayloadType::DesignSystem => 7,
             }],
         );
         index += 1;
@@ -1199,6 +1202,9 @@ pub enum EventPayload<'a> {
         height_dp: f32,
         class: WindowSizeClass,
     },
+    /// The Renderer resolved the theme and this is what it chose. Sent once and then
+    /// only when the answer changes, the same way a size class is.
+    DesignSystemResolved(DesignSystem),
     /// The Renderer lost its node table and asks for the whole tree again. A recreated
     /// Activity is the case that produces it.
     Resync,
@@ -1272,6 +1278,13 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "LifecycleStop",
         tag: 20,
         payload: EventPayloadType::None,
+    },
+    // Addressed to the Host rather than to a node, like the three above: it is a fact
+    // about the window, not something that happened inside it.
+    EventSchema {
+        name: "DesignSystemResolved",
+        tag: 21,
+        payload: EventPayloadType::DesignSystem,
     },
 ];
 

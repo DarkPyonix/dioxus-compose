@@ -114,9 +114,9 @@ class SheetTest {
             waitForIdle()
             assertEquals(
                 0,
-                connection.events.size,
+                connection.nodeEvents.size,
                 "a drag that did not close the sheet must not reach the Host: " +
-                    "${connection.events}",
+                    "${connection.nodeEvents}",
             )
             onNodeWithTag(nodeTestTag(CONTENT)).assertTextEquals("filter by")
 
@@ -124,7 +124,7 @@ class SheetTest {
             onNodeWithTag(sheetTestTag(SHEET)).performTouchInput { swipeDown() }
             waitForIdle()
             val dismissals = connection.events.filterIsInstance<HostEvent.Clicked>()
-            assertEquals(1, dismissals.size, "one dismissal, not ${connection.events}")
+            assertEquals(1, dismissals.size, "one dismissal, not ${connection.nodeEvents}")
             assertEquals(SHEET, dismissals[0].nodeId)
             assertEquals(DISMISS_HANDLER, dismissals[0].handlerId)
             // And the Renderer closed it without waiting to be told to.

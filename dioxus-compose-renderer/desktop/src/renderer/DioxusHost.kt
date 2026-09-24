@@ -31,6 +31,8 @@ import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
+import androidx.compose.runtime.SideEffect
+import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.SlotRole
@@ -248,6 +250,24 @@ fun DioxusContent(
         }
     }
     val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass)
+    // The answer goes back to the Host, which asked a question it cannot answer itself:
+    // an adaptive theme names no system, and the one that ends up running is worked out
+    // here where the platform is. Only when it changes, the way a size class is reported.
+    //
+    // SideEffect rather than LaunchedEffect, and this is not a detail. A boundary call is
+    // a direct call on the thread the Host was started on, and that thread is the one
+    // composition is applied on. A coroutine effect runs on the toolkit's event thread
+    // instead, where the Host has no state at all: the call came back refused, with the
+    // status that means it was made in the wrong place.
+    val reported = remember { arrayOfNulls<DesignSystem>(1) }
+    SideEffect {
+        if (reported[0] != theme.system) {
+            reported[0] = theme.system
+            host.dispatch(
+                HostEvent.DesignSystemResolved(nodeId = 0, handlerId = 0, system = theme.system),
+            )
+        }
+    }
     // A tree that opens with a bar, a picture or a colour of its own makes that the
     // window's caption, so the strip the window buttons sit in belongs to it rather than
     // to the page underneath it. Otherwise the page keeps it and the content starts below
