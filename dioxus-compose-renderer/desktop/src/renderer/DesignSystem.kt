@@ -182,11 +182,13 @@ val TypeToken.composeLetterSpacing: TextUnit get() = letterSpacing.sp
 
 /**
  * Font resources deliberately do not cross the protocol: a Host that named a font would
- * push the check that it exists out to run time. So the ladder picks between the two
- * families the Renderer always has. The token table's family names are documentation of the
- * guideline, not a font the Host may request.
+ * push the check that it exists out to run time. The token table's family names are
+ * documentation of the guideline, not a font the Host may request.
+ *
+ * Everything that is not code is written in the machine's own UI face, whichever design
+ * system is running. See [platformUiFamily] for why that is not the design system's call.
  */
-val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace else FontFamily.Default
+val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace else platformUiFamily
 
 /**
  * The hand-written half of a design system: elevation rendering, `ButtonVariant` styling

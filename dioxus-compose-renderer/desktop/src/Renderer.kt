@@ -125,6 +125,28 @@ private fun runRendererWithHost(
         // change can be aimed at.
         //
         // Off unless asked for, because this is a diagnostic and not a log line.
+        // Which typeface the toolkit's default actually resolves to here. Asked rather
+        // than assumed: a design system that names no face gets whatever this is, and
+        // whether that is the platform's own UI font decides whether the text reads as a
+        // native control or as something drawn.
+        if (System.getenv("DXC_REPORT_FONT") != null) {
+            LaunchedEffect(Unit) {
+                val manager = org.jetbrains.skia.FontMgr.default
+                val forLetter = manager.matchFamilyStyleCharacter(
+                    null,
+                    org.jetbrains.skia.FontStyle.NORMAL,
+                    null,
+                    'A'.code,
+                )
+                // What this window actually writes in, next to what the toolkit would
+                // have chosen on its own.
+                dioxus.compose.design.platformUiFamily
+                System.err.println(
+                    "dioxus-compose: using ${dioxus.compose.design.platformUiFamilyName}" +
+                        ", toolkit default would be ${forLetter?.familyName}",
+                )
+            }
+        }
         if (System.getenv("DXC_REPORT_SCALE") != null) {
             LaunchedEffect(Unit) {
                 val transform = window.graphicsConfiguration?.defaultTransform
