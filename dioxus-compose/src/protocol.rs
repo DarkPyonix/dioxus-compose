@@ -849,6 +849,7 @@ fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
         Modifier::ShapeRole(role) => (13, *role as u64, 0),
         Modifier::Border { width, paint } => (14, u64::from(width.to_bits()), paint.to_bits()),
         Modifier::Elevation(dp) => (15, u64::from(dp.to_bits()), 0),
+        Modifier::ObserveSize { token } => (16, u64::from(*token), 0),
     }
 }
 
@@ -895,6 +896,9 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
             paint: decode_paint(second)?,
         }),
         15 => Ok(Modifier::Elevation(f32::from_bits(first as u32))),
+        16 => Ok(Modifier::ObserveSize {
+            token: first as u32,
+        }),
         other => Err(ProtocolError::InvalidModifier(other)),
     }
 }

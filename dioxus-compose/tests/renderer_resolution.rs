@@ -1540,3 +1540,69 @@ fn nfr10_a_renderer_from_another_schema_is_caught_at_build_time() {
         );
     }
 }
+
+/// Nothing is measured unless a screen asked.
+///
+/// The first thing this requirement promises: a tree that observes nothing costs exactly
+/// what it cost before observing existed. The modifier is the only thing that makes the
+/// Renderer measure, so a batch that carries none of them is the proof.
+#[test]
+fn fr28_a_tree_that_observes_nothing_sends_no_observation() {
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::Modifier;
+    use dioxus_compose::prelude::*;
+
+    fn quiet() -> Element {
+        rsx! { Column { Text { text: "nothing is watching this" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(quiet);
+    let batch = host.rebuild().expect("the first frame failed to encode");
+    let mutations = decode_batch(batch).expect("decode");
+    assert!(
+        !mutations.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetModifier {
+                modifier: Modifier::ObserveSize { .. },
+                ..
+            }
+        )),
+        "a tree nobody is observing asked the Renderer to measure something",
+    );
+}
+
+/// A node that asked carries the token its screen gave it.
+#[test]
+fn fr28_an_observed_node_carries_its_own_token() {
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::Modifier;
+    use dioxus_compose::prelude::*;
+
+    fn watched() -> Element {
+        let panel = use_node_size();
+        rsx! {
+            Column {
+                observe_size: panel.token(),
+                Text { text: "this one is watched" }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(watched);
+    let batch = host.rebuild().expect("the first frame failed to encode");
+    let mutations = decode_batch(batch).expect("decode");
+    let observed: Vec<_> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                modifier: Modifier::ObserveSize { token },
+                ..
+            } => Some(*token),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(observed.len(), 1, "one node asked, so one modifier travels");
+    assert_ne!(observed[0], 0, "a token of zero is the window, not a node");
+}

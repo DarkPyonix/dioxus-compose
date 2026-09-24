@@ -24,7 +24,15 @@ import org.jetbrains.skia.FontStyle
  * glyph edge crossed 1.10 pixels here against 1.27 there. They were simply somebody
  * else's letters.
  */
-internal val platformUiFamily: FontFamily by lazy { resolvePlatformUiFamily() }
+/**
+ * Finds the face and hands it to the shared table. Called once, before the first frame.
+ *
+ * Desktop only, and that is the point of the file: it asks a font manager and reads
+ * system properties, neither of which a browser or a Kotlin/Native target has.
+ */
+internal fun installPlatformUiFamily() {
+    platformUiFamily = resolvePlatformUiFamily()
+}
 
 /** The name that was found, or null where none was and the toolkit's default is in use. */
 internal var platformUiFamilyName: String? = null

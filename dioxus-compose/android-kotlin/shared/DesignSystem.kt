@@ -191,6 +191,20 @@ val TypeToken.composeLetterSpacing: TextUnit get() = letterSpacing.sp
 val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace else platformUiFamily
 
 /**
+ * The face this machine writes its interfaces in.
+ *
+ * Held here and filled in by the platform, because finding it is platform work: the
+ * desktop asks the font manager for the system's UI face by name, and a browser or a
+ * phone has its own answer or none. Whoever knows assigns it before the first frame;
+ * whoever does not leaves the toolkit's default, which is what every screen had before.
+ *
+ * Not the design system's choice. A window belongs to the machine it is on mostly because
+ * its letters look like every other window's, and a Material 3 screen on a Mac is still
+ * on a Mac.
+ */
+var platformUiFamily: FontFamily = FontFamily.Default
+
+/**
  * The hand-written half of a design system: elevation rendering, `ButtonVariant` styling
  * and motion.
  *
