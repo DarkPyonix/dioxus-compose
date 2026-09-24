@@ -22,6 +22,8 @@ enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
 
 enum class MotionRole { Instant, Quick, Standard, Slow, Emphasized }
 
+enum class MaterialRole { Thin, Regular, Thick, Chrome }
+
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
 enum class TextAlign { Start, Center, End, Justify }
@@ -240,6 +242,7 @@ sealed interface Modifier {
     data class Elevation(val value: kotlin.Float) : Modifier
     data class ObserveSize(val token: Int) : Modifier
     data class Motion(val role: dioxus.compose.protocol.MotionRole) : Modifier
+    data class Material(val role: dioxus.compose.protocol.MaterialRole) : Modifier
 }
 
 sealed interface Mutation {
@@ -316,7 +319,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -8278255917080106232L
+    const val SCHEMA_HASH: Long = 3337190066966830593L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -839,6 +842,14 @@ object Protocol {
         else -> throw ProtocolException("unknown MotionRole tag $tag", offset)
     }
 
+    private fun materialRole(tag: Int, offset: Int): MaterialRole = when (tag) {
+        1 -> MaterialRole.Thin
+        2 -> MaterialRole.Regular
+        3 -> MaterialRole.Thick
+        4 -> MaterialRole.Chrome
+        else -> throw ProtocolException("unknown MaterialRole tag $tag", offset)
+    }
+
     private fun spaceRole(tag: Int, offset: Int): SpaceRole = when (tag) {
         1 -> SpaceRole.None
         2 -> SpaceRole.Xs
@@ -988,6 +999,7 @@ object Protocol {
         15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
         16 -> Modifier.ObserveSize(first.toInt())
         17 -> Modifier.Motion(motionRole(first.toInt(), offset))
+        18 -> Modifier.Material(materialRole(first.toInt(), offset))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 

@@ -9,7 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, IconRole, MotionRole, Paint, ShapeRole, SlotRole,
+    Alignment, Arrangement, ButtonVariant, IconRole, MaterialRole, MotionRole, Paint, ShapeRole,
+    SlotRole,
     SpaceRole,
     TextAlign, TextOverflow, TypeRole,
 };
@@ -109,6 +110,10 @@ pub fn Column(
     /// system's answer to that, and are never sent from here.
     #[props(default)]
     motion: Option<MotionRole>,
+    /// What this node's surface is made of. Blur on the systems that blur, a lifted tone
+    /// on the ones that lift, a flat fill on the rest.
+    #[props(default)]
+    material: Option<MaterialRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -132,6 +137,7 @@ pub fn Column(
         column {
             observe_size,
             motion: opt_role(motion),
+            material: opt_role(material),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -164,6 +170,10 @@ pub fn Row(
     /// system's answer to that, and are never sent from here.
     #[props(default)]
     motion: Option<MotionRole>,
+    /// What this node's surface is made of. Blur on the systems that blur, a lifted tone
+    /// on the ones that lift, a flat fill on the rest.
+    #[props(default)]
+    material: Option<MaterialRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -187,6 +197,7 @@ pub fn Row(
         row {
             observe_size,
             motion: opt_role(motion),
+            material: opt_role(material),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -219,6 +230,10 @@ pub fn ComposeBox(
     /// system's answer to that, and are never sent from here.
     #[props(default)]
     motion: Option<MotionRole>,
+    /// What this node's surface is made of. Blur on the systems that blur, a lifted tone
+    /// on the ones that lift, a flat fill on the rest.
+    #[props(default)]
+    material: Option<MaterialRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -239,6 +254,7 @@ pub fn ComposeBox(
         composebox {
             observe_size,
             motion: opt_role(motion),
+            material: opt_role(material),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -657,6 +673,10 @@ pub fn Card(
     /// system's answer to that, and are never sent from here.
     #[props(default)]
     motion: Option<MotionRole>,
+    /// What this node's surface is made of. Blur on the systems that blur, a lifted tone
+    /// on the ones that lift, a flat fill on the rest.
+    #[props(default)]
+    material: Option<MaterialRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -676,6 +696,7 @@ pub fn Card(
         card {
             observe_size,
             motion: opt_role(motion),
+            material: opt_role(material),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -706,6 +727,10 @@ pub fn Surface(
     /// system's answer to that, and are never sent from here.
     #[props(default)]
     motion: Option<MotionRole>,
+    /// What this node's surface is made of. Blur on the systems that blur, a lifted tone
+    /// on the ones that lift, a flat fill on the rest.
+    #[props(default)]
+    material: Option<MaterialRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -725,6 +750,7 @@ pub fn Surface(
         surface {
             observe_size,
             motion: opt_role(motion),
+            material: opt_role(material),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),

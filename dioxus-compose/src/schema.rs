@@ -71,7 +71,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget;",
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans,on_files_entered,on_files_dropped;",
-    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize,Motion;",
+    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize,Motion,Material;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved,FilesEntered,FilesDropped;",
     "windowsizeclasses=Compact,Medium,Expanded;",
@@ -478,6 +478,17 @@ define_wire_enum!(MOTION_ROLE_SCHEMA, MotionRole {
     Emphasized = 5,
 });
 
+// What a surface is made of. Four roles rather than a blur radius, because Cupertino and
+// Liquid Glass answer with blur, Material 3 with elevation and a tone laid over the
+// surface, and the GNOME and KDE systems with an opaque fill. A radius from the
+// application would be a blur instruction to systems that do not blur.
+define_wire_enum!(MATERIAL_ROLE_SCHEMA, MaterialRole {
+    Thin = 1,
+    Regular = 2,
+    Thick = 3,
+    Chrome = 4,
+});
+
 // Density roles, because dp density differs per design system.
 define_wire_enum!(SPACE_ROLE_SCHEMA, SpaceRole {
     None = 1,
@@ -632,6 +643,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
         name: "MotionRole",
         variants: MOTION_ROLE_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "MaterialRole",
+        variants: MATERIAL_ROLE_SCHEMA,
     },
     RoleEnumSchema {
         name: "SpaceRole",
@@ -922,6 +937,11 @@ pub enum Modifier {
     /// The node says how important the change is, not how long it takes. Appearing,
     /// disappearing, a selection moving and a size changing all read this.
     Motion(MotionRole),
+    /// What this node's surface is made of.
+    ///
+    /// A role, so that a system which blurs blurs and a system which does not lifts its
+    /// surface instead. Nothing here claims a particular effect was achieved.
+    Material(MaterialRole),
 }
 
 const NO_FIELDS: &[FieldSchema] = &[];
@@ -970,6 +990,11 @@ const SHAPE_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
 const MOTION_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
     name: "role",
     ty: FieldType::Role("MotionRole"),
+    slot: FieldSlot::FirstLow,
+}];
+const MATERIAL_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "role",
+    ty: FieldType::Role("MaterialRole"),
     slot: FieldSlot::FirstLow,
 }];
 const PADDING_EACH_FIELDS: &[FieldSchema] = &[
@@ -1119,6 +1144,11 @@ pub const MODIFIER_SCHEMA: &[VariantSchema] = &[
         name: "Motion",
         tag: 17,
         fields: MOTION_ROLE_FIELD,
+    },
+    VariantSchema {
+        name: "Material",
+        tag: 18,
+        fields: MATERIAL_ROLE_FIELD,
     },
 ];
 

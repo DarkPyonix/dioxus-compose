@@ -1870,3 +1870,82 @@ fn fr24_every_motion_role_survives_the_wire() {
         .collect();
     assert_eq!(arrived, ROLES);
 }
+
+/// A surface says what it is made of, and nothing about blur.
+#[test]
+fn fr23_a_material_role_reaches_the_renderer_as_a_role() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn sheet() -> Element {
+        rsx! {
+            Surface { material: MaterialRole::Regular, Text { text: "over the page" } }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(sheet);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(
+        mutations.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetModifier { modifier: Modifier::Material(MaterialRole::Regular), .. }
+        )),
+        "the material role did not reach the Renderer: {mutations:?}",
+    );
+}
+
+/// The four roles survive the round trip in the order the wire fixes them in.
+#[test]
+fn fr23_every_material_role_survives_the_wire() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    const ROLES: [MaterialRole; 4] = [
+        MaterialRole::Thin,
+        MaterialRole::Regular,
+        MaterialRole::Thick,
+        MaterialRole::Chrome,
+    ];
+
+    fn all_four() -> Element {
+        rsx! {
+            Column {
+                for role in ROLES {
+                    Surface { material: role, Text { text: "{role:?}" } }
+                }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(all_four);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    let arrived: Vec<MaterialRole> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier { modifier: Modifier::Material(role), .. } => Some(*role),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(arrived, ROLES);
+}
+
+/// A node that said nothing about material pays nothing.
+#[test]
+fn fr23_silence_about_material_costs_no_record() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn plain() -> Element {
+        rsx! { Surface { Text { text: "flat" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(plain);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(!mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Material(_), .. }
+    )));
+}

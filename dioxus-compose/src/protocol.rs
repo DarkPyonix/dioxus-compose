@@ -1,7 +1,8 @@
 //! Fixed-layout little-endian boundary protocol.
 
 use crate::schema::{
-    AssetKind, ColorScheme, DesignSystem, Key, MessageDuration, Modifier, MotionRole, Paint,
+    AssetKind, ColorScheme, DesignSystem, Key, MaterialRole, MessageDuration, Modifier, MotionRole,
+    Paint,
     PropertyKind,
     Selection, ShapeRole, SpaceRole, Theme, WidgetKind,
 };
@@ -862,6 +863,7 @@ fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
         Modifier::Elevation(dp) => (15, u64::from(dp.to_bits()), 0),
         Modifier::ObserveSize { token } => (16, u64::from(*token), 0),
         Modifier::Motion(role) => (17, *role as u64, 0),
+        Modifier::Material(role) => (18, *role as u64, 0),
     }
 }
 
@@ -912,6 +914,7 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
             token: first as u32,
         }),
         17 => Ok(Modifier::Motion(decode_role::<MotionRole>(first)?)),
+        18 => Ok(Modifier::Material(decode_role::<MaterialRole>(first)?)),
         other => Err(ProtocolError::InvalidModifier(other)),
     }
 }

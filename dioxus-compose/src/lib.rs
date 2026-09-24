@@ -47,7 +47,7 @@ pub use message::{Message, show_message};
 pub use schema::{
     Alignment, Arrangement, AssetKind, ButtonVariant, Chrome, Color, ColorRole, ColorScheme,
     DesignSystem, EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint,
-    MotionRole, PropertyKind, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
+    MaterialRole, MotionRole, PropertyKind, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
     TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
@@ -154,7 +154,7 @@ pub mod prelude {
         DrawList, Dropdown, Element, FileDrop, FileDropTarget, Icon, IconRole, Image, Key, KeyEvent,
         LaunchBuilder,
         LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
-        Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
+        MaterialRole, Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
         RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
         Spacer,
         Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
@@ -218,6 +218,8 @@ pub mod elements {
             // How important this node's changes are. Every widget takes it, because
             // anything that appears, moves or resizes has changes to run.
             pub const motion: AttributeDescription = ("motion", None, false);
+            // What this node's surface is made of, where it has one.
+            pub const material: AttributeDescription = ("material", None, false);
             // Willingness to have files dropped, said by having somewhere to report them.
             // A node without a handler is never told files are over it, which is what
             // keeps a screen from lighting up every container it has.

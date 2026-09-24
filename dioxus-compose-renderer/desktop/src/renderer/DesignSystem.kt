@@ -16,6 +16,7 @@ import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.DesignTokenTable
 import dioxus.compose.protocol.DesignTokens
 import androidx.compose.animation.core.FiniteAnimationSpec
+import dioxus.compose.protocol.MaterialRole
 import dioxus.compose.protocol.MotionRole
 import dioxus.compose.protocol.Paint
 import dioxus.compose.protocol.ShapeRole
@@ -317,6 +318,22 @@ interface ComponentRules {
 
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
+
+    /**
+     * What a surface of this role is made of here.
+     *
+     * Four roles and no blur radius, because the systems disagree about what a material
+     * even is: Apple's blur what is behind them, Material 3 lifts the surface and lays a
+     * tone over it, and the GNOME and KDE systems draw an opaque panel. A radius from the
+     * screen would be a blur instruction handed to systems that never blur.
+     *
+     * The default is the opaque reading, and it is the reading four of the seven want. It
+     * is built from this system's own surface and outline tokens, so a screen asking for
+     * the same material still comes out in this system's colours rather than in someone
+     * else's.
+     */
+    fun material(role: MaterialRole, theme: ResolvedTheme): SurfaceMaterial =
+        SurfaceMaterial.Opaque(opaqueMaterial(role, theme))
 
     // The three answers below have defaults, and that is the point of them. A design
     // system implements what it has an opinion about; what it says nothing about is
@@ -1000,6 +1017,30 @@ fun resolveTheme(
         ColorScheme.FollowSystem -> systemDark
     }
     return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark, sizeClass)
+}
+
+/**
+ * The opaque reading of a material: the system's surface, moved towards its own outline.
+ *
+ * Thickness is how far it has moved. A thin material is barely separated from the page, a
+ * chrome panel is the furthest, and every step is taken between two colours this system
+ * already chose, so nothing here invents a colour.
+ */
+internal fun opaqueMaterial(role: MaterialRole, theme: ResolvedTheme): Color {
+    val surface = theme.color(ColorRole.Surface)
+    val toward = theme.color(ColorRole.SurfaceVariant)
+    val distance = when (role) {
+        MaterialRole.Thin -> 0.18f
+        MaterialRole.Regular -> 0.38f
+        MaterialRole.Thick -> 0.62f
+        MaterialRole.Chrome -> 0.85f
+    }
+    return Color(
+        red = surface.red + (toward.red - surface.red) * distance,
+        green = surface.green + (toward.green - surface.green) * distance,
+        blue = surface.blue + (toward.blue - surface.blue) * distance,
+        alpha = 1f,
+    )
 }
 
 internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {

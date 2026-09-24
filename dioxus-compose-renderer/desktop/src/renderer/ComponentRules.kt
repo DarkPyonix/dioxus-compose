@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.IconRole
+import dioxus.compose.protocol.MaterialRole
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.TypeRole
@@ -342,6 +343,23 @@ internal object Material3Rules : ComponentRules {
         time = TimePresentation.Dial,
         choice = ChoicePresentation.ExposedMenu,
     )
+
+    /**
+     * Material 3 does not blur. It raises the surface and lays a tone of the primary
+     * colour over it, and thickness is how much of that tone there is. Drawing Apple's
+     * blur here would be the mistake the shared vocabulary exists to prevent: the
+     * declaration is the same, the answer is this system's own.
+     */
+    override fun material(role: MaterialRole, theme: ResolvedTheme): SurfaceMaterial {
+        val tone = when (role) {
+            MaterialRole.Thin -> 0.05f
+            MaterialRole.Regular -> 0.08f
+            MaterialRole.Thick -> 0.11f
+            MaterialRole.Chrome -> 0.14f
+        }
+        val tint = theme.color(ColorRole.Primary).copy(alpha = tone)
+        return SurfaceMaterial.Opaque(compositeOver(tint, theme.color(ColorRole.Surface)))
+    }
 
     override val motion: Motion = Motion(
         pressMillis = 100,
@@ -733,6 +751,33 @@ internal object CupertinoRules : ComponentRules {
         time = TimePresentation.Wheel,
         choice = ChoicePresentation.Wheel,
     )
+
+    /**
+     * The blur materials iOS had before glass. Thin and regular let a good deal of the
+     * backdrop through; a chrome bar has to win against whatever is scrolling under it.
+     */
+    override fun material(role: MaterialRole, theme: ResolvedTheme): SurfaceMaterial {
+        val prominence = when (role) {
+            MaterialRole.Thin, MaterialRole.Regular -> GlassProminence.Clear
+            MaterialRole.Thick, MaterialRole.Chrome -> GlassProminence.Regular
+        }
+        val glass = LiquidGlass.material(
+            dark = theme.dark,
+            prominence = prominence,
+            backdrop = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+        )
+        // Shorter radii than the glass system uses. A pre-26 blur is a frosted pane, not
+        // a lens, and it does not bend what is behind it.
+        return glass.copy(
+            blurRadius = when (role) {
+                MaterialRole.Thin -> 8.dp
+                MaterialRole.Regular -> 14.dp
+                MaterialRole.Thick -> 20.dp
+                MaterialRole.Chrome -> 24.dp
+            },
+        )
+    }
 
     override val motion: Motion = Motion(
         pressMillis = 80,
@@ -1159,6 +1204,43 @@ internal object FluentRules : ComponentRules {
         time = TimePresentation.Stepper,
         choice = ChoicePresentation.ComboBox,
     )
+
+    /**
+     * Acrylic, which is Fluent's own translucency and not a borrowed one.
+     *
+     * Windows has had this since Fluent 1 and it is nothing like Apple's: a lighter tint,
+     * a shorter blur, and a single hairline along the top rather than a lit rim all the
+     * way round. Answering with a flat fill here would have been the easy reading and the
+     * wrong one, and it showed: it put Fluent on exactly the pixels GNOME paints.
+     */
+    override fun material(role: MaterialRole, theme: ResolvedTheme): SurfaceMaterial {
+        val surface = theme.color(ColorRole.Surface)
+        val alpha = when (role) {
+            MaterialRole.Thin -> 0.60f
+            MaterialRole.Regular -> 0.72f
+            MaterialRole.Thick -> 0.84f
+            MaterialRole.Chrome -> 0.92f
+        }
+        return SurfaceMaterial.Glass(
+            tint = surface,
+            tintAlpha = alpha,
+            blurRadius = when (role) {
+                MaterialRole.Thin -> 12.dp
+                MaterialRole.Regular -> 20.dp
+                MaterialRole.Thick -> 28.dp
+                MaterialRole.Chrome -> 34.dp
+            },
+            // One hairline along the top edge. Acrylic is a sheet laid on the window, and
+            // a sheet has a thickness you see at its edge and nowhere else.
+            highlight = if (theme.dark) {
+                Color.White.copy(alpha = 0.10f)
+            } else {
+                Color.White.copy(alpha = 0.55f)
+            },
+            shade = Color.Black.copy(alpha = if (theme.dark) 0.24f else 0.06f),
+            fallback = opaqueMaterial(role, theme),
+        )
+    }
 
     override val motion: Motion = Motion(
         // Fluent's "ultra fast" duration: the press reads as instant.
@@ -3012,6 +3094,32 @@ internal object LiquidGlassRules : ComponentRules {
         choice = ChoicePresentation.Wheel,
         wheelRowHeight = 36.dp,
     )
+
+    /**
+     * Glass at every thickness, which is what this system is for. Thickness is how much
+     * of the backdrop survives, and the chrome role is the one that has to carry controls
+     * over anything at all.
+     */
+    override fun material(role: MaterialRole, theme: ResolvedTheme): SurfaceMaterial {
+        val glass = LiquidGlass.material(
+            dark = theme.dark,
+            prominence = if (role == MaterialRole.Thin) {
+                GlassProminence.Clear
+            } else {
+                GlassProminence.Regular
+            },
+            backdrop = theme.color(ColorRole.Surface),
+            content = theme.color(ColorRole.OnSurface),
+        )
+        return glass.copy(
+            blurRadius = when (role) {
+                MaterialRole.Thin -> 18.dp
+                MaterialRole.Regular -> 30.dp
+                MaterialRole.Thick -> 44.dp
+                MaterialRole.Chrome -> 52.dp
+            },
+        )
+    }
 
     override val motion: Motion = Motion(
         pressMillis = 80,

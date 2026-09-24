@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.design.glassSurface
 import dioxus.compose.runtime.EventDispatcher
 
 /**
@@ -77,6 +78,12 @@ internal fun List<ProtocolModifier>.toComposeModifier(
             // along which curve is the running design system's answer, and a system the
             // user has asked to hold still answers every role with no run at all.
             is ProtocolModifier.Motion -> chain.animateContentSize(theme.motion(value.role))
+
+            // What this node's surface is made of. The role is resolved by the running
+            // design system, which answers with blur where it blurs and with a lifted or
+            // flat fill where it does not, and the surface draws whichever it was given.
+            is ProtocolModifier.Material ->
+                chain.composed { glassSurface(theme.rules.material(value.role, theme), shape) }
 
             // Weight is parent data: it is applied by the Column or Row that owns this node,
             // not here. See `weightOf` and `Children` in RenderNode.kt.
