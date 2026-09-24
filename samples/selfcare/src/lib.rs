@@ -640,19 +640,26 @@ pub fn app() -> Element {
     };
 
     rsx! {
-        Navigation {
-            fill_max_width: true,
-            fill_max_height: true,
+        // The frame is named rather than built. Which of a bar, a rail or a drawer the
+        // destinations become, and where the page sits beside them, are answers this
+        // screen never has to know.
+        Scaffold {
             background: Paint::Literal(palette::PAGE),
-            selected_index: destination().index(),
-            for choice in Destination::STRIP {
-                NavigationItem {
-                    key: "{choice.label()}",
-                    text: choice.label(),
-                    icon: choice.icon(),
-                    on_click: move |()| destination.set(choice),
+            bottom_bar: rsx! {
+                Navigation {
+                    background: Paint::Literal(palette::PAGE),
+                    selected_index: destination().index(),
+                    for choice in Destination::STRIP {
+                        NavigationItem {
+                            key: "{choice.label()}",
+                            text: choice.label(),
+                            icon: choice.icon(),
+                            on_click: move |()| destination.set(choice),
+                        }
+                    }
                 }
-            }
+            },
+
             Column {
                 fill_max_width: true,
                 fill_max_height: true,
