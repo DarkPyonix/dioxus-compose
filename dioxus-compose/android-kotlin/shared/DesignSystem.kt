@@ -4,6 +4,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Brush as ComposeBrush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -15,6 +17,9 @@ import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.DesignTokenTable
 import dioxus.compose.protocol.DesignTokens
+import androidx.compose.animation.core.FiniteAnimationSpec
+import dioxus.compose.protocol.MaterialRole
+import dioxus.compose.protocol.MotionRole
 import dioxus.compose.protocol.Paint
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
@@ -115,17 +120,66 @@ class ResolvedTheme(
      * already measures the window for `WindowSizeChanged`, and this is the same reading.
      */
     val sizeClass: WindowSizeClass = WindowSizeClass.Compact,
+    /**
+     * The faces the application registered, by the role each was registered for.
+     *
+     * Empty is the ordinary case and means every role is written in the machine's own UI
+     * face. A role that is in here is written in the face the application shipped, and a
+     * role that is not stays where it was: naming a font for titles must not quietly
+     * change body text as well.
+     */
+    val fonts: Map<TypeRole, FontFamily> = emptyMap(),
+    /**
+     * What a registered brush id was registered as, or null for an id naming nothing.
+     *
+     * A lookup and not a map, because a brush is named per node rather than per theme and
+     * copying every registration into the theme each time one changes would cost the
+     * whole table for the one node that asked.
+     */
+    val brushes: (Int) -> ComposeBrush? = { null },
 ) {
     fun color(role: ColorRole): Color =
         rules.color(role, dark, sizeClass) ?: Color(tokens.color(role, dark))
 
-    /** A literal paints itself, a role goes through the table. */
+    /**
+     * A literal paints itself, a role goes through the table, a brush answers with the
+     * colour it starts from.
+     *
+     * A gradient asked for as a colour has to become one somewhere, and the alternative
+     * is a caller that has to know which kind of paint it was handed before it can use
+     * it. Everywhere a brush can actually be drawn asks [brush] instead.
+     */
     fun color(paint: Paint): Color = when (paint) {
         is Paint.Literal -> Color(paint.argb)
         is Paint.Role -> color(paint.role)
+        is Paint.Asset -> brushes(paint.assetId)?.let(::startingColor)
+            ?: color(ColorRole.Surface)
+    }
+
+    /**
+     * What to fill with: a brush where the paint named one, a flat colour otherwise.
+     *
+     * Null where the paint named a brush that is not registered, so that the caller can
+     * report it. Drawing a guess would leave the application with a screen that is only
+     * subtly wrong and nothing to read about why.
+     */
+    fun brush(paint: Paint): ComposeBrush? = when (paint) {
+        is Paint.Asset -> brushes(paint.assetId)
+        else -> SolidColor(color(paint))
     }
 
     fun space(role: SpaceRole): Dp = tokens.space(role).dp
+
+    /**
+     * The spec a change of this importance runs on in this system.
+     *
+     * Reduced motion is answered here rather than by the Host: every role becomes
+     * `Instant`, so each one finishes inside the frame it starts in, and the screen that
+     * declared it is not involved and does not need to be recomposed for it.
+     */
+    fun <T> motion(role: MotionRole): FiniteAnimationSpec<T> = rules.motion.spec(
+        if (dioxus.compose.ui.node.platformReducedMotion()) MotionRole.Instant else role,
+    )
 
     fun radius(role: ShapeRole): Dp = tokens.radius(role).dp
 
@@ -167,6 +221,16 @@ class ResolvedTheme(
 
     fun type(role: TypeRole): TypeToken = tokens.type(role)
 
+    /**
+     * The face this role is written in.
+     *
+     * A registered font wins, then code, then the machine's UI face. Code is second
+     * because a monospace role that resolved to a proportional face is not a styling
+     * difference, it is columns that no longer line up.
+     */
+    fun family(role: TypeRole): FontFamily =
+        fonts[role] ?: if (tokens.type(role).monospace) FontFamily.Monospace else platformUiFamily
+
     companion object {
         internal fun roundedShape(radius: Float): Shape =
             if (radius >= FULL_RADIUS) RoundedCornerShape(percent = 50) else RoundedCornerShape(radius.dp)
@@ -179,16 +243,6 @@ val TypeToken.fontSize: TextUnit get() = size.sp
 val TypeToken.composeWeight: FontWeight get() = FontWeight(weight)
 val TypeToken.composeLineHeight: TextUnit get() = lineHeight.sp
 val TypeToken.composeLetterSpacing: TextUnit get() = letterSpacing.sp
-
-/**
- * Font resources deliberately do not cross the protocol: a Host that named a font would
- * push the check that it exists out to run time. The token table's family names are
- * documentation of the guideline, not a font the Host may request.
- *
- * Everything that is not code is written in the machine's own UI face, whichever design
- * system is running. See [platformUiFamily] for why that is not the design system's call.
- */
-val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace else platformUiFamily
 
 /**
  * The face this machine writes its interfaces in.
@@ -304,6 +358,22 @@ interface ComponentRules {
 
     /** State transition timing. Motion is a design system rule, not a Host parameter. */
     val motion: Motion
+
+    /**
+     * What a surface of this role is made of here.
+     *
+     * Four roles and no blur radius, because the systems disagree about what a material
+     * even is: Apple's blur what is behind them, Material 3 lifts the surface and lays a
+     * tone over it, and the GNOME and KDE systems draw an opaque panel. A radius from the
+     * screen would be a blur instruction handed to systems that never blur.
+     *
+     * The default is the opaque reading, and it is the reading four of the seven want. It
+     * is built from this system's own surface and outline tokens, so a screen asking for
+     * the same material still comes out in this system's colours rather than in someone
+     * else's.
+     */
+    fun material(role: MaterialRole, theme: ResolvedTheme): SurfaceMaterial =
+        SurfaceMaterial.Opaque(opaqueMaterial(role, theme))
 
     // The three answers below have defaults, and that is the point of them. A design
     // system implements what it has an opinion about; what it says nothing about is
@@ -604,14 +674,49 @@ data class MessageStyle(
     val typeRole: TypeRole,
 )
 
-/** The design system's state transition timing. */
+/**
+ * The design system's state transition timing.
+ *
+ * The four named lengths are what a node's declared importance resolves to. A screen says
+ * how much a change matters and never how many milliseconds it takes, because Material's
+ * emphasized curve and Cupertino's softer, shorter one are different answers to the same
+ * question and the screen is not the place to settle it.
+ */
 data class Motion(
     val pressMillis: Int,
     val releaseMillis: Int,
     val easing: androidx.compose.animation.core.Easing,
     /** How long a pointer rests on something before its explanation appears. */
     val tooltipDelayMillis: Int = 500,
-)
+    val quickMillis: Int = pressMillis,
+    val standardMillis: Int = releaseMillis,
+    val slowMillis: Int = releaseMillis * 2,
+    val emphasizedMillis: Int = releaseMillis * 3 / 2,
+    /** The curve for the one role that is allowed its own, and the same curve otherwise. */
+    val emphasizedEasing: androidx.compose.animation.core.Easing = easing,
+) {
+
+    /** How long a change of this importance runs for. Instant is a change with no run. */
+    fun millis(role: MotionRole): Int = when (role) {
+        MotionRole.Instant -> 0
+        MotionRole.Quick -> quickMillis
+        MotionRole.Standard -> standardMillis
+        MotionRole.Slow -> slowMillis
+        MotionRole.Emphasized -> emphasizedMillis
+    }
+
+    fun easing(role: MotionRole): androidx.compose.animation.core.Easing =
+        if (role == MotionRole.Emphasized) emphasizedEasing else easing
+
+    /**
+     * The spec a change of this importance runs on.
+     *
+     * A zero length tween finishes inside the frame it starts in, which is what a system
+     * asked to reduce motion gets for every role, and what `Instant` means anyway.
+     */
+    fun <T> spec(role: MotionRole): androidx.compose.animation.core.FiniteAnimationSpec<T> =
+        androidx.compose.animation.core.tween(millis(role), easing = easing(role))
+}
 
 /**
  * A line along a field's bottom edge, which is what Material and Fluent thicken when the
@@ -940,6 +1045,15 @@ fun resolveTheme(
     platform: HostPlatform,
     systemDark: Boolean,
     sizeClass: WindowSizeClass = WindowSizeClass.Compact,
+    /**
+     * What a registered font asset became, or null where nothing was registered.
+     *
+     * A lookup rather than the cache itself, so that the design system stays a thing that
+     * can be resolved in a test with nothing else standing up around it.
+     */
+    fontOf: (Int) -> FontFamily? = { null },
+    /** What a registered brush became, or null for an id naming nothing. */
+    brushOf: (Int) -> ComposeBrush? = { null },
 ): ResolvedTheme {
     val system = when {
         theme == null -> adaptiveSystem(platform, DesignSystem.Material3)
@@ -951,7 +1065,61 @@ fun resolveTheme(
         ColorScheme.Dark -> true
         ColorScheme.FollowSystem -> systemDark
     }
-    return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark, sizeClass)
+    // Only the roles the application actually named. A role whose asset is missing or is
+    // not a font is left out, so it stays on the machine's own face rather than on
+    // nothing, and the report of the missing asset is what says it happened.
+    val fonts = buildMap {
+        theme?.let { asked ->
+            for (role in TypeRole.entries) {
+                val family = asked.font(role)?.let(fontOf) ?: continue
+                put(role, family)
+            }
+        }
+    }
+    return ResolvedTheme(
+        system,
+        DesignTokens.of(system),
+        rulesFor(system),
+        dark,
+        sizeClass,
+        fonts,
+        brushOf,
+    )
+}
+
+/**
+ * The opaque reading of a material: the system's surface, moved towards its own outline.
+ *
+ * Thickness is how far it has moved. A thin material is barely separated from the page, a
+ * chrome panel is the furthest, and every step is taken between two colours this system
+ * already chose, so nothing here invents a colour.
+ */
+/**
+ * The colour a brush starts from.
+ *
+ * Only for the places that can hold a colour and nothing else. A gradient's first stop is
+ * the honest answer there: it is a colour the application actually chose.
+ */
+private fun startingColor(brush: ComposeBrush): Color = when (brush) {
+    is SolidColor -> brush.value
+    else -> Color.Unspecified
+}
+
+internal fun opaqueMaterial(role: MaterialRole, theme: ResolvedTheme): Color {
+    val surface = theme.color(ColorRole.Surface)
+    val toward = theme.color(ColorRole.SurfaceVariant)
+    val distance = when (role) {
+        MaterialRole.Thin -> 0.18f
+        MaterialRole.Regular -> 0.38f
+        MaterialRole.Thick -> 0.62f
+        MaterialRole.Chrome -> 0.85f
+    }
+    return Color(
+        red = surface.red + (toward.red - surface.red) * distance,
+        green = surface.green + (toward.green - surface.green) * distance,
+        blue = surface.blue + (toward.blue - surface.blue) * distance,
+        alpha = 1f,
+    )
 }
 
 internal fun rulesFor(system: DesignSystem): ComponentRules = when (system) {

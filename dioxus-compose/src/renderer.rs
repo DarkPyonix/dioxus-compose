@@ -70,7 +70,7 @@ struct StackNode {
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 12;
+const MODIFIER_SLOTS: usize = 14;
 
 /// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
 /// takes no slot in the Compose tree.
@@ -294,6 +294,8 @@ impl ComposeRenderer {
         const CLICKABLE: u16 = 9;
         const PADDING: u16 = 10;
         const OBSERVE_SIZE: u16 = 11;
+        const MOTION: u16 = 12;
+        const MATERIAL: u16 = 13;
 
         let float = |value: &AttributeValue| match value {
             AttributeValue::Float(number) => Some(*number as f32),
@@ -319,6 +321,8 @@ impl ComposeRenderer {
             "onclickable" => Some(CLICKABLE),
             "padding" | "padding_role" => Some(PADDING),
             "observe_size" => Some(OBSERVE_SIZE),
+            "motion" => Some(MOTION),
+            "material" => Some(MATERIAL),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -391,6 +395,23 @@ impl ComposeRenderer {
                     },
                 )))
             }
+            // The node says how important its changes are. Which curve and how many
+            // milliseconds that means is the design system's answer, and it is never
+            // asked here.
+            "motion" => Some(Some((
+                MOTION,
+                Modifier::Motion(
+                    crate::MotionRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                ),
+            ))),
+            // What the surface is made of. Blur, tone or a flat fill is the running
+            // design system's answer, and the node does not get to ask for one of them.
+            "material" => Some(Some((
+                MATERIAL,
+                Modifier::Material(
+                    crate::MaterialRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                ),
+            ))),
             "shape_role" => Some(Some((
                 SHAPE,
                 Modifier::ShapeRole(
@@ -981,6 +1002,8 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
+        "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),
+        "filesdropped" | "onfilesdropped" => Some(PropertyKind::OnFilesDropped),
         "change" | "onchange" => Some(PropertyKind::OnValueChange),
         _ => None,
     }

@@ -1701,3 +1701,321 @@ fn fr26_markdown_becomes_runs_and_never_crosses_the_boundary() {
     assert_eq!(kept, "2 * 3 = 6");
     assert!(none.is_empty());
 }
+
+/// Paths arrive together and come apart again as they were.
+#[test]
+fn fr27_two_paths_arrive_as_one_event() {
+    use dioxus_compose::FileDrop;
+
+    let drop = FileDrop::new("/tmp/one.txt\0/tmp/two.txt");
+    assert_eq!(drop.paths(), ["/tmp/one.txt", "/tmp/two.txt"]);
+}
+
+/// A path the platform could not give as text is dropped, and the rest are delivered.
+///
+/// The requirement asks for this by name. One unreadable file must not lose the other
+/// nine and must not end the process.
+#[test]
+fn fr27_an_unreadable_path_is_dropped_and_the_rest_arrive() {
+    use dioxus_compose::FileDrop;
+
+    let drop = FileDrop::new("/tmp/kept.txt\0\0/tmp/also-kept.txt");
+    assert_eq!(drop.paths(), ["/tmp/kept.txt", "/tmp/also-kept.txt"]);
+}
+
+/// A node that said nothing about files is not a place files may be dropped.
+///
+/// Said as "pays nothing" rather than "sends false", because a container that is silent
+/// about files is the common case: every Box, Column, Card and Surface in every screen.
+#[test]
+fn fr27_a_node_that_did_not_ask_is_not_a_drop_target() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::PropertyKind;
+
+    fn plain() -> Element {
+        rsx! { dioxus_compose::Box { Text { text: "not a target" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(plain);
+    let batch = host.rebuild().expect("the first frame failed to encode");
+    let said = decode_batch(batch)
+        .expect("decode")
+        .into_iter()
+        .filter(|mutation| {
+            matches!(
+                mutation,
+                Mutation::SetProp {
+                    property: PropertyKind::OnFilesEntered | PropertyKind::OnFilesDropped,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(said, 0, "a node that said nothing was offered as a drop target");
+}
+
+/// The widget that exists to receive files is the one that carries the handlers.
+#[test]
+fn fr27_a_drop_target_carries_both_handlers() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::{PropertyKind, WidgetKind};
+
+    fn target() -> Element {
+        rsx! {
+            FileDropTarget {
+                on_files_entered: move |_| {},
+                on_files_dropped: move |_| {},
+                Text { text: "drop files here" }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(target);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::Create { widget: WidgetKind::FileDropTarget, .. }
+    )));
+    for wanted in [PropertyKind::OnFilesEntered, PropertyKind::OnFilesDropped] {
+        assert!(
+            mutations.iter().any(|mutation| matches!(
+                mutation,
+                Mutation::SetProp { property, .. } if *property == wanted
+            )),
+            "{wanted:?} did not reach the Renderer",
+        );
+    }
+}
+
+/// A node says how important its changes are, and nothing about how long they take.
+#[test]
+fn fr24_a_motion_role_reaches_the_renderer_as_a_role() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn moving() -> Element {
+        rsx! {
+            Card { motion: MotionRole::Emphasized, Text { text: "opens" } }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(moving);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(
+        mutations.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetModifier { modifier: Modifier::Motion(MotionRole::Emphasized), .. }
+        )),
+        "the motion role did not reach the Renderer: {mutations:?}",
+    );
+}
+
+/// A node that said nothing about motion pays nothing.
+#[test]
+fn fr24_silence_about_motion_costs_no_record() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn still() -> Element {
+        rsx! { Card { Text { text: "still" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(still);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(!mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Motion(_), .. }
+    )));
+}
+
+/// The five roles survive the round trip in the order the wire fixes them in.
+#[test]
+fn fr24_every_motion_role_survives_the_wire() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    const ROLES: [MotionRole; 5] = [
+        MotionRole::Instant,
+        MotionRole::Quick,
+        MotionRole::Standard,
+        MotionRole::Slow,
+        MotionRole::Emphasized,
+    ];
+
+    fn all_five() -> Element {
+        rsx! {
+            Column {
+                for role in ROLES {
+                    Card { motion: role, Text { text: "{role:?}" } }
+                }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(all_five);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    let arrived: Vec<MotionRole> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier { modifier: Modifier::Motion(role), .. } => Some(*role),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(arrived, ROLES);
+}
+
+/// A surface says what it is made of, and nothing about blur.
+#[test]
+fn fr23_a_material_role_reaches_the_renderer_as_a_role() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn sheet() -> Element {
+        rsx! {
+            Surface { material: MaterialRole::Regular, Text { text: "over the page" } }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(sheet);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(
+        mutations.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetModifier { modifier: Modifier::Material(MaterialRole::Regular), .. }
+        )),
+        "the material role did not reach the Renderer: {mutations:?}",
+    );
+}
+
+/// The four roles survive the round trip in the order the wire fixes them in.
+#[test]
+fn fr23_every_material_role_survives_the_wire() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    const ROLES: [MaterialRole; 4] = [
+        MaterialRole::Thin,
+        MaterialRole::Regular,
+        MaterialRole::Thick,
+        MaterialRole::Chrome,
+    ];
+
+    fn all_four() -> Element {
+        rsx! {
+            Column {
+                for role in ROLES {
+                    Surface { material: role, Text { text: "{role:?}" } }
+                }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(all_four);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    let arrived: Vec<MaterialRole> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier { modifier: Modifier::Material(role), .. } => Some(*role),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(arrived, ROLES);
+}
+
+/// A node that said nothing about material pays nothing.
+#[test]
+fn fr23_silence_about_material_costs_no_record() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn plain() -> Element {
+        rsx! { Surface { Text { text: "flat" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(plain);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(!mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Material(_), .. }
+    )));
+}
+
+/// A gradient reaches the Renderer as a registration and an id, not as a list of stops.
+#[test]
+fn fr23_a_gradient_is_registered_once_and_named_by_id() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::{AssetKind, Color, Paint};
+
+    fn sky() -> Element {
+        let paint = brush(Brush::vertical(vec![
+            Stop::new(0.0, Color::rgb(0x4a90d9)),
+            Stop::new(0.5, Color::rgb(0x9ec9f0)),
+            Stop::new(1.0, Color::rgb(0xffffff)),
+        ]));
+        rsx! { Surface { background: paint, Text { text: "over a gradient" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(sky);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+
+    let registration = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::RegisterAsset { asset_id, kind: AssetKind::Brush, bytes } => {
+                Some((*asset_id, *bytes))
+            }
+            _ => None,
+        })
+        .expect("the brush was never registered");
+    // Header, then one record per stop.
+    assert_eq!(
+        registration.1.len(),
+        dioxus_compose::brush::HEADER_LEN + 3 * dioxus_compose::brush::STOP_LEN,
+    );
+
+    let named = mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Background(Paint::Asset(id)), .. }
+            if *id == registration.0
+    ));
+    assert!(named, "the surface did not name the brush it registered: {mutations:?}");
+}
+
+/// The same gradient asked for twice is one registration.
+#[test]
+fn fr23_the_same_brush_is_registered_once() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::schema::Color;
+
+    let first = brush(Brush::horizontal(vec![
+        Stop::new(0.0, Color::rgb(0x101010)),
+        Stop::new(1.0, Color::rgb(0xf0f0f0)),
+    ]));
+    let again = brush(Brush::horizontal(vec![
+        Stop::new(0.0, Color::rgb(0x101010)),
+        Stop::new(1.0, Color::rgb(0xf0f0f0)),
+    ]));
+    assert_eq!(first, again);
+}
+
+/// A brush travels as the two words a Paint has, whichever kind it is.
+#[test]
+fn fr23_a_brush_paint_survives_the_wire() {
+    use dioxus_compose::schema::{ColorRole, Paint};
+
+    for paint in [Paint::Asset(1), Paint::Asset(4_000_000), Paint::Role(ColorRole::Primary)] {
+        assert_eq!(Paint::from_bits(paint.to_bits()), Some(paint));
+    }
+}

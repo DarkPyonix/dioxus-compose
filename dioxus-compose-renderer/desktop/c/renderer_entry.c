@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -41,6 +42,23 @@ graal_isolatethread_t *graal_get_current_thread(graal_isolate_t *isolate);
 int32_t dioxus_compose_renderer_run_impl(graal_isolatethread_t *thread, const char *library_dir);
 void dioxus_compose_renderer_request_frame_impl(graal_isolatethread_t *thread);
 int32_t dioxus_compose_renderer_run(void);
+
+/**
+ * Whether the application asked for a material behind its window.
+ *
+ * Off until the renderer says otherwise, because a window that did not ask must come up
+ * the way it always did: no effect view is built for it and nothing about its drawing
+ * changes. The renderer knows the answer only after the first batch has been applied,
+ * and the macOS poller is still running by then, so a late yes is still acted on.
+ *
+ * Exported on every desktop so the renderer has one symbol to call. Only macOS has
+ * anything to do with the answer today; Windows and Linux record it and draw as before.
+ */
+static atomic_int dxc_window_material_asked;
+
+void dxc_set_window_material(int32_t asked) {
+    atomic_store(&dxc_window_material_asked, asked != 0);
+}
 
 #ifdef __APPLE__
 #include <dispatch/dispatch.h>
@@ -515,6 +533,16 @@ static DWORD WINAPI dxc_reclaim_caption(LPVOID unused) {
 enum { DXC_TOOLBAR_STYLE_UNIFIED = 3 };
 // NSWindowStyleMaskFullSizeContentView.
 enum { DXC_FULL_SIZE_CONTENT_VIEW = 1 << 15 };
+// Titled, Closable, Miniaturizable, Resizable: what a window needs in its mask before
+// AppKit gives it a title bar and draws the three buttons in it.
+enum {
+    DXC_TITLED = 1 << 0,
+    DXC_CLOSABLE = 1 << 1,
+    DXC_MINIATURIZABLE = 1 << 2,
+    DXC_RESIZABLE = 1 << 3,
+};
+// NSWindowTitleHidden.
+enum { DXC_TITLE_HIDDEN = 1 };
 
 static id dxc_send(id self, const char *selector) {
     return ((id (*)(id, SEL))objc_msgSend)(self, sel_registerName(selector));
@@ -583,6 +611,40 @@ enum { DXC_VIEW_SIZABLE = 2 | 16 };
  * reaches the eye depends on what is painted over it, which is the renderer's half.
  */
 /**
+ * Says why the window has no material behind it, when asked to.
+ *
+ * Every step here is a message to a toolkit object that may not be what this expects, and
+ * a silent early return leaves a window that simply looks ordinary with nothing to read.
+ * Off unless `DXC_REPORT_MATERIAL` is set, so it costs a pointer comparison in normal use.
+ */
+static void dxc_report_material(const char *what) {
+    static int asked = -1;
+    if (asked < 0) {
+        asked = getenv("DXC_REPORT_MATERIAL") != NULL;
+    }
+    if (asked) {
+        fprintf(stderr, "dxc material: %s\n", what);
+    }
+}
+
+/**
+ * Stops the window claiming it fills its own rectangle, and takes its fill away.
+ *
+ * Both are needed and neither sticks. The system composites nothing behind an opaque
+ * window, and a window with a background colour paints that colour over whatever was
+ * composited; the toolkit sets the colour from its own side, so this is said again on
+ * every pass rather than once at the start.
+ */
+static void dxc_clear_window_background(id window) {
+    ((void (*)(id, SEL, signed char))objc_msgSend)(window, sel_registerName("setOpaque:"), 0);
+    id clear = dxc_send_class("NSColor", "clearColor");
+    if (clear != NULL) {
+        ((void (*)(id, SEL, id))objc_msgSend)(
+            window, sel_registerName("setBackgroundColor:"), clear);
+    }
+}
+
+/**
  * Stops a view and everything under it from claiming to fill its own rectangle.
  *
  * A layer that says it is opaque is composited as though nothing behind it matters, so
@@ -594,8 +656,11 @@ enum { DXC_VIEW_SIZABLE = 2 | 16 };
  * be its problem becoming ours.
  */
 static void dxc_open_layers(id view, int depth) {
-    if (view == NULL || depth > 6) {
+    if (view == NULL || depth > 12) {
         return;
+    }
+    if (depth == 0) {
+        dxc_report_material("opening the layers under the content view");
     }
     ((void (*)(id, SEL, signed char))objc_msgSend)(view, sel_registerName("setWantsLayer:"), 1);
     id layer = dxc_send(view, "layer");
@@ -618,15 +683,77 @@ static void dxc_open_layers(id view, int depth) {
     }
 }
 
-static void dxc_back_window_with_material(id window) {
+/**
+ * Gives a window its own frame back, with the system's buttons in it.
+ *
+ * The toolkit is asked for a window with no decoration, because that is the only window
+ * it will let draw transparently, and a window that cannot draw transparently can have
+ * any amount of material put behind it and show none of it.
+ *
+ * What is given up in that request is given up on the toolkit's side only. The window is
+ * a real one and AppKit will draw it a title bar and the three buttons the moment its
+ * style mask says to, so the mask is put back here: titled, closable, miniaturizable,
+ * resizable, and the content running the full height with the bar transparent over it.
+ * Nothing of the frame is drawn by this project, which is the whole point: an imitation
+ * of those three buttons is the most visible way to fail at looking native.
+ *
+ * Said again on every pass. Changing the mask makes AppKit rebuild the frame view, and a
+ * rebuilt frame has its own idea of what the window's background is.
+ */
+static void dxc_restore_window_frame(id window) {
     long mask = ((long (*)(id, SEL))objc_msgSend)(window, sel_registerName("styleMask"));
-    if ((mask & DXC_FULL_SIZE_CONTENT_VIEW) == 0) {
+    long wanted = mask | DXC_TITLED | DXC_CLOSABLE | DXC_MINIATURIZABLE | DXC_RESIZABLE |
+        DXC_FULL_SIZE_CONTENT_VIEW;
+    if (mask != wanted) {
+        ((void (*)(id, SEL, long))objc_msgSend)(window, sel_registerName("setStyleMask:"), wanted);
+        long now = ((long (*)(id, SEL))objc_msgSend)(window, sel_registerName("styleMask"));
+        char line[160];
+        snprintf(line, sizeof line, "frame asked for 0x%lx, window now reports 0x%lx", wanted, now);
+        dxc_report_material(line);
+    }
+    ((void (*)(id, SEL, signed char))objc_msgSend)(
+        window, sel_registerName("setTitlebarAppearsTransparent:"), 1);
+    ((void (*)(id, SEL, long))objc_msgSend)(
+        window, sel_registerName("setTitleVisibility:"), DXC_TITLE_HIDDEN);
+    {
+        static int said;
+        if (!said) {
+            said = 1;
+            // NSWindowCloseButton is 0. Whether AppKit built the three is the question
+            // this answers: a mask that reads back correctly and a window with no buttons
+            // in it are two different failures and look alike from a screenshot.
+            id close = ((id (*)(id, SEL, long))objc_msgSend)(
+                window, sel_registerName("standardWindowButton:"), 0);
+            id title = dxc_send(window, "title");
+            const char *text = title == NULL ? NULL :
+                ((const char *(*)(id, SEL))objc_msgSend)(title, sel_registerName("UTF8String"));
+            signed char opaque =
+                ((signed char (*)(id, SEL))objc_msgSend)(window, sel_registerName("isOpaque"));
+            char line[220];
+            snprintf(line, sizeof line,
+                     "window %s (%s): close button %s, opaque %d",
+                     text == NULL ? "?" : text, object_getClassName(window),
+                     close == NULL ? "missing" : "present", (int)opaque);
+            dxc_report_material(line);
+        }
+    }
+}
+
+static void dxc_back_window_with_material(id window) {
+    if (!atomic_load(&dxc_window_material_asked)) {
         return;
     }
+    // Only the window the renderer draws into. The toolkit keeps others of its own, and
+    // a material put behind one of those is a material nobody sees.
     id content = dxc_send(window, "contentView");
     if (content == NULL) {
+        dxc_report_material("the window has no content view yet");
         return;
     }
+    if (!((signed char (*)(id, SEL))objc_msgSend)(window, sel_registerName("isVisible"))) {
+        return;
+    }
+    dxc_restore_window_frame(window);
     // Once is enough. This runs from a thread that asks repeatedly until the window
     // exists, so without the mark it would stack a hundred of them.
     id already = dxc_send(content, "superview");
@@ -641,6 +768,14 @@ static void dxc_back_window_with_material(id window) {
                 ((signed char (*)(id, SEL, Class))objc_msgSend)(
                     view, sel_registerName("isKindOfClass:"),
                     objc_getClass("NSVisualEffectView"))) {
+                // The view is there, and that is not the end of it. The toolkit sets the
+                // window's own background from its Java side whenever it realises or
+                // updates the peer, and an opaque one there covers the material however
+                // the view is configured, so the two are pressed down again each time
+                // rather than once.
+                dxc_clear_window_background(window);
+                dxc_open_layers(content, 0);
+                dxc_report_material("already backed");
                 return;
             }
         }
@@ -663,14 +798,7 @@ static void dxc_back_window_with_material(id window) {
     ((void (*)(id, SEL, unsigned long))objc_msgSend)(
         effect, sel_registerName("setAutoresizingMask:"), DXC_VIEW_SIZABLE);
 
-    // The window itself has to stop claiming it fills its own rectangle, or the system
-    // never composites anything behind it.
-    ((void (*)(id, SEL, signed char))objc_msgSend)(window, sel_registerName("setOpaque:"), 0);
-    id clear = dxc_send_class("NSColor", "clearColor");
-    if (clear != NULL) {
-        ((void (*)(id, SEL, id))objc_msgSend)(
-            window, sel_registerName("setBackgroundColor:"), clear);
-    }
+    dxc_clear_window_background(window);
 
     // A sibling behind the content view, not a child of it and not in its place.
     //
@@ -694,6 +822,7 @@ static void dxc_back_window_with_material(id window) {
     ((void (*)(id, SEL, id, long, id))objc_msgSend)(
         frame, sel_registerName("addSubview:positioned:relativeTo:"), effect, -1, content);
     dxc_open_layers(content, 0);
+    dxc_report_material("backed the window with a material");
 }
 
 /** Runs on the main thread, because AppKit is only safe there. */

@@ -24,7 +24,6 @@ import dioxus.compose.ui.node.Node
 import dioxus.compose.design.composeLetterSpacing
 import dioxus.compose.design.composeLineHeight
 import dioxus.compose.design.composeWeight
-import dioxus.compose.design.family
 import dioxus.compose.design.fontSize
 
 /**
@@ -70,7 +69,8 @@ internal fun Node.variant(): ButtonVariant =
  * replacing exactly one axis.
  */
 internal fun Node.textStyle(theme: ResolvedTheme, defaultRole: TypeRole = TypeRole.Body): TextStyle {
-    val token = theme.type(typeRole() ?: defaultRole)
+    val role = typeRole() ?: defaultRole
+    val token = theme.type(role)
     val paint = paintProp(PropertyKind.Color)
     return TextStyle(
         color = if (paint != null) theme.color(paint) else theme.color(ColorRole.OnSurface),
@@ -80,7 +80,7 @@ internal fun Node.textStyle(theme: ResolvedTheme, defaultRole: TypeRole = TypeRo
             ?: token.composeWeight,
         lineHeight = floatProp(PropertyKind.LineHeight)?.sp ?: token.composeLineHeight,
         letterSpacing = floatProp(PropertyKind.LetterSpacing)?.sp ?: token.composeLetterSpacing,
-        fontFamily = token.family,
+        fontFamily = theme.family(role),
         textAlign = when (role(PropertyKind.TextAlign, TextAlign.entries.toTypedArray())) {
             TextAlign.Start -> ComposeTextAlign.Start
             TextAlign.Center -> ComposeTextAlign.Center

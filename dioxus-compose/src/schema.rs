@@ -69,11 +69,11 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans;",
-    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans,on_files_entered,on_files_dropped;",
+    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize,Motion,Material;",
     "keys=Enter;",
-    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved;",
+    "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved,FilesEntered,FilesDropped;",
     "windowsizeclasses=Compact,Medium,Expanded;",
     "commands=Create,SetProp,SetModifier,Insert,Move,Remove,SetText,AppendText,SetTheme,SetWindow,RegisterAsset,ReleaseAsset,ShowMessage"
 );
@@ -309,6 +309,10 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     // it lays out, and how many items a row holds is its own decision when the columns
     // were given as a minimum width rather than a count.
     LazyGrid = 35,
+    // A place files may be dropped. Being this widget is the willingness: a node that is
+    // not one is never offered as a target, so the platform shows no drop cursor over it
+    // and nothing is reported.
+    FileDropTarget = 36,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -462,6 +466,29 @@ define_wire_enum!(SHAPE_ROLE_SCHEMA, ShapeRole {
     Full = 6,
 });
 
+// How long a change takes and along which curve. A role rather than a duration, because
+// Material's emphasized curve and Cupertino's spring are different answers to the same
+// question, and a milliseconds figure from the application would settle it in the wrong
+// place. A system asked to reduce motion answers every one of these instantly.
+define_wire_enum!(MOTION_ROLE_SCHEMA, MotionRole {
+    Instant = 1,
+    Quick = 2,
+    Standard = 3,
+    Slow = 4,
+    Emphasized = 5,
+});
+
+// What a surface is made of. Four roles rather than a blur radius, because Cupertino and
+// Liquid Glass answer with blur, Material 3 with elevation and a tone laid over the
+// surface, and the GNOME and KDE systems with an opaque fill. A radius from the
+// application would be a blur instruction to systems that do not blur.
+define_wire_enum!(MATERIAL_ROLE_SCHEMA, MaterialRole {
+    Thin = 1,
+    Regular = 2,
+    Thick = 3,
+    Chrome = 4,
+});
+
 // Density roles, because dp density differs per design system.
 define_wire_enum!(SPACE_ROLE_SCHEMA, SpaceRole {
     None = 1,
@@ -523,6 +550,25 @@ define_wire_enum!(ASSET_KIND_SCHEMA, AssetKind {
     Jpeg = 2,
     Svg = 3,
     VectorIcon = 4,
+    // A font file, registered so that a type role can resolve to it. The bytes are the
+    // font, which is why this is an asset and not a name: a name would put the check that
+    // the font exists at run time on the reader's machine, and a missing one there is a
+    // screen in the wrong typeface with nobody to tell.
+    Font = 5,
+    // A gradient or an image fill, registered so that any Paint may name it. The bytes
+    // are the brush's own fixed layout rather than a file: nothing on any platform stores
+    // a list of stops as a document, and a format would be a parser to write and keep.
+    Brush = 6,
+});
+
+// How a brush carries on past the area it was given.
+define_wire_enum!(TILE_MODE_SCHEMA, TileMode {
+    // Stops at the edge and drags the last colour outwards, which is what a gradient
+    // filling a surface wants.
+    Clamp = 1,
+    Repeat = 2,
+    // Repeats, flipping every other copy, so the seams do not show.
+    Mirror = 3,
 });
 
 // The closed set of icon meanings. An icon is addressed by what it is for, never by a
@@ -614,6 +660,18 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
         variants: SHAPE_ROLE_SCHEMA,
     },
     RoleEnumSchema {
+        name: "MotionRole",
+        variants: MOTION_ROLE_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "TileMode",
+        variants: TILE_MODE_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "MaterialRole",
+        variants: MATERIAL_ROLE_SCHEMA,
+    },
+    RoleEnumSchema {
         name: "SpaceRole",
         variants: SPACE_ROLE_SCHEMA,
     },
@@ -674,16 +732,24 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
 pub enum Paint {
     Role(ColorRole),
     Literal(Color),
+    /// A registered brush: a gradient, or a picture laid out as a fill.
+    ///
+    /// An id rather than the thing itself, because a list of stops does not fit the two
+    /// words a modifier has and because a brush outlives the frame that draws it, which
+    /// is what the asset path already exists for.
+    Asset(u32),
 }
 
 const PAINT_KIND_ROLE: u64 = 1;
 const PAINT_KIND_LITERAL: u64 = 2;
+const PAINT_KIND_ASSET: u64 = 3;
 
 impl Paint {
     pub const fn to_bits(self) -> u64 {
         match self {
             Self::Role(role) => (PAINT_KIND_ROLE << 32) | role as u64,
             Self::Literal(color) => (PAINT_KIND_LITERAL << 32) | color.0 as u64,
+            Self::Asset(id) => (PAINT_KIND_ASSET << 32) | id as u64,
         }
     }
 
@@ -694,6 +760,7 @@ impl Paint {
                 ColorRole::try_from(u16::try_from(value).ok()?).ok()?,
             )),
             PAINT_KIND_LITERAL => Some(Self::Literal(Color(value))),
+            PAINT_KIND_ASSET => Some(Self::Asset(value)),
             _ => None,
         }
     }
@@ -807,7 +874,19 @@ pub struct Theme {
     pub fallback: DesignSystem,
     pub color_scheme: ColorScheme,
     pub adaptive: bool,
+    /// The font asset each type role resolves to, or zero for the system font.
+    ///
+    /// Per theme and not per node. A node that could name its own font would be a node
+    /// deciding typography, and the whole point of roles is that it does not: an
+    /// application changes what `Display` is made of, and every title changes with it.
+    ///
+    /// Indexed by the role's wire tag minus one, so the array and the enum cannot drift
+    /// apart without the compiler saying so.
+    pub fonts: [u32; TYPE_ROLE_COUNT],
 }
+
+/// How many type roles there are, which is how many font slots a theme carries.
+pub const TYPE_ROLE_COUNT: usize = 9;
 
 impl Theme {
     /// The same design system on every platform.
@@ -817,6 +896,7 @@ impl Theme {
             fallback: design_system,
             color_scheme: ColorScheme::FollowSystem,
             adaptive: false,
+            fonts: [0; TYPE_ROLE_COUNT],
         }
     }
 
@@ -827,12 +907,32 @@ impl Theme {
             fallback,
             color_scheme: ColorScheme::FollowSystem,
             adaptive: true,
+            fonts: [0; TYPE_ROLE_COUNT],
         }
     }
 
     pub const fn with_color_scheme(mut self, color_scheme: ColorScheme) -> Self {
         self.color_scheme = color_scheme;
         self
+    }
+
+    /// Resolves one type role to a registered font, leaving every other role alone.
+    ///
+    /// The asset has to be registered before the theme that names it reaches the
+    /// Renderer, the same way a picture does. An id that names nothing is reported and
+    /// the role falls back to the system font, because a screen in the wrong typeface is
+    /// better than no screen.
+    pub const fn with_font(mut self, role: TypeRole, asset: u32) -> Self {
+        self.fonts[role as usize - 1] = asset;
+        self
+    }
+
+    /// The font this role resolves to, or `None` for the system font.
+    pub const fn font(&self, role: TypeRole) -> Option<u32> {
+        match self.fonts[role as usize - 1] {
+            0 => None,
+            asset => Some(asset),
+        }
     }
 }
 
@@ -897,6 +997,16 @@ pub enum Modifier {
     /// wide one of its own containers ended up needs a name it gave itself. The Renderer
     /// does not read it.
     ObserveSize { token: u32 },
+    /// Which curve and length this node's changes run along.
+    ///
+    /// The node says how important the change is, not how long it takes. Appearing,
+    /// disappearing, a selection moving and a size changing all read this.
+    Motion(MotionRole),
+    /// What this node's surface is made of.
+    ///
+    /// A role, so that a system which blurs blurs and a system which does not lifts its
+    /// surface instead. Nothing here claims a particular effect was achieved.
+    Material(MaterialRole),
 }
 
 const NO_FIELDS: &[FieldSchema] = &[];
@@ -940,6 +1050,16 @@ const SPACE_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
 const SHAPE_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
     name: "role",
     ty: FieldType::Role("ShapeRole"),
+    slot: FieldSlot::FirstLow,
+}];
+const MOTION_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "role",
+    ty: FieldType::Role("MotionRole"),
+    slot: FieldSlot::FirstLow,
+}];
+const MATERIAL_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "role",
+    ty: FieldType::Role("MaterialRole"),
     slot: FieldSlot::FirstLow,
 }];
 const PADDING_EACH_FIELDS: &[FieldSchema] = &[
@@ -1085,6 +1205,16 @@ pub const MODIFIER_SCHEMA: &[VariantSchema] = &[
         tag: 16,
         fields: TOKEN_U32_FIELD,
     },
+    VariantSchema {
+        name: "Motion",
+        tag: 17,
+        fields: MOTION_ROLE_FIELD,
+    },
+    VariantSchema {
+        name: "Material",
+        tag: 18,
+        fields: MATERIAL_ROLE_FIELD,
+    },
 ];
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1198,6 +1328,11 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     // A Text that says nothing about runs carries none of this and travels as it always
     // did.
     Spans = 64,
+    // A node that is willing to have files dropped on it. The handler is the willingness:
+    // a node without one is never told that files are over it, which is what keeps a
+    // screen from lighting up every container it has.
+    OnFilesEntered = 65,
+    OnFilesDropped = 66,
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1236,6 +1371,13 @@ pub enum EventPayload<'a> {
         height_dp: f32,
         class: WindowSizeClass,
     },
+    /// Files are over a node that said it would take them. Nothing about what they are:
+    /// the platforms disagree about what is knowable before a drop, and a screen that
+    /// only needs to light up does not need to know.
+    FilesEntered,
+    /// Files were let go over a node. The paths arrive together, separated by a byte no
+    /// path on any of the three desktops may contain.
+    FilesDropped(&'a str),
     /// The Renderer resolved the theme and this is what it chose. Sent once and then
     /// only when the answer changes, the same way a size class is.
     DesignSystemResolved(DesignSystem),
@@ -1319,6 +1461,18 @@ pub const EVENT_SCHEMA: &[EventSchema] = &[
         name: "DesignSystemResolved",
         tag: 21,
         payload: EventPayloadType::DesignSystem,
+    },
+    EventSchema {
+        name: "FilesEntered",
+        tag: 22,
+        payload: EventPayloadType::None,
+    },
+    // One string for however many paths, which is the string convention unchanged. A
+    // second way of carrying a list would be a second thing to keep in step.
+    EventSchema {
+        name: "FilesDropped",
+        tag: 23,
+        payload: EventPayloadType::Text,
     },
 ];
 

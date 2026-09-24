@@ -76,6 +76,7 @@ mod tests {
             Paint::Role(role) => {
                 panic!("{role:?} is a role, so the design system would pick the colour")
             }
+            Paint::Asset(id) => panic!("brush {id} is a fill, not a colour this can check"),
         }
     }
 }

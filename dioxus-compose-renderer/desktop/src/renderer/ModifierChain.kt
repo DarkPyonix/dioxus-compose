@@ -1,5 +1,6 @@
 package dioxus.compose.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.composed
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.remember
@@ -26,7 +29,9 @@ import androidx.compose.ui.unit.dp
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.design.glassSurface
 import dioxus.compose.runtime.EventDispatcher
+import dioxus.compose.ui.node.TableError
 
 /**
  * Rebuilds a Compose `Modifier` chain from the Host's modifier value list.
@@ -54,7 +59,12 @@ internal fun List<ProtocolModifier>.toComposeModifier(
             is ProtocolModifier.Width -> chain.width(value.value.dp)
             is ProtocolModifier.Height -> chain.height(value.value.dp)
             is ProtocolModifier.Size -> chain.size(value.width.dp, value.height.dp)
-            is ProtocolModifier.Background -> chain.background(theme.color(value.paint), shape)
+            // A gradient where the paint named one, a flat colour otherwise. A paint
+            // that names a brush nobody registered is reported and left unpainted: a
+            // guess would leave a screen subtly wrong with nothing to read about why.
+            is ProtocolModifier.Background -> theme.brush(value.paint)?.let { brush ->
+                chain.background(brush, shape)
+            } ?: chain.composed { reportUnknownBrush(nodeId, value.paint, dispatcher) }
             is ProtocolModifier.Clickable -> chain.hostClickable(nodeId, value.handlerId, dispatcher)
 
             is ProtocolModifier.PaddingEach ->
@@ -62,8 +72,9 @@ internal fun List<ProtocolModifier>.toComposeModifier(
             is ProtocolModifier.PaddingRole -> chain.padding(theme.space(value.role))
             is ProtocolModifier.Shape -> chain.clip(shape)
             is ProtocolModifier.ShapeRole -> chain.clip(shape)
-            is ProtocolModifier.Border ->
-                chain.border(value.width.dp, theme.color(value.paint), shape)
+            is ProtocolModifier.Border -> theme.brush(value.paint)?.let { brush ->
+                chain.border(value.width.dp, brush, shape)
+            } ?: chain.composed { reportUnknownBrush(nodeId, value.paint, dispatcher) }
             is ProtocolModifier.Elevation ->
                 theme.rules.elevation(chain, value.value.dp, shape, theme)
 
@@ -72,11 +83,48 @@ internal fun List<ProtocolModifier>.toComposeModifier(
             // was before any of this existed.
             is ProtocolModifier.ObserveSize -> chain.reportSizeTo(nodeId, dispatcher)
 
+            // How important this node's changes are. What that means in milliseconds and
+            // along which curve is the running design system's answer, and a system the
+            // user has asked to hold still answers every role with no run at all.
+            is ProtocolModifier.Motion -> chain.animateContentSize(theme.motion(value.role))
+
+            // What this node's surface is made of. The role is resolved by the running
+            // design system, which answers with blur where it blurs and with a lifted or
+            // flat fill where it does not, and the surface draws whichever it was given.
+            is ProtocolModifier.Material ->
+                chain.composed { glassSurface(theme.rules.material(value.role, theme), shape) }
+
             // Weight is parent data: it is applied by the Column or Row that owns this node,
             // not here. See `weightOf` and `Children` in RenderNode.kt.
             is ProtocolModifier.Weight -> chain
         }
     }
+}
+
+/**
+ * Says that a paint named a brush that is not registered, and paints nothing.
+ *
+ * Once per node and per id, the same way a missing picture is reported. The node keeps
+ * its place in the layout: a surface that vanished would take its children with it.
+ */
+@Composable
+private fun Modifier.reportUnknownBrush(
+    nodeId: Int,
+    paint: dioxus.compose.protocol.Paint,
+    dispatcher: EventDispatcher,
+): Modifier {
+    val assetId = (paint as? dioxus.compose.protocol.Paint.Asset)?.assetId ?: return this
+    LaunchedEffect(nodeId, assetId) {
+        dispatcher.dispatch(
+            HostEvent.ProtocolError(
+                nodeId = nodeId,
+                handlerId = 0,
+                code = TableError.UNKNOWN_ASSET,
+                message = "brush $assetId is not registered, so node $nodeId was not painted",
+            ),
+        )
+    }
+    return this
 }
 
 /** The shape this node's clip, border and background all use. */

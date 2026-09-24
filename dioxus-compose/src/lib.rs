@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod asset;
+pub mod brush;
 pub mod boundary;
 /// Generated JNI shims. Compiled only for Android, where the Host is a cdylib that the
 /// Kotlin Activity loads.
@@ -41,18 +42,19 @@ pub use dioxus_core::{Element, VirtualDom};
 // second dependency, which defeats the promise that one dependency is enough.
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
+pub use brush::{Brush, Stop, brush};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use message::{Message, show_message};
 pub use schema::{
     Alignment, Arrangement, AssetKind, ButtonVariant, Chrome, Color, ColorRole, ColorScheme,
     DesignSystem, EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint,
-    PropertyKind, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
+    MaterialRole, MotionRole, PropertyKind, TileMode, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
     TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
     Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
-    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
+    Dropdown, FileDrop, FileDropTarget, Icon, Image, KeyEvent, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
     ProgressIndicator, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, Separator, Sheet,
     Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
@@ -151,14 +153,15 @@ pub mod prelude {
     pub use crate::{
         Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Checkbox, Color,
         ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
-        DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        DrawList, Dropdown, Element, FileDrop, FileDropTarget, Icon, IconRole, Image, Key, KeyEvent,
+        LaunchBuilder,
         LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
-        Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
+        Brush, MaterialRole, Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
         RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
         Spacer,
         Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
         Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
-        show_message, use_design_system, use_node_size, use_window_size,
+        Stop, TileMode, brush, show_message, use_design_system, use_node_size, use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
@@ -214,6 +217,16 @@ pub mod elements {
             pub const elevation: AttributeDescription = ("elevation", None, false);
             pub const onclickable: AttributeDescription = ("onclickable", None, false);
             pub const observe_size: AttributeDescription = ("observe_size", None, false);
+            // How important this node's changes are. Every widget takes it, because
+            // anything that appears, moves or resizes has changes to run.
+            pub const motion: AttributeDescription = ("motion", None, false);
+            // What this node's surface is made of, where it has one.
+            pub const material: AttributeDescription = ("material", None, false);
+            // Willingness to have files dropped, said by having somewhere to report them.
+            // A node without a handler is never told files are over it, which is what
+            // keeps a screen from lighting up every container it has.
+            pub const onfilesentered: AttributeDescription = ("onfilesentered", None, false);
+            pub const onfilesdropped: AttributeDescription = ("onfilesdropped", None, false);
         };
     }
 
@@ -354,6 +367,7 @@ pub mod elements {
     // are separate attributes because they are separate questions: a count the screen
     // insists on, or a width below which the Renderer drops one.
     element!(lazygrid, "LazyGrid", [item_count, columns, min_column_width]);
+    element!(filedroptarget, "FileDropTarget", [alignment]);
 
     #[doc(hidden)]
     pub mod completions {
@@ -437,6 +451,11 @@ pub mod events {
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
+    // Files over a node, and files let go on it. The first carries nothing: the platforms
+    // disagree about what is knowable before a drop, and a node that only lights up does
+    // not need to know.
+    event!(onfilesentered, ());
+    event!(onfilesdropped, crate::FileDrop);
     // A control reports the value the user landed on, as one f64. A picker reads it as
     // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
     // the wire property with the text field's value change, because both are "this

@@ -26,7 +26,6 @@ import dioxus.compose.design.MessagePlacement
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.composeLetterSpacing
 import dioxus.compose.design.composeLineHeight
-import dioxus.compose.design.family
 import dioxus.compose.design.fontSize
 import androidx.compose.ui.text.TextStyle
 import dioxus.compose.protocol.HostEvent
@@ -166,7 +165,7 @@ internal fun HostMessages(
         ) {
             val base = TextStyle(
                 fontSize = token.fontSize,
-                fontFamily = token.family,
+                fontFamily = theme.family(style.typeRole),
                 lineHeight = token.composeLineHeight,
                 letterSpacing = token.composeLetterSpacing,
             )

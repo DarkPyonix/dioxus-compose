@@ -60,6 +60,27 @@ pub fn asset(kind: AssetKind, bytes: &'static [u8]) -> u32 {
     asset_id
 }
 
+/// Registers bytes this process built rather than bytes it was compiled with.
+///
+/// A gradient is worked out at run time, so there is no `include_bytes!` to point at. The
+/// bytes are handed to the registry to keep for the life of the process, which is what
+/// `'static` means here and what a registration is anyway: an asset has to outlive every
+/// frame that draws it, and nothing ever un-registers by dropping.
+///
+/// The content comparison runs first, so building the same gradient on every render keeps
+/// one copy. Only a brush nobody has registered before is kept.
+pub fn register_owned(kind: AssetKind, bytes: Vec<u8>) -> u32 {
+    if let Some(id) = REGISTERED.with_borrow(|registered| {
+        registered
+            .iter()
+            .find(|(known, _)| *known == bytes.as_slice())
+            .map(|(_, id)| *id)
+    }) {
+        return id;
+    }
+    asset(kind, Box::leak(bytes.into_boxed_slice()))
+}
+
 /// The id these bytes were registered under, by address first and by content after.
 ///
 /// Address first because that is the answer almost every time and it costs a comparison.

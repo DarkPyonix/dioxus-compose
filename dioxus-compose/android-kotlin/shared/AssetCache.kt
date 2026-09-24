@@ -1,7 +1,9 @@
 package dioxus.compose.ui.node
 
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.graphics.Brush as ComposeBrush
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.font.FontFamily
 import dioxus.compose.protocol.AssetKind
 import dioxus.compose.protocol.IconRole
 import java.lang.InterruptedException
@@ -20,6 +22,21 @@ sealed interface Asset {
 
     /** A parsed vector document, drawn at whatever size the modifier chain gives it. */
     class Vector(val document: VectorDocument) : Asset
+
+    /**
+     * A face the application shipped, which a type role can be resolved to.
+     *
+     * The family and not the bytes: reading a font file is done once at registration, and
+     * every piece of text in that role after it is a lookup.
+     */
+    class Font(val family: FontFamily) : Asset
+
+    /**
+     * A gradient or a picture laid out as a fill, ready for anywhere a colour can go.
+     *
+     * Read once at registration. A frame painted with it is a lookup and a draw.
+     */
+    class Brush(val brush: ComposeBrush) : Asset
 
     /**
      * One meaning out of the closed set, with no artwork attached.
@@ -104,6 +121,13 @@ class AssetCache {
         AssetKind.Png, AssetKind.Jpeg -> decodeRasterAsset(bytes)?.let(Asset::Raster)
 
         AssetKind.Svg -> decodeVectorAsset(bytes)?.let(Asset::Vector)
+
+        AssetKind.Font -> decodeFontAsset(bytes)?.let(Asset::Font)
+
+        // An image brush names a picture registered in its own right, so the lookup is
+        // into what this cache is already holding. A brush registered before the picture
+        // it names is unreadable and says so, rather than drawing nothing quietly.
+        AssetKind.Brush -> decodeBrushAsset(bytes, entries::get)?.let(Asset::Brush)
 
         // A vector icon registers a meaning, so its bytes are the role tag and nothing
         // else. There is no artwork on the wire and no icon name to look up at run time.
