@@ -72,6 +72,9 @@ probe="$work/win32-window-layout.c"
     echo '#include <stddef.h>'
     echo '#include <stdint.h>'
     # The declarations themselves, taken from the file under test rather than restated.
+    # The size the text field is declared with comes from the file as well, so the two
+    # cannot be changed apart.
+    grep '^#define DXC_TEXT_BYTES' "$source_file"
     sed -n '/^struct dxc_native_window {/,/^};/p' "$source_file"
     sed -n '/^struct dxc_event {/,/^};/p' "$source_file"
     echo 'int main(void) {'

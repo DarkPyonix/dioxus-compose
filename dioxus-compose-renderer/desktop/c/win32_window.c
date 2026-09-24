@@ -63,7 +63,16 @@ enum {
     DXC_EVENT_SCROLL = 4,
     DXC_EVENT_KEY_DOWN = 5,
     DXC_EVENT_KEY_UP = 6,
+    // Named here so the two desktops agree about what a kind number means. Nothing on
+    // this one sends them yet.
+    DXC_EVENT_TEXT_COMMIT = 7,
+    DXC_EVENT_TEXT_COMPOSE = 8,
 };
+
+// Room for what an input method is composing, which is a syllable or a word and never a
+// document. Declared here as well as on the other desktop because one Kotlin reader reads
+// both, and a test compares the two declarations for exactly that reason.
+#define DXC_TEXT_BYTES 96
 
 struct dxc_event {
     int32_t kind;
@@ -76,6 +85,13 @@ struct dxc_event {
     // that is gets decided on the other side, where the table lives.
     int32_t key_code;
     int32_t code_point;
+    // UTF-8, ending at the first zero. Empty for everything that is not text.
+    //
+    // Nothing fills this yet. Text arrives through an input method, and this window has
+    // no answer for one: on this platform that means IMM32, and the composition messages
+    // are the next thing to write here. Until then a field in this window takes the
+    // characters its keys produce and composes nothing, which is English and no more.
+    char text[DXC_TEXT_BYTES];
 };
 
 // Room for a burst rather than for a session. A queue that fills is a queue nobody is
