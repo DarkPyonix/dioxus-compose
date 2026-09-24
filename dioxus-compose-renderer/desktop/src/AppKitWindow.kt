@@ -339,12 +339,15 @@ private fun drawFrame(
 /**
  * Something recognisably Compose, so that a screenshot answers a question.
  *
+ * Shared with the window Windows opens for itself, which is why it is not private to this
+ * file: what a spike draws is not platform work, and two copies of it would drift.
+ *
  * Text and a shape: text because it is the part that needs a font manager, a shaper and a
  * layout pass, and a shape because a page of text alone would leave it unclear whether
  * anything was drawn or the window simply stayed empty.
  */
 @Composable
-private fun SpikeContent() {
+internal fun SpikeContent() {
     var clicks by remember { mutableStateOf(0) }
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
@@ -393,11 +396,15 @@ private fun SpikeContent() {
 /**
  * Hands one thing the window heard to the scene.
  *
- * The pointer's place is in points from the top left of the content, which is what a
- * scene measures in, so nothing is converted here beyond naming which kind of event it
- * was.
+ * Shared with the Windows path for the same reason the scene's content is. Both platforms
+ * record an event into the same fields, so turning one into something Compose understands
+ * is written once.
+ *
+ * The pointer's place arrives from the top left of the content, in whatever unit that
+ * platform's scene measures in, so nothing is converted here beyond naming which kind of
+ * event it was.
  */
-private fun ComposeScene.receive(event: WindowEvent) {
+internal fun ComposeScene.receive(event: WindowEvent) {
     when (event.kind) {
         // Built from parts rather than from a platform event. The toolkit's own key
         // event is what the supported path converts, and there is none here to convert.
