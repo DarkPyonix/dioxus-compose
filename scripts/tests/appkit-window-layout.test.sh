@@ -28,6 +28,9 @@ trap 'rm -f "$probe" "${probe%.m}"' EXIT
     echo '#include <stdio.h>'
     echo '#include <stddef.h>'
     # The declarations themselves, taken from the file under test rather than restated.
+    # The size the text field is declared with comes from there as well, so the two cannot
+    # be changed apart.
+    grep '^#define DXC_TEXT_BYTES' "$source_file"
     sed -n '/^struct dxc_native_window {/,/^};/p' "$source_file"
     sed -n '/^struct dxc_event {/,/^};/p' "$source_file"
     echo 'int main(void) {'
@@ -38,7 +41,7 @@ trap 'rm -f "$probe" "${probe%.m}"' EXIT
     echo '        offsetof(struct dxc_native_window, queue),'
     echo '        offsetof(struct dxc_native_window, layer),'
     echo '        sizeof(struct dxc_native_window));'
-    echo '    printf("kind %zu\nx %zu\ny %zu\nbuttons %zu\nmodifiers %zu\nkey_code %zu\ncode_point %zu\nevent_size %zu\n",'
+    echo '    printf("kind %zu\nx %zu\ny %zu\nbuttons %zu\nmodifiers %zu\nkey_code %zu\ncode_point %zu\ntext %zu\nevent_size %zu\n",'
     echo '        offsetof(struct dxc_event, kind),'
     echo '        offsetof(struct dxc_event, x),'
     echo '        offsetof(struct dxc_event, y),'
@@ -46,6 +49,7 @@ trap 'rm -f "$probe" "${probe%.m}"' EXIT
     echo '        offsetof(struct dxc_event, modifiers),'
     echo '        offsetof(struct dxc_event, key_code),'
     echo '        offsetof(struct dxc_event, code_point),'
+    echo '        offsetof(struct dxc_event, text),'
     echo '        sizeof(struct dxc_event));'
     echo '    return 0;'
     echo '}'
@@ -85,6 +89,12 @@ check_event_field buttons readInt buttons
 check_event_field modifiers readInt modifiers
 check_event_field key_code readInt keyCode
 check_event_field code_point readInt codePoint
+
+text_offset="$(awk '$1 == "text" { print $2 }' <<< "$layout")"
+if ! grep -q "TEXT_OFFSET = $text_offset" "$kotlin_file"; then
+    echo "fail: C puts the text at $text_offset, which is not where AppKitWindow.kt reads it"
+    red=1
+fi
 
 event_size="$(awk '$1 == "event_size" { print $2 }' <<< "$layout")"
 if ! grep -q "EVENT_STRUCT_BYTES = $event_size" "$kotlin_file"; then

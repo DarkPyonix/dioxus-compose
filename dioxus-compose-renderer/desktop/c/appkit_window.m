@@ -34,7 +34,17 @@ enum {
     DXC_EVENT_SCROLL = 4,
     DXC_EVENT_KEY_DOWN = 5,
     DXC_EVENT_KEY_UP = 6,
+    // Text the input method finished, and text it is still working on. The second is
+    // what typing Korean, Japanese or Chinese is made of: letters stand in the field,
+    // marked, and are replaced as the reader goes rather than piling up.
+    DXC_EVENT_TEXT_COMMIT = 7,
+    DXC_EVENT_TEXT_COMPOSE = 8,
 };
+
+// Room for what an input method is composing, which is a syllable or a word and never a
+// document. Text longer than this arrives as several commits, which reads the same in a
+// field; composition longer than this does not happen.
+#define DXC_TEXT_BYTES 96
 
 struct dxc_event {
     int32_t kind;
@@ -47,6 +57,8 @@ struct dxc_event {
     // that is gets decided on the other side, where the table lives.
     int32_t key_code;
     int32_t code_point;
+    // UTF-8, ending at the first zero. Empty for everything that is not text.
+    char text[DXC_TEXT_BYTES];
 };
 
 // Room for a burst rather than for a session. A queue that fills is a queue nobody is
@@ -88,6 +100,15 @@ int32_t dxc_native_poll_event(struct dxc_event *out) {
     return taken;
 }
 
+// What the input method is currently composing, and nil when nothing is.
+//
+// Kept because the input method asks for it back. Building a syllable out of letters
+// means reading what is already there and replacing it, so a client that answers nothing
+// is a client whose last letter has vanished: the method gives up on combining and
+// commits each letter on its own. That is exactly what this looked like before the
+// answer existed, with every consonant and vowel standing separately.
+static NSString *dxc_marked_text;
+
 /**
  * The view the window is filled with.
  *
@@ -95,7 +116,7 @@ int32_t dxc_native_poll_event(struct dxc_event *out) {
  * and to the one holding focus, and a plain NSView answers none of them; everything here
  * turns one into a record and puts it on the queue above.
  */
-@interface DxcView : NSView
+@interface DxcView : NSView <NSTextInputClient>
 @end
 
 @implementation DxcView
@@ -138,8 +159,113 @@ int32_t dxc_native_poll_event(struct dxc_event *out) {
 - (void)rightMouseDown:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_DOWN event:event]; }
 - (void)rightMouseUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_UP event:event]; }
 - (void)scrollWheel:(NSEvent *)event { [self dxcSend:DXC_EVENT_SCROLL event:event]; }
-- (void)keyDown:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_DOWN event:event]; }
+// Both, and in this order. The key itself is what arrows, Enter and backspace are read
+// as, and `interpretKeyEvents:` is what turns the rest into text: it hands the event to
+// the input context, which answers with `insertText:` for a letter and with
+// `setMarkedText:` while a syllable is still being built. A path that only queued the key
+// would type English and lose every language that composes.
+- (void)keyDown:(NSEvent *)event {
+    [self dxcSend:DXC_EVENT_KEY_DOWN event:event];
+    // Handed to the input context rather than interpreted. Interpreting also turns keys
+    // into editing commands for a text system this window does not have, and the keys
+    // have already gone to the scene, which has its own.
+    [self.inputContext handleEvent:event];
+}
 - (void)keyUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_UP event:event]; }
+
+#pragma mark - NSTextInputClient
+
+// What the input method is building, if anything. Held as a range over the text it gave
+// us rather than over the field's contents, because the field is on the other side of the
+// boundary and answering for it would mean asking across on every keystroke.
+- (BOOL)hasMarkedText { return dxc_marked_text.length > 0; }
+- (NSRange)markedRange {
+    return dxc_marked_text.length > 0 ?
+        NSMakeRange(0, dxc_marked_text.length) : NSMakeRange(NSNotFound, 0);
+}
+// Where the caret is, and "nowhere this client can say" when nothing is being composed.
+//
+// Said as not-found rather than as zero. Zero is a real place, and an input method told
+// the caret is at the start of a document it cannot read decides the client is not one it
+// can compose into: it stops marking and commits every letter on its own, which is what
+// this looked like with a zero here.
+- (NSRange)selectedRange {
+    return dxc_marked_text.length > 0 ?
+        NSMakeRange(dxc_marked_text.length, 0) : NSMakeRange(NSNotFound, 0);
+}
+- (NSArray<NSAttributedStringKey> *)validAttributesForMarkedText { return @[]; }
+
+- (void)dxcSendText:(int32_t)kind string:(NSString *)text {
+    struct dxc_event record;
+    memset(&record, 0, sizeof record);
+    record.kind = kind;
+    const char *utf8 = text.UTF8String;
+    if (utf8 != NULL) {
+        strncpy(record.text, utf8, DXC_TEXT_BYTES - 1);
+    }
+    dxc_push_event(record);
+}
+
+- (void)insertText:(id)string replacementRange:(NSRange)replacementRange {
+    NSString *text = [string isKindOfClass:NSAttributedString.class] ?
+        ((NSAttributedString *)string).string : (NSString *)string;
+    dxc_marked_text = nil;
+    [self dxcSendText:DXC_EVENT_TEXT_COMMIT string:text];
+}
+
+- (void)setMarkedText:(id)string
+        selectedRange:(NSRange)selectedRange
+     replacementRange:(NSRange)replacementRange {
+    NSString *text = [string isKindOfClass:NSAttributedString.class] ?
+        ((NSAttributedString *)string).string : (NSString *)string;
+    dxc_marked_text = text.length > 0 ? text : nil;
+    [self dxcSendText:DXC_EVENT_TEXT_COMPOSE string:text];
+}
+
+// The reader backed out of what was being composed. An empty composition ends it without
+// putting anything in the field.
+- (void)unmarkText {
+    dxc_marked_text = nil;
+    [self dxcSendText:DXC_EVENT_TEXT_COMPOSE string:@""];
+}
+
+// What is being composed, when asked for it back.
+//
+// Only the marked text. The field's own contents are on the other side of the boundary
+// and answering for them would mean asking across on every keystroke, which is the cost
+// the whole arrangement is avoiding. An input method that wants more than it is composing
+// is asking about text it did not write.
+- (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)range
+                                                actualRange:(NSRangePointer)actualRange {
+    if (dxc_marked_text == nil) {
+        return nil;
+    }
+    NSRange available = NSMakeRange(0, dxc_marked_text.length);
+    NSRange wanted = NSIntersectionRange(range, available);
+    if (wanted.length == 0) {
+        return nil;
+    }
+    if (actualRange != NULL) {
+        *actualRange = wanted;
+    }
+    return [[NSAttributedString alloc] initWithString:[dxc_marked_text substringWithRange:wanted]];
+}
+
+- (NSUInteger)characterIndexForPoint:(NSPoint)point { return NSNotFound; }
+
+// Where the candidate list is put. The caret's own place is on the other side of the
+// boundary; until it is asked for, the top left of the view keeps the list on screen and
+// near enough to read, which is better than the bottom of the display.
+- (NSRect)firstRectForCharacterRange:(NSRange)range actualRange:(NSRangePointer)actualRange {
+    NSRect local = NSMakeRect(0, 0, 1, 20);
+    NSRect windowRect = [self convertRect:local toView:nil];
+    return [self.window convertRectToScreen:windowRect];
+}
+
+// Keys that mean an action rather than a letter. They were queued as keys already and the
+// field reads them there, so nothing more is done with them here. Answering at all is
+// what stops AppKit from sounding the alert for every arrow key.
+- (void)doCommandBySelector:(SEL)selector { }
 
 // Without a tracking area the view hears a moving pointer only while a button is held,
 // and hover is half of what a desktop control does.

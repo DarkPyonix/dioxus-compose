@@ -148,6 +148,8 @@ data class WindowEvent(
     val modifiers: Int,
     val keyCode: Int,
     val codePoint: Int,
+    /** What an input method produced, and empty for everything that is not text. */
+    val text: String,
 ) {
 
     companion object {
@@ -157,6 +159,8 @@ data class WindowEvent(
         const val SCROLL = 4
         const val KEY_DOWN = 5
         const val KEY_UP = 6
+        const val TEXT_COMMIT = 7
+        const val TEXT_COMPOSE = 8
     }
 }
 
@@ -170,7 +174,18 @@ data class WindowEvent(
 fun drainWindowEvents(): List<WindowEvent> {
     val record = StackValue.get<Pointer>(EVENT_STRUCT_BYTES)
     val events = ArrayList<WindowEvent>()
+    // Everything about the record is read here. A word value may not leave the method it
+    // was made in, so the text is copied out byte by byte rather than by handing the
+    // pointer to something that knows how to read a string.
+    val bytes = ByteArray(TEXT_BYTES)
     while (pollEvent(record) != 0) {
+        var length = 0
+        while (length < TEXT_BYTES) {
+            val byte = record.readByte(TEXT_OFFSET + length)
+            if (byte == ZERO) break
+            bytes[length] = byte
+            length++
+        }
         events.add(
             WindowEvent(
                 kind = record.readInt(0),
@@ -180,13 +195,17 @@ fun drainWindowEvents(): List<WindowEvent> {
                 modifiers = record.readInt(16),
                 keyCode = record.readInt(20),
                 codePoint = record.readInt(24),
+                text = if (length == 0) "" else String(bytes, 0, length, Charsets.UTF_8),
             ),
         )
     }
     return events
 }
 
-private const val EVENT_STRUCT_BYTES = 28
+private const val ZERO: Byte = 0
+private const val TEXT_OFFSET = 28
+private const val TEXT_BYTES = 96
+private const val EVENT_STRUCT_BYTES = 124
 
 /**
  * Opens a window, or null where this machine has no Metal device.
@@ -253,15 +272,26 @@ internal fun runAppKitSpike() {
         // A plain loop rather than a clock. Pacing is the frame clock's work and comes
         // later; what this has to show is that what the window hears reaches the scene
         // and changes what the next frame draws.
+        var painted = false
         repeat(SPIKE_FRAMES) { frame ->
+            var heard = false
             for (event in drainWindowEvents()) {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
                 }
                 scene.receive(event)
                 textInput.receive(event)
+                heard = true
             }
-            drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)
+            // Only when there is something to draw. Every frame reaches the window by
+            // asking the main thread for a drawable and waiting for it, and the main
+            // thread is where AppKit answers everything else: sixty of those a second
+            // left the input method unable to reach this process at all, which showed up
+            // as every letter being committed on its own instead of composing.
+            if (!painted || heard || scene.hasInvalidations()) {
+                drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS, size)
+                painted = true
+            }
             Thread.sleep(FRAME_MILLIS)
         }
     } finally {
@@ -276,17 +306,13 @@ private fun drawFrame(
     context: org.jetbrains.skia.DirectContext,
     scene: ComposeScene,
     nanos: Long,
+    size: androidx.compose.ui.unit.IntSize,
 ) {
     val texture = window.beginFrame()
     // Zero means the system had no drawable to give, which happens when frames are made
     // faster than the screen takes them. The answer is to skip one.
     if (texture == 0L) return
-    val measured = window.measure()
-    val target = org.jetbrains.skia.BackendRenderTarget.makeMetal(
-        measured.width,
-        measured.height,
-        texture,
-    )
+    val target = org.jetbrains.skia.BackendRenderTarget.makeMetal(size.width, size.height, texture)
     val surface = org.jetbrains.skia.Surface.makeFromBackendRenderTarget(
         context,
         target,
@@ -458,25 +484,23 @@ private const val MODIFIER_OPTION = 1 shl 19
 private const val MODIFIER_COMMAND = 1 shl 20
 
 /**
- * Puts what was typed into the field that asked to be typed into.
+ * Puts what the input method produced into the field that asked to be typed into.
  *
  * Text does not arrive in Compose through key events. A focused field opens a session and
- * waits to be handed text, and a key press that produced a character is handed over here.
- * A key that produced none is a key the field reads as a key: an arrow, a backspace, an
- * Enter, all of which reached it already.
+ * waits to be handed text, and what hands it over is the input method: `insertText` for a
+ * letter that is finished and `setMarkedText` while a syllable is still being built.
+ *
+ * The keys themselves went to the scene already and are read there as keys: arrows, Enter
+ * and backspace. Nothing is committed from a key's character, because a key that types
+ * one has already produced it through the path above and doing both would type it twice.
  */
 private fun NativeTextInput.receive(event: WindowEvent) {
-    if (event.kind != WindowEvent.KEY_DOWN) return
     if (!isActive) return
-    // Control characters are not text. Backspace, tab, escape and the rest arrive as key
-    // events and are handled as keys; committing them as characters would type a
-    // rubbed-out square into the field.
-    if (event.codePoint < FIRST_PRINTABLE || event.codePoint == DELETE) return
-    commit(String(Character.toChars(event.codePoint)))
+    when (event.kind) {
+        WindowEvent.TEXT_COMMIT -> commit(event.text)
+        WindowEvent.TEXT_COMPOSE -> compose(event.text)
+    }
 }
-
-private const val FIRST_PRINTABLE = 0x20
-private const val DELETE = 0x7F
 
 private const val SPIKE_FRAMES = 1_200
 private const val FRAME_MILLIS = 16L
