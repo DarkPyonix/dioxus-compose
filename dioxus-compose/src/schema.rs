@@ -67,8 +67,8 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged;",
@@ -292,6 +292,14 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     // A temporary surface that slides in from an edge of the screen. Which edge is the
     // Renderer's decision, for the same reason the navigation presentation is.
     Sheet = 32,
+    // The screen's frame. The application fills slots and the Renderer decides what each
+    // one becomes on this platform and at this width, which is the same decision
+    // `Navigation` already makes for itself, widened to the whole frame.
+    Scaffold = 33,
+    // One filled slot. A wrapper rather than a property on the slot's own root, because
+    // an application may put any tree in a slot and the Renderer has to know which slot
+    // it is looking at without reading into it.
+    ScaffoldSlot = 34,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -568,6 +576,20 @@ define_wire_enum!(COLOR_SCHEME_SCHEMA, ColorScheme {
     FollowSystem = 3,
 });
 
+/// Which part of the screen's frame a `Scaffold` slot fills.
+///
+/// What each one becomes is the Renderer's: a top bar may be the window's caption, an
+/// ordinary bar under the system title bar, or a large title that shrinks as the page
+/// scrolls; a bottom bar may be a bar, a rail or a permanent drawer; a floating action
+/// may float, sit in the toolbar, or fold into a menu. The application says which slot
+/// it filled and nothing about the answer.
+define_wire_enum!(SLOT_ROLE_SCHEMA, SlotRole {
+    TopBar = 1,
+    BottomBar = 2,
+    FloatingAction = 3,
+    Content = 4,
+});
+
 /// Every role enum codegen mirrors, in wire order. Appending is the only allowed edit.
 pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
@@ -629,6 +651,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
         name: "Chrome",
         variants: CHROME_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "SlotRole",
+        variants: SLOT_ROLE_SCHEMA,
     },
 ];
 
@@ -1133,6 +1159,8 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     // The meaning of the icon a destination carries, as an `IconRole` tag. Tag 0 is "not
     // sent", so a destination without an icon is label only.
     Icon = 60,
+    // Which slot of a Scaffold this subtree fills.
+    Slot = 61,
 });
 
 #[derive(Clone, Debug, PartialEq)]

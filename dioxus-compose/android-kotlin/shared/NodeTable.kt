@@ -494,6 +494,10 @@ class NodeTable {
                 PropertyKind.Icon ->
                     widget == WidgetKind.NavigationItem || widget == WidgetKind.Button
 
+                // Which part of a screen's frame a subtree fills. Only the wrapper a
+                // Scaffold puts around a slot carries it.
+                PropertyKind.Slot -> widget == WidgetKind.ScaffoldSlot
+
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.
                 PropertyKind.Progress -> widget == WidgetKind.LinearProgressIndicator

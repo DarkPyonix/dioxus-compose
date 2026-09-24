@@ -6,9 +6,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Progress }
 
 enum class Key { Enter }
 
@@ -43,6 +43,8 @@ enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, 
 enum class MessageDuration { Short, Long }
 
 enum class Chrome { Modern, System }
+
+enum class SlotRole { TopBar, BottomBar, FloatingAction, Content }
 
 enum class LoopMode(val wire: Byte) {
     /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
@@ -307,7 +309,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 1493067490765879670L
+    const val SCHEMA_HASH: Long = 1198943268178959523L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -678,6 +680,8 @@ object Protocol {
         30 -> WidgetKind.Navigation
         31 -> WidgetKind.NavigationItem
         32 -> WidgetKind.Sheet
+        33 -> WidgetKind.Scaffold
+        34 -> WidgetKind.ScaffoldSlot
         100 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -723,6 +727,7 @@ object Protocol {
         52 -> PropertyKind.Min
         53 -> PropertyKind.Max
         60 -> PropertyKind.Icon
+        61 -> PropertyKind.Slot
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -898,6 +903,14 @@ object Protocol {
         1 -> Chrome.Modern
         2 -> Chrome.System
         else -> throw ProtocolException("unknown Chrome tag $tag", offset)
+    }
+
+    private fun slotRole(tag: Int, offset: Int): SlotRole = when (tag) {
+        1 -> SlotRole.TopBar
+        2 -> SlotRole.BottomBar
+        3 -> SlotRole.FloatingAction
+        4 -> SlotRole.Content
+        else -> throw ProtocolException("unknown SlotRole tag $tag", offset)
     }
 
     private fun paint(bits: Long, offset: Int): Paint {
