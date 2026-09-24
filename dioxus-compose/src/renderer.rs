@@ -62,7 +62,7 @@ struct StackNode {
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 11;
+const MODIFIER_SLOTS: usize = 12;
 
 /// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
 /// takes no slot in the Compose tree.
@@ -111,6 +111,8 @@ pub struct ComposeRenderer {
     /// owner it would clear the modifier its partner had just written, which is how a
     /// rounded container came out square.
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
+    /// Which application token each observed node was given, for reading a report back.
+    size_tokens: HashMap<u32, u32>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
 }
@@ -122,6 +124,11 @@ impl Default for ComposeRenderer {
 }
 
 impl ComposeRenderer {
+    /// The application's name for an observed node, if that node is observed.
+    pub(crate) fn size_token(&self, node_id: u32) -> Option<u32> {
+        self.size_tokens.get(&node_id).copied()
+    }
+
     pub fn new() -> Self {
         Self {
             encoder: BatchEncoder::with_capacity(16 * 1024, 4 * 1024, 256),
@@ -136,6 +143,9 @@ impl ComposeRenderer {
             design_props: HashMap::with_capacity(64),
             pending_borders: HashMap::with_capacity(16),
             modifier_slots: HashMap::with_capacity(64),
+            // Empty until a screen asks, which is the point: a tree that observes nothing
+            // allocates nothing here.
+            size_tokens: HashMap::new(),
             stack: Vec::with_capacity(64),
             error: None,
         }
@@ -275,6 +285,7 @@ impl ComposeRenderer {
         const ELEVATION: u16 = 8;
         const CLICKABLE: u16 = 9;
         const PADDING: u16 = 10;
+        const OBSERVE_SIZE: u16 = 11;
 
         let float = |value: &AttributeValue| match value {
             AttributeValue::Float(number) => Some(*number as f32),
@@ -299,6 +310,7 @@ impl ComposeRenderer {
             "elevation" => Some(ELEVATION),
             "onclickable" => Some(CLICKABLE),
             "padding" | "padding_role" => Some(PADDING),
+            "observe_size" => Some(OBSERVE_SIZE),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -325,6 +337,14 @@ impl ComposeRenderer {
             .or_insert([""; MODIFIER_SLOTS])[slot as usize] = name;
 
         match name {
+            // The token is the application's name for this node, and it stays here: what
+            // the Renderer reports back is its own node id, so the pairing has to be
+            // remembered at the moment the two are both in hand.
+            "observe_size" => {
+                let token = u32::try_from(integer(value)?).ok()?;
+                self.size_tokens.insert(node_id, token);
+                Some(Some((slot, Modifier::ObserveSize { token })))
+            }
             "fill_max_width" | "fill_max_height" => {
                 let AttributeValue::Bool(enabled) = value else {
                     return Some(None);

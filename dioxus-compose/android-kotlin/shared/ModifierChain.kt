@@ -11,6 +11,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.composed
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import dioxus.compose.protocol.WindowSizeClass
+import dioxus.compose.runtime.windowSizeClassOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.RectangleShape
@@ -60,6 +66,11 @@ internal fun List<ProtocolModifier>.toComposeModifier(
                 chain.border(value.width.dp, theme.color(value.paint), shape)
             is ProtocolModifier.Elevation ->
                 theme.rules.elevation(chain, value.value.dp, shape, theme)
+
+            // Only a node that asked is measured. Nothing is attached to a node without
+            // this modifier, so a tree that observes nothing is laid out exactly as it
+            // was before any of this existed.
+            is ProtocolModifier.ObserveSize -> chain.reportSizeTo(nodeId, dispatcher)
 
             // Weight is parent data: it is applied by the Column or Row that owns this node,
             // not here. See `weightOf` and `Children` in RenderNode.kt.
@@ -115,3 +126,36 @@ private fun Modifier.hostClickable(
         }
     }
 }
+
+/**
+ * Reports this node's width when the class it falls in changes.
+ *
+ * The same event the window's own size travels on, with this node's id instead of zero:
+ * a node being narrow or wide means what it means for a window, and a second way of
+ * saying it would be a second thing to keep in step.
+ *
+ * The class is remembered per node rather than the size, so a drag that widens a panel
+ * without crossing a boundary reports nothing at all.
+ */
+private fun Modifier.reportSizeTo(nodeId: Int, dispatcher: EventDispatcher): Modifier =
+    composed {
+        val density = LocalDensity.current
+        val reported = remember(nodeId) { arrayOfNulls<WindowSizeClass>(1) }
+        onSizeChanged { size ->
+            val widthDp = with(density) { size.width.toDp().value }
+            val heightDp = with(density) { size.height.toDp().value }
+            val sizeClass = windowSizeClassOf(widthDp)
+            if (reported[0] != sizeClass) {
+                reported[0] = sizeClass
+                dispatcher.dispatch(
+                    HostEvent.WindowSizeChanged(
+                        nodeId = nodeId,
+                        handlerId = 0,
+                        widthDp = widthDp,
+                        heightDp = heightDp,
+                        sizeClass = sizeClass,
+                    ),
+                )
+            }
+        }
+    }

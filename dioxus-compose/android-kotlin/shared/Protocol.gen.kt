@@ -236,6 +236,7 @@ sealed interface Modifier {
     data class ShapeRole(val role: dioxus.compose.protocol.ShapeRole) : Modifier
     data class Border(val width: kotlin.Float, val paint: Paint) : Modifier
     data class Elevation(val value: kotlin.Float) : Modifier
+    data class ObserveSize(val token: Int) : Modifier
 }
 
 sealed interface Mutation {
@@ -310,7 +311,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -7949120909607226195L
+    const val SCHEMA_HASH: Long = -7524106320107483966L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -956,6 +957,7 @@ object Protocol {
         13 -> Modifier.ShapeRole(shapeRole(first.toInt(), offset))
         14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
         15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
+        16 -> Modifier.ObserveSize(first.toInt())
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 

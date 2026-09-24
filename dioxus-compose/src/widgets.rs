@@ -100,6 +100,10 @@ fn dp(value: Option<f32>) -> f64 {
 
 #[component]
 pub fn Column(
+    /// Asks the Renderer to report this node's measured size, under the name a
+    /// screen gave it with `use_node_size`. Nothing is measured without it.
+    #[props(default)]
+    observe_size: Option<i64>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -121,6 +125,7 @@ pub fn Column(
 ) -> Element {
     rsx! {
         column {
+            observe_size,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -145,6 +150,10 @@ pub fn Column(
 
 #[component]
 pub fn Row(
+    /// Asks the Renderer to report this node's measured size, under the name a
+    /// screen gave it with `use_node_size`. Nothing is measured without it.
+    #[props(default)]
+    observe_size: Option<i64>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -166,6 +175,7 @@ pub fn Row(
 ) -> Element {
     rsx! {
         row {
+            observe_size,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -190,6 +200,10 @@ pub fn Row(
 
 #[component]
 pub fn ComposeBox(
+    /// Asks the Renderer to report this node's measured size, under the name a
+    /// screen gave it with `use_node_size`. Nothing is measured without it.
+    #[props(default)]
+    observe_size: Option<i64>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -208,6 +222,7 @@ pub fn ComposeBox(
 ) -> Element {
     rsx! {
         composebox {
+            observe_size,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -579,6 +594,10 @@ pub fn LazyColumn(
 /// own. `Modifier::Elevation` overrides the resting height when the Host has a reason to.
 #[component]
 pub fn Card(
+    /// Asks the Renderer to report this node's measured size, under the name a
+    /// screen gave it with `use_node_size`. Nothing is measured without it.
+    #[props(default)]
+    observe_size: Option<i64>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -596,6 +615,7 @@ pub fn Card(
 ) -> Element {
     rsx! {
         card {
+            observe_size,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -618,6 +638,10 @@ pub fn Card(
 /// would be wrong and only the surface is wanted.
 #[component]
 pub fn Surface(
+    /// Asks the Renderer to report this node's measured size, under the name a
+    /// screen gave it with `use_node_size`. Nothing is measured without it.
+    #[props(default)]
+    observe_size: Option<i64>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -635,6 +659,7 @@ pub fn Surface(
 ) -> Element {
     rsx! {
         surface {
+            observe_size,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),

@@ -71,7 +71,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot;",
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot;",
-    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation;",
+    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved;",
     "windowsizeclasses=Compact,Medium,Expanded;",
@@ -883,9 +883,22 @@ pub enum Modifier {
     /// One dp value. How the shadow is drawn is the design system's rule: tonal lift plus a
     /// shadow, a wide soft shadow, or layered shadow plus a hairline stroke.
     Elevation(f32),
+    /// Asks the Renderer to report this node's measured size, the way it reports the
+    /// window's.
+    ///
+    /// The token is the application's own name for the node. A node id belongs to the
+    /// Renderer and is never something the Host chose, so a screen that wants to know how
+    /// wide one of its own containers ended up needs a name it gave itself. The Renderer
+    /// does not read it.
+    ObserveSize { token: u32 },
 }
 
 const NO_FIELDS: &[FieldSchema] = &[];
+const TOKEN_U32_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "token",
+    ty: FieldType::U32,
+    slot: FieldSlot::FirstLow,
+}];
 const VALUE_FLOAT_FIELD: &[FieldSchema] = &[FieldSchema {
     name: "value",
     ty: FieldType::Float,
@@ -1060,6 +1073,11 @@ pub const MODIFIER_SCHEMA: &[VariantSchema] = &[
         name: "Elevation",
         tag: 15,
         fields: VALUE_FLOAT_FIELD,
+    },
+    VariantSchema {
+        name: "ObserveSize",
+        tag: 16,
+        fields: TOKEN_U32_FIELD,
     },
 ];
 

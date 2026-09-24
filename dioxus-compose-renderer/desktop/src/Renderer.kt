@@ -60,6 +60,8 @@ internal fun runRenderer(
     // decorated is settled when it is created. `dioxus_compose_host_init` answers with
     // that batch, so asking early costs nothing and needs no argument on any boundary
     // function.
+    // Before the first frame, because every piece of text drawn after this reads it.
+    dioxus.compose.design.installPlatformUiFamily()
     val host = DioxusHost(connection())
     // Started on the thread the window will be driven from, which is not the thread this
     // function was called on.
