@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,10 +28,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerButtons
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
@@ -320,6 +325,20 @@ private fun SpikeContent() {
                 "composed, painted by Skia, shown by AppKit",
                 style = TextStyle(color = Color(0xFF9CCC9C), fontSize = 14.sp),
             )
+            // A field, because typing is what the next step has to carry and this is
+            // where it will first show. It holds its own text, the way every field in
+            // this renderer does.
+            var typed by remember { mutableStateOf("") }
+            BasicTextField(
+                value = typed,
+                onValueChange = { typed = it },
+                modifier = Modifier
+                    .padding(top = 16.dp)
+                    .size(220.dp, 32.dp)
+                    .background(Color(0xFF1E4620)),
+                textStyle = TextStyle(color = Color.White, fontSize = 16.sp),
+                cursorBrush = SolidColor(Color.White),
+            )
             Box(
                 Modifier
                     .padding(top = 24.dp)
@@ -350,6 +369,24 @@ private fun SpikeContent() {
  */
 private fun ComposeScene.receive(event: WindowEvent) {
     when (event.kind) {
+        // Built from parts rather than from a platform event. The toolkit's own key
+        // event is what the supported path converts, and there is none here to convert.
+        WindowEvent.KEY_DOWN, WindowEvent.KEY_UP -> sendKeyEvent(
+            KeyEvent(
+                key = composeKey(event.keyCode),
+                type = if (event.kind == WindowEvent.KEY_DOWN) {
+                    KeyEventType.KeyDown
+                } else {
+                    KeyEventType.KeyUp
+                },
+                codePoint = event.codePoint,
+                isAltPressed = event.modifiers and MODIFIER_OPTION != 0,
+                isCtrlPressed = event.modifiers and MODIFIER_CONTROL != 0,
+                isMetaPressed = event.modifiers and MODIFIER_COMMAND != 0,
+                isShiftPressed = event.modifiers and MODIFIER_SHIFT != 0,
+            ),
+        )
+
         WindowEvent.POINTER_MOVE -> sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(event.x, event.y),
@@ -379,6 +416,42 @@ private fun ComposeScene.receive(event: WindowEvent) {
         )
     }
 }
+
+/**
+ * The Compose key a platform key number means.
+ *
+ * A table because the two numberings have nothing to do with each other: the platform
+ * numbers keys by where they sit on the board, and Compose names them by what they are.
+ * Only the keys that have a meaning of their own are here. A key that types a character
+ * carries that character in the event beside it, and a screen reading text wants the
+ * character rather than the position.
+ *
+ * Unknown is a real answer. A key nobody mapped still reaches the scene with its
+ * character, so typing works before every key in the world has a line here.
+ */
+private fun composeKey(platformKey: Int): Key = when (platformKey) {
+    0x24 -> Key.Enter
+    0x30 -> Key.Tab
+    0x31 -> Key.Spacebar
+    0x33 -> Key.Backspace
+    0x35 -> Key.Escape
+    0x75 -> Key.Delete
+    0x7B -> Key.DirectionLeft
+    0x7C -> Key.DirectionRight
+    0x7D -> Key.DirectionDown
+    0x7E -> Key.DirectionUp
+    0x73 -> Key.MoveHome
+    0x77 -> Key.MoveEnd
+    0x74 -> Key.PageUp
+    0x79 -> Key.PageDown
+    else -> Key.Unknown
+}
+
+// From NSEvent.h. The bits a modifier flag word carries.
+private const val MODIFIER_SHIFT = 1 shl 17
+private const val MODIFIER_CONTROL = 1 shl 18
+private const val MODIFIER_OPTION = 1 shl 19
+private const val MODIFIER_COMMAND = 1 shl 20
 
 private const val SPIKE_FRAMES = 1_200
 private const val FRAME_MILLIS = 16L
