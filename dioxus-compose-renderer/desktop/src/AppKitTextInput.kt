@@ -102,10 +102,12 @@ class NativeTextInput {
 class NativePlatformContext(
     private val size: () -> IntSize,
     private val textInput: NativeTextInput,
+    private val semantics: PlatformContext.SemanticsOwnerListener,
 ) : PlatformContext {
 
     override val windowInfo: WindowInfo = NativeWindowInfo(size)
     override val inputModeManager: InputModeManager = NativeInputModeManager()
+    override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener = semantics
 
     override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing =
         textInput.run(request)

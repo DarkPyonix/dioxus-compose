@@ -61,6 +61,65 @@ struct dxc_event {
     char text[DXC_TEXT_BYTES];
 };
 
+/**
+ * Runs a block on the main thread and waits for it.
+ *
+ * AppKit answers on one thread and the renderer runs on another, which is the arrangement
+ * the shell already sets up: the main thread is in `[NSApp run]` and serves its queue.
+ * Straight through when already there, because dispatching to the queue you are on and
+ * then waiting for it is a deadlock.
+ */
+static void dxc_on_main(void (^work)(void)) {
+    if ([NSThread isMainThread]) {
+        work();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), work);
+    }
+}
+
+// What the window would tell a reader who cannot see it.
+//
+// A snapshot rather than a question. Accessibility is asked for on the thread AppKit
+// answers on, at moments nobody chose, and the tree it describes lives where the scene
+// does: answering by asking across would block whichever thread asked, and one of them is
+// the thread the frame is drawn from. The scene pushes what it has whenever it changes,
+// and this answers from that.
+struct dxc_element {
+    int32_t role;
+    // In points from the top left of the view, which is what the scene measures in.
+    float x;
+    float y;
+    float width;
+    float height;
+    char label[DXC_TEXT_BYTES];
+};
+
+// Rebuilt whenever the scene pushes, which is rarely: a tree changes when the screen
+// does, not when a frame is drawn.
+static NSArray<NSAccessibilityElement *> *dxc_accessibility_children;
+
+// The roles a scene can describe, as numbers, because a name would be a string crossing
+// for every element on every push. Which AppKit role each one is is decided here.
+enum {
+    DXC_ROLE_GROUP = 0,
+    DXC_ROLE_BUTTON = 1,
+    DXC_ROLE_TEXT = 2,
+    DXC_ROLE_FIELD = 3,
+    DXC_ROLE_CHECKBOX = 4,
+    DXC_ROLE_IMAGE = 5,
+};
+
+static NSAccessibilityRole dxc_appkit_role(int32_t role) {
+    switch (role) {
+        case DXC_ROLE_BUTTON: return NSAccessibilityButtonRole;
+        case DXC_ROLE_TEXT: return NSAccessibilityStaticTextRole;
+        case DXC_ROLE_FIELD: return NSAccessibilityTextFieldRole;
+        case DXC_ROLE_CHECKBOX: return NSAccessibilityCheckBoxRole;
+        case DXC_ROLE_IMAGE: return NSAccessibilityImageRole;
+        default: return NSAccessibilityGroupRole;
+    }
+}
+
 // Room for a burst rather than for a session. A queue that fills is a queue nobody is
 // draining, and holding a thousand stale mouse moves helps no one.
 #define DXC_EVENT_CAPACITY 256
@@ -84,6 +143,38 @@ static void dxc_push_event(struct dxc_event event) {
         dxc_event_head = (dxc_event_head + 1) % DXC_EVENT_CAPACITY;
     }
     pthread_mutex_unlock(&dxc_event_lock);
+}
+
+/**
+ * Replaces what the window tells a reader who cannot see it.
+ *
+ * Called from the thread the scene lives on, and the elements it builds are read from the
+ * thread AppKit asks on, so the array is swapped whole: a reader either sees the tree
+ * before this call or the one after it, never half of each.
+ */
+void dxc_native_set_accessibility(const struct dxc_element *elements, int32_t count, void *view_pointer) {
+    NSMutableArray<NSAccessibilityElement *> *built = [NSMutableArray arrayWithCapacity:count];
+    for (int32_t index = 0; index < count; index++) {
+        const struct dxc_element *element = &elements[index];
+        NSString *label = [NSString stringWithUTF8String:element->label];
+        NSAccessibilityElement *made = [NSAccessibilityElement
+            accessibilityElementWithRole:dxc_appkit_role(element->role)
+                                   frame:NSZeroRect
+                                   label:label != nil ? label : @""
+                                  parent:nil];
+        // The frame is in screen coordinates, which is what a reader's pointer is in, and
+        // the scene measures from the top left of the view. Converted on the main thread
+        // because that is where the window's own geometry may be asked for.
+        dxc_on_main(^{
+            NSView *view = (__bridge NSView *)view_pointer;
+            NSRect local = NSMakeRect(element->x, element->y, element->width, element->height);
+            NSRect inWindow = [view convertRect:local toView:nil];
+            [made setAccessibilityFrame:[view.window convertRectToScreen:inWindow]];
+            [made setAccessibilityParent:view];
+        });
+        [built addObject:made];
+    }
+    dxc_accessibility_children = built;
 }
 
 /** Takes the oldest event, or answers zero when there is none. */
@@ -172,6 +263,18 @@ static NSString *dxc_marked_text;
     [self.inputContext handleEvent:event];
 }
 - (void)keyUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_UP event:event]; }
+
+#pragma mark - NSAccessibility
+
+// The window's contents, as elements rather than as pixels.
+//
+// A reader who cannot see the window gets this and nothing else, so an empty answer is a
+// window that appears to contain nothing at all. What is in it is whatever the scene last
+// pushed.
+- (NSArray *)accessibilityChildren { return dxc_accessibility_children ?: @[]; }
+- (NSArray *)accessibilityChildrenInNavigationOrder { return self.accessibilityChildren; }
+- (NSAccessibilityRole)accessibilityRole { return NSAccessibilityGroupRole; }
+- (BOOL)isAccessibilityElement { return YES; }
 
 #pragma mark - NSTextInputClient
 
@@ -291,22 +394,6 @@ struct dxc_native_window {
     void *queue;
     void *layer;
 };
-
-/**
- * Runs a block on the main thread and waits for it.
- *
- * AppKit answers on one thread and the renderer runs on another, which is the arrangement
- * the shell already sets up: the main thread is in `[NSApp run]` and serves its queue.
- * Straight through when already there, because dispatching to the queue you are on and
- * then waiting for it is a deadlock.
- */
-static void dxc_on_main(void (^work)(void)) {
-    if ([NSThread isMainThread]) {
-        work();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), work);
-    }
-}
 
 /**
  * Opens a window with a Metal layer filling it.

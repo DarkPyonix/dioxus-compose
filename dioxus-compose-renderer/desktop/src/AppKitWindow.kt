@@ -85,6 +85,9 @@ private external fun endFrame(queue: Pointer?)
 @CFunction("dxc_native_poll_event")
 private external fun pollEvent(out: Pointer?): Int
 
+@CFunction("dxc_native_set_accessibility")
+private external fun setAccessibility(elements: Pointer?, count: Int, view: Pointer?)
+
 /**
  * The four pointers a window is, once AppKit has made one.
  *
@@ -202,6 +205,44 @@ fun drainWindowEvents(): List<WindowEvent> {
     return events
 }
 
+/**
+ * Hands the platform what the window would tell a reader who cannot see it.
+ *
+ * Written into stack storage and copied on the other side. The elements are few, they
+ * change when the screen changes rather than when a frame is drawn, and the alternative
+ * is the platform asking across threads at a moment nobody chose.
+ */
+fun NativeWindow.describeTo(elements: List<AccessibleElement>) {
+    val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements
+    val records = StackValue.get<Pointer>(MAX_ELEMENTS * ELEMENT_BYTES)
+    for ((index, element) in capped.withIndex()) {
+        val at = index * ELEMENT_BYTES
+        records.writeInt(at, element.role)
+        records.writeFloat(at + 4, element.x)
+        records.writeFloat(at + 8, element.y)
+        records.writeFloat(at + 12, element.width)
+        records.writeFloat(at + 16, element.height)
+        val bytes = element.label.toByteArray(Charsets.UTF_8)
+        var length = 0
+        while (length < bytes.size && length < TEXT_BYTES - 1) {
+            records.writeByte(at + ELEMENT_LABEL_OFFSET + length, bytes[length])
+            length++
+        }
+        records.writeByte(at + ELEMENT_LABEL_OFFSET + length, ZERO)
+    }
+    setAccessibility(records, capped.size, WordFactory.pointer(view))
+}
+
+/**
+ * How many things a screen may say it has.
+ *
+ * Enough for a screen and not for a document. A list of ten thousand rows is windowed
+ * before it reaches the scene, so what is here is what is on screen.
+ */
+private const val MAX_ELEMENTS = 256
+private const val ELEMENT_LABEL_OFFSET = 20
+private const val ELEMENT_BYTES = 116
+
 private const val ZERO: Byte = 0
 private const val TEXT_OFFSET = 28
 private const val TEXT_BYTES = 96
@@ -261,10 +302,16 @@ internal fun runAppKitSpike() {
     val report = System.getenv("DXC_REPORT_INPUT") != null
     val size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
     val textInput = NativeTextInput()
+    val semantics = NativeSemantics { elements ->
+        if (report) {
+            System.err.println("dioxus-compose: the window has ${elements.size} things to say")
+        }
+        window.describeTo(elements)
+    }
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
         size = size,
-        platformContext = NativePlatformContext({ size }, textInput),
+        platformContext = NativePlatformContext({ size }, textInput, semantics),
     )
     scene.setContent { SpikeContent() }
 
