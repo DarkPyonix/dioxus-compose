@@ -144,6 +144,7 @@ class NodeTable {
         messages.clear()
         theme = null
         window = null
+        materials = 0
         revision = 0
     }
 
@@ -228,8 +229,29 @@ class NodeTable {
         while (node.modifiers.size <= mutation.index) {
             node.modifiers.add(ProtocolModifier.Empty)
         }
+        val replaced = node.modifiers[mutation.index]
         node.modifiers[mutation.index] = mutation.modifier
+        // Counted rather than searched for. Whether any node in the tree is made of a
+        // material decides whether the window is stood up in a form that can show what is
+        // behind it, and that question is asked once per frame: walking the tree to answer
+        // it would put the size of the tree into every frame for a screen that mostly says
+        // no.
+        if (replaced is ProtocolModifier.Material) materials--
+        if (mutation.modifier is ProtocolModifier.Material) materials++
     }
+
+    /**
+     * How many nodes are made of a material.
+     *
+     * Zero for almost every screen. One is enough for the window to need a backdrop, and
+     * which part of it actually shows through is decided where the material is drawn: a
+     * sidebar made of glass is glass, and a page that paints itself covers what is behind
+     * it exactly as an ordinary page does.
+     */
+    private var materials: Int by mutableStateOf(0)
+
+    /** True where some node asked to be made of a material. */
+    internal val asksForMaterial: Boolean get() = materials > 0
 
     private fun insert(parentId: Int, nodeId: Int, index: Int) {
         // Node id 0 is the "no node" sentinel. The Host uses it for a Dioxus
@@ -281,6 +303,7 @@ class NodeTable {
 
     private fun removeSubtree(nodeId: Int) {
         val node = nodes.remove(nodeId) ?: return
+        materials -= node.modifiers.count { it is ProtocolModifier.Material }
         node.children.toList().forEach(::removeSubtree)
     }
 
@@ -435,7 +458,8 @@ class NodeTable {
                     widget == WidgetKind.Box ||
                     widget == WidgetKind.LazyColumn ||
                     widget == WidgetKind.LazyRow ||
-                    widget == WidgetKind.ScrollColumn
+                    widget == WidgetKind.ScrollColumn ||
+                    widget == WidgetKind.FileDropTarget
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
 
@@ -503,16 +527,13 @@ class NodeTable {
                 // Runs of different treatment inside one string.
                 PropertyKind.Spans -> widget == WidgetKind.Text
 
-                // Files over a node and files let go on it. The handlers are attached
-                // whether or not a screen supplied one, so the willingness is its own
-                // property and any container may carry all three.
+                // Files over a node and files let go on it. Only the widget that exists
+                // to receive them, because a handler is attached whether or not a screen
+                // supplied one: on any container these would cost every container in the
+                // tree three records for saying nothing.
                 PropertyKind.OnFilesEntered,
                 PropertyKind.OnFilesDropped,
-                PropertyKind.AcceptsFiles,
-                -> widget == WidgetKind.Box ||
-                    widget == WidgetKind.Column ||
-                    widget == WidgetKind.Card ||
-                    widget == WidgetKind.Surface
+                -> widget == WidgetKind.FileDropTarget
 
                 // How wide a grid's columns are, said as a count or as a minimum.
                 PropertyKind.Columns,

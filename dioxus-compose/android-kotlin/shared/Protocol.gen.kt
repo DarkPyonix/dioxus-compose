@@ -6,9 +6,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LazyGrid, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LazyGrid, FileDropTarget, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, OnFilesEntered, OnFilesDropped, AcceptsFiles, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, OnFilesEntered, OnFilesDropped, Progress }
 
 enum class Key { Enter }
 
@@ -19,6 +19,12 @@ enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSu
 enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
 
 enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
+
+enum class MotionRole { Instant, Quick, Standard, Slow, Emphasized }
+
+enum class TileMode { Clamp, Repeat, Mirror }
+
+enum class MaterialRole { Thin, Regular, Thick, Chrome }
 
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
@@ -36,7 +42,7 @@ enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze, Deepin, L
 
 enum class ColorScheme { Light, Dark, FollowSystem }
 
-enum class AssetKind { Png, Jpeg, Svg, VectorIcon }
+enum class AssetKind { Png, Jpeg, Svg, VectorIcon, Font, Brush }
 
 enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, Home, List, Inbox, Menu, History }
 
@@ -59,6 +65,14 @@ sealed interface Paint {
 
     /** A literal 0xAARRGGBB colour. */
     data class Literal(val argb: Int) : Paint
+
+    /**
+     * A registered brush: a gradient, or a picture laid out as a fill.
+     *
+     * An id, because a list of stops does not fit the two words a paint has and because a
+     * brush has to outlive the frame that draws it.
+     */
+    data class Asset(val assetId: Int) : Paint
 }
 
 data class Theme(
@@ -66,7 +80,20 @@ data class Theme(
     val fallback: DesignSystem,
     val colorScheme: ColorScheme,
     val adaptive: Boolean,
-)
+    /**
+     * The font asset each type role resolves to, indexed by the role's ordinal, with zero
+     * where the role keeps the system font.
+     *
+     * Per theme rather than per node: an application changes what a role is made of and
+     * every piece of text in that role changes with it. A node that could name a font
+     * would be a node deciding typography.
+     */
+    val fonts: List<Int> = List(TypeRole.entries.size) { 0 },
+) {
+
+    /** The font asset for [role], or null where the role keeps the system font. */
+    fun font(role: TypeRole): Int? = fonts.getOrNull(role.ordinal)?.takeIf { it != 0 }
+}
 
 /**
  * What the application asked of its own window.
@@ -237,6 +264,8 @@ sealed interface Modifier {
     data class Border(val width: kotlin.Float, val paint: Paint) : Modifier
     data class Elevation(val value: kotlin.Float) : Modifier
     data class ObserveSize(val token: Int) : Modifier
+    data class Motion(val role: dioxus.compose.protocol.MotionRole) : Modifier
+    data class Material(val role: dioxus.compose.protocol.MaterialRole) : Modifier
 }
 
 sealed interface Mutation {
@@ -313,7 +342,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -7963920781011345283L
+    const val SCHEMA_HASH: Long = -2513130958258615401L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -331,6 +360,8 @@ object Protocol {
     private const val TAG_SHOW_MESSAGE = 12
     private const val TAG_SET_WINDOW = 13
     private const val ENVELOPE_LENGTH = 12
+    /** Four role tags, then one font asset id per type role. */
+    private val THEME_RECORD_LENGTH = 12 + 4 * TypeRole.entries.size
 
     /**
      * The high bit of each of eight bytes, which is where UTF-8 stops being ASCII. Written
@@ -458,10 +489,14 @@ object Protocol {
                         )
                     }
                     TAG_SET_THEME -> {
-                        requireRecordLength(length, 12, offset)
+                        requireRecordLength(length, THEME_RECORD_LENGTH, offset)
                         val adaptive = readU16(batch, base, available, offset + 10)
                         if (adaptive > 1) {
                             throw ProtocolException("invalid adaptive flag $adaptive", offset + 10)
+                        }
+                        // One slot per type role, in the order the wire fixes them in.
+                        val fonts = List(TypeRole.entries.size) { role ->
+                            readU32(batch, base, available, offset + 12 + 4 * role).toInt()
                         }
                         Mutation.SetTheme(
                             Theme(
@@ -469,6 +504,7 @@ object Protocol {
                                 designSystem(readU16(batch, base, available, offset + 6), offset + 6),
                                 colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
                                 adaptive == 1,
+                                fonts,
                             ),
                         )
                     }
@@ -701,6 +737,7 @@ object Protocol {
         33 -> WidgetKind.Scaffold
         34 -> WidgetKind.ScaffoldSlot
         35 -> WidgetKind.LazyGrid
+        36 -> WidgetKind.FileDropTarget
         100 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -752,7 +789,6 @@ object Protocol {
         64 -> PropertyKind.Spans
         65 -> PropertyKind.OnFilesEntered
         66 -> PropertyKind.OnFilesDropped
-        67 -> PropertyKind.AcceptsFiles
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -825,6 +861,30 @@ object Protocol {
         5 -> ShapeRole.Large
         6 -> ShapeRole.Full
         else -> throw ProtocolException("unknown ShapeRole tag $tag", offset)
+    }
+
+    private fun motionRole(tag: Int, offset: Int): MotionRole = when (tag) {
+        1 -> MotionRole.Instant
+        2 -> MotionRole.Quick
+        3 -> MotionRole.Standard
+        4 -> MotionRole.Slow
+        5 -> MotionRole.Emphasized
+        else -> throw ProtocolException("unknown MotionRole tag $tag", offset)
+    }
+
+    private fun tileMode(tag: Int, offset: Int): TileMode = when (tag) {
+        1 -> TileMode.Clamp
+        2 -> TileMode.Repeat
+        3 -> TileMode.Mirror
+        else -> throw ProtocolException("unknown TileMode tag $tag", offset)
+    }
+
+    private fun materialRole(tag: Int, offset: Int): MaterialRole = when (tag) {
+        1 -> MaterialRole.Thin
+        2 -> MaterialRole.Regular
+        3 -> MaterialRole.Thick
+        4 -> MaterialRole.Chrome
+        else -> throw ProtocolException("unknown MaterialRole tag $tag", offset)
     }
 
     private fun spaceRole(tag: Int, offset: Int): SpaceRole = when (tag) {
@@ -908,6 +968,8 @@ object Protocol {
         2 -> AssetKind.Jpeg
         3 -> AssetKind.Svg
         4 -> AssetKind.VectorIcon
+        5 -> AssetKind.Font
+        6 -> AssetKind.Brush
         else -> throw ProtocolException("unknown AssetKind tag $tag", offset)
     }
 
@@ -953,6 +1015,7 @@ object Protocol {
         return when (val kind = (bits ushr 32).toInt()) {
             1 -> Paint.Role(colorRole(value, offset))
             2 -> Paint.Literal(value)
+            3 -> Paint.Asset(value)
             else -> throw ProtocolException("unknown paint kind $kind", offset)
         }
     }
@@ -975,6 +1038,8 @@ object Protocol {
         14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
         15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
         16 -> Modifier.ObserveSize(first.toInt())
+        17 -> Modifier.Motion(motionRole(first.toInt(), offset))
+        18 -> Modifier.Material(materialRole(first.toInt(), offset))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 

@@ -121,7 +121,11 @@ fun RenderNode(
             verticalAlignment = node.verticalAlignment(),
         ) { Children(node, table, dispatcher) }
 
-        WidgetKind.Box -> Box(modifier, contentAlignment = node.boxAlignment()) {
+        // A place files may be dropped is laid out as a plain box. Being this widget is
+        // the whole of the difference: the drop target is set up for it and for nothing
+        // else in the tree.
+        WidgetKind.Box, WidgetKind.FileDropTarget ->
+            Box(modifier, contentAlignment = node.boxAlignment()) {
             Children(node, table, dispatcher)
         }
 
@@ -239,6 +243,30 @@ fun RenderNode(
  */
 var platformFileDrop: @Composable (Modifier, Node, EventDispatcher) -> Modifier =
     { modifier, _, _ -> modifier }
+
+/**
+ * Whether the system has been asked to reduce motion, answered by the platform that can
+ * be asked.
+ *
+ * A hook for the same reason as the one above: the setting lives in a different place on
+ * each desktop and nowhere at all on a target that has no desktop. The Host is not
+ * consulted and never learns the answer, because this is the user's setting about their
+ * own machine rather than anything the application declared.
+ *
+ * Read only by a node that declared a motion role, so a screen that declares none never
+ * asks the question.
+ */
+var platformReducedMotion: () -> Boolean = { false }
+
+/**
+ * Tells the platform whether this window wants a material behind it.
+ *
+ * A hook because only one build can answer: the effect view is put behind the window by
+ * the shared library's own C entry, which exists in the native image and not in the
+ * development shell, and not at all on a platform whose windows are not ours. Whoever
+ * cannot do it leaves this alone, and the window comes up the way it always did.
+ */
+var platformWindowMaterial: (Boolean) -> Unit = { }
 
 /**
  * The axis a widget stacks its children along, which is the axis a child's `Weight` is a
