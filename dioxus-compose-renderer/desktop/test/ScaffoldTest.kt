@@ -24,11 +24,11 @@ class ScaffoldTest {
     fun fr31_a_phone_stacks_the_bars_and_anything_wider_sets_them_beside() {
         assertEquals(
             ScaffoldFrame.Stacked,
-            scaffoldFrame(NavigationPresentation.Bar),
+            scaffoldFrame(NavigationPresentation.Bar, destinationsCanTurn = true),
             "a bar across the bottom is the phone frame",
         )
-        assertEquals(ScaffoldFrame.SideBySide, scaffoldFrame(NavigationPresentation.Rail))
-        assertEquals(ScaffoldFrame.SideBySide, scaffoldFrame(NavigationPresentation.Drawer))
+        assertEquals(ScaffoldFrame.SideBySide, scaffoldFrame(NavigationPresentation.Rail, destinationsCanTurn = true))
+        assertEquals(ScaffoldFrame.SideBySide, scaffoldFrame(NavigationPresentation.Drawer, destinationsCanTurn = true))
     }
 
     @Test
@@ -42,7 +42,22 @@ class ScaffoldTest {
             } else {
                 ScaffoldFrame.SideBySide
             }
-            assertEquals(expected, scaffoldFrame(presentation), "$presentation")
+            assertEquals(expected, scaffoldFrame(presentation, destinationsCanTurn = true), "$presentation")
+        }
+    }
+
+    @Test
+    fun fr31_a_bar_the_application_drew_itself_stays_a_bar() {
+        // Only a navigation is one declaration the renderer can stand on end. A row of
+        // icons an application laid out is a row: down the leading edge it keeps its own
+        // width, takes the page's, and leaves a strip across the top with nothing under
+        // it, which is what two samples drew the first time this ran.
+        for (presentation in NavigationPresentation.entries) {
+            assertEquals(
+                ScaffoldFrame.Stacked,
+                scaffoldFrame(presentation, destinationsCanTurn = false),
+                "$presentation",
+            )
         }
     }
 

@@ -345,76 +345,80 @@ pub fn app() -> Element {
     let edited = text() != on_disk();
 
     rsx! {
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
+        // The frame is named rather than built. Whether this bar is the window's own
+        // caption or a bar beneath the system's, and where the page starts under it, are
+        // answers this screen never has to know.
+        Scaffold {
+            top_bar: rsx! {
+                {document_bar(page_width, working, rsx! {
+                    // The application's name, on the windows with room for it. On a phone the
+                    // four actions need the whole bar, and the page already says what document
+                    // this is, which is the thing a title is for. Left in, the name was
+                    // squeezed to one letter per line.
+                    if crowded {
+                        dioxus_compose::Box { weight: 1.0 }
+                    } else {
+                        Text {
+                            text: "Notepad",
+                            type_role: TypeRole::Title,
+                            weight: 1.0,
+                            max_lines: 1,
+                            overflow: TextOverflow::Ellipsis,
+                        }
+                    }
+                    // Whether there is anything to lose, said where the actions that could
+                    // lose it are. Not the error colour: unsaved work is an ordinary state of
+                    // a document being written, not a fault.
+                    if edited {
+                        Text {
+                            text: "Edited",
+                            type_role: TypeRole::Label,
+                            color: Paint::Role(ColorRole::OnSurfaceVariant),
+                        }
+                    }
+                    // Only where the list is not already on screen. A button that opens what
+                    // you are looking at is a button that does nothing.
+                    if !list_beside {
+                        Button {
+                            text: "Documents",
+                            variant: ButtonVariant::Text,
+                            on_click: move |_| list_open.set(true),
+                        }
+                    }
+                    // Starting a document no longer throws one away: the one that was on
+                    // screen is in the list, which is why this offers nothing back.
+                    Button {
+                        text: "New",
+                        variant: ButtonVariant::Text,
+                        enabled: !working,
+                        on_click: move |_| new_document(()),
+                    }
+                    Button {
+                        text: "File",
+                        variant: ButtonVariant::Tonal,
+                        on_click: move |_| file_open.set(true),
+                    }
+                    Button {
+                        text: "Format",
+                        variant: ButtonVariant::Text,
+                        on_click: move |_| format_open.set(true),
+                    }
+                    Button {
+                        text: "Save",
+                        variant: ButtonVariant::Filled,
+                        enabled: !working,
+                        on_click: move |_| {
+                            let target = PathBuf::from(path());
+                            let contents = text();
+                            run_on_worker(Box::new(move || document::save(target, contents)));
+                        },
+                    }
+                })}
+            },
 
             // The document's actions belong in the bar, not in a line of buttons above the
             // text.
-            {document_bar(page_width, working, rsx! {
-                // The application's name, on the windows with room for it. On a phone the
-                // four actions need the whole bar, and the page already says what document
-                // this is, which is the thing a title is for. Left in, the name was
-                // squeezed to one letter per line.
-                if crowded {
-                    dioxus_compose::Box { weight: 1.0 }
-                } else {
-                    Text {
-                        text: "Notepad",
-                        type_role: TypeRole::Title,
-                        weight: 1.0,
-                        max_lines: 1,
-                        overflow: TextOverflow::Ellipsis,
-                    }
-                }
-                // Whether there is anything to lose, said where the actions that could
-                // lose it are. Not the error colour: unsaved work is an ordinary state of
-                // a document being written, not a fault.
-                if edited {
-                    Text {
-                        text: "Edited",
-                        type_role: TypeRole::Label,
-                        color: Paint::Role(ColorRole::OnSurfaceVariant),
-                    }
-                }
-                // Only where the list is not already on screen. A button that opens what
-                // you are looking at is a button that does nothing.
-                if !list_beside {
-                    Button {
-                        text: "Documents",
-                        variant: ButtonVariant::Text,
-                        on_click: move |_| list_open.set(true),
-                    }
-                }
-                // Starting a document no longer throws one away: the one that was on
-                // screen is in the list, which is why this offers nothing back.
-                Button {
-                    text: "New",
-                    variant: ButtonVariant::Text,
-                    enabled: !working,
-                    on_click: move |_| new_document(()),
-                }
-                Button {
-                    text: "File",
-                    variant: ButtonVariant::Tonal,
-                    on_click: move |_| file_open.set(true),
-                }
-                Button {
-                    text: "Format",
-                    variant: ButtonVariant::Text,
-                    on_click: move |_| format_open.set(true),
-                }
-                Button {
-                    text: "Save",
-                    variant: ButtonVariant::Filled,
-                    enabled: !working,
-                    on_click: move |_| {
-                        let target = PathBuf::from(path());
-                        let contents = text();
-                        run_on_worker(Box::new(move || document::save(target, contents)));
-                    },
-                }
-            })}
+
 
             // Which file the document is, and the two things that can be done with it.
             //
@@ -667,6 +671,7 @@ pub fn app() -> Element {
                 }
             }
             }
+
         }
     }
 }

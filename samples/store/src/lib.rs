@@ -894,37 +894,36 @@ pub fn app() -> Element {
     let scrolls = showing.is_none() || destination() != Destination::Shop;
 
     rsx! {
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
+        // The frame is named rather than built. Whether the bar runs across the bottom,
+        // stands down the leading edge or opens as a drawer is the frame's answer from
+        // the width it was given, and the page is laid out clear of whatever it took.
+        Scaffold {
             background: palette::PAGE,
+            bottom_bar: rsx! {
+                dioxus_compose::Box {
+                    fill_max_width: true,
+                    alignment: Alignment::Center,
+                    Column {
+                        width: measure,
+                        fill_max_width: measure.is_none(),
+                        {bottom_bar(destination(), on_go)}
+                    }
+                }
+            },
+
             dioxus_compose::Box {
-                fill_max_width: true,
                 weight: 1.0,
                 alignment: Alignment::TopCenter,
                 if scrolls {
                     ScrollColumn {
                         width: measure,
-                        fill_max_width: measure.is_none(),
-                        fill_max_height: true,
                         {body}
                     }
                 } else {
                     Column {
                         width: measure,
-                        fill_max_width: measure.is_none(),
-                        fill_max_height: true,
                         {body}
                     }
-                }
-            }
-            dioxus_compose::Box {
-                fill_max_width: true,
-                alignment: Alignment::Center,
-                Column {
-                    width: measure,
-                    fill_max_width: measure.is_none(),
-                    {bottom_bar(destination(), on_go)}
                 }
             }
         }
