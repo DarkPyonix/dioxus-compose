@@ -516,22 +516,23 @@ pub fn app() -> Element {
     };
 
     rsx! {
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
+        // The frame is named rather than built: what the bar becomes, and where the page
+        // starts under it, are answers this screen never has to know.
+        Scaffold {
             background: Paint::Role(ColorRole::Background),
-
-            TopAppBar {
-                fill_max_width: true,
-                Text { text: "Minimal", type_role: TypeRole::Title, weight: 1.0 }
-                Text {
-                    text: "one design, every platform",
-                    type_role: TypeRole::Label,
-                    color: Paint::Role(ColorRole::OnSurfaceVariant),
+            top_bar: rsx! {
+                TopAppBar {
+                    fill_max_width: true,
+                    Text { text: "Minimal", type_role: TypeRole::Title, weight: 1.0 }
+                    Text {
+                        text: "one design, every platform",
+                        type_role: TypeRole::Label,
+                        color: Paint::Role(ColorRole::OnSurfaceVariant),
+                    }
                 }
-            }
+            },
 
-            dioxus_compose::Box {
+                        dioxus_compose::Box {
                 fill_max_width: true,
                 weight: 1.0,
                 alignment: Alignment::TopCenter,

@@ -1724,6 +1724,12 @@ pub fn Sheet(
 /// ```
 #[component]
 pub fn Scaffold(
+    /// The window's own colour, where this screen holds its own palette.
+    ///
+    /// Read off the root, so a frame that is the root is where it has to be said. A
+    /// screen that says nothing gets the theme's page colour.
+    #[props(default)]
+    background: Option<Paint>,
     /// The bar across the top, where this screen wants one.
     #[props(default)]
     top_bar: Option<Element>,
@@ -1738,6 +1744,7 @@ pub fn Scaffold(
 ) -> Element {
     rsx! {
         scaffold {
+            background: opt_paint(background),
             if let Some(bar) = top_bar {
                 scaffoldslot { slot: i64::from(u16::from(SlotRole::TopBar)), {bar} }
             }
