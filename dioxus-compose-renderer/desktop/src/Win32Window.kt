@@ -165,9 +165,12 @@ internal fun runWin32Spike() {
     )
 
     val report = System.getenv("DXC_REPORT_INPUT") != null
+    var size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
+    val textInput = NativeTextInput()
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
-        size = androidx.compose.ui.unit.IntSize(measured.width, measured.height),
+        size = size,
+        platformContext = NativePlatformContext({ size }, textInput, NativeSemantics { }),
     )
     scene.setContent { SpikeContent() }
 
@@ -180,13 +183,15 @@ internal fun runWin32Spike() {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
                 }
-                scene.receive(event)
+                scene.receive(event, win32 = true)
+                textInput.receive(event)
             }
             if (!drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)) {
                 // Nothing was drawn, so nothing waited for the screen either. Without this
                 // a minimised window would spend every frame it has in a few milliseconds.
                 Thread.sleep(FRAME_MILLIS)
             }
+            size = scene.size
         }
     } finally {
         scene.close()
