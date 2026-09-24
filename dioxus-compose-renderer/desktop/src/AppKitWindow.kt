@@ -240,9 +240,12 @@ internal fun runAppKitSpike() {
     )
 
     val report = System.getenv("DXC_REPORT_INPUT") != null
+    val size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
+    val textInput = NativeTextInput()
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
-        size = androidx.compose.ui.unit.IntSize(measured.width, measured.height),
+        size = size,
+        platformContext = NativePlatformContext({ size }, textInput),
     )
     scene.setContent { SpikeContent() }
 
@@ -256,6 +259,7 @@ internal fun runAppKitSpike() {
                     System.err.println("dioxus-compose: window heard $event")
                 }
                 scene.receive(event)
+                textInput.receive(event)
             }
             drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)
             Thread.sleep(FRAME_MILLIS)
@@ -452,6 +456,27 @@ private const val MODIFIER_SHIFT = 1 shl 17
 private const val MODIFIER_CONTROL = 1 shl 18
 private const val MODIFIER_OPTION = 1 shl 19
 private const val MODIFIER_COMMAND = 1 shl 20
+
+/**
+ * Puts what was typed into the field that asked to be typed into.
+ *
+ * Text does not arrive in Compose through key events. A focused field opens a session and
+ * waits to be handed text, and a key press that produced a character is handed over here.
+ * A key that produced none is a key the field reads as a key: an arrow, a backspace, an
+ * Enter, all of which reached it already.
+ */
+private fun NativeTextInput.receive(event: WindowEvent) {
+    if (event.kind != WindowEvent.KEY_DOWN) return
+    if (!isActive) return
+    // Control characters are not text. Backspace, tab, escape and the rest arrive as key
+    // events and are handled as keys; committing them as characters would type a
+    // rubbed-out square into the field.
+    if (event.codePoint < FIRST_PRINTABLE || event.codePoint == DELETE) return
+    commit(String(Character.toChars(event.codePoint)))
+}
+
+private const val FIRST_PRINTABLE = 0x20
+private const val DELETE = 0x7F
 
 private const val SPIKE_FRAMES = 1_200
 private const val FRAME_MILLIS = 16L
