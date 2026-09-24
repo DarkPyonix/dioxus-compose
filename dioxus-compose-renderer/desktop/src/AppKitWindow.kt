@@ -85,6 +85,12 @@ private external fun endFrame(queue: Pointer?)
 @CFunction("dxc_native_poll_event")
 private external fun pollEvent(out: Pointer?): Int
 
+@CFunction("dxc_native_set_accessibility")
+private external fun setAccessibility(elements: Pointer?, count: Int, view: Pointer?)
+
+@CFunction("dxc_native_set_cursor")
+private external fun setCursorShape(shape: Int)
+
 /**
  * The four pointers a window is, once AppKit has made one.
  *
@@ -161,6 +167,9 @@ data class WindowEvent(
         const val KEY_UP = 6
         const val TEXT_COMMIT = 7
         const val TEXT_COMPOSE = 8
+        const val RESIZE = 9
+        const val FILES_ENTERED = 10
+        const val FILES_DROPPED = 11
     }
 }
 
@@ -201,6 +210,62 @@ fun drainWindowEvents(): List<WindowEvent> {
     }
     return events
 }
+
+/**
+ * Hands the platform what the window would tell a reader who cannot see it.
+ *
+ * Written into stack storage and copied on the other side. The elements are few, they
+ * change when the screen changes rather than when a frame is drawn, and the alternative
+ * is the platform asking across threads at a moment nobody chose.
+ */
+fun NativeWindow.describeTo(elements: List<AccessibleElement>) {
+    val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements
+    val records = StackValue.get<Pointer>(MAX_ELEMENTS * ELEMENT_BYTES)
+    for ((index, element) in capped.withIndex()) {
+        val at = index * ELEMENT_BYTES
+        records.writeInt(at, element.role)
+        records.writeFloat(at + 4, element.x)
+        records.writeFloat(at + 8, element.y)
+        records.writeFloat(at + 12, element.width)
+        records.writeFloat(at + 16, element.height)
+        val bytes = element.label.toByteArray(Charsets.UTF_8)
+        var length = 0
+        while (length < bytes.size && length < TEXT_BYTES - 1) {
+            records.writeByte(at + ELEMENT_LABEL_OFFSET + length, bytes[length])
+            length++
+        }
+        records.writeByte(at + ELEMENT_LABEL_OFFSET + length, ZERO)
+    }
+    setAccessibility(records, capped.size, WordFactory.pointer(view))
+}
+
+/**
+ * Sets the shape of the pointer over the window.
+ *
+ * The scene decides: a control that is a link asks for a hand, a field asks for a bar.
+ * Which platform cursor that is belongs to the shell, so what crosses is a number.
+ */
+fun setPointerShape(shape: Int) = setCursorShape(shape)
+
+/** What a pointer can look like, in the small set both sides agree on. */
+object PointerShape {
+    const val ARROW = 0
+    const val HAND = 1
+    const val TEXT = 2
+    const val CROSSHAIR = 3
+    const val RESIZE_LEFT_RIGHT = 4
+    const val RESIZE_UP_DOWN = 5
+}
+
+/**
+ * How many things a screen may say it has.
+ *
+ * Enough for a screen and not for a document. A list of ten thousand rows is windowed
+ * before it reaches the scene, so what is here is what is on screen.
+ */
+private const val MAX_ELEMENTS = 256
+private const val ELEMENT_LABEL_OFFSET = 20
+private const val ELEMENT_BYTES = 116
 
 private const val ZERO: Byte = 0
 private const val TEXT_OFFSET = 28
@@ -246,7 +311,18 @@ private const val WINDOW_STRUCT_BYTES = 40
  * Reached by setting `DXC_APPKIT_WINDOW`, so the ordinary path is untouched.
  */
 internal fun runAppKitSpike() {
-    val window = openNativeWindow("dioxus-compose", 520, 360)
+    // The Host is started before there is a window, because what the window should look
+    // like is in its first batch and a window cannot be told afterwards. Started on this
+    // thread, which is the one every later call to it is made from: the boundary is a
+    // direct call on one thread and the Host keeps its state there.
+    val host = dioxus.compose.runtime.DioxusHost(NativeHostConnection())
+    host.start()
+    val asked = host.table.window
+    val window = openNativeWindow(
+        asked?.title?.takeIf { it.isNotEmpty() } ?: "dioxus-compose",
+        if (asked != null && asked.width > 0) asked.width else 520,
+        if (asked != null && asked.height > 0) asked.height else 360,
+    )
     if (window == null) {
         System.err.println("dioxus-compose: this machine has no Metal device")
         return
@@ -259,14 +335,25 @@ internal fun runAppKitSpike() {
     )
 
     val report = System.getenv("DXC_REPORT_INPUT") != null
-    val size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
+    // Held rather than measured once. The window is resizable, and everything that reads
+    // a size reads this: the scene, the render target, and what the scene is told about
+    // the window it is in.
+    var size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
     val textInput = NativeTextInput()
+    val semantics = NativeSemantics { elements ->
+        if (report) {
+            System.err.println("dioxus-compose: the window has ${elements.size} things to say")
+        }
+        window.describeTo(elements)
+    }
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
         size = size,
-        platformContext = NativePlatformContext({ size }, textInput),
+        platformContext = NativePlatformContext({ size }, textInput, semantics),
     )
-    scene.setContent { SpikeContent() }
+    // The application's own tree, drawn by the same interpreter the toolkit path uses.
+    // Nothing in it knows which of the two it is running on, which is the point.
+    scene.setContent { dioxus.compose.runtime.DioxusContent(host) }
 
     try {
         // A plain loop rather than a clock. Pacing is the frame clock's work and comes
@@ -278,6 +365,14 @@ internal fun runAppKitSpike() {
             for (event in drainWindowEvents()) {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
+                }
+                if (event.kind == WindowEvent.FILES_DROPPED) {
+                    val paths = event.text.split('\u0000').filter { it.isNotEmpty() }
+                    spikeDroppedFiles.value = "dropped ${paths.size}: ${paths.joinToString(", ")}"
+                }
+                if (event.kind == WindowEvent.RESIZE) {
+                    size = androidx.compose.ui.unit.IntSize(event.x.toInt(), event.y.toInt())
+                    scene.size = size
                 }
                 scene.receive(event)
                 textInput.receive(event)
@@ -297,6 +392,7 @@ internal fun runAppKitSpike() {
     } finally {
         scene.close()
         context.close()
+        host.shutdown()
     }
 }
 
@@ -339,20 +435,28 @@ private fun drawFrame(
 /**
  * Something recognisably Compose, so that a screenshot answers a question.
  *
+ * Shared with the window Windows opens for itself, which is why it is not private to this
+ * file: what a spike draws is not platform work, and two copies of it would drift.
+ *
  * Text and a shape: text because it is the part that needs a font manager, a shaper and a
  * layout pass, and a shape because a page of text alone would leave it unclear whether
  * anything was drawn or the window simply stayed empty.
  */
 @Composable
-private fun SpikeContent() {
+internal fun SpikeContent() {
     var clicks by remember { mutableStateOf(0) }
+    val dropped = spikeDroppedFiles
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(Modifier.fillMaxSize().background(Color(0xFF12321A))) {
         Column(Modifier.padding(top = 40.dp, start = 24.dp)) {
             BasicText("no toolkit here", style = TextStyle(color = Color.White, fontSize = 24.sp))
             BasicText(
-                "composed, painted by Skia, shown by AppKit",
+                if (dropped.value.isEmpty()) {
+                    "composed, painted by Skia, shown by AppKit"
+                } else {
+                    dropped.value
+                },
                 style = TextStyle(color = Color(0xFF9CCC9C), fontSize = 14.sp),
             )
             // A field, because typing is what the next step has to carry and this is
@@ -393,11 +497,15 @@ private fun SpikeContent() {
 /**
  * Hands one thing the window heard to the scene.
  *
- * The pointer's place is in points from the top left of the content, which is what a
- * scene measures in, so nothing is converted here beyond naming which kind of event it
- * was.
+ * Shared with the Windows path for the same reason the scene's content is. Both platforms
+ * record an event into the same fields, so turning one into something Compose understands
+ * is written once.
+ *
+ * The pointer's place arrives from the top left of the content, in whatever unit that
+ * platform's scene measures in, so nothing is converted here beyond naming which kind of
+ * event it was.
  */
-private fun ComposeScene.receive(event: WindowEvent) {
+internal fun ComposeScene.receive(event: WindowEvent) {
     when (event.kind) {
         // Built from parts rather than from a platform event. The toolkit's own key
         // event is what the supported path converts, and there is none here to convert.
@@ -501,6 +609,15 @@ private fun NativeTextInput.receive(event: WindowEvent) {
         WindowEvent.TEXT_COMPOSE -> compose(event.text)
     }
 }
+
+/**
+ * What was last dropped on the window, so a screenshot can show it arrived.
+ *
+ * Held beside the scene rather than in it, because what a drag carries reaches this side
+ * before any node has asked for it: there is no drop target in the tree yet, and this
+ * step is about the paths crossing at all.
+ */
+internal val spikeDroppedFiles = androidx.compose.runtime.mutableStateOf("")
 
 private const val SPIKE_FRAMES = 1_200
 private const val FRAME_MILLIS = 16L

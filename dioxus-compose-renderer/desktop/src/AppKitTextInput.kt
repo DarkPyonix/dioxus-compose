@@ -9,6 +9,7 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.input.CommitTextCommand
@@ -102,10 +103,30 @@ class NativeTextInput {
 class NativePlatformContext(
     private val size: () -> IntSize,
     private val textInput: NativeTextInput,
+    private val semantics: PlatformContext.SemanticsOwnerListener,
 ) : PlatformContext {
 
     override val windowInfo: WindowInfo = NativeWindowInfo(size)
     override val inputModeManager: InputModeManager = NativeInputModeManager()
+    override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener = semantics
+
+    /**
+     * The shape the pointer takes over whatever it is on.
+     *
+     * Compose names a few shapes and leaves the rest to the platform. A shape this does
+     * not know becomes the arrow, which is what a pointer over something unremarkable
+     * looks like anyway.
+     */
+    override fun setPointerIcon(pointerIcon: PointerIcon) {
+        setPointerShape(
+            when (pointerIcon) {
+                PointerIcon.Hand -> PointerShape.HAND
+                PointerIcon.Text -> PointerShape.TEXT
+                PointerIcon.Crosshair -> PointerShape.CROSSHAIR
+                else -> PointerShape.ARROW
+            },
+        )
+    }
 
     override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing =
         textInput.run(request)

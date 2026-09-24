@@ -19,6 +19,7 @@
 #import <Metal/Metal.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 // What happened in the window, waiting to be read.
@@ -39,6 +40,15 @@ enum {
     // marked, and are replaced as the reader goes rather than piling up.
     DXC_EVENT_TEXT_COMMIT = 7,
     DXC_EVENT_TEXT_COMPOSE = 8,
+    // The window is a different size. Carried as an event rather than asked for, because
+    // the scene has to be told before the next frame is drawn into a drawable that is
+    // already the new size, and asking every frame is the traffic that starved the input
+    // method once already.
+    DXC_EVENT_RESIZE = 9,
+    // Files were dragged over the window, and let go on it. The paths ride in the text
+    // field, separated by the one byte no path may contain.
+    DXC_EVENT_FILES_ENTERED = 10,
+    DXC_EVENT_FILES_DROPPED = 11,
 };
 
 // Room for what an input method is composing, which is a syllable or a word and never a
@@ -60,6 +70,65 @@ struct dxc_event {
     // UTF-8, ending at the first zero. Empty for everything that is not text.
     char text[DXC_TEXT_BYTES];
 };
+
+/**
+ * Runs a block on the main thread and waits for it.
+ *
+ * AppKit answers on one thread and the renderer runs on another, which is the arrangement
+ * the shell already sets up: the main thread is in `[NSApp run]` and serves its queue.
+ * Straight through when already there, because dispatching to the queue you are on and
+ * then waiting for it is a deadlock.
+ */
+static void dxc_on_main(void (^work)(void)) {
+    if ([NSThread isMainThread]) {
+        work();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), work);
+    }
+}
+
+// What the window would tell a reader who cannot see it.
+//
+// A snapshot rather than a question. Accessibility is asked for on the thread AppKit
+// answers on, at moments nobody chose, and the tree it describes lives where the scene
+// does: answering by asking across would block whichever thread asked, and one of them is
+// the thread the frame is drawn from. The scene pushes what it has whenever it changes,
+// and this answers from that.
+struct dxc_element {
+    int32_t role;
+    // In points from the top left of the view, which is what the scene measures in.
+    float x;
+    float y;
+    float width;
+    float height;
+    char label[DXC_TEXT_BYTES];
+};
+
+// Rebuilt whenever the scene pushes, which is rarely: a tree changes when the screen
+// does, not when a frame is drawn.
+static NSArray<NSAccessibilityElement *> *dxc_accessibility_children;
+
+// The roles a scene can describe, as numbers, because a name would be a string crossing
+// for every element on every push. Which AppKit role each one is is decided here.
+enum {
+    DXC_ROLE_GROUP = 0,
+    DXC_ROLE_BUTTON = 1,
+    DXC_ROLE_TEXT = 2,
+    DXC_ROLE_FIELD = 3,
+    DXC_ROLE_CHECKBOX = 4,
+    DXC_ROLE_IMAGE = 5,
+};
+
+static NSAccessibilityRole dxc_appkit_role(int32_t role) {
+    switch (role) {
+        case DXC_ROLE_BUTTON: return NSAccessibilityButtonRole;
+        case DXC_ROLE_TEXT: return NSAccessibilityStaticTextRole;
+        case DXC_ROLE_FIELD: return NSAccessibilityTextFieldRole;
+        case DXC_ROLE_CHECKBOX: return NSAccessibilityCheckBoxRole;
+        case DXC_ROLE_IMAGE: return NSAccessibilityImageRole;
+        default: return NSAccessibilityGroupRole;
+    }
+}
 
 // Room for a burst rather than for a session. A queue that fills is a queue nobody is
 // draining, and holding a thousand stale mouse moves helps no one.
@@ -84,6 +153,49 @@ static void dxc_push_event(struct dxc_event event) {
         dxc_event_head = (dxc_event_head + 1) % DXC_EVENT_CAPACITY;
     }
     pthread_mutex_unlock(&dxc_event_lock);
+}
+
+/**
+ * Replaces what the window tells a reader who cannot see it.
+ *
+ * Called from the thread the scene lives on, and the elements it builds are read from the
+ * thread AppKit asks on, so the array is swapped whole: a reader either sees the tree
+ * before this call or the one after it, never half of each.
+ */
+void dxc_native_set_accessibility(const struct dxc_element *elements, int32_t count, void *view_pointer) {
+    // Copied here and built there, without waiting. The frames are in screen coordinates
+    // and only the main thread can answer for the window's geometry, but the thread that
+    // calls this is the one that drains the window's events: a wait here is a wait on a
+    // thread that is already busy answering questions about accessibility, and while it
+    // lasts nothing takes the clicks out of the queue. A calculator went deaf this way.
+    //
+    // Nothing needs the result, so nothing waits for it. The elements are copied first
+    // because what was handed in is the caller's stack.
+    size_t bytes = (size_t)count * sizeof(struct dxc_element);
+    struct dxc_element *copy = count > 0 ? malloc(bytes) : NULL;
+    if (copy != NULL) {
+        memcpy(copy, elements, bytes);
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSView *view = (__bridge NSView *)view_pointer;
+        NSMutableArray<NSAccessibilityElement *> *built =
+            [NSMutableArray arrayWithCapacity:count];
+        for (int32_t index = 0; index < count; index++) {
+            const struct dxc_element *element = &copy[index];
+            NSString *label = [NSString stringWithUTF8String:element->label];
+            NSAccessibilityElement *made = [NSAccessibilityElement
+                accessibilityElementWithRole:dxc_appkit_role(element->role)
+                                       frame:NSZeroRect
+                                       label:label != nil ? label : @""
+                                      parent:view];
+            NSRect local = NSMakeRect(element->x, element->y, element->width, element->height);
+            NSRect inWindow = [view convertRect:local toView:nil];
+            [made setAccessibilityFrame:[view.window convertRectToScreen:inWindow]];
+            [built addObject:made];
+        }
+        dxc_accessibility_children = built;
+        free(copy);
+    });
 }
 
 /** Takes the oldest event, or answers zero when there is none. */
@@ -118,6 +230,39 @@ static NSString *dxc_marked_text;
  */
 @interface DxcView : NSView <NSTextInputClient>
 @end
+
+// The shape of a pointer, as a number both sides agree on. A name would be a string
+// crossing every time the pointer moved over a different control.
+enum {
+    DXC_CURSOR_ARROW = 0,
+    DXC_CURSOR_HAND = 1,
+    DXC_CURSOR_TEXT = 2,
+    DXC_CURSOR_CROSSHAIR = 3,
+    DXC_CURSOR_RESIZE_LEFT_RIGHT = 4,
+    DXC_CURSOR_RESIZE_UP_DOWN = 5,
+};
+
+/**
+ * Sets the shape of the pointer over this window.
+ *
+ * Called from the thread the scene runs on, because that is where a control decides what
+ * the pointer should look like over it, and done on the main thread because the cursor
+ * belongs to the window.
+ */
+void dxc_native_set_cursor(int32_t shape) {
+    dxc_on_main(^{
+        NSCursor *cursor = nil;
+        switch (shape) {
+            case DXC_CURSOR_HAND: cursor = NSCursor.pointingHandCursor; break;
+            case DXC_CURSOR_TEXT: cursor = NSCursor.IBeamCursor; break;
+            case DXC_CURSOR_CROSSHAIR: cursor = NSCursor.crosshairCursor; break;
+            case DXC_CURSOR_RESIZE_LEFT_RIGHT: cursor = NSCursor.resizeLeftRightCursor; break;
+            case DXC_CURSOR_RESIZE_UP_DOWN: cursor = NSCursor.resizeUpDownCursor; break;
+            default: cursor = NSCursor.arrowCursor; break;
+        }
+        [cursor set];
+    });
+}
 
 @implementation DxcView
 
@@ -172,6 +317,49 @@ static NSString *dxc_marked_text;
     [self.inputContext handleEvent:event];
 }
 - (void)keyUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_UP event:event]; }
+
+#pragma mark - Files dragged onto the window
+
+// What a drag is carrying, written into an event the same way text is.
+//
+// Only files. A drag of anything else is refused rather than delivered as an empty list,
+// because a window that accepts a drag and then does nothing with it is worse than one
+// that never offered.
+- (void)dxcSendPaths:(int32_t)kind info:(id<NSDraggingInfo>)info {
+    NSArray<NSURL *> *urls = [info.draggingPasteboard
+        readObjectsForClasses:@[NSURL.class]
+                      options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+    NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithCapacity:urls.count];
+    for (NSURL *url in urls) {
+        if (url.path != nil) {
+            [paths addObject:url.path];
+        }
+    }
+    // NUL, because it is the one byte no path on any desktop may contain.
+    [self dxcSendText:kind string:[paths componentsJoinedByString:@"\0"]];
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    [self dxcSendPaths:DXC_EVENT_FILES_ENTERED info:sender];
+    return NSDragOperationCopy;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    [self dxcSendPaths:DXC_EVENT_FILES_DROPPED info:sender];
+    return YES;
+}
+
+#pragma mark - NSAccessibility
+
+// The window's contents, as elements rather than as pixels.
+//
+// A reader who cannot see the window gets this and nothing else, so an empty answer is a
+// window that appears to contain nothing at all. What is in it is whatever the scene last
+// pushed.
+- (NSArray *)accessibilityChildren { return dxc_accessibility_children ?: @[]; }
+- (NSArray *)accessibilityChildrenInNavigationOrder { return self.accessibilityChildren; }
+- (NSAccessibilityRole)accessibilityRole { return NSAccessibilityGroupRole; }
+- (BOOL)isAccessibilityElement { return YES; }
 
 #pragma mark - NSTextInputClient
 
@@ -269,6 +457,24 @@ static NSString *dxc_marked_text;
 
 // Without a tracking area the view hears a moving pointer only while a button is held,
 // and hover is half of what a desktop control does.
+// The window changed size. The layer is told first, because a drawable handed out at the
+// old size would be drawn into at the new one, and the scene is told through the queue so
+// that it changes its mind between frames rather than during one.
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1;
+    layer.contentsScale = scale;
+    layer.drawableSize = CGSizeMake(size.width * scale, size.height * scale);
+
+    struct dxc_event record;
+    memset(&record, 0, sizeof record);
+    record.kind = DXC_EVENT_RESIZE;
+    record.x = (float)(size.width * scale);
+    record.y = (float)(size.height * scale);
+    dxc_push_event(record);
+}
+
 - (void)updateTrackingAreas {
     for (NSTrackingArea *area in self.trackingAreas) {
         [self removeTrackingArea:area];
@@ -291,22 +497,6 @@ struct dxc_native_window {
     void *queue;
     void *layer;
 };
-
-/**
- * Runs a block on the main thread and waits for it.
- *
- * AppKit answers on one thread and the renderer runs on another, which is the arrangement
- * the shell already sets up: the main thread is in `[NSApp run]` and serves its queue.
- * Straight through when already there, because dispatching to the queue you are on and
- * then waiting for it is a deadlock.
- */
-static void dxc_on_main(void (^work)(void)) {
-    if ([NSThread isMainThread]) {
-        work();
-    } else {
-        dispatch_sync(dispatch_get_main_queue(), work);
-    }
-}
 
 /**
  * Opens a window with a Metal layer filling it.
@@ -363,6 +553,7 @@ int32_t dxc_native_window_open(
 
         window.contentView = view;
         [window makeFirstResponder:view];
+        [view registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
         window.acceptsMouseMovedEvents = YES;
         [window center];
         [window makeKeyAndOrderFront:nil];
