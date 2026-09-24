@@ -1204,6 +1204,7 @@ mod tests {
                 fallback: DesignSystem::Fluent,
                 color_scheme: ColorScheme::FollowSystem,
                 adaptive: false,
+                fonts: [0; crate::schema::TYPE_ROLE_COUNT],
             })
         );
         assert_eq!(
@@ -1213,6 +1214,7 @@ mod tests {
                 fallback: DesignSystem::Cupertino,
                 color_scheme: ColorScheme::FollowSystem,
                 adaptive: true,
+                fonts: [0; crate::schema::TYPE_ROLE_COUNT],
             })
         );
     }

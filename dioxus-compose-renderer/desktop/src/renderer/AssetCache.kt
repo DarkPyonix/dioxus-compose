@@ -2,6 +2,7 @@ package dioxus.compose.ui.node
 
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.text.font.FontFamily
 import dioxus.compose.protocol.AssetKind
 import dioxus.compose.protocol.IconRole
 import java.lang.InterruptedException
@@ -20,6 +21,14 @@ sealed interface Asset {
 
     /** A parsed vector document, drawn at whatever size the modifier chain gives it. */
     class Vector(val document: VectorDocument) : Asset
+
+    /**
+     * A face the application shipped, which a type role can be resolved to.
+     *
+     * The family and not the bytes: reading a font file is done once at registration, and
+     * every piece of text in that role after it is a lookup.
+     */
+    class Font(val family: FontFamily) : Asset
 
     /**
      * One meaning out of the closed set, with no artwork attached.
@@ -104,6 +113,8 @@ class AssetCache {
         AssetKind.Png, AssetKind.Jpeg -> decodeRasterAsset(bytes)?.let(Asset::Raster)
 
         AssetKind.Svg -> decodeVectorAsset(bytes)?.let(Asset::Vector)
+
+        AssetKind.Font -> decodeFontAsset(bytes)?.let(Asset::Font)
 
         // A vector icon registers a meaning, so its bytes are the role tag and nothing
         // else. There is no artwork on the wire and no icon name to look up at run time.

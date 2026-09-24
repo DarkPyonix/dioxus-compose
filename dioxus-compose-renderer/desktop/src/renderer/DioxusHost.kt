@@ -43,6 +43,7 @@ import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.resolveTheme
+import dioxus.compose.ui.node.Asset
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
@@ -249,7 +250,9 @@ fun DioxusContent(
             reporter.report(widthDp, size.height.toDp().value, host)
         }
     }
-    val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass)
+    val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass) { asset ->
+        (host.table.assets.asset(asset) as? Asset.Font)?.family
+    }
     // The answer goes back to the Host, which asked a question it cannot answer itself:
     // an adaptive theme names no system, and the one that ends up running is worked out
     // here where the platform is. Only when it changes, the way a size class is reported.

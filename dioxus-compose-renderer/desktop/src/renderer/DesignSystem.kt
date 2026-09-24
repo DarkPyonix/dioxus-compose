@@ -118,6 +118,15 @@ class ResolvedTheme(
      * already measures the window for `WindowSizeChanged`, and this is the same reading.
      */
     val sizeClass: WindowSizeClass = WindowSizeClass.Compact,
+    /**
+     * The faces the application registered, by the role each was registered for.
+     *
+     * Empty is the ordinary case and means every role is written in the machine's own UI
+     * face. A role that is in here is written in the face the application shipped, and a
+     * role that is not stays where it was: naming a font for titles must not quietly
+     * change body text as well.
+     */
+    val fonts: Map<TypeRole, FontFamily> = emptyMap(),
 ) {
     fun color(role: ColorRole): Color =
         rules.color(role, dark, sizeClass) ?: Color(tokens.color(role, dark))
@@ -181,6 +190,16 @@ class ResolvedTheme(
 
     fun type(role: TypeRole): TypeToken = tokens.type(role)
 
+    /**
+     * The face this role is written in.
+     *
+     * A registered font wins, then code, then the machine's UI face. Code is second
+     * because a monospace role that resolved to a proportional face is not a styling
+     * difference, it is columns that no longer line up.
+     */
+    fun family(role: TypeRole): FontFamily =
+        fonts[role] ?: if (tokens.type(role).monospace) FontFamily.Monospace else platformUiFamily
+
     companion object {
         internal fun roundedShape(radius: Float): Shape =
             if (radius >= FULL_RADIUS) RoundedCornerShape(percent = 50) else RoundedCornerShape(radius.dp)
@@ -193,16 +212,6 @@ val TypeToken.fontSize: TextUnit get() = size.sp
 val TypeToken.composeWeight: FontWeight get() = FontWeight(weight)
 val TypeToken.composeLineHeight: TextUnit get() = lineHeight.sp
 val TypeToken.composeLetterSpacing: TextUnit get() = letterSpacing.sp
-
-/**
- * Font resources deliberately do not cross the protocol: a Host that named a font would
- * push the check that it exists out to run time. The token table's family names are
- * documentation of the guideline, not a font the Host may request.
- *
- * Everything that is not code is written in the machine's own UI face, whichever design
- * system is running. See [platformUiFamily] for why that is not the design system's call.
- */
-val TypeToken.family: FontFamily get() = if (monospace) FontFamily.Monospace else platformUiFamily
 
 /**
  * The face this machine writes its interfaces in.
@@ -1005,6 +1014,13 @@ fun resolveTheme(
     platform: HostPlatform,
     systemDark: Boolean,
     sizeClass: WindowSizeClass = WindowSizeClass.Compact,
+    /**
+     * What a registered font asset became, or null where nothing was registered.
+     *
+     * A lookup rather than the cache itself, so that the design system stays a thing that
+     * can be resolved in a test with nothing else standing up around it.
+     */
+    fontOf: (Int) -> FontFamily? = { null },
 ): ResolvedTheme {
     val system = when {
         theme == null -> adaptiveSystem(platform, DesignSystem.Material3)
@@ -1016,7 +1032,25 @@ fun resolveTheme(
         ColorScheme.Dark -> true
         ColorScheme.FollowSystem -> systemDark
     }
-    return ResolvedTheme(system, DesignTokens.of(system), rulesFor(system), dark, sizeClass)
+    // Only the roles the application actually named. A role whose asset is missing or is
+    // not a font is left out, so it stays on the machine's own face rather than on
+    // nothing, and the report of the missing asset is what says it happened.
+    val fonts = buildMap {
+        theme?.let { asked ->
+            for (role in TypeRole.entries) {
+                val family = asked.font(role)?.let(fontOf) ?: continue
+                put(role, family)
+            }
+        }
+    }
+    return ResolvedTheme(
+        system,
+        DesignTokens.of(system),
+        rulesFor(system),
+        dark,
+        sizeClass,
+        fonts,
+    )
 }
 
 /**

@@ -86,7 +86,20 @@ data class Theme(
     val fallback: DesignSystem,
     val colorScheme: ColorScheme,
     val adaptive: Boolean,
-)
+    /**
+     * The font asset each type role resolves to, indexed by the role's ordinal, with zero
+     * where the role keeps the system font.
+     *
+     * Per theme rather than per node: an application changes what a role is made of and
+     * every piece of text in that role changes with it. A node that could name a font
+     * would be a node deciding typography.
+     */
+    val fonts: List<Int> = List(TypeRole.entries.size) { 0 },
+) {
+
+    /** The font asset for [role], or null where the role keeps the system font. */
+    fun font(role: TypeRole): Int? = fonts.getOrNull(role.ordinal)?.takeIf { it != 0 }
+}
 
 /**
  * What the application asked of its own window.
@@ -275,6 +288,8 @@ object Protocol {
     private const val TAG_SHOW_MESSAGE = 12
     private const val TAG_SET_WINDOW = 13
     private const val ENVELOPE_LENGTH = 12
+    /** Four role tags, then one font asset id per type role. */
+    private val THEME_RECORD_LENGTH = 12 + 4 * TypeRole.entries.size
 
     /**
      * The high bit of each of eight bytes, which is where UTF-8 stops being ASCII. Written
@@ -402,10 +417,14 @@ object Protocol {
                         )
                     }
                     TAG_SET_THEME -> {
-                        requireRecordLength(length, 12, offset)
+                        requireRecordLength(length, THEME_RECORD_LENGTH, offset)
                         val adaptive = readU16(batch, base, available, offset + 10)
                         if (adaptive > 1) {
                             throw ProtocolException("invalid adaptive flag $adaptive", offset + 10)
+                        }
+                        // One slot per type role, in the order the wire fixes them in.
+                        val fonts = List(TypeRole.entries.size) { role ->
+                            readU32(batch, base, available, offset + 12 + 4 * role).toInt()
                         }
                         Mutation.SetTheme(
                             Theme(
@@ -413,6 +432,7 @@ object Protocol {
                                 designSystem(readU16(batch, base, available, offset + 6), offset + 6),
                                 colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
                                 adaptive == 1,
+                                fonts,
                             ),
                         )
                     }

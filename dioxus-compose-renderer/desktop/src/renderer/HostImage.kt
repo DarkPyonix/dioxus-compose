@@ -56,6 +56,9 @@ internal fun HostImage(
             // A symbol carries a meaning rather than a picture, so drawn as a picture it
             // takes the surface's own colour.
             is Asset.Symbol -> Unit
+            // A face is not a picture. An `Image` that names one is a mistake, and the
+            // report above is what says so.
+            is Asset.Font -> Unit
             null -> Unit
         }
     }
@@ -97,6 +100,10 @@ internal fun HostIcon(
         is Asset.Vector -> Canvas(modifier.size(theme.rules.icon(fallbackRole, theme).size)) {
             drawVector(asset)
         }
+
+        // A face has no shape to draw. An `Icon` that names one is a mistake, and the
+        // report above is what says so.
+        is Asset.Font -> Box(modifier)
 
         null -> Box(modifier)
     }

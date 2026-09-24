@@ -550,6 +550,11 @@ define_wire_enum!(ASSET_KIND_SCHEMA, AssetKind {
     Jpeg = 2,
     Svg = 3,
     VectorIcon = 4,
+    // A font file, registered so that a type role can resolve to it. The bytes are the
+    // font, which is why this is an asset and not a name: a name would put the check that
+    // the font exists at run time on the reader's machine, and a missing one there is a
+    // screen in the wrong typeface with nobody to tell.
+    Font = 5,
 });
 
 // The closed set of icon meanings. An icon is addressed by what it is for, never by a
@@ -842,7 +847,19 @@ pub struct Theme {
     pub fallback: DesignSystem,
     pub color_scheme: ColorScheme,
     pub adaptive: bool,
+    /// The font asset each type role resolves to, or zero for the system font.
+    ///
+    /// Per theme and not per node. A node that could name its own font would be a node
+    /// deciding typography, and the whole point of roles is that it does not: an
+    /// application changes what `Display` is made of, and every title changes with it.
+    ///
+    /// Indexed by the role's wire tag minus one, so the array and the enum cannot drift
+    /// apart without the compiler saying so.
+    pub fonts: [u32; TYPE_ROLE_COUNT],
 }
+
+/// How many type roles there are, which is how many font slots a theme carries.
+pub const TYPE_ROLE_COUNT: usize = 9;
 
 impl Theme {
     /// The same design system on every platform.
@@ -852,6 +869,7 @@ impl Theme {
             fallback: design_system,
             color_scheme: ColorScheme::FollowSystem,
             adaptive: false,
+            fonts: [0; TYPE_ROLE_COUNT],
         }
     }
 
@@ -862,12 +880,32 @@ impl Theme {
             fallback,
             color_scheme: ColorScheme::FollowSystem,
             adaptive: true,
+            fonts: [0; TYPE_ROLE_COUNT],
         }
     }
 
     pub const fn with_color_scheme(mut self, color_scheme: ColorScheme) -> Self {
         self.color_scheme = color_scheme;
         self
+    }
+
+    /// Resolves one type role to a registered font, leaving every other role alone.
+    ///
+    /// The asset has to be registered before the theme that names it reaches the
+    /// Renderer, the same way a picture does. An id that names nothing is reported and
+    /// the role falls back to the system font, because a screen in the wrong typeface is
+    /// better than no screen.
+    pub const fn with_font(mut self, role: TypeRole, asset: u32) -> Self {
+        self.fonts[role as usize - 1] = asset;
+        self
+    }
+
+    /// The font this role resolves to, or `None` for the system font.
+    pub const fn font(&self, role: TypeRole) -> Option<u32> {
+        match self.fonts[role as usize - 1] {
+            0 => None,
+            asset => Some(asset),
+        }
     }
 }
 

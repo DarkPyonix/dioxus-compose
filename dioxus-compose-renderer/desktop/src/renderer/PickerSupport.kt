@@ -34,7 +34,6 @@ import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.composeLetterSpacing
 import dioxus.compose.design.composeLineHeight
 import dioxus.compose.design.composeWeight
-import dioxus.compose.design.family
 import dioxus.compose.design.fontSize
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.HostEvent
@@ -121,7 +120,7 @@ internal fun ResolvedTheme.pickerTextStyle(
         fontWeight = token.composeWeight,
         lineHeight = token.composeLineHeight,
         letterSpacing = token.composeLetterSpacing,
-        fontFamily = token.family,
+        fontFamily = family(role),
     )
 }
 

@@ -2,9 +2,8 @@
 
 use crate::schema::{
     AssetKind, ColorScheme, DesignSystem, Key, MaterialRole, MessageDuration, Modifier, MotionRole,
-    Paint,
-    PropertyKind,
-    Selection, ShapeRole, SpaceRole, Theme, WidgetKind,
+    Paint, PropertyKind, Selection, ShapeRole, SpaceRole, TYPE_ROLE_COUNT, Theme, TypeRole,
+    WidgetKind,
 };
 use core::fmt;
 
@@ -540,11 +539,17 @@ impl BatchEncoder {
                 self.put_u16(0);
             }
             Mutation::SetTheme(theme) => {
-                self.begin_record(TAG_SET_THEME, 8);
+                self.begin_record(TAG_SET_THEME, 8 + 4 * TYPE_ROLE_COUNT as u16);
                 self.put_u16(theme.design_system as u16);
                 self.put_u16(theme.fallback as u16);
                 self.put_u16(theme.color_scheme as u16);
                 self.put_u16(u16::from(theme.adaptive));
+                // One slot per type role, zero where the role keeps the system font. Sent
+                // whether or not any of them is filled, because the record is fixed
+                // layout and a theme change is one record rather than a per frame cost.
+                for asset in theme.fonts {
+                    self.put_u32(asset);
+                }
             }
             Mutation::SetWindow(window) => {
                 self.begin_record(TAG_SET_WINDOW, 24);
@@ -735,13 +740,17 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                 node_id: read_u32(bytes, payload)?,
                 text: read_string(bytes, payload + 4, records_len)?,
             },
-            TAG_SET_THEME if len == 12 => {
+            TAG_SET_THEME if len == 12 + 4 * TYPE_ROLE_COUNT => {
                 let design_system = read_u16(bytes, payload)?;
                 let fallback = read_u16(bytes, payload + 2)?;
                 let color_scheme = read_u16(bytes, payload + 4)?;
                 let adaptive = read_u16(bytes, payload + 6)?;
                 if adaptive > 1 {
                     return Err(ProtocolError::InvalidTheme(adaptive));
+                }
+                let mut fonts = [0u32; TYPE_ROLE_COUNT];
+                for (index, slot) in fonts.iter_mut().enumerate() {
+                    *slot = read_u32(bytes, payload + 8 + 4 * index)?;
                 }
                 Mutation::SetTheme(Theme {
                     design_system: DesignSystem::try_from(design_system)
@@ -751,6 +760,7 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     color_scheme: ColorScheme::try_from(color_scheme)
                         .map_err(|()| ProtocolError::InvalidTheme(color_scheme))?,
                     adaptive: adaptive == 1,
+                    fonts,
                 })
             }
             TAG_SET_WINDOW if len == 28 => {
@@ -1109,17 +1119,34 @@ mod tests {
         assert_eq!(decode_batch(bytes).unwrap(), expected);
     }
 
-    /// `SetTheme` is a 12-byte record of four `u16` fields.
+    /// `SetTheme` is four `u16` fields and one font slot per type role.
+    ///
+    /// Fixed length whether or not any font is named, because the record is fixed layout
+    /// and a theme is sent once rather than per frame. The slots cost 36 bytes on a
+    /// message that appears once in a session.
     #[test]
-    fn fr14_set_theme_round_trips_in_twelve_bytes() {
-        let theme = Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
+    fn fr23_set_theme_round_trips_with_a_slot_for_every_type_role() {
+        let theme = Theme::adaptive(DesignSystem::Cupertino)
+            .with_color_scheme(ColorScheme::Dark)
+            .with_font(TypeRole::Display, 7);
+        let length = 12 + 4 * TYPE_ROLE_COUNT as u16;
         let mut encoder = BatchEncoder::default();
         encoder.encode(&Mutation::SetTheme(theme)).unwrap();
         let bytes = encoder.finish().unwrap();
-        assert_eq!(bytes.len(), ENVELOPE_LEN + 12);
+        assert_eq!(bytes.len(), ENVELOPE_LEN + length as usize);
         assert_eq!(read_u16(bytes, ENVELOPE_LEN).unwrap(), TAG_SET_THEME);
-        assert_eq!(read_u16(bytes, ENVELOPE_LEN + 2).unwrap(), 12);
+        assert_eq!(read_u16(bytes, ENVELOPE_LEN + 2).unwrap(), length);
         assert_eq!(decode_batch(bytes).unwrap(), [Mutation::SetTheme(theme)]);
+    }
+
+    /// A font named for one role leaves every other role on the system font.
+    #[test]
+    fn fr23_a_font_is_named_for_one_role_and_no_others() {
+        let theme = Theme::unified(DesignSystem::Material3).with_font(TypeRole::Display, 3);
+        assert_eq!(theme.font(TypeRole::Display), Some(3));
+        for role in [TypeRole::Body, TypeRole::Title, TypeRole::Mono, TypeRole::Caption] {
+            assert_eq!(theme.font(role), None);
+        }
     }
 
     /// An out-of-range theme tag is an error, never a panic.
