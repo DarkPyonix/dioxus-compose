@@ -438,18 +438,26 @@ pub fn app() -> Element {
         // This code never asks how wide the window is: the Renderer has measured it and
         // draws a bar along the bottom of a phone, a rail beside a tablet and a drawer
         // standing open on a desktop, from these same three items.
-        Navigation {
-            fill_max_width: true,
-            fill_max_height: true,
-            selected_index: filter().index(),
-            for choice in Filter::STRIP {
-                NavigationItem {
-                    key: "{choice.label()}",
-                    text: choice.label(),
-                    icon: choice.icon(),
-                    on_click: move |()| filter.set(choice),
+        Scaffold {
+            bottom_bar: rsx! {
+                Navigation {
+                    // No fill here. In a frame the destinations are a slot and how much
+                    // room they get is the frame's answer: a bar across the bottom on a
+                    // phone, a strip down the leading edge on anything wider. Asking to
+                    // fill the width took the whole row on a desktop and left the page
+                    // with none of it.
+                    selected_index: filter().index(),
+                    for choice in Filter::STRIP {
+                        NavigationItem {
+                            key: "{choice.label()}",
+                            text: choice.label(),
+                            icon: choice.icon(),
+                            on_click: move |()| filter.set(choice),
+                        }
+                    }
                 }
-            }
+            },
+
         Column {
             fill_max_width: true,
             fill_max_height: true,
@@ -1454,3 +1462,4 @@ mod tests {
         }
     }
 }
+

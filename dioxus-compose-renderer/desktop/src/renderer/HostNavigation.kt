@@ -186,11 +186,15 @@ internal fun HostNavigation(
 
     when (style.presentation) {
         NavigationPresentation.Bar -> Column(modifier.navigationBackdrop(style)) {
-            Box(Modifier.fillMaxWidth().weight(1f)) {
-                Screen(content, table, dispatcher)
-            }
-            style.separator?.let { line ->
-                Box(Modifier.fillMaxWidth().height(1.dp).background(line))
+            // Same reason as the rail below: with nothing to show above it, this is a
+            // strip and not a screen with a strip under it.
+            if (content.isNotEmpty()) {
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    Screen(content, table, dispatcher)
+                }
+                style.separator?.let { line ->
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(line))
+                }
             }
             Row(
                 Modifier
@@ -260,11 +264,18 @@ internal fun HostNavigation(
                     }
                 }
             }
-            style.separator?.let { line ->
-                Box(Modifier.width(1.dp).fillMaxHeight().background(line))
-            }
-            Box(Modifier.fillMaxHeight().weight(1f)) {
-                Screen(content, table, dispatcher)
+            // The rule and the room for a screen belong to the screen. A navigation
+            // holding nothing but its destinations is a strip, and a strip that reserved
+            // the rest of the window would leave whatever is beside it with no width at
+            // all. That is what a frame does with this: the destinations go in one slot
+            // and the page in another, and the two are laid out by the frame.
+            if (content.isNotEmpty()) {
+                style.separator?.let { line ->
+                    Box(Modifier.width(1.dp).fillMaxHeight().background(line))
+                }
+                Box(Modifier.fillMaxHeight().weight(1f)) {
+                    Screen(content, table, dispatcher)
+                }
             }
         }
     }
