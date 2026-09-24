@@ -56,9 +56,9 @@ internal fun HostImage(
             // A symbol carries a meaning rather than a picture, so drawn as a picture it
             // takes the surface's own colour.
             is Asset.Symbol -> Unit
-            // A face is not a picture. An `Image` that names one is a mistake, and the
-            // report above is what says so.
-            is Asset.Font -> Unit
+            // Neither a face nor a fill is a picture. An `Image` that names one is a
+            // mistake, and the report above is what says so.
+            is Asset.Font, is Asset.Brush -> Unit
             null -> Unit
         }
     }
@@ -101,9 +101,9 @@ internal fun HostIcon(
             drawVector(asset)
         }
 
-        // A face has no shape to draw. An `Icon` that names one is a mistake, and the
-        // report above is what says so.
-        is Asset.Font -> Box(modifier)
+        // Neither a face nor a fill has a shape to draw. An `Icon` that names one is a
+        // mistake, and the report above is what says so.
+        is Asset.Font, is Asset.Brush -> Box(modifier)
 
         null -> Box(modifier)
     }

@@ -22,6 +22,8 @@ enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
 
 enum class MotionRole { Instant, Quick, Standard, Slow, Emphasized }
 
+enum class TileMode { Clamp, Repeat, Mirror }
+
 enum class MaterialRole { Thin, Regular, Thick, Chrome }
 
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
@@ -40,7 +42,7 @@ enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze, Deepin, L
 
 enum class ColorScheme { Light, Dark, FollowSystem }
 
-enum class AssetKind { Png, Jpeg, Svg, VectorIcon, Font }
+enum class AssetKind { Png, Jpeg, Svg, VectorIcon, Font, Brush }
 
 enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, Home, List, Inbox, Menu, History }
 
@@ -63,6 +65,14 @@ sealed interface Paint {
 
     /** A literal 0xAARRGGBB colour. */
     data class Literal(val argb: Int) : Paint
+
+    /**
+     * A registered brush: a gradient, or a picture laid out as a fill.
+     *
+     * An id, because a list of stops does not fit the two words a paint has and because a
+     * brush has to outlive the frame that draws it.
+     */
+    data class Asset(val assetId: Int) : Paint
 }
 
 data class Theme(
@@ -332,7 +342,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -5973421749591360603L
+    const val SCHEMA_HASH: Long = -2513130958258615401L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -862,6 +872,13 @@ object Protocol {
         else -> throw ProtocolException("unknown MotionRole tag $tag", offset)
     }
 
+    private fun tileMode(tag: Int, offset: Int): TileMode = when (tag) {
+        1 -> TileMode.Clamp
+        2 -> TileMode.Repeat
+        3 -> TileMode.Mirror
+        else -> throw ProtocolException("unknown TileMode tag $tag", offset)
+    }
+
     private fun materialRole(tag: Int, offset: Int): MaterialRole = when (tag) {
         1 -> MaterialRole.Thin
         2 -> MaterialRole.Regular
@@ -952,6 +969,7 @@ object Protocol {
         3 -> AssetKind.Svg
         4 -> AssetKind.VectorIcon
         5 -> AssetKind.Font
+        6 -> AssetKind.Brush
         else -> throw ProtocolException("unknown AssetKind tag $tag", offset)
     }
 
@@ -997,6 +1015,7 @@ object Protocol {
         return when (val kind = (bits ushr 32).toInt()) {
             1 -> Paint.Role(colorRole(value, offset))
             2 -> Paint.Literal(value)
+            3 -> Paint.Asset(value)
             else -> throw ProtocolException("unknown paint kind $kind", offset)
         }
     }

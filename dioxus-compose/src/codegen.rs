@@ -79,6 +79,14 @@ pub fn generate_kotlin() -> String {
 
     /** A literal 0xAARRGGBB colour. */
     data class Literal(val argb: Int) : Paint
+
+    /**
+     * A registered brush: a gradient, or a picture laid out as a fill.
+     *
+     * An id, because a list of stops does not fit the two words a paint has and because a
+     * brush has to outlive the frame that draws it.
+     */
+    data class Asset(val assetId: Int) : Paint
 }
 
 data class Theme(
@@ -799,6 +807,7 @@ object Protocol {
         return when (val kind = (bits ushr 32).toInt()) {
             1 -> Paint.Role(colorRole(value, offset))
             2 -> Paint.Literal(value)
+            3 -> Paint.Asset(value)
             else -> throw ProtocolException("unknown paint kind $kind", offset)
         }
     }

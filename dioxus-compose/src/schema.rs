@@ -555,6 +555,20 @@ define_wire_enum!(ASSET_KIND_SCHEMA, AssetKind {
     // the font exists at run time on the reader's machine, and a missing one there is a
     // screen in the wrong typeface with nobody to tell.
     Font = 5,
+    // A gradient or an image fill, registered so that any Paint may name it. The bytes
+    // are the brush's own fixed layout rather than a file: nothing on any platform stores
+    // a list of stops as a document, and a format would be a parser to write and keep.
+    Brush = 6,
+});
+
+// How a brush carries on past the area it was given.
+define_wire_enum!(TILE_MODE_SCHEMA, TileMode {
+    // Stops at the edge and drags the last colour outwards, which is what a gradient
+    // filling a surface wants.
+    Clamp = 1,
+    Repeat = 2,
+    // Repeats, flipping every other copy, so the seams do not show.
+    Mirror = 3,
 });
 
 // The closed set of icon meanings. An icon is addressed by what it is for, never by a
@@ -650,6 +664,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
         variants: MOTION_ROLE_SCHEMA,
     },
     RoleEnumSchema {
+        name: "TileMode",
+        variants: TILE_MODE_SCHEMA,
+    },
+    RoleEnumSchema {
         name: "MaterialRole",
         variants: MATERIAL_ROLE_SCHEMA,
     },
@@ -714,16 +732,24 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
 pub enum Paint {
     Role(ColorRole),
     Literal(Color),
+    /// A registered brush: a gradient, or a picture laid out as a fill.
+    ///
+    /// An id rather than the thing itself, because a list of stops does not fit the two
+    /// words a modifier has and because a brush outlives the frame that draws it, which
+    /// is what the asset path already exists for.
+    Asset(u32),
 }
 
 const PAINT_KIND_ROLE: u64 = 1;
 const PAINT_KIND_LITERAL: u64 = 2;
+const PAINT_KIND_ASSET: u64 = 3;
 
 impl Paint {
     pub const fn to_bits(self) -> u64 {
         match self {
             Self::Role(role) => (PAINT_KIND_ROLE << 32) | role as u64,
             Self::Literal(color) => (PAINT_KIND_LITERAL << 32) | color.0 as u64,
+            Self::Asset(id) => (PAINT_KIND_ASSET << 32) | id as u64,
         }
     }
 
@@ -734,6 +760,7 @@ impl Paint {
                 ColorRole::try_from(u16::try_from(value).ok()?).ok()?,
             )),
             PAINT_KIND_LITERAL => Some(Self::Literal(Color(value))),
+            PAINT_KIND_ASSET => Some(Self::Asset(value)),
             _ => None,
         }
     }

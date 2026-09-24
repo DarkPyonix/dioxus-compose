@@ -4,6 +4,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Brush as ComposeBrush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -127,14 +129,43 @@ class ResolvedTheme(
      * change body text as well.
      */
     val fonts: Map<TypeRole, FontFamily> = emptyMap(),
+    /**
+     * What a registered brush id was registered as, or null for an id naming nothing.
+     *
+     * A lookup and not a map, because a brush is named per node rather than per theme and
+     * copying every registration into the theme each time one changes would cost the
+     * whole table for the one node that asked.
+     */
+    val brushes: (Int) -> ComposeBrush? = { null },
 ) {
     fun color(role: ColorRole): Color =
         rules.color(role, dark, sizeClass) ?: Color(tokens.color(role, dark))
 
-    /** A literal paints itself, a role goes through the table. */
+    /**
+     * A literal paints itself, a role goes through the table, a brush answers with the
+     * colour it starts from.
+     *
+     * A gradient asked for as a colour has to become one somewhere, and the alternative
+     * is a caller that has to know which kind of paint it was handed before it can use
+     * it. Everywhere a brush can actually be drawn asks [brush] instead.
+     */
     fun color(paint: Paint): Color = when (paint) {
         is Paint.Literal -> Color(paint.argb)
         is Paint.Role -> color(paint.role)
+        is Paint.Asset -> brushes(paint.assetId)?.let(::startingColor)
+            ?: color(ColorRole.Surface)
+    }
+
+    /**
+     * What to fill with: a brush where the paint named one, a flat colour otherwise.
+     *
+     * Null where the paint named a brush that is not registered, so that the caller can
+     * report it. Drawing a guess would leave the application with a screen that is only
+     * subtly wrong and nothing to read about why.
+     */
+    fun brush(paint: Paint): ComposeBrush? = when (paint) {
+        is Paint.Asset -> brushes(paint.assetId)
+        else -> SolidColor(color(paint))
     }
 
     fun space(role: SpaceRole): Dp = tokens.space(role).dp
@@ -1021,6 +1052,8 @@ fun resolveTheme(
      * can be resolved in a test with nothing else standing up around it.
      */
     fontOf: (Int) -> FontFamily? = { null },
+    /** What a registered brush became, or null for an id naming nothing. */
+    brushOf: (Int) -> ComposeBrush? = { null },
 ): ResolvedTheme {
     val system = when {
         theme == null -> adaptiveSystem(platform, DesignSystem.Material3)
@@ -1050,6 +1083,7 @@ fun resolveTheme(
         dark,
         sizeClass,
         fonts,
+        brushOf,
     )
 }
 
@@ -1060,6 +1094,17 @@ fun resolveTheme(
  * chrome panel is the furthest, and every step is taken between two colours this system
  * already chose, so nothing here invents a colour.
  */
+/**
+ * The colour a brush starts from.
+ *
+ * Only for the places that can hold a colour and nothing else. A gradient's first stop is
+ * the honest answer there: it is a colour the application actually chose.
+ */
+private fun startingColor(brush: ComposeBrush): Color = when (brush) {
+    is SolidColor -> brush.value
+    else -> Color.Unspecified
+}
+
 internal fun opaqueMaterial(role: MaterialRole, theme: ResolvedTheme): Color {
     val surface = theme.color(ColorRole.Surface)
     val toward = theme.color(ColorRole.SurfaceVariant)

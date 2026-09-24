@@ -1,6 +1,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod asset;
+pub mod brush;
 pub mod boundary;
 /// Generated JNI shims. Compiled only for Android, where the Host is a cdylib that the
 /// Kotlin Activity loads.
@@ -41,13 +42,14 @@ pub use dioxus_core::{Element, VirtualDom};
 // second dependency, which defeats the promise that one dependency is enough.
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
+pub use brush::{Brush, Stop, brush};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use message::{Message, show_message};
 pub use schema::{
     Alignment, Arrangement, AssetKind, ButtonVariant, Chrome, Color, ColorRole, ColorScheme,
     DesignSystem, EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint,
-    MaterialRole, MotionRole, PropertyKind, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
+    MaterialRole, MotionRole, PropertyKind, TileMode, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
     TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
@@ -154,12 +156,12 @@ pub mod prelude {
         DrawList, Dropdown, Element, FileDrop, FileDropTarget, Icon, IconRole, Image, Key, KeyEvent,
         LaunchBuilder,
         LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
-        MaterialRole, Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
+        Brush, MaterialRole, Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
         RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
         Spacer,
         Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
         Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
-        show_message, use_design_system, use_node_size, use_window_size,
+        Stop, TileMode, brush, show_message, use_design_system, use_node_size, use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find

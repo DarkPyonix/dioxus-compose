@@ -250,9 +250,14 @@ fun DioxusContent(
             reporter.report(widthDp, size.height.toDp().value, host)
         }
     }
-    val theme = resolveTheme(host.table.theme, platform, systemDark, sizeClass) { asset ->
-        (host.table.assets.asset(asset) as? Asset.Font)?.family
-    }
+    val theme = resolveTheme(
+        host.table.theme,
+        platform,
+        systemDark,
+        sizeClass,
+        fontOf = { asset -> (host.table.assets.asset(asset) as? Asset.Font)?.family },
+        brushOf = { asset -> (host.table.assets.asset(asset) as? Asset.Brush)?.brush },
+    )
     // The answer goes back to the Host, which asked a question it cannot answer itself:
     // an adaptive theme names no system, and the one that ends up running is worked out
     // here where the platform is. Only when it changes, the way a size class is reported.

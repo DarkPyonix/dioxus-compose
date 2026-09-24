@@ -1949,3 +1949,73 @@ fn fr23_silence_about_material_costs_no_record() {
         Mutation::SetModifier { modifier: Modifier::Material(_), .. }
     )));
 }
+
+/// A gradient reaches the Renderer as a registration and an id, not as a list of stops.
+#[test]
+fn fr23_a_gradient_is_registered_once_and_named_by_id() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::{AssetKind, Color, Paint};
+
+    fn sky() -> Element {
+        let paint = brush(Brush::vertical(vec![
+            Stop::new(0.0, Color::rgb(0x4a90d9)),
+            Stop::new(0.5, Color::rgb(0x9ec9f0)),
+            Stop::new(1.0, Color::rgb(0xffffff)),
+        ]));
+        rsx! { Surface { background: paint, Text { text: "over a gradient" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(sky);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+
+    let registration = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::RegisterAsset { asset_id, kind: AssetKind::Brush, bytes } => {
+                Some((*asset_id, *bytes))
+            }
+            _ => None,
+        })
+        .expect("the brush was never registered");
+    // Header, then one record per stop.
+    assert_eq!(
+        registration.1.len(),
+        dioxus_compose::brush::HEADER_LEN + 3 * dioxus_compose::brush::STOP_LEN,
+    );
+
+    let named = mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Background(Paint::Asset(id)), .. }
+            if *id == registration.0
+    ));
+    assert!(named, "the surface did not name the brush it registered: {mutations:?}");
+}
+
+/// The same gradient asked for twice is one registration.
+#[test]
+fn fr23_the_same_brush_is_registered_once() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::schema::Color;
+
+    let first = brush(Brush::horizontal(vec![
+        Stop::new(0.0, Color::rgb(0x101010)),
+        Stop::new(1.0, Color::rgb(0xf0f0f0)),
+    ]));
+    let again = brush(Brush::horizontal(vec![
+        Stop::new(0.0, Color::rgb(0x101010)),
+        Stop::new(1.0, Color::rgb(0xf0f0f0)),
+    ]));
+    assert_eq!(first, again);
+}
+
+/// A brush travels as the two words a Paint has, whichever kind it is.
+#[test]
+fn fr23_a_brush_paint_survives_the_wire() {
+    use dioxus_compose::schema::{ColorRole, Paint};
+
+    for paint in [Paint::Asset(1), Paint::Asset(4_000_000), Paint::Role(ColorRole::Primary)] {
+        assert_eq!(Paint::from_bits(paint.to_bits()), Some(paint));
+    }
+}
