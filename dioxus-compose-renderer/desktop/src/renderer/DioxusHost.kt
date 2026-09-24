@@ -43,10 +43,12 @@ import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.resolveTheme
+import dioxus.compose.protocol.MaterialRole
 import dioxus.compose.ui.node.Asset
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
+import dioxus.compose.ui.node.platformWindowMaterial
 import dioxus.compose.ui.node.TableError
 import java.lang.InterruptedException
 import java.lang.System
@@ -330,6 +332,10 @@ fun DioxusContent(
         // the inset outside instead leaves the window's own background showing through the
         // strip the title bar used to occupy, which reads as a leftover title bar rather
         // than as content extending underneath one.
+        // Told once, and again only when the answer changes. A window that never asks is
+        // never told, and comes up on exactly the path it did before any of this existed.
+        val asked = host.table.asksForWindowMaterial(host.roots)
+        SideEffect { platformWindowMaterial(asked) }
         CompositionLocalProvider(LocalWindowSizeClass provides sizeClass) {
             Box(modifier.then(measured).background(host.table.windowFill(host.roots, theme))) {
                 Box(Modifier.padding(top = pageTop, bottom = pageBottom)) {
@@ -541,30 +547,42 @@ internal fun NodeTable.windowFill(roots: List<Int>, theme: ResolvedTheme): Color
     val root = roots.firstOrNull()?.let(::node)
     val own = root?.modifiers?.firstNotNullOfOrNull { it as? ProtocolModifier.Background }
     val fill = own?.let { theme.color(it.paint) } ?: theme.color(ColorRole.Background)
-    return fill.letTheWindowShowThrough(theme)
+    return if (asksForWindowMaterial(roots)) fill.letTheWindowShowThrough() else fill
 }
 
 /**
- * How much of the page colour a glass window keeps.
+ * Whether anything in this tree asked to be made of a material.
  *
- * A material behind the window is only a material if something lets it through. The page
- * is the backmost thing the renderer paints, so painting it opaque covers the window's own
- * backdrop completely and the glass is a flat tint again, which is exactly what the first
- * run of this looked like: the desktop was being composited behind a window that then hid
- * it.
+ * Anything, not the page. A window that shows what is behind it is not a window that is
+ * see-through all over: no application on this platform is. A sidebar is vibrant and the
+ * page beside it is not, and that is decided where the material is drawn rather than
+ * here. What is decided here is only whether the window is stood up in a form that has
+ * anything behind it to show, which is a property of the window and has to be settled
+ * before it opens.
  *
- * Kept high enough that the page is still a page. Apple's own under-window material is
- * blurred and tinted before anything of ours is drawn over it, so what comes through is a
- * wash of the colours behind rather than a picture competing with the text.
+ * A page that paints itself still covers what is behind it, exactly as it always did.
  */
-private const val GLASS_PAGE_ALPHA = 0.76f
+internal fun NodeTable.asksForWindowMaterial(roots: List<Int>): Boolean {
+    // The roots are taken so that the question is asked of a tree rather than of the
+    // table in the abstract, and so a caller cannot forget to check that one exists.
+    if (roots.isEmpty()) return false
+    return asksForMaterial
+}
 
-private fun Color.letTheWindowShowThrough(theme: ResolvedTheme): Color =
-    if (theme.system == DesignSystem.LiquidGlass && platformBacksWindowWithMaterial()) {
-        copy(alpha = GLASS_PAGE_ALPHA)
-    } else {
-        this
-    }
+/**
+ * The page of a window that is backed by a material: none of it.
+ *
+ * The material behind the window is the page. Painting one over it is painting over the
+ * thing that was asked for, and it does not take much: a page at three quarters opacity
+ * left four percent of the backdrop showing, which measures as a couple of levels and
+ * reads as a flat dark rectangle.
+ *
+ * What the screen declared is still drawn. The root carries the material role, and the
+ * design system's own glass is drawn for it in the ordinary way, over a window that now
+ * has something real behind it to be glass over.
+ */
+private fun Color.letTheWindowShowThrough(): Color =
+    if (platformBacksWindowWithMaterial()) Color.Transparent else this
 
 /**
  * True where the window has a material behind it for a translucent page to reveal.

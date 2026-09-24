@@ -259,6 +259,16 @@ var platformFileDrop: @Composable (Modifier, Node, EventDispatcher) -> Modifier 
 var platformReducedMotion: () -> Boolean = { false }
 
 /**
+ * Tells the platform whether this window wants a material behind it.
+ *
+ * A hook because only one build can answer: the effect view is put behind the window by
+ * the shared library's own C entry, which exists in the native image and not in the
+ * development shell, and not at all on a platform whose windows are not ours. Whoever
+ * cannot do it leaves this alone, and the window comes up the way it always did.
+ */
+var platformWindowMaterial: (Boolean) -> Unit = { }
+
+/**
  * The axis a widget stacks its children along, which is the axis a child's `Weight` is a
  * share of: a weight under a Column is a share of the height, a weight under a Row a share
  * of the width.

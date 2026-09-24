@@ -18,6 +18,7 @@ import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.delay
 import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.asksForWindowMaterial
 import dioxus.compose.runtime.HostConnection
 import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.DpSize
@@ -88,6 +89,10 @@ internal fun runRenderer(
     runRendererWithHost(host, asked, chrome, autoExitMillis)
 }
 
+/** How long the surface is asked to stay transparent while the window settles. */
+private const val BACKDROP_ATTEMPTS = 20
+private const val BACKDROP_RETRY_MILLIS = 100L
+
 private fun runRendererWithHost(
     host: DioxusHost,
     asked: dioxus.compose.protocol.Window?,
@@ -98,7 +103,14 @@ private fun runRendererWithHost(
     // up the bar. macOS makes the real bar transparent; Windows keeps the frame and hands
     // the caption strip to the client area. Linux has neither, so the whole decoration
     // goes and every part of it is drawn here, including the resize edges.
-    val undecorated = chrome == WindowChrome.Modern && !platformKeepsSystemFrame()
+    // A window that wants to show what is behind it has to be able to draw
+    // transparently, and the toolkit allows that only for a window it was asked to leave
+    // undecorated. What is given up in the asking is given up on this side alone: the
+    // window is a real one, and the shell puts the platform's own frame back on it, so
+    // the title bar and its three buttons are still the system's and not ours.
+    val wantsBackdrop = host.table.asksForWindowMaterial(host.roots)
+    val undecorated =
+        (chrome == WindowChrome.Modern && !platformKeepsSystemFrame()) || wantsBackdrop
     // A measurement of zero means the application did not ask, so the choice stays the
     // window's own rather than becoming a window of no size.
     val state = if (asked != null && asked.width > 0 && asked.height > 0) {
@@ -113,12 +125,29 @@ private fun runRendererWithHost(
         // which is the library's name and not any application's.
         title = asked?.title?.takeIf { it.isNotEmpty() } ?: "DioxusCompose",
         undecorated = undecorated,
+        transparent = wantsBackdrop,
         resizable = asked?.resizable ?: true,
         state = state,
     ) {
         // AWT reads the macOS client properties when the peer is realised, so this runs
         // once the window exists rather than as a constructor argument.
         LaunchedEffect(chrome) { applyWindowChrome(window, chrome) }
+
+        // The surface clears itself opaque unless told otherwise, and a window that never
+        // asked keeps that, because it is the cheaper of the two.
+        //
+        // Said again for a moment rather than once. Giving the window its frame back
+        // happens on the platform's side, a little after this, and it rebuilds the views
+        // the surface hangs from; a switch pressed before that is a switch on something
+        // that is about to be replaced. A second of it is enough and then it stops, so
+        // nothing here runs for the life of the window.
+        LaunchedEffect(wantsBackdrop) {
+            if (!wantsBackdrop) return@LaunchedEffect
+            repeat(BACKDROP_ATTEMPTS) {
+                dioxus.compose.ui.letWindowShowItsBackdrop(window)
+                kotlinx.coroutines.delay(BACKDROP_RETRY_MILLIS)
+            }
+        }
 
         // What the window believes the display's scale is, on request.
         //

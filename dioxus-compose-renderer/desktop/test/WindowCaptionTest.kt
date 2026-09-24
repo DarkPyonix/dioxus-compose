@@ -24,6 +24,8 @@ import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.Theme
 import dioxus.compose.runtime.platformBacksWindowWithMaterial
+import dioxus.compose.protocol.MaterialRole
+import dioxus.compose.runtime.asksForWindowMaterial
 import dioxus.compose.runtime.windowFill
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
@@ -107,6 +109,13 @@ private val TREE_IN_A_PAINTED_SHELL = listOf(
 private val TREE_PAINTED_BY_THE_APPLICATION = listOf(
     Mutation.Create(ROOT, WidgetKind.Column),
     Mutation.SetModifier(ROOT, 0, ProtocolModifier.Background(Paint.Literal(CREAM))),
+) + label(LABEL, ROOT, 0, "Title")
+
+/** The same page, made of the thickest material a design system has. */
+private val TREE_MADE_OF_CHROME = listOf(
+    Mutation.Create(ROOT, WidgetKind.Column),
+    Mutation.SetModifier(ROOT, 0, ProtocolModifier.Background(Paint.Literal(CREAM))),
+    Mutation.SetModifier(ROOT, 1, ProtocolModifier.Material(MaterialRole.Chrome)),
 ) + label(LABEL, ROOT, 0, "Title")
 
 @OptIn(ExperimentalTestApi::class)
@@ -210,7 +219,7 @@ class WindowCaptionTest {
     }
 
     /**
-     * A glass window keeps the page's colour and stops painting all of it.
+     * A page made of chrome keeps its colour and stops painting all of it.
      *
      * The material the renderer puts behind the window is only a material if something
      * lets it through, and the page is the backmost thing drawn. Painted opaque it covers
@@ -218,28 +227,87 @@ class WindowCaptionTest {
      * desktop was being composited behind a window that then hid it.
      */
     @Test
-    fun fr29_a_glass_window_lets_its_backdrop_through() {
-        val glass = resolveTheme(
-            theme = Theme(
-                DesignSystem.LiquidGlass,
-                DesignSystem.LiquidGlass,
-                ColorScheme.Light,
-                adaptive = false,
-            ),
-            platform = HostPlatform.MacOs,
-            systemDark = false,
-        )
-        val painted = tableOf(TREE_PAINTED_BY_THE_APPLICATION)
-        val fill = painted.windowFill(painted.roots, glass)
+    fun fr29_a_window_made_of_chrome_lets_its_backdrop_through() {
+        val glass = glassTheme()
+        val chrome = tableOf(TREE_MADE_OF_CHROME)
+        val fill = chrome.windowFill(chrome.roots, glass)
         if (platformBacksWindowWithMaterial()) {
-            assertTrue(fill.alpha < 1f, "an opaque page hides the window's own backdrop")
-            assertEquals(Color(CREAM).red, fill.red, "the colour is still the page's")
-            assertEquals(Color(CREAM).green, fill.green)
-            assertEquals(Color(CREAM).blue, fill.blue)
+            // None of it. The material behind the window is the page, and a page painted
+            // over it is paint over the thing that was asked for: three quarters opacity
+            // left four percent of the backdrop showing, which measured as two levels.
+            assertEquals(0f, fill.alpha, "a painted page hides the window's own backdrop")
         } else {
             assertEquals(1f, fill.alpha, "nothing is put behind the window here to reveal")
         }
     }
+
+    /**
+     * A window that did not ask comes up the way it always did.
+     *
+     * This is half of what the requirement asks for, and the more important half: the
+     * feature must cost nothing to every window that is not using it. The other half is
+     * that no effect view is built for such a window, which is the same answer read by
+     * the shim that would build one.
+     */
+    @Test
+    fun fr29_a_window_that_did_not_ask_is_painted_as_before() {
+        val glass = glassTheme()
+        val painted = tableOf(TREE_PAINTED_BY_THE_APPLICATION)
+        assertEquals(1f, painted.windowFill(painted.roots, glass).alpha)
+        assertTrue(!painted.asksForWindowMaterial(painted.roots))
+    }
+
+    /**
+     * Any material anywhere asks, not the page alone.
+     *
+     * No application on this platform is see-through all over: a sidebar is vibrant and
+     * the page beside it is not. So the question the window has to settle before it opens
+     * is whether anything in the tree will be glass, and where that glass ends up is
+     * decided later, where it is drawn.
+     */
+    @Test
+    fun fr29_a_material_anywhere_in_the_tree_asks_for_a_backdrop() {
+        val chrome = tableOf(TREE_MADE_OF_CHROME)
+        assertTrue(chrome.asksForWindowMaterial(chrome.roots))
+
+        // A sidebar made of glass under a page that is not.
+        val sidebar = tableOf(
+            listOf(
+                Mutation.Create(ROOT, WidgetKind.Column),
+                Mutation.Create(LABEL + 1, WidgetKind.Column),
+                Mutation.SetModifier(LABEL + 1, 0, ProtocolModifier.Material(MaterialRole.Thick)),
+                Mutation.Insert(ROOT, LABEL + 1, 0),
+            ) + label(LABEL, ROOT, 1, "Page"),
+        )
+        assertTrue(sidebar.asksForWindowMaterial(sidebar.roots))
+    }
+
+    /** A tree with no material anywhere leaves the window exactly as it was. */
+    @Test
+    fun fr29_a_tree_with_no_material_asks_for_nothing() {
+        val plain = tableOf(TREE_WITHOUT_A_BAR)
+        assertTrue(!plain.asksForWindowMaterial(plain.roots))
+    }
+
+    /** A material that goes away takes the window's reason for a backdrop with it. */
+    @Test
+    fun fr29_removing_the_last_material_stops_asking() {
+        val table = tableOf(TREE_MADE_OF_CHROME)
+        assertTrue(table.asksForWindowMaterial(table.roots))
+        table.apply(Mutation.SetModifier(ROOT, 1, ProtocolModifier.Empty))
+        assertTrue(!table.asksForWindowMaterial(table.roots))
+    }
+
+    private fun glassTheme() = resolveTheme(
+        theme = Theme(
+            DesignSystem.LiquidGlass,
+            DesignSystem.LiquidGlass,
+            ColorScheme.Light,
+            adaptive = false,
+        ),
+        platform = HostPlatform.MacOs,
+        systemDark = false,
+    )
 
     /**
      * A bar that has the caption covers the strip and lays its content out beside the
