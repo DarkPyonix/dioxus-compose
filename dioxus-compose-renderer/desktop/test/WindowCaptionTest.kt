@@ -20,6 +20,10 @@ import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.WindowCaption
 import dioxus.compose.runtime.opensWithABar
 import dioxus.compose.runtime.opensWithANavigation
+import dioxus.compose.protocol.ColorScheme
+import dioxus.compose.protocol.DesignSystem
+import dioxus.compose.protocol.Theme
+import dioxus.compose.runtime.platformBacksWindowWithMaterial
 import dioxus.compose.runtime.windowFill
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
@@ -185,12 +189,56 @@ class WindowCaptionTest {
 
     @Test
     fun fr19_2_the_caption_strip_takes_the_colour_the_root_was_painted() {
-        val theme = resolveTheme(theme = null, platform = HostPlatform.MacOs, systemDark = false)
+        // Material 3 rather than whatever this machine resolves to, because a glass
+        // window keeps the same colour and gives up some of its opacity, and this test is
+        // about which colour rather than how much of it.
+        val theme = resolveTheme(
+            theme = Theme(
+                DesignSystem.Material3,
+                DesignSystem.Material3,
+                ColorScheme.Light,
+                adaptive = false,
+            ),
+            platform = HostPlatform.MacOs,
+            systemDark = false,
+        )
         val painted = tableOf(TREE_PAINTED_BY_THE_APPLICATION)
         assertEquals(Color(CREAM), painted.windowFill(painted.roots, theme))
 
         val plain = tableOf(TREE_WITHOUT_A_BAR)
         assertEquals(theme.color(ColorRole.Background), plain.windowFill(plain.roots, theme))
+    }
+
+    /**
+     * A glass window keeps the page's colour and stops painting all of it.
+     *
+     * The material the renderer puts behind the window is only a material if something
+     * lets it through, and the page is the backmost thing drawn. Painted opaque it covers
+     * the backdrop completely, which is what the first run of this looked like: the
+     * desktop was being composited behind a window that then hid it.
+     */
+    @Test
+    fun fr29_a_glass_window_lets_its_backdrop_through() {
+        val glass = resolveTheme(
+            theme = Theme(
+                DesignSystem.LiquidGlass,
+                DesignSystem.LiquidGlass,
+                ColorScheme.Light,
+                adaptive = false,
+            ),
+            platform = HostPlatform.MacOs,
+            systemDark = false,
+        )
+        val painted = tableOf(TREE_PAINTED_BY_THE_APPLICATION)
+        val fill = painted.windowFill(painted.roots, glass)
+        if (platformBacksWindowWithMaterial()) {
+            assertTrue(fill.alpha < 1f, "an opaque page hides the window's own backdrop")
+            assertEquals(Color(CREAM).red, fill.red, "the colour is still the page's")
+            assertEquals(Color(CREAM).green, fill.green)
+            assertEquals(Color(CREAM).blue, fill.blue)
+        } else {
+            assertEquals(1f, fill.alpha, "nothing is put behind the window here to reveal")
+        }
     }
 
     /**

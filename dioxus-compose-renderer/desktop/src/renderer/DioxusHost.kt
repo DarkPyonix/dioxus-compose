@@ -532,8 +532,42 @@ internal fun NodeTable.opensWithANavigation(roots: List<Int>): Boolean {
 internal fun NodeTable.windowFill(roots: List<Int>, theme: ResolvedTheme): Color {
     val root = roots.firstOrNull()?.let(::node)
     val own = root?.modifiers?.firstNotNullOfOrNull { it as? ProtocolModifier.Background }
-    return own?.let { theme.color(it.paint) } ?: theme.color(ColorRole.Background)
+    val fill = own?.let { theme.color(it.paint) } ?: theme.color(ColorRole.Background)
+    return fill.letTheWindowShowThrough(theme)
 }
+
+/**
+ * How much of the page colour a glass window keeps.
+ *
+ * A material behind the window is only a material if something lets it through. The page
+ * is the backmost thing the renderer paints, so painting it opaque covers the window's own
+ * backdrop completely and the glass is a flat tint again, which is exactly what the first
+ * run of this looked like: the desktop was being composited behind a window that then hid
+ * it.
+ *
+ * Kept high enough that the page is still a page. Apple's own under-window material is
+ * blurred and tinted before anything of ours is drawn over it, so what comes through is a
+ * wash of the colours behind rather than a picture competing with the text.
+ */
+private const val GLASS_PAGE_ALPHA = 0.76f
+
+private fun Color.letTheWindowShowThrough(theme: ResolvedTheme): Color =
+    if (theme.system == DesignSystem.LiquidGlass && platformBacksWindowWithMaterial()) {
+        copy(alpha = GLASS_PAGE_ALPHA)
+    } else {
+        this
+    }
+
+/**
+ * True where the window has a material behind it for a translucent page to reveal.
+ *
+ * macOS only, and only because the renderer puts one there. Everywhere else a page with
+ * alpha would show whatever the toolkit leaves behind a window, which is nothing to look
+ * at and on some systems is black.
+ */
+internal fun platformBacksWindowWithMaterial(
+    osName: String = System.getProperty("os.name").orEmpty(),
+): Boolean = osName.startsWith("Mac")
 
 /**
  * How many wrappers deep the search for that bar goes.
