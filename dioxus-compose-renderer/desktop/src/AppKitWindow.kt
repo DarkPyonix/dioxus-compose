@@ -88,6 +88,9 @@ private external fun pollEvent(out: Pointer?): Int
 @CFunction("dxc_native_set_accessibility")
 private external fun setAccessibility(elements: Pointer?, count: Int, view: Pointer?)
 
+@CFunction("dxc_native_set_cursor")
+private external fun setCursorShape(shape: Int)
+
 /**
  * The four pointers a window is, once AppKit has made one.
  *
@@ -164,6 +167,9 @@ data class WindowEvent(
         const val KEY_UP = 6
         const val TEXT_COMMIT = 7
         const val TEXT_COMPOSE = 8
+        const val RESIZE = 9
+        const val FILES_ENTERED = 10
+        const val FILES_DROPPED = 11
     }
 }
 
@@ -234,6 +240,24 @@ fun NativeWindow.describeTo(elements: List<AccessibleElement>) {
 }
 
 /**
+ * Sets the shape of the pointer over the window.
+ *
+ * The scene decides: a control that is a link asks for a hand, a field asks for a bar.
+ * Which platform cursor that is belongs to the shell, so what crosses is a number.
+ */
+fun setPointerShape(shape: Int) = setCursorShape(shape)
+
+/** What a pointer can look like, in the small set both sides agree on. */
+object PointerShape {
+    const val ARROW = 0
+    const val HAND = 1
+    const val TEXT = 2
+    const val CROSSHAIR = 3
+    const val RESIZE_LEFT_RIGHT = 4
+    const val RESIZE_UP_DOWN = 5
+}
+
+/**
  * How many things a screen may say it has.
  *
  * Enough for a screen and not for a document. A list of ten thousand rows is windowed
@@ -300,7 +324,10 @@ internal fun runAppKitSpike() {
     )
 
     val report = System.getenv("DXC_REPORT_INPUT") != null
-    val size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
+    // Held rather than measured once. The window is resizable, and everything that reads
+    // a size reads this: the scene, the render target, and what the scene is told about
+    // the window it is in.
+    var size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
     val textInput = NativeTextInput()
     val semantics = NativeSemantics { elements ->
         if (report) {
@@ -325,6 +352,14 @@ internal fun runAppKitSpike() {
             for (event in drainWindowEvents()) {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
+                }
+                if (event.kind == WindowEvent.FILES_DROPPED) {
+                    val paths = event.text.split('\u0000').filter { it.isNotEmpty() }
+                    spikeDroppedFiles.value = "dropped ${paths.size}: ${paths.joinToString(", ")}"
+                }
+                if (event.kind == WindowEvent.RESIZE) {
+                    size = androidx.compose.ui.unit.IntSize(event.x.toInt(), event.y.toInt())
+                    scene.size = size
                 }
                 scene.receive(event)
                 textInput.receive(event)
@@ -396,13 +431,18 @@ private fun drawFrame(
 @Composable
 internal fun SpikeContent() {
     var clicks by remember { mutableStateOf(0) }
+    val dropped = spikeDroppedFiles
     val hover = remember { MutableInteractionSource() }
     val hovered by hover.collectIsHoveredAsState()
     Box(Modifier.fillMaxSize().background(Color(0xFF12321A))) {
         Column(Modifier.padding(top = 40.dp, start = 24.dp)) {
             BasicText("no toolkit here", style = TextStyle(color = Color.White, fontSize = 24.sp))
             BasicText(
-                "composed, painted by Skia, shown by AppKit",
+                if (dropped.value.isEmpty()) {
+                    "composed, painted by Skia, shown by AppKit"
+                } else {
+                    dropped.value
+                },
                 style = TextStyle(color = Color(0xFF9CCC9C), fontSize = 14.sp),
             )
             // A field, because typing is what the next step has to carry and this is
@@ -555,6 +595,15 @@ private fun NativeTextInput.receive(event: WindowEvent) {
         WindowEvent.TEXT_COMPOSE -> compose(event.text)
     }
 }
+
+/**
+ * What was last dropped on the window, so a screenshot can show it arrived.
+ *
+ * Held beside the scene rather than in it, because what a drag carries reaches this side
+ * before any node has asked for it: there is no drop target in the tree yet, and this
+ * step is about the paths crossing at all.
+ */
+internal val spikeDroppedFiles = androidx.compose.runtime.mutableStateOf("")
 
 private const val SPIKE_FRAMES = 1_200
 private const val FRAME_MILLIS = 16L

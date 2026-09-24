@@ -39,6 +39,15 @@ enum {
     // marked, and are replaced as the reader goes rather than piling up.
     DXC_EVENT_TEXT_COMMIT = 7,
     DXC_EVENT_TEXT_COMPOSE = 8,
+    // The window is a different size. Carried as an event rather than asked for, because
+    // the scene has to be told before the next frame is drawn into a drawable that is
+    // already the new size, and asking every frame is the traffic that starved the input
+    // method once already.
+    DXC_EVENT_RESIZE = 9,
+    // Files were dragged over the window, and let go on it. The paths ride in the text
+    // field, separated by the one byte no path may contain.
+    DXC_EVENT_FILES_ENTERED = 10,
+    DXC_EVENT_FILES_DROPPED = 11,
 };
 
 // Room for what an input method is composing, which is a syllable or a word and never a
@@ -210,6 +219,39 @@ static NSString *dxc_marked_text;
 @interface DxcView : NSView <NSTextInputClient>
 @end
 
+// The shape of a pointer, as a number both sides agree on. A name would be a string
+// crossing every time the pointer moved over a different control.
+enum {
+    DXC_CURSOR_ARROW = 0,
+    DXC_CURSOR_HAND = 1,
+    DXC_CURSOR_TEXT = 2,
+    DXC_CURSOR_CROSSHAIR = 3,
+    DXC_CURSOR_RESIZE_LEFT_RIGHT = 4,
+    DXC_CURSOR_RESIZE_UP_DOWN = 5,
+};
+
+/**
+ * Sets the shape of the pointer over this window.
+ *
+ * Called from the thread the scene runs on, because that is where a control decides what
+ * the pointer should look like over it, and done on the main thread because the cursor
+ * belongs to the window.
+ */
+void dxc_native_set_cursor(int32_t shape) {
+    dxc_on_main(^{
+        NSCursor *cursor = nil;
+        switch (shape) {
+            case DXC_CURSOR_HAND: cursor = NSCursor.pointingHandCursor; break;
+            case DXC_CURSOR_TEXT: cursor = NSCursor.IBeamCursor; break;
+            case DXC_CURSOR_CROSSHAIR: cursor = NSCursor.crosshairCursor; break;
+            case DXC_CURSOR_RESIZE_LEFT_RIGHT: cursor = NSCursor.resizeLeftRightCursor; break;
+            case DXC_CURSOR_RESIZE_UP_DOWN: cursor = NSCursor.resizeUpDownCursor; break;
+            default: cursor = NSCursor.arrowCursor; break;
+        }
+        [cursor set];
+    });
+}
+
 @implementation DxcView
 
 - (BOOL)acceptsFirstResponder { return YES; }
@@ -263,6 +305,37 @@ static NSString *dxc_marked_text;
     [self.inputContext handleEvent:event];
 }
 - (void)keyUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_UP event:event]; }
+
+#pragma mark - Files dragged onto the window
+
+// What a drag is carrying, written into an event the same way text is.
+//
+// Only files. A drag of anything else is refused rather than delivered as an empty list,
+// because a window that accepts a drag and then does nothing with it is worse than one
+// that never offered.
+- (void)dxcSendPaths:(int32_t)kind info:(id<NSDraggingInfo>)info {
+    NSArray<NSURL *> *urls = [info.draggingPasteboard
+        readObjectsForClasses:@[NSURL.class]
+                      options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+    NSMutableArray<NSString *> *paths = [NSMutableArray arrayWithCapacity:urls.count];
+    for (NSURL *url in urls) {
+        if (url.path != nil) {
+            [paths addObject:url.path];
+        }
+    }
+    // NUL, because it is the one byte no path on any desktop may contain.
+    [self dxcSendText:kind string:[paths componentsJoinedByString:@"\0"]];
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    [self dxcSendPaths:DXC_EVENT_FILES_ENTERED info:sender];
+    return NSDragOperationCopy;
+}
+
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    [self dxcSendPaths:DXC_EVENT_FILES_DROPPED info:sender];
+    return YES;
+}
 
 #pragma mark - NSAccessibility
 
@@ -372,6 +445,24 @@ static NSString *dxc_marked_text;
 
 // Without a tracking area the view hears a moving pointer only while a button is held,
 // and hover is half of what a desktop control does.
+// The window changed size. The layer is told first, because a drawable handed out at the
+// old size would be drawn into at the new one, and the scene is told through the queue so
+// that it changes its mind between frames rather than during one.
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    CAMetalLayer *layer = (CAMetalLayer *)self.layer;
+    CGFloat scale = self.window.backingScaleFactor > 0 ? self.window.backingScaleFactor : 1;
+    layer.contentsScale = scale;
+    layer.drawableSize = CGSizeMake(size.width * scale, size.height * scale);
+
+    struct dxc_event record;
+    memset(&record, 0, sizeof record);
+    record.kind = DXC_EVENT_RESIZE;
+    record.x = (float)(size.width * scale);
+    record.y = (float)(size.height * scale);
+    dxc_push_event(record);
+}
+
 - (void)updateTrackingAreas {
     for (NSTrackingArea *area in self.trackingAreas) {
         [self removeTrackingArea:area];
@@ -450,6 +541,7 @@ int32_t dxc_native_window_open(
 
         window.contentView = view;
         [window makeFirstResponder:view];
+        [view registerForDraggedTypes:@[NSPasteboardTypeFileURL]];
         window.acceptsMouseMovedEvents = YES;
         [window center];
         [window makeKeyAndOrderFront:nil];
