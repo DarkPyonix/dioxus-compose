@@ -18,6 +18,145 @@
 #import <QuartzCore/CAMetalLayer.h>
 #import <Metal/Metal.h>
 #include <stdint.h>
+#include <string.h>
+#include <pthread.h>
+
+// What happened in the window, waiting to be read.
+//
+// A queue and not a call. The events arrive on the thread AppKit answers on and the Host
+// lives on the one the renderer draws from, so a call would cross between them on every
+// click: the boundary is a direct call on one thread and the Host keeps its state there.
+// Emptied once per frame instead, which is the same shape the rest of this already has.
+enum {
+    DXC_EVENT_POINTER_MOVE = 1,
+    DXC_EVENT_POINTER_DOWN = 2,
+    DXC_EVENT_POINTER_UP = 3,
+    DXC_EVENT_SCROLL = 4,
+    DXC_EVENT_KEY_DOWN = 5,
+    DXC_EVENT_KEY_UP = 6,
+};
+
+struct dxc_event {
+    int32_t kind;
+    // In points from the top left of the content, which is what a scene measures in.
+    float x;
+    float y;
+    int32_t buttons;
+    int32_t modifiers;
+    // The platform's own key number, and the character it would type. Which Compose key
+    // that is gets decided on the other side, where the table lives.
+    int32_t key_code;
+    int32_t code_point;
+};
+
+// Room for a burst rather than for a session. A queue that fills is a queue nobody is
+// draining, and holding a thousand stale mouse moves helps no one.
+#define DXC_EVENT_CAPACITY 256
+
+static struct dxc_event dxc_events[DXC_EVENT_CAPACITY];
+static int dxc_event_head;
+static int dxc_event_count;
+static pthread_mutex_t dxc_event_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void dxc_push_event(struct dxc_event event) {
+    pthread_mutex_lock(&dxc_event_lock);
+    if (dxc_event_count < DXC_EVENT_CAPACITY) {
+        int slot = (dxc_event_head + dxc_event_count) % DXC_EVENT_CAPACITY;
+        dxc_events[slot] = event;
+        dxc_event_count++;
+    } else {
+        // Full: the oldest goes. A dropped move from a while ago is a position that has
+        // already been overtaken, and dropping the newest would leave the pointer
+        // somewhere it no longer is.
+        dxc_events[dxc_event_head] = event;
+        dxc_event_head = (dxc_event_head + 1) % DXC_EVENT_CAPACITY;
+    }
+    pthread_mutex_unlock(&dxc_event_lock);
+}
+
+/** Takes the oldest event, or answers zero when there is none. */
+int32_t dxc_native_poll_event(struct dxc_event *out) {
+    int32_t taken = 0;
+    pthread_mutex_lock(&dxc_event_lock);
+    if (dxc_event_count > 0) {
+        *out = dxc_events[dxc_event_head];
+        dxc_event_head = (dxc_event_head + 1) % DXC_EVENT_CAPACITY;
+        dxc_event_count--;
+        taken = 1;
+    }
+    pthread_mutex_unlock(&dxc_event_lock);
+    return taken;
+}
+
+/**
+ * The view the window is filled with.
+ *
+ * It exists to receive. AppKit sends mouse and key events to the view under the pointer
+ * and to the one holding focus, and a plain NSView answers none of them; everything here
+ * turns one into a record and puts it on the queue above.
+ */
+@interface DxcView : NSView
+@end
+
+@implementation DxcView
+
+- (BOOL)acceptsFirstResponder { return YES; }
+- (BOOL)isFlipped { return YES; }
+
+// The click that brings a window forward is delivered as well as being spent on the
+// bringing. Without this the first press on a control nobody has focused yet is eaten by
+// the activation, which reads to the reader as a control that ignored them once.
+- (BOOL)acceptsFirstMouse:(NSEvent *)event { return YES; }
+
+- (void)dxcSend:(int32_t)kind event:(NSEvent *)event {
+    NSPoint where = [self convertPoint:event.locationInWindow fromView:nil];
+    struct dxc_event record;
+    memset(&record, 0, sizeof record);
+    record.kind = kind;
+    record.x = (float)where.x;
+    record.y = (float)where.y;
+    record.buttons = (int32_t)NSEvent.pressedMouseButtons;
+    record.modifiers = (int32_t)event.modifierFlags;
+    if (kind == DXC_EVENT_SCROLL) {
+        // The wheel's travel rides in the same two fields the pointer uses, because a
+        // scroll has no position of its own beyond where the pointer already is.
+        record.x = (float)event.scrollingDeltaX;
+        record.y = (float)event.scrollingDeltaY;
+    }
+    if (kind == DXC_EVENT_KEY_DOWN || kind == DXC_EVENT_KEY_UP) {
+        record.key_code = (int32_t)event.keyCode;
+        NSString *typed = event.charactersIgnoringModifiers;
+        record.code_point = typed.length > 0 ? (int32_t)[typed characterAtIndex:0] : 0;
+    }
+    dxc_push_event(record);
+}
+
+- (void)mouseMoved:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_MOVE event:event]; }
+- (void)mouseDragged:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_MOVE event:event]; }
+- (void)mouseDown:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_DOWN event:event]; }
+- (void)mouseUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_UP event:event]; }
+- (void)rightMouseDown:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_DOWN event:event]; }
+- (void)rightMouseUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_POINTER_UP event:event]; }
+- (void)scrollWheel:(NSEvent *)event { [self dxcSend:DXC_EVENT_SCROLL event:event]; }
+- (void)keyDown:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_DOWN event:event]; }
+- (void)keyUp:(NSEvent *)event { [self dxcSend:DXC_EVENT_KEY_UP event:event]; }
+
+// Without a tracking area the view hears a moving pointer only while a button is held,
+// and hover is half of what a desktop control does.
+- (void)updateTrackingAreas {
+    for (NSTrackingArea *area in self.trackingAreas) {
+        [self removeTrackingArea:area];
+    }
+    NSTrackingAreaOptions options = NSTrackingMouseMoved | NSTrackingActiveInKeyWindow |
+        NSTrackingInVisibleRect;
+    [self addTrackingArea:[[NSTrackingArea alloc] initWithRect:self.bounds
+                                                      options:options
+                                                        owner:self
+                                                     userInfo:nil]];
+    [super updateTrackingAreas];
+}
+
+@end
 
 struct dxc_native_window {
     void *window;
@@ -82,7 +221,7 @@ int32_t dxc_native_window_open(
         window.titleVisibility = NSWindowTitleHidden;
         window.releasedWhenClosed = NO;
 
-        NSView *view = [[NSView alloc] initWithFrame:frame];
+        DxcView *view = [[DxcView alloc] initWithFrame:frame];
         CAMetalLayer *layer = [CAMetalLayer layer];
         layer.device = device;
         layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
@@ -97,6 +236,8 @@ int32_t dxc_native_window_open(
         view.layer = layer;
 
         window.contentView = view;
+        [window makeFirstResponder:view];
+        window.acceptsMouseMovedEvents = YES;
         [window center];
         [window makeKeyAndOrderFront:nil];
         [NSApp activateIgnoringOtherApps:YES];

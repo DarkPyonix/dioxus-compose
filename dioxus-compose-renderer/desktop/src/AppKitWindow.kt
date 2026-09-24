@@ -10,15 +10,28 @@ import org.graalvm.nativeimage.c.type.CIntPointer
 import org.graalvm.nativeimage.c.type.CFloatPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerButtons
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.text.TextStyle
@@ -63,6 +76,9 @@ private external fun beginFrame(layer: Pointer?, textureOut: Pointer?): Int
 
 @CFunction("dxc_native_frame_end")
 private external fun endFrame(queue: Pointer?)
+
+@CFunction("dxc_native_poll_event")
+private external fun pollEvent(out: Pointer?): Int
 
 /**
  * The four pointers a window is, once AppKit has made one.
@@ -111,6 +127,61 @@ class NativeWindow internal constructor(
 }
 
 data class WindowMeasurement(val width: Int, val height: Int, val scale: Float)
+
+/**
+ * What happened in the window, as the shell recorded it.
+ *
+ * Plain numbers rather than a platform event. What Compose is given is built on this
+ * side, so nothing of AppKit's reaches the scene and the same record could be filled in
+ * by another platform without the scene noticing.
+ */
+data class WindowEvent(
+    val kind: Int,
+    val x: Float,
+    val y: Float,
+    val buttons: Int,
+    val modifiers: Int,
+    val keyCode: Int,
+    val codePoint: Int,
+) {
+
+    companion object {
+        const val POINTER_MOVE = 1
+        const val POINTER_DOWN = 2
+        const val POINTER_UP = 3
+        const val SCROLL = 4
+        const val KEY_DOWN = 5
+        const val KEY_UP = 6
+    }
+}
+
+/**
+ * Takes everything the window has heard since the last frame.
+ *
+ * Drained rather than delivered. AppKit answers on its own thread and the Host keeps its
+ * state on the one that draws, so an event that arrived as a call would arrive on the
+ * wrong thread; the shell writes them down and this reads them where they can be used.
+ */
+fun drainWindowEvents(): List<WindowEvent> {
+    val record = StackValue.get<Pointer>(EVENT_STRUCT_BYTES)
+    val events = ArrayList<WindowEvent>()
+    while (pollEvent(record) != 0) {
+        events.add(
+            WindowEvent(
+                kind = record.readInt(0),
+                x = record.readFloat(4),
+                y = record.readFloat(8),
+                buttons = record.readInt(12),
+                modifiers = record.readInt(16),
+                keyCode = record.readInt(20),
+                codePoint = record.readInt(24),
+            ),
+        )
+    }
+    return events
+}
+
+private const val EVENT_STRUCT_BYTES = 28
 
 /**
  * Opens a window, or null where this machine has no Metal device.
@@ -163,6 +234,7 @@ internal fun runAppKitSpike() {
             "at ${measured.scale}x, with no toolkit in it",
     )
 
+    val report = System.getenv("DXC_REPORT_INPUT") != null
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
         size = androidx.compose.ui.unit.IntSize(measured.width, measured.height),
@@ -170,13 +242,19 @@ internal fun runAppKitSpike() {
     scene.setContent { SpikeContent() }
 
     try {
-        // A handful of frames rather than a clock. What this is proving is that a frame
-        // arrives at all; pacing it is the frame clock's work and comes later.
+        // A plain loop rather than a clock. Pacing is the frame clock's work and comes
+        // later; what this has to show is that what the window hears reaches the scene
+        // and changes what the next frame draws.
         repeat(SPIKE_FRAMES) { frame ->
+            for (event in drainWindowEvents()) {
+                if (report && event.kind != WindowEvent.POINTER_MOVE) {
+                    System.err.println("dioxus-compose: window heard $event")
+                }
+                scene.receive(event)
+            }
             drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)
             Thread.sleep(FRAME_MILLIS)
         }
-        Thread.sleep(SPIKE_HOLD_MILLIS)
     } finally {
         scene.close()
         context.close()
@@ -232,18 +310,76 @@ private fun drawFrame(
  */
 @Composable
 private fun SpikeContent() {
+    var clicks by remember { mutableStateOf(0) }
+    val hover = remember { MutableInteractionSource() }
+    val hovered by hover.collectIsHoveredAsState()
     Box(Modifier.fillMaxSize().background(Color(0xFF12321A))) {
-        Column(Modifier.padding(24.dp)) {
+        Column(Modifier.padding(top = 40.dp, start = 24.dp)) {
             BasicText("no toolkit here", style = TextStyle(color = Color.White, fontSize = 24.sp))
             BasicText(
                 "composed, painted by Skia, shown by AppKit",
                 style = TextStyle(color = Color(0xFF9CCC9C), fontSize = 14.sp),
             )
+            Box(
+                Modifier
+                    .padding(top = 24.dp)
+                    .size(220.dp, 56.dp)
+                    // Hover and click are what this frame is for. A control that changes
+                    // under the pointer is the difference between a window that was
+                    // drawn and a window that is running.
+                    .background(if (hovered) Color(0xFF66BB6A) else Color(0xFF2E7D32))
+                    .hoverable(hover)
+                    .clickable { clicks++ },
+            ) {
+                BasicText(
+                    if (clicks == 0) "click me" else "clicked $clicks",
+                    Modifier.padding(16.dp),
+                    style = TextStyle(color = Color.White, fontSize = 18.sp),
+                )
+            }
         }
     }
 }
 
-private const val SPIKE_FRAMES = 10
+/**
+ * Hands one thing the window heard to the scene.
+ *
+ * The pointer's place is in points from the top left of the content, which is what a
+ * scene measures in, so nothing is converted here beyond naming which kind of event it
+ * was.
+ */
+private fun ComposeScene.receive(event: WindowEvent) {
+    when (event.kind) {
+        WindowEvent.POINTER_MOVE -> sendPointerEvent(
+            eventType = PointerEventType.Move,
+            position = Offset(event.x, event.y),
+            buttons = PointerButtons(isPrimaryPressed = event.buttons and 1 != 0),
+        )
+
+        WindowEvent.POINTER_DOWN -> sendPointerEvent(
+            eventType = PointerEventType.Press,
+            position = Offset(event.x, event.y),
+            button = PointerButton.Primary,
+            buttons = PointerButtons(isPrimaryPressed = true),
+        )
+
+        WindowEvent.POINTER_UP -> sendPointerEvent(
+            eventType = PointerEventType.Release,
+            position = Offset(event.x, event.y),
+            button = PointerButton.Primary,
+            buttons = PointerButtons(isPrimaryPressed = false),
+        )
+
+        // The wheel's travel arrives where a position usually is, because a scroll
+        // happens wherever the pointer already was.
+        WindowEvent.SCROLL -> sendPointerEvent(
+            eventType = PointerEventType.Scroll,
+            position = Offset.Zero,
+            scrollDelta = Offset(event.x, event.y),
+        )
+    }
+}
+
+private const val SPIKE_FRAMES = 1_200
 private const val FRAME_MILLIS = 16L
 private const val FRAME_NANOS = 16_000_000L
-private const val SPIKE_HOLD_MILLIS = 20_000L

@@ -27,8 +27,9 @@ trap 'rm -f "$probe" "${probe%.m}"' EXIT
 {
     echo '#include <stdio.h>'
     echo '#include <stddef.h>'
-    # The declaration itself, taken from the file under test rather than restated here.
+    # The declarations themselves, taken from the file under test rather than restated.
     sed -n '/^struct dxc_native_window {/,/^};/p' "$source_file"
+    sed -n '/^struct dxc_event {/,/^};/p' "$source_file"
     echo 'int main(void) {'
     echo '    printf("window %zu\nview %zu\ndevice %zu\nqueue %zu\nlayer %zu\nsize %zu\n",'
     echo '        offsetof(struct dxc_native_window, window),'
@@ -37,6 +38,15 @@ trap 'rm -f "$probe" "${probe%.m}"' EXIT
     echo '        offsetof(struct dxc_native_window, queue),'
     echo '        offsetof(struct dxc_native_window, layer),'
     echo '        sizeof(struct dxc_native_window));'
+    echo '    printf("kind %zu\nx %zu\ny %zu\nbuttons %zu\nmodifiers %zu\nkey_code %zu\ncode_point %zu\nevent_size %zu\n",'
+    echo '        offsetof(struct dxc_event, kind),'
+    echo '        offsetof(struct dxc_event, x),'
+    echo '        offsetof(struct dxc_event, y),'
+    echo '        offsetof(struct dxc_event, buttons),'
+    echo '        offsetof(struct dxc_event, modifiers),'
+    echo '        offsetof(struct dxc_event, key_code),'
+    echo '        offsetof(struct dxc_event, code_point),'
+    echo '        sizeof(struct dxc_event));'
     echo '    return 0;'
     echo '}'
 } > "$probe"
@@ -57,6 +67,30 @@ check_field() {
 for field in window view device queue layer; do
     check_field "$field"
 done
+
+check_event_field() {
+    local field="$1" reader="$2" name="$3"
+    local offset
+    offset="$(awk -v f="$field" '$1 == f { print $2 }' <<< "$layout")"
+    if ! grep -q "$name = record.$reader($offset)" "$kotlin_file"; then
+        echo "fail: C puts $field at $offset, which is not where AppKitWindow.kt reads it"
+        red=1
+    fi
+}
+
+check_event_field kind readInt kind
+check_event_field x readFloat x
+check_event_field y readFloat y
+check_event_field buttons readInt buttons
+check_event_field modifiers readInt modifiers
+check_event_field key_code readInt keyCode
+check_event_field code_point readInt codePoint
+
+event_size="$(awk '$1 == "event_size" { print $2 }' <<< "$layout")"
+if ! grep -q "EVENT_STRUCT_BYTES = $event_size" "$kotlin_file"; then
+    echo "fail: an event is $event_size bytes, which is not what AppKitWindow.kt reserves"
+    red=1
+fi
 
 size="$(awk '$1 == "size" { print $2 }' <<< "$layout")"
 if ! grep -q "WINDOW_STRUCT_BYTES = $size" "$kotlin_file"; then
