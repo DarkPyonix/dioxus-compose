@@ -65,12 +65,16 @@ $ObjDir = Join-Path $BuildDir "obj-windows"
 $MetadataDir = Join-Path $ScriptsDir "windows-metadata"
 $LibraryName = "libdioxus_compose_renderer"
 $RendererSource = Join-Path $NativeDir "c\renderer_entry.c"
+$WindowSource = Join-Path $NativeDir "c\win32_window.c"
 $KotlinWrapper = Join-Path $ProjectDir "kotlin.bat"
 $ClasspathFile = Join-Path $BuildDir "classpath-windows.txt"
 $JvmLog = Join-Path $BuildDir "jvm-run-windows.log"
 
 if (-not (Test-Path -LiteralPath $RendererSource -PathType Leaf)) {
     Fail "missing $RendererSource"
+}
+if (-not (Test-Path -LiteralPath $WindowSource -PathType Leaf)) {
+    Fail "missing $WindowSource"
 }
 if (-not (Test-Path -LiteralPath $KotlinWrapper -PathType Leaf)) {
     Fail "missing $KotlinWrapper" @(
@@ -254,6 +258,15 @@ if ($LASTEXITCODE -ne 0) {
     Fail "MSVC could not compile $RendererSource"
 }
 
+# The window the renderer opens for itself, with its Direct3D 12 swapchain. Compiled as
+# C11 like the shim beside it; the Direct3D and DXGI interfaces are reached through the
+# macros the Windows SDK provides for C, so no part of this needs a C++ compiler.
+$WindowObject = Join-Path $ObjDir "win32_window.obj"
+Invoke-Native { & cl.exe /nologo /c /O2 /std:c11 "/Fo$WindowObject" $WindowSource }
+if ($LASTEXITCODE -ne 0) {
+    Fail "MSVC could not compile $WindowSource"
+}
+
 # PE/COFF requires the Host boundary to resolve at DLL link time. renderer_entry.obj supplies
 # forwarding definitions that use GetProcAddress on the host executable. Only the two public
 # Renderer functions are exported from the DLL.
@@ -277,6 +290,15 @@ $NativeImageArgs = @(
     # for JNI as well as reflection, so it covers both failures at once.
     "-H:Preserve=module=java.desktop",
     "-H:NativeLinkerOption=$RendererObject",
+    "-H:NativeLinkerOption=$WindowObject",
+    # Named rather than left to the linker. Direct3D and DXGI resolve nowhere else, and
+    # dxguid carries the interface identifiers that C code has to name as values because
+    # it cannot ask for them the way C++ does. user32 is where the window, its messages
+    # and the per-monitor DPI calls live.
+    "-H:NativeLinkerOption=d3d12.lib",
+    "-H:NativeLinkerOption=dxgi.lib",
+    "-H:NativeLinkerOption=dxguid.lib",
+    "-H:NativeLinkerOption=user32.lib",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"
 )

@@ -8,6 +8,7 @@ import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
 import dioxus.compose.ui.platform.NativeHostConnection
 import dioxus.compose.ui.platform.runAppKitSpike
+import dioxus.compose.ui.platform.runWin32Spike
 import org.graalvm.nativeimage.c.function.CFunction
 
 // C entry points of the renderer shared library.
@@ -38,8 +39,19 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
         // The window of our own, while it is being built. Off unless asked for: every
         // sample and every test still rides the toolkit's path until this one can carry
         // them.
-        if (System.getenv("DXC_APPKIT_WINDOW") != null) {
+        //
+        // One per platform, and each asked for by name. The two C files behind them
+        // export the same five symbols, so the one compiled into an image is the one
+        // either would reach: asking for the Windows window on a Mac would open an AppKit
+        // window and read its view as a Direct3D device. Which platform this is decides,
+        // rather than which variable was set.
+        val platform = System.getProperty("os.name", "")
+        if (System.getenv("DXC_APPKIT_WINDOW") != null && platform.startsWith("Mac")) {
             runAppKitSpike()
+            return@rendererRun 0
+        }
+        if (System.getenv("DXC_WIN32_WINDOW") != null && platform.startsWith("Windows")) {
+            runWin32Spike()
             return@rendererRun 0
         }
         dioxus.compose.ui.node.platformWindowMaterial = { asked ->
