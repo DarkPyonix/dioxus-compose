@@ -359,28 +359,29 @@ pub fn app() -> Element {
     let mut page = use_signal(|| Page::Today);
 
     rsx! {
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
+        // The frame is named rather than built: what the bar becomes, and where the page
+        // starts under it, are answers this screen never has to know.
+        Scaffold {
             background: Paint::Literal(palette::PAGE),
-
-            TopAppBar {
-                fill_max_width: true,
-                Text { text: "Product\nStatistics", type_role: TypeRole::Title, weight: 1.0, color: Paint::Literal(palette::INK) }
-                Button {
-                    // The reference marks this with a chevron in the page's own ink. A
-                    // text button left to itself wears the design system's accent, which
-                    // is the one colour this design does not have.
-                    text: ">",
-                    variant: ButtonVariant::Text,
-                    color: Paint::Literal(palette::INK),
-                    on_click: move |_| {
-                        page.set(if page() == Page::Today { Page::Costs } else { Page::Today });
+            top_bar: rsx! {
+                TopAppBar {
+                    fill_max_width: true,
+                    Text { text: "Product\nStatistics", type_role: TypeRole::Title, weight: 1.0, color: Paint::Literal(palette::INK) }
+                    Button {
+                        // The reference marks this with a chevron in the page's own ink. A
+                        // text button left to itself wears the design system's accent, which
+                        // is the one colour this design does not have.
+                        text: ">",
+                        variant: ButtonVariant::Text,
+                        color: Paint::Literal(palette::INK),
+                        on_click: move |_| {
+                            page.set(if page() == Page::Today { Page::Costs } else { Page::Today });
+                        }
                     }
                 }
-            }
+            },
 
-            dioxus_compose::Box {
+                        dioxus_compose::Box {
                 fill_max_width: true,
                 weight: 1.0,
                 alignment: Alignment::TopCenter,
