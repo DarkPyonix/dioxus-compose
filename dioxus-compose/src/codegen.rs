@@ -5,7 +5,8 @@ use crate::protocol::{
 };
 use crate::schema::{
     ANDROID_BRIDGE_CLASS, BOUNDARY_SCHEMA, BoundaryOp, BoundaryParam, Color, ColorRole,
-    ColorScheme, DesignSystem, EVENT_SCHEMA, EventPayloadType, FieldSchema, FieldSlot, FieldType,
+    ColorScheme, DESIGN_SYSTEM_SCHEMA, DesignSystem, EVENT_SCHEMA, EventPayloadType, FieldSchema,
+    FieldSlot, FieldType,
     KEY_SCHEMA, Key, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PROTOCOL_VERSION, Paint, PropertyKind,
     ROLE_ENUM_SCHEMA, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, Theme, WEB_BATCH_BYTES,
     WEB_BATCH_FIELDS, WEB_EVENT_BUFFER_BYTES, WEB_EVENT_BUFFER_OFFSET, WEB_HOST_GLOBAL,
@@ -233,6 +234,7 @@ data class Window(
                     ", val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass",
                 );
             }
+            EventPayloadType::DesignSystem => output.push_str(", val system: DesignSystem"),
         }
         output.push_str(") : HostEvent\n");
     }
@@ -506,7 +508,8 @@ object Protocol {
             EventPayloadType::KeyDown
             | EventPayloadType::Range
             | EventPayloadType::Double
-            | EventPayloadType::WindowSize => {
+            | EventPayloadType::WindowSize
+            | EventPayloadType::DesignSystem => {
                 writeln!(
                     output,
                     "                is HostEvent.{} -> null",
@@ -530,6 +533,8 @@ object Protocol {
             EventPayloadType::Range => 24,
             EventPayloadType::Double => 24,
             EventPayloadType::WindowSize => 28,
+            // A tag and the padding that keeps the record a multiple of four.
+            EventPayloadType::DesignSystem => 20,
         };
         writeln!(
             output,
@@ -614,6 +619,13 @@ object Protocol {
                 writeln!(output, "                is HostEvent.{} -> {{", event.name).unwrap();
                 output.push_str("                    out.putInt(event.start)\n");
                 output.push_str("                    out.putInt(event.count)\n");
+                output.push_str("                }\n");
+            }
+            EventPayloadType::DesignSystem => {
+                writeln!(output, "                is HostEvent.{} -> {{", event.name).unwrap();
+                output.push_str(
+                    "                    out.putInt(designSystemTag(event.system))\n",
+                );
                 output.push_str("                }\n");
             }
             EventPayloadType::Double => {
@@ -717,6 +729,21 @@ object Protocol {
         writeln!(
             output,
             "        WindowSizeClass.{} -> {}",
+            variant.name, variant.tag
+        )
+        .unwrap();
+    }
+    output.push_str("    }\n\n");
+    // The one role enum that travels the other way as well: the Renderer reports which
+    // system it resolved the theme to, so it needs the tag for one as well as the value
+    // for a tag.
+    output.push_str(
+        "    private fun designSystemTag(system: DesignSystem): Int = when (system) {\n",
+    );
+    for variant in DESIGN_SYSTEM_SCHEMA {
+        writeln!(
+            output,
+            "        DesignSystem.{} -> {}",
             variant.name, variant.tag
         )
         .unwrap();

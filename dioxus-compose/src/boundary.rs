@@ -299,11 +299,34 @@ impl Host {
         Ok((self.renderer.finish_frame()?, 0))
     }
 
+    /// Records which design system the Renderer resolved the theme to.
+    ///
+    /// The same shape as a size class arriving: it belongs to no node and no handler, and
+    /// a repeat of the same answer wakes nothing, so an application that never asks pays
+    /// a comparison once per change and nothing per frame.
+    fn publish_design_system(
+        &mut self,
+        system: crate::schema::DesignSystem,
+    ) -> Result<(&[u8], i64), ProtocolError> {
+        if crate::design::publish(system) {
+            self.renderer.begin_frame();
+            self.dom.render_immediate(&mut self.renderer);
+            self.flush_messages();
+            self.arm_scheduler_wake();
+            return Ok((self.renderer.finish_frame()?, 0));
+        }
+        self.renderer.begin_frame();
+        Ok((self.renderer.finish_frame()?, 0))
+    }
+
     pub fn dispatch(&mut self, event: HostEvent<'_>) -> Result<(&[u8], i64), ProtocolError> {
         // These three address the Host itself: no node, no handler, and an answer before
         // anything is looked up.
         match event.payload {
             EventPayload::Resync => return self.resync(),
+            EventPayload::DesignSystemResolved(system) => {
+                return self.publish_design_system(system);
+            }
             EventPayload::LifecycleStart => return self.set_lifecycle_running(true),
             EventPayload::LifecycleStop => return self.set_lifecycle_running(false),
             _ => {}
@@ -376,6 +399,7 @@ impl Host {
             }
             EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
             EventPayload::WindowSizeChanged { .. }
+            | EventPayload::DesignSystemResolved(_)
             | EventPayload::Resync
             | EventPayload::LifecycleStart
             | EventPayload::LifecycleStop => unreachable!("handled above"),

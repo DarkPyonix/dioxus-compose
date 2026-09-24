@@ -303,13 +303,14 @@ sealed interface HostEvent {
     data class Resync(override val nodeId: Int, override val handlerId: Long) : HostEvent
     data class LifecycleStart(override val nodeId: Int, override val handlerId: Long) : HostEvent
     data class LifecycleStop(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class DesignSystemResolved(override val nodeId: Int, override val handlerId: Long, val system: DesignSystem) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 1198943268178959523L
+    const val SCHEMA_HASH: Long = -7949120909607226195L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -541,6 +542,7 @@ object Protocol {
                 is HostEvent.Resync -> null
                 is HostEvent.LifecycleStart -> null
                 is HostEvent.LifecycleStop -> null
+                is HostEvent.DesignSystemResolved -> null
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -555,6 +557,7 @@ object Protocol {
                 is HostEvent.Resync -> 16
                 is HostEvent.LifecycleStart -> 16
                 is HostEvent.LifecycleStop -> 16
+                is HostEvent.DesignSystemResolved -> 20
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -573,6 +576,7 @@ object Protocol {
                 is HostEvent.Resync -> 18
                 is HostEvent.LifecycleStart -> 19
                 is HostEvent.LifecycleStop -> 20
+                is HostEvent.DesignSystemResolved -> 21
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -610,6 +614,9 @@ object Protocol {
                 is HostEvent.Resync -> Unit
                 is HostEvent.LifecycleStart -> Unit
                 is HostEvent.LifecycleStop -> Unit
+                is HostEvent.DesignSystemResolved -> {
+                    out.putInt(designSystemTag(event.system))
+                }
             }
             if (text != null) out.put(text)
             return out.position() - start
@@ -740,6 +747,16 @@ object Protocol {
         WindowSizeClass.Compact -> 0
         WindowSizeClass.Medium -> 1
         WindowSizeClass.Expanded -> 2
+    }
+
+    private fun designSystemTag(system: DesignSystem): Int = when (system) {
+        DesignSystem.Material3 -> 1
+        DesignSystem.Cupertino -> 2
+        DesignSystem.Fluent -> 3
+        DesignSystem.Gnome -> 4
+        DesignSystem.Breeze -> 5
+        DesignSystem.Deepin -> 6
+        DesignSystem.LiquidGlass -> 7
     }
 
     private fun colorRole(tag: Int, offset: Int): ColorRole = when (tag) {

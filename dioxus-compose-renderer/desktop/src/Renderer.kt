@@ -37,6 +37,20 @@ import dioxus.compose.runtime.LocalWindowActions
  * `exitProcessOnExit` is off because the process belongs to the Rust host: closing the
  * window must return control to it, not terminate it.
  */
+/**
+ * Runs [work] on AWT's event thread and waits for it.
+ *
+ * Straight through when already there, because invokeAndWait from the event thread
+ * deadlocks rather than reentering.
+ */
+private fun onEventThread(work: () -> Unit) {
+    if (java.awt.EventQueue.isDispatchThread()) {
+        work()
+    } else {
+        java.awt.EventQueue.invokeAndWait(work)
+    }
+}
+
 internal fun runRenderer(
     autoExitMillis: Long? = null,
     connection: () -> HostConnection,
@@ -47,7 +61,19 @@ internal fun runRenderer(
     // that batch, so asking early costs nothing and needs no argument on any boundary
     // function.
     val host = DioxusHost(connection())
-    host.start()
+    // Started on the thread the window will be driven from, which is not the thread this
+    // function was called on.
+    //
+    // The boundary is a direct call on one thread and the Host keeps its state there,
+    // in storage that belongs to that thread and to no other. This entry point runs on the thread the C shim created for the renderer, and
+    // Compose then drives the window from AWT's event thread, so a Host started here had
+    // no state anywhere the application would later call it from: the first batch drew,
+    // and after that every click, key and report came back refused with the status that
+    // means "not initialised on this thread". A calculator drew and could not count.
+    //
+    // invokeAndWait rather than invokeLater, because what the window should look like is
+    // in the batch this produces and the window is built from it on the next line.
+    onEventThread { host.start() }
     val asked = host.table.window
     val chrome = when (asked?.chrome) {
         Chrome.System -> WindowChrome.System
