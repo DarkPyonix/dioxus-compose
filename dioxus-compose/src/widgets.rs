@@ -299,6 +299,10 @@ pub fn Text(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// Runs of different treatment inside [text]: a bold phrase, a link, a piece of
+    /// code. Left out, the widget travels exactly as it did before runs existed.
+    #[props(default)]
+    spans: crate::spans::TextSpans,
     #[props(into)] text: String,
     #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] font_size: Option<f32>,
@@ -325,6 +329,9 @@ pub fn Text(
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
+            // Left out entirely when there are none, so a Text that says nothing about
+            // runs travels exactly as it did before runs existed.
+            spans: (!spans.is_empty()).then_some(spans),
             text,
             type_role: role(type_role),
             font_size: dp(font_size),

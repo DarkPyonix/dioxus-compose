@@ -500,6 +500,9 @@ class NodeTable {
                 // Scaffold puts around a slot carries it.
                 PropertyKind.Slot -> widget == WidgetKind.ScaffoldSlot
 
+                // Runs of different treatment inside one string.
+                PropertyKind.Spans -> widget == WidgetKind.Text
+
                 // How wide a grid's columns are, said as a count or as a minimum.
                 PropertyKind.Columns,
                 PropertyKind.MinColumnWidth,
