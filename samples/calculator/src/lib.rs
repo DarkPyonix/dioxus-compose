@@ -370,7 +370,16 @@ pub fn app() -> Element {
                         variant: ButtonVariant::Text,
                         on_click: move |_| {},
                     }
-                    Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
+                    // Apple's calculator names no mode across its bar: the two icons are
+                    // the whole of it, and the mode is where the menu leads. Windows'
+                    // names the mode in bold beside the menu, which is what the bar is
+                    // mostly for there. The spacer keeps the trailing icon at the trailing
+                    // edge either way.
+                    if apple {
+                        Spacer { weight: 1.0 }
+                    } else {
+                        Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
+                    }
                     if !tape_beside {
                         Button {
                             text: "",
@@ -560,6 +569,28 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The two pads are two calculators, not one calculator painted twice.
+    ///
+    /// Apple's has no `C` and no memory keys on its face; the top row erases, clears
+    /// everything, takes a percentage and divides. Windows' clears with `C` and carries
+    /// six memory keys. If these two ever hold the same labels, the branch that chooses
+    /// between them has stopped meaning anything and the screen has quietly become one
+    /// screen again.
+    #[test]
+    fn fr32_the_apple_pad_is_not_the_windows_pad() {
+        assert_ne!(APPLE_ROWS, ROWS);
+        assert_eq!(APPLE_ROWS[0], ["\u{232b}", "AC", "%", "\u{00f7}"]);
+        assert_eq!(ROWS[0], ["C", "\u{232b}", "%", "\u{00f7}"]);
+        assert!(
+            !APPLE_ROWS.iter().flatten().any(|label| *label == "C"),
+            "Apple's calculator clears with AC and has no C",
+        );
+        // The digits, the point and the arithmetic are the same instrument in both.
+        for row in 1..5 {
+            assert_eq!(APPLE_ROWS[row], ROWS[row]);
+        }
     }
 
     /// The reference screen reads from the top down: what is being worked out, what it
