@@ -31,6 +31,9 @@ import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.ui.platform.LocalFrameRequests
 import dioxus.compose.protocol.HostEvent
 import dioxus.compose.protocol.Mutation
+import dioxus.compose.protocol.PropertyKind
+import dioxus.compose.protocol.PropertyValue
+import dioxus.compose.protocol.SlotRole
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.design.CaptionSide
 import dioxus.compose.design.LocalDesignTheme
@@ -38,6 +41,7 @@ import dioxus.compose.design.LocalReduceTransparency
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.design.resolveTheme
+import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
 import dioxus.compose.ui.node.TableError
@@ -417,6 +421,15 @@ data class WindowCaption(
  */
 val LocalWindowCaption = staticCompositionLocalOf { WindowCaption.None }
 
+/** The child of a frame that fills [slot], if the application filled it. */
+private fun NodeTable.slotChild(node: Node, slot: SlotRole): Int? =
+    node.children.firstOrNull { childId ->
+        val child = node(childId) ?: return@firstOrNull false
+        child.widget == WidgetKind.ScaffoldSlot &&
+            (child.property(PropertyKind.Slot) as? PropertyValue.Integer)?.value?.toInt() ==
+            slot.ordinal + 1
+    }
+
 /**
  * True when the first thing the tree draws is a top app bar.
  *
@@ -443,6 +456,12 @@ internal fun NodeTable.opensWithABar(roots: List<Int>): Boolean {
             // colour is the page's, and the page is exactly what should start below the
             // window buttons rather than run under them; what it holds decides instead.
             WidgetKind.Column, WidgetKind.Box -> id = node.children.firstOrNull() ?: return false
+            // A frame names its parts, so the top of the window is the slot that says it
+            // is the top bar rather than whichever child happens to come first. Following
+            // the order instead would hand the caption to the destinations on a screen
+            // that filled the bottom slot and not the top one.
+            WidgetKind.Scaffold -> id = slotChild(node, SlotRole.TopBar) ?: return false
+            WidgetKind.ScaffoldSlot -> id = node.children.firstOrNull() ?: return false
             // Nothing else takes it. A shell that paints itself, a Navigation holding a
             // whole page for instance, is the page rather than a strip across the top of
             // it, and handing it the caption puts its first line of text under the window
@@ -471,6 +490,10 @@ internal fun NodeTable.opensWithANavigation(roots: List<Int>): Boolean {
             // The same wrappers the search above passes through, for the same reason:
             // they are not things the reader sees.
             WidgetKind.Column, WidgetKind.Box -> id = node.children.firstOrNull() ?: return false
+            // A frame's destinations are whatever fills its bottom slot, and the frame
+            // owns the page around them, which is what this question is really asking.
+            WidgetKind.Scaffold -> id = slotChild(node, SlotRole.BottomBar) ?: return false
+            WidgetKind.ScaffoldSlot -> id = node.children.firstOrNull() ?: return false
             else -> return false
         }
     }
