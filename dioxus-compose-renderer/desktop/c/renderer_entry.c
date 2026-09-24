@@ -559,6 +559,143 @@ static void dxc_unify_window(id window) {
         window, sel_registerName("setToolbarStyle:"), DXC_TOOLBAR_STYLE_UNIFIED);
 }
 
+// From NSVisualEffectView.h. The material a window uses for its own background, blended
+// with what is behind the window rather than with what is behind the view.
+enum {
+    DXC_MATERIAL_UNDER_WINDOW_BACKGROUND = 21,
+    DXC_BLENDING_BEHIND_WINDOW = 0,
+    DXC_EFFECT_STATE_ACTIVE = 1,
+};
+// NSViewWidthSizable | NSViewHeightSizable.
+enum { DXC_VIEW_SIZABLE = 2 | 16 };
+
+/**
+ * Puts a layer behind the window that shows what is behind the window.
+ *
+ * This is the half of the glass that cannot be drawn. Everything the renderer paints can
+ * be translucent over what it painted before, but the desktop is not something it
+ * painted, and a material that does not pick up the desktop is a flat tint whatever its
+ * alpha is: measured against a window that has it, a sidebar's blue channel climbed from
+ * 34 to 59 down its length while ours stayed on one value from top to bottom.
+ *
+ * The view is inserted under everything else in the content view and told to follow it,
+ * so it is the window's backmost layer and nothing has to lay it out. Whether any of it
+ * reaches the eye depends on what is painted over it, which is the renderer's half.
+ */
+/**
+ * Stops a view and everything under it from claiming to fill its own rectangle.
+ *
+ * A layer that says it is opaque is composited as though nothing behind it matters, so
+ * the material under the window never reaches the eye however much alpha the page was
+ * painted with. The renderer draws into a layer several views down, so the whole branch
+ * is asked rather than the top of it.
+ *
+ * Depth-limited because this walks a view tree the toolkit owns and a cycle there would
+ * be its problem becoming ours.
+ */
+static void dxc_open_layers(id view, int depth) {
+    if (view == NULL || depth > 6) {
+        return;
+    }
+    ((void (*)(id, SEL, signed char))objc_msgSend)(view, sel_registerName("setWantsLayer:"), 1);
+    id layer = dxc_send(view, "layer");
+    if (layer != NULL) {
+        ((void (*)(id, SEL, signed char))objc_msgSend)(layer, sel_registerName("setOpaque:"), 0);
+        ((void (*)(id, SEL, void *))objc_msgSend)(
+            layer, sel_registerName("setBackgroundColor:"), NULL);
+    }
+    id children = dxc_send(view, "subviews");
+    if (children == NULL) {
+        return;
+    }
+    unsigned long count =
+        ((unsigned long (*)(id, SEL))objc_msgSend)(children, sel_registerName("count"));
+    for (unsigned long i = 0; i < count; i++) {
+        dxc_open_layers(
+            ((id (*)(id, SEL, unsigned long))objc_msgSend)(
+                children, sel_registerName("objectAtIndex:"), i),
+            depth + 1);
+    }
+}
+
+static void dxc_back_window_with_material(id window) {
+    long mask = ((long (*)(id, SEL))objc_msgSend)(window, sel_registerName("styleMask"));
+    if ((mask & DXC_FULL_SIZE_CONTENT_VIEW) == 0) {
+        return;
+    }
+    id content = dxc_send(window, "contentView");
+    if (content == NULL) {
+        return;
+    }
+    // Once is enough. This runs from a thread that asks repeatedly until the window
+    // exists, so without the mark it would stack a hundred of them.
+    id already = dxc_send(content, "superview");
+    if (already != NULL) {
+        id siblings = dxc_send(already, "subviews");
+        unsigned long count = siblings == NULL ? 0 :
+            ((unsigned long (*)(id, SEL))objc_msgSend)(siblings, sel_registerName("count"));
+        for (unsigned long i = 0; i < count; i++) {
+            id view = ((id (*)(id, SEL, unsigned long))objc_msgSend)(
+                siblings, sel_registerName("objectAtIndex:"), i);
+            if (view != NULL &&
+                ((signed char (*)(id, SEL, Class))objc_msgSend)(
+                    view, sel_registerName("isKindOfClass:"),
+                    objc_getClass("NSVisualEffectView"))) {
+                return;
+            }
+        }
+    }
+
+    id effect = dxc_send_class("NSVisualEffectView", "alloc");
+    if (effect == NULL) {
+        return;
+    }
+    effect = dxc_send(effect, "init");
+    if (effect == NULL) {
+        return;
+    }
+    ((void (*)(id, SEL, long))objc_msgSend)(
+        effect, sel_registerName("setMaterial:"), DXC_MATERIAL_UNDER_WINDOW_BACKGROUND);
+    ((void (*)(id, SEL, long))objc_msgSend)(
+        effect, sel_registerName("setBlendingMode:"), DXC_BLENDING_BEHIND_WINDOW);
+    ((void (*)(id, SEL, long))objc_msgSend)(
+        effect, sel_registerName("setState:"), DXC_EFFECT_STATE_ACTIVE);
+    ((void (*)(id, SEL, unsigned long))objc_msgSend)(
+        effect, sel_registerName("setAutoresizingMask:"), DXC_VIEW_SIZABLE);
+
+    // The window itself has to stop claiming it fills its own rectangle, or the system
+    // never composites anything behind it.
+    ((void (*)(id, SEL, signed char))objc_msgSend)(window, sel_registerName("setOpaque:"), 0);
+    id clear = dxc_send_class("NSColor", "clearColor");
+    if (clear != NULL) {
+        ((void (*)(id, SEL, id))objc_msgSend)(
+            window, sel_registerName("setBackgroundColor:"), clear);
+    }
+
+    // A sibling behind the content view, not a child of it and not in its place.
+    //
+    // A child is drawn over its parent's own layer, and the renderer draws into that
+    // layer, so an effect view added inside covered the application: the window showed
+    // the desktop and nothing else. Taking the content view's place instead broke the
+    // toolkit, which calls methods of its own on whatever the window says its content
+    // view is: `-[NSVisualEffectView mouseIsOver]`, unrecognised, and the process ended
+    // on the first frame.
+    //
+    // The window's frame view is the parent of both, so the material goes there, below
+    // the content view, and neither the toolkit nor the renderer is asked to change.
+    id frame = dxc_send(content, "superview");
+    if (frame == NULL) {
+        return;
+    }
+    typedef struct { double x, y, w, h; } dxc_rect;
+    dxc_rect bounds = ((dxc_rect (*)(id, SEL))objc_msgSend)(frame, sel_registerName("bounds"));
+    ((void (*)(id, SEL, dxc_rect))objc_msgSend)(effect, sel_registerName("setFrame:"), bounds);
+    // NSWindowBelow is -1.
+    ((void (*)(id, SEL, id, long, id))objc_msgSend)(
+        frame, sel_registerName("addSubview:positioned:relativeTo:"), effect, -1, content);
+    dxc_open_layers(content, 0);
+}
+
 /** Runs on the main thread, because AppKit is only safe there. */
 static void dxc_unify_all_windows(void *unused) {
     (void)unused;
@@ -577,6 +714,7 @@ static void dxc_unify_all_windows(void *unused) {
             windows, sel_registerName("objectAtIndex:"), i);
         if (window != NULL) {
             dxc_unify_window(window);
+            dxc_back_window_with_material(window);
         }
     }
 }
