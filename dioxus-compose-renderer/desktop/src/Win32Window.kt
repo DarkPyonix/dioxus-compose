@@ -148,13 +148,11 @@ fun Win32NativeWindow.describeTo(elements: List<AccessibleElement>) {
         records.writeFloat(at + 8, element.y)
         records.writeFloat(at + 12, element.width)
         records.writeFloat(at + 16, element.height)
-        val bytes = element.label.toByteArray(Charsets.UTF_8)
-        var length = 0
-        while (length < bytes.size && length < TEXT_BYTES - 1) {
-            records.writeByte(at + ELEMENT_LABEL_OFFSET + length, bytes[length])
-            length++
+        val bytes = win32LabelBytes(element.label)
+        for (offset in bytes.indices) {
+            records.writeByte(at + ELEMENT_LABEL_OFFSET + offset, bytes[offset])
         }
-        records.writeByte(at + ELEMENT_LABEL_OFFSET + length, ZERO)
+        records.writeByte(at + ELEMENT_LABEL_OFFSET + bytes.size, ZERO)
     }
     setAccessibility(records, capped.size, WordFactory.pointer(window))
 }
@@ -170,6 +168,17 @@ private const val ELEMENT_LABEL_OFFSET = 20
 private const val ELEMENT_BYTES = 116
 private const val ZERO: Byte = 0
 private const val TEXT_BYTES = 96
+
+/** Fits a label in the native record without cutting a UTF-8 character in half. */
+internal fun win32LabelBytes(label: String): ByteArray {
+    val bytes = label.toByteArray(Charsets.UTF_8)
+    if (bytes.size < TEXT_BYTES) return bytes
+    var length = TEXT_BYTES - 1
+    while (length > 0 && (bytes[length].toInt() and 0xC0) == 0x80) {
+        length--
+    }
+    return bytes.copyOf(length)
+}
 
 /**
  * What the swapchain was made with, which Skia has to be told again.

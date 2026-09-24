@@ -9,7 +9,7 @@
 //
 // Nothing here draws. The pixels are Skia's, as they already were.
 //
-// The same five C symbols the macOS file exports, because the Kotlin side reaches them by
+// The same native symbols the macOS file exports, because the Kotlin side reaches them by
 // name and only one of the two files is ever compiled into an image. What the five
 // pointers in `struct dxc_native_window` mean is this platform's business; what
 // `struct dxc_event` looks like is not, and it is declared here field for field as the
@@ -47,6 +47,7 @@
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <uiautomation.h>
+#include <uiautomationcoreapi.h>
 #include <oleauto.h>
 #include <stdint.h>
 #include <string.h>
@@ -204,6 +205,9 @@ static int dxc_uia_control_type(int32_t role) {
 // pumps its messages), so no lock is needed.
 static struct dxc_element dxc_a11y_elements[DXC_MAX_ELEMENTS];
 static int32_t dxc_a11y_count;
+static int dxc_a11y_dirty;
+static int dxc_a11y_update_posted;
+#define DXC_WM_ACCESSIBILITY_UPDATE (WM_APP + 1)
 
 // ---------------------------------------------------------------------------
 // COM plumbing
@@ -232,7 +236,7 @@ struct DxcProvider {
     IRawElementProviderSimpleVtbl *simple_vtbl;
     IRawElementProviderFragmentVtbl *fragment_vtbl;
     LONG ref_count;
-    int32_t index;   // position in dxc_a11y_elements at the time this was built
+    int32_t index;   // position in the snapshot at the time this was built
     struct dxc_element snapshot; // copied at construction time
     DxcRootProvider *root;
 };
@@ -543,14 +547,17 @@ static HRESULT STDMETHODCALLTYPE dxc_frag_navigate(
         InterlockedIncrement(&provider->root->ref_count);
         return S_OK;
     case NavigateDirection_NextSibling:
-        if (provider->index + 1 < provider->root->child_count) {
+        if (provider->index >= 0 && provider->index < provider->root->child_count &&
+            provider->root->children[provider->index] == provider &&
+            provider->index + 1 < provider->root->child_count) {
             DxcProvider *next = provider->root->children[provider->index + 1];
             *out = (IRawElementProviderFragment *)&next->fragment_vtbl;
             InterlockedIncrement(&next->ref_count);
         }
         return S_OK;
     case NavigateDirection_PreviousSibling:
-        if (provider->index > 0) {
+        if (provider->index > 0 && provider->index < provider->root->child_count &&
+            provider->root->children[provider->index] == provider) {
             DxcProvider *prev = provider->root->children[provider->index - 1];
             *out = (IRawElementProviderFragment *)&prev->fragment_vtbl;
             InterlockedIncrement(&prev->ref_count);
@@ -686,17 +693,22 @@ static HRESULT STDMETHODCALLTYPE dxc_root_get_pattern_provider(
 static HRESULT STDMETHODCALLTYPE dxc_root_get_property_value(
     IRawElementProviderSimple *self, PROPERTYID id, VARIANT *out
 ) {
-    (void)self;
+    DxcRootProvider *root = dxc_root_from_simple(self);
     VariantInit(out);
     switch (id) {
     case UIA_ControlTypePropertyId:
         out->vt = VT_I4;
         out->lVal = UIA_WindowControlTypeId;
         return S_OK;
-    case UIA_NamePropertyId:
+    case UIA_NamePropertyId: {
+        wchar_t title[256] = L"";
+        if (root->window != NULL) {
+            GetWindowTextW(root->window, title, (int)(sizeof title / sizeof *title));
+        }
         out->vt = VT_BSTR;
-        out->bstrVal = SysAllocString(L"dioxus-compose");
+        out->bstrVal = SysAllocString(title);
         return S_OK;
+    }
     case UIA_IsControlElementPropertyId:
     case UIA_IsContentElementPropertyId:
         out->vt = VT_BOOL;
@@ -719,9 +731,10 @@ static HRESULT STDMETHODCALLTYPE dxc_root_get_property_value(
 static HRESULT STDMETHODCALLTYPE dxc_root_get_host_raw_element_provider(
     IRawElementProviderSimple *self, IRawElementProviderSimple **out
 ) {
-    (void)self;
+    DxcRootProvider *root = dxc_root_from_simple(self);
     *out = NULL;
-    return S_OK;
+    if (root->window == NULL) return UIA_E_ELEMENTNOTAVAILABLE;
+    return UiaHostProviderFromHwnd(root->window, out);
 }
 
 // ---------------------------------------------------------------------------
@@ -918,14 +931,31 @@ static void dxc_release_children(DxcRootProvider *root) {
 static void dxc_rebuild_children(DxcRootProvider *root,
                                   const struct dxc_element *elements,
                                   int32_t count) {
-    dxc_release_children(root);
-    if (count <= 0) return;
-    root->children = (DxcProvider **)calloc((size_t)count, sizeof(DxcProvider *));
-    if (root->children == NULL) return;
-    root->child_count = count;
-    for (int32_t i = 0; i < count; i++) {
-        root->children[i] = dxc_create_provider(&elements[i], i, root);
+    if (count <= 0) {
+        dxc_release_children(root);
+        return;
     }
+    DxcProvider **children = (DxcProvider **)calloc((size_t)count, sizeof(DxcProvider *));
+    if (children == NULL) return;
+    for (int32_t i = 0; i < count; i++) {
+        children[i] = dxc_create_provider(&elements[i], i, root);
+        if (children[i] == NULL) {
+            for (int32_t j = 0; j < i; j++) {
+                dxc_provider_release((IRawElementProviderSimple *)&children[j]->simple_vtbl);
+            }
+            free(children);
+            return;
+        }
+    }
+    dxc_release_children(root);
+    root->children = children;
+    root->child_count = count;
+}
+
+static void dxc_publish_accessibility(DxcRootProvider *root) {
+    if (!dxc_a11y_dirty || root == NULL) return;
+    dxc_rebuild_children(root, dxc_a11y_elements, dxc_a11y_count);
+    dxc_a11y_dirty = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -935,6 +965,7 @@ static void dxc_rebuild_children(DxcRootProvider *root,
 
 static DxcRootProvider *dxc_ensure_root_provider(HWND window) {
     if (dxc_root_provider != NULL) {
+        dxc_root_provider->window = window;
         return dxc_root_provider;
     }
     DxcRootProvider *root = (DxcRootProvider *)calloc(1, sizeof(DxcRootProvider));
@@ -956,8 +987,7 @@ static DxcRootProvider *dxc_ensure_root_provider(HWND window) {
 //
 // Called from the thread the scene lives on. The elements are copied into a
 // snapshot and a message is posted to the window's thread so that the tree is
-// rebuilt there, where UIA will ask for it. The call itself does not wait.
-// Nothing needs the result, so nothing blocks.
+// rebuilt and UIA is notified after this call returns.
 //
 // The same name and the same signature as the macOS version. Kotlin calls one
 // or the other depending on which file was compiled into the image.
@@ -967,26 +997,20 @@ void dxc_native_set_accessibility(const struct dxc_element *elements,
                                    void *window_pointer) {
     HWND window = (HWND)window_pointer;
     if (window == NULL) return;
+    if (count < 0 || (count > 0 && elements == NULL)) return;
     // Cap to the maximum the static buffer can hold.
     if (count > DXC_MAX_ELEMENTS) count = DXC_MAX_ELEMENTS;
-    // Copy the elements and rebuild the tree. On this platform the scene's
-    // thread is the window's thread (the renderer creates the window on the
-    // thread it draws from), so the copy is straight into the static buffer
-    // and the rebuild happens here. No dispatch_async, no PostMessage, no
-    // wait: copied and returned, which is what the macOS side does too.
+    // The scene and window share a thread. Copy the caller's stack now and
+    // defer provider rebuilding and notification to the message pump.
     if (count > 0) {
         memcpy(dxc_a11y_elements, elements,
                (size_t)count * sizeof(struct dxc_element));
     }
     dxc_a11y_count = count;
-    DxcRootProvider *root = dxc_ensure_root_provider(window);
-    if (root != NULL) {
-        dxc_rebuild_children(root, dxc_a11y_elements, dxc_a11y_count);
-        // Tell UIA the tree changed so it re-reads it.
-        UiaRaiseStructureChangedEvent(
-            (IRawElementProviderSimple *)&root->simple_vtbl,
-            StructureChangeType_ChildrenInvalidated,
-            NULL, 0);
+    dxc_a11y_dirty = 1;
+    if (!dxc_a11y_update_posted) {
+        dxc_a11y_update_posted = PostMessageW(
+            window, DXC_WM_ACCESSIBILITY_UPDATE, 0, 0) != 0;
     }
 }
 
@@ -1137,8 +1161,26 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
         DestroyWindow(window);
         return 0;
     case WM_DESTROY:
+        if (dxc_root_provider != NULL && dxc_root_provider->window == window) {
+            dxc_release_children(dxc_root_provider);
+            dxc_root_provider->window = NULL;
+        }
+        dxc_a11y_count = 0;
+        dxc_a11y_dirty = 0;
+        dxc_a11y_update_posted = 0;
         dxc_window = NULL;
         PostQuitMessage(0);
+        return 0;
+    case DXC_WM_ACCESSIBILITY_UPDATE:
+        dxc_a11y_update_posted = 0;
+        {
+            DxcRootProvider *root = dxc_ensure_root_provider(window);
+            if (root == NULL) return 0;
+            dxc_publish_accessibility(root);
+            UiaRaiseStructureChangedEvent(
+                (IRawElementProviderSimple *)&root->simple_vtbl,
+                StructureChangeType_ChildrenInvalidated, NULL, 0);
+        }
         return 0;
     case WM_GETOBJECT:
         // A reader is asking what is in the window. The answer is our root
@@ -1146,6 +1188,7 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
         if ((LONG)lparam == UiaRootObjectId) {
             DxcRootProvider *root = dxc_ensure_root_provider(window);
             if (root != NULL) {
+                dxc_publish_accessibility(root);
                 return UiaReturnRawElementProvider(
                     window, wparam, lparam,
                     (IRawElementProviderSimple *)&root->simple_vtbl);
