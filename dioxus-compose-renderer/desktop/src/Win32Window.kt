@@ -53,6 +53,9 @@ private external fun beginFrame(swapchain: Pointer?, resourceOut: Pointer?): Int
 @CFunction("dxc_native_frame_end")
 private external fun endFrame(queue: Pointer?)
 
+@CFunction("dxc_native_set_accessibility")
+private external fun setAccessibility(elements: Pointer?, count: Int, window: Pointer?)
+
 /**
  * The five pointers a window is, once Win32 and DXGI have made one.
  *
@@ -129,6 +132,46 @@ fun openWin32Window(title: String, width: Int, height: Int): Win32NativeWindow? 
 private const val WINDOW_STRUCT_BYTES = 40
 
 /**
+ * Hands the platform what the window would tell a reader who cannot see it.
+ *
+ * Written into stack storage and copied on the other side. The elements are few, they
+ * change when the screen changes rather than when a frame is drawn, and the alternative
+ * is the platform asking across threads at a moment nobody chose.
+ */
+fun Win32NativeWindow.describeTo(elements: List<AccessibleElement>) {
+    val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements
+    val records = StackValue.get<Pointer>(MAX_ELEMENTS * ELEMENT_BYTES)
+    for ((index, element) in capped.withIndex()) {
+        val at = index * ELEMENT_BYTES
+        records.writeInt(at, element.role)
+        records.writeFloat(at + 4, element.x)
+        records.writeFloat(at + 8, element.y)
+        records.writeFloat(at + 12, element.width)
+        records.writeFloat(at + 16, element.height)
+        val bytes = element.label.toByteArray(Charsets.UTF_8)
+        var length = 0
+        while (length < bytes.size && length < TEXT_BYTES - 1) {
+            records.writeByte(at + ELEMENT_LABEL_OFFSET + length, bytes[length])
+            length++
+        }
+        records.writeByte(at + ELEMENT_LABEL_OFFSET + length, ZERO)
+    }
+    setAccessibility(records, capped.size, WordFactory.pointer(window))
+}
+
+/**
+ * How many things a screen may say it has.
+ *
+ * Enough for a screen and not for a document. A list of ten thousand rows is windowed
+ * before it reaches the scene, so what is here is what is on screen.
+ */
+private const val MAX_ELEMENTS = 256
+private const val ELEMENT_LABEL_OFFSET = 20
+private const val ELEMENT_BYTES = 116
+private const val ZERO: Byte = 0
+private const val TEXT_BYTES = 96
+
+/**
  * What the swapchain was made with, which Skia has to be told again.
  *
  * `DXGI_FORMAT_R8G8B8A8_UNORM`. Named by its number because the C side holds the header
@@ -165,9 +208,18 @@ internal fun runWin32Spike() {
     )
 
     val report = System.getenv("DXC_REPORT_INPUT") != null
+    var size = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
+    val textInput = NativeTextInput()
+    val semantics = NativeSemantics { elements ->
+        if (report) {
+            System.err.println("dioxus-compose: the window has ${elements.size} things to say")
+        }
+        window.describeTo(elements)
+    }
     val scene = CanvasLayersComposeScene(
         density = androidx.compose.ui.unit.Density(measured.scale),
-        size = androidx.compose.ui.unit.IntSize(measured.width, measured.height),
+        size = size,
+        platformContext = NativePlatformContext({ size }, textInput, semantics),
     )
     scene.setContent { SpikeContent() }
 
@@ -180,7 +232,12 @@ internal fun runWin32Spike() {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
                 }
+                if (event.kind == WindowEvent.RESIZE) {
+                    size = androidx.compose.ui.unit.IntSize(event.x.toInt(), event.y.toInt())
+                    scene.size = size
+                }
                 scene.receive(event)
+                textInput.receive(event)
             }
             if (!drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)) {
                 // Nothing was drawn, so nothing waited for the screen either. Without this
@@ -257,6 +314,21 @@ private fun drawFrame(
     // of one is what paces a frame that was drawn.
     window.endFrame()
     return true
+}
+
+/**
+ * Puts what the input method produced into the field that asked to be typed into.
+ *
+ * The same function that lives in the macOS file, duplicated here because that one is
+ * private to its file. The Win32 C side does not produce text events yet (IMM32 is
+ * not wired), but the handler is ready for when it does.
+ */
+private fun NativeTextInput.receive(event: WindowEvent) {
+    if (!isActive) return
+    when (event.kind) {
+        WindowEvent.TEXT_COMMIT -> commit(event.text)
+        WindowEvent.TEXT_COMPOSE -> compose(event.text)
+    }
 }
 
 private const val SPIKE_FRAMES = 1_200
