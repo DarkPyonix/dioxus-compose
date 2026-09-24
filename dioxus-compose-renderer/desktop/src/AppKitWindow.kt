@@ -1,4 +1,5 @@
 @file:JvmName("AppKitWindow")
+@file:OptIn(androidx.compose.ui.InternalComposeUiApi::class)
 
 package dioxus.compose.ui.platform
 
@@ -8,6 +9,21 @@ import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CIntPointer
 import org.graalvm.nativeimage.c.type.CFloatPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeCanvas
+import androidx.compose.ui.scene.CanvasLayersComposeScene
+import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import org.graalvm.word.Pointer
 import org.graalvm.word.WordFactory
 
@@ -17,8 +33,14 @@ import org.graalvm.word.WordFactory
 // same reason: this is the only other place that names GraalVM types, so a development
 // run on a JVM never loads them.
 //
-// The C side is `c/appkit_window.m`. It owns the window, the view, the Metal device and
-// the queue, and answers with the four pointers. Nothing there draws.
+// The C side is `c/appkit_window.m`. It owns the window, the view, the layer, the Metal
+// device and the queue, and answers with the pointers. Nothing there draws.
+//
+// The scene this drives is Compose's own, reached through an interface the library marks
+// as being for its own modules. There is no other way in: the supported entry builds a
+// toolkit window, and a toolkit window is the thing being removed. Kept to this one file
+// and pinned to the version in the module file, which is what the rule about unstable
+// APIs asks for. A Compose upgrade changes this file or it changes nothing.
 
 @CFunction("dxc_native_window_open")
 private external fun openWindow(
@@ -119,11 +141,12 @@ fun openNativeWindow(title: String, width: Int, height: Int): NativeWindow? {
 private const val WINDOW_STRUCT_BYTES = 40
 
 /**
- * Draws one colour into a window of our own, and holds it there.
+ * Draws a Compose scene into a window of our own, and holds it there.
  *
- * The first step of standing the renderer up without a toolkit, and the one worth taking
- * first: if Skia can be handed a drawable that AppKit gave us and the result reaches the
- * screen, everything after it is plumbing. If it cannot, nothing after it matters.
+ * The step worth taking first, and the one everything after it rests on: a scene that
+ * Compose composed, painted by Skia into a drawable AppKit gave us, reaching the screen
+ * with no toolkit anywhere between. What follows is input, text and the rest, and none of
+ * it means anything until this does.
  *
  * Reached by setting `DXC_APPKIT_WINDOW`, so the ordinary path is untouched.
  */
@@ -139,11 +162,39 @@ internal fun runAppKitSpike() {
         "dioxus-compose: a window of our own, ${measured.width}x${measured.height} " +
             "at ${measured.scale}x, with no toolkit in it",
     )
-    val texture = window.beginFrame()
-    if (texture == 0L) {
-        System.err.println("dioxus-compose: no drawable to paint into")
-        return
+
+    val scene = CanvasLayersComposeScene(
+        density = androidx.compose.ui.unit.Density(measured.scale),
+        size = androidx.compose.ui.unit.IntSize(measured.width, measured.height),
+    )
+    scene.setContent { SpikeContent() }
+
+    try {
+        // A handful of frames rather than a clock. What this is proving is that a frame
+        // arrives at all; pacing it is the frame clock's work and comes later.
+        repeat(SPIKE_FRAMES) { frame ->
+            drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)
+            Thread.sleep(FRAME_MILLIS)
+        }
+        Thread.sleep(SPIKE_HOLD_MILLIS)
+    } finally {
+        scene.close()
+        context.close()
     }
+}
+
+/** One frame: take a drawable, let the scene paint it, give it to the screen. */
+private fun drawFrame(
+    window: NativeWindow,
+    context: org.jetbrains.skia.DirectContext,
+    scene: ComposeScene,
+    nanos: Long,
+) {
+    val texture = window.beginFrame()
+    // Zero means the system had no drawable to give, which happens when frames are made
+    // faster than the screen takes them. The answer is to skip one.
+    if (texture == 0L) return
+    val measured = window.measure()
     val target = org.jetbrains.skia.BackendRenderTarget.makeMetal(
         measured.width,
         measured.height,
@@ -156,21 +207,43 @@ internal fun runAppKitSpike() {
         org.jetbrains.skia.SurfaceColorFormat.BGRA_8888,
         org.jetbrains.skia.ColorSpace.sRGB,
         org.jetbrains.skia.SurfaceProps(org.jetbrains.skia.PixelGeometry.RGB_H),
-    )!!
-    // A colour nothing else on this desktop is, so a screenshot cannot be read as a
-    // window that happened to be there.
-    surface.canvas.clear(0xFF2E7D32.toInt())
-    // Submitted, not only recorded. Skia's Metal backend records the frame into a command
+    )
+    if (surface == null) {
+        target.close()
+        window.endFrame()
+        return
+    }
+    scene.render(surface.canvas.asComposeCanvas(), nanos)
+    // Submitted, not only recorded. Skia's Metal backend keeps the frame in a command
     // buffer of its own, and a drawable presented before that buffer runs is a drawable
-    // with nothing in it: the window came up black with the colour never reaching the GPU.
+    // with nothing in it: the window came up black with the paint never reaching the GPU.
     surface.flushAndSubmit(true)
     surface.close()
     target.close()
     window.endFrame()
-    // Held on screen while a screenshot is taken. The main thread is already running
-    // AppKit; this one has nothing left to do but wait, and the process ends when it
-    // stops waiting.
-    Thread.sleep(SPIKE_HOLD_MILLIS)
 }
 
+/**
+ * Something recognisably Compose, so that a screenshot answers a question.
+ *
+ * Text and a shape: text because it is the part that needs a font manager, a shaper and a
+ * layout pass, and a shape because a page of text alone would leave it unclear whether
+ * anything was drawn or the window simply stayed empty.
+ */
+@Composable
+private fun SpikeContent() {
+    Box(Modifier.fillMaxSize().background(Color(0xFF12321A))) {
+        Column(Modifier.padding(24.dp)) {
+            BasicText("no toolkit here", style = TextStyle(color = Color.White, fontSize = 24.sp))
+            BasicText(
+                "composed, painted by Skia, shown by AppKit",
+                style = TextStyle(color = Color(0xFF9CCC9C), fontSize = 14.sp),
+            )
+        }
+    }
+}
+
+private const val SPIKE_FRAMES = 10
+private const val FRAME_MILLIS = 16L
+private const val FRAME_NANOS = 16_000_000L
 private const val SPIKE_HOLD_MILLIS = 20_000L
