@@ -19,6 +19,7 @@ import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.WindowCaption
 import dioxus.compose.runtime.opensWithABar
+import dioxus.compose.runtime.opensWithANavigation
 import dioxus.compose.runtime.windowFill
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
@@ -61,6 +62,34 @@ private val TREE_WITH_A_PICTURE = listOf(
     Mutation.Insert(ROOT, BAR, 0),
 )
 
+/**
+ * A frame with its top slot filled: `Scaffold { ScaffoldSlot(TopBar) { TopAppBar } }`.
+ *
+ * The shape the samples took when they stopped building their own frames, and the shape
+ * that broke this: the search walked Column and Box and stopped at anything else, so a
+ * bar inside a frame was not found, the bar did not take the caption, and the window
+ * opened with a strip of page colour above it and the buttons floating in it.
+ */
+private const val SLOT = 4
+private val TREE_IN_A_FRAME = listOf(
+    Mutation.Create(ROOT, WidgetKind.Scaffold),
+    Mutation.Create(SLOT, WidgetKind.ScaffoldSlot),
+    Mutation.SetProp(SLOT, PropertyKind.Slot, PropertyValue.Integer(1)),
+    Mutation.Insert(ROOT, SLOT, 0),
+    Mutation.Create(BAR, WidgetKind.TopAppBar),
+    Mutation.Insert(SLOT, BAR, 0),
+)
+
+/** The same frame with only its bottom slot filled, which is not a bar at the top. */
+private val TREE_IN_A_FRAME_WITHOUT_A_TOP_BAR = listOf(
+    Mutation.Create(ROOT, WidgetKind.Scaffold),
+    Mutation.Create(SLOT, WidgetKind.ScaffoldSlot),
+    Mutation.SetProp(SLOT, PropertyKind.Slot, PropertyValue.Integer(2)),
+    Mutation.Insert(ROOT, SLOT, 0),
+    Mutation.Create(BAR, WidgetKind.Navigation),
+    Mutation.Insert(SLOT, BAR, 0),
+)
+
 /** The colour an application names when it holds its own palette rather than a role's. */
 private const val CREAM = 0xfffdf3e7.toInt()
 
@@ -97,6 +126,34 @@ class WindowCaptionTest {
 
         val withoutBar = tableOf(TREE_WITHOUT_A_BAR)
         assertFalse(withoutBar.opensWithABar(withoutBar.roots))
+    }
+
+    /**
+     * A bar inside a frame is still the bar across the top of the window.
+     *
+     * The frame names its parts, so the search follows the slot that says it is the top
+     * bar rather than whichever child comes first: a screen that filled only the bottom
+     * slot has no bar at the top and must not be handed the caption.
+     */
+    @Test
+    fun fr19_2_a_frame_hands_its_top_slot_the_caption() {
+        val framed = tableOf(TREE_IN_A_FRAME)
+        assertTrue(
+            framed.opensWithABar(framed.roots),
+            "the bar is in the frame's top slot, so it is what runs across the top of " +
+                "the window; missing it leaves a strip of page colour above it with the " +
+                "window buttons floating in it",
+        )
+
+        val bottomOnly = tableOf(TREE_IN_A_FRAME_WITHOUT_A_TOP_BAR)
+        assertFalse(
+            bottomOnly.opensWithABar(bottomOnly.roots),
+            "the destinations are at the bottom and there is no bar at the top",
+        )
+        assertTrue(
+            bottomOnly.opensWithANavigation(bottomOnly.roots),
+            "the frame's bottom slot is the navigation that owns the window",
+        )
     }
 
     /**
