@@ -503,6 +503,17 @@ class NodeTable {
                 // Runs of different treatment inside one string.
                 PropertyKind.Spans -> widget == WidgetKind.Text
 
+                // Files over a node and files let go on it. The handlers are attached
+                // whether or not a screen supplied one, so the willingness is its own
+                // property and any container may carry all three.
+                PropertyKind.OnFilesEntered,
+                PropertyKind.OnFilesDropped,
+                PropertyKind.AcceptsFiles,
+                -> widget == WidgetKind.Box ||
+                    widget == WidgetKind.Column ||
+                    widget == WidgetKind.Card ||
+                    widget == WidgetKind.Surface
+
                 // How wide a grid's columns are, said as a count or as a minimum.
                 PropertyKind.Columns,
                 PropertyKind.MinColumnWidth,

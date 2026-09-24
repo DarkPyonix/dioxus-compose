@@ -1701,3 +1701,92 @@ fn fr26_markdown_becomes_runs_and_never_crosses_the_boundary() {
     assert_eq!(kept, "2 * 3 = 6");
     assert!(none.is_empty());
 }
+
+/// Paths arrive together and come apart again as they were.
+#[test]
+fn fr27_two_paths_arrive_as_one_event() {
+    use dioxus_compose::FileDrop;
+
+    let drop = FileDrop::new("/tmp/one.txt\0/tmp/two.txt");
+    assert_eq!(drop.paths(), ["/tmp/one.txt", "/tmp/two.txt"]);
+}
+
+/// A path the platform could not give as text is dropped, and the rest are delivered.
+///
+/// The requirement asks for this by name. One unreadable file must not lose the other
+/// nine and must not end the process.
+#[test]
+fn fr27_an_unreadable_path_is_dropped_and_the_rest_arrive() {
+    use dioxus_compose::FileDrop;
+
+    let drop = FileDrop::new("/tmp/kept.txt\0\0/tmp/also-kept.txt");
+    assert_eq!(drop.paths(), ["/tmp/kept.txt", "/tmp/also-kept.txt"]);
+}
+
+/// A node that said nothing about files is not a place files may be dropped.
+///
+/// Said as "pays nothing" rather than "sends false", because a container that is silent
+/// about files is the common case: every Box, Column, Card and Surface in every screen.
+#[test]
+fn fr27_a_node_that_did_not_ask_is_not_a_drop_target() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::PropertyKind;
+
+    fn plain() -> Element {
+        rsx! { dioxus_compose::Box { Text { text: "not a target" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(plain);
+    let batch = host.rebuild().expect("the first frame failed to encode");
+    let said = decode_batch(batch)
+        .expect("decode")
+        .into_iter()
+        .filter(|mutation| {
+            matches!(
+                mutation,
+                Mutation::SetProp {
+                    property: PropertyKind::OnFilesEntered | PropertyKind::OnFilesDropped,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(said, 0, "a node that said nothing was offered as a drop target");
+}
+
+/// The widget that exists to receive files is the one that carries the handlers.
+#[test]
+fn fr27_a_drop_target_carries_both_handlers() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::{PropertyKind, WidgetKind};
+
+    fn target() -> Element {
+        rsx! {
+            FileDropTarget {
+                on_files_entered: move |_| {},
+                on_files_dropped: move |_| {},
+                Text { text: "drop files here" }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(target);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::Create { widget: WidgetKind::FileDropTarget, .. }
+    )));
+    for wanted in [PropertyKind::OnFilesEntered, PropertyKind::OnFilesDropped] {
+        assert!(
+            mutations.iter().any(|mutation| matches!(
+                mutation,
+                Mutation::SetProp { property, .. } if *property == wanted
+            )),
+            "{wanted:?} did not reach the Renderer",
+        );
+    }
+}

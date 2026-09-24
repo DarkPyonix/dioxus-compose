@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets
 
 enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LazyGrid, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, OnFilesEntered, OnFilesDropped, AcceptsFiles, Progress }
 
 enum class Key { Enter }
 
@@ -305,13 +305,15 @@ sealed interface HostEvent {
     data class LifecycleStart(override val nodeId: Int, override val handlerId: Long) : HostEvent
     data class LifecycleStop(override val nodeId: Int, override val handlerId: Long) : HostEvent
     data class DesignSystemResolved(override val nodeId: Int, override val handlerId: Long, val system: DesignSystem) : HostEvent
+    data class FilesEntered(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class FilesDropped(override val nodeId: Int, override val handlerId: Long, val text: String) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -638914361547021916L
+    const val SCHEMA_HASH: Long = -7963920781011345283L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -544,6 +546,8 @@ object Protocol {
                 is HostEvent.LifecycleStart -> null
                 is HostEvent.LifecycleStop -> null
                 is HostEvent.DesignSystemResolved -> null
+                is HostEvent.FilesEntered -> null
+                is HostEvent.FilesDropped -> event.text.toByteArray(StandardCharsets.UTF_8)
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -559,6 +563,8 @@ object Protocol {
                 is HostEvent.LifecycleStart -> 16
                 is HostEvent.LifecycleStop -> 16
                 is HostEvent.DesignSystemResolved -> 20
+                is HostEvent.FilesEntered -> 16
+                is HostEvent.FilesDropped -> 24
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -578,6 +584,8 @@ object Protocol {
                 is HostEvent.LifecycleStart -> 19
                 is HostEvent.LifecycleStop -> 20
                 is HostEvent.DesignSystemResolved -> 21
+                is HostEvent.FilesEntered -> 22
+                is HostEvent.FilesDropped -> 23
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -618,6 +626,8 @@ object Protocol {
                 is HostEvent.DesignSystemResolved -> {
                     out.putInt(designSystemTag(event.system))
                 }
+                is HostEvent.FilesEntered -> Unit
+                is HostEvent.FilesDropped -> writeStringReference(out, recordLength, text!!)
             }
             if (text != null) out.put(text)
             return out.position() - start
@@ -740,6 +750,9 @@ object Protocol {
         62 -> PropertyKind.Columns
         63 -> PropertyKind.MinColumnWidth
         64 -> PropertyKind.Spans
+        65 -> PropertyKind.OnFilesEntered
+        66 -> PropertyKind.OnFilesDropped
+        67 -> PropertyKind.AcceptsFiles
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }

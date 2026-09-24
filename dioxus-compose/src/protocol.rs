@@ -159,6 +159,8 @@ const EVENT_RESYNC: u16 = 18;
 const EVENT_LIFECYCLE_START: u16 = 19;
 const EVENT_LIFECYCLE_STOP: u16 = 20;
 const EVENT_DESIGN_SYSTEM_RESOLVED: u16 = 21;
+const EVENT_FILES_ENTERED: u16 = 22;
+const EVENT_FILES_DROPPED: u16 = 23;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -228,6 +230,10 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 .and_then(|tag| crate::schema::DesignSystem::try_from(tag).ok())
                 .ok_or(ProtocolError::InvalidValueKind(raw as u16))?;
             crate::schema::EventPayload::DesignSystemResolved(system)
+        }
+        EVENT_FILES_ENTERED if record_len == 16 => crate::schema::EventPayload::FilesEntered,
+        EVENT_FILES_DROPPED if record_len == 24 => {
+            crate::schema::EventPayload::FilesDropped(read_string(bytes, 16, record_len)?)
         }
         EVENT_RESYNC if record_len == 16 => crate::schema::EventPayload::Resync,
         EVENT_LIFECYCLE_START if record_len == 16 => crate::schema::EventPayload::LifecycleStart,
@@ -319,6 +325,10 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
             (EVENT_TEXT_SUBMITTED, 24, Some(*value), None)
         }
         crate::schema::EventPayload::FocusLost => (EVENT_FOCUS_LOST, 16, None, None),
+        crate::schema::EventPayload::FilesEntered => (EVENT_FILES_ENTERED, 16, None, None),
+        crate::schema::EventPayload::FilesDropped(paths) => {
+            (EVENT_FILES_DROPPED, 24, Some(*paths), None)
+        }
         crate::schema::EventPayload::Resync => (EVENT_RESYNC, 16, None, None),
         crate::schema::EventPayload::LifecycleStart => (EVENT_LIFECYCLE_START, 16, None, None),
         crate::schema::EventPayload::LifecycleStop => (EVENT_LIFECYCLE_STOP, 16, None, None),

@@ -511,6 +511,38 @@ pub fn Spacer(
     }
 }
 
+/// The paths of the files a reader let go over a node.
+///
+/// Separated on the wire by a NUL, which is the one byte no path on any of the three
+/// desktops may contain. A newline would have been shorter to read and wrong: a file
+/// called "notes\nfor tuesday" is legal on two of them, and splitting on newlines would
+/// have turned one file into two.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FileDrop {
+    paths: Vec<String>,
+}
+
+impl FileDrop {
+    /// Takes apart the one string the paths travelled in.
+    ///
+    /// Public because the separation is part of what this type promises, and a test that
+    /// could not build one could only check it through a window.
+    pub fn new(joined: &str) -> Self {
+        Self {
+            paths: joined
+                .split('\0')
+                .filter(|path| !path.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        }
+    }
+
+    /// Every path that arrived, in the order the platform gave them.
+    pub fn paths(&self) -> &[String] {
+        &self.paths
+    }
+}
+
 /// The visible item range the Renderer asks the Host to materialise.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RangeRequest {
@@ -1867,6 +1899,66 @@ pub fn LazyGrid(
                     }
                 }
             }
+        }
+    }
+}
+
+/// A place files may be dropped.
+///
+/// A widget rather than a property on every container, because willingness has to be
+/// absent by default and a handler cannot be: a listener is attached whether or not a
+/// screen supplied one, so four containers each grew three records for saying nothing.
+/// Being this widget is the willingness, and nothing else in the tree carries any of it.
+///
+/// Desktop only in effect. A phone has no notion of letting a file go over a window, so
+/// the events never arrive there and the same screen compiles and runs unchanged.
+#[component]
+pub fn FileDropTarget(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    #[props(default)] alignment: Option<Alignment>,
+    /// Files have come over this node. Nothing about what they are: the platforms
+    /// disagree about what is knowable before a drop, and a screen that only lights up
+    /// does not need to know.
+    #[props(default)]
+    on_files_entered: EventHandler<()>,
+    /// Files were let go here.
+    #[props(default)]
+    on_files_dropped: EventHandler<FileDrop>,
+    children: Element,
+) -> Element {
+    rsx! {
+        filedroptarget {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            alignment: opt_role(alignment),
+            onfilesentered: move |_: dioxus_core::Event<()>| on_files_entered.call(()),
+            onfilesdropped: move |event: dioxus_core::Event<FileDrop>| {
+                on_files_dropped.call(event.data().as_ref().clone());
+            },
+            {children}
         }
     }
 }

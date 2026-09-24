@@ -981,6 +981,8 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
+        "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),
+        "filesdropped" | "onfilesdropped" => Some(PropertyKind::OnFilesDropped),
         "change" | "onchange" => Some(PropertyKind::OnValueChange),
         _ => None,
     }

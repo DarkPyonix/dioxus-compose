@@ -435,7 +435,8 @@ class NodeTable {
                     widget == WidgetKind.Box ||
                     widget == WidgetKind.LazyColumn ||
                     widget == WidgetKind.LazyRow ||
-                    widget == WidgetKind.ScrollColumn
+                    widget == WidgetKind.ScrollColumn ||
+                    widget == WidgetKind.FileDropTarget
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
 
@@ -502,6 +503,14 @@ class NodeTable {
 
                 // Runs of different treatment inside one string.
                 PropertyKind.Spans -> widget == WidgetKind.Text
+
+                // Files over a node and files let go on it. Only the widget that exists
+                // to receive them, because a handler is attached whether or not a screen
+                // supplied one: on any container these would cost every container in the
+                // tree three records for saying nothing.
+                PropertyKind.OnFilesEntered,
+                PropertyKind.OnFilesDropped,
+                -> widget == WidgetKind.FileDropTarget
 
                 // How wide a grid's columns are, said as a count or as a minimum.
                 PropertyKind.Columns,

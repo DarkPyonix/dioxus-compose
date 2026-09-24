@@ -52,7 +52,7 @@ pub use schema::{
 };
 pub use widgets::{
     Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
-    Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
+    Dropdown, FileDrop, FileDropTarget, Icon, Image, KeyEvent, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
     ProgressIndicator, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, Separator, Sheet,
     Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
@@ -151,7 +151,8 @@ pub mod prelude {
     pub use crate::{
         Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Checkbox, Color,
         ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
-        DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        DrawList, Dropdown, Element, FileDrop, FileDropTarget, Icon, IconRole, Image, Key, KeyEvent,
+        LaunchBuilder,
         LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
         Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
         RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
@@ -214,6 +215,11 @@ pub mod elements {
             pub const elevation: AttributeDescription = ("elevation", None, false);
             pub const onclickable: AttributeDescription = ("onclickable", None, false);
             pub const observe_size: AttributeDescription = ("observe_size", None, false);
+            // Willingness to have files dropped, said by having somewhere to report them.
+            // A node without a handler is never told files are over it, which is what
+            // keeps a screen from lighting up every container it has.
+            pub const onfilesentered: AttributeDescription = ("onfilesentered", None, false);
+            pub const onfilesdropped: AttributeDescription = ("onfilesdropped", None, false);
         };
     }
 
@@ -354,6 +360,7 @@ pub mod elements {
     // are separate attributes because they are separate questions: a count the screen
     // insists on, or a width below which the Renderer drops one.
     element!(lazygrid, "LazyGrid", [item_count, columns, min_column_width]);
+    element!(filedroptarget, "FileDropTarget", [alignment]);
 
     #[doc(hidden)]
     pub mod completions {
@@ -437,6 +444,11 @@ pub mod events {
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
+    // Files over a node, and files let go on it. The first carries nothing: the platforms
+    // disagree about what is knowable before a drop, and a node that only lights up does
+    // not need to know.
+    event!(onfilesentered, ());
+    event!(onfilesdropped, crate::FileDrop);
     // A control reports the value the user landed on, as one f64. A picker reads it as
     // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
     // the wire property with the text field's value change, because both are "this

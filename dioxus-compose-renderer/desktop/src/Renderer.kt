@@ -62,6 +62,7 @@ internal fun runRenderer(
     // function.
     // Before the first frame, because every piece of text drawn after this reads it.
     dioxus.compose.design.installPlatformUiFamily()
+    dioxus.compose.ui.installFileDrop()
     val host = DioxusHost(connection())
     // Started on the thread the window will be driven from, which is not the thread this
     // function was called on.

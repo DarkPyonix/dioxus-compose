@@ -413,6 +413,10 @@ impl Host {
                 key_event = Some(value.clone());
                 Event::new(Rc::new(value), true).into_any()
             }
+            EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
+            EventPayload::FilesDropped(paths) => {
+                Event::new(Rc::new(crate::widgets::FileDrop::new(paths)), true).into_any()
+            }
             EventPayload::RangeRequested { start, count } => {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }

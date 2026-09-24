@@ -100,11 +100,14 @@ fun RenderNode(
     // The TextField wires its own key handling, because it has an editor to intercept and a
     // composition to protect; everything else routes keys here.
     val keyDownHandler = node.handler(PropertyKind.OnKeyDown)
-    val modifier = if (keyDownHandler == null || node.widget == WidgetKind.TextField) {
+    val withKeys = if (keyDownHandler == null || node.widget == WidgetKind.TextField) {
         chain
     } else {
         chain.hostKeyEvents(nodeId, keyDownHandler, dispatcher)
     }
+    // Only where the node said it is a place files may be dropped. Everywhere else this
+    // adds nothing to the chain and the platform shows no drop cursor.
+    val modifier = platformFileDrop(withKeys, node, dispatcher)
     when (node.widget) {
         WidgetKind.Column -> Column(
             modifier = modifier,
@@ -118,7 +121,11 @@ fun RenderNode(
             verticalAlignment = node.verticalAlignment(),
         ) { Children(node, table, dispatcher) }
 
-        WidgetKind.Box -> Box(modifier, contentAlignment = node.boxAlignment()) {
+        // A place files may be dropped is laid out as a plain box. Being this widget is
+        // the whole of the difference: the drop target is set up for it and for nothing
+        // else in the tree.
+        WidgetKind.Box, WidgetKind.FileDropTarget ->
+            Box(modifier, contentAlignment = node.boxAlignment()) {
             Children(node, table, dispatcher)
         }
 
@@ -224,6 +231,18 @@ fun RenderNode(
         }
     }
 }
+
+/**
+ * How a node that takes files gets its drop target, filled in by the platform that has
+ * one.
+ *
+ * A hook rather than a call, because setting up a drop target means reading the toolkit's
+ * clipboard flavours and only the desktop has them. A phone has no notion of letting a
+ * file go over a window, so it leaves this alone and the modifier chain is unchanged,
+ * which is the same rule pointer hover follows.
+ */
+var platformFileDrop: @Composable (Modifier, Node, EventDispatcher) -> Modifier =
+    { modifier, _, _ -> modifier }
 
 /**
  * The axis a widget stacks its children along, which is the axis a child's `Weight` is a
