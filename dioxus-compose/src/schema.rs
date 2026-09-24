@@ -71,7 +71,7 @@ pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
     "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget;",
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans,on_files_entered,on_files_dropped;",
-    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize;",
+    "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize,Motion;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved,FilesEntered,FilesDropped;",
     "windowsizeclasses=Compact,Medium,Expanded;",
@@ -466,6 +466,18 @@ define_wire_enum!(SHAPE_ROLE_SCHEMA, ShapeRole {
     Full = 6,
 });
 
+// How long a change takes and along which curve. A role rather than a duration, because
+// Material's emphasized curve and Cupertino's spring are different answers to the same
+// question, and a milliseconds figure from the application would settle it in the wrong
+// place. A system asked to reduce motion answers every one of these instantly.
+define_wire_enum!(MOTION_ROLE_SCHEMA, MotionRole {
+    Instant = 1,
+    Quick = 2,
+    Standard = 3,
+    Slow = 4,
+    Emphasized = 5,
+});
+
 // Density roles, because dp density differs per design system.
 define_wire_enum!(SPACE_ROLE_SCHEMA, SpaceRole {
     None = 1,
@@ -616,6 +628,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
     RoleEnumSchema {
         name: "ShapeRole",
         variants: SHAPE_ROLE_SCHEMA,
+    },
+    RoleEnumSchema {
+        name: "MotionRole",
+        variants: MOTION_ROLE_SCHEMA,
     },
     RoleEnumSchema {
         name: "SpaceRole",
@@ -901,6 +917,11 @@ pub enum Modifier {
     /// wide one of its own containers ended up needs a name it gave itself. The Renderer
     /// does not read it.
     ObserveSize { token: u32 },
+    /// Which curve and length this node's changes run along.
+    ///
+    /// The node says how important the change is, not how long it takes. Appearing,
+    /// disappearing, a selection moving and a size changing all read this.
+    Motion(MotionRole),
 }
 
 const NO_FIELDS: &[FieldSchema] = &[];
@@ -944,6 +965,11 @@ const SPACE_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
 const SHAPE_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
     name: "role",
     ty: FieldType::Role("ShapeRole"),
+    slot: FieldSlot::FirstLow,
+}];
+const MOTION_ROLE_FIELD: &[FieldSchema] = &[FieldSchema {
+    name: "role",
+    ty: FieldType::Role("MotionRole"),
     slot: FieldSlot::FirstLow,
 }];
 const PADDING_EACH_FIELDS: &[FieldSchema] = &[
@@ -1088,6 +1114,11 @@ pub const MODIFIER_SCHEMA: &[VariantSchema] = &[
         name: "ObserveSize",
         tag: 16,
         fields: TOKEN_U32_FIELD,
+    },
+    VariantSchema {
+        name: "Motion",
+        tag: 17,
+        fields: MOTION_ROLE_FIELD,
     },
 ];
 

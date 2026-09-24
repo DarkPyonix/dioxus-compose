@@ -9,7 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, IconRole, Paint, ShapeRole, SlotRole, SpaceRole,
+    Alignment, Arrangement, ButtonVariant, IconRole, MotionRole, Paint, ShapeRole, SlotRole,
+    SpaceRole,
     TextAlign, TextOverflow, TypeRole,
 };
 use std::cell::Cell;
@@ -104,6 +105,10 @@ pub fn Column(
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
     observe_size: Option<i64>,
+    /// How important this node's changes are. The curve and the length are the design
+    /// system's answer to that, and are never sent from here.
+    #[props(default)]
+    motion: Option<MotionRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -126,6 +131,7 @@ pub fn Column(
     rsx! {
         column {
             observe_size,
+            motion: opt_role(motion),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -154,6 +160,10 @@ pub fn Row(
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
     observe_size: Option<i64>,
+    /// How important this node's changes are. The curve and the length are the design
+    /// system's answer to that, and are never sent from here.
+    #[props(default)]
+    motion: Option<MotionRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -176,6 +186,7 @@ pub fn Row(
     rsx! {
         row {
             observe_size,
+            motion: opt_role(motion),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -204,6 +215,10 @@ pub fn ComposeBox(
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
     observe_size: Option<i64>,
+    /// How important this node's changes are. The curve and the length are the design
+    /// system's answer to that, and are never sent from here.
+    #[props(default)]
+    motion: Option<MotionRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -223,6 +238,7 @@ pub fn ComposeBox(
     rsx! {
         composebox {
             observe_size,
+            motion: opt_role(motion),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -637,6 +653,10 @@ pub fn Card(
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
     observe_size: Option<i64>,
+    /// How important this node's changes are. The curve and the length are the design
+    /// system's answer to that, and are never sent from here.
+    #[props(default)]
+    motion: Option<MotionRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -655,6 +675,7 @@ pub fn Card(
     rsx! {
         card {
             observe_size,
+            motion: opt_role(motion),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -681,6 +702,10 @@ pub fn Surface(
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
     observe_size: Option<i64>,
+    /// How important this node's changes are. The curve and the length are the design
+    /// system's answer to that, and are never sent from here.
+    #[props(default)]
+    motion: Option<MotionRole>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -699,6 +724,7 @@ pub fn Surface(
     rsx! {
         surface {
             observe_size,
+            motion: opt_role(motion),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),

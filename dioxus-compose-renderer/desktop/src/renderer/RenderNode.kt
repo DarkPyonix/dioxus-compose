@@ -245,6 +245,20 @@ var platformFileDrop: @Composable (Modifier, Node, EventDispatcher) -> Modifier 
     { modifier, _, _ -> modifier }
 
 /**
+ * Whether the system has been asked to reduce motion, answered by the platform that can
+ * be asked.
+ *
+ * A hook for the same reason as the one above: the setting lives in a different place on
+ * each desktop and nowhere at all on a target that has no desktop. The Host is not
+ * consulted and never learns the answer, because this is the user's setting about their
+ * own machine rather than anything the application declared.
+ *
+ * Read only by a node that declared a motion role, so a screen that declares none never
+ * asks the question.
+ */
+var platformReducedMotion: () -> Boolean = { false }
+
+/**
  * The axis a widget stacks its children along, which is the axis a child's `Weight` is a
  * share of: a weight under a Column is a share of the height, a weight under a Row a share
  * of the width.

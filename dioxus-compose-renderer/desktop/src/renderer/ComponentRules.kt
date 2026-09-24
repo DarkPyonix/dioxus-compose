@@ -348,6 +348,12 @@ internal object Material3Rules : ComponentRules {
         releaseMillis = 200,
         easing = FastOutSlowInEasing,
         tooltipDelayMillis = 500,
+        // Material 3's own durations: short4, medium2, long2, and the emphasized
+        // transition that the system asks for whenever a change is worth noticing.
+        quickMillis = 150,
+        standardMillis = 300,
+        slowMillis = 450,
+        emphasizedMillis = 500,
     )
 
 
@@ -734,6 +740,12 @@ internal object CupertinoRules : ComponentRules {
         easing = LinearOutSlowInEasing,
         // A help tag waits until the pointer has clearly stopped.
         tooltipDelayMillis = 1000,
+        // Shorter than Material throughout. An iOS transition settles rather than
+        // arrives, and a long one reads as sluggish next to the system's own.
+        quickMillis = 120,
+        standardMillis = 250,
+        slowMillis = 400,
+        emphasizedMillis = 350,
     )
 
 
@@ -1154,6 +1166,12 @@ internal object FluentRules : ComponentRules {
         releaseMillis = 100,
         easing = LinearEasing,
         tooltipDelayMillis = 300,
+        // The shortest set here. Fluent's guidance is that a transition should be over
+        // before it is noticed.
+        quickMillis = 100,
+        standardMillis = 200,
+        slowMillis = 300,
+        emphasizedMillis = 250,
     )
 
 
@@ -1572,6 +1590,12 @@ internal object GnomeRules : ComponentRules {
         releaseMillis = 200,
         easing = FastOutSlowInEasing,
         tooltipDelayMillis = 500,
+        // Adwaita's transitions are even and unhurried, and its emphasis is a longer
+        // version of the same curve rather than a different one.
+        quickMillis = 180,
+        standardMillis = 350,
+        slowMillis = 500,
+        emphasizedMillis = 420,
     )
 
     /**
@@ -2019,6 +2043,11 @@ internal object BreezeRules : ComponentRules {
         releaseMillis = 80,
         easing = LinearEasing,
         tooltipDelayMillis = 700,
+        // Mechanical: the quickest standard change of the seven.
+        quickMillis = 80,
+        standardMillis = 150,
+        slowMillis = 250,
+        emphasizedMillis = 200,
     )
 
     /**
@@ -2453,6 +2482,11 @@ internal object DeepinRules : ComponentRules {
         releaseMillis = 200,
         easing = LinearOutSlowInEasing,
         tooltipDelayMillis = 600,
+        // The longest set here, to match the rounded shapes and the soft elevation.
+        quickMillis = 200,
+        standardMillis = 400,
+        slowMillis = 600,
+        emphasizedMillis = 450,
     )
 
     /**
@@ -2985,6 +3019,12 @@ internal object LiquidGlassRules : ComponentRules {
         easing = LinearOutSlowInEasing,
         // A help tag waits until the pointer has clearly stopped.
         tooltipDelayMillis = 1000,
+        // Glass moves a little longer than Cupertino does, because the material itself
+        // is what is being seen to move and it is given time to be read.
+        quickMillis = 140,
+        standardMillis = 280,
+        slowMillis = 460,
+        emphasizedMillis = 430,
     )
 
     /**

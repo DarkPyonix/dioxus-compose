@@ -1790,3 +1790,83 @@ fn fr27_a_drop_target_carries_both_handlers() {
         );
     }
 }
+
+/// A node says how important its changes are, and nothing about how long they take.
+#[test]
+fn fr24_a_motion_role_reaches_the_renderer_as_a_role() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn moving() -> Element {
+        rsx! {
+            Card { motion: MotionRole::Emphasized, Text { text: "opens" } }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(moving);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(
+        mutations.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetModifier { modifier: Modifier::Motion(MotionRole::Emphasized), .. }
+        )),
+        "the motion role did not reach the Renderer: {mutations:?}",
+    );
+}
+
+/// A node that said nothing about motion pays nothing.
+#[test]
+fn fr24_silence_about_motion_costs_no_record() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    fn still() -> Element {
+        rsx! { Card { Text { text: "still" } } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(still);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    assert!(!mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Motion(_), .. }
+    )));
+}
+
+/// The five roles survive the round trip in the order the wire fixes them in.
+#[test]
+fn fr24_every_motion_role_survives_the_wire() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+
+    const ROLES: [MotionRole; 5] = [
+        MotionRole::Instant,
+        MotionRole::Quick,
+        MotionRole::Standard,
+        MotionRole::Slow,
+        MotionRole::Emphasized,
+    ];
+
+    fn all_five() -> Element {
+        rsx! {
+            Column {
+                for role in ROLES {
+                    Card { motion: role, Text { text: "{role:?}" } }
+                }
+            }
+        }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(all_five);
+    let mutations = decode_batch(host.rebuild().expect("encode")).expect("decode");
+    let arrived: Vec<MotionRole> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier { modifier: Modifier::Motion(role), .. } => Some(*role),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(arrived, ROLES);
+}

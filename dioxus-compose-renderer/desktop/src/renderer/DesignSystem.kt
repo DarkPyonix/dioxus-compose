@@ -15,6 +15,8 @@ import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
 import dioxus.compose.protocol.DesignTokenTable
 import dioxus.compose.protocol.DesignTokens
+import androidx.compose.animation.core.FiniteAnimationSpec
+import dioxus.compose.protocol.MotionRole
 import dioxus.compose.protocol.Paint
 import dioxus.compose.protocol.ShapeRole
 import dioxus.compose.protocol.SpaceRole
@@ -126,6 +128,17 @@ class ResolvedTheme(
     }
 
     fun space(role: SpaceRole): Dp = tokens.space(role).dp
+
+    /**
+     * The spec a change of this importance runs on in this system.
+     *
+     * Reduced motion is answered here rather than by the Host: every role becomes
+     * `Instant`, so each one finishes inside the frame it starts in, and the screen that
+     * declared it is not involved and does not need to be recomposed for it.
+     */
+    fun <T> motion(role: MotionRole): FiniteAnimationSpec<T> = rules.motion.spec(
+        if (dioxus.compose.ui.node.platformReducedMotion()) MotionRole.Instant else role,
+    )
 
     fun radius(role: ShapeRole): Dp = tokens.radius(role).dp
 
@@ -604,14 +617,49 @@ data class MessageStyle(
     val typeRole: TypeRole,
 )
 
-/** The design system's state transition timing. */
+/**
+ * The design system's state transition timing.
+ *
+ * The four named lengths are what a node's declared importance resolves to. A screen says
+ * how much a change matters and never how many milliseconds it takes, because Material's
+ * emphasized curve and Cupertino's softer, shorter one are different answers to the same
+ * question and the screen is not the place to settle it.
+ */
 data class Motion(
     val pressMillis: Int,
     val releaseMillis: Int,
     val easing: androidx.compose.animation.core.Easing,
     /** How long a pointer rests on something before its explanation appears. */
     val tooltipDelayMillis: Int = 500,
-)
+    val quickMillis: Int = pressMillis,
+    val standardMillis: Int = releaseMillis,
+    val slowMillis: Int = releaseMillis * 2,
+    val emphasizedMillis: Int = releaseMillis * 3 / 2,
+    /** The curve for the one role that is allowed its own, and the same curve otherwise. */
+    val emphasizedEasing: androidx.compose.animation.core.Easing = easing,
+) {
+
+    /** How long a change of this importance runs for. Instant is a change with no run. */
+    fun millis(role: MotionRole): Int = when (role) {
+        MotionRole.Instant -> 0
+        MotionRole.Quick -> quickMillis
+        MotionRole.Standard -> standardMillis
+        MotionRole.Slow -> slowMillis
+        MotionRole.Emphasized -> emphasizedMillis
+    }
+
+    fun easing(role: MotionRole): androidx.compose.animation.core.Easing =
+        if (role == MotionRole.Emphasized) emphasizedEasing else easing
+
+    /**
+     * The spec a change of this importance runs on.
+     *
+     * A zero length tween finishes inside the frame it starts in, which is what a system
+     * asked to reduce motion gets for every role, and what `Instant` means anyway.
+     */
+    fun <T> spec(role: MotionRole): androidx.compose.animation.core.FiniteAnimationSpec<T> =
+        androidx.compose.animation.core.tween(millis(role), easing = easing(role))
+}
 
 /**
  * A line along a field's bottom edge, which is what Material and Fluent thicken when the

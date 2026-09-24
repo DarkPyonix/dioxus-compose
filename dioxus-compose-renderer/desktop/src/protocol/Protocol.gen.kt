@@ -20,6 +20,8 @@ enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Labe
 
 enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
 
+enum class MotionRole { Instant, Quick, Standard, Slow, Emphasized }
+
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
 enum class TextAlign { Start, Center, End, Justify }
@@ -237,6 +239,7 @@ sealed interface Modifier {
     data class Border(val width: kotlin.Float, val paint: Paint) : Modifier
     data class Elevation(val value: kotlin.Float) : Modifier
     data class ObserveSize(val token: Int) : Modifier
+    data class Motion(val role: dioxus.compose.protocol.MotionRole) : Modifier
 }
 
 sealed interface Mutation {
@@ -313,7 +316,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -6464632409592826589L
+    const val SCHEMA_HASH: Long = -8278255917080106232L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -827,6 +830,15 @@ object Protocol {
         else -> throw ProtocolException("unknown ShapeRole tag $tag", offset)
     }
 
+    private fun motionRole(tag: Int, offset: Int): MotionRole = when (tag) {
+        1 -> MotionRole.Instant
+        2 -> MotionRole.Quick
+        3 -> MotionRole.Standard
+        4 -> MotionRole.Slow
+        5 -> MotionRole.Emphasized
+        else -> throw ProtocolException("unknown MotionRole tag $tag", offset)
+    }
+
     private fun spaceRole(tag: Int, offset: Int): SpaceRole = when (tag) {
         1 -> SpaceRole.None
         2 -> SpaceRole.Xs
@@ -975,6 +987,7 @@ object Protocol {
         14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
         15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
         16 -> Modifier.ObserveSize(first.toInt())
+        17 -> Modifier.Motion(motionRole(first.toInt(), offset))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 

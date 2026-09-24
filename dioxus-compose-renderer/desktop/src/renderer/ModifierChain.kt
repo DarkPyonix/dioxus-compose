@@ -1,5 +1,6 @@
 package dioxus.compose.ui
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -71,6 +72,11 @@ internal fun List<ProtocolModifier>.toComposeModifier(
             // this modifier, so a tree that observes nothing is laid out exactly as it
             // was before any of this existed.
             is ProtocolModifier.ObserveSize -> chain.reportSizeTo(nodeId, dispatcher)
+
+            // How important this node's changes are. What that means in milliseconds and
+            // along which curve is the running design system's answer, and a system the
+            // user has asked to hold still answers every role with no run at all.
+            is ProtocolModifier.Motion -> chain.animateContentSize(theme.motion(value.role))
 
             // Weight is parent data: it is applied by the Column or Row that owns this node,
             // not here. See `weightOf` and `Children` in RenderNode.kt.
