@@ -311,7 +311,18 @@ private const val WINDOW_STRUCT_BYTES = 40
  * Reached by setting `DXC_APPKIT_WINDOW`, so the ordinary path is untouched.
  */
 internal fun runAppKitSpike() {
-    val window = openNativeWindow("dioxus-compose", 520, 360)
+    // The Host is started before there is a window, because what the window should look
+    // like is in its first batch and a window cannot be told afterwards. Started on this
+    // thread, which is the one every later call to it is made from: the boundary is a
+    // direct call on one thread and the Host keeps its state there.
+    val host = dioxus.compose.runtime.DioxusHost(NativeHostConnection())
+    host.start()
+    val asked = host.table.window
+    val window = openNativeWindow(
+        asked?.title?.takeIf { it.isNotEmpty() } ?: "dioxus-compose",
+        if (asked != null && asked.width > 0) asked.width else 520,
+        if (asked != null && asked.height > 0) asked.height else 360,
+    )
     if (window == null) {
         System.err.println("dioxus-compose: this machine has no Metal device")
         return
@@ -340,7 +351,9 @@ internal fun runAppKitSpike() {
         size = size,
         platformContext = NativePlatformContext({ size }, textInput, semantics),
     )
-    scene.setContent { SpikeContent() }
+    // The application's own tree, drawn by the same interpreter the toolkit path uses.
+    // Nothing in it knows which of the two it is running on, which is the point.
+    scene.setContent { dioxus.compose.runtime.DioxusContent(host) }
 
     try {
         // A plain loop rather than a clock. Pacing is the frame clock's work and comes
@@ -379,6 +392,7 @@ internal fun runAppKitSpike() {
     } finally {
         scene.close()
         context.close()
+        host.shutdown()
     }
 }
 

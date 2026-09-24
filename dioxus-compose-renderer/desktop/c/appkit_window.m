@@ -19,6 +19,7 @@
 #import <Metal/Metal.h>
 #include <stdint.h>
 #include <string.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 // What happened in the window, waiting to be read.
@@ -162,28 +163,39 @@ static void dxc_push_event(struct dxc_event event) {
  * before this call or the one after it, never half of each.
  */
 void dxc_native_set_accessibility(const struct dxc_element *elements, int32_t count, void *view_pointer) {
-    NSMutableArray<NSAccessibilityElement *> *built = [NSMutableArray arrayWithCapacity:count];
-    for (int32_t index = 0; index < count; index++) {
-        const struct dxc_element *element = &elements[index];
-        NSString *label = [NSString stringWithUTF8String:element->label];
-        NSAccessibilityElement *made = [NSAccessibilityElement
-            accessibilityElementWithRole:dxc_appkit_role(element->role)
-                                   frame:NSZeroRect
-                                   label:label != nil ? label : @""
-                                  parent:nil];
-        // The frame is in screen coordinates, which is what a reader's pointer is in, and
-        // the scene measures from the top left of the view. Converted on the main thread
-        // because that is where the window's own geometry may be asked for.
-        dxc_on_main(^{
-            NSView *view = (__bridge NSView *)view_pointer;
+    // Copied here and built there, without waiting. The frames are in screen coordinates
+    // and only the main thread can answer for the window's geometry, but the thread that
+    // calls this is the one that drains the window's events: a wait here is a wait on a
+    // thread that is already busy answering questions about accessibility, and while it
+    // lasts nothing takes the clicks out of the queue. A calculator went deaf this way.
+    //
+    // Nothing needs the result, so nothing waits for it. The elements are copied first
+    // because what was handed in is the caller's stack.
+    size_t bytes = (size_t)count * sizeof(struct dxc_element);
+    struct dxc_element *copy = count > 0 ? malloc(bytes) : NULL;
+    if (copy != NULL) {
+        memcpy(copy, elements, bytes);
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSView *view = (__bridge NSView *)view_pointer;
+        NSMutableArray<NSAccessibilityElement *> *built =
+            [NSMutableArray arrayWithCapacity:count];
+        for (int32_t index = 0; index < count; index++) {
+            const struct dxc_element *element = &copy[index];
+            NSString *label = [NSString stringWithUTF8String:element->label];
+            NSAccessibilityElement *made = [NSAccessibilityElement
+                accessibilityElementWithRole:dxc_appkit_role(element->role)
+                                       frame:NSZeroRect
+                                       label:label != nil ? label : @""
+                                      parent:view];
             NSRect local = NSMakeRect(element->x, element->y, element->width, element->height);
             NSRect inWindow = [view convertRect:local toView:nil];
             [made setAccessibilityFrame:[view.window convertRectToScreen:inWindow]];
-            [made setAccessibilityParent:view];
-        });
-        [built addObject:made];
-    }
-    dxc_accessibility_children = built;
+            [built addObject:made];
+        }
+        dxc_accessibility_children = built;
+        free(copy);
+    });
 }
 
 /** Takes the oldest event, or answers zero when there is none. */
