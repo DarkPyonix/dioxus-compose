@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# The window the renderer opens for itself is four pointers and a fifth, and the Kotlin
+# side reads them by offset. Nothing in either language checks the other, so a field added
+# to the C struct would leave Kotlin reading a pointer from the wrong place: a window
+# handle used as a Metal device, which is a crash with no line in it to read.
+#
+# This compiles the struct and asks C where each field is, then checks that the Kotlin
+# side reads from there.
+
+set -uo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source_file="$repo_root/dioxus-compose-renderer/desktop/c/appkit_window.m"
+kotlin_file="$repo_root/dioxus-compose-renderer/desktop/src/AppKitWindow.kt"
+red=0
+
+[[ -f "$source_file" ]] || { echo "missing $source_file"; exit 1; }
+[[ -f "$kotlin_file" ]] || { echo "missing $kotlin_file"; exit 1; }
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+    echo "skipped: the window this describes is macOS's"
+    exit 0
+fi
+
+probe="$(mktemp -t appkit-window-layout).m"
+trap 'rm -f "$probe" "${probe%.m}"' EXIT
+{
+    echo '#include <stdio.h>'
+    echo '#include <stddef.h>'
+    # The declaration itself, taken from the file under test rather than restated here.
+    sed -n '/^struct dxc_native_window {/,/^};/p' "$source_file"
+    echo 'int main(void) {'
+    echo '    printf("window %zu\nview %zu\ndevice %zu\nqueue %zu\nlayer %zu\nsize %zu\n",'
+    echo '        offsetof(struct dxc_native_window, window),'
+    echo '        offsetof(struct dxc_native_window, view),'
+    echo '        offsetof(struct dxc_native_window, device),'
+    echo '        offsetof(struct dxc_native_window, queue),'
+    echo '        offsetof(struct dxc_native_window, layer),'
+    echo '        sizeof(struct dxc_native_window));'
+    echo '    return 0;'
+    echo '}'
+} > "$probe"
+
+cc -o "${probe%.m}" "$probe" || { echo "the struct did not compile"; exit 1; }
+layout="$("${probe%.m}")"
+
+check_field() {
+    local field="$1"
+    local offset
+    offset="$(awk -v f="$field" '$1 == f { print $2 }' <<< "$layout")"
+    if ! grep -q "$field = out.readWord<Pointer>($offset)" "$kotlin_file"; then
+        echo "fail: C puts $field at $offset, which is not where AppKitWindow.kt reads it"
+        red=1
+    fi
+}
+
+for field in window view device queue layer; do
+    check_field "$field"
+done
+
+size="$(awk '$1 == "size" { print $2 }' <<< "$layout")"
+if ! grep -q "WINDOW_STRUCT_BYTES = $size" "$kotlin_file"; then
+    echo "fail: the struct is $size bytes, which is not what AppKitWindow.kt reserves"
+    red=1
+fi
+
+if (( red )); then
+    exit 1
+fi
+echo "ok: the window's fields are read from where C puts them"

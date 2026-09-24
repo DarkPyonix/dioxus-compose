@@ -9,6 +9,7 @@ import org.graalvm.nativeimage.c.type.CIntPointer
 import org.graalvm.nativeimage.c.type.CFloatPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
 import org.graalvm.word.Pointer
+import org.graalvm.word.WordFactory
 
 // A window that is ours, drawn into with Skia and with no toolkit in between.
 //
@@ -35,11 +36,11 @@ private external fun windowSize(
     scale: CFloatPointer?,
 )
 
-@CFunction("dxc_native_window_present")
-private external fun presentWindow(view: Pointer?, queue: Pointer?)
+@CFunction("dxc_native_frame_begin")
+private external fun beginFrame(layer: Pointer?, textureOut: Pointer?): Int
 
-@CFunction("dxc_native_window_run")
-private external fun runEventLoop()
+@CFunction("dxc_native_frame_end")
+private external fun endFrame(queue: Pointer?)
 
 /**
  * The four pointers a window is, once AppKit has made one.
@@ -53,22 +54,38 @@ class NativeWindow internal constructor(
     val view: Long,
     val device: Long,
     val queue: Long,
+    val layer: Long,
 ) {
+
+    // A word value is made where it is used and nowhere else. Native-image accepts one
+    // in straight-line code inside a single method, so a helper that returned one, or a
+    // variable that held one across a call, is rejected: `WordFactory.pointer` is
+    // written out at each call rather than wrapped.
 
     /** The size of the drawable in pixels, and how many of them go to a point. */
     fun measure(): WindowMeasurement {
         val width = StackValue.get<CIntPointer>(4)
         val height = StackValue.get<CIntPointer>(4)
         val scale = StackValue.get<CFloatPointer>(4)
-        windowSize(pointerOf(view), width, height, scale)
+        windowSize(WordFactory.pointer(layer), width, height, scale)
         return WindowMeasurement(width.read(), height.read(), scale.read())
     }
 
-    /** Ends the frame Skia has just painted. */
-    fun present() = presentWindow(pointerOf(view), pointerOf(queue))
+    /**
+     * The texture this frame paints into, or zero where the system had none to give.
+     *
+     * Zero is not a failure. It means frames are being produced faster than the screen
+     * takes them, and the answer to that is to skip one rather than to wait.
+     */
+    fun beginFrame(): Long {
+        val texture = StackValue.get<Pointer>(8)
+        if (beginFrame(WordFactory.pointer(layer), texture) != 0) return 0
+        return texture.readWord<Pointer>(0).rawValue()
+    }
 
-    /** Hands the thread to AppKit. Returns when the window closes. */
-    fun run() = runEventLoop()
+    /** Puts the painted frame on the screen. */
+    fun endFrame() = endFrame(WordFactory.pointer(queue))
+
 }
 
 data class WindowMeasurement(val width: Int, val height: Int, val scale: Float)
@@ -92,15 +109,14 @@ fun openNativeWindow(title: String, width: Int, height: Int): NativeWindow? {
             view = out.readWord<Pointer>(8).rawValue(),
             device = out.readWord<Pointer>(16).rawValue(),
             queue = out.readWord<Pointer>(24).rawValue(),
+            layer = out.readWord<Pointer>(32).rawValue(),
         )
     } finally {
         holder.close()
     }
 }
 
-private const val WINDOW_STRUCT_BYTES = 32
-
-private fun pointerOf(value: Long): Pointer = org.graalvm.word.WordFactory.pointer(value)
+private const val WINDOW_STRUCT_BYTES = 40
 
 /**
  * Draws one colour into a window of our own, and holds it there.
@@ -123,20 +139,38 @@ internal fun runAppKitSpike() {
         "dioxus-compose: a window of our own, ${measured.width}x${measured.height} " +
             "at ${measured.scale}x, with no toolkit in it",
     )
-    val surface = org.jetbrains.skia.Surface.makeFromMTKView(
+    val texture = window.beginFrame()
+    if (texture == 0L) {
+        System.err.println("dioxus-compose: no drawable to paint into")
+        return
+    }
+    val target = org.jetbrains.skia.BackendRenderTarget.makeMetal(
+        measured.width,
+        measured.height,
+        texture,
+    )
+    val surface = org.jetbrains.skia.Surface.makeFromBackendRenderTarget(
         context,
-        window.view,
+        target,
         org.jetbrains.skia.SurfaceOrigin.TOP_LEFT,
-        1,
         org.jetbrains.skia.SurfaceColorFormat.BGRA_8888,
         org.jetbrains.skia.ColorSpace.sRGB,
         org.jetbrains.skia.SurfaceProps(org.jetbrains.skia.PixelGeometry.RGB_H),
-    )
-    // A colour nothing else on a desktop is, so a screenshot cannot be read as a window
-    // that happened to be there.
+    )!!
+    // A colour nothing else on this desktop is, so a screenshot cannot be read as a
+    // window that happened to be there.
     surface.canvas.clear(0xFF2E7D32.toInt())
-    context.flush()
+    // Submitted, not only recorded. Skia's Metal backend records the frame into a command
+    // buffer of its own, and a drawable presented before that buffer runs is a drawable
+    // with nothing in it: the window came up black with the colour never reaching the GPU.
+    surface.flushAndSubmit(true)
     surface.close()
-    window.present()
-    window.run()
+    target.close()
+    window.endFrame()
+    // Held on screen while a screenshot is taken. The main thread is already running
+    // AppKit; this one has nothing left to do but wait, and the process ends when it
+    // stops waiting.
+    Thread.sleep(SPIKE_HOLD_MILLIS)
 }
+
+private const val SPIKE_HOLD_MILLIS = 20_000L
