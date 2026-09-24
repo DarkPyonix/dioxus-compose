@@ -51,8 +51,8 @@ pub use schema::{
 pub use widgets::{
     Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
     Dropdown, Icon, Image, KeyEvent, LazyColumn, LazyRow, Menu, Navigation, NavigationItem,
-    ProgressIndicator, RadioButton, RangeRequest, Row, ScrollColumn, Separator, Sheet, Slider,
-    Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    ProgressIndicator, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, Separator, Sheet,
+    Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{WindowSize, use_window_size, window_size};
 
@@ -151,7 +151,8 @@ pub mod prelude {
         DrawList, Dropdown, Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
         LazyColumn, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
         Modifier, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
-        RangeRequest, Row, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer,
+        RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
+        Spacer,
         Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
         Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
         show_message, use_window_size,
@@ -340,12 +341,18 @@ pub mod elements {
     // says once that the user asked to close it. Which edge it enters from is the
     // Renderer's, because it is the side that knows how wide the window is.
     element!(sheet, "Sheet", [open]);
+    // The screen's frame. It carries nothing of its own: what it is made of arrives as
+    // slots, and what each slot becomes is decided where the window's width is known.
+    element!(scaffold, "Scaffold", []);
+    element!(scaffoldslot, "ScaffoldSlot", [slot]);
 
     #[doc(hidden)]
     pub mod completions {
         #[allow(non_camel_case_types)]
         pub enum CompleteWithBraces {
             column {},
+            scaffold {},
+            scaffoldslot {},
             row {},
             composebox {},
             text {},

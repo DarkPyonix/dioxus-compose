@@ -9,8 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, IconRole, Paint, ShapeRole, SpaceRole, TextAlign,
-    TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonVariant, IconRole, Paint, ShapeRole, SlotRole, SpaceRole,
+    TextAlign, TextOverflow, TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -765,7 +765,8 @@ pub fn Tabs(
     /// The design system decides where this is unset, which is what an adaptive
     /// application wants. A unified one names it, because its reference may have no
     /// accent at all and a system asked the question answers with its own.
-    #[props(default)] color: Option<Paint>,
+    #[props(default)]
+    color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] border_width: Option<f32>,
@@ -1387,7 +1388,8 @@ pub fn Slider(
     /// The design system decides where this is unset, which is what an adaptive
     /// application wants. A unified one names it, because its reference may have no
     /// accent at all and a system asked the question answers with its own.
-    #[props(default)] color: Option<Paint>,
+    #[props(default)]
+    color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] border_width: Option<f32>,
@@ -1688,6 +1690,67 @@ pub fn Sheet(
             open,
             ondismiss: move |_| on_dismiss.call(()),
             {children}
+        }
+    }
+}
+
+/// The screen's frame: a top bar, a bottom bar, a floating action and the page.
+///
+/// Shaped after Material's `Scaffold`, because that is the vocabulary people already
+/// write, and for the same reason: a screen's frame is the same few parts every time, and
+/// assembling it by hand in every application is how every application ends up with a
+/// different one.
+///
+/// What it buys here is more than the layout. **The application says which slot it filled
+/// and nothing about what the slot becomes.** A top bar is the window's caption on a
+/// desktop that hands its caption to the application and an ordinary bar where it does
+/// not; a bottom bar is a bar on a phone, a rail on a tablet and a permanent drawer on a
+/// desktop; a floating action floats, or sits in the toolbar, or folds into a menu. Those
+/// are decisions about the running platform and the measured window, and both of those
+/// are known in the Renderer and not here.
+///
+/// The page is the children, and it is laid out clear of whatever the other slots took.
+/// Nothing about that arithmetic reaches the application, which is the point: a screen
+/// that computed its own inset would be wrong the moment the Renderer chose differently.
+///
+/// ```ignore
+/// rsx! {
+///     Scaffold {
+///         top_bar: rsx! { TopAppBar { title: "Standard" } },
+///         bottom_bar: rsx! { Navigation { /* destinations */ } },
+///         Column { /* the page */ }
+///     }
+/// }
+/// ```
+#[component]
+pub fn Scaffold(
+    /// The bar across the top, where this screen wants one.
+    #[props(default)]
+    top_bar: Option<Element>,
+    /// The destinations, or the actions that belong at the bottom of a phone screen.
+    #[props(default)]
+    bottom_bar: Option<Element>,
+    /// The one action a screen is mostly about, where it has one.
+    #[props(default)]
+    floating_action: Option<Element>,
+    /// The page.
+    children: Element,
+) -> Element {
+    rsx! {
+        scaffold {
+            if let Some(bar) = top_bar {
+                scaffoldslot { slot: i64::from(u16::from(SlotRole::TopBar)), {bar} }
+            }
+            if let Some(bar) = bottom_bar {
+                scaffoldslot { slot: i64::from(u16::from(SlotRole::BottomBar)), {bar} }
+            }
+            if let Some(action) = floating_action {
+                scaffoldslot {
+                    slot: i64::from(u16::from(SlotRole::FloatingAction)),
+                    {action}
+                }
+            }
+            scaffoldslot { slot: i64::from(u16::from(SlotRole::Content)), {children} }
         }
     }
 }

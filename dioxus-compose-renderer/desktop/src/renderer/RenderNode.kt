@@ -24,6 +24,7 @@ import dioxus.compose.design.ToggleRole
 import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostScaffold
 import dioxus.compose.foundation.HostContainerColumn
 import dioxus.compose.foundation.HostDialog
 import dioxus.compose.foundation.HostDivider
@@ -208,6 +209,16 @@ fun RenderNode(
         // A temporary surface from an edge of the window. Which edge is this side's
         // decision, and so is everything about the drag that closes it.
         WidgetKind.Sheet -> HostSheet(node, modifier, table, dispatcher, theme)
+
+        // The screen's frame. The application filled slots; what each one becomes here
+        // comes from the design system and the width this window was measured at.
+        WidgetKind.Scaffold -> HostScaffold(node, modifier, table, dispatcher, theme)
+
+        // Drawn by the frame it belongs to, which is the only thing that knows which slot
+        // this is. On its own it is a tree with a label nobody read.
+        WidgetKind.ScaffoldSlot -> Column(modifier = modifier) {
+            Children(node, table, dispatcher)
+        }
     }
 }
 

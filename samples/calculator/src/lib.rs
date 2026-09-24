@@ -335,28 +335,30 @@ pub fn app() -> Element {
     });
 
     rsx! {
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
-
-            TopAppBar {
-                fill_max_width: true,
-                Button {
-                    text: "",
-                    icon: IconRole::Menu,
-                    variant: ButtonVariant::Text,
-                    on_click: move |_| {},
-                }
-                Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
-                if !tape_beside {
+        // The frame is named rather than built. What the bar becomes here, whether it is
+        // the window's caption or a bar under the system's, and where the page starts, are
+        // answers this screen never has to know.
+        Scaffold {
+            top_bar: rsx! {
+                TopAppBar {
+                    fill_max_width: true,
                     Button {
                         text: "",
-                    icon: IconRole::History,
+                        icon: IconRole::Menu,
                         variant: ButtonVariant::Text,
-                        on_click: move |_| tape_open.set(true),
+                        on_click: move |_| {},
+                    }
+                    Text { text: "Standard", type_role: TypeRole::Title, weight: 1.0 }
+                    if !tape_beside {
+                        Button {
+                            text: "",
+                            icon: IconRole::History,
+                            variant: ButtonVariant::Text,
+                            on_click: move |_| tape_open.set(true),
+                        }
                     }
                 }
-            }
+            },
 
             Row {
                 fill_max_width: true,
