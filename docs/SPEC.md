@@ -164,7 +164,12 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 - `Text`의 속성으로 개별 재정의를 둡니다. 각각 독립된 `SetProp`이라서 FR-4의 변경분 전송이 유지됩니다.
   - `type_role`, `font_size`(sp), `font_weight`(100~900), `line_height`, `letter_spacing`, `color`(`Paint`), `text_align`(`Start|Center|End|Justify`), `max_lines`, `overflow`(`Clip|Ellipsis|Visible`)
 - `type_role`만 지정한 Text는 디자인 시스템이 정한 크기·굵기·행간·자간을 그대로 씁니다. 재정의 속성이 있으면 그 축만 덮어씁니다.
-- 수용 기준: `Text { type_role: Title }` 한 개는 `SetProp` 1건만 보냅니다. `font_size`만 바꾸면 추가 `SetProp` 1건만 전송됩니다.
+- **서체는 그 기계의 UI 서체입니다.** 디자인 시스템이 정하지 않고 Host는 더더욱 정하지 않습니다. Renderer가 플랫폼의 UI 서체를 이름으로 찾아 쓰고, 없으면 툴킷 기본으로 떨어집니다. macOS는 SF, Windows는 Segoe UI, GNOME은 Adwaita Sans나 Cantarell, KDE는 Noto Sans입니다.
+  - **디자인 시스템별로 가르지 않습니다.** macOS에서 Material 3를 고른 화면도 SF로 나옵니다. 창 하나가 그 기계의 다른 창들과 같은 글자로 읽히는 것이, 그 화면이 Roboto로 읽히는 것보다 중요합니다. 어느 서체를 쓸지는 디자인 시스템의 축이 아니라 기계의 성질입니다.
+  - **번들하지 않습니다.** 설치된 것 중에서 고르므로 배포 용량이 늘지 않고 라이선스가 걸리지 않습니다.
+  - 사다리(크기·굵기·행간·자간)는 그대로 디자인 시스템의 것입니다. 바뀌는 것은 그 사다리를 무엇으로 새기느냐뿐입니다.
+  - 2026-09-24까지 일곱 시스템이 전부 Helvetica로 그려지고 있었습니다. `FontFamily.Default`가 macOS에서 그것으로 풀리기 때문이고, 그래서 화면이 네이티브 컨트롤이 아니라 그려 놓은 그림처럼 읽혔습니다. 글자 가장자리 전이 폭을 재면 우리 1.10픽셀, 네이티브 1.27픽셀로 흐린 것이 아니었고, 다른 서체였습니다.
+- 수용 기준: `Text { type_role: Title }` 한 개는 `SetProp` 1건만 보냅니다. `font_size`만 바꾸면 추가 `SetProp` 1건만 전송됩니다. 그리고 어느 디자인 시스템으로 그리든 본문 서체가 그 기계의 UI 서체입니다.
 
 #### 13.3 모양: `Shape`와 `Border`
 - `Modifier::Shape { top_start, top_end, bottom_end, bottom_start }`, f32 4개를 `u64` 2개에 담습니다.
