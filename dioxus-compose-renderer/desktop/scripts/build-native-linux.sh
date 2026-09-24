@@ -27,6 +27,7 @@ rm -rf "$DIST_DIR" "$obj"
 mkdir -p "$obj" "$lib"
 
 cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
+cc -c -O2 -fPIC -o "$obj/x11_window.o" "$NATIVE_DIR/c/x11_window.c"
 
 # Why the C shim is not handed to native-image here, the way build-native.sh does on macOS.
 #
@@ -76,6 +77,9 @@ image_name="${LIBRARY_NAME}_image"
     -Os \
     -H:+UnlockExperimentalVMOptions \
     -H:Preserve=module=java.desktop \
+    "-H:NativeLinkerOption=$obj/x11_window.o" \
+    '-H:NativeLinkerOption=-lX11' \
+    '-H:NativeLinkerOption=-lGL' \
     "-H:NativeLinkerOption=-Wl,-soname,$image_name.so" \
     '-H:NativeLinkerOption=-Wl,-rpath,$ORIGIN')
 

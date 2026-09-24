@@ -9,6 +9,7 @@ import org.graalvm.nativeimage.c.type.CTypeConversion
 import dioxus.compose.ui.platform.NativeHostConnection
 import dioxus.compose.ui.platform.runAppKitSpike
 import dioxus.compose.ui.platform.runWin32Spike
+import dioxus.compose.ui.platform.runX11Spike
 import org.graalvm.nativeimage.c.function.CFunction
 
 // C entry points of the renderer shared library.
@@ -52,6 +53,10 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
         }
         if (System.getenv("DXC_WIN32_WINDOW") != null && platform.startsWith("Windows")) {
             runWin32Spike()
+            return@rendererRun 0
+        }
+        if (System.getenv("DXC_X11_WINDOW") != null && platform.startsWith("Linux")) {
+            runX11Spike()
             return@rendererRun 0
         }
         dioxus.compose.ui.node.platformWindowMaterial = { asked ->
