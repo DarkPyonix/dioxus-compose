@@ -25,6 +25,7 @@ import dioxus.compose.design.LocalDesignTheme
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.HostButton
 import dioxus.compose.foundation.HostLazyGrid
+import dioxus.compose.foundation.HostRichText
 import dioxus.compose.foundation.HostScaffold
 import dioxus.compose.foundation.HostContainerColumn
 import dioxus.compose.foundation.HostDialog
@@ -121,13 +122,9 @@ fun RenderNode(
             Children(node, table, dispatcher)
         }
 
-        WidgetKind.Text -> BasicText(
-            text = node.text(PropertyKind.Text),
-            modifier = modifier,
-            style = node.textStyle(theme),
-            maxLines = node.maxLines(),
-            overflow = node.overflow(),
-        )
+        // One widget whether or not it carries runs. A paragraph with a bold phrase in
+        // it is one piece of text, and three widgets would wrap at the seams.
+        WidgetKind.Text -> HostRichText(node, modifier, dispatcher, theme)
 
         WidgetKind.Spacer -> Spacer(modifier)
         WidgetKind.Button -> HostButton(node, modifier, dispatcher, theme)

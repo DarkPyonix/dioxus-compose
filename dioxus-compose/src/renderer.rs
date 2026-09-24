@@ -7,8 +7,16 @@ use dioxus_core::{
 use std::collections::HashMap;
 
 /// The inclusive range of design-property tags. Extension properties follow this range.
-const FIRST_DESIGN_PROPERTY: u16 = PropertyKind::TypeRole as u16;
-const LAST_DESIGN_PROPERTY: u16 = PropertyKind::Variant as u16;
+const FIRST_OPTIONAL_PROPERTY: u16 = PropertyKind::TypeRole as u16;
+const LAST_OPTIONAL_PROPERTY: u16 = PropertyKind::Variant as u16;
+
+/// The bit that tracks whether a node has ever carried a list of text runs.
+///
+/// Outside the range above and kept separately, because widening that range swallowed
+/// values where zero means zero: a picker whose minimum really is 0 stopped sending it
+/// and got the Renderer's default instead. A list of runs has no such value. Empty and
+/// absent are the same state, so the first empty one is worth no record.
+const SPANS_BIT: u32 = 63;
 
 #[derive(Clone, Copy, Debug)]
 struct Handler {
@@ -96,7 +104,7 @@ pub struct ComposeRenderer {
     /// The next marker to stand in a template's dynamic child.
     next_marker: u32,
     /// Which design properties a node has actually been given, one bit per tag.
-    design_props: HashMap<u32, u32>,
+    optional_props: HashMap<u32, u64>,
     /// A border arrives as a width and a colour in separate attributes; this holds
     /// whichever came first until the pair can be written as one modifier.
     pending_borders: HashMap<u32, (Option<f32>, Option<crate::Paint>)>,
@@ -140,7 +148,7 @@ impl ComposeRenderer {
             placeholders: HashMap::with_capacity(16),
             children: HashMap::with_capacity(256),
             next_marker: 1,
-            design_props: HashMap::with_capacity(64),
+            optional_props: HashMap::with_capacity(64),
             pending_borders: HashMap::with_capacity(16),
             modifier_slots: HashMap::with_capacity(64),
             // Empty until a screen asks, which is the point: a tree that observes nothing
@@ -525,25 +533,29 @@ impl ComposeRenderer {
     /// Role tag 0 means "not sent", so a design property at its neutral value
     /// produces no record at all. A property that was set and then cleared still sends
     /// its zero once, which is what tells the Renderer to drop the override.
-    fn should_write_design_property(
+    fn should_write_optional_property(
         &mut self,
         node_id: u32,
         property: PropertyKind,
         neutral: bool,
     ) -> bool {
         let tag = property as u16;
-        if !(FIRST_DESIGN_PROPERTY..=LAST_DESIGN_PROPERTY).contains(&tag) {
+        let index = if (FIRST_OPTIONAL_PROPERTY..=LAST_OPTIONAL_PROPERTY).contains(&tag) {
+            u32::from(tag - FIRST_OPTIONAL_PROPERTY)
+        } else if property == PropertyKind::Spans {
+            SPANS_BIT
+        } else {
             return true;
-        }
-        let bit = 1_u32 << (tag - FIRST_DESIGN_PROPERTY);
-        let seen = self.design_props.get(&node_id).copied().unwrap_or(0);
+        };
+        let bit = 1_u64 << index;
+        let seen = self.optional_props.get(&node_id).copied().unwrap_or(0);
         if neutral {
             if seen & bit == 0 {
                 return false;
             }
-            self.design_props.insert(node_id, seen & !bit);
+            self.optional_props.insert(node_id, seen & !bit);
         } else if seen & bit == 0 {
-            self.design_props.insert(node_id, seen | bit);
+            self.optional_props.insert(node_id, seen | bit);
         }
         true
     }
@@ -564,17 +576,26 @@ impl ComposeRenderer {
             // A drawing command list is the one value that is neither a number nor text.
             // dioxus-core compares it before calling here, so an unchanged list never
             // reaches this point and costs no record.
-            AttributeValue::Any(value) => match value.as_any().downcast_ref::<DrawList>() {
-                Some(list) => PropertyValue::Bytes(list.as_bytes()),
-                None => return,
-            },
+            AttributeValue::Any(value) => {
+                let any = value.as_any();
+                if let Some(list) = any.downcast_ref::<DrawList>() {
+                    PropertyValue::Bytes(list.as_bytes())
+                } else if let Some(spans) = any.downcast_ref::<crate::spans::TextSpans>() {
+                    // Runs inside a string travel the same way a drawing does, and for the
+                    // same reason: a list that has not changed compares equal before it
+                    // reaches here and costs no record at all.
+                    PropertyValue::Bytes(spans.as_bytes())
+                } else {
+                    return;
+                }
+            }
             AttributeValue::Listener(_) => return,
         };
         let neutral = matches!(
             value,
             PropertyValue::None | PropertyValue::Integer(0) | PropertyValue::Float(0.0)
         );
-        if !self.should_write_design_property(node_id, property, neutral) {
+        if !self.should_write_optional_property(node_id, property, neutral) {
             return;
         }
         self.write(Mutation::SetProp {

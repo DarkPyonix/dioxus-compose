@@ -26,6 +26,7 @@ pub mod schema;
 pub mod tokens;
 mod widgets;
 pub mod design;
+pub mod spans;
 pub mod window;
 
 pub use asset::asset;
@@ -255,6 +256,7 @@ pub mod elements {
         "Text",
         [
             text,
+            spans,
             type_role,
             font_size,
             font_weight,

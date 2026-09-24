@@ -1606,3 +1606,98 @@ fn fr28_an_observed_node_carries_its_own_token() {
     assert_eq!(observed.len(), 1, "one node asked, so one modifier travels");
     assert_ne!(observed[0], 0, "a token of zero is the window, not a node");
 }
+
+/// A Text that says nothing about runs travels as it always did.
+///
+/// The requirement is explicit that the record and the path are unchanged where there
+/// are no runs, because a feature nobody used must not cost every string in every screen
+/// one record per node.
+#[test]
+fn fr26_a_text_without_runs_carries_no_run_record() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, decode_batch};
+    use dioxus_compose::schema::PropertyKind;
+
+    fn plain() -> Element {
+        rsx! { Text { text: "nothing special about this" } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(plain);
+    let batch = host.rebuild().expect("the first frame failed to encode");
+    assert!(
+        !decode_batch(batch)
+            .expect("decode")
+            .iter()
+            .any(|mutation| matches!(
+                mutation,
+                Mutation::SetProp {
+                    property: PropertyKind::Spans,
+                    ..
+                }
+            )),
+        "a string with no runs paid a record for saying so",
+    );
+}
+
+/// Runs survive the wire exactly as they were written.
+#[test]
+fn fr26_runs_round_trip_through_the_boundary() {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
+    use dioxus_compose::schema::PropertyKind;
+    use dioxus_compose::spans::{TextSpan, TextSpans};
+
+    fn marked() -> Element {
+        let spans = TextSpans::new([
+            TextSpan::new(0, 5).bold(),
+            TextSpan::new(6, 4)
+                .underline()
+                .with_color(Paint::Role(ColorRole::Primary)),
+        ]);
+        rsx! { Text { text: "Plain link here", spans } }
+    }
+
+    dioxus_compose::window::reset_window_size();
+    let mut host = dioxus_compose::Host::new(marked);
+    let batch = host.rebuild().expect("the first frame failed to encode");
+    let bytes = decode_batch(batch)
+        .expect("decode")
+        .into_iter()
+        .find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Spans,
+                value: PropertyValue::Bytes(bytes),
+                ..
+            } => Some(bytes.to_vec()),
+            _ => None,
+        })
+        .expect("the runs did not travel");
+
+    let decoded: Vec<_> = TextSpans::from_bytes(bytes).spans().collect();
+    assert_eq!(decoded.len(), 2);
+    assert_eq!((decoded[0].start, decoded[0].length), (0, 5));
+    assert!(decoded[0].bold && !decoded[0].underline);
+    assert!(decoded[1].underline && !decoded[1].bold);
+    assert_eq!(decoded[1].color, Some(Paint::Role(ColorRole::Primary)));
+}
+
+/// The markdown convenience is a Host convenience, and leaves what it does not know.
+#[test]
+fn fr26_markdown_becomes_runs_and_never_crosses_the_boundary() {
+    use dioxus_compose::spans::TextSpans;
+
+    let (text, spans) = TextSpans::from_markdown("a **bold** and *slanted* word");
+    assert_eq!(text, "a bold and slanted word");
+    let runs: Vec<_> = spans.spans().collect();
+    assert_eq!(runs.len(), 2);
+    assert!(runs[0].bold);
+    assert!(runs[1].italic);
+    assert_eq!(&text[runs[0].start as usize..][..runs[0].length as usize], "bold");
+    assert_eq!(&text[runs[1].start as usize..][..runs[1].length as usize], "slanted");
+
+    // A marker with nothing closing it is a character the reader typed, not a marker.
+    let (kept, none) = TextSpans::from_markdown("2 * 3 = 6");
+    assert_eq!(kept, "2 * 3 = 6");
+    assert!(none.is_empty());
+}
