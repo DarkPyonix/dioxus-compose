@@ -120,6 +120,13 @@ fn main() {
         if let Some(dir) = std::env::var_os("DXC_MACOS_NATIVE_LIB") {
             let dir = PathBuf::from(dir);
             println!("cargo:rerun-if-env-changed=DXC_MACOS_NATIVE_LIB");
+            // The archive itself, not only the variable naming it. Rebuilding the
+            // renderer and not saying so left Cargo linking yesterday's one and
+            // reporting a build that finished in no time at all.
+            println!(
+                "cargo:rerun-if-changed={}",
+                dir.join("libdioxus_compose_renderer.a").display()
+            );
             println!("cargo:rustc-link-search=native={}", dir.display());
             println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
             // What the archive itself calls in. Kotlin/Native names none of these: they
