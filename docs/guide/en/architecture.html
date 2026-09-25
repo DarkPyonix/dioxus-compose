@@ -46,6 +46,7 @@
         <li><a href="#protocol">The protocol</a></li>
         <li><a href="#frames">The frame model</a></li>
         <li><a href="#codegen">Schema codegen</a></li>
+        <li><a href="#runtimes">What runs where</a></li>
         <li><a href="#macos">The macOS runtime</a></li>
       </ul>
     </nav>
@@ -182,6 +183,43 @@
       A schema hash compares the two sides at handshake time. Nobody writes JNI or cinterop glue by
       hand.
     </p>
+
+    <h2 id="runtimes">What runs where</h2>
+    <p>
+      The renderer is built two ways. Where Compose publishes a target of its own, it is compiled
+      for the platform directly and there is no virtual machine in the result. Where it does not,
+      the renderer is a native image with a Java runtime inside it.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Platform</th><th scope="col">Built as</th><th scope="col">Carries a Java runtime</th></tr></thead>
+        <tbody>
+          <tr><td>macOS</td><td>Kotlin/Native</td><td>No</td></tr>
+          <tr><td>Linux</td><td>Native image</td><td>Yes</td></tr>
+          <tr><td>Windows</td><td>Native image</td><td>Yes</td></tr>
+          <tr><td>Web</td><td>Kotlin/Wasm</td><td>No</td></tr>
+          <tr><td>iOS</td><td>Kotlin/Native</td><td>No</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The difference is most of the weight. A calculator on macOS is one 29MB file with nothing
+      beside it; the same calculator as a native image is 64MB across four. What the runtime costs
+      is not Compose and not this project's own code, which come to about 5MB between them, but
+      the Java runtime and the metadata a closed world needs.
+    </p>
+    <p>
+      Linux and Windows are not a choice. Compose publishes no UI layer for either as a native
+      target, and Windows is blocked twice over: Kotlin's target there is MinGW and Skia's build
+      is MSVC, so the two cannot be linked even if the artifacts existed.
+    </p>
+    <div class="note">
+      <span class="label">The application does not know which</span>
+      <p>
+        The boundary is the same C ABI on both, the protocol is the same bytes, and the
+        interpreter is the same source. Nothing you write changes.
+      </p>
+    </div>
 
     <h2 id="macos">The macOS runtime</h2>
     <p>
