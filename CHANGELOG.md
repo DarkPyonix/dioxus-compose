@@ -24,10 +24,10 @@ written down, because their failing is what found the cause.
 
 `docs/platforms.md` has the measurements, what each platform can and cannot do, and why.
 
-### Still missing on the macOS native path
+### Checked by hand on the macOS native path
 
-Mouse input does not reach the scene. The keyboard does. Drawing, the accessibility tree,
-the title bar and the window the application asked for are all in place.
+The calculator draws, a screen reader is given every button by name, a press reaches the
+scene, and the window is the one the application asked for.
 
 ## v0.0.0
 
