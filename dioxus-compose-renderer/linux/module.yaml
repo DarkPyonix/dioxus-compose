@@ -1,0 +1,42 @@
+# The renderer for Linux, without a virtual machine in it.
+#
+# The same renderer the desktop native image builds, compiled for the platform directly:
+# `src/shared/` holds symlinks into `desktop/src/`, so there is one copy of the interpreter
+# and one copy of the generated protocol. The boundary is the iOS one, which is Kotlin
+# native and POSIX and names neither platform, so it is shared rather than written twice.
+#
+# What this is for: the native image carries a Java runtime, and most of what a Linux
+# distribution of it weighs is that runtime rather than anything drawn. It also carries AWT
+# and its X11 toolkit, which is a second window system underneath the one the renderer opens.
+#
+# The window is `src/LinuxWindow.kt`: Xlib, GLX and the sync extension reached through
+# `cinterop/x11.def`. Windows has no Kotlin/Native Compose target and keeps the native image
+# path, which is why `desktop/c/x11_window.c` is still there: Windows links it for the names
+# it answers, and it is the window the native image opens.
+product:
+  type: lib
+  platforms: [ linuxX64 ]
+
+# Where the patched Compose comes from. Compose Multiplatform publishes no Kotlin/Native
+# target for Linux at all, so every module below is built from source here: `patches/` says
+# what the target needs that upstream does not have, and `scripts/build-compose.sh --target
+# linuxX64` builds and publishes them under the version asked for. skiko has a published
+# linuxX64 target and is resolved normally, as a dependency of Compose UI.
+repositories:
+  - mavenLocal
+
+dependencies:
+  - $compose.runtime
+  - $compose.foundation
+  - $compose.material3
+  - $compose.ui
+
+test-dependencies:
+  - $kotlin.test
+
+settings:
+  compose: enabled
+  kotlin:
+    optIns:
+      - kotlinx.cinterop.ExperimentalForeignApi
+      - kotlinx.cinterop.BetaInteropApi

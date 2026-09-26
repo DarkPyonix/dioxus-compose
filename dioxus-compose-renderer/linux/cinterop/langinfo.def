@@ -1,0 +1,18 @@
+# What the C library will say about reading dates and times in this locale.
+#
+# The pickers ask `platformFormats()` what a month is called, which day a week starts on and
+# whether the clock reads to twelve or to twenty four, and the answer has to come from the
+# machine the application is running on rather than from anything the Host sent. On iOS and
+# macOS that is Foundation; on Linux it is `nl_langinfo`, which Kotlin/Native's posix platform
+# library does not declare.
+#
+# Both headers are in Kotlin/Native's own sysroot, so unlike the X11 definition beside this
+# one nothing has to be installed for it.
+package = langinfo
+
+headers = langinfo.h locale.h
+headerFilter = langinfo.h locale.h
+
+# Which day a week starts on is a GNU extension (`_NL_TIME_FIRST_WEEKDAY`) and is declared
+# only when this is set. Every locale has an answer for it and POSIX has no way to ask.
+compilerOpts = -D_GNU_SOURCE
