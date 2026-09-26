@@ -301,13 +301,15 @@ $NativeImageArgs = @(
     # Named rather than left to the linker. Direct3D and DXGI resolve nowhere else, and
     # dxguid carries the interface identifiers that C code has to name as values because
     # it cannot ask for them the way C++ does. user32 is where the window, its messages
-    # and the per-monitor DPI calls live. UI Automation and BSTRs have their own libraries.
+    # and the per-monitor DPI calls live. UI Automation and BSTRs have their own
+    # libraries, and imm32 supplies composition strings and where to put the candidates.
     "-H:NativeLinkerOption=d3d12.lib",
     "-H:NativeLinkerOption=dxgi.lib",
     "-H:NativeLinkerOption=dxguid.lib",
     "-H:NativeLinkerOption=user32.lib",
     "-H:NativeLinkerOption=uiautomationcore.lib",
     "-H:NativeLinkerOption=oleaut32.lib",
+    "-H:NativeLinkerOption=imm32.lib",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_run",
     "-H:NativeLinkerOption=/EXPORT:dioxus_compose_renderer_request_frame"
 )

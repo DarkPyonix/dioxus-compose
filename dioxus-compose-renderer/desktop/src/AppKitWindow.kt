@@ -611,23 +611,23 @@ internal fun SpikeContent() {
  * platform's scene measures in, so nothing is converted here beyond naming which kind of
  * event it was.
  */
-internal fun ComposeScene.receive(event: WindowEvent) {
+internal fun ComposeScene.receive(event: WindowEvent, win32: Boolean = false) {
     when (event.kind) {
         // Built from parts rather than from a platform event. The toolkit's own key
         // event is what the supported path converts, and there is none here to convert.
         WindowEvent.KEY_DOWN, WindowEvent.KEY_UP -> sendKeyEvent(
             KeyEvent(
-                key = composeKey(event.keyCode),
+                key = if (win32) win32ComposeKey(event.keyCode) else composeKey(event.keyCode),
                 type = if (event.kind == WindowEvent.KEY_DOWN) {
                     KeyEventType.KeyDown
                 } else {
                     KeyEventType.KeyUp
                 },
                 codePoint = event.codePoint,
-                isAltPressed = event.modifiers and MODIFIER_OPTION != 0,
-                isCtrlPressed = event.modifiers and MODIFIER_CONTROL != 0,
-                isMetaPressed = event.modifiers and MODIFIER_COMMAND != 0,
-                isShiftPressed = event.modifiers and MODIFIER_SHIFT != 0,
+                isAltPressed = event.modifiers and (if (win32) 4 else MODIFIER_OPTION) != 0,
+                isCtrlPressed = event.modifiers and (if (win32) 2 else MODIFIER_CONTROL) != 0,
+                isMetaPressed = event.modifiers and (if (win32) 8 else MODIFIER_COMMAND) != 0,
+                isShiftPressed = event.modifiers and (if (win32) 1 else MODIFIER_SHIFT) != 0,
             ),
         )
 
@@ -661,6 +661,24 @@ internal fun ComposeScene.receive(event: WindowEvent) {
     }
 }
 
+
+internal fun win32ComposeKey(virtualKey: Int): Key = when (virtualKey) {
+    0x0D -> Key.Enter
+    0x09 -> Key.Tab
+    0x20 -> Key.Spacebar
+    0x08 -> Key.Backspace
+    0x1B -> Key.Escape
+    0x2E -> Key.Delete
+    0x25 -> Key.DirectionLeft
+    0x27 -> Key.DirectionRight
+    0x28 -> Key.DirectionDown
+    0x26 -> Key.DirectionUp
+    0x24 -> Key.MoveHome
+    0x23 -> Key.MoveEnd
+    0x21 -> Key.PageUp
+    0x22 -> Key.PageDown
+    else -> Key.Unknown
+}
 
 // From NSEvent.h. The bits a modifier flag word carries.
 private const val MODIFIER_SHIFT = 1 shl 17

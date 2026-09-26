@@ -44,17 +44,23 @@
 
 #include <windows.h>
 #include <windowsx.h>
+#include <imm.h>
 #include <d3d12.h>
 #include <dxgi1_4.h>
 #include <uiautomation.h>
 #include <uiautomationcoreapi.h>
 #include <oleauto.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+<<<<<<< HEAD
 #include <stdlib.h>
 #include <stddef.h>
 
 #include "win32_resize.h"
+=======
+#include "win32_ime_text.h"
+>>>>>>> feat/win32-ime
 
 // What happened in the window, waiting to be read.
 //
@@ -70,8 +76,6 @@ enum {
     DXC_EVENT_SCROLL = 4,
     DXC_EVENT_KEY_DOWN = 5,
     DXC_EVENT_KEY_UP = 6,
-    // Named here so the two desktops agree about what a kind number means. Nothing on
-    // this one sends them yet.
     DXC_EVENT_TEXT_COMMIT = 7,
     DXC_EVENT_TEXT_COMPOSE = 8,
 };
@@ -94,10 +98,6 @@ struct dxc_event {
     int32_t code_point;
     // UTF-8, ending at the first zero. Empty for everything that is not text.
     //
-    // Nothing fills this yet. Text arrives through an input method, and this window has
-    // no answer for one: on this platform that means IMM32, and the composition messages
-    // are the next thing to write here. Until then a field in this window takes the
-    // characters its keys produce and composes nothing, which is English and no more.
     char text[DXC_TEXT_BYTES];
 };
 
@@ -133,6 +133,7 @@ static ID3D12Fence *dxc_fence;
 static HANDLE dxc_fence_signalled;
 static UINT64 dxc_fence_value;
 static UINT dxc_frame_index;
+<<<<<<< HEAD
 // The size the window has been given and the size it is drawn at, which are the same
 // except while a resize is being taken. A swapchain cannot be refitted while the buffer
 // being refitted is the one being drawn into, so the size is written down here and acted
@@ -181,6 +182,26 @@ static void dxc_draw_one_frame(void) {
     if (dxc_draw_frame != NULL) {
         dxc_draw_frame(dxc_draw_thread);
     }
+=======
+// Set when the window changed size and acted on at the start of the next frame, because a
+// swapchain cannot be resized while the buffer being resized is the one being drawn into.
+static int32_t dxc_pending_width;
+static int32_t dxc_pending_height;
+static int dxc_ime_composing;
+static WCHAR dxc_pending_high_surrogate;
+static LPCWSTR dxc_cursor = IDC_ARROW;
+
+void dxc_native_set_cursor(int32_t shape) {
+    switch (shape) {
+    case 1: dxc_cursor = IDC_HAND; break;
+    case 2: dxc_cursor = IDC_IBEAM; break;
+    case 3: dxc_cursor = IDC_CROSS; break;
+    case 4: dxc_cursor = IDC_SIZEWE; break;
+    case 5: dxc_cursor = IDC_SIZENS; break;
+    default: dxc_cursor = IDC_ARROW; break;
+    }
+    SetCursor(LoadCursorW(NULL, dxc_cursor));
+>>>>>>> feat/win32-ime
 }
 
 static void dxc_push_event(struct dxc_event event) {
@@ -1139,6 +1160,44 @@ static void dxc_push_key(int32_t kind, WPARAM key) {
     dxc_push_event(record);
 }
 
+static void dxc_push_text(int32_t kind, const uint16_t *text, size_t units) {
+    struct dxc_event record;
+    memset(&record, 0, sizeof record);
+    record.kind = kind;
+    dxc_utf16_to_utf8(text, units, record.text, sizeof record.text);
+    dxc_push_event(record);
+}
+
+static void dxc_read_ime_text(HIMC context, DWORD part, int32_t kind) {
+    LONG bytes = ImmGetCompositionStringW(context, part, NULL, 0);
+    if (bytes < 0 || bytes % sizeof(WCHAR) != 0) return;
+    if (bytes == 0) {
+        if (kind == DXC_EVENT_TEXT_COMPOSE) dxc_push_text(kind, NULL, 0);
+        return;
+    }
+    WCHAR *wide = (WCHAR *)malloc((size_t)bytes);
+    if (wide == NULL) return;
+    LONG copied = ImmGetCompositionStringW(context, part, wide, (DWORD)bytes);
+    if (copied >= 0 && copied <= bytes && copied % sizeof(WCHAR) == 0) {
+        dxc_push_text(kind, (const uint16_t *)wide, (size_t)copied / sizeof(WCHAR));
+    }
+    free(wide);
+}
+
+static void dxc_position_ime(HWND window) {
+    HIMC context = ImmGetContext(window);
+    if (context == NULL) return;
+    COMPOSITIONFORM position;
+    memset(&position, 0, sizeof position);
+    position.dwStyle = CFS_POINT;
+    // The caret position has not crossed from Compose yet. Keep the IME window at the
+    // client area's top left, as the macOS text client does for the same reason.
+    position.ptCurrentPos.x = 0;
+    position.ptCurrentPos.y = 0;
+    ImmSetCompositionWindow(context, &position);
+    ImmReleaseContext(window, context);
+}
+
 // Named apart from the one in `renderer_entry.c`, which subclasses the toolkit's frame
 // to reclaim its caption. That one goes looking for a window of AWT's class and will
 // not find this one, so the two never meet; the names are kept distinct anyway,
@@ -1151,6 +1210,12 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
         // without having to be asked for.
         dxc_push_pointer(DXC_EVENT_POINTER_MOVE, lparam);
         return 0;
+    case WM_SETCURSOR:
+        if (LOWORD(lparam) == HTCLIENT) {
+            SetCursor(LoadCursorW(NULL, dxc_cursor));
+            return 1;
+        }
+        break;
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN:
@@ -1190,6 +1255,7 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
     case WM_SYSKEYUP:
         dxc_push_key(DXC_EVENT_KEY_UP, wparam);
         return 0;
+<<<<<<< HEAD
     case WM_ENTERSIZEMOVE:
         // The reader has taken hold of an edge, or of the title bar. From here until the
         // matching message below, everything this window hears is dispatched from a loop
@@ -1202,6 +1268,64 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
         // written down and taken by the next frame.
         dxc_resize_end_drag(&dxc_sizing);
         return 0;
+=======
+    case WM_IME_STARTCOMPOSITION:
+        dxc_ime_composing = 1;
+        dxc_pending_high_surrogate = 0;
+        dxc_position_ime(window);
+        return 0;
+    case WM_IME_COMPOSITION: {
+        if (lparam == 0) {
+            dxc_push_text(DXC_EVENT_TEXT_COMPOSE, NULL, 0);
+            return 0;
+        }
+        HIMC context = ImmGetContext(window);
+        if (context != NULL) {
+            // A result replaces the old marked text; a new composition may follow it
+            // in this same message. Preserve that order in the event queue.
+            if (lparam & GCS_RESULTSTR) {
+                dxc_read_ime_text(context, GCS_RESULTSTR, DXC_EVENT_TEXT_COMMIT);
+                dxc_ime_composing = 0;
+            }
+            if (lparam & GCS_COMPSTR) {
+                dxc_read_ime_text(context, GCS_COMPSTR, DXC_EVENT_TEXT_COMPOSE);
+                dxc_ime_composing = 1;
+            }
+            ImmReleaseContext(window, context);
+        }
+        return 0;
+    }
+    case WM_IME_ENDCOMPOSITION:
+        if (dxc_ime_composing) dxc_push_text(DXC_EVENT_TEXT_COMPOSE, NULL, 0);
+        dxc_ime_composing = 0;
+        return 0;
+    case WM_IME_CHAR:
+        // The result already arrived through GCS_RESULTSTR. The default handler can
+        // turn this into WM_CHAR, which would commit it a second time.
+        return 0;
+    case WM_CHAR: {
+        if (dxc_ime_composing) return 0;
+        uint16_t unit = (uint16_t)wparam;
+        if (unit >= 0xd800 && unit <= 0xdbff) {
+            dxc_pending_high_surrogate = unit;
+            return 0;
+        }
+        uint16_t text[2];
+        size_t units = 1;
+        if (unit >= 0xdc00 && unit <= 0xdfff && dxc_pending_high_surrogate != 0) {
+            text[0] = dxc_pending_high_surrogate;
+            text[1] = unit;
+            units = 2;
+        } else {
+            text[0] = unit;
+        }
+        dxc_pending_high_surrogate = 0;
+        if (unit >= 0x20 && unit != 0x7f) {
+            dxc_push_text(DXC_EVENT_TEXT_COMMIT, text, units);
+        }
+        return 0;
+    }
+>>>>>>> feat/win32-ime
     case WM_SIZE:
         // Written down rather than acted on. The buffer being refitted may be the one the
         // frame in flight is drawing into, so the swapchain is refitted where a frame

@@ -373,7 +373,9 @@ internal fun runWin32Window() {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
                 }
-                scene.receive(event)
+                // Told which desktop it is, because the key numbers differ: the shared
+                // table is macOS's, and without this Home arrives as Enter.
+                scene.receive(event, win32 = true)
                 textInput.receive(event)
                 heard = true
             }
