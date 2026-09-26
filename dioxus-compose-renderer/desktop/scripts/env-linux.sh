@@ -33,14 +33,16 @@ esac
 
 LINUX_PACKAGES=(build-essential zlib1g-dev unzip pkg-config fontconfig libx11-dev libxext-dev
                 libxi-dev libxrender-dev libxtst-dev libxrandr-dev libfontconfig1-dev
-                libfreetype6-dev fonts-noto-cjk)
+                libfreetype6-dev libgl1-mesa-dev fonts-noto-cjk)
 
 for tool in cc nm readelf unzip pkg-config fc-match; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool '$tool' was not found" \
         "On Ubuntu 24.04: sudo apt-get install ${LINUX_PACKAGES[*]}"
 done
 
-for package in x11 xext xi xrender xtst xrandr fontconfig freetype2; do
+# gl is the window's own: it draws through GLX, which is the headers in libgl1-mesa-dev
+# and the library -lGL. The others are what the AWT toolkit and Skia need.
+for package in x11 xext xi xrender xtst xrandr gl fontconfig freetype2; do
     pkg-config --exists "$package" || die "pkg-config cannot find '$package'" \
         "On Ubuntu 24.04: sudo apt-get install ${LINUX_PACKAGES[*]}"
 done
