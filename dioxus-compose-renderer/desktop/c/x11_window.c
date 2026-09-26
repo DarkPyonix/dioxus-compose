@@ -2,12 +2,16 @@
 // X11 connection on Wayland desktops. Skia paints; this file only presents and records.
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/cursorfont.h>
 #include <X11/keysym.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 enum {
     DXC_EVENT_POINTER_MOVE = 1,
@@ -25,6 +29,14 @@ enum {
 #define DXC_TEXT_BYTES 96
 #define DXC_EVENT_CAPACITY 256
 
+// How many things a screen may say it has. Enough for a screen and not for a document,
+// which is the same number the renderer is willing to send.
+#define DXC_ELEMENT_CAPACITY 256
+
+// The shapes a pointer may take, in the order both sides agree on: arrow, hand, text,
+// crosshair, and the two resize arrows.
+#define DXC_CURSOR_SHAPES 6
+
 struct dxc_event {
     int32_t kind;
     float x;
@@ -34,6 +46,19 @@ struct dxc_event {
     int32_t key_code;
     int32_t code_point;
     char text[DXC_TEXT_BYTES];
+};
+
+// One thing in the window, as a reader who cannot see it would meet it. The same fields
+// and the same order as the other two windows declare, because the renderer writes the
+// records once and every platform reads that one layout.
+struct dxc_element {
+    int32_t role;
+    // In points from the top left of the window, which is what the scene measures in.
+    float x;
+    float y;
+    float width;
+    float height;
+    char label[DXC_TEXT_BYTES];
 };
 
 // Five pointer slots, matching the size and offsets of the other two windows. The
@@ -57,6 +82,17 @@ static int dxc_closed;
 static struct dxc_event dxc_events[DXC_EVENT_CAPACITY];
 static int dxc_event_head;
 static int dxc_event_count;
+
+// Made once each and kept, because a cursor is a server resource and the scene asks for
+// one whenever the pointer crosses into something new.
+static Cursor dxc_cursors[DXC_CURSOR_SHAPES];
+static int32_t dxc_cursor_shape = -1;
+
+// The newest tree the scene pushed. Kept rather than published: what answers a reader on
+// this desktop is AT-SPI, which is its own work and is not here yet, and holding the tree
+// is what lets that work read from a window that is already describing itself.
+static struct dxc_element dxc_elements[DXC_ELEMENT_CAPACITY];
+static int32_t dxc_element_count;
 
 static void dxc_push_event(struct dxc_event event) {
     if (dxc_event_count == DXC_EVENT_CAPACITY) {
@@ -243,4 +279,102 @@ int32_t dxc_native_frame_begin(void *window_pointer) {
 void dxc_native_frame_end(void *display_pointer) {
     (void)display_pointer;
     if (!dxc_closed) glXSwapBuffers(dxc_display, dxc_window);
+}
+
+/**
+ * Lets the window answer for itself for a moment, and rests if it has nothing to say.
+ *
+ * Called once a frame. This thread is the one the display server's events are read on, so
+ * the events of this frame arrive here or not at all.
+ *
+ * The waiting is here rather than in a sleep afterwards, and that is the point of it: a
+ * resize that arrives while this is waiting is drawn inside the wait, in the same step
+ * that recorded the new size, instead of a turn of the loop later. A window with nothing
+ * happening rests on its connection for the frame's length rather than spinning.
+ */
+void dxc_native_pump(double seconds) {
+    if (dxc_display == NULL) {
+        return;
+    }
+    // XPending sends whatever is still in the output buffer before it answers, so the
+    // frame just swapped is on its way out before this thread goes to sleep.
+    if (seconds > 0.0 && XPending(dxc_display) == 0) {
+        int connection = ConnectionNumber(dxc_display);
+        fd_set readable;
+        FD_ZERO(&readable);
+        FD_SET(connection, &readable);
+        struct timeval limit;
+        limit.tv_sec = (time_t)seconds;
+        limit.tv_usec = (suseconds_t)((seconds - (double)limit.tv_sec) * 1000000.0);
+        select(connection + 1, &readable, NULL, NULL, &limit);
+    }
+    dxc_pump_events();
+}
+
+/** True once the reader has closed the window. */
+int32_t dxc_native_window_closed(void) {
+    return dxc_closed ? 1 : 0;
+}
+
+/**
+ * Sets the shape of the pointer over the window.
+ *
+ * The scene decides what shape a thing under the pointer asks for and what crosses is a
+ * number, so the names of this server's cursors are known only here. A shape this does not
+ * have becomes the arrow, which is what a pointer over something unremarkable looks like.
+ */
+void dxc_native_set_cursor(int32_t shape) {
+    static const unsigned int fonts[DXC_CURSOR_SHAPES] = {
+        XC_left_ptr, XC_hand2, XC_xterm, XC_crosshair,
+        XC_sb_h_double_arrow, XC_sb_v_double_arrow,
+    };
+    if (dxc_display == NULL || dxc_window == None) {
+        return;
+    }
+    if (shape < 0 || shape >= DXC_CURSOR_SHAPES) {
+        shape = 0;
+    }
+    // The scene asks on every crossing, and a pointer moving across a row of links asks
+    // for the hand it already has. Answering that with a request to the server would be
+    // traffic on the thread the frames are drawn from.
+    if (shape == dxc_cursor_shape) {
+        return;
+    }
+    if (dxc_cursors[shape] == None) {
+        dxc_cursors[shape] = XCreateFontCursor(dxc_display, fonts[shape]);
+    }
+    XDefineCursor(dxc_display, dxc_window, dxc_cursors[shape]);
+    dxc_cursor_shape = shape;
+    XFlush(dxc_display);
+}
+
+/**
+ * Takes the tree the window would tell a reader who cannot see it.
+ *
+ * Copied and kept, not published. What answers an assistive technology on this desktop is
+ * AT-SPI, which is a bus, an interface and a registration of its own and is not written
+ * yet. Holding the newest tree is the half of it that belongs to the window: when that
+ * work arrives it reads from here rather than asking the scene across a thread it is not
+ * on, which is the one thing a frame loop cannot afford.
+ */
+void dxc_native_set_accessibility(const struct dxc_element *elements, int32_t count,
+                                  void *window_pointer) {
+    (void)window_pointer;
+    if (count < 0) {
+        count = 0;
+    }
+    if (count > DXC_ELEMENT_CAPACITY) {
+        count = DXC_ELEMENT_CAPACITY;
+    }
+    if (count > 0) {
+        memcpy(dxc_elements, elements, (size_t)count * sizeof *dxc_elements);
+    }
+    dxc_element_count = count;
+    if (getenv("DXC_REPORT_FRAMES") != NULL) {
+        fprintf(stderr, "dioxus-compose: the window holds %d things to say", count);
+        if (count > 0) {
+            fprintf(stderr, ", the first being \"%s\"", dxc_elements[0].label);
+        }
+        fprintf(stderr, "\n");
+    }
 }

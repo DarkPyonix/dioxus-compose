@@ -233,7 +233,16 @@ fun drainWindowEvents(): List<WindowEvent> {
  * change when the screen changes rather than when a frame is drawn, and the alternative
  * is the platform asking across threads at a moment nobody chose.
  */
-fun NativeWindow.describeTo(elements: List<AccessibleElement>) {
+fun NativeWindow.describeTo(elements: List<AccessibleElement>) = describeWindow(view, elements)
+
+/**
+ * Writes the records and hands them to whichever window asked.
+ *
+ * Apart from the extension above because the windows the other desktops open are not this
+ * class, and what a tree looks like on the way across is the same for all three: one layout,
+ * written once, so a field that moves cannot move in one place only.
+ */
+internal fun describeWindow(view: Long, elements: List<AccessibleElement>) {
     val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements
     val records = StackValue.get<Pointer>(MAX_ELEMENTS * ELEMENT_BYTES)
     for ((index, element) in capped.withIndex()) {

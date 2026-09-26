@@ -9,7 +9,7 @@ import org.graalvm.nativeimage.c.type.CTypeConversion
 import dioxus.compose.ui.platform.NativeHostConnection
 import dioxus.compose.ui.platform.runAppKitSpike
 import dioxus.compose.ui.platform.runWin32Spike
-import dioxus.compose.ui.platform.runX11Spike
+import dioxus.compose.ui.platform.runX11Window
 import org.graalvm.nativeimage.c.function.CFunction
 
 // C entry points of the renderer shared library.
@@ -41,11 +41,11 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
         // sample and every test still rides the toolkit's path until this one can carry
         // them.
         //
-        // One per platform, and each asked for by name. The two C files behind them
-        // export the same five symbols, so the one compiled into an image is the one
-        // either would reach: asking for the Windows window on a Mac would open an AppKit
-        // window and read its view as a Direct3D device. Which platform this is decides,
-        // rather than which variable was set.
+        // One per platform, and each asked for by name. The C files behind them answer
+        // for the same symbols, so the one compiled into an image is the one any of them
+        // would reach: asking for the Windows window on a Mac would open an AppKit window
+        // and read its view as a Direct3D device. Which platform this is decides, rather
+        // than which variable was set.
         val platform = System.getProperty("os.name", "")
         if (System.getenv("DXC_APPKIT_WINDOW") != null && platform.startsWith("Mac")) {
             // Before anything else on this path. The toolkit, if it is ever woken, asks
@@ -62,7 +62,7 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
             return@rendererRun 0
         }
         if (System.getenv("DXC_X11_WINDOW") != null && platform.startsWith("Linux")) {
-            runX11Spike()
+            runX11Window()
             return@rendererRun 0
         }
         dioxus.compose.ui.node.platformWindowMaterial = { asked ->
