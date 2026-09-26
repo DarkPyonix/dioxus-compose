@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: ./scripts/launch-codex.sh <name> <branch> <prompt-file>
+# Usage: ./scripts/launch-codex.sh <name> <branch> <prompt-file> [model]
 #
 # Runs one headless Codex in its own worktree, detached, with a log you can tail.
 #
@@ -33,14 +33,17 @@
 # question now and this defers to it, so there is one answer rather than two.
 set -euo pipefail
 
-if [ "$#" -ne 3 ]; then
-    echo "usage: $0 <name> <branch> <prompt-file>" >&2
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
+    echo "usage: $0 <name> <branch> <prompt-file> [model]" >&2
     exit 2
 fi
 
 name="$1"
 branch="$2"
 prompt_file="$3"
+# Optional, so a task can be given to a particular model when the default is not the one
+# wanted. Empty means whatever codex is configured to use.
+model="${4:-}"
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runs="${DXC_AGENT_RUNS:-$(dirname "$repo")/agent-runs}"
@@ -93,6 +96,7 @@ $prompt"
 # working run from a wedged one. Each line here is one event as it happens.
 nohup env PATH="$HOME/.cargo/bin:$PATH" \
     codex exec "$prompt" \
+        ${model:+--model "$model"} \
         --dangerously-bypass-approvals-and-sandbox \
         --json \
     < /dev/null >> "$log" 2>&1 &

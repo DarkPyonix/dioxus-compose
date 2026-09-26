@@ -17,7 +17,9 @@
 #import <AppKit/AppKit.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <Metal/Metal.h>
+#include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
@@ -163,20 +165,19 @@ static void dxc_push_event(struct dxc_event event) {
  * before this call or the one after it, never half of each.
  */
 void dxc_native_set_accessibility(const struct dxc_element *elements, int32_t count, void *view_pointer) {
-    // Copied here and built there, without waiting. The frames are in screen coordinates
-    // and only the main thread can answer for the window's geometry, but the thread that
-    // calls this is the one that drains the window's events: a wait here is a wait on a
-    // thread that is already busy answering questions about accessibility, and while it
-    // lasts nothing takes the clicks out of the queue. A calculator went deaf this way.
+    // Built where the caller already is. The window this renders into runs on the thread
+    // AppKit answers on, so this is that thread and there is nothing to hand the work to.
     //
-    // Nothing needs the result, so nothing waits for it. The elements are copied first
-    // because what was handed in is the caller's stack.
+    // It was queued for a while, from when the renderer ran on a thread of its own and
+    // waiting here would have stopped it draining the window's events. Queuing outlived
+    // that: a block put on the main queue runs when the run loop turns, and a loop that
+    // only takes events never turns for it, so the window described nothing at all.
     size_t bytes = (size_t)count * sizeof(struct dxc_element);
     struct dxc_element *copy = count > 0 ? malloc(bytes) : NULL;
     if (copy != NULL) {
         memcpy(copy, elements, bytes);
     }
-    dispatch_async(dispatch_get_main_queue(), ^{
+    dxc_on_main(^{
         NSView *view = (__bridge NSView *)view_pointer;
         NSMutableArray<NSAccessibilityElement *> *built =
             [NSMutableArray arrayWithCapacity:count];
@@ -190,12 +191,144 @@ void dxc_native_set_accessibility(const struct dxc_element *elements, int32_t co
                                       parent:view];
             NSRect local = NSMakeRect(element->x, element->y, element->width, element->height);
             NSRect inWindow = [view convertRect:local toView:nil];
-            [made setAccessibilityFrame:[view.window convertRectToScreen:inWindow]];
+            NSRect onScreen = [view.window convertRectToScreen:inWindow];
+            [made setAccessibilityFrame:onScreen];
+            if (index == 0 && getenv("DXC_REPORT_FRAMES") != NULL) {
+                fprintf(stderr,
+                        "dxc frames: %s scene (%.0f %.0f %.0fx%.0f) -> screen "
+                        "(%.0f %.0f %.0fx%.0f)\n",
+                        element->label, local.origin.x, local.origin.y,
+                        local.size.width, local.size.height,
+                        onScreen.origin.x, onScreen.origin.y,
+                        onScreen.size.width, onScreen.size.height);
+            }
             [built addObject:made];
         }
         dxc_accessibility_children = built;
         free(copy);
     });
+}
+
+/**
+ * What is on the clipboard, copied into [out], and its length.
+ *
+ * Text only. A window that pasted a picture into a text field would be worse than one
+ * that pasted nothing.
+ */
+int32_t dxc_native_clipboard_read(char *out, int32_t capacity) {
+    __block int32_t length = 0;
+    dxc_on_main(^{
+        @autoreleasepool {
+            NSString *text = [NSPasteboard.generalPasteboard stringForType:NSPasteboardTypeString];
+            if (text == nil) {
+                return;
+            }
+            const char *utf8 = text.UTF8String;
+            if (utf8 == NULL) {
+                return;
+            }
+            strncpy(out, utf8, (size_t)capacity - 1);
+            out[capacity - 1] = 0;
+            length = (int32_t)strlen(out);
+        }
+    });
+    return length;
+}
+
+/** Puts text on the clipboard, replacing what was there. */
+void dxc_native_clipboard_write(const char *text) {
+    dxc_on_main(^{
+        @autoreleasepool {
+            NSPasteboard *board = NSPasteboard.generalPasteboard;
+            [board clearContents];
+            NSString *value = [NSString stringWithUTF8String:text];
+            if (value != nil) {
+                [board setString:value forType:NSPasteboardTypeString];
+            }
+        }
+    });
+}
+
+/**
+ * Gives the application the menu every macOS application has.
+ *
+ * Without one the menu bar shows the application's name and nothing under it, and the
+ * shortcuts every reader expects do nothing: command-Q does not quit, command-C does not
+ * copy. The items are the system's own actions, so the window is not asked to implement
+ * them.
+ */
+void dxc_native_install_menu(const char *application_name) {
+    dxc_on_main(^{
+        @autoreleasepool {
+            NSString *name = [NSString stringWithUTF8String:application_name];
+            if (name == nil) {
+                name = @"Application";
+            }
+            NSMenu *bar = [[NSMenu alloc] init];
+
+            NSMenuItem *appItem = [[NSMenuItem alloc] init];
+            NSMenu *appMenu = [[NSMenu alloc] init];
+            [appMenu addItemWithTitle:[@"Hide " stringByAppendingString:name]
+                               action:@selector(hide:)
+                        keyEquivalent:@"h"];
+            [appMenu addItem:NSMenuItem.separatorItem];
+            [appMenu addItemWithTitle:[@"Quit " stringByAppendingString:name]
+                               action:@selector(terminate:)
+                        keyEquivalent:@"q"];
+            appItem.submenu = appMenu;
+            [bar addItem:appItem];
+
+            // Cut, copy, paste and select all are the system's actions, sent to whatever
+            // holds focus. The window answers them through the text input it already has.
+            NSMenuItem *editItem = [[NSMenuItem alloc] init];
+            NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+            [editMenu addItemWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+            [editMenu addItem:NSMenuItem.separatorItem];
+            [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+            [editMenu addItemWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+            [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+            [editMenu addItemWithTitle:@"Select All"
+                                action:@selector(selectAll:)
+                         keyEquivalent:@"a"];
+            editItem.submenu = editMenu;
+            [bar addItem:editItem];
+
+            NSApp.mainMenu = bar;
+        }
+    });
+}
+
+/**
+ * Lets the window answer for itself for a moment.
+ *
+ * The thread that draws is the thread AppKit delivers on, so a frame that never gave the
+ * run loop a turn would be a window that never heard a click. This is that turn: events
+ * arrive, timers fire, and the queue above fills, all before the next frame is drawn.
+ *
+ * Returns straight away when there is nothing waiting, so a window with nothing happening
+ * in it costs a call rather than the whole of [seconds].
+ */
+void dxc_native_pump(double seconds) {
+    @autoreleasepool {
+        // The wait is done here, by the application, with a date in the future. That is
+        // what reaches out to the window server for what has been pressed: asking only
+        // for what has already arrived returns the events the toolkit makes for itself
+        // and never a single click. The frame's length is how long it is willing to wait.
+        NSDate *until = [NSDate dateWithTimeIntervalSinceNow:seconds];
+        for (;;) {
+            NSEvent *event = [NSApp nextEventMatchingMask:NSEventMaskAny
+                                                untilDate:until
+                                                   inMode:NSDefaultRunLoopMode
+                                                  dequeue:YES];
+            if (event == nil) {
+                break;
+            }
+            [NSApp sendEvent:event];
+            // Whatever else is waiting is taken without waiting again: one turn should
+            // empty what has arrived rather than sleep once per event.
+            until = NSDate.distantPast;
+        }
+    }
 }
 
 /** Takes the oldest event, or answers zero when there is none. */
@@ -229,6 +362,23 @@ static NSString *dxc_marked_text;
  * turns one into a record and puts it on the queue above.
  */
 @interface DxcView : NSView <NSTextInputClient>
+@end
+
+/** True once the window has been closed, so the renderer knows to stop. */
+static atomic_bool dxc_window_closed;
+
+int32_t dxc_native_window_closed(void) {
+    return atomic_load(&dxc_window_closed) ? 1 : 0;
+}
+
+// Hears the close button, which is the system's and not ours to draw or to wire up.
+@interface DxcWindowDelegate : NSObject <NSWindowDelegate>
+@end
+
+@implementation DxcWindowDelegate
+- (void)windowWillClose:(NSNotification *)notification {
+    atomic_store(&dxc_window_closed, true);
+}
 @end
 
 // The shape of a pointer, as a number both sides agree on. A name would be a string
@@ -536,6 +686,10 @@ int32_t dxc_native_window_open(
         window.titlebarAppearsTransparent = YES;
         window.titleVisibility = NSWindowTitleHidden;
         window.releasedWhenClosed = NO;
+        // Held for the life of the window, which owns it through the delegate reference.
+        static DxcWindowDelegate *delegate;
+        delegate = [[DxcWindowDelegate alloc] init];
+        window.delegate = delegate;
 
         DxcView *view = [[DxcView alloc] initWithFrame:frame];
         CAMetalLayer *layer = [CAMetalLayer layer];
@@ -550,6 +704,21 @@ int32_t dxc_native_window_open(
                                         height * layer.contentsScale);
         view.wantsLayer = YES;
         view.layer = layer;
+
+        // The application itself, named before anything is asked of it. The toolkit used
+        // to do this on its way past and nothing does now.
+        [NSApplication sharedApplication];
+
+        // An executable that is not inside a bundle is not, by default, something the
+        // system will put in front of anything else: it has no place in the dock and
+        // cannot take the keyboard. Saying what kind of application this is has to come
+        // before it launches.
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+
+        // Started, because an application that has not launched hands over no events.
+        // The usual way is `[NSApp run]`, which never returns and would take the thread
+        // the frames are drawn from; this is the half of it that matters here.
+        [NSApp finishLaunching];
 
         window.contentView = view;
         [window makeFirstResponder:view];
