@@ -699,7 +699,7 @@ private const val MODIFIER_COMMAND = 1 shl 20
  * and backspace. Nothing is committed from a key's character, because a key that types
  * one has already produced it through the path above and doing both would type it twice.
  */
-private fun NativeTextInput.receive(event: WindowEvent) {
+internal fun NativeTextInput.receive(event: WindowEvent) {
     if (!isActive) return
     when (event.kind) {
         WindowEvent.TEXT_COMMIT -> commit(event.text)

@@ -9,11 +9,11 @@
 //
 // Nothing here draws. The pixels are Skia's, as they already were.
 //
-// The same five C symbols the macOS file exports, because the Kotlin side reaches them by
-// name and only one of the two files is ever compiled into an image. What the five
-// pointers in `struct dxc_native_window` mean is this platform's business; what
-// `struct dxc_event` looks like is not, and it is declared here field for field as the
-// macOS file declares it so that one piece of Kotlin can read either.
+// The same C symbols the macOS file exports, because the Kotlin side reaches them by name
+// and only one of the two files is ever compiled into an image. What the five pointers in
+// `struct dxc_native_window` mean is this platform's business; what `struct dxc_event`
+// looks like is not, and it is declared here field for field as the macOS file declares
+// it so that one piece of Kotlin can read either.
 //
 // Two of the four walls the macOS window ran into are not here. A window may be created
 // on any thread on Windows, and the thread that created it is the thread its messages are
@@ -130,6 +130,8 @@ static UINT dxc_frame_index;
 // swapchain cannot be resized while the buffer being resized is the one being drawn into.
 static int32_t dxc_pending_width;
 static int32_t dxc_pending_height;
+// Set when the window has gone, so the frame loop stops rather than drawing into nothing.
+static int dxc_window_gone;
 
 static void dxc_push_event(struct dxc_event event) {
     if (dxc_event_count < DXC_EVENT_CAPACITY) {
@@ -293,6 +295,7 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
         return 0;
     case WM_DESTROY:
         dxc_window = NULL;
+        dxc_window_gone = 1;
         PostQuitMessage(0);
         return 0;
     default:
@@ -315,6 +318,48 @@ static void dxc_pump_messages(void) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+}
+
+/**
+ * Lets the window answer for itself for a moment.
+ *
+ * Called once a frame. The thread that draws is the thread Windows delivers to, so a loop
+ * that never gave it a turn would be a window that heard nothing.
+ *
+ * The wait is for something to arrive rather than for the clock. A frame that drew has
+ * already waited for the screen inside `Present`, and the caller asks for no wait at all
+ * in that case; a window with nothing happening is asked to rest for a frame's length,
+ * and comes back the moment anything is pressed.
+ */
+void dxc_native_pump(double seconds) {
+    if (dxc_window != NULL && seconds > 0.0) {
+        DWORD wait = (DWORD)(seconds * 1000.0 + 0.5);
+        if (wait > 0) {
+            // Returns at once where something is already waiting, which is what the last
+            // flag asks for. Without it a message that arrived before this call would be
+            // paid for with a whole frame of sleeping.
+            MsgWaitForMultipleObjectsEx(0, NULL, wait, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        }
+    }
+    dxc_pump_messages();
+}
+
+/** True once the reader has closed the window. */
+int32_t dxc_native_window_closed(void) {
+    return dxc_window_gone ? 1 : 0;
+}
+
+/**
+ * The menu bar this platform does not have.
+ *
+ * Named because one piece of Kotlin drives both desktops and asks for this by name on
+ * each. macOS keeps its application menu outside the window, and the shortcuts a reader
+ * expects there do nothing without it. Windows keeps nothing outside the window: closing
+ * is alt with F4 and the system menu, which the default handler already answers, and the
+ * editing shortcuts belong to whatever holds focus, which is the scene.
+ */
+void dxc_native_install_menu(const char *application_name) {
+    (void)application_name;
 }
 
 /** Takes the oldest event, or answers zero when there is none. */

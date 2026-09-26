@@ -12,6 +12,8 @@ import org.graalvm.nativeimage.c.type.CTypeConversion
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntSize
 import org.graalvm.word.Pointer
 import org.graalvm.word.WordFactory
 
@@ -24,12 +26,13 @@ import org.graalvm.word.WordFactory
 // The C side is `c/win32_window.c`. It owns the window, the Direct3D device, the queue,
 // the adapter and the swapchain, and answers with the pointers. Nothing there draws.
 //
-// The same five C symbols the macOS file calls, because the two C files are alternatives:
+// The same C symbols the macOS file calls, because the two C files are alternatives:
 // exactly one of them is compiled into an image, and each answers for the window its own
 // platform knows how to open. What the five pointers mean differs, which is why each
 // platform reads them here rather than sharing a struct. What an event looks like does
 // not differ, so `WindowEvent` and `drainWindowEvents` are the macOS file's and used as
-// they are.
+// they are, and so are the shell's own turns: `pumpWindowEvents` and `isWindowClosed`
+// name what every window does and are declared once, there.
 
 @CFunction("dxc_native_window_open")
 private external fun openWindow(
@@ -139,7 +142,7 @@ private const val WINDOW_STRUCT_BYTES = 40
 private const val SWAPCHAIN_FORMAT = 28
 
 /**
- * Draws a Compose scene into a window of our own, and holds it there.
+ * Draws the application into a window of our own, and holds it there until it closes.
  *
  * The Windows half of the step everything after it rests on: a scene that Compose
  * composed, painted by Skia into a swapchain buffer Direct3D gave us, reaching the screen
@@ -147,10 +150,22 @@ private const val SWAPCHAIN_FORMAT = 28
  *
  * Reached by setting `DXC_WIN32_WINDOW`, so the ordinary path is untouched.
  */
-internal fun runWin32Spike() {
-    val window = openWin32Window("dioxus-compose", 520, 360)
+internal fun runWin32Window() {
+    // The Host is started before there is a window, because what the window should look
+    // like is in its first batch and a window cannot be told afterwards. Started on this
+    // thread, which is the one every later call to it is made from: the boundary is a
+    // direct call on one thread and the Host keeps its state there.
+    val host = dioxus.compose.runtime.DioxusHost(NativeHostConnection())
+    host.start()
+    val asked = host.table.window
+    val window = openWin32Window(
+        asked?.title?.takeIf { it.isNotEmpty() } ?: "dioxus-compose",
+        if (asked != null && asked.width > 0) asked.width else 520,
+        if (asked != null && asked.height > 0) asked.height else 360,
+    )
     if (window == null) {
         System.err.println("dioxus-compose: this machine has no Direct3D 12 adapter")
+        host.shutdown()
         return
     }
     val context = org.jetbrains.skia.DirectContext.makeDirect3D(
@@ -165,55 +180,108 @@ internal fun runWin32Spike() {
     )
 
     val report = System.getenv("DXC_REPORT_INPUT") != null
+    // Held rather than measured once. The window is resizable, and what the scene is told
+    // about the window it sits in is read from here.
+    var size = IntSize(measured.width, measured.height)
+    val textInput = NativeTextInput()
+    // What the window would tell a reader who cannot see it, read after each frame that
+    // painted and handed on when it has changed. Where it is handed on to is the
+    // platform's own accessibility, which is not in this file: on Windows that is UI
+    // Automation, and it is being written against this call.
+    val semantics = NativeSemantics { elements ->
+        if (report) {
+            System.err.println("dioxus-compose: the window has ${elements.size} things to say")
+        }
+    }
+    // Kept rather than left to the scene. What a scene picks for itself is the toolkit's
+    // queue, and the Host this renderer talks to is on this thread and invisible from
+    // there: a list asking for the rows it is about to show asked from a thread with no
+    // Host and was told nothing had been initialised.
+    val work = FrameDispatcher()
     val scene = CanvasLayersComposeScene(
-        density = androidx.compose.ui.unit.Density(measured.scale),
-        size = androidx.compose.ui.unit.IntSize(measured.width, measured.height),
+        density = Density(measured.scale),
+        size = size,
+        coroutineContext = work,
+        platformContext = NativePlatformContext({ size }, textInput, semantics),
     )
-    scene.setContent { SpikeContent() }
+    // The application's own tree, drawn by the same interpreter the toolkit path uses.
+    // Nothing in it knows which of the two it is running on, which is the point.
+    scene.setContent { dioxus.compose.runtime.DioxusContent(host) }
+
+    var nanos = 0L
+    var painted = false
 
     try {
-        // A plain loop rather than a clock. Pacing is the frame clock's work and comes
-        // later; what this has to show is that what the window hears reaches the scene
-        // and changes what the next frame draws.
-        repeat(SPIKE_FRAMES) { frame ->
+        // Rests only when the last turn found nothing to do. A frame that drew has
+        // already waited for the screen inside `Present`, and waiting again on top of
+        // that would halve the rate of anything that animates.
+        var busy = true
+        while (!isWindowClosed()) {
+            var drew = false
+            // The window's own turn, before anything is read from it. This thread is the
+            // one Windows delivers to, so the messages of this frame arrive here or not
+            // at all.
+            pumpWindowEvents(if (busy) 0.0 else FRAME_SECONDS)
+            work.runPending()
+            var heard = false
             for (event in drainWindowEvents()) {
                 if (report && event.kind != WindowEvent.POINTER_MOVE) {
                     System.err.println("dioxus-compose: window heard $event")
                 }
                 scene.receive(event)
+                textInput.receive(event)
+                heard = true
             }
-            if (!drawFrame(window, context, scene, frame.toLong() * FRAME_NANOS)) {
-                // Nothing was drawn, so nothing waited for the screen either. Without this
-                // a minimised window would spend every frame it has in a few milliseconds.
-                Thread.sleep(FRAME_MILLIS)
+            // Only when there is something to draw. A window that is being looked at
+            // rather than used should cost a comparison a frame.
+            if (!painted || heard || scene.hasInvalidations()) {
+                nanos += FRAME_NANOS
+                val at = drawFrame(window, context, scene, nanos)
+                if (at != null) {
+                    // The size the buffer really is, which is the size the scene was just
+                    // drawn at and the size the window is told it has.
+                    size = at
+                    painted = true
+                    drew = true
+                }
             }
+            // Every frame, and after the drawing. After, because that is when what is in
+            // the window has been placed and can say where it is. Every frame, because a
+            // tree that changed on the last one is a tree nobody has been told about, and
+            // a window that has gone still is exactly where that would be forgotten.
+            semantics.pushIfChanged(afterDrawing = drew)
+            busy = heard || drew
         }
     } finally {
         scene.close()
         context.close()
+        host.shutdown()
     }
 }
 
 /**
  * One frame: take a buffer, let the scene paint it, give it to the screen.
  *
- * False where there was no buffer to take. A closed window answers that, a minimised one
- * answers it for as long as it stays down, and a swapchain that has just been asked to
- * fit a new size answers it once.
+ * Answers the size it was drawn at, which is the swapchain's and not the size anything
+ * asked for: a resize is taken inside the call that hands this frame its buffer, so the
+ * size that comes back is the one the buffer really is. Null where there was nothing to
+ * draw into. A closed window answers that, a minimised one answers it for as long as it
+ * stays down, and a swapchain that could not be made to fit a size it was given answers
+ * it once.
  */
 private fun drawFrame(
     window: Win32NativeWindow,
     context: org.jetbrains.skia.DirectContext,
     scene: ComposeScene,
     nanos: Long,
-): Boolean {
+): IntSize? {
     val resource = window.beginFrame()
-    if (resource == 0L) return false
+    if (resource == 0L) return null
     // After the buffer and not before it, because that is where a swapchain waiting to be
     // refitted is refitted, and what is measured here is the buffer that came back.
     val measured = window.measure()
-    val fitted = androidx.compose.ui.unit.IntSize(measured.width, measured.height)
-    val density = androidx.compose.ui.unit.Density(measured.scale)
+    val fitted = IntSize(measured.width, measured.height)
+    val density = Density(measured.scale)
     // The window was resized, or moved onto a screen of another density. Told to the
     // scene here, because a buffer that fits and a scene that does not is a window drawing
     // its old size into a corner of its new one.
@@ -243,7 +311,7 @@ private fun drawFrame(
     if (surface == null) {
         target.close()
         window.endFrame()
-        return true
+        return null
     }
     scene.render(surface.canvas.asComposeCanvas(), nanos)
     // Submitted, not only recorded. Skia's Direct3D backend keeps the frame in a command
@@ -256,9 +324,8 @@ private fun drawFrame(
     // Waits for the screen, so there is no sleep after this: presenting with an interval
     // of one is what paces a frame that was drawn.
     window.endFrame()
-    return true
+    return fitted
 }
 
-private const val SPIKE_FRAMES = 1_200
-private const val FRAME_MILLIS = 16L
+private const val FRAME_SECONDS = 0.016
 private const val FRAME_NANOS = 16_000_000L
