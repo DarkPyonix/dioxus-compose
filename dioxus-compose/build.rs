@@ -107,6 +107,44 @@ fn main() {
         return;
     }
 
+    // The renderer built for this platform directly, with no virtual machine in it.
+    //
+    // Off unless DXC_MACOS_NATIVE_LIB names the directory holding
+    // `libdioxus_compose_renderer.a`, because it is not what the published crate ships:
+    // `dioxus-compose-renderer/desktop/scripts/build-macos.sh` makes one in a checkout.
+    //
+    // A static archive rather than a library beside the binary, because Kotlin/Native
+    // produces one and because what is inside it is most of Compose and all of Skia: what
+    // the application does not reach, the linker drops.
+    if target_os == "macos" {
+        if let Some(dir) = std::env::var_os("DXC_MACOS_NATIVE_LIB") {
+            let dir = PathBuf::from(dir);
+            println!("cargo:rerun-if-env-changed=DXC_MACOS_NATIVE_LIB");
+            // The archive itself, not only the variable naming it. Rebuilding the
+            // renderer and not saying so left Cargo linking yesterday's one and
+            // reporting a build that finished in no time at all.
+            println!(
+                "cargo:rerun-if-changed={}",
+                dir.join("libdioxus_compose_renderer.a").display()
+            );
+            println!("cargo:rustc-link-search=native={}", dir.display());
+            println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
+            // What the archive itself calls in. Kotlin/Native names none of these: they
+            // are the frameworks Compose and Skia reach through, and the compression the
+            // Kotlin runtime uses for its own resources.
+            for framework in [
+                "AppKit", "Foundation", "Metal", "QuartzCore", "CoreGraphics",
+                "CoreText", "CoreServices", "IOKit", "Carbon", "OpenGL",
+            ] {
+                println!("cargo:rustc-link-lib=framework={framework}");
+            }
+            println!("cargo:rustc-link-lib=dylib=c++");
+            println!("cargo:rustc-link-lib=dylib=z");
+            println!("cargo:rustc-cfg=renderer_linked");
+            return;
+        }
+    }
+
     let manifest_dir = PathBuf::from(
         std::env::var_os("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR"),
     );

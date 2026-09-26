@@ -27,6 +27,7 @@ rm -rf "$DIST_DIR" "$obj"
 mkdir -p "$obj" "$lib"
 
 cc -c -O2 -fPIC -o "$obj/renderer_entry.o" "$NATIVE_DIR/c/renderer_entry.c"
+cc -c -O2 -fPIC -o "$obj/x11_window.o" "$NATIVE_DIR/c/x11_window.c"
 
 # Why the C shim is not handed to native-image here, the way build-native.sh does on macOS.
 #
@@ -65,7 +66,15 @@ image_name="${LIBRARY_NAME}_image"
 # The Compose, Skiko and Skia registrations are not part of java.desktop. They come from
 # desktop/resources/META-INF/native-image, which is on the classpath and is therefore read on
 # every platform without a -H:ConfigurationFileDirectories argument.
+#
+# The window draws its own frame when it is resized, and it does that by calling a function
+# in the image through a pointer. The pointer is a CEntryPointLiteral, which Native Image
+# fills in while it builds the image and only for a literal that is already in the image
+# heap: the class holding it has to be initialised here rather than when the library starts,
+# or the pointer stays null and every resize silently draws nothing. Asked for by name so
+# that a class which cannot be initialised at build time fails this build instead.
 (cd "$lib" && "$GRAALVM_HOME/bin/native-image" \
+    --initialize-at-build-time=dioxus.compose.ui.platform.X11FrameCallback \
     --shared \
     -cp "$classpath" \
     -o "$image_name" \
@@ -76,6 +85,10 @@ image_name="${LIBRARY_NAME}_image"
     -Os \
     -H:+UnlockExperimentalVMOptions \
     -H:Preserve=module=java.desktop \
+    "-H:NativeLinkerOption=$obj/x11_window.o" \
+    '-H:NativeLinkerOption=-lX11' \
+    '-H:NativeLinkerOption=-lGL' \
+    '-H:NativeLinkerOption=-lXext' \
     "-H:NativeLinkerOption=-Wl,-soname,$image_name.so" \
     '-H:NativeLinkerOption=-Wl,-rpath,$ORIGIN')
 

@@ -24,10 +24,11 @@ import java.util.function.BooleanSupplier;
  * ICU data table. Skipping the lookup skips unpacking that too, and a table Skia cannot
  * find is its own problem, handled where the rest of that file is.
  *
- * Java rather than Kotlin, and this is the only Java in the renderer. The Compose compiler
- * plugin adds a `$stable` field to the Kotlin classes it sees, and a substitution class may
- * only hold members that say what they do to the original, so a generated field it has
- * never heard of stops the build.
+ * Java rather than Kotlin. The Compose compiler plugin adds a `$stable` field to the
+ * Kotlin classes it sees, and a substitution class may only hold members that say what
+ * they do to the original, so a generated field it has never heard of stops the build.
+ * `Win32DrawCallback` is the other Java file here, written that way for a reason of its
+ * own.
  */
 final class StaticSkikoLoader {
 

@@ -44,3 +44,6 @@ dioxus-compose/tests/fixtures/consumer/Cargo.lock
 # checked in; the module it fetches is a build output.
 dioxus-compose-renderer/web/resources/dioxus_compose_host.wasm
 dioxus-compose-renderer/web/testResources/dioxus_compose_host.wasm
+
+# The upstream Compose checkout scripts/build-compose.sh patches and builds.
+compose-build/

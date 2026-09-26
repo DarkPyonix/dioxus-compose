@@ -233,7 +233,16 @@ fun drainWindowEvents(): List<WindowEvent> {
  * change when the screen changes rather than when a frame is drawn, and the alternative
  * is the platform asking across threads at a moment nobody chose.
  */
-fun NativeWindow.describeTo(elements: List<AccessibleElement>) {
+fun NativeWindow.describeTo(elements: List<AccessibleElement>) = describeWindow(view, elements)
+
+/**
+ * Writes the records and hands them to whichever window asked.
+ *
+ * Apart from the extension above because the windows the other desktops open are not this
+ * class, and what a tree looks like on the way across does not differ between them: one
+ * layout, written once, so a field that moves cannot move in one place only.
+ */
+internal fun describeWindow(view: Long, elements: List<AccessibleElement>) {
     val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements
     val records = StackValue.get<Pointer>(MAX_ELEMENTS * ELEMENT_BYTES)
     for ((index, element) in capped.withIndex()) {
@@ -602,23 +611,23 @@ internal fun SpikeContent() {
  * platform's scene measures in, so nothing is converted here beyond naming which kind of
  * event it was.
  */
-internal fun ComposeScene.receive(event: WindowEvent) {
+internal fun ComposeScene.receive(event: WindowEvent, win32: Boolean = false) {
     when (event.kind) {
         // Built from parts rather than from a platform event. The toolkit's own key
         // event is what the supported path converts, and there is none here to convert.
         WindowEvent.KEY_DOWN, WindowEvent.KEY_UP -> sendKeyEvent(
             KeyEvent(
-                key = composeKey(event.keyCode),
+                key = if (win32) win32ComposeKey(event.keyCode) else composeKey(event.keyCode),
                 type = if (event.kind == WindowEvent.KEY_DOWN) {
                     KeyEventType.KeyDown
                 } else {
                     KeyEventType.KeyUp
                 },
                 codePoint = event.codePoint,
-                isAltPressed = event.modifiers and MODIFIER_OPTION != 0,
-                isCtrlPressed = event.modifiers and MODIFIER_CONTROL != 0,
-                isMetaPressed = event.modifiers and MODIFIER_COMMAND != 0,
-                isShiftPressed = event.modifiers and MODIFIER_SHIFT != 0,
+                isAltPressed = event.modifiers and (if (win32) 4 else MODIFIER_OPTION) != 0,
+                isCtrlPressed = event.modifiers and (if (win32) 2 else MODIFIER_CONTROL) != 0,
+                isMetaPressed = event.modifiers and (if (win32) 8 else MODIFIER_COMMAND) != 0,
+                isShiftPressed = event.modifiers and (if (win32) 1 else MODIFIER_SHIFT) != 0,
             ),
         )
 
@@ -652,33 +661,22 @@ internal fun ComposeScene.receive(event: WindowEvent) {
     }
 }
 
-/**
- * The Compose key a platform key number means.
- *
- * A table because the two numberings have nothing to do with each other: the platform
- * numbers keys by where they sit on the board, and Compose names them by what they are.
- * Only the keys that have a meaning of their own are here. A key that types a character
- * carries that character in the event beside it, and a screen reading text wants the
- * character rather than the position.
- *
- * Unknown is a real answer. A key nobody mapped still reaches the scene with its
- * character, so typing works before every key in the world has a line here.
- */
-private fun composeKey(platformKey: Int): Key = when (platformKey) {
-    0x24 -> Key.Enter
-    0x30 -> Key.Tab
-    0x31 -> Key.Spacebar
-    0x33 -> Key.Backspace
-    0x35 -> Key.Escape
-    0x75 -> Key.Delete
-    0x7B -> Key.DirectionLeft
-    0x7C -> Key.DirectionRight
-    0x7D -> Key.DirectionDown
-    0x7E -> Key.DirectionUp
-    0x73 -> Key.MoveHome
-    0x77 -> Key.MoveEnd
-    0x74 -> Key.PageUp
-    0x79 -> Key.PageDown
+
+internal fun win32ComposeKey(virtualKey: Int): Key = when (virtualKey) {
+    0x0D -> Key.Enter
+    0x09 -> Key.Tab
+    0x20 -> Key.Spacebar
+    0x08 -> Key.Backspace
+    0x1B -> Key.Escape
+    0x2E -> Key.Delete
+    0x25 -> Key.DirectionLeft
+    0x27 -> Key.DirectionRight
+    0x28 -> Key.DirectionDown
+    0x26 -> Key.DirectionUp
+    0x24 -> Key.MoveHome
+    0x23 -> Key.MoveEnd
+    0x21 -> Key.PageUp
+    0x22 -> Key.PageDown
     else -> Key.Unknown
 }
 
@@ -699,7 +697,7 @@ private const val MODIFIER_COMMAND = 1 shl 20
  * and backspace. Nothing is committed from a key's character, because a key that types
  * one has already produced it through the path above and doing both would type it twice.
  */
-private fun NativeTextInput.receive(event: WindowEvent) {
+internal fun NativeTextInput.receive(event: WindowEvent) {
     if (!isActive) return
     when (event.kind) {
         WindowEvent.TEXT_COMMIT -> commit(event.text)
