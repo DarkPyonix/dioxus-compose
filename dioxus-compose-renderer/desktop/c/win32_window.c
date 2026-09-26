@@ -9,11 +9,11 @@
 //
 // Nothing here draws. The pixels are Skia's, as they already were.
 //
-// The same five C symbols the macOS file exports, because the Kotlin side reaches them by
-// name and only one of the two files is ever compiled into an image. What the five
-// pointers in `struct dxc_native_window` mean is this platform's business; what
-// `struct dxc_event` looks like is not, and it is declared here field for field as the
-// macOS file declares it so that one piece of Kotlin can read either.
+// The same C symbols the macOS file exports, because the Kotlin side reaches them by name
+// and only one of the two files is ever compiled into an image. What the five pointers in
+// `struct dxc_native_window` mean is this platform's business; what `struct dxc_event`
+// looks like is not, and it is declared here field for field as the macOS file declares
+// it so that one piece of Kotlin can read either.
 //
 // Two of the four walls the macOS window ran into are not here. A window may be created
 // on any thread on Windows, and the thread that created it is the thread its messages are
@@ -48,6 +48,7 @@
 #include <dxgi1_4.h>
 #include <stdint.h>
 #include <string.h>
+#include "win32_resize.h"
 
 // What happened in the window, waiting to be read.
 //
@@ -126,10 +127,55 @@ static ID3D12Fence *dxc_fence;
 static HANDLE dxc_fence_signalled;
 static UINT64 dxc_fence_value;
 static UINT dxc_frame_index;
-// Set when the window changed size and acted on at the start of the next frame, because a
-// swapchain cannot be resized while the buffer being resized is the one being drawn into.
-static int32_t dxc_pending_width;
-static int32_t dxc_pending_height;
+// The size the window has been given and the size it is drawn at, which are the same
+// except while a resize is being taken. A swapchain cannot be refitted while the buffer
+// being refitted is the one being drawn into, so the size is written down here and acted
+// on where a frame begins.
+static struct dxc_resize dxc_sizing;
+// Set when the window has gone, so the frame loop stops rather than drawing into nothing.
+static int dxc_window_gone;
+
+// A frame, asked for by the window rather than by the loop that usually draws them.
+//
+// Registered by the renderer, which is the only thing that can draw: the pixels are
+// Skia's and this file has never had any. It is needed because Windows runs a loop of its
+// own inside `DefWindowProc` while the reader drags the window's edge, and for the whole
+// of that drag the renderer's frame loop is stopped inside the message that began it. A
+// size written down there is a size nothing draws until the drag ends.
+//
+// This is the renderer's platform code calling the renderer, on the one thread both live
+// on. Nothing of the Host's crosses here and no new boundary entry point is involved: the
+// window asks its own renderer to draw, which is what the frame loop would have done had
+// it been given a turn.
+typedef void (*dxc_draw_frame_fn)(void *isolate_thread);
+static dxc_draw_frame_fn dxc_draw_frame;
+// The renderer's thread, as the renderer named it when it registered. Handed back with
+// every call because the other side is a Java runtime and cannot be entered without it.
+static void *dxc_draw_thread;
+
+/**
+ * Lets the renderer be asked for a frame from inside a message.
+ *
+ * A null callback is how it is taken away again, which the renderer does before it closes
+ * the scene: a message arriving after that would be a frame drawn into a scene that has
+ * gone.
+ */
+void dxc_native_set_draw_callback(dxc_draw_frame_fn callback, void *isolate_thread) {
+    dxc_draw_frame = callback;
+    dxc_draw_thread = isolate_thread;
+}
+
+/**
+ * Asks for a frame now, where a frame can be drawn at all.
+ *
+ * Nothing happens before the renderer has registered, which covers the first few messages
+ * a window receives while it is still being built.
+ */
+static void dxc_draw_one_frame(void) {
+    if (dxc_draw_frame != NULL) {
+        dxc_draw_frame(dxc_draw_thread);
+    }
+}
 
 static void dxc_push_event(struct dxc_event event) {
     if (dxc_event_count < DXC_EVENT_CAPACITY) {
@@ -274,14 +320,34 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
     case WM_SYSKEYUP:
         dxc_push_key(DXC_EVENT_KEY_UP, wparam);
         return 0;
+    case WM_ENTERSIZEMOVE:
+        // The reader has taken hold of an edge, or of the title bar. From here until the
+        // matching message below, everything this window hears is dispatched from a loop
+        // inside `DefWindowProc` rather than from the renderer's frame loop, and that
+        // loop does not return until the reader lets go.
+        dxc_resize_begin_drag(&dxc_sizing);
+        return 0;
+    case WM_EXITSIZEMOVE:
+        // Let go. The frame loop has its turns back, so a size arriving after this is
+        // written down and taken by the next frame.
+        dxc_resize_end_drag(&dxc_sizing);
+        return 0;
     case WM_SIZE:
-        // Written down rather than acted on. The buffer being resized may be the one the
-        // frame in flight is drawing into, so the swapchain is resized where a frame
+        // Written down rather than acted on. The buffer being refitted may be the one the
+        // frame in flight is drawing into, so the swapchain is refitted where a frame
         // begins instead. Nothing to do while minimised: the client area is empty and a
         // swapchain cannot have a zero dimension.
         if (dxc_swapchain != NULL && wparam != SIZE_MINIMIZED) {
-            dxc_pending_width = (int32_t)LOWORD(lparam);
-            dxc_pending_height = (int32_t)HIWORD(lparam);
+            dxc_resize_note(&dxc_sizing, (int32_t)LOWORD(lparam), (int32_t)HIWORD(lparam));
+            // Inside a drag the note is not enough. Nothing is going to come back and
+            // read it: the frame loop is stopped several frames back inside the press
+            // that began the drag, and what the screen shows meanwhile is the last frame
+            // the window drew, stretched or cut to whatever size the window now is. The
+            // frame is drawn here instead, inside this message, which is the only place
+            // that runs while the reader is dragging.
+            if (dxc_resize_draw_here(&dxc_sizing)) {
+                dxc_draw_one_frame();
+            }
         }
         return 0;
     case WM_ERASEBKGND:
@@ -293,6 +359,7 @@ static LRESULT CALLBACK dxc_native_window_proc(HWND window, UINT message, WPARAM
         return 0;
     case WM_DESTROY:
         dxc_window = NULL;
+        dxc_window_gone = 1;
         PostQuitMessage(0);
         return 0;
     default:
@@ -315,6 +382,48 @@ static void dxc_pump_messages(void) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+}
+
+/**
+ * Lets the window answer for itself for a moment.
+ *
+ * Called once a frame. The thread that draws is the thread Windows delivers to, so a loop
+ * that never gave it a turn would be a window that heard nothing.
+ *
+ * The wait is for something to arrive rather than for the clock. A frame that drew has
+ * already waited for the screen inside `Present`, and the caller asks for no wait at all
+ * in that case; a window with nothing happening is asked to rest for a frame's length,
+ * and comes back the moment anything is pressed.
+ */
+void dxc_native_pump(double seconds) {
+    if (dxc_window != NULL && seconds > 0.0) {
+        DWORD wait = (DWORD)(seconds * 1000.0 + 0.5);
+        if (wait > 0) {
+            // Returns at once where something is already waiting, which is what the last
+            // flag asks for. Without it a message that arrived before this call would be
+            // paid for with a whole frame of sleeping.
+            MsgWaitForMultipleObjectsEx(0, NULL, wait, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+        }
+    }
+    dxc_pump_messages();
+}
+
+/** True once the reader has closed the window. */
+int32_t dxc_native_window_closed(void) {
+    return dxc_window_gone ? 1 : 0;
+}
+
+/**
+ * The menu bar this platform does not have.
+ *
+ * Named because one piece of Kotlin drives both desktops and asks for this by name on
+ * each. macOS keeps its application menu outside the window, and the shortcuts a reader
+ * expects there do nothing without it. Windows keeps nothing outside the window: closing
+ * is alt with F4 and the system menu, which the default handler already answers, and the
+ * editing shortcuts belong to whatever holds focus, which is the scene.
+ */
+void dxc_native_install_menu(const char *application_name) {
+    (void)application_name;
 }
 
 /** Takes the oldest event, or answers zero when there is none. */
@@ -598,6 +707,10 @@ int32_t dxc_native_window_open(
     dxc_device = device;
     dxc_queue = queue;
     dxc_swapchain = swapchain;
+    // The size frames are drawn at from here until something resizes the window. Written
+    // down now so that the size the window reports as it is shown, which is this one, is
+    // recognised as the size the swapchain already is.
+    dxc_resize_fitted(&dxc_sizing, (int32_t)pixel_width, (int32_t)pixel_height);
 
     if (dxc_acquire_buffers() != 0) {
         dxc_abandon_window(adapter);
@@ -683,37 +796,32 @@ int32_t dxc_native_frame_begin(void *swapchain_pointer, void **texture_out) {
         return 1;
     }
 
-    if (dxc_pending_width > 0 && dxc_pending_height > 0) {
-        UINT wanted_width = (UINT)dxc_pending_width;
-        UINT wanted_height = (UINT)dxc_pending_height;
-        dxc_pending_width = 0;
-        dxc_pending_height = 0;
-        // Showing the window reports a size as well, and it is the size the swapchain was
-        // just made at. Asked first so that the common case costs a question rather than a
-        // round of releasing and taking back every buffer.
-        DXGI_SWAP_CHAIN_DESC1 current;
-        int32_t already = SUCCEEDED(IDXGISwapChain3_GetDesc1(swapchain, &current)) &&
-            current.Width == wanted_width && current.Height == wanted_height;
-        if (!already) {
-            // Nothing may still be reading the buffers when they are let go, and a
-            // swapchain refuses to resize while anything holds one.
-            dxc_wait_for_gpu();
-            dxc_release_buffers();
-            HRESULT resized = IDXGISwapChain3_ResizeBuffers(
-                swapchain, DXC_BUFFER_COUNT, wanted_width, wanted_height,
-                DXC_SWAPCHAIN_FORMAT, 0);
-            // A refusal leaves the swapchain the size it was, so the old buffers are taken
-            // back and the window carries on drawing at the size it had. Losing this frame
-            // is a stretched image for a moment; not taking them back is a window that
-            // stays black from here on.
-            if (FAILED(resized)) {
-                dxc_acquire_buffers();
-                return 2;
-            }
-            if (dxc_acquire_buffers() != 0) {
-                return 2;
-            }
+    // The size the window was last given, where that is not the size it is already drawn
+    // at. Showing the window reports a size as well, and it is the size the swapchain was
+    // just made, so the common case costs a comparison rather than a round of releasing
+    // and taking back every buffer.
+    int32_t wanted_width = 0;
+    int32_t wanted_height = 0;
+    if (dxc_resize_take(&dxc_sizing, &wanted_width, &wanted_height)) {
+        // Nothing may still be reading the buffers when they are let go, and a swapchain
+        // refuses to be refitted while anything holds one.
+        dxc_wait_for_gpu();
+        dxc_release_buffers();
+        HRESULT resized = IDXGISwapChain3_ResizeBuffers(
+            swapchain, DXC_BUFFER_COUNT, (UINT)wanted_width, (UINT)wanted_height,
+            DXC_SWAPCHAIN_FORMAT, 0);
+        // A refusal leaves the swapchain the size it was, so the old buffers are taken
+        // back and the window carries on drawing at the size it had. Losing this frame
+        // is a stretched image for a moment; not taking them back is a window that
+        // stays black from here on.
+        if (FAILED(resized)) {
+            dxc_acquire_buffers();
+            return 2;
         }
+        if (dxc_acquire_buffers() != 0) {
+            return 2;
+        }
+        dxc_resize_fitted(&dxc_sizing, wanted_width, wanted_height);
     }
 
     dxc_frame_index = IDXGISwapChain3_GetCurrentBackBufferIndex(swapchain);

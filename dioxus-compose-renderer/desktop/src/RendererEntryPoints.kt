@@ -8,7 +8,7 @@ import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CTypeConversion
 import dioxus.compose.ui.platform.NativeHostConnection
 import dioxus.compose.ui.platform.runAppKitSpike
-import dioxus.compose.ui.platform.runWin32Spike
+import dioxus.compose.ui.platform.runWin32Window
 import dioxus.compose.ui.platform.runX11Window
 import org.graalvm.nativeimage.c.function.CFunction
 
@@ -58,7 +58,7 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
             return@rendererRun 0
         }
         if (System.getenv("DXC_WIN32_WINDOW") != null && platform.startsWith("Windows")) {
-            runWin32Spike()
+            runWin32Window()
             return@rendererRun 0
         }
         if (System.getenv("DXC_X11_WINDOW") != null && platform.startsWith("Linux")) {
