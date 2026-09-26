@@ -457,11 +457,13 @@ pub fn app() -> Element {
                     }
                 }
             },
-
-        Column {
-            fill_max_width: true,
-            fill_max_height: true,
-
+            // The bar names the frame's top slot rather than sitting inside the
+            // page. A frame is asked which of its parts is the top of the window, and
+            // a bar that is merely the first thing in the content is not an answer to
+            // that: the window keeps the caption itself, the page starts below the
+            // window buttons, and the strip above it is left in the window's colour
+            // rather than the bar's. It read as a title bar nobody asked for.
+            top_bar: rsx! {
             {list_bar(measure, total - remaining, total, rsx! {
                 // Two lines, the way the reference heads its screens: what you are
                 // looking at, and how it is going. The title used to be the application's
@@ -525,6 +527,12 @@ pub fn app() -> Element {
                     on_click: move |_| about_open.set(true),
                 }
             })}
+            },
+
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+
 
             dioxus_compose::Box {
                 fill_max_width: true,
