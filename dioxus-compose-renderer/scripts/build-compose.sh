@@ -17,6 +17,9 @@ set -euo pipefail
 UPSTREAM="https://github.com/JetBrains/compose-multiplatform-core.git"
 REVISION="73ac84978a9e4ddca7e062dc0ee357ad875450fa"
 PUBLISHED_AS="1.11.1"
+# Material 3 is versioned on its own line and the renderer asks for it by that version, so
+# publishing it as the others would leave a coordinate nobody looks for.
+MATERIAL3_PUBLISHED_AS="1.11.0-alpha07"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RENDERER_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -50,6 +53,12 @@ done
 # renderer draws with has to be built here. A module left off this list is not a build failure in
 # this script; it is an unresolvable dependency in the renderer's own build, tens of minutes later,
 # naming a coordinate nobody recognises.
+#
+# What is left off, and why it has to be: the renderer's closure and nothing beyond it.
+# Material 2's navigation, the adaptive family and the navigation suite each ask for a
+# published artifact that has no Linux variant at all, so building them here is not slow,
+# it is impossible. None of them is reachable from what the renderer draws, which is
+# runtime, ui, foundation and material3.
 case "$target" in
     macosArm64)
         publication="MacosArm64"
@@ -63,19 +72,10 @@ case "$target" in
         modules=(
             compose:animation:animation
             compose:animation:animation-core
-            compose:animation:animation-graphics
             compose:foundation:foundation
             compose:foundation:foundation-layout
-            compose:material:material
-            compose:material:material-navigation
             compose:material:material-ripple
-            compose:material3:adaptive:adaptive
-            compose:material3:adaptive:adaptive-layout
-            compose:material3:adaptive:adaptive-navigation
-            compose:material3:adaptive:adaptive-navigation3
             compose:material3:material3
-            compose:material3:material3-adaptive-navigation-suite
-            compose:material3:material3-window-size-class
             compose:ui:ui
             compose:ui:ui-backhandler
             compose:ui:ui-geometry
@@ -84,7 +84,6 @@ case "$target" in
             compose:ui:ui-tooling-preview
             compose:ui:ui-unit
             compose:ui:ui-util
-            navigation:navigation-compose
         )
         ;;
     *) die "unknown target '$target'" "known: macosArm64, linuxX64" ;;
@@ -125,14 +124,20 @@ done
     "The Compose build needs a JDK 17; the toolchain wrapper's does not apply here."
 
 echo "==> publishing ${#modules[@]} compose module(s) for $target as $PUBLISHED_AS"
+# Two publications per module, not one. The target's own carries the klib; the root one
+# carries the metadata that says which targets exist. Without the root, a consumer asking
+# for the module is told the library does not support this platform, which is true of what
+# was published and not of what was built.
 tasks=()
 for module in "${modules[@]}"; do
     tasks+=(":$module:publish${publication}PublicationToMavenLocal")
+    tasks+=(":$module:publishKotlinMultiplatformPublicationToMavenLocal")
 done
 (
     cd "$WORK"
     ./gradlew --no-daemon --no-configuration-cache \
         "-Pjetbrains.publication.version.COMPOSE=$PUBLISHED_AS" \
+        "-Pjetbrains.publication.version.COMPOSE_MATERIAL3=$MATERIAL3_PUBLISHED_AS" \
         "${tasks[@]}"
 )
 
