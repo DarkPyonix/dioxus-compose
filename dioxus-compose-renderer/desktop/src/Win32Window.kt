@@ -3,8 +3,11 @@
 
 package dioxus.compose.ui.platform
 
+import org.graalvm.nativeimage.CurrentIsolate
+import org.graalvm.nativeimage.IsolateThread
 import org.graalvm.nativeimage.StackValue
 import org.graalvm.nativeimage.c.function.CFunction
+import org.graalvm.nativeimage.c.function.CFunctionPointer
 import org.graalvm.nativeimage.c.type.CCharPointer
 import org.graalvm.nativeimage.c.type.CIntPointer
 import org.graalvm.nativeimage.c.type.CFloatPointer
@@ -55,6 +58,9 @@ private external fun beginFrame(swapchain: Pointer?, resourceOut: Pointer?): Int
 
 @CFunction("dxc_native_frame_end")
 private external fun endFrame(queue: Pointer?)
+
+@CFunction("dxc_native_set_draw_callback")
+private external fun setDrawCallback(callback: CFunctionPointer?, isolateThread: IsolateThread?)
 
 /**
  * The five pointers a window is, once Win32 and DXGI have made one.
@@ -142,6 +148,72 @@ private const val WINDOW_STRUCT_BYTES = 40
 private const val SWAPCHAIN_FORMAT = 28
 
 /**
+ * The one door a frame is drawn through, and the only thing that decides there is one.
+ *
+ * Two callers reach it on the same thread. The frame loop asks once a turn, and the
+ * window asks from inside a message it is handling, which is how anything is drawn while
+ * the reader drags an edge. Nothing inside the drawing hands Windows its messages today,
+ * so as the code stands the two do not meet; they are one call apart from meeting,
+ * because reading what the window heard is what pumps for more of it. A scene rendered
+ * from inside its own render is not something Compose survives, and that is the kind of
+ * crash that is found first on somebody else's machine, so the second ask is refused
+ * rather than nested.
+ *
+ * Refused and not queued. What the second caller wanted was the window drawn at the size
+ * it now is, and the frame already running is about to do exactly that: it measures the
+ * window after taking its buffer, which is after the swapchain has been refitted.
+ */
+object Win32Frames {
+
+    private var drawing = false
+
+    /**
+     * What drawing a frame is, as the loop that owns the scene defines it.
+     *
+     * Null before a window has been opened and again once it has gone, and both of those
+     * are messages arriving with nothing left to draw into rather than mistakes.
+     */
+    var paint: (() -> Unit)? = null
+
+    /**
+     * Draws one frame unless one is already being drawn.
+     *
+     * False where nothing was drawn, which is either of those two cases.
+     */
+    fun draw(): Boolean {
+        val paint = paint
+        if (drawing || paint == null) {
+            return false
+        }
+        drawing = true
+        try {
+            paint()
+        } finally {
+            drawing = false
+        }
+        return true
+    }
+}
+
+/**
+ * Gives the window an address to ask for a frame at, and takes it away again.
+ *
+ * The thread goes with the address because the other side of it is a Java runtime: an
+ * entry point cannot be called without being told which thread of which isolate is
+ * calling, and this is the thread the window, the scene and the Host all live on.
+ *
+ * Written out at the call rather than kept, because native-image accepts a word value in
+ * straight-line code inside one method and nowhere else.
+ */
+private fun registerFrameCallback() =
+    setDrawCallback(Win32DrawCallback.POINTER.functionPointer, CurrentIsolate.getCurrentThread())
+
+private fun forgetFrameCallback() = setDrawCallback(
+    WordFactory.nullPointer<CFunctionPointer>(),
+    WordFactory.nullPointer<IsolateThread>(),
+)
+
+/**
  * Draws the application into a window of our own, and holds it there until it closes.
  *
  * The Windows half of the step everything after it rests on: a scene that Compose
@@ -208,8 +280,25 @@ internal fun runWin32Window() {
     // Nothing in it knows which of the two it is running on, which is the point.
     scene.setContent { dioxus.compose.runtime.DioxusContent(host) }
 
+    // What a frame is, wherever the ask comes from. The loop below is one caller and the
+    // window's own resize handling is the other, and they draw the same frame.
     var nanos = 0L
     var painted = false
+    var drew = false
+    Win32Frames.paint = {
+        // The scene's own work first. A list that asked for rows on the last frame wants
+        // them in hand before this one is measured, and during a drag of the window's
+        // edge this is the only place that runs at all.
+        work.runPending()
+        nanos += FRAME_NANOS
+        val at = drawFrame(window, context, scene, nanos)
+        if (at != null) {
+            size = at
+            painted = true
+            drew = true
+        }
+    }
+    registerFrameCallback()
 
     try {
         // Rests only when the last turn found nothing to do. A frame that drew has
@@ -217,7 +306,11 @@ internal fun runWin32Window() {
         // that would halve the rate of anything that animates.
         var busy = true
         while (!isWindowClosed()) {
-            var drew = false
+            // Cleared before the window is given its turn rather than after. A drag of an
+            // edge draws its frames from inside that turn, and a turn that forgot them
+            // would be a window that said nothing about itself for the length of a drag,
+            // which is exactly when everything in it has moved.
+            drew = false
             // The window's own turn, before anything is read from it. This thread is the
             // one Windows delivers to, so the messages of this frame arrive here or not
             // at all.
@@ -235,15 +328,7 @@ internal fun runWin32Window() {
             // Only when there is something to draw. A window that is being looked at
             // rather than used should cost a comparison a frame.
             if (!painted || heard || scene.hasInvalidations()) {
-                nanos += FRAME_NANOS
-                val at = drawFrame(window, context, scene, nanos)
-                if (at != null) {
-                    // The size the buffer really is, which is the size the scene was just
-                    // drawn at and the size the window is told it has.
-                    size = at
-                    painted = true
-                    drew = true
-                }
+                Win32Frames.draw()
             }
             // Every frame, and after the drawing. After, because that is when what is in
             // the window has been placed and can say where it is. Every frame, because a
@@ -253,6 +338,10 @@ internal fun runWin32Window() {
             busy = heard || drew
         }
     } finally {
+        // In this order. A message dispatched after the scene has closed would otherwise
+        // be a frame drawn into it.
+        Win32Frames.paint = null
+        forgetFrameCallback()
         scene.close()
         context.close()
         host.shutdown()

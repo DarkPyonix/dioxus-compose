@@ -299,6 +299,21 @@ void dxc_native_install_menu(const char *application_name) {
 }
 
 /**
+ * The way back into the renderer that this window has no use for.
+ *
+ * Named because one piece of Kotlin drives both desktops and the symbol has to resolve on
+ * each. The Windows window needs it: Windows runs a loop of its own while an edge is
+ * being dragged, and the renderer has to be asked for a frame from inside that loop or
+ * nothing is drawn for the length of the drag. AppKit hands a live resize back to the
+ * same run loop the frame loop is already pumping, so there is nothing here to ask from.
+ * Nothing on this platform registers, and so nothing here is ever called.
+ */
+void dxc_native_set_draw_callback(void (*callback)(void *), void *isolate_thread) {
+    (void)callback;
+    (void)isolate_thread;
+}
+
+/**
  * Lets the window answer for itself for a moment.
  *
  * The thread that draws is the thread AppKit delivers on, so a frame that never gave the
