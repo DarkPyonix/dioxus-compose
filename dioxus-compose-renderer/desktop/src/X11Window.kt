@@ -82,11 +82,16 @@ private const val GL_RGBA8 = 0x8058
  * Draws a Compose scene into a window of our own on X11, and holds it there until it is
  * closed.
  *
- * The pair of the macOS and Windows loops, and the same shape: the window is given its turn
- * to hear things, the scene's own work is run on the thread that draws, what the window
- * heard reaches the scene, and a frame is drawn when something has changed. XWayland takes
- * the same connection, so this is the loop on a Wayland desktop as well until a Wayland
- * window of its own is written.
+ * The pair of the macOS loop and the same shape: the window is given its turn to hear
+ * things, the scene's own work is run on the thread that draws, what the window heard
+ * reaches the scene, and a frame is drawn when something has changed. XWayland takes the
+ * same connection, so this is the loop on a Wayland desktop as well, until a Wayland window
+ * of its own is written.
+ *
+ * One thing is not in the loop, and it is the thing the loop cannot do: the frame that
+ * belongs to a resize is drawn inside the handling of the resize, by the window, through
+ * the painter registered below. A loop that drew it on its next turn would be a window
+ * whose edge moves before its content does.
  *
  * Reached by setting `DXC_X11_WINDOW`, so the ordinary path is untouched.
  */
@@ -139,9 +144,9 @@ internal fun runX11Window() {
     // Nothing in it knows which of the two it is running on, which is the point.
     scene.setContent { dioxus.compose.runtime.DioxusContent(host) }
 
-    // A clock rather than a count of turns, because a turn and a frame are not the same
-    // thing: a turn that found nothing changed draws nothing, and an animation handed the
-    // same time twice does not move.
+    // A clock rather than a count of turns, because a turn and a frame are no longer the
+    // same thing: a resize draws its own, and a count only the loop advanced would hand
+    // two frames in a row the same time and stop whatever is animating between them.
     val opened = System.nanoTime()
     var painted = false
     val frames = WindowFrames({ window.measure() }) { fitted, density ->
@@ -158,6 +163,11 @@ internal fun runX11Window() {
         }
     }
     try {
+        // Before the first frame and before the first event is read, because the events
+        // that mapped the window are already waiting and one of them is its first real
+        // size. Inside the try, so that whatever happens next the window is left asking
+        // nothing of a scene that has closed.
+        setX11FramePainter { frames.draw() }
         while (!isWindowClosed()) {
             // The window's own turn, before anything is read from it. This thread is the
             // one the display server answers on, so the events of this frame arrive here
@@ -178,9 +188,9 @@ internal fun runX11Window() {
                 scene.receive(event)
                 heard = true
             }
-            // Only when there is something to draw. Every frame costs the GPU and the
-            // display server a buffer, and a window where nothing is happening should
-            // leave the screen alone.
+            // Only when there is something to draw. A window that is being resized has
+            // already had its frame drawn by the resize, and a window where nothing is
+            // happening should leave the screen alone.
             if (!painted || heard || scene.hasInvalidations()) {
                 drew = frames.draw()
             }
@@ -191,6 +201,9 @@ internal fun runX11Window() {
             semantics.pushIfChanged(afterDrawing = drew)
         }
     } finally {
+        // Before the scene closes. A resize arriving between the two would otherwise ask a
+        // scene that has gone to draw into a context that has gone with it.
+        clearX11FramePainter()
         scene.close()
         context.close()
         host.shutdown()

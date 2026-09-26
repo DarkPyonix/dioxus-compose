@@ -239,8 +239,8 @@ fun NativeWindow.describeTo(elements: List<AccessibleElement>) = describeWindow(
  * Writes the records and hands them to whichever window asked.
  *
  * Apart from the extension above because the windows the other desktops open are not this
- * class, and what a tree looks like on the way across is the same for all three: one layout,
- * written once, so a field that moves cannot move in one place only.
+ * class, and what a tree looks like on the way across does not differ between them: one
+ * layout, written once, so a field that moves cannot move in one place only.
  */
 internal fun describeWindow(view: Long, elements: List<AccessibleElement>) {
     val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements

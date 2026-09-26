@@ -2,8 +2,10 @@
 // X11 connection on Wayland desktops. Skia paints; this file only presents and records.
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/Xatom.h>
 #include <X11/cursorfont.h>
 #include <X11/keysym.h>
+#include <X11/extensions/sync.h>
 #include <GL/gl.h>
 #include <GL/glx.h>
 #include <stdint.h>
@@ -83,6 +85,38 @@ static struct dxc_event dxc_events[DXC_EVENT_CAPACITY];
 static int dxc_event_head;
 static int dxc_event_count;
 
+// Set while a turn of the event loop is running, so that a second turn started from inside
+// it does nothing.
+//
+// A turn can draw a frame, and a frame that asked this file anything used to read events as
+// a side effect. A nested read would take a resize still arriving out from under the turn
+// already handling one, and the frame for it would be refused as re-entrant and then
+// forgotten, which is the lateness this file exists to remove. So reading happens in one
+// place, dxc_native_pump, and this is what keeps it that way whoever calls in next.
+static int dxc_pumping;
+
+// What the renderer registered for drawing a frame, and the thread it asked to be called
+// back on.
+//
+// The window is this file's and the frame is the renderer's, so the only way to produce
+// one from here is a pointer the other side handed over. Null until it does, which is
+// every moment before the first frame and every moment after the window has closed.
+static int32_t (*dxc_draw_frame)(void *isolate_thread);
+static void *dxc_frame_thread;
+
+// The window manager's frame synchronisation, where the manager offered one.
+//
+// It hands out a number with a resize and holds the frame it is about to show until the
+// counter carries that number. That is what puts the edge it moved and the drawing inside
+// it on the screen in one step: without it the frame changes when the manager says so and
+// the drawing arrives when it is ready, and the gap between the two is a strip of the
+// window that has been claimed and not painted.
+static Atom dxc_protocols;
+static Atom dxc_sync_request;
+static XSyncCounter dxc_sync_counter;
+static XSyncValue dxc_sync_value;
+static int dxc_sync_owed;
+
 // Made once each and kept, because a cursor is a server resource and the scene asks for
 // one whenever the pointer crosses into something new.
 static Cursor dxc_cursors[DXC_CURSOR_SHAPES];
@@ -140,7 +174,55 @@ static int32_t dxc_key_code(KeySym key) {
     }
 }
 
+/**
+ * Tells the window manager that the drawing it was waiting for is done.
+ *
+ * Called where a frame ends, and where a frame turned out not to be needed: the manager
+ * hands out the number with the resize and shows the frame it was holding when the counter
+ * carries it, so every request it makes has to be answered by something.
+ */
+static void dxc_pay_sync(void) {
+    if (!dxc_sync_owed || dxc_sync_counter == None || dxc_display == NULL) {
+        return;
+    }
+    XSyncSetCounter(dxc_display, dxc_sync_counter, dxc_sync_value);
+    dxc_sync_owed = 0;
+    XFlush(dxc_display);
+}
+
+/**
+ * Asks the renderer to draw a frame, now, where the need for it arose.
+ *
+ * Nothing here counts calls. A request that arrives while a frame is already being drawn
+ * is refused on the renderer's side, which is where the scene and the surface are, and
+ * where the refusal is something a test can watch.
+ */
+static void dxc_request_frame(void) {
+    if (dxc_draw_frame == NULL || dxc_draw_frame(dxc_frame_thread) == 0) {
+        // No frame came of it, either because there is no renderer to ask yet or because
+        // one was already being drawn. A manager waiting on the counter must still be
+        // answered: one that is never told holds the window until it gives up on it.
+        dxc_pay_sync();
+    }
+}
+
+/**
+ * Hands this file the function that draws a frame, and the thread to call it on.
+ *
+ * Called once when the window opens and again with nothing when it closes, so that a
+ * resize arriving while the scene is being taken down does not reach a scene that has
+ * gone.
+ */
+void dxc_native_set_frame_callback(int32_t (*callback)(void *isolate_thread), void *isolate_thread) {
+    dxc_draw_frame = callback;
+    dxc_frame_thread = isolate_thread;
+}
+
 static void dxc_pump_events(void) {
+    if (dxc_pumping) {
+        return;
+    }
+    dxc_pumping = 1;
     while (dxc_display != NULL && XPending(dxc_display) > 0) {
         XEvent event;
         XNextEvent(dxc_display, &event);
@@ -188,10 +270,52 @@ static void dxc_pump_events(void) {
                 break;
             }
             case ConfigureNotify:
+                if (event.xconfigure.width == dxc_width && event.xconfigure.height == dxc_height) {
+                    // The window was moved, or told again what it already was. Nothing
+                    // needs painting, and a manager waiting for a counter it asked about
+                    // this change is told so here.
+                    dxc_pay_sync();
+                    continue;
+                }
                 dxc_width = event.xconfigure.width;
                 dxc_height = event.xconfigure.height;
+                // The frame is drawn here, inside the handling of the size change, rather
+                // than written down for the next turn of the loop.
+                //
+                // When a hand drags an edge, the display server moves the window's frame
+                // at once and what is inside the frame is whatever was last drawn. If the
+                // two reach the screen in separate steps, a strip of the window has been
+                // claimed and not yet painted, and the width of that strip is the speed of
+                // the hand times how late the painting is. Measured on another desktop
+                // where the same mistake was made: one screen refresh late at every speed,
+                // which is 3 pixels for a slow drag and 350 for a fast one, while from
+                // inside the process every frame looked on time and the right size.
+                dxc_request_frame();
+                continue;
+            case Expose:
+                // Whatever was covering the window has gone, and the copy the server kept
+                // is not ours to trust. Nothing in the scene changed, so the frame loop
+                // would draw nothing and a window uncovered on a server with no compositor
+                // would keep showing what was in front of it. The last of a run of these
+                // is enough: they arrive one per exposed rectangle and one frame paints
+                // all of them.
+                if (event.xexpose.count == 0) {
+                    dxc_request_frame();
+                }
                 continue;
             case ClientMessage:
+                if (event.xclient.message_type == dxc_protocols &&
+                    (Atom)event.xclient.data.l[0] == dxc_sync_request) {
+                    // The manager is about to resize the window and will hold the frame
+                    // until the counter carries this number. It is set once the drawing
+                    // for that size has been handed to the server, which is in
+                    // dxc_native_frame_end.
+                    XSyncIntsToValue(&dxc_sync_value,
+                                     (unsigned int)event.xclient.data.l[2],
+                                     (int)event.xclient.data.l[3]);
+                    dxc_sync_owed = 1;
+                    continue;
+                }
                 if ((Atom)event.xclient.data.l[0] == dxc_delete_window) dxc_closed = 1;
                 continue;
             case DestroyNotify:
@@ -202,10 +326,13 @@ static void dxc_pump_events(void) {
         }
         dxc_push_event(record);
     }
+    dxc_pumping = 0;
 }
 
+// The oldest thing the window heard, or zero where it has heard nothing since the last
+// turn. Reads nothing itself: what fills this queue is dxc_native_pump, and a second reader
+// here would be a second place that could take a resize out of the queue mid-drag.
 int32_t dxc_native_poll_event(struct dxc_event *out) {
-    if (dxc_event_count == 0) dxc_pump_events();
     if (dxc_event_count == 0) return 0;
     *out = dxc_events[dxc_event_head];
     dxc_event_head = (dxc_event_head + 1) % DXC_EVENT_CAPACITY;
@@ -245,7 +372,40 @@ int32_t dxc_native_window_open(const char *title, int32_t width, int32_t height,
         return 3;
     }
     dxc_delete_window = XInternAtom(dxc_display, "WM_DELETE_WINDOW", False);
-    XSetWMProtocols(dxc_display, dxc_window, &dxc_delete_window, 1);
+    dxc_protocols = XInternAtom(dxc_display, "WM_PROTOCOLS", False);
+    dxc_sync_request = XInternAtom(dxc_display, "_NET_WM_SYNC_REQUEST", False);
+    Atom protocols[2] = { dxc_delete_window, None };
+    int protocol_count = 1;
+    // Offered to the window manager before the window is mapped, because that is when the
+    // manager reads what a window can do.
+    //
+    // A counter it can watch is the only way on this display server to have the drawing
+    // reach the screen with the size change rather than after it: the manager asks for a
+    // number with the resize, holds the new frame, and shows it when the counter says the
+    // drawing for that size is done. A manager that does not offer this is not an error,
+    // and nothing below depends on having one.
+    int sync_event_base = 0;
+    int sync_error_base = 0;
+    int sync_major = 0;
+    int sync_minor = 0;
+    if (XSyncQueryExtension(dxc_display, &sync_event_base, &sync_error_base) &&
+        XSyncInitialize(dxc_display, &sync_major, &sync_minor)) {
+        XSyncValue start;
+        XSyncIntToValue(&start, 0);
+        dxc_sync_counter = XSyncCreateCounter(dxc_display, start);
+        if (dxc_sync_counter != None) {
+            Atom counter_property =
+                XInternAtom(dxc_display, "_NET_WM_SYNC_REQUEST_COUNTER", False);
+            // A property of format 32 is read out of an array of long, whatever a long is
+            // on this machine. One entry is the basic protocol; a second would offer the
+            // extended one, which asks to be told when each frame was actually shown.
+            long counter_id = (long)dxc_sync_counter;
+            XChangeProperty(dxc_display, dxc_window, counter_property, XA_CARDINAL, 32,
+                            PropModeReplace, (unsigned char *)&counter_id, 1);
+            protocols[protocol_count++] = dxc_sync_request;
+        }
+    }
+    XSetWMProtocols(dxc_display, dxc_window, protocols, protocol_count);
     XStoreName(dxc_display, dxc_window, title);
     XMapWindow(dxc_display, dxc_window);
     XFlush(dxc_display);
@@ -260,9 +420,14 @@ int32_t dxc_native_window_open(const char *title, int32_t width, int32_t height,
     return 0;
 }
 
+// The size the window was last told it has, without reading anything.
+//
+// Reading events here is what it used to do, and it cannot: a frame drawn from inside a
+// resize asks this, and taking the rest of that resize out of the queue in the middle of
+// handling one of them is how a size change ends up recorded and never painted. Events are
+// read in one place, which is dxc_native_pump.
 void dxc_native_window_size(void *window_pointer, int32_t *width, int32_t *height, float *scale) {
     (void)window_pointer;
-    dxc_pump_events();
     *width = dxc_width;
     *height = dxc_height;
     *scale = 1.0f;
@@ -270,7 +435,6 @@ void dxc_native_window_size(void *window_pointer, int32_t *width, int32_t *heigh
 
 int32_t dxc_native_frame_begin(void *window_pointer) {
     (void)window_pointer;
-    dxc_pump_events();
     if (dxc_closed || dxc_width <= 0 || dxc_height <= 0) return 1;
     if (!glXMakeCurrent(dxc_display, dxc_window, dxc_context)) return 1;
     return 0;
@@ -278,7 +442,17 @@ int32_t dxc_native_frame_begin(void *window_pointer) {
 
 void dxc_native_frame_end(void *display_pointer) {
     (void)display_pointer;
-    if (!dxc_closed) glXSwapBuffers(dxc_display, dxc_window);
+    if (dxc_closed) {
+        return;
+    }
+    glXSwapBuffers(dxc_display, dxc_window);
+    // After the swap, because what the manager is waiting to hear is that the drawing for
+    // the size it gave us has been handed over. Until it hears that, it holds the frame it
+    // was about to show, so the edge it moved and what is inside it appear together.
+    dxc_pay_sync();
+    // Out to the server before this returns. A swap sitting in the output buffer is a frame
+    // nobody has been shown.
+    XFlush(dxc_display);
 }
 
 /**
