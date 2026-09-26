@@ -48,6 +48,12 @@ fun rendererRun(thread: IsolateThread?, libraryDir: CCharPointer?): Int =
         // rather than which variable was set.
         val platform = System.getProperty("os.name", "")
         if (System.getenv("DXC_APPKIT_WINDOW") != null && platform.startsWith("Mac")) {
+            // Before anything else on this path. The toolkit, if it is ever woken, asks
+            // the main thread to run the application, and this thread is the one drawing
+            // the frames: that request is delivered on the first frame and never comes
+            // back. Saying up front that there is no display to open keeps the toolkit
+            // from asking, and nothing on this path wants one.
+            System.setProperty("java.awt.headless", "true")
             runAppKitSpike()
             return@rendererRun 0
         }
