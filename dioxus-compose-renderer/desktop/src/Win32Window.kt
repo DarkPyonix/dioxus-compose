@@ -62,6 +62,9 @@ private external fun endFrame(queue: Pointer?)
 @CFunction("dxc_native_set_draw_callback")
 private external fun setDrawCallback(callback: CFunctionPointer?, isolateThread: IsolateThread?)
 
+@CFunction("dxc_native_set_accessibility")
+private external fun setAccessibility(elements: Pointer?, count: Int, window: Pointer?)
+
 /**
  * The five pointers a window is, once Win32 and DXGI have made one.
  *
@@ -136,6 +139,55 @@ fun openWin32Window(title: String, width: Int, height: Int): Win32NativeWindow? 
 }
 
 private const val WINDOW_STRUCT_BYTES = 40
+
+/**
+ * Hands the platform what the window would tell a reader who cannot see it.
+ *
+ * Written into stack storage and copied on the other side. The elements are few, they
+ * change when the screen changes rather than when a frame is drawn, and the alternative
+ * is the platform asking across threads at a moment nobody chose.
+ */
+fun Win32NativeWindow.describeTo(elements: List<AccessibleElement>) {
+    val capped = if (elements.size > MAX_ELEMENTS) elements.take(MAX_ELEMENTS) else elements
+    val records = StackValue.get<Pointer>(MAX_ELEMENTS * ELEMENT_BYTES)
+    for ((index, element) in capped.withIndex()) {
+        val at = index * ELEMENT_BYTES
+        records.writeInt(at, element.role)
+        records.writeFloat(at + 4, element.x)
+        records.writeFloat(at + 8, element.y)
+        records.writeFloat(at + 12, element.width)
+        records.writeFloat(at + 16, element.height)
+        val bytes = win32LabelBytes(element.label)
+        for (offset in bytes.indices) {
+            records.writeByte(at + ELEMENT_LABEL_OFFSET + offset, bytes[offset])
+        }
+        records.writeByte(at + ELEMENT_LABEL_OFFSET + bytes.size, ZERO)
+    }
+    setAccessibility(records, capped.size, WordFactory.pointer(window))
+}
+
+/**
+ * How many things a screen may say it has.
+ *
+ * Enough for a screen and not for a document. A list of ten thousand rows is windowed
+ * before it reaches the scene, so what is here is what is on screen.
+ */
+private const val MAX_ELEMENTS = 256
+private const val ELEMENT_LABEL_OFFSET = 20
+private const val ELEMENT_BYTES = 116
+private const val ZERO: Byte = 0
+private const val TEXT_BYTES = 96
+
+/** Fits a label in the native record without cutting a UTF-8 character in half. */
+internal fun win32LabelBytes(label: String): ByteArray {
+    val bytes = label.toByteArray(Charsets.UTF_8)
+    if (bytes.size < TEXT_BYTES) return bytes
+    var length = TEXT_BYTES - 1
+    while (length > 0 && (bytes[length].toInt() and 0xC0) == 0x80) {
+        length--
+    }
+    return bytes.copyOf(length)
+}
 
 /**
  * What the swapchain was made with, which Skia has to be told again.
@@ -257,13 +309,13 @@ internal fun runWin32Window() {
     var size = IntSize(measured.width, measured.height)
     val textInput = NativeTextInput()
     // What the window would tell a reader who cannot see it, read after each frame that
-    // painted and handed on when it has changed. Where it is handed on to is the
-    // platform's own accessibility, which is not in this file: on Windows that is UI
-    // Automation, and it is being written against this call.
+    // painted and handed on when it has changed. Where it goes is UI Automation, which
+    // the window answers for rather than this file.
     val semantics = NativeSemantics { elements ->
         if (report) {
             System.err.println("dioxus-compose: the window has ${elements.size} things to say")
         }
+        window.describeTo(elements)
     }
     // Kept rather than left to the scene. What a scene picks for itself is the toolkit's
     // queue, and the Host this renderer talks to is on this thread and invisible from
