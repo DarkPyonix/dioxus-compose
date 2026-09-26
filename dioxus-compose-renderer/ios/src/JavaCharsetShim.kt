@@ -2,36 +2,19 @@
 
 package java.nio.charset
 
-import java.nio.ByteBuffer
-
 /**
- * The slice of `java.nio.charset` the generated protocol codec uses. See `JavaNioShim.kt`.
+ * The slice of `java.nio.charset` the generated protocol codec uses. See `JavaNioShim.kt`,
+ * of which each JDK-less module has its own, over the memory that module can address.
  *
- * The codec decodes strings strictly: malformed UTF-8 is an error, never a replacement
- * character, because a bad string means the two sides disagree about the arena and the
- * Renderer has to report `ProtocolError` rather than draw nonsense.
+ * Compiled by the iOS module and, through a symlink, by the web module.
+ *
+ * Only the charset itself, because the codec no longer decodes through a `CharsetDecoder`.
+ * It checks that a range of the arena is UTF-8 where it lies and then builds one `String`
+ * from it, so the charset is here to name what the bytes are: `StandardCharsets.UTF_8` is
+ * the argument the codec passes to the string shims in `ProtocolCompatShims.kt`, which
+ * check it rather than interpret it.
  */
-class CharacterCodingException : Exception("input is not valid UTF-8")
-
-enum class CodingErrorAction { REPORT }
-
-class CharsetDecoder internal constructor() {
-    fun onMalformedInput(action: CodingErrorAction): CharsetDecoder = this
-
-    fun onUnmappableCharacter(action: CodingErrorAction): CharsetDecoder = this
-
-    /** Always strict; `REPORT` is the only action this shim offers. */
-    fun decode(buffer: ByteBuffer): String =
-        try {
-            buffer.toByteArray().decodeToString(throwOnInvalidSequence = true)
-        } catch (_: kotlin.text.CharacterCodingException) {
-            throw CharacterCodingException()
-        }
-}
-
-class Charset internal constructor(val name: String) {
-    fun newDecoder(): CharsetDecoder = CharsetDecoder()
-}
+class Charset internal constructor(val name: String)
 
 object StandardCharsets {
     val UTF_8 = Charset("UTF-8")

@@ -33,6 +33,7 @@
         <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
         <li><a href="design-systems.html">디자인 시스템</a></li>
         <li><a href="architecture.html" aria-current="page">아키텍처</a></li>
@@ -45,6 +46,7 @@
         <li><a href="#protocol">프로토콜</a></li>
         <li><a href="#frames">프레임 모델</a></li>
         <li><a href="#codegen">스키마 코드젠</a></li>
+        <li><a href="#runtimes">어디서 무엇이 도는가</a></li>
         <li><a href="#macos">macOS 런타임</a></li>
       </ul>
     </nav>
@@ -177,6 +179,43 @@
       저장소의 테스트가 실패하고, 핸드셰이크의 스키마 해시가 양쪽을 대조합니다. JNI나 cinterop
       글루를 손으로 쓰는 사람은 없습니다.
     </p>
+
+    <h2 id="runtimes">어디서 무엇이 도는가</h2>
+    <p>
+      렌더러는 두 가지로 빌드됩니다. Compose가 그 플랫폼을 자기 타깃으로 발행하는 곳에서는
+      플랫폼용으로 직접 컴파일되고, 결과물 안에 가상 머신이 없습니다. 발행하지 않는 곳에서는
+      자바 런타임을 품은 네이티브 이미지가 됩니다.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">플랫폼</th><th scope="col">빌드 방식</th><th scope="col">자바 런타임</th></tr></thead>
+        <tbody>
+          <tr><td>macOS</td><td>Kotlin/Native</td><td>없음</td></tr>
+          <tr><td>Linux</td><td>네이티브 이미지</td><td>있음</td></tr>
+          <tr><td>Windows</td><td>네이티브 이미지</td><td>있음</td></tr>
+          <tr><td>Web</td><td>Kotlin/Wasm</td><td>없음</td></tr>
+          <tr><td>iOS</td><td>Kotlin/Native</td><td>없음</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      그 차이가 무게의 대부분입니다. macOS에서 계산기는 옆에 아무것도 두지 않는 29MB짜리 파일
+      하나이고, 같은 계산기가 네이티브 이미지로는 파일 넷에 64MB입니다. 런타임이 치르는 값은
+      Compose도 이 프로젝트의 코드도 아닙니다. 둘을 합쳐 5MB 남짓이고, 나머지는 자바 런타임과
+      닫힌 세계로 컴파일할 때 붙는 메타데이터입니다.
+    </p>
+    <p>
+      Linux와 Windows는 고른 것이 아닙니다. Compose가 둘 다 UI 계층을 네이티브 타깃으로
+      발행하지 않고, Windows는 두 겹으로 막혀 있습니다. Kotlin의 그쪽 타깃은 MinGW이고 Skia의
+      빌드는 MSVC라, 아티팩트가 있었더라도 링크가 성립하지 않습니다.
+    </p>
+    <div class="note">
+      <span class="label">응용 프로그램은 어느 쪽인지 모릅니다</span>
+      <p>
+        경계는 양쪽 모두 같은 C ABI이고, 프로토콜은 같은 바이트이며, 인터프리터는 같은
+        소스입니다. 여러분이 쓰는 코드는 달라지지 않습니다.
+      </p>
+    </div>
 
     <h2 id="macos">macOS 런타임</h2>
     <p>

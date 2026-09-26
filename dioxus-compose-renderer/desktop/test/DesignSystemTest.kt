@@ -28,7 +28,9 @@ import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.Theme
 import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.WidgetKind
+import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.design.HostPlatform
+import dioxus.compose.design.adaptiveSystem
 import dioxus.compose.design.detectHostPlatform
 import dioxus.compose.design.resolveTheme
 import dioxus.compose.runtime.DioxusContent
@@ -68,17 +70,34 @@ class ThemeResolutionTest {
     @Test
     fun fr14_3_adaptive_follows_the_host_platform() {
         val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Material3)
-        assertEquals(DesignSystem.Cupertino, resolveTheme(adaptive, HostPlatform.MacOs, false).system)
-        assertEquals(DesignSystem.Cupertino, resolveTheme(adaptive, HostPlatform.Ios, false).system)
+        assertEquals(DesignSystem.LiquidGlass, resolveTheme(adaptive, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.LiquidGlass, resolveTheme(adaptive, HostPlatform.Ios, false).system)
         assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, HostPlatform.Windows, false).system)
         assertEquals(DesignSystem.Material3, resolveTheme(adaptive, HostPlatform.Android, false).system)
         assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, HostPlatform.Web, false).system)
     }
 
     @Test
-    fun fr14_3_adaptive_falls_back_where_the_system_is_not_implemented() {
+    fun fr14_3_cupertino_is_still_reachable_by_name() {
+        // Apple's two languages are both current. Adaptive answers with the one the
+        // machine is actually running, and an app that wants the other one says so.
+        val named = theme(DesignSystem.Cupertino)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(named, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.Cupertino, resolveTheme(named, HostPlatform.Ios, false).system)
+    }
+
+    @Test
+    fun fr14_3_adaptive_follows_the_linux_desktop_session() {
         val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Fluent)
-        listOf(HostPlatform.LinuxGnome, HostPlatform.LinuxKde, HostPlatform.LinuxOther, HostPlatform.Unknown)
+        assertEquals(DesignSystem.Gnome, resolveTheme(adaptive, HostPlatform.LinuxGnome, false).system)
+        assertEquals(DesignSystem.Breeze, resolveTheme(adaptive, HostPlatform.LinuxKde, false).system)
+        assertEquals(DesignSystem.Deepin, resolveTheme(adaptive, HostPlatform.LinuxOther, false).system)
+    }
+
+    @Test
+    fun fr14_3_adaptive_falls_back_where_a_platform_has_no_look_of_its_own() {
+        val adaptive = theme(DesignSystem.Material3, adaptive = true, fallback = DesignSystem.Fluent)
+        listOf(HostPlatform.Unknown)
             .forEach { platform ->
                 assertEquals(DesignSystem.Fluent, resolveTheme(adaptive, platform, false).system)
             }
@@ -90,7 +109,7 @@ class ThemeResolutionTest {
         // Material 3, which meant a Windows machine with no theme set drew a Material
         // window and nothing in the default path ever exercised platform adaptation.
         assertEquals(DesignSystem.Fluent, resolveTheme(null, HostPlatform.Windows, false).system)
-        assertEquals(DesignSystem.Cupertino, resolveTheme(null, HostPlatform.MacOs, false).system)
+        assertEquals(DesignSystem.LiquidGlass, resolveTheme(null, HostPlatform.MacOs, false).system)
         assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Android, false).system)
         // Material 3 remains the fallback where a platform has no look of its own.
         assertEquals(DesignSystem.Material3, resolveTheme(null, HostPlatform.Unknown, false).system)
@@ -117,6 +136,30 @@ class ThemeResolutionTest {
         assertEquals(HostPlatform.LinuxOther, detectHostPlatform("Linux", null, null, null))
         assertEquals(HostPlatform.MacOs, detectHostPlatform("Mac OS X", null, null, null))
         assertEquals(HostPlatform.Windows, detectHostPlatform("Windows 11", null, null, null))
+    }
+
+    /**
+     * A browser tab reports `web` and nothing else, because the machine underneath is not
+     * what decides. The same page opened on a Mac and on a Windows box has to look the
+     * same, so the platform is the browser rather than what it is running on.
+     */
+    @Test
+    fun pr6_a_browser_reports_itself_as_the_web_platform() {
+        assertEquals(HostPlatform.Web, detectHostPlatform("web", null, null, null))
+        assertEquals(DesignSystem.Fluent, adaptiveSystem(HostPlatform.Web, DesignSystem.Material3))
+    }
+
+    /**
+     * Android reports its operating system as Linux, so the runtime's vendor is what tells
+     * the two apart. Reading the operating system first would put a phone on the Linux
+     * branch and hand it whatever desktop the environment claimed.
+     */
+    @Test
+    fun fr14_3_android_is_recognised_by_its_runtime_rather_than_its_operating_system() {
+        assertEquals(
+            HostPlatform.Android,
+            detectHostPlatform("Linux", "The Android Project", null, null),
+        )
     }
 }
 
@@ -194,9 +237,49 @@ class DesignTokenWiringTest {
     fun fr14_2_every_variant_is_distinct_within_a_system() {
         DesignSystem.entries.forEach { system ->
             val theme = resolved(system)
-            val styles = ButtonVariant.entries.map { theme.rules.button(it, theme) }
+            val styles = ButtonVariant.entries
+                .filterNot { it == ButtonVariant.Operator }
+                .map { theme.rules.button(it, theme) }
             assertEquals(styles.size, styles.distinct().size, "$system draws two variants identically")
         }
+    }
+
+    @Test
+    fun fr22_operator_keys_follow_the_calculator_language_of_each_system() {
+        val cupertino = resolved(DesignSystem.Cupertino)
+        val cupertinoOperator = cupertino.rules.button(ButtonVariant.Operator, cupertino)
+        assertEquals(
+            cupertino.rules.button(ButtonVariant.Filled, cupertino),
+            cupertinoOperator,
+        )
+
+        val fluent = resolved(DesignSystem.Fluent)
+        val fluentOperator = fluent.rules.button(ButtonVariant.Operator, fluent)
+        assertEquals(fluent.rules.button(ButtonVariant.Tonal, fluent), fluentOperator)
+        assertNotEquals(fluent.rules.button(ButtonVariant.Filled, fluent).container, fluentOperator.container)
+
+        val deepin = resolved(DesignSystem.Deepin)
+        val deepinOperator = deepin.rules.button(ButtonVariant.Operator, deepin)
+        val deepinNumber = deepin.rules.button(ButtonVariant.Tonal, deepin)
+        assertEquals(deepinNumber.container, deepinOperator.container)
+        assertEquals(deepin.color(ColorRole.Primary), deepinOperator.content)
+        assertNotEquals(deepinNumber.content, deepinOperator.content)
+    }
+
+    @Test
+    fun fr22_liquid_glass_navigation_has_a_translucent_gradient_and_search_pill() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val style = glass.rules.navigation(WindowSizeClass.Expanded, glass)
+        assertTrue(style.container.alpha < 1f, "the drawer hides the page behind it")
+        assertEquals(glass.color(ColorRole.Background), style.pageGradientStart)
+        assertEquals(glass.color(ColorRole.PrimaryContainer), style.pageGradientEnd)
+        assertTrue(style.searchContainer != null, "the search destination has no pill fill")
+
+        val fluent = resolved(DesignSystem.Fluent)
+        val flat = fluent.rules.navigation(WindowSizeClass.Expanded, fluent)
+        assertEquals(null, flat.pageGradientStart)
+        assertEquals(null, flat.pageGradientEnd)
+        assertEquals(null, flat.searchContainer)
     }
 }
 

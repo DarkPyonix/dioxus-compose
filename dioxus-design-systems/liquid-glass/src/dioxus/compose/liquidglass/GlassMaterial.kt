@@ -61,9 +61,13 @@ object LiquidGlass {
         minContrast: Float = MIN_CONTRAST_BODY,
     ): SurfaceMaterial.Glass {
         val tint = if (dark) DARK_TINT else LIGHT_TINT
+        // High enough that the surface is a surface. A translucent layer whose colour is
+        // within a few levels of the page behind it does not read as glass, it reads as
+        // nothing: the first version of this was 0.70 over a 0xF2F2F7 page and the only
+        // thing visible on screen was the rim.
         val alpha = when (prominence) {
-            GlassProminence.Regular -> if (dark) 0.62f else 0.70f
-            GlassProminence.Clear -> if (dark) 0.28f else 0.32f
+            GlassProminence.Regular -> if (dark) 0.74f else 0.85f
+            GlassProminence.Clear -> if (dark) 0.38f else 0.45f
         }
         val blur = when (prominence) {
             GlassProminence.Regular -> 30.dp
@@ -86,9 +90,24 @@ object LiquidGlass {
         )
     }
 
-    /** The tint of the glass itself, before anything shows through it. */
-    val LIGHT_TINT: Color = Color(0xFFF7F7FA)
-    val DARK_TINT: Color = Color(0xFF1E1E20)
+    /**
+     * The tint of the glass itself, before anything shows through it.
+     *
+     * The tint has to differ from the page it lands on, or the material has nothing to
+     * say: glass reads as glass because it is a step off what is behind it and because
+     * the rim catches light, and a tint the colour of the page cancels the first of
+     * those. Both values here have been that mistake once. The dark one was two levels
+     * from the secondary fill grey, and a tinted button on a bar disappeared into the
+     * bar; the light one was pure white, and once the page became white a glass card on
+     * it was drawn full size and could not be seen at all.
+     *
+     * So light is the lightest system grey rather than white, which is also what a light
+     * material actually composites to over white content: about thirteen levels off the
+     * page, which is the separation Apple's own panels have. Dark is a grey lighter than
+     * any page the surface can land on and than any fill that can land on the surface.
+     */
+    val LIGHT_TINT: Color = Color(0xFFF2F2F7)
+    val DARK_TINT: Color = Color(0xFF3A3A3C)
 
     /**
      * The ratio the opaque fallback is held to: WCAG 2.2 AA for body text.

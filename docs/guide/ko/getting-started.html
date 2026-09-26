@@ -33,6 +33,7 @@
         <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html" aria-current="page">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
         <li><a href="design-systems.html">디자인 시스템</a></li>
         <li><a href="architecture.html">아키텍처</a></li>
@@ -40,6 +41,7 @@
       </ul>
       <h2>이 페이지</h2>
       <ul>
+        <li><a href="#install">내 프로젝트에 추가하기</a></li>
         <li><a href="#prerequisites">준비물</a></li>
         <li><a href="#renderer">렌더러 빌드</a></li>
         <li><a href="#smoke">라이브러리 스모크 테스트</a></li>
@@ -53,8 +55,52 @@
     <p class="eyebrow">시작하기</p>
     <h1>받아 온 저장소에서 창이 뜰 때까지</h1>
     <p class="lede">
-      지금 이 경로는 macOS 전용입니다. 렌더러는 미리 공유 라이브러리로 컴파일해 두고 Rust
-      바이너리가 그것을 링크하는 구조라서, 렌더러를 먼저 빌드해야 어떤 Rust 예제든 실행됩니다.
+      크레이트를 쓰는 것은 <code>Cargo.toml</code> 한 줄이면 됩니다. 필요한 렌더러는 빌드가
+      내려받습니다. 렌더러 자체를 손보는 것은 아래의 긴 경로입니다.
+    </p>
+
+    <h2 id="install">내 프로젝트에 추가하기</h2>
+    <p>
+      렌더러는 바이너리가 링크하는 공유 라이브러리이고 crates.io에 넣기에는 너무 큽니다. 그래서
+      버전마다 체크섬이 붙은 릴리스 아티팩트로 나가고, 그것을 가져오는 일은 빌드 스크립트의
+      몫입니다.
+    </p>
+
+    <figure class="codeblock" data-copy="복사" data-copied="복사됨">
+      <figcaption>Cargo.toml</figcaption>
+<pre><code>[dependencies]
+dioxus-compose = "0.0.0"</code></pre>
+    </figure>
+
+    <p>
+      <code>cargo build</code>가 이 타깃에 필요한 렌더러를 알아내고, 크레이트 버전에 정확히 맞는
+      아티팩트를 내려받고, 게시된 <code>.sha256</code>으로 검증하고, <code>target/</code> 밖의
+      캐시에 풀어서 링크합니다. 캐시는 버전과 타깃으로 키가 잡혀 있어 <code>cargo clean</code>을
+      견디고 같은 기계의 프로젝트끼리 공유됩니다. 따로 설정하거나 내려받거나 실행할 것은
+      없습니다.
+    </p>
+
+    <p>
+      필요한 경우를 위한 변수가 둘 있고, 둘 다 설치에 필요하지는 않습니다.
+      <code>DIOXUS_COMPOSE_RENDERER_DIR</code>은 이미 가지고 있는 렌더러를 가리키며 다운로드보다
+      먼저 확인하므로, 직접 빌드한 렌더러와 벤더링한 사본과 망 분리 빌드가 모두 이것으로
+      해결됩니다. <code>DIOXUS_COMPOSE_CACHE_DIR</code>은 캐시 위치를 옮깁니다. 네트워크가 없는
+      빌드는 어떤 파일 둘을 어디에 두면 되는지 말하고, 그 자리에 두면 그것으로 끝입니다.
+    </p>
+
+    <div class="note">
+      <span class="label">렌더러 없이 빌드하기</span>
+      <p>
+        <code>default-features = false</code>는 렌더러가 전혀 없는 Host를 줍니다. 헤드리스
+        빌드나 문서 빌드가 원하는 구성입니다. 그렇게 만든 바이너리를 실행하면 무엇이 없는지
+        말하고 0이 아닌 상태로 끝납니다. 창을 열지 않은 채 <code>0</code>을 반환하지는
+        않습니다. 아무것도 그리지 않은 프로그램은 할 일을 마친 프로그램과 구분되어야 합니다.
+      </p>
+    </div>
+
+    <p>
+      아래는 전부 <strong>이 저장소</strong>에서 작업할 때의 이야기이고, 렌더러 툴체인까지
+      필요합니다.
     </p>
 
     <h2 id="prerequisites">준비물</h2>
@@ -142,9 +188,9 @@ libawt_lwawt.dylib                 <span class="c"># libawt가 경로로 찾는 
     </p>
 
     <p>
-      렌더러를 다른 곳에 두고 쓴다면(내려받은 아티팩트나 벤더링한 사본 등)
-      <code>DIOXUS_COMPOSE_RENDERER_DIR</code>을 그 <code>lib</code> 디렉터리로 지정하면
-      워크스페이스 빌드 대신 그쪽을 씁니다(NFR-10).
+      이 저장소의 체크아웃에서는 Rust 빌드가 방금 빌드한 워크스페이스의 렌더러를 내려받기보다
+      먼저 씁니다. 전체 순서는 <code>DIOXUS_COMPOSE_RENDERER_DIR</code>, 워크스페이스 빌드
+      결과물, 캐시, 크레이트 버전의 릴리스 순입니다(NFR-10).
     </p>
 
     <p>
@@ -172,8 +218,8 @@ libawt_lwawt.dylib                 <span class="c"># libawt가 경로로 찾는 
 
     <h2 id="demo">데모 실행</h2>
     <p>
-      데스크톱 예제는 <code>native-renderer</code> 기능 뒤에 있습니다. 이 기능이 켜져야 Rust
-      빌드가 방금 만든 라이브러리를 링크합니다.
+      데스크톱 예제는 <code>native-renderer</code> 기능을 명시적으로 요구합니다. 창이 필요한
+      예제가 해야 할 일입니다. 평범한 빌드에서는 기본으로 켜져 있습니다.
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
@@ -190,11 +236,12 @@ libawt_lwawt.dylib                 <span class="c"># libawt가 경로로 찾는 
     </p>
 
     <div class="note">
-      <span class="label">기능 플래그 없이 빌드하면</span>
+      <span class="label">창 없는 Host</span>
       <p>
-        <code>native-renderer</code> 없이 빌드하면 렌더러가 아무 일도 하지 않는 Host가 만들어집니다.
-        <code>launch</code>가 곧바로 반환하고 창은 뜨지 않습니다. 이 빌드는 단위 테스트와 벤치마크가
-        쓰는 구성이라 쓸모가 있습니다. 다만 눈으로 볼 것이 없을 뿐입니다.
+        단위 테스트와 벤치마크는 렌더러도 창도 없이 Host를 직접 굴리고,
+        <code>mock-renderer</code> 기능은 임베더가 같은 것을 요청하는 방법입니다. 그런 빌드는
+        설계상 조용합니다. 그냥 렌더러가 없는 빌드는 조용하지 않습니다. 그렇다고 말하고 0이
+        아닌 상태로 끝냅니다.
       </p>
     </div>
 

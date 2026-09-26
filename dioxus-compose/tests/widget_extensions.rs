@@ -45,7 +45,32 @@ fn fr11_typed_extension_uses_fixed_layout_mutations() {
         lengths.push(length);
         offset += usize::from(length);
     }
-    assert_eq!(lengths, [12, 12, 24]);
+    // The theme, the window, the node and its one property: four records, each four-byte
+    // aligned, each carrying its own length in its header. That is what lets a reader walk
+    // the batch without knowing what any of it means, and it is the property worth
+    // asserting.
+    //
+    // The exact lengths are not. This assertion used to spell them out and broke twice in
+    // one day for the same uninteresting reason: the window's record grew when it learned
+    // to carry a title, and again when it learned to carry an icon. Neither had anything
+    // to do with what this test is about.
+    //
+    // Four and not eight. The comment here used to say eight while the numbers beside it
+    // included a twelve, so the first rewrite asserted the sentence rather than the data
+    // and failed on a record that had always been there.
+    assert_eq!(lengths.len(), 4, "the batch holds four records: {lengths:?}");
+    for length in &lengths {
+        assert_eq!(
+            length % 4,
+            0,
+            "a record that is not four-byte aligned leaves the next one misaligned: \
+             {lengths:?}"
+        );
+        assert!(
+            *length >= 12,
+            "a record shorter than its own header cannot be walked past: {lengths:?}"
+        );
+    }
 
     let mut zero_host = Host::new(zero_progress_app);
     let zero_batch = zero_host.rebuild().unwrap().to_vec();

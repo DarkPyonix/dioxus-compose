@@ -19,6 +19,29 @@ enum class ColorRole {
     Background, OnBackground,
     Outline, OutlineVariant,
     Error, OnError,
+    // The layer a panel is made of. Separate from Surface because Material 3 gives
+    // Surface and Background one value on purpose, so a panel painted with Surface is
+    // invisible there. This role is the one a caller can rely on to lift off the page,
+    // and OnSurface is the ink that reads on it.
+    SurfaceContainer,
+    // The third accent and a quiet fill for each of the three.
+    //
+    // Two accents and a page say a button, a bar and a heading. They cannot say a grid of
+    // tiles where the colour is the subject, a mood picker, or a panel of costs beside a
+    // panel of totals. Those screens need fills that read as relatives, are not reading
+    // surfaces, and are quiet enough for body text to sit on.
+    //
+    // A container is a colour of its own rather than its accent at low opacity: opacity
+    // only means something once you know what is behind it, and a role has to answer
+    // before anyone knows that. Each carries its own ink, held to the body-text bound.
+    //
+    // The three containers are not required to be told apart from each other. Material 3's
+    // baseline primary and secondary containers are neighbouring tones of one palette. A
+    // caller who needs three fills that separate at a glance uses the tertiary pair.
+    Tertiary, OnTertiary,
+    PrimaryContainer, OnPrimaryContainer,
+    SecondaryContainer, OnSecondaryContainer,
+    TertiaryContainer, OnTertiaryContainer,
 }
 
 enum class TypeRole {
@@ -30,7 +53,7 @@ enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
 
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
-enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+enum class ButtonVariant { Filled, Tonal, Outlined, Text, Operator }
 
 /**
  * Which design system an implementation is.

@@ -79,6 +79,17 @@ class CupertinoDesignSystem private constructor(
         ColorRole.OutlineVariant -> palette.separatorFaint
         ColorRole.Error -> palette.danger
         ColorRole.OnError -> palette.onDanger
+        // A grouped box on the grouped page is the plain reading surface, and what makes
+        // it a panel is that the page underneath it is not.
+        ColorRole.SurfaceContainer -> palette.surface
+        ColorRole.Tertiary -> palette.accentTertiary
+        ColorRole.OnTertiary -> palette.onAccentTertiary
+        ColorRole.PrimaryContainer -> palette.accentContainer
+        ColorRole.OnPrimaryContainer -> palette.onAccentContainer
+        ColorRole.SecondaryContainer -> palette.accentSecondaryContainer
+        ColorRole.OnSecondaryContainer -> palette.onAccentSecondaryContainer
+        ColorRole.TertiaryContainer -> palette.accentTertiaryContainer
+        ColorRole.OnTertiaryContainer -> palette.onAccentTertiaryContainer
     }
 
     /**
@@ -180,7 +191,7 @@ class CupertinoDesignSystem private constructor(
      * the pressed container rather than staying put while a wave crosses under it.
      */
     override fun button(variant: ButtonVariant): ButtonStyle = when (variant) {
-        ButtonVariant.Filled -> ButtonStyle(
+        ButtonVariant.Filled, ButtonVariant.Operator -> ButtonStyle(
             container = palette.accent,
             content = palette.onAccent,
             border = null,
@@ -257,7 +268,9 @@ class CupertinoDesignSystem private constructor(
      * recompute contrast at draw time.
      */
     override fun material(role: ColorRole): SurfaceMaterial = when (role) {
-        ColorRole.Surface -> LiquidGlass.material(
+        // A panel is a layer over the page, which is exactly what the regular glass
+        // recipe is for, so the layer role answers the same material as the surface.
+        ColorRole.Surface, ColorRole.SurfaceContainer -> LiquidGlass.material(
             dark = isDark,
             prominence = GlassProminence.Regular,
             backdrop = palette.canvas,

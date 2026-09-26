@@ -4,7 +4,9 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.unit.height
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import kotlin.test.Test
@@ -20,6 +22,7 @@ import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.runtime.DioxusContent
+import dioxus.compose.runtime.DioxusHost
 import dioxus.compose.runtime.rememberDioxusHost
 import dioxus.compose.tooling.FakeHostConnection
 import dioxus.compose.tooling.HostResponse
@@ -30,6 +33,8 @@ private const val DISMISS_HANDLER = 61L
 private const val FIRST_TAB_HANDLER = 71L
 private const val SECOND_TAB_HANDLER = 72L
 private const val RANGE_HANDLER = 73L
+private const val SMALL = 81
+private const val LARGE = 82
 
 private fun text(id: Int, parent: Int, index: Int, value: String) = listOf(
     Mutation.Create(id, WidgetKind.Text),
@@ -44,6 +49,40 @@ class ContainerWidgetsTest {
     // request left behind by one test can keep another's composition from going idle.
     private val frames = FrameRequestSource()
 
+
+    /**
+     * Weight is parent data, so every layout that can hold a weighted child has to apply
+     * it. A Surface stacks its children the way a Column does, so a child that asks for
+     * the remaining space gets it, instead of the Surface being a dead end nothing inside
+     * it can be made to fill.
+     */
+    @Test
+    fun fr13_a_container_gives_a_weighted_child_its_share_of_the_height() = runComposeUiTest {
+        val batch = listOf(
+            Mutation.Create(ROOT, WidgetKind.Surface),
+            Mutation.SetModifier(ROOT, 0, ProtocolModifier.Height(300f)),
+            Mutation.Create(SMALL, WidgetKind.Box),
+            Mutation.SetModifier(SMALL, 0, ProtocolModifier.Weight(1f)),
+            Mutation.Insert(ROOT, SMALL, 0),
+            Mutation.Create(LARGE, WidgetKind.Box),
+            Mutation.SetModifier(LARGE, 0, ProtocolModifier.Weight(3f)),
+            Mutation.Insert(ROOT, LARGE, 1),
+        )
+        setContent {
+            CompositionLocalProvider(LocalFrameRequests provides frames) {
+                DioxusContent(rememberDioxusHost(FakeHostConnection(batch)))
+            }
+        }
+        waitForIdle()
+
+        val small = onNodeWithTag(nodeTestTag(SMALL)).getUnclippedBoundsInRoot().height.value
+        val large = onNodeWithTag(nodeTestTag(LARGE)).getUnclippedBoundsInRoot().height.value
+        assertTrue(small > 0f, "the weighted children shared no height at all")
+        assertTrue(
+            kotlin.math.abs(large - 3f * small) < 1f,
+            "a weight of 3 took ${large}dp beside a weight of 1 taking ${small}dp",
+        )
+    }
 
     /**
      * A Card is a container and nothing else on the wire: the Host sends children, never a
@@ -151,6 +190,44 @@ class ContainerWidgetsTest {
         waitForIdle()
         onNodeWithTag(nodeTestTag(3)).assertTextEquals("Open")
     }
+
+    /**
+     * A menu's entries reach the Renderer before its anchor does, and the anchor still
+     * ends up first.
+     *
+     * The index an Insert carries is a position in the child list as it stands when that
+     * record is applied, not a position in the finished tree. Dioxus builds a menu's
+     * entries before it builds the anchor, so the entries go in at 0 and 1 while the list
+     * is empty, and the anchor then goes in at 0 and pushes them along. A Renderer that
+     * applies the batch in order gets the anchor first, which is the child it hangs the
+     * popup off.
+     */
+    @Test
+    fun fr1_a_menu_s_entries_arriving_before_its_anchor_leave_the_anchor_first() =
+        runComposeUiTest {
+            val batch = listOf(Mutation.Create(ROOT, WidgetKind.Menu)) +
+                text(2, ROOT, 0, "Open") +
+                text(3, ROOT, 1, "Save") +
+                text(4, ROOT, 0, "File")
+            val connection = FakeHostConnection(batch)
+            lateinit var host: DioxusHost
+            setContent {
+                CompositionLocalProvider(LocalFrameRequests provides frames) {
+                    host = rememberDioxusHost(connection)
+                    DioxusContent(host)
+                }
+            }
+            waitForIdle()
+
+            assertEquals(
+                listOf(4, 2, 3),
+                host.table.node(ROOT)!!.children,
+                "the anchor is the child the popup hangs off, so it has to be first",
+            )
+            onNodeWithTag(nodeTestTag(4)).assertTextEquals("File")
+            onNodeWithTag(nodeTestTag(2)).assertDoesNotExist()
+            onNodeWithTag(nodeTestTag(3)).assertDoesNotExist()
+        }
 
     /**
      * Choosing a tab is that tab's own click and nothing else: the strip does not need the

@@ -6,14 +6,24 @@ license.workspace = true
 rust-version.workspace = true
 publish = false
 
+# Three shapes of the same sample. The rlib is what the binary and the tests use; the
+# cdylib is what an Android Activity loads and what a browser page fetches, because
+# neither of those platforms runs a `main` of ours.
+[lib]
+name = "sample_todo"
+path = "src/lib.rs"
+# The staticlib is iOS. There the renderer is a Kotlin/Native archive and the two are
+# linked into one executable, so the sample cannot be a shared library: a cdylib would
+# have to resolve the renderer's symbols at link time and they are not there yet.
+crate-type = ["rlib", "cdylib", "staticlib"]
+bench = false
+
 [dependencies]
 dioxus-compose = { path = "../../dioxus-compose" }
-# rsx! expands to paths that name these crates directly, so a consumer has to depend on
-# them even though it never writes their names. That is a wart in our public API rather
-# than something a sample should be teaching, and it is tracked as such.
-dioxus-core.workspace = true
-dioxus-signals.workspace = true
 dioxus-hooks.workspace = true
+
+[dev-dependencies]
+sample-frames = { path = "../frames" }
 
 # The sample is an application, not a benchmark. Without this `cargo bench` runs the
 # binary with Criterion's flags, which its plain test harness rejects.

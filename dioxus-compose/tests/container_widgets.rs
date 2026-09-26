@@ -59,20 +59,28 @@ fn node_of(records: &[Record], widget: WidgetKind) -> u32 {
         .unwrap_or_else(|| panic!("no {widget:?} was created"))
 }
 
-/// Children in the order the parent will draw them. Node id 0 is the Host's placeholder
-/// for a dynamic slot that produced nothing, so it occupies no position and is dropped.
+/// Children in the order the parent will draw them, replayed the way the Renderer applies
+/// a batch: each Insert takes the position its index names and moves the ones already
+/// standing there along. Node id 0 is the Host's placeholder for a dynamic slot that
+/// produced nothing, so it occupies no position and is dropped.
+///
+/// The indices cannot be sorted on instead. An index is a position in the list as it
+/// stands when that record is applied, not a position in the finished list, and the Host
+/// builds a dynamic slot before the slot that comes before it whenever Dioxus hands the
+/// two over in that order.
 fn children_of(records: &[Record], parent: u32) -> Vec<u32> {
-    let mut inserted: Vec<(u32, u32)> = records
-        .iter()
-        .filter_map(|record| match record {
-            Record::Insert(parent_id, node_id, index) if *parent_id == parent && *node_id != 0 => {
-                Some((*index, *node_id))
-            }
-            _ => None,
-        })
-        .collect();
-    inserted.sort_by_key(|(index, _)| *index);
-    inserted.into_iter().map(|(_, node_id)| node_id).collect()
+    let mut children: Vec<u32> = Vec::new();
+    for record in records {
+        let Record::Insert(parent_id, node_id, index) = record else {
+            continue;
+        };
+        if *parent_id != parent || *node_id == 0 {
+            continue;
+        }
+        let at = (*index as usize).min(children.len());
+        children.insert(at, *node_id);
+    }
+    children
 }
 
 fn handler_of(records: &[Record], node: u32, property: PropertyKind) -> u64 {
@@ -306,6 +314,11 @@ fn top_app_bar_app() -> Element {
 
 /// The bar's height, spacing and separation are the design system's rules, so the widget
 /// sends its content and nothing else.
+///
+/// Its title is content. It is a property rather than a child because the Renderer has to
+/// be able to find it, since three design systems centre the window title and a bar whose
+/// children are an arbitrary tree gives no way to tell which of them to centre. What the
+/// bar still must not send is anything about how it looks.
 #[test]
 fn fr15_top_app_bar_carries_only_its_content() {
     let mut host = Host::new(top_app_bar_app);
@@ -313,10 +326,18 @@ fn fr15_top_app_bar_carries_only_its_content() {
     let records = records(&batch);
     let bar = node_of(&records, WidgetKind::TopAppBar);
     assert_eq!(children_of(&records, bar).len(), 2);
+    let styling: Vec<_> = records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(node_id, kind, _) if *node_id == bar && *kind != PropertyKind::Text => {
+                Some(*kind)
+            }
+            _ => None,
+        })
+        .collect();
     assert!(
-        !records
-            .iter()
-            .any(|record| matches!(record, Record::Prop(node_id, _, _) if *node_id == bar)),
+        styling.is_empty(),
+        "the bar sent {styling:?}, and how it looks is the design system's to decide"
     );
 }
 

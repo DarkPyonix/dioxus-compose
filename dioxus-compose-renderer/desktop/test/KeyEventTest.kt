@@ -65,7 +65,7 @@ class KeyEventTest {
                     metaKey = false,
                 ),
             ),
-            connection.events,
+            connection.nodeEvents,
         )
         onNodeWithTag(nodeTestTag(FIELD)).assertTextEquals("")
     }
@@ -137,7 +137,7 @@ class KeyEventTest {
 
         assertEquals(
             listOf(HostEvent.TextSubmitted(FIELD, SUBMIT_HANDLER, "")),
-            connection.events,
+            connection.nodeEvents,
         )
     }
 }

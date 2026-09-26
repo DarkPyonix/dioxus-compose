@@ -62,9 +62,11 @@ class BreezeDesignSystem private constructor(
         // Breeze puts white on the highlight, which measures under three to one against
         // this blue. Dark ink keeps the same blue and stays readable at small sizes.
         ColorRole.OnPrimary -> Color(0xFF06222E)
-        // Breeze "positive" teal, its second accent.
+        // Breeze "positive" teal, its second accent. Dark ink again, for the same reason
+        // as the highlight: white on this green measures about two to one, which is under
+        // the bound for a label on an accent fill.
         ColorRole.Secondary -> Color(0xFF16A085)
-        ColorRole.OnSecondary -> Color(0xFFFFFFFF)
+        ColorRole.OnSecondary -> Color(0xFF03201B)
         // View background: the white of a list or an entry.
         ColorRole.Surface -> Color(0xFFFCFCFC)
         ColorRole.OnSurface -> Color(0xFF232629)
@@ -80,7 +82,24 @@ class BreezeDesignSystem private constructor(
         ColorRole.OutlineVariant -> Color(0xFFD8DBDD)
         // Breeze "negative".
         ColorRole.Error -> Color(0xFFDA4453)
+        // The view layer, raised off the window background. Breeze already separates the
+        // two, so a panel is the view colour and the window is what it sits on.
+        ColorRole.SurfaceContainer -> Color(0xFFFCFCFC)
         ColorRole.OnError -> Color(0xFFFFFFFF)
+        // Breeze "neutral", the amber of a warning state, taken as the third accent.
+        // Dark ink for the same reason the other two carry it: white on any of these
+        // fills measures under three to one.
+        ColorRole.Tertiary -> Color(0xFFF67400)
+        ColorRole.OnTertiary -> Color(0xFF2B1200)
+        // Plasma tints a selected region with the highlight at low alpha over the view.
+        // Resolved against the window colour, once per accent, so the role can answer
+        // without knowing what it sits on.
+        ColorRole.PrimaryContainer -> Color(0xFFD3ECF9)
+        ColorRole.OnPrimaryContainer -> Color(0xFF0B3B52)
+        ColorRole.SecondaryContainer -> Color(0xFFD2ECE5)
+        ColorRole.OnSecondaryContainer -> Color(0xFF083B31)
+        ColorRole.TertiaryContainer -> Color(0xFFFAE0C4)
+        ColorRole.OnTertiaryContainer -> Color(0xFF4A2C00)
     }
 
     private fun darkColor(role: ColorRole): Color = when (role) {
@@ -96,9 +115,26 @@ class BreezeDesignSystem private constructor(
         ColorRole.Background -> Color(0xFF232629)
         ColorRole.OnBackground -> Color(0xFFFCFCFC)
         ColorRole.Outline -> Color(0xFF4D5155)
-        ColorRole.OutlineVariant -> Color(0xFF31363B)
+        // A step lighter than SurfaceVariant. The two carried the same value, so the
+        // quieter of the two lines vanished on any container filled with the variant.
+        ColorRole.OutlineVariant -> Color(0xFF3F4449)
         ColorRole.Error -> Color(0xFFED8079)
+        ColorRole.SurfaceContainer -> Color(0xFF1B1E20)
         ColorRole.OnError -> Color(0xFF2A0806)
+        // Breeze "neutral", the amber of a warning state, taken as the third accent.
+        // Dark ink for the same reason the other two carry it: white on any of these
+        // fills measures under three to one.
+        ColorRole.Tertiary -> Color(0xFFF8A44C)
+        ColorRole.OnTertiary -> Color(0xFF2B1200)
+        // Plasma tints a selected region with the highlight at low alpha over the view.
+        // Resolved against the window colour, once per accent, so the role can answer
+        // without knowing what it sits on.
+        ColorRole.PrimaryContainer -> Color(0xFF123B4F)
+        ColorRole.OnPrimaryContainer -> Color(0xFFCDE6F5)
+        ColorRole.SecondaryContainer -> Color(0xFF103A32)
+        ColorRole.OnSecondaryContainer -> Color(0xFFCFE8E0)
+        ColorRole.TertiaryContainer -> Color(0xFF4A3113)
+        ColorRole.OnTertiaryContainer -> Color(0xFFF8DFC3)
     }
 
     /**
@@ -234,6 +270,17 @@ class BreezeDesignSystem private constructor(
                 shape = ShapeRole.Medium,
                 pressedContainer = standardPressed,
                 pressedContent = onStandard,
+                pressedBorder = accent,
+                ripple = false,
+            )
+            ButtonVariant.Operator -> ButtonStyle(
+                container = standard,
+                content = accent,
+                border = line,
+                borderWidth = 1.dp,
+                shape = ShapeRole.Medium,
+                pressedContainer = standardPressed,
+                pressedContent = accent,
                 pressedBorder = accent,
                 ripple = false,
             )

@@ -33,14 +33,16 @@ esac
 
 LINUX_PACKAGES=(build-essential zlib1g-dev unzip pkg-config fontconfig libx11-dev libxext-dev
                 libxi-dev libxrender-dev libxtst-dev libxrandr-dev libfontconfig1-dev
-                libfreetype6-dev fonts-noto-cjk)
+                libfreetype6-dev libgl1-mesa-dev fonts-noto-cjk)
 
 for tool in cc nm readelf unzip pkg-config fc-match; do
     command -v "$tool" >/dev/null 2>&1 || die "required tool '$tool' was not found" \
         "On Ubuntu 24.04: sudo apt-get install ${LINUX_PACKAGES[*]}"
 done
 
-for package in x11 xext xi xrender xtst xrandr fontconfig freetype2; do
+# gl is the window's own: it draws through GLX, which is the headers in libgl1-mesa-dev
+# and the library -lGL. The others are what the AWT toolkit and Skia need.
+for package in x11 xext xi xrender xtst xrandr gl fontconfig freetype2; do
     pkg-config --exists "$package" || die "pkg-config cannot find '$package'" \
         "On Ubuntu 24.04: sudo apt-get install ${LINUX_PACKAGES[*]}"
 done
@@ -71,15 +73,34 @@ CLASSPATH_FILE="$BUILD_DIR/classpath.txt"
 run_on_jvm() {
     local extra_jvm_args="$1"
     local log="$BUILD_DIR/jvm-run.log"
-    [[ -n "${DISPLAY:-}" ]] || die "DISPLAY is not set, so the Compose JVM probe cannot start" \
-        "On a headless machine: xvfb-run -a $NATIVE_DIR/scripts/build-native-linux.sh"
     mkdir -p "$BUILD_DIR"
+    # Metadata describes the JDK it was collected on, so the JVM run uses NIK itself.
+    #
+    # The exit status is deliberately not fatal here, and the reason is where the class
+    # path comes from: `-XshowSettings:properties` is printed by the JVM at startup,
+    # before main runs, so it is already in the log by the time anything opens a window.
+    # This function is called by the native-image build for that one line, and opening a
+    # Compose window to read it is a lot of machinery to stand on. A hosted macOS runner
+    # killed one of these with SIGTRAP while nothing in the tree had changed for that
+    # platform, and the build failed for want of a string it had already read.
+    #
+    # So a run that dies after printing is reported and accepted. A run that dies before
+    # printing leaves the file empty and still fails below. Whether the renderer actually
+    # works is not this function's question: the smoke test that runs the built image is,
+    # and it runs either way.
+    local jvm_status=0
     (cd "$PROJECT_DIR" && JAVA_HOME="$GRAALVM_HOME" ./kotlin run -m desktop --no-compose-hot-reload \
-        --jvm-args="-XshowSettings:properties $extra_jvm_args") 2>&1 | tee "$log" >&2
+        --jvm-args="-XshowSettings:properties $extra_jvm_args") 2>&1 | tee "$log" >&2 || jvm_status=$?
     awk '
         /^ *java\.class\.path = / { sub(/^ *java\.class\.path = /, ""); print; collecting = 1; next }
         collecting && /^ {8,}[^ ]/ { sub(/^ +/, ""); print; next }
         collecting { exit }
     ' "$log" | paste -sd: - > "$CLASSPATH_FILE"
-    [[ -s "$CLASSPATH_FILE" ]] || die "could not read java.class.path from $log"
+    if [[ ! -s "$CLASSPATH_FILE" ]]; then
+        echo "error: could not read java.class.path from $log" >&2
+        [[ "$jvm_status" -eq 0 ]] || echo "       the JVM run also exited with $jvm_status" >&2
+        exit 1
+    fi
+    [[ "$jvm_status" -eq 0 ]] || echo \
+        "warning: the JVM run exited with $jvm_status after printing its class path; continuing" >&2
 }

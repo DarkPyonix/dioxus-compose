@@ -1,37 +1,149 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod asset;
+pub mod brush;
 pub mod boundary;
+/// Generated JNI shims. Compiled only for Android, where the Host is a cdylib that the
+/// Kotlin Activity loads.
+#[cfg(target_os = "android")]
+#[path = "boundary_jni.gen.rs"]
+mod boundary_jni;
+/// Generated wasm shims. Compiled only for the browser, where the page owns the loop and
+/// the Renderer's module owns the one linear memory both halves read.
+#[cfg(target_family = "wasm")]
+#[path = "boundary_wasm.gen.rs"]
+mod boundary_wasm;
+#[cfg(target_family = "wasm")]
+#[doc(hidden)]
+pub use boundary_wasm::web_start as __web_start;
 #[doc(hidden)]
 pub mod codegen;
 pub mod drawing;
 mod extensions;
+pub mod message;
 pub mod protocol;
 pub mod renderer;
 pub mod schema;
 pub mod tokens;
 mod widgets;
+pub mod design;
+pub mod spans;
 pub mod window;
 
+pub use asset::asset;
 pub use boundary::{
-    Host, LaunchBuilder, MutationBatch, RendererApi, demo_theme, install_renderer_api, launch,
-    request_frame_from_worker,
+    Host, LaunchBuilder, MutationBatch, RendererApi, demo_theme, demo_theme_for,
+    install_renderer_api, launch, request_frame_from_worker,
 };
 pub use dioxus_core::{Element, VirtualDom};
-pub use dioxus_core_macro::{component, rsx};
+// `Props` goes out with `component` because `#[component]` expands into a
+// `#[derive(Props)]`. Without it an application that writes a component of its own fails
+// to compile on a macro it never typed, and the fix is to add `dioxus-core-macro` as a
+// second dependency, which defeats the promise that one dependency is enough.
+pub use dioxus_core_macro::{Props, component, rsx};
 pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
+pub use brush::{Brush, Stop, brush};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
+pub use message::{Message, show_message};
 pub use schema::{
-    Alignment, Arrangement, AssetKind, ButtonVariant, Color, ColorRole, ColorScheme, DesignSystem,
-    EventPayload, IconRole, Key, LoopMode, Modifier, Paint, PropertyKind, SCHEMA_HASH, Selection,
-    ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme, TypeRole, WidgetKind, WindowSizeClass,
+    Alignment, Arrangement, AssetKind, ButtonVariant, Chrome, Color, ColorRole, ColorScheme,
+    DesignSystem, EventPayload, IconRole, Key, LoopMode, MessageDuration, Modifier, Paint,
+    MaterialRole, MotionRole, PropertyKind, TileMode, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign, TextOverflow, Theme,
+    TypeRole, WidgetKind, WindowSizeClass,
 };
 pub use widgets::{
-    Button, Canvas, Card, Column, ComposeBox as Box, DatePicker, Dialog, Dropdown, Icon, Image,
-    KeyEvent, LazyColumn, LazyRow, Menu, RangeRequest, Row, ScrollColumn, Separator, Spacer,
-    Surface, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    Button, Canvas, Card, Checkbox, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
+    Dropdown, FileDrop, FileDropTarget, Icon, Image, KeyEvent, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
+    ProgressIndicator, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, Separator, Sheet,
+    Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
-pub use window::{WindowSize, use_window_size, window_size};
+pub use design::{design_system, use_design_system};
+pub use window::{NodeSize, WindowSize, node_size, use_node_size, use_window_size, window_size};
+
+/// Declares the Android entry point for an application's cdylib.
+///
+/// Android has no `main`: the Kotlin Activity owns the process and the frame loop, so the
+/// root component is registered from `JNI_OnLoad`, which the generated shims reach through
+/// the symbol this macro defines.
+///
+/// ```ignore
+/// dioxus_compose::android_main!(app);
+/// ```
+#[macro_export]
+macro_rules! android_main {
+    ($app:path) => {
+        $crate::android_main!($crate::LaunchBuilder::new(), $app);
+    };
+    ($builder:expr, $app:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_android_main() {
+            $builder.with_mode($crate::LoopMode::Platform).launch($app);
+        }
+    };
+}
+
+/// Declares the entry point an iOS application starts at.
+///
+/// iOS is the one platform where the application is the library: the renderer is a
+/// Kotlin/Native archive and the two are linked into a single executable, so there is no
+/// Activity to load anything and no page to fetch anything. What there is instead is a
+/// `main`, and a `main` in an application bundle has to be C, so this exports the launch
+/// under a name that C can call.
+///
+/// ```ignore
+/// dioxus_compose::ios_main!(launch);
+/// ```
+#[macro_export]
+macro_rules! ios_main {
+    ($launch:path) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_ios_main() -> i32 {
+            $launch();
+            0
+        }
+    };
+}
+
+/// Declares the browser entry point for an application's wasm module.
+///
+/// A page has no library loader and no `main` of its own to run: the Renderer's module
+/// owns the loop and calls this once both wasm modules exist, and it answers with the
+/// address of the block the Host lends the Renderer.
+///
+/// The export is here rather than in this crate because a wasm module cannot be linked
+/// with an undefined symbol the way an ELF shared library can. Android's cdylib imports
+/// `dioxus_compose_android_main` from the application and the dynamic linker resolves it
+/// at load time; a browser refuses to instantiate a module whose imports are not all
+/// supplied, so the entry point is defined where the root component is.
+///
+/// ```ignore
+/// dioxus_compose::web_main!(app);
+/// ```
+#[macro_export]
+macro_rules! web_main {
+    ($app:path) => {
+        $crate::web_main!($crate::LaunchBuilder::new(), $app);
+    };
+    ($builder:expr, $app:path) => {
+        #[cfg(target_family = "wasm")]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+            $crate::__web_start($builder, $app)
+        }
+
+        /// Off the web there is no page to call this and no shared memory to report an
+        /// address in, but it stays defined so that a build for the machine you are
+        /// working on still compiles the component rather than leaving it unreferenced.
+        #[cfg(not(target_family = "wasm"))]
+        #[unsafe(no_mangle)]
+        pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+            let _: fn() -> $crate::Element = $app;
+            let _ = $builder;
+            0
+        }
+    };
+}
 
 pub mod prelude {
     pub use crate as dioxus_elements;
@@ -39,15 +151,35 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Color, ColorRole,
-        ColorScheme, Column, DatePicker, DesignSystem, Dialog, DrawCommand, DrawList, Dropdown,
-        Element, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyRow,
-        LinearProgressIndicator, LoopMode, Menu, Modifier, Paint, RangeRequest, Row, ScrollColumn,
-        Separator, ShapeRole, SpaceRole, Spacer, Surface, Tabs, Text, TextAlign, TextField,
-        TextOverflow, Theme, TimePicker, Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass,
-        component, launch, rsx, use_window_size,
+        Alignment, Arrangement, AssetKind, Button, ButtonVariant, Canvas, Card, Checkbox, Color,
+        ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider, DrawCommand,
+        DrawList, Dropdown, Element, FileDrop, FileDropTarget, Icon, IconRole, Image, Key, KeyEvent,
+        LaunchBuilder,
+        LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, Menu, Message, MessageDuration,
+        Brush, MaterialRole, Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
+        RangeRequest, Row, Scaffold, ScrollColumn, Separator, ShapeRole, Sheet, Slider, SpaceRole,
+        Spacer,
+        Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TimePicker,
+        Tooltip, TopAppBar, TypeRole, WindowSize, WindowSizeClass, asset, component, launch, rsx,
+        Stop, TileMode, brush, show_message, use_design_system, use_node_size, use_window_size,
     };
-    pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom};
+    // Under its own name, and the one thing in this list that could shadow something a
+    // reader already has: an application that draws its own `Window` component would find
+    // this one instead. It is here because the alternative is a fully qualified path in
+    // every `main`, and because `Chrome` beside it is meaningless on its own.
+    pub use crate::schema::{Chrome, Window};
+    // The crates `rsx!` expands into references to, under the names it expands into. A
+    // consumer who added only `dioxus-compose` does not have `dioxus_core` or
+    // `dioxus_signals` in their dependency graph by name, so without these the macro
+    // fails to resolve them and the crate cannot be used at all with one dependency,
+    // which is the whole promise.
+    pub use dioxus_core;
+    pub use dioxus_signals;
+
+    // `use_hook` is how a component starts something once and keeps it: a worker thread,
+    // a connection, a subscription. Domain work runs on worker threads, so a consumer who
+    // added only this crate needs it by name.
+    pub use dioxus_core::{Callback, Event, EventHandler, Properties, VirtualDom, use_hook};
     pub use dioxus_hooks::*;
     pub use dioxus_signals::*;
 }
@@ -84,6 +216,17 @@ pub mod elements {
             pub const border_color: AttributeDescription = ("border_color", None, false);
             pub const elevation: AttributeDescription = ("elevation", None, false);
             pub const onclickable: AttributeDescription = ("onclickable", None, false);
+            pub const observe_size: AttributeDescription = ("observe_size", None, false);
+            // How important this node's changes are. Every widget takes it, because
+            // anything that appears, moves or resizes has changes to run.
+            pub const motion: AttributeDescription = ("motion", None, false);
+            // What this node's surface is made of, where it has one.
+            pub const material: AttributeDescription = ("material", None, false);
+            // Willingness to have files dropped, said by having somewhere to report them.
+            // A node without a handler is never told files are over it, which is what
+            // keeps a screen from lighting up every container it has.
+            pub const onfilesentered: AttributeDescription = ("onfilesentered", None, false);
+            pub const onfilesdropped: AttributeDescription = ("onfilesdropped", None, false);
         };
     }
 
@@ -126,6 +269,7 @@ pub mod elements {
         "Text",
         [
             text,
+            spans,
             type_role,
             font_size,
             font_weight,
@@ -142,7 +286,10 @@ pub mod elements {
         "TextField",
         [placeholder, enabled, multiline, type_role]
     );
-    element!(button, "Button", [text, enabled, variant, color]);
+    // `icon` is the meaning of the glyph on it and never a picture. A button is the
+    // second place a role icon reaches the tree, because a toolbar is a row of icon
+    // buttons and nothing else in the vocabulary can place one.
+    element!(button, "Button", [text, icon, enabled, variant, color]);
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.
     element!(spacer, "Spacer", []);
@@ -152,6 +299,25 @@ pub mod elements {
     element!(image, "Image", [asset]);
     // An Icon takes a tint as well, through the same Paint attribute Text uses.
     element!(icon, "Icon", [asset, color]);
+    // Widget tags 12 to 17. A toggle is controlled: `checked` is the whole of what it
+    // draws, so the box on screen and the value the Host holds can never disagree.
+    element!(checkbox, "Checkbox", [checked, enabled]);
+    element!(radiobutton, "RadioButton", [checked, enabled]);
+    element!(switch, "Switch", [checked, enabled]);
+    // The position a drag is passing through is the Renderer's, like scroll and focus, so
+    // following a finger costs no boundary call. `value` seeds it and carries a change
+    // that came from somewhere else.
+    element!(slider, "Slider", [value, min, max, steps, enabled, color]);
+    // `determinate` says whether `value` means anything and `circular` picks the form. How
+    // fast an indeterminate indicator travels is motion, and motion is the design system's.
+    element!(
+        progressindicator,
+        "ProgressIndicator",
+        [value, determinate, circular]
+    );
+    // The thickness, the colour and the inset come from the design system. The axis is the
+    // only decision left to make.
+    element!(divider, "Divider", [vertical]);
     // Widget tags 18 to 25. Each one emits roles and children only: how a card, a bar or a
     // popup is drawn belongs to the design system, not to the Host that declared it.
     element!(card, "Card", []);
@@ -162,8 +328,8 @@ pub mod elements {
     element!(menu, "Menu", [open]);
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
-    element!(tabs, "Tabs", [selected_index]);
-    element!(topappbar, "TopAppBar", []);
+    element!(tabs, "Tabs", [selected_index, color]);
+    element!(topappbar, "TopAppBar", [text]);
     element!(lazyrow, "LazyRow", [item_count]);
     element!(tooltip, "Tooltip", [text]);
     // The command list is a byte blob, so it is one attribute and one SetProp. An
@@ -177,12 +343,40 @@ pub mod elements {
     element!(dropdown, "Dropdown", [selected_index, enabled]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
     element!(scrollcolumn, "ScrollColumn", []);
+    // Widget tags 30 to 32. `Navigation` carries the selection and nothing about whether
+    // it is a bar, a rail or a drawer: the Renderer has measured the window and chooses.
+    // The destinations are the `NavigationItem` children and the rest is the screen.
+    element!(navigation, "Navigation", [selected_index]);
+    // A destination's label and icon are properties, not a child tree. A child tree would
+    // fix the arrangement, and the three presentations exist because it differs: a bar
+    // stacks the label under the icon, a drawer sets it beside.
+    element!(
+        navigationitem,
+        "NavigationItem",
+        [text, icon, color, enabled]
+    );
+    // Like a Dialog on the wire: `open` seeds the Renderer's own state and `on_dismiss`
+    // says once that the user asked to close it. Which edge it enters from is the
+    // Renderer's, because it is the side that knows how wide the window is.
+    element!(sheet, "Sheet", [open]);
+    // The screen's frame. It carries nothing of its own: what it is made of arrives as
+    // slots, and what each slot becomes is decided where the window's width is known.
+    element!(scaffold, "Scaffold", []);
+    element!(scaffoldslot, "ScaffoldSlot", [slot]);
+    // A grid whose window is the list's, unchanged. The two ways of saying how wide a column is
+    // are separate attributes because they are separate questions: a count the screen
+    // insists on, or a width below which the Renderer drops one.
+    element!(lazygrid, "LazyGrid", [item_count, columns, min_column_width]);
+    element!(filedroptarget, "FileDropTarget", [alignment]);
 
     #[doc(hidden)]
     pub mod completions {
         #[allow(non_camel_case_types)]
         pub enum CompleteWithBraces {
             column {},
+            scaffold {},
+            lazygrid {},
+            scaffoldslot {},
             row {},
             composebox {},
             text {},
@@ -191,6 +385,12 @@ pub mod elements {
             spacer {},
             lazycolumn {},
             scrollcolumn {},
+            checkbox {},
+            radiobutton {},
+            switch {},
+            slider {},
+            progressindicator {},
+            divider {},
             card {},
             surface {},
             dialog {},
@@ -205,6 +405,9 @@ pub mod elements {
             datepicker {},
             timepicker {},
             dropdown {},
+            navigation {},
+            navigationitem {},
+            sheet {},
         }
     }
 }
@@ -248,8 +451,14 @@ pub mod events {
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
-    // A picker reports the value the user landed on, as the epoch integer the widget
-    // speaks. It shares the wire property with the text field's value change, because
-    // both are "this control's value is now this".
-    event!(onchange, i64);
+    // Files over a node, and files let go on it. The first carries nothing: the platforms
+    // disagree about what is knowable before a drop, and a node that only lights up does
+    // not need to know.
+    event!(onfilesentered, ());
+    event!(onfilesdropped, crate::FileDrop);
+    // A control reports the value the user landed on, as one f64. A picker reads it as
+    // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
+    // the wire property with the text field's value change, because both are "this
+    // control's value is now this".
+    event!(onchange, f64);
 }

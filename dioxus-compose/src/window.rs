@@ -65,6 +65,12 @@ struct Subscriber {
 }
 
 thread_local! {
+    /// What each observed node last measured, by the token its screen gave it.
+    ///
+    /// A map rather than a field, because nothing is in it until a screen asks: a tree
+    /// with no observers keeps an empty map and pays for nothing.
+    static NODES: RefCell<Vec<(u32, WindowSize)>> = const { RefCell::new(Vec::new()) };
+    static NODE_SUBSCRIBERS: RefCell<Vec<(u32, Subscriber)>> = const { RefCell::new(Vec::new()) };
     static CURRENT: Cell<WindowSize> = const { Cell::new(WindowSize {
         width_dp: 0.0,
         height_dp: 0.0,
@@ -96,11 +102,59 @@ pub(crate) fn publish(size: WindowSize) -> bool {
     true
 }
 
+/// The size a node last measured, or a zero size for one nothing has reported yet.
+pub fn node_size(token: u32) -> WindowSize {
+    NODES.with_borrow(|nodes| {
+        nodes
+            .iter()
+            .find(|(name, _)| *name == token)
+            .map(|(_, size)| *size)
+            .unwrap_or_default()
+    })
+}
+
+/// Records a node's measurement and wakes whoever asked about that one.
+///
+/// Returns whether anything was woken, so a report about a node nobody is reading costs
+/// a lookup and nothing else.
+pub(crate) fn publish_node(token: u32, size: WindowSize) -> bool {
+    let changed = NODES.with_borrow_mut(|nodes| {
+        match nodes.iter_mut().find(|(name, _)| *name == token) {
+            Some(entry) => {
+                if entry.1 == size {
+                    return false;
+                }
+                entry.1 = size;
+                true
+            }
+            None => {
+                nodes.push((token, size));
+                true
+            }
+        }
+    });
+    if !changed {
+        return false;
+    }
+    NODE_SUBSCRIBERS.with_borrow(|subscribers| {
+        let mut woke = false;
+        for (name, subscriber) in subscribers {
+            if *name == token {
+                (subscriber.notify)();
+                woke = true;
+            }
+        }
+        woke
+    })
+}
+
 /// Clears the measurement and every subscription. Used between tests.
 #[doc(hidden)]
 pub fn reset_window_size() {
     CURRENT.with(|current| current.set(WindowSize::default()));
     SUBSCRIBERS.with_borrow_mut(Vec::clear);
+    NODES.with_borrow_mut(Vec::clear);
+    NODE_SUBSCRIBERS.with_borrow_mut(Vec::clear);
 }
 
 /// A component's registration, dropped with the hook state when the component unmounts.
@@ -144,6 +198,108 @@ impl Drop for WindowSizeSubscription {
 ///
 /// Only components that call this are woken, and only when the class actually changes.
 /// Resizing inside one class re-renders nothing.
+/// A node whose measured size this component follows.
+///
+/// The token is the name the screen gives the node, because a node id belongs to the
+/// Renderer and never crosses back as something the Host chose. Attach it with
+/// `observe_size` and read the size here.
+///
+/// ```ignore
+/// let panel = use_node_size();
+/// rsx! {
+///     Card {
+///         observe_size: panel.token(),
+///         if panel.is_expanded() { Row { Left {} Right {} } } else { Left {} }
+///     }
+/// }
+/// ```
+///
+/// A component that never calls this costs nothing: the modifier is the only thing that
+/// makes the Renderer measure, and the modifier comes from here.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NodeSize {
+    token: u32,
+    size: WindowSize,
+}
+
+impl NodeSize {
+    /// The value to hand to `observe_size`.
+    pub const fn token(&self) -> i64 {
+        self.token as i64
+    }
+
+    /// Phone-shaped: narrower than 600dp.
+    pub fn is_compact(&self) -> bool {
+        self.size.is_compact()
+    }
+
+    /// Tablet-shaped.
+    pub fn is_medium(&self) -> bool {
+        self.size.is_medium()
+    }
+
+    /// Desktop-shaped.
+    pub fn is_expanded(&self) -> bool {
+        self.size.is_expanded()
+    }
+
+    /// The measurement itself, zero until the Renderer has reported one.
+    pub const fn measured(&self) -> WindowSize {
+        self.size
+    }
+}
+
+thread_local! {
+    static NEXT_TOKEN: Cell<u32> = const { Cell::new(1) };
+}
+
+/// Follows one node's size, and re-renders this component when its class changes.
+pub fn use_node_size() -> NodeSize {
+    let token = dioxus_core::use_hook(|| {
+        let token = NEXT_TOKEN.with(|next| {
+            let token = next.get();
+            next.set(token + 1);
+            token
+        });
+        Rc::new(NodeSizeSubscription::new(token, dioxus_core::schedule_update()))
+    });
+    NodeSize {
+        token: token.token,
+        size: node_size(token.token),
+    }
+}
+
+/// A component's registration for one node, dropped with its hook state.
+struct NodeSizeSubscription {
+    token: u32,
+    id: u64,
+}
+
+impl NodeSizeSubscription {
+    fn new(token: u32, notify: Arc<dyn Fn() + Send + Sync>) -> Self {
+        let id = NEXT_SUBSCRIBER_ID.with(|next| {
+            let id = next.get();
+            next.set(id + 1);
+            id
+        });
+        NODE_SUBSCRIBERS.with_borrow_mut(|subscribers| {
+            subscribers.push((token, Subscriber { id, notify }));
+        });
+        Self { token, id }
+    }
+}
+
+impl Drop for NodeSizeSubscription {
+    fn drop(&mut self) {
+        // The node going out of the tree takes the subscription with it, which is the
+        // third thing this requirement asks for.
+        NODE_SUBSCRIBERS.with_borrow_mut(|subscribers| {
+            subscribers.retain(|(_, subscriber)| subscriber.id != self.id);
+        });
+        NODES.with_borrow_mut(|nodes| nodes.retain(|(token, _)| *token != self.token));
+    }
+}
+
 pub fn use_window_size() -> WindowSize {
     // Rc, because hook state has to be `Clone` and the registration must not be
     // duplicated: dropping the last handle with the component's hook state is what

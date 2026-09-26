@@ -1,7 +1,7 @@
 # Native renderer -- the slow half of the quality gate, and the release.
 #
 # A version tag runs the same three platform builds this workflow already ran for
-# verification, then attaches what they produced to a draft GitHub Release and publishes
+# verification, then attaches what they produced to a GitHub Release and publishes
 # the crate. The renderer distribution is the native-image shared library plus Skia, about
 # 85MB, which crates.io will not take and which has no business in a source crate anyway,
 # so the split is: `dioxus-compose` stays an ordinary crate that builds with no renderer
@@ -116,7 +116,19 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install upstream GraalVM 25
-        # Upstream GraalVM supports AWT on Windows. Liberica NIK is a macOS requirement only.
+        # Upstream GraalVM supports AWT on Windows and Liberica NIK is a macOS requirement.
+        #
+        # NIK would be the better answer and is not ready. It carries the JDK's desktop
+        # libraries as static archives, which is why a macOS distribution is four files and
+        # this one is sixteen, and linking them in here got as far as producing an image
+        # that could not start: AWT's Toolkit still calls System.loadLibrary("awt") at run
+        # time, and an archive inside the image does not answer that call. It has to be
+        # registered as a library the image already contains, which GraalVM does for AWT on
+        # macOS and does not do here.
+        #
+        # That work is on feat/windows-nik-static-awt. It is not on this branch because
+        # every attempt at it costs a CI run to observe and four of them left the Windows
+        # renderer unbuildable in the meantime.
         uses: graalvm/setup-graalvm@v1
         with:
           java-version: '25'
@@ -133,6 +145,22 @@ jobs:
         # It does not prove mouse input because a hosted runner cannot perform the required click.
         shell: powershell
         run: .\dioxus-compose-renderer\desktop\scripts\smoke-test-windows.ps1
+
+      # A run artifact, which is a different thing from the release asset below: it belongs
+      # to this run, lasts a fortnight, and is not published anywhere. The release asset
+      # stays tag-only, which is right.
+      #
+      # It exists because a renderer built from the current schema was otherwise
+      # unobtainable between releases. Anyone working on Windows had the choice of
+      # installing GraalVM and Visual Studio Build Tools, or using the last release's
+      # renderer and watching it fail the schema handshake, which is what an empty window
+      # on Windows turned out to be.
+      - name: Keep the distribution as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-windows-x64
+          path: dioxus-compose-renderer/build/native-image/dist
+          retention-days: 14
 
       - name: Package the distribution for a release
         id: package
@@ -287,8 +315,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
             libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
-            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri \
-            fonts-noto-cjk xvfb xauth dbus-x11
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri libegl1 \
+            libgl1-mesa-dev fonts-noto-cjk xvfb xauth dbus-x11
 
       - name: Cache the Kotlin toolchain and Maven dependencies
         uses: actions/cache@v4
@@ -353,6 +381,87 @@ jobs:
           path: dioxus-compose-renderer/build/native-image-linux/dist/
           retention-days: 7
 
+  linux-arm64:
+    needs: changed
+    if: needs.changed.outputs.renderer == 'true'
+    name: Linux arm64 native-image build and headless smoke test
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install upstream GraalVM Community for JDK 25
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25.0.1'
+          distribution: 'graalvm-community'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Linux AWT, Skia, font, and virtual-display dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential zlib1g-dev unzip pkg-config fontconfig \
+            libx11-dev libxext-dev libxi-dev libxrender-dev libxtst-dev libxrandr-dev \
+            libfontconfig1-dev libfreetype6-dev libgl1 libgl1-mesa-dri libegl1 \
+            libgl1-mesa-dev fonts-noto-cjk xvfb xauth dbus-x11
+
+      - name: Cache the Kotlin toolchain and Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/JetBrains/Kotlin
+            ~/.m2/repository
+          key: kotlin-linux-${{ hashFiles('dioxus-compose-renderer/kotlin', 'dioxus-compose-renderer/libs.versions.toml', 'dioxus-compose-renderer/**/module.yaml') }}
+          restore-keys: |
+            kotlin-linux-
+
+      - name: Build the Linux renderer under Xvfb
+        run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/build-native-linux.sh
+
+      - name: Inspect staged dynamic dependencies
+        run: |
+          find dioxus-compose-renderer/build/native-image-linux/dist/lib -maxdepth 1 -type f -print | sort
+          ldd dioxus-compose-renderer/build/native-image-linux/dist/lib/*.so
+
+      - name: Headless startup smoke only
+        env:
+          DIOXUS_COMPOSE_AUTOEXIT_MS: '5000'
+        run: xvfb-run -a ./dioxus-compose-renderer/desktop/scripts/smoke-test-linux.sh
+
+      - name: Package the distribution for a release
+        id: package
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="dioxus-compose-renderer-${{ github.ref_name }}-linux-arm64"
+          # dist/ holds the renderer, Skia and the AWT libraries, plus include/.
+          tar -czf "${name}.tar.gz" -C dioxus-compose-renderer/build/native-image-linux/dist .
+          if command -v shasum >/dev/null; then
+            shasum -a 256 "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          else
+            sha256sum "${name}.tar.gz" > "${name}.tar.gz.sha256"
+          fi
+          cat "${name}.tar.gz.sha256"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          retention-days: 7
+
+      - name: Upload the Linux renderer for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: dioxus-compose-renderer-linux-arm64
+          path: dioxus-compose-renderer/build/native-image-linux/dist/
+          retention-days: 7
+
   # iOS is Kotlin/Native, not native-image, so it shares nothing with the jobs above
   # except the interpreter source. It builds both slices (simulator and device) and
   # runs the *desktop* C smoke host against the simulator archive, which is what makes
@@ -397,13 +506,61 @@ jobs:
       - name: Simulator smoke test (PR-2)
         run: ./dioxus-compose-renderer/desktop/scripts/ios-smoke-test.sh --screenshot "${RUNNER_TEMP}/ios-smoke.png"
 
-      - name: Upload the simulator screenshot
-        # The one artifact a human can judge without a Mac to hand.
+      - name: Simulator screenshot of the system's navigation chrome
+        # The default smoke tree has no navigation, so the screenshot above shows none of
+        # the chrome iOS 26 draws as Liquid Glass. This run declares two destinations,
+        # which is what the renderer turns into a UITabBarController and a title bar.
+        run: |
+          ./dioxus-compose-renderer/desktop/scripts/ios-smoke-test.sh \
+            --navigation --screenshot "${RUNNER_TEMP}/ios-navigation.png"
+
+      - name: Package the iOS renderer as an XCFramework
+        # Both slices in one bundle, which is the only form Xcode links directly. A bare
+        # .a would make every consumer pick the right slice by hand and would break the
+        # moment they switched between a device and the simulator.
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: package
+        run: |
+          set -euo pipefail
+          name="dioxus-compose-renderer-${GITHUB_REF_NAME}-ios"
+          build=dioxus-compose-renderer/build/ios
+          for slice in device simulator; do
+            mkdir -p "$build/$slice/include"
+            cp "$build/$slice"/*.h "$build/$slice/include/"
+          done
+          rm -rf "$name.xcframework"
+          xcodebuild -create-xcframework \
+            -library "$build/device/libdioxus_compose_renderer.a" \
+            -headers "$build/device/include" \
+            -library "$build/simulator/libdioxus_compose_renderer.a" \
+            -headers "$build/simulator/include" \
+            -output "$name.xcframework"
+          tar -czf "$name.tar.gz" "$name.xcframework"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+          cat "$name.tar.gz.sha256"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the release artifact
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            ${{ steps.package.outputs.name }}.tar.gz
+            ${{ steps.package.outputs.name }}.tar.gz.sha256
+          retention-days: 7
+
+      - name: Upload the simulator screenshots
+        # The one artifact a human can judge without a Mac to hand. Whether the bars are
+        # really made of glass cannot be asserted, only looked at, so the navigation shot
+        # is uploaded beside the plain one.
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ios-simulator-screenshot
-          path: ${{ runner.temp }}/ios-smoke.png
+          path: |
+            ${{ runner.temp }}/ios-smoke.png
+            ${{ runner.temp }}/ios-navigation.png
           retention-days: 7
 
   # Everything below runs only for a version tag, and only after every platform above has
@@ -412,13 +569,13 @@ jobs:
   # while a platform is missing would leave anyone on that platform with a version that can
   # never be made to work.
   release:
-    name: Draft the GitHub Release
-    needs: [changed, build, windows, linux]
+    name: Publish the GitHub Release
+    needs: [changed, build, windows, linux, linux-arm64, ios]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       # The only write permission anywhere in this repository's workflows, and
-      # it is scoped to this job: it creates a draft release and uploads files.
+      # it is scoped to this job: it creates a release and uploads files.
       contents: write
     steps:
       - uses: actions/checkout@v4
@@ -437,7 +594,12 @@ jobs:
           cat artifacts/*.sha256 > artifacts/SHA256SUMS
           cat artifacts/SHA256SUMS
 
-      - name: Create or update the draft release
+      - name: Create or update the release
+        # Published, not drafted. The crate that names these artifacts is uploaded to
+        # crates.io by the next job, and that cannot be undone, so a release left in draft
+        # means the published crate points at a download page nobody outside this
+        # repository can see. The gate is the tag: a tag only reaches here after all three
+        # platforms built and smoke tested.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
@@ -445,11 +607,12 @@ jobs:
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS --clobber
+            # A release created by an earlier run of this tag may still be a draft.
+            gh release edit "$TAG" --draft=false
           else
             gh release create "$TAG" \
-              --draft \
               --title "$TAG" \
-              --notes "Renderer artifacts for \`$TAG\`. Verify with \`shasum -a 256 -c SHA256SUMS\`. Review, then publish by hand." \
+              --notes "Renderer artifacts for \`$TAG\`. Verify with \`shasum -a 256 -c SHA256SUMS\`." \
               artifacts/*.tar.gz artifacts/*.sha256 artifacts/SHA256SUMS
           fi
 
@@ -487,8 +650,11 @@ jobs:
           echo "tag $tag matches Cargo.toml $manifest"
 
       - name: Publish
-        # Default features only, so this is exactly what a consumer gets: the Host crate
-        # with no renderer. The renderer is the artifact the release job attached above.
+        # Default features only, so this is exactly what a consumer gets. The verification
+        # build downloads the renderer for this version from the release the job above
+        # just attached it to, which is why that job has to finish first: publishing a
+        # crate whose build script cannot find its own renderer would ship a version
+        # nobody can build.
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: cargo publish -p dioxus-compose

@@ -65,12 +65,28 @@ private class RendererAppDelegate : UIResponder, UIApplicationDelegateProtocol {
         didFinishLaunchingWithOptions: Map<Any?, *>?,
     ): Boolean {
         val window = UIWindow(frame = UIScreen.mainScreen.bounds)
-        window.rootViewController = ComposeUIViewController {
+        val content = ComposeUIViewController {
             DioxusContent(
                 rememberDioxusHost(remember { hostConnectionFactory() }),
+                // The whole screen. Where the safe area is is the renderer's to decide:
+                // a bar that opens the tree grows up into the status bar and a navigation
+                // grows down into the home indicator, the way every application on the
+                // platform does, and whatever is left over is kept off the page there.
+                // Padding everything here instead left the system's own background
+                // showing through both strips.
                 Modifier.fillMaxSize(),
             )
         }
+        // Where the system draws its own chrome as Liquid Glass, the container that can
+        // hold it is built now, before anything has been drawn, and the interpreter is
+        // told where to find it. It stands empty and its bar stays hidden until a
+        // navigation reaches the tree, so an application that never declares one sees no
+        // difference.
+        //
+        // Below that, the window holds the Compose controller and nothing else, exactly as
+        // it did before: there is no system glass down there to take, so a second shell
+        // would buy nothing and would put an untested layout in front of the screen.
+        window.rootViewController = rendererRootViewController(content)
         window.makeKeyAndVisible()
         mainWindow = window
         return true

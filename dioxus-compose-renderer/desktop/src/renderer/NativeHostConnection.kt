@@ -84,6 +84,7 @@ class NativeHostConnection : HostConnection {
             checkStatus(
                 hostDispatchEvent(pinned.addressOfArrayElement(0), length, batch),
                 "dispatch_event",
+                event,
             )
             try {
                 result = batch.readLong(RESULT_OFFSET)
@@ -119,9 +120,13 @@ class NativeHostConnection : HostConnection {
 
     override fun shutdown() = hostShutdown()
 
-    private fun checkStatus(status: Int, operation: String) {
+    private fun checkStatus(status: Int, operation: String, event: HostEvent? = null) {
         if (status != STATUS_OK) {
-            throw HostCallException("dioxus_compose_host_$operation returned $status")
+            // Which event, and from where. A bare status says a call was refused and
+            // leaves the two questions that actually locate it unanswered: -2 is the Host
+            // saying it has no state on this thread, so the thread is half the answer.
+            val about = event?.let { " for $it on thread ${Thread.currentThread().name}" } ?: ""
+            throw HostCallException("dioxus_compose_host_$operation returned $status$about")
         }
     }
 

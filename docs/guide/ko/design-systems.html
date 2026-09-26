@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>디자인 시스템 · dioxus-compose 가이드</title>
-<meta name="description" content="디자인 프리미티브와 디자인 시스템(SPEC FR-13, FR-14). 색·타입·모양·간격 역할, Material 3 / Apple HIG / WinUI Fluent, unified과 adaptive 테마 모드. 명세만 있고 아직 구현되지 않았습니다.">
+<meta name="description" content="디자인 프리미티브와 디자인 시스템(SPEC FR-13, FR-14). 색·타입·모양·간격 역할, Material 3 / Cupertino / WinUI Fluent, unified과 adaptive 테마 모드. 명세만 있고 아직 구현되지 않았습니다.">
 <link rel="alternate" hreflang="en" href="../en/design-systems.html">
 <link rel="alternate" hreflang="ko" href="design-systems.html">
 <link rel="alternate" hreflang="x-default" href="../en/design-systems.html">
@@ -33,6 +33,7 @@
         <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html">UI 작성하기</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
         <li><a href="design-systems.html" aria-current="page">디자인 시스템</a></li>
         <li><a href="architecture.html">아키텍처</a></li>
@@ -107,7 +108,7 @@
         <tbody>
           <tr>
             <td><code>ColorRole</code></td>
-            <td>의미 슬롯 14개: <code>Primary</code>, <code>OnPrimary</code>, <code>Secondary</code>, <code>OnSecondary</code>, <code>Surface</code>, <code>OnSurface</code>, <code>SurfaceVariant</code>, <code>OnSurfaceVariant</code>, <code>Background</code>, <code>OnBackground</code>, <code>Outline</code>, <code>OutlineVariant</code>, <code>Error</code>, <code>OnError</code></td>
+            <td>의미 슬롯 23개: <code>Primary</code>, <code>OnPrimary</code>, <code>Secondary</code>, <code>OnSecondary</code>, <code>Tertiary</code>, <code>OnTertiary</code>, <code>Background</code>, <code>OnBackground</code>, <code>Surface</code>, <code>OnSurface</code>, <code>SurfaceVariant</code>, <code>OnSurfaceVariant</code>, <code>SurfaceContainer</code>, <code>PrimaryContainer</code>, <code>OnPrimaryContainer</code>, <code>SecondaryContainer</code>, <code>OnSecondaryContainer</code>, <code>TertiaryContainer</code>, <code>OnTertiaryContainer</code>, <code>Outline</code>, <code>OutlineVariant</code>, <code>Error</code>, <code>OnError</code></td>
             <td>디자인 시스템이 명암별로</td>
           </tr>
           <tr>
@@ -128,7 +129,7 @@
           <tr>
             <td><code>SpaceRole</code></td>
             <td><code>None</code>, <code>Xs</code>, <code>Sm</code>, <code>Md</code>, <code>Lg</code>, <code>Xl</code>, <code>Xxl</code></td>
-            <td>디자인 시스템. 밀도야말로 세 시스템이 가장 크게 다른 부분입니다</td>
+            <td>디자인 시스템. 밀도야말로 여러 시스템이 가장 크게 다른 부분입니다</td>
           </tr>
           <tr>
             <td><code>Elevation(dp)</code></td>
@@ -173,24 +174,18 @@
           <tr><td>폰트 패밀리, 커스텀 폰트</td><td>폰트는 Renderer 번들에 있습니다. Host가 이름만 보내면 "그 폰트가 있는가"가 런타임 문제로 밀립니다.</td></tr>
           <tr><td>아이콘·이미지 위젯</td><td>에셋 전달 프로토콜이 따로 필요합니다. 이 요구사항의 각주가 아니라 별도 요구사항입니다.</td></tr>
           <tr><td>애니메이션 스펙(duration, easing)</td><td>모션은 디자인 시스템의 규칙입니다. Host가 곡선을 주면 시스템은 값만 받는 껍데기가 됩니다.</td></tr>
-          <tr><td>블러, HIG vibrancy, 리플 설정</td><td>플랫폼 전용 효과라 세 시스템의 공통 축이 아닙니다.</td></tr>
+          <tr><td>블러, HIG vibrancy, 리플 설정</td><td>플랫폼 전용 효과라 여러 시스템의 공통 축이 아닙니다.</td></tr>
           <tr><td>Host가 보내는 토큰 테이블</td><td>토큰 해석을 Renderer가 한다는 결정을 정면으로 뒤집습니다.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <h2 id="systems">세 개의 시스템, 하나의 위젯 트리 (FR-14)</h2>
+    <h2 id="systems">일곱 가지 시스템, 하나의 위젯 트리 (FR-14)</h2>
     <p>
-      여기서 디자인 시스템은 <strong>토큰 테이블 + 컴포넌트 규칙</strong> 한 쌍입니다. 1단계는
-      <strong>Material&nbsp;3</strong>, <strong>Apple HIG</strong>,
-      <strong>WinUI/Fluent&nbsp;2</strong>입니다. 같은 <code>rsx!</code>가 시스템에 따라 다르게
-      보이는 것은 정상 동작입니다. 버그로 접수할 일이 아닙니다.
-    </p>
-    <p>
-      2단계로 Linux 데스크톱용 <strong>GNOME&nbsp;50</strong>, <strong>KDE Breeze</strong>,
-      <strong>Deepin</strong>을 더하지만, 1단계가 제대로 그려진 다음의 일입니다. 이 셋은 계획으로
-      보시면 됩니다. 토큰 테이블이 없고 <code>DesignSystem</code> 태그도 앞의 셋에만 배정되어
-      있습니다.
+      여기서 디자인 시스템은 <strong>토큰 테이블 + 컴포넌트 규칙</strong> 한 쌍입니다. 구현된 시스템은
+      <strong>Material&nbsp;3</strong>, <strong>Cupertino</strong>, <strong>WinUI/Fluent&nbsp;2</strong>,
+      <strong>GNOME</strong>, <strong>Breeze</strong>, <strong>Deepin</strong>, <strong>Liquid Glass</strong>의 일곱 가지입니다.
+      같은 <code>rsx!</code>가 시스템에 따라 다르게 보이는 것은 정상 동작입니다. 버그로 접수할 일이 아닙니다.
     </p>
     <p>
       컴포넌트 규칙이 붙는 자리는 변형(variant) 속성이고, 이름은 특정 시스템에 치우치지 않게
@@ -234,7 +229,7 @@
         <thead><tr><th scope="col">플랫폼</th><th scope="col"><code>adaptive</code>가 고르는 시스템</th></tr></thead>
         <tbody>
           <tr><td>Android</td><td>Material 3</td></tr>
-          <tr><td>macOS, iOS</td><td>Apple HIG</td></tr>
+          <tr><td>macOS, iOS</td><td>Liquid Glass</td></tr>
           <tr><td>Windows</td><td>WinUI/Fluent 2</td></tr>
           <tr><td>Linux (GNOME)</td><td>GNOME 50 <span class="pill planned">계획</span></td></tr>
           <tr><td>Linux (KDE)</td><td>KDE Breeze <span class="pill planned">계획</span></td></tr>
@@ -290,7 +285,7 @@
       값이 아니라 규칙입니다.
     </p>
     <p>
-      디자인 시스템 하나를 구현한다는 것은 표 일곱 개를 채우는 일입니다. 명암 두 벌의 색 역할 14개,
+      디자인 시스템 하나를 구현한다는 것은 표 일곱 개를 채우는 일입니다. 명암 두 벌의 색 역할 23개,
       타입 역할 9개, 모양 역할 6개, 간격 역할 7개, elevation 렌더링 규칙, 버튼 변형 4개, 그리고
       모션의 duration과 easing. 앞의 넷은 코드젠이 만들고, 뒤의 셋이 Renderer의 몫입니다. 이것들이
       채워지면 위젯 코드는 건드릴 일이 없습니다.

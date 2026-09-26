@@ -16,7 +16,8 @@ on first use, so nothing has to be installed separately.
 | `desktop` | JVM development shell for working on Compose code with hot reload and `@Preview`. |
 | `ios` | **The renderer for iOS.** The same interpreter sources (`ios/src/shared/` symlinks `desktop/src/`) compiled by Kotlin/Native, plus the iOS half of the boundary: `IosHostConnection`, the UIKit entry, and the `java.nio` shim the generated codec needs. |
 | `staticlib` | The two `@CName` functions that become the C symbols of the iOS static library. Separate so that `-produce static` generates a C header for them and not for the whole of Compose. |
-| `android`, `ios`, `web` | Platform targets from the project template. Designed but not implemented; see `docs/SPEC.md` PR-5 and PR-6. |
+| `android` | **The renderer for Android.** The same interpreter sources (`android/src/shared/` symlinks `desktop/src/`), plus the Android half of the boundary under `android/src/bridge/`: the generated JNI declarations, a `HostConnection` that reads the Host's arena through a direct `ByteBuffer`, and Android's own picture decoding. |
+| `web` | **The renderer for the browser.** The same interpreter sources (`web/src/shared/` symlinks `desktop/src/`), plus the web half of the boundary under `web/src/bridge/`: the generated forwarders and instantiation, a `HostConnection` that reads the Host's arena in place through a `java.nio` shim over wasm linear memory, and the browser's own `Intl` tables for the pickers. `web/scripts/build-host.sh` builds the Rust Host beside the page, `serve.sh` serves them together, and `test-boundary.sh` runs the boundary tests against a real Host. |
 
 The generated protocol bindings live in `desktop/src/protocol/Protocol.gen.kt`. They are
 produced from the Rust schema by `cargo run -p dioxus-compose --bin codegen`, edit the Rust
@@ -62,6 +63,29 @@ main thread, where `UIApplicationMain` installs the run loop, and it never retur
 
 The smoke test links `desktop/c/smoke_host.c`, the same stand-in Host the desktop smoke test
 uses, so a passing run on both platforms is evidence that the C ABI really is one ABI.
+
+## Android
+
+On Android the host relationship is inverted: a Kotlin Activity owns the process and the
+frame loop, and the Rust Host is a cdylib it loads. The two sides meet at JNI, and both
+halves of that boundary are generated from the Rust schema, so the symbol names and the
+argument order cannot drift apart.
+
+This module is a library and has no application in it. An Android application is built by
+the Dioxus CLI, which generates the Gradle project; the `dioxus-compose` crate's build
+script unpacks this Kotlin into it and generates the Activity that hosts it, with that
+application's own package and library name.
+
+```bash
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+    dx build --package sample-minimal --platform android --release
+./kotlin build -m android                   # this module on its own, a compile check
+```
+
+The JDK matters: the Android Gradle plugin runs `jlink` and that fails above Java 21.
+
+Building an application any other way is how this repository once shipped sample APKs by a
+route no user takes, so there is deliberately no second way to do it here.
 
 See the root [README](../README.md) for prerequisites and the
 [guide](http://darkpyonix.dev/dioxus-compose/) for everything else.

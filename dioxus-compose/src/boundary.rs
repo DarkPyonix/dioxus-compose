@@ -20,6 +20,15 @@ pub const STATUS_PROTOCOL_ERROR: i32 = -1;
 pub const STATUS_NOT_INITIALIZED: i32 = -2;
 pub const STATUS_ALREADY_INITIALIZED: i32 = -3;
 pub const STATUS_PANIC: i32 = -4;
+/// There is no renderer in this build to run. Returned by the loop entry point, never by
+/// a boundary call: a call could not have got this far without a renderer to make it.
+pub const STATUS_NO_RENDERER: i32 = -5;
+
+/// What the process exits with when the renderer loop does not finish successfully.
+///
+/// 1, not the status itself: exit codes are a single byte on Unix, so `STATUS_NO_RENDERER`
+/// would reach the shell as 251 and read as a signal rather than an ordinary failure.
+const EXIT_FAILURE: i32 = 1;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -49,36 +58,79 @@ static RENDERER_API: OnceLock<RendererApi> = OnceLock::new();
 static FRAME_REQUESTED: AtomicBool = AtomicBool::new(false);
 static EVENT_DISPATCH_ACTIVE: AtomicBool = AtomicBool::new(false);
 static DEFERRED_FRAME_REQUEST: AtomicBool = AtomicBool::new(false);
+/// Set between a stop and the start that follows it. While it is set a worker's frame
+/// request is remembered but not delivered, so a process that is not on screen is never
+/// asked to draw.
+static LIFECYCLE_SUPPRESSED: AtomicBool = AtomicBool::new(false);
 
 pub fn install_renderer_api(api: RendererApi) -> Result<(), RendererApi> {
     RENDERER_API.set(api)
 }
 
-#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
+// `renderer_linked` is set by the build script, and only when a renderer was really
+// linked. That is not the same as the feature being on: a documentation build turns the
+// feature on and links nothing, and the result has to behave like the build it is.
+#[cfg(all(renderer_linked, not(any(test, feature = "mock-renderer"))))]
 unsafe extern "C" {
     fn dioxus_compose_renderer_run() -> c_int;
     fn dioxus_compose_renderer_request_frame();
 }
 
-#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
+#[cfg(all(renderer_linked, not(any(test, feature = "mock-renderer"))))]
 extern "C" fn native_run() -> c_int {
     // SAFETY: The application links the Renderer implementation of this declared C ABI.
     unsafe { dioxus_compose_renderer_run() }
 }
 
-#[cfg(all(feature = "native-renderer", not(any(test, feature = "mock-renderer"))))]
+#[cfg(all(renderer_linked, not(any(test, feature = "mock-renderer"))))]
 extern "C" fn native_request_frame() {
     // SAFETY: The Renderer contract makes request_frame thread-safe.
     unsafe { dioxus_compose_renderer_request_frame() }
 }
 
-#[cfg(any(test, feature = "mock-renderer", not(feature = "native-renderer")))]
+// The mock renderer and the crate's own tests drive the boundary directly and never want
+// a window, so doing nothing is the correct answer for them and always has been.
+#[cfg(any(test, feature = "mock-renderer"))]
 extern "C" fn native_run() -> c_int {
     STATUS_OK
 }
 
-#[cfg(any(test, feature = "mock-renderer", not(feature = "native-renderer")))]
+#[cfg(any(test, feature = "mock-renderer"))]
 extern "C" fn native_request_frame() {}
+
+// A real build with no renderer. This used to return success, so an application built
+// this way opened no window, drew nothing, printed nothing and exited 0, and there was
+// no way to tell that from a program that had simply finished.
+#[cfg(all(not(renderer_linked), not(any(test, feature = "mock-renderer"))))]
+extern "C" fn native_run() -> c_int {
+    eprintln!("{}", no_renderer_message());
+    STATUS_NO_RENDERER
+}
+
+#[cfg(all(not(renderer_linked), not(any(test, feature = "mock-renderer"))))]
+extern "C" fn native_request_frame() {}
+
+/// What a build with no renderer says on its way out.
+///
+/// Compiled into every build, not only the one that prints it, so that a test can read it
+/// whatever the build it is running in was configured with.
+pub fn no_renderer_message() -> String {
+    format!(
+        "dioxus-compose: this application was built without a renderer, so there is nothing\n\
+         to draw with and nothing to draw on. Exiting {EXIT_FAILURE} rather than looking like\n\
+         a program that ran and finished.\n\
+         \n\
+         A default `cargo build` links the renderer for the platform it is building for and\n\
+         downloads it if it has to. A build reaches this message by turning that off:\n\
+         \n\
+         \x20   default-features = false, without re-enabling `native-renderer`\n\
+         \x20   a documentation build, which has no network to fetch a renderer with\n\
+         \n\
+         Building for a test or with the `mock-renderer` feature is a third way, and that\n\
+         one is silent on purpose: those builds drive the boundary directly and want no\n\
+         window."
+    )
+}
 
 fn renderer_api() -> RendererApi {
     RENDERER_API.get().copied().unwrap_or(RendererApi {
@@ -88,12 +140,22 @@ fn renderer_api() -> RendererApi {
 }
 
 /// Coalesced wake used internally by the Dioxus scheduler waker.
+///
+/// The flag spans the moment of delivery, not the wait for the frame that answers it. The
+/// Renderer folds requests into its own frame clock, so however many arrive between two
+/// frames it draws once; holding the flag until the frame came back would instead mean
+/// that one request the Renderer was not yet listening for silenced every later one. That
+/// happens on a cold start, where the first composition can be seconds after the first
+/// worker request, and it leaves the application frozen with nothing to unfreeze it.
 pub fn request_frame_from_worker() {
     if !FRAME_REQUESTED.swap(true, Ordering::AcqRel) {
-        if EVENT_DISPATCH_ACTIVE.load(Ordering::Acquire) {
+        if LIFECYCLE_SUPPRESSED.load(Ordering::Acquire)
+            || EVENT_DISPATCH_ACTIVE.load(Ordering::Acquire)
+        {
             DEFERRED_FRAME_REQUEST.store(true, Ordering::Release);
         } else {
             (renderer_api().request_frame)();
+            FRAME_REQUESTED.store(false, Ordering::Release);
         }
     }
 }
@@ -110,8 +172,12 @@ impl EventDispatchGuard {
 impl Drop for EventDispatchGuard {
     fn drop(&mut self) {
         EVENT_DISPATCH_ACTIVE.store(false, Ordering::Release);
+        if LIFECYCLE_SUPPRESSED.load(Ordering::Acquire) {
+            return;
+        }
         if DEFERRED_FRAME_REQUEST.swap(false, Ordering::AcqRel) {
             (renderer_api().request_frame)();
+            FRAME_REQUESTED.store(false, Ordering::Release);
         }
     }
 }
@@ -136,7 +202,11 @@ struct PendingAppend {
 }
 
 pub struct Host {
+    /// Kept so the tree can be built again from nothing when the Renderer asks for a
+    /// resync, which is the one thing a diff against a lost node table cannot answer.
+    app: fn() -> Element,
     theme: Theme,
+    window: crate::schema::Window,
     dom: VirtualDom,
     renderer: ComposeRenderer,
     frame_waker: Waker,
@@ -156,8 +226,19 @@ impl Host {
         // behind would put the two sides out of step, because the Renderer reports only
         // differences.
         crate::window::reset_window_size();
+        // Messages queued against a Host that is going away would otherwise be said by
+        // the one replacing it, out of any context that made them make sense.
+        //
+        // The asset table goes with them. The Renderer this Host is about to talk to has
+        // an empty cache, so an id the one before it handed out names nothing, and a
+        // screen built on those ids would draw no pictures while every batch it sent
+        // looked correct.
+        crate::message::reset_messages();
+        crate::asset::reset_assets();
         Self {
+            app,
             theme,
+            window: launched_window(),
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
             frame_waker: Waker::from(Arc::new(FrameWake)),
@@ -171,7 +252,12 @@ impl Host {
         // values, so switching theme or colour scheme costs this one record rather than a
         // SetProp for every node in the tree.
         self.renderer.set_theme(self.theme);
+        // Beside the theme, and for the same reason: it is about the window rather than
+        // any node in it, and it is settled once rather than every frame. The Renderer
+        // reads it out of this batch before it stands the window up.
+        self.renderer.set_window(self.window);
         self.dom.rebuild(&mut self.renderer);
+        self.flush_messages();
         self.arm_scheduler_wake();
         self.renderer.finish_frame()
     }
@@ -181,7 +267,70 @@ impl Host {
         self.dispatch(event)
     }
 
+    /// The batch arena, reported to the Renderer on every boundary call.
+    pub fn arena(&self) -> (*const u8, usize) {
+        self.renderer.arena()
+    }
+
+    /// Answers with the whole tree, for a Renderer that no longer has a node table.
+    ///
+    /// The Host keeps no shadow of what it has already sent, so the only way to produce a
+    /// full-tree batch is to build the application again, and that resets component state.
+    /// A Renderer that keeps its node table across a configuration change never needs
+    /// this call, which is what the Android host does.
+    pub fn resync(&mut self) -> Result<(&[u8], i64), ProtocolError> {
+        *self = Self::with_theme(self.app, self.theme);
+        Ok((self.rebuild()?, 0))
+    }
+
+    /// Suppresses timers and animations while the UI is off screen, and releases the
+    /// request that arrived while it was, so nothing is lost by stopping.
+    fn set_lifecycle_running(&mut self, running: bool) -> Result<(&[u8], i64), ProtocolError> {
+        LIFECYCLE_SUPPRESSED.store(!running, Ordering::Release);
+        if running {
+            if DEFERRED_FRAME_REQUEST.swap(false, Ordering::AcqRel) {
+                (renderer_api().request_frame)();
+            }
+            FRAME_REQUESTED.store(false, Ordering::Release);
+        }
+        // An empty batch, not a frame: starting again is the Renderer's cue to draw, and
+        // it asks for that frame itself.
+        self.renderer.begin_frame();
+        Ok((self.renderer.finish_frame()?, 0))
+    }
+
+    /// Records which design system the Renderer resolved the theme to.
+    ///
+    /// The same shape as a size class arriving: it belongs to no node and no handler, and
+    /// a repeat of the same answer wakes nothing, so an application that never asks pays
+    /// a comparison once per change and nothing per frame.
+    fn publish_design_system(
+        &mut self,
+        system: crate::schema::DesignSystem,
+    ) -> Result<(&[u8], i64), ProtocolError> {
+        if crate::design::publish(system) {
+            self.renderer.begin_frame();
+            self.dom.render_immediate(&mut self.renderer);
+            self.flush_messages();
+            self.arm_scheduler_wake();
+            return Ok((self.renderer.finish_frame()?, 0));
+        }
+        self.renderer.begin_frame();
+        Ok((self.renderer.finish_frame()?, 0))
+    }
+
     pub fn dispatch(&mut self, event: HostEvent<'_>) -> Result<(&[u8], i64), ProtocolError> {
+        // These three address the Host itself: no node, no handler, and an answer before
+        // anything is looked up.
+        match event.payload {
+            EventPayload::Resync => return self.resync(),
+            EventPayload::DesignSystemResolved(system) => {
+                return self.publish_design_system(system);
+            }
+            EventPayload::LifecycleStart => return self.set_lifecycle_running(true),
+            EventPayload::LifecycleStop => return self.set_lifecycle_running(false),
+            _ => {}
+        }
         // The window's size belongs to no node and no handler: the Renderer measures the
         // root content and reports it. It takes the same synchronous path as every other
         // event, so the batch it produces is applied in the frame that asked for it.
@@ -191,9 +340,48 @@ impl Host {
             class,
         } = event.payload
         {
-            crate::window::publish(crate::window::WindowSize::new(width_dp, height_dp, class));
+            // Node id zero is the window; anything else is one of its nodes. One event
+            // for both, because they are the same fact measured at two scales and a
+            // second way of saying it would be a second thing to keep in step.
+            let size = crate::window::WindowSize::new(width_dp, height_dp, class);
+            if event.node_id != 0 {
+                let woke = self
+                    .renderer
+                    .size_token(event.node_id)
+                    .is_some_and(|token| crate::window::publish_node(token, size));
+                if !woke {
+                    self.renderer.begin_frame();
+                    return Ok((self.renderer.finish_frame()?, 0));
+                }
+                self.renderer.begin_frame();
+                self.dom.render_immediate(&mut self.renderer);
+                self.flush_messages();
+                self.arm_scheduler_wake();
+                return Ok((self.renderer.finish_frame()?, 0));
+            }
+            crate::window::publish(size);
             self.renderer.begin_frame();
             self.dom.render_immediate(&mut self.renderer);
+            self.flush_messages();
+            self.arm_scheduler_wake();
+            return Ok((self.renderer.finish_frame()?, 0));
+        }
+        // The action on a transient message. It belongs to no node, because the message is
+        // not in the tree, so it is found by its handler id alone and the event carries the
+        // "no node" id the Renderer uses for anything the tree does not own.
+        let message_action = match event.payload {
+            EventPayload::Clicked => crate::message::take_action(event.handler_id),
+            _ => None,
+        };
+        if let Some(action) = message_action {
+            if event.node_id != 0 {
+                return Err(ProtocolError::InvalidValueKind(0));
+            }
+            let _dispatch_guard = EventDispatchGuard::enter();
+            action.call(());
+            self.renderer.begin_frame();
+            self.dom.render_immediate(&mut self.renderer);
+            self.flush_messages();
             self.arm_scheduler_wake();
             return Ok((self.renderer.finish_frame()?, 0));
         }
@@ -225,16 +413,25 @@ impl Host {
                 key_event = Some(value.clone());
                 Event::new(Rc::new(value), true).into_any()
             }
+            EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
+            EventPayload::FilesDropped(paths) => {
+                Event::new(Rc::new(crate::widgets::FileDrop::new(paths)), true).into_any()
+            }
             EventPayload::RangeRequested { start, count } => {
                 Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
             }
             EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
-            EventPayload::WindowSizeChanged { .. } => unreachable!("handled above"),
+            EventPayload::WindowSizeChanged { .. }
+            | EventPayload::DesignSystemResolved(_)
+            | EventPayload::Resync
+            | EventPayload::LifecycleStart
+            | EventPayload::LifecycleStop => unreachable!("handled above"),
         };
         let _dispatch_guard = EventDispatchGuard::enter();
         self.dom.runtime().handle_event(name, event_data, element);
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
+        self.flush_messages();
         self.arm_scheduler_wake();
         let result = i64::from(key_event.is_some_and(|event| event.consumed()));
         Ok((self.renderer.finish_frame()?, result))
@@ -247,6 +444,7 @@ impl Host {
         self.renderer.begin_frame();
         self.dom.render_immediate(&mut self.renderer);
         self.flush_pending_appends();
+        self.flush_messages();
         self.arm_scheduler_wake();
         self.renderer.finish_frame()
     }
@@ -271,6 +469,28 @@ impl Host {
         }
         // Repeated calls collapse into one frame request; see `request_frame_from_worker`.
         request_frame_from_worker();
+    }
+
+    /// Writes whatever the tree asked to say during this call into the batch it produced.
+    ///
+    /// A message therefore arrives in the same call as the change it is about, which is
+    /// what makes "deleted" and the row disappearing one frame rather than two.
+    fn flush_messages(&mut self) {
+        let renderer = &mut self.renderer;
+        // Registrations first. Not because the Renderer needs them first, it applies the
+        // whole batch before drawing any of it, but because a batch read by a person
+        // debugging one reads in the order the screen was built.
+        crate::asset::drain(|pending| {
+            renderer.register_asset(pending.asset_id, pending.kind, pending.bytes);
+        });
+        crate::message::drain(|message| {
+            renderer.show_message(
+                message.handler_id,
+                &message.text,
+                &message.action,
+                message.duration,
+            );
+        });
     }
 
     fn flush_pending_appends(&mut self) {
@@ -394,12 +614,21 @@ static APP: Mutex<Option<fn() -> Element>> = Mutex::new(None);
 /// Chosen by `LaunchBuilder::with_theme`, read once when the Host is built.
 static THEME: Mutex<Theme> = Mutex::new(Theme::unified(crate::schema::DesignSystem::Material3));
 
+/// Chosen by `LaunchBuilder::with_window`, read once when the Host is built.
+static WINDOW: Mutex<crate::schema::Window> = Mutex::new(crate::schema::Window::new());
+
 thread_local! {
     static HOST: HostSlot = const { HostSlot(RefCell::new(None)) };
 }
 
 fn launched_app() -> Option<fn() -> Element> {
     APP.lock().map_or(None, |app| *app)
+}
+
+fn launched_window() -> crate::schema::Window {
+    WINDOW
+        .lock()
+        .map_or_else(|error| *error.into_inner(), |window| *window)
 }
 
 fn launched_theme() -> Theme {
@@ -412,6 +641,7 @@ fn launched_theme() -> Theme {
 pub struct LaunchBuilder {
     mode: LoopMode,
     theme: Theme,
+    window: crate::schema::Window,
 }
 
 impl Default for LaunchBuilder {
@@ -419,6 +649,7 @@ impl Default for LaunchBuilder {
         Self {
             mode: LoopMode::Renderer,
             theme: Theme::default(),
+            window: crate::schema::Window::new(),
         }
     }
 }
@@ -441,16 +672,50 @@ impl LaunchBuilder {
         self
     }
 
+    /// What the application asks of its own window: its size, and whether it wears the
+    /// platform's title bar or has content run into it.
+    ///
+    /// Not calling this gets a modern window that the Renderer sizes. The window belongs
+    /// to the Renderer and most of what it looks like is the design system's, so what can
+    /// be said here is short on purpose: nothing names a colour, a corner, or where the
+    /// window buttons go.
+    pub fn with_window(mut self, window: crate::schema::Window) -> Self {
+        self.window = window;
+        self
+    }
+
+    /// Runs the application. Does not return while it is running, and ends the process
+    /// with a failing status if the renderer loop could not run at all.
+    ///
+    /// Exiting rather than returning is the point. `launch` is the last statement of
+    /// `main` in every application that uses this crate, so returning from it means `main`
+    /// returns, which means the process exits 0. A window that never opened would then be
+    /// indistinguishable from a program that did its work and stopped.
     pub fn launch(self, app: fn() -> Element) {
+        let status = self.try_launch(app);
+        if status != STATUS_OK {
+            std::process::exit(EXIT_FAILURE);
+        }
+    }
+
+    /// [`LaunchBuilder::launch`] without the exit: the status the renderer loop ended
+    /// with, handed back for a caller that has its own idea of what to do with it.
+    pub fn try_launch(self, app: fn() -> Element) -> i32 {
         if let Ok(mut slot) = APP.lock() {
             *slot = Some(app);
         }
         if let Ok(mut slot) = THEME.lock() {
             *slot = self.theme;
         }
-        if self.mode == LoopMode::Renderer {
-            let _ = (renderer_api().run)();
+        if let Ok(mut slot) = WINDOW.lock() {
+            *slot = self.window;
         }
+        // Under `LoopMode::Platform` the platform owns the loop and calls in through the
+        // boundary when it is ready. There is nothing to run and nothing to fail.
+        if self.mode != LoopMode::Renderer {
+            return STATUS_OK;
+        }
+        (renderer_api().run)()
     }
 }
 
@@ -473,6 +738,16 @@ fn parse_handshake(bytes: &[u8]) -> Result<LoopMode, ProtocolError> {
             .map_err(|_| ProtocolError::Truncated)?,
     );
     if hash != SCHEMA_HASH || version != PROTOCOL_VERSION {
+        // Say what did not match, and say it here rather than leaving the status code to
+        // carry it. A mismatch means the two halves were generated from different
+        // versions of the schema, which on a desktop build means a renderer library
+        // compiled before the last codegen run. The window still opens, because the
+        // renderer stands it up before it asks, so the only thing on screen is an empty
+        // page in the default theme: a symptom that looks like a blank application rather
+        // than like a stale build, and one that cost a morning to read the first time.
+        eprintln!(
+            "dioxus-compose: the renderer was built from a different schema than this              program. It sent hash {hash:#x} version {version}, and this build expects              hash {SCHEMA_HASH:#x} version {PROTOCOL_VERSION}. Rebuild the renderer after              running codegen; if it was already rebuilt, its build directory is holding a              cached copy of the generated protocol and has to be cleared."
+        );
         return Err(ProtocolError::InvalidEnvelope);
     }
     match bytes[10] {
@@ -621,6 +896,18 @@ pub unsafe extern "C" fn dioxus_compose_host_release_batch(batch: *mut MutationB
     }));
 }
 
+/// The UI thread's batch arena.
+///
+/// Not a boundary entry point: it is crate-internal, and the generated Android shims use
+/// it to tell the Renderer where the arena is so it can map it once instead of per call.
+pub fn current_arena() -> (*const u8, usize) {
+    HOST.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map_or((std::ptr::null(), 0), Host::arena)
+    })
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn dioxus_compose_host_shutdown() {
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -718,7 +1005,9 @@ mod tests {
                     | Mutation::AppendText { .. }
                     | Mutation::RegisterAsset { .. }
                     | Mutation::ReleaseAsset { .. }
-                    | Mutation::SetTheme(_) => {}
+                    | Mutation::ShowMessage { .. }
+                    | Mutation::SetTheme(_)
+                    | Mutation::SetWindow(_) => {}
                 }
             }
         }
@@ -915,6 +1204,7 @@ mod tests {
                 fallback: DesignSystem::Fluent,
                 color_scheme: ColorScheme::FollowSystem,
                 adaptive: false,
+                fonts: [0; crate::schema::TYPE_ROLE_COUNT],
             })
         );
         assert_eq!(
@@ -924,6 +1214,7 @@ mod tests {
                 fallback: DesignSystem::Cupertino,
                 color_scheme: ColorScheme::FollowSystem,
                 adaptive: true,
+                fonts: [0; crate::schema::TYPE_ROLE_COUNT],
             })
         );
     }
@@ -973,29 +1264,104 @@ mod tests {
 /// Mac, so everything was Cupertino.
 ///
 /// `DXC_DESIGN` names the system. Anything else, including nothing, adapts to the host.
+/// `DXC_SCHEME` names `light` or `dark`; anything else leaves the reader's own setting
+/// alone.
 pub fn demo_theme() -> Theme {
+    demo_theme_for(Theme::adaptive(crate::schema::DesignSystem::Material3))
+}
+
+/// The same, for a demonstration that has a theme of its own to start from.
+///
+/// A sample whose design is one particular design system in one particular colour scheme
+/// says so, and that declaration is the sample. But the machine it is being looked at on
+/// can only draw one of the seven at a time, so without a way to point it somewhere else
+/// the other six are never seen. This keeps the sample's own theme as the answer and lets
+/// the two variables override the part they name, so what is on screen is either the
+/// design the sample chose or exactly the one that was asked for.
+pub fn demo_theme_for(theme: Theme) -> Theme {
     use crate::schema::DesignSystem;
-    match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
+    let theme = match std::env::var("DXC_DESIGN").as_deref().map(str::trim) {
         Ok("material3") => Theme::unified(DesignSystem::Material3),
         Ok("cupertino") => Theme::unified(DesignSystem::Cupertino),
         Ok("fluent") => Theme::unified(DesignSystem::Fluent),
-        _ => Theme::adaptive(DesignSystem::Material3),
+        Ok("gnome") => Theme::unified(DesignSystem::Gnome),
+        Ok("breeze") => Theme::unified(DesignSystem::Breeze),
+        Ok("deepin") => Theme::unified(DesignSystem::Deepin),
+        // Spelled both ways, because the name is two words everywhere it is written down
+        // and nobody remembers which one a shell variable wants.
+        Ok("liquidglass") | Ok("liquid-glass") => Theme::unified(DesignSystem::LiquidGlass),
+        // Naming a system replaces the sample's design system but keeps its colour
+        // scheme, so asking to see one design does not also change how light it is.
+        _ => return with_scheme_override(theme),
+    }
+    .with_color_scheme(theme.color_scheme);
+    with_scheme_override(theme)
+}
+
+/// Applies `DXC_SCHEME` if it names one of the two schemes.
+fn with_scheme_override(theme: Theme) -> Theme {
+    match std::env::var("DXC_SCHEME").as_deref().map(str::trim) {
+        Ok("light") => theme.with_color_scheme(crate::schema::ColorScheme::Light),
+        Ok("dark") => theme.with_color_scheme(crate::schema::ColorScheme::Dark),
+        _ => theme,
     }
 }
 
 #[cfg(test)]
 mod demo_theme_tests {
     use super::*;
-    use crate::schema::DesignSystem;
+    use crate::schema::{ColorScheme, DESIGN_SYSTEM_SCHEMA, DesignSystem};
+    use std::sync::{Mutex, MutexGuard};
+
+    /// Held for the length of any test that sets one of the variables.
+    ///
+    /// The variables belong to the process, not to the test, so two of these running at
+    /// once read each other's settings and fail on a value neither of them asked for.
+    static ENVIRONMENT: Mutex<()> = Mutex::new(());
+
+    /// Clears both variables and keeps everyone else out until the guard is dropped.
+    fn exclusive_environment() -> MutexGuard<'static, ()> {
+        let guard = ENVIRONMENT
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        // SAFETY: the lock makes this the only thread touching the environment, and the
+        // variables are read only by the functions called under the same lock.
+        unsafe {
+            std::env::remove_var("DXC_DESIGN");
+            std::env::remove_var("DXC_SCHEME");
+        }
+        guard
+    }
 
     /// Named for what it defends: a sample that cannot be pointed at a design system
     /// leaves five of the six unseen on any one machine.
     #[test]
     fn fr14_a_named_design_system_is_unified_and_anything_else_adapts() {
-        // SAFETY: the test process is single threaded here and the variable is read only
-        // by this function, which is called below.
-        unsafe { std::env::set_var("DXC_DESIGN", "fluent") };
-        assert_eq!(demo_theme(), Theme::unified(DesignSystem::Fluent));
+        let _environment = exclusive_environment();
+        // SAFETY: `exclusive_environment` holds the lock, so nothing else is reading or
+        // writing these while this runs.
+        for (name, system) in [
+            ("material3", DesignSystem::Material3),
+            ("cupertino", DesignSystem::Cupertino),
+            ("fluent", DesignSystem::Fluent),
+            ("gnome", DesignSystem::Gnome),
+            ("breeze", DesignSystem::Breeze),
+            ("deepin", DesignSystem::Deepin),
+            ("liquidglass", DesignSystem::LiquidGlass),
+            ("liquid-glass", DesignSystem::LiquidGlass),
+        ] {
+            unsafe { std::env::set_var("DXC_DESIGN", name) };
+            assert_eq!(
+                demo_theme(),
+                Theme::unified(system),
+                "{name} is not selectable"
+            );
+        }
+        assert_eq!(
+            DESIGN_SYSTEM_SCHEMA.len(),
+            7,
+            "a system nobody can select goes unseen"
+        );
 
         unsafe { std::env::set_var("DXC_DESIGN", "nonsense") };
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
@@ -1003,4 +1369,149 @@ mod demo_theme_tests {
         unsafe { std::env::remove_var("DXC_DESIGN") };
         assert_eq!(demo_theme(), Theme::adaptive(DesignSystem::Material3));
     }
+
+    /// Named for what it defends: a machine set to dark draws every sample dark, so a
+    /// design that is meant to be read light cannot be looked at at all without this.
+    #[test]
+    fn fr14_a_named_colour_scheme_is_pinned_and_anything_else_is_left_alone() {
+        let _environment = exclusive_environment();
+        // SAFETY: as above.
+        for (name, scheme) in [("light", ColorScheme::Light), ("dark", ColorScheme::Dark)] {
+            unsafe { std::env::set_var("DXC_SCHEME", name) };
+            assert_eq!(
+                demo_theme().color_scheme,
+                scheme,
+                "{name} is not selectable"
+            );
+        }
+
+        unsafe { std::env::set_var("DXC_SCHEME", "nonsense") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::FollowSystem);
+
+        unsafe { std::env::remove_var("DXC_SCHEME") };
+        assert_eq!(demo_theme().color_scheme, ColorScheme::FollowSystem);
+    }
+
+    /// A sample that names its own theme keeps it, and each variable overrides only the
+    /// half it names. Asking to see Liquid Glass must not also throw away the colour
+    /// scheme the design was drawn for.
+    #[test]
+    fn fr14_a_samples_own_theme_survives_everything_the_variables_do_not_name() {
+        let _environment = exclusive_environment();
+        let sample = Theme::unified(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Light);
+        assert_eq!(demo_theme_for(sample), sample);
+
+        unsafe { std::env::set_var("DXC_DESIGN", "liquidglass") };
+        assert_eq!(
+            demo_theme_for(sample),
+            Theme::unified(DesignSystem::LiquidGlass).with_color_scheme(ColorScheme::Light)
+        );
+
+        unsafe { std::env::set_var("DXC_SCHEME", "dark") };
+        assert_eq!(
+            demo_theme_for(sample),
+            Theme::unified(DesignSystem::LiquidGlass).with_color_scheme(ColorScheme::Dark)
+        );
+
+        unsafe {
+            std::env::remove_var("DXC_DESIGN");
+            std::env::remove_var("DXC_SCHEME");
+        };
+    }
+    /// A renderer built from a different schema is refused, and says so.
+    ///
+    /// The refusal already worked. What did not was finding out why: the renderer stands
+    /// its window up before it asks the Host anything, so a mismatch leaves an empty page
+    /// in the default theme and a status code, which reads as an application that draws
+    /// nothing rather than as a build that is out of date. It cost a morning once.
+    #[test]
+    fn pr2_a_handshake_from_another_schema_is_refused() {
+        let mut wrong = Vec::with_capacity(12);
+        wrong.extend_from_slice(&SCHEMA_HASH.wrapping_add(1).to_le_bytes());
+        wrong.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+        wrong.extend_from_slice(&[LoopMode::Renderer as u8, 0]);
+        assert!(
+            matches!(
+                parse_handshake(&wrong),
+                Err(crate::protocol::ProtocolError::InvalidEnvelope)
+            ),
+            "a handshake carrying another schema's hash was accepted, so the two halves \
+             would go on to disagree about what every record means"
+        );
+
+        let mut right = Vec::with_capacity(12);
+        right.extend_from_slice(&SCHEMA_HASH.to_le_bytes());
+        right.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+        right.extend_from_slice(&[LoopMode::Renderer as u8, 0]);
+        assert!(
+            parse_handshake(&right).is_ok(),
+            "the handshake this build generates is not one it accepts"
+        );
+    }
 }
+
+/// Keeps the five exported boundary functions in the final executable.
+///
+/// The Renderer resolves them by name once it is loaded, which means nothing in the
+/// application ever refers to them and the linker is free to conclude they are dead. It
+/// does exactly that in any binary whose own code happens not to reach them, a test
+/// harness for an application being the ordinary case, and the result is a process that
+/// dies on startup with the dynamic loader unable to bind a symbol that should have been
+/// right there in the executable.
+///
+/// Taking their addresses in a static the compiler is told to keep marks them as roots
+/// for the dead-code pass, which is the whole job. It costs five pointers.
+#[used]
+static BOUNDARY_EXPORTS: BoundaryExports = BoundaryExports([
+    dioxus_compose_host_init as *const (),
+    dioxus_compose_host_dispatch_event as *const (),
+    dioxus_compose_host_render_frame as *const (),
+    dioxus_compose_host_release_batch as *const (),
+    dioxus_compose_host_shutdown as *const (),
+]);
+
+/// The same five names, as a linker directive the object file carries.
+///
+/// The Renderer finds these with GetProcAddress against the running executable, which
+/// reads the PE export table, and an executable has no export table unless the link is
+/// told to make one. The build script asks for that with `/EXPORT:` arguments, and those
+/// reach the binaries of this package and no further: Cargo does not pass a dependency's
+/// link arguments on to whatever depends on it.
+///
+/// So every application built on this crate linked without an export table, the Renderer
+/// could not reach back into it, and the window came up empty. It looked like it worked
+/// because the only Windows binaries anyone had run were this package's own examples.
+///
+/// `.drectve` is how an object file carries linker arguments of its own. The MSVC linker
+/// reads that section out of every object it links, so the directive travels inside the
+/// rlib and applies wherever the rlib ends up.
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+const EXPORT_DIRECTIVES: &str = concat!(
+    " /EXPORT:dioxus_compose_host_init",
+    " /EXPORT:dioxus_compose_host_dispatch_event",
+    " /EXPORT:dioxus_compose_host_render_frame",
+    " /EXPORT:dioxus_compose_host_release_batch",
+    " /EXPORT:dioxus_compose_host_shutdown",
+);
+
+#[cfg(all(target_os = "windows", target_env = "msvc"))]
+#[used]
+#[unsafe(link_section = ".drectve")]
+static EXPORT_DIRECTIVE_BYTES: [u8; EXPORT_DIRECTIVES.len()] = {
+    let source = EXPORT_DIRECTIVES.as_bytes();
+    let mut bytes = [0u8; EXPORT_DIRECTIVES.len()];
+    let mut index = 0;
+    while index < source.len() {
+        bytes[index] = source[index];
+        index += 1;
+    }
+    bytes
+};
+
+/// Never read. Being referenced is the entire contract.
+struct BoundaryExports(#[allow(dead_code)] [*const (); 5]);
+
+// SAFETY: The addresses are written once, at compile time, and never read. A static has
+// to be Sync to exist at all, and raw pointers decline to be only because of what they
+// might point at; these point at code.
+unsafe impl Sync for BoundaryExports {}

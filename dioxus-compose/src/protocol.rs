@@ -1,8 +1,9 @@
 //! Fixed-layout little-endian boundary protocol.
 
 use crate::schema::{
-    AssetKind, ColorScheme, DesignSystem, Key, Modifier, Paint, PropertyKind, Selection, ShapeRole,
-    SpaceRole, Theme, WidgetKind,
+    AssetKind, ColorScheme, DesignSystem, Key, MaterialRole, MessageDuration, Modifier, MotionRole,
+    Paint, PropertyKind, Selection, ShapeRole, SpaceRole, TYPE_ROLE_COUNT, Theme, TypeRole,
+    WidgetKind,
 };
 use core::fmt;
 
@@ -18,6 +19,8 @@ const TAG_APPEND_TEXT: u16 = 8;
 const TAG_SET_THEME: u16 = 9;
 const TAG_REGISTER_ASSET: u16 = 10;
 const TAG_RELEASE_ASSET: u16 = 11;
+const TAG_SHOW_MESSAGE: u16 = 12;
+const TAG_SET_WINDOW: u16 = 13;
 const ENVELOPE_LEN: usize = 12;
 /// The shortest mutation record on the wire (`Remove`: 4-byte header + `node_id`).
 const MIN_RECORD_LEN: usize = 8;
@@ -82,6 +85,14 @@ pub enum Mutation<'a> {
     },
     /// The root theme. Sent once as the first record of the initial batch.
     SetTheme(Theme),
+    /// What the application asked of its own window.
+    ///
+    /// Written once per rebuild beside the theme, and read by the Renderer before it
+    /// stands the window up: `dioxus_compose_host_init` answers with the first batch, so
+    /// the setting is in hand before there is a window to apply it to. Platforms where
+    /// the window is not ours ignore it, which is not an error but an absence of anywhere
+    /// to put it.
+    SetWindow(crate::schema::Window),
     /// Hands the Renderer the bytes of one asset. The Renderer copies them into its own
     /// cache inside this call, because the batch buffer is only valid for the call that
     /// carries it and an image has to outlive the frame that draws it.
@@ -93,6 +104,19 @@ pub enum Mutation<'a> {
     /// Drops an asset from the Renderer's cache. The Host owns the lifetime.
     ReleaseAsset {
         asset_id: u32,
+    },
+    /// Says a sentence to the user once. It is not a node, because the Host would then
+    /// have to hold "showing until four seconds from now" and run a render to take it
+    /// away again. How long it stays, where it sits and what happens when a second one
+    /// arrives while the first is up are all the Renderer's.
+    ///
+    /// `handler_id` is what the action label reports when it is pressed, or 0 when the
+    /// message has no action, in which case `action` is empty too.
+    ShowMessage {
+        handler_id: u64,
+        text: &'a str,
+        action: &'a str,
+        duration: MessageDuration,
     },
 }
 
@@ -108,6 +132,7 @@ pub enum ProtocolError {
     InvalidModifier(u16),
     InvalidTheme(u16),
     InvalidAssetKind(u16),
+    InvalidMessageDuration(u16),
     InvalidStringRange,
     InvalidUtf8,
     LengthOverflow,
@@ -127,10 +152,16 @@ const EVENT_FOCUS_LOST: u16 = 4;
 const EVENT_PROTOCOL_ERROR: u16 = 5;
 const EVENT_KEY_DOWN: u16 = 6;
 const EVENT_RANGE_REQUESTED: u16 = 7;
-const EVENT_VALUE_CHANGED: u16 = 8;
-// Tags 9 to 15 are reserved for pointer gestures, and 16 is where the picker's value
-// change belongs, so the window size report continues from 17.
+// Tags 8 to 15 are reserved for the pointer gesture events, so this one starts at 16
+// and the window size report continues from 17.
+const EVENT_VALUE_CHANGED: u16 = 16;
 const EVENT_WINDOW_SIZE_CHANGED: u16 = 17;
+const EVENT_RESYNC: u16 = 18;
+const EVENT_LIFECYCLE_START: u16 = 19;
+const EVENT_LIFECYCLE_STOP: u16 = 20;
+const EVENT_DESIGN_SYSTEM_RESOLVED: u16 = 21;
+const EVENT_FILES_ENTERED: u16 = 22;
+const EVENT_FILES_DROPPED: u16 = 23;
 
 const MODIFIER_SHIFT: u8 = 1 << 0;
 const MODIFIER_CTRL: u8 = 1 << 1;
@@ -179,7 +210,7 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
             count: read_u32(bytes, 20)?,
         },
         EVENT_VALUE_CHANGED if record_len == 24 => {
-            crate::schema::EventPayload::ValueChanged(read_u64(bytes, 16)? as i64)
+            crate::schema::EventPayload::ValueChanged(f64::from_bits(read_u64(bytes, 16)?))
         }
         EVENT_WINDOW_SIZE_CHANGED if record_len == 28 => {
             let raw_class = read_u32(bytes, 24)?;
@@ -193,7 +224,22 @@ pub fn decode_event(bytes: &[u8]) -> Result<HostEvent<'_>, ProtocolError> {
                 class,
             }
         }
-        EVENT_CLICK..=EVENT_VALUE_CHANGED | EVENT_WINDOW_SIZE_CHANGED => {
+        EVENT_DESIGN_SYSTEM_RESOLVED if record_len == 20 => {
+            let raw = read_u32(bytes, 16)?;
+            let system = u16::try_from(raw)
+                .ok()
+                .and_then(|tag| crate::schema::DesignSystem::try_from(tag).ok())
+                .ok_or(ProtocolError::InvalidValueKind(raw as u16))?;
+            crate::schema::EventPayload::DesignSystemResolved(system)
+        }
+        EVENT_FILES_ENTERED if record_len == 16 => crate::schema::EventPayload::FilesEntered,
+        EVENT_FILES_DROPPED if record_len == 24 => {
+            crate::schema::EventPayload::FilesDropped(read_string(bytes, 16, record_len)?)
+        }
+        EVENT_RESYNC if record_len == 16 => crate::schema::EventPayload::Resync,
+        EVENT_LIFECYCLE_START if record_len == 16 => crate::schema::EventPayload::LifecycleStart,
+        EVENT_LIFECYCLE_STOP if record_len == 16 => crate::schema::EventPayload::LifecycleStop,
+        EVENT_CLICK..=EVENT_RANGE_REQUESTED | EVENT_VALUE_CHANGED..=EVENT_LIFECYCLE_STOP => {
             return Err(ProtocolError::InvalidRecordLength);
         }
         other => return Err(ProtocolError::InvalidTag(other)),
@@ -234,7 +280,7 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.extend_from_slice(&24_u16.to_le_bytes());
         output.extend_from_slice(&event.node_id.to_le_bytes());
         output.extend_from_slice(&event.handler_id.to_le_bytes());
-        output.extend_from_slice(&(value as u64).to_le_bytes());
+        output.extend_from_slice(&value.to_bits().to_le_bytes());
         return Ok(());
     }
     if let crate::schema::EventPayload::WindowSizeChanged {
@@ -250,6 +296,16 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
         output.extend_from_slice(&width_dp.to_bits().to_le_bytes());
         output.extend_from_slice(&height_dp.to_bits().to_le_bytes());
         output.extend_from_slice(&u32::from(u16::from(class)).to_le_bytes());
+        return Ok(());
+    }
+    if let crate::schema::EventPayload::DesignSystemResolved(system) = event.payload {
+        output.extend_from_slice(&EVENT_DESIGN_SYSTEM_RESOLVED.to_le_bytes());
+        output.extend_from_slice(&20_u16.to_le_bytes());
+        output.extend_from_slice(&event.node_id.to_le_bytes());
+        output.extend_from_slice(&event.handler_id.to_le_bytes());
+        // The tag in a word, which keeps the record a multiple of four the way every
+        // other record here is.
+        output.extend_from_slice(&u32::from(u16::from(system)).to_le_bytes());
         return Ok(());
     }
     if let crate::schema::EventPayload::RangeRequested { start, count } = event.payload {
@@ -270,13 +326,21 @@ pub fn encode_event(event: &HostEvent<'_>, output: &mut Vec<u8>) -> Result<(), P
             (EVENT_TEXT_SUBMITTED, 24, Some(*value), None)
         }
         crate::schema::EventPayload::FocusLost => (EVENT_FOCUS_LOST, 16, None, None),
+        crate::schema::EventPayload::FilesEntered => (EVENT_FILES_ENTERED, 16, None, None),
+        crate::schema::EventPayload::FilesDropped(paths) => {
+            (EVENT_FILES_DROPPED, 24, Some(*paths), None)
+        }
+        crate::schema::EventPayload::Resync => (EVENT_RESYNC, 16, None, None),
+        crate::schema::EventPayload::LifecycleStart => (EVENT_LIFECYCLE_START, 16, None, None),
+        crate::schema::EventPayload::LifecycleStop => (EVENT_LIFECYCLE_STOP, 16, None, None),
         crate::schema::EventPayload::ProtocolError { code, message } => {
             (EVENT_PROTOCOL_ERROR, 28, Some(*message), Some(*code))
         }
         crate::schema::EventPayload::KeyDown { .. }
         | crate::schema::EventPayload::RangeRequested { .. }
         | crate::schema::EventPayload::ValueChanged(_)
-        | crate::schema::EventPayload::WindowSizeChanged { .. } => unreachable!(),
+        | crate::schema::EventPayload::WindowSizeChanged { .. }
+        | crate::schema::EventPayload::DesignSystemResolved(_) => unreachable!(),
     };
     output.extend_from_slice(&tag.to_le_bytes());
     output.extend_from_slice(&record_len.to_le_bytes());
@@ -461,12 +525,42 @@ impl BatchEncoder {
                 self.begin_record(TAG_RELEASE_ASSET, 4);
                 self.put_u32(*asset_id);
             }
+            Mutation::ShowMessage {
+                handler_id,
+                text,
+                action,
+                duration,
+            } => {
+                self.begin_record(TAG_SHOW_MESSAGE, 28);
+                self.put_u64(*handler_id);
+                self.put_string_ref(text)?;
+                self.put_string_ref(action)?;
+                self.put_u16(*duration as u16);
+                self.put_u16(0);
+            }
             Mutation::SetTheme(theme) => {
-                self.begin_record(TAG_SET_THEME, 8);
+                self.begin_record(TAG_SET_THEME, 8 + 4 * TYPE_ROLE_COUNT as u16);
                 self.put_u16(theme.design_system as u16);
                 self.put_u16(theme.fallback as u16);
                 self.put_u16(theme.color_scheme as u16);
                 self.put_u16(u16::from(theme.adaptive));
+                // One slot per type role, zero where the role keeps the system font. Sent
+                // whether or not any of them is filled, because the record is fixed
+                // layout and a theme change is one record rather than a per frame cost.
+                for asset in theme.fonts {
+                    self.put_u32(asset);
+                }
+            }
+            Mutation::SetWindow(window) => {
+                self.begin_record(TAG_SET_WINDOW, 24);
+                self.put_u16(window.chrome as u16);
+                self.put_u16(window.width);
+                self.put_u16(window.height);
+                self.put_u16(window.min_width);
+                self.put_u16(window.min_height);
+                self.put_u16(u16::from(window.resizable));
+                self.put_string_ref(window.title)?;
+                self.put_u32(window.icon);
             }
         }
         self.record_count = self
@@ -500,6 +594,16 @@ impl BatchEncoder {
             self.arena[position..position + 4].copy_from_slice(&absolute.to_le_bytes());
         }
         Ok(&self.arena)
+    }
+
+    /// Where the arena a finished batch lives in starts, and how much of it is mapped.
+    ///
+    /// A runtime that cannot read the Host's memory directly wraps this range once and
+    /// keeps the view: every batch is a prefix of the arena, so it is read where it lies
+    /// and no byte is copied out. Growing the arena moves it, which is why the address is
+    /// reported again on every call rather than once at startup.
+    pub fn arena(&self) -> (*const u8, usize) {
+        (self.arena.as_ptr(), self.arena.capacity())
     }
 
     pub fn capacity(&self) -> usize {
@@ -636,13 +740,17 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                 node_id: read_u32(bytes, payload)?,
                 text: read_string(bytes, payload + 4, records_len)?,
             },
-            TAG_SET_THEME if len == 12 => {
+            TAG_SET_THEME if len == 12 + 4 * TYPE_ROLE_COUNT => {
                 let design_system = read_u16(bytes, payload)?;
                 let fallback = read_u16(bytes, payload + 2)?;
                 let color_scheme = read_u16(bytes, payload + 4)?;
                 let adaptive = read_u16(bytes, payload + 6)?;
                 if adaptive > 1 {
                     return Err(ProtocolError::InvalidTheme(adaptive));
+                }
+                let mut fonts = [0u32; TYPE_ROLE_COUNT];
+                for (index, slot) in fonts.iter_mut().enumerate() {
+                    *slot = read_u32(bytes, payload + 8 + 4 * index)?;
                 }
                 Mutation::SetTheme(Theme {
                     design_system: DesignSystem::try_from(design_system)
@@ -652,6 +760,32 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
                     color_scheme: ColorScheme::try_from(color_scheme)
                         .map_err(|()| ProtocolError::InvalidTheme(color_scheme))?,
                     adaptive: adaptive == 1,
+                    fonts,
+                })
+            }
+            TAG_SET_WINDOW if len == 28 => {
+                let chrome = read_u16(bytes, payload)?;
+                let resizable = read_u16(bytes, payload + 10)?;
+                if resizable > 1 {
+                    return Err(ProtocolError::InvalidValueKind(resizable));
+                }
+                Mutation::SetWindow(crate::schema::Window {
+                    chrome: crate::schema::Chrome::try_from(chrome)
+                        .map_err(|()| ProtocolError::InvalidValueKind(chrome))?,
+                    width: read_u16(bytes, payload + 2)?,
+                    height: read_u16(bytes, payload + 4)?,
+                    min_width: read_u16(bytes, payload + 6)?,
+                    min_height: read_u16(bytes, payload + 8)?,
+                    resizable: resizable == 1,
+                    // Leaked on purpose, once per window. The record's owner is the
+                    // window, the window outlives the batch it arrived in, and there is
+                    // one of these per process.
+                    icon: read_u32(bytes, payload + 20)?,
+                    title: Box::leak(
+                        read_string(bytes, payload + 12, records_len)?
+                            .to_owned()
+                            .into_boxed_str(),
+                    ),
                 })
             }
             TAG_REGISTER_ASSET if len == 20 => {
@@ -666,7 +800,17 @@ pub fn decode_batch(bytes: &[u8]) -> Result<Vec<Mutation<'_>>, ProtocolError> {
             TAG_RELEASE_ASSET if len == 8 => Mutation::ReleaseAsset {
                 asset_id: read_u32(bytes, payload)?,
             },
-            TAG_CREATE..=TAG_RELEASE_ASSET => {
+            TAG_SHOW_MESSAGE if len == 32 => {
+                let raw_duration = read_u16(bytes, payload + 24)?;
+                Mutation::ShowMessage {
+                    handler_id: read_u64(bytes, payload)?,
+                    text: read_string(bytes, payload + 8, records_len)?,
+                    action: read_string(bytes, payload + 16, records_len)?,
+                    duration: MessageDuration::try_from(raw_duration)
+                        .map_err(|()| ProtocolError::InvalidMessageDuration(raw_duration))?,
+                }
+            }
+            TAG_CREATE..=TAG_SHOW_MESSAGE => {
                 return Err(ProtocolError::InvalidRecordLength);
             }
             other => return Err(ProtocolError::InvalidTag(other)),
@@ -727,6 +871,9 @@ fn modifier_fields(modifier: &Modifier) -> (u16, u64, u64) {
         Modifier::ShapeRole(role) => (13, *role as u64, 0),
         Modifier::Border { width, paint } => (14, u64::from(width.to_bits()), paint.to_bits()),
         Modifier::Elevation(dp) => (15, u64::from(dp.to_bits()), 0),
+        Modifier::ObserveSize { token } => (16, u64::from(*token), 0),
+        Modifier::Motion(role) => (17, *role as u64, 0),
+        Modifier::Material(role) => (18, *role as u64, 0),
     }
 }
 
@@ -773,6 +920,11 @@ fn decode_modifier(tag: u16, first: u64, second: u64) -> Result<Modifier, Protoc
             paint: decode_paint(second)?,
         }),
         15 => Ok(Modifier::Elevation(f32::from_bits(first as u32))),
+        16 => Ok(Modifier::ObserveSize {
+            token: first as u32,
+        }),
+        17 => Ok(Modifier::Motion(decode_role::<MotionRole>(first)?)),
+        18 => Ok(Modifier::Material(decode_role::<MaterialRole>(first)?)),
         other => Err(ProtocolError::InvalidModifier(other)),
     }
 }
@@ -967,17 +1119,34 @@ mod tests {
         assert_eq!(decode_batch(bytes).unwrap(), expected);
     }
 
-    /// `SetTheme` is a 12-byte record of four `u16` fields.
+    /// `SetTheme` is four `u16` fields and one font slot per type role.
+    ///
+    /// Fixed length whether or not any font is named, because the record is fixed layout
+    /// and a theme is sent once rather than per frame. The slots cost 36 bytes on a
+    /// message that appears once in a session.
     #[test]
-    fn fr14_set_theme_round_trips_in_twelve_bytes() {
-        let theme = Theme::adaptive(DesignSystem::Cupertino).with_color_scheme(ColorScheme::Dark);
+    fn fr23_set_theme_round_trips_with_a_slot_for_every_type_role() {
+        let theme = Theme::adaptive(DesignSystem::Cupertino)
+            .with_color_scheme(ColorScheme::Dark)
+            .with_font(TypeRole::Display, 7);
+        let length = 12 + 4 * TYPE_ROLE_COUNT as u16;
         let mut encoder = BatchEncoder::default();
         encoder.encode(&Mutation::SetTheme(theme)).unwrap();
         let bytes = encoder.finish().unwrap();
-        assert_eq!(bytes.len(), ENVELOPE_LEN + 12);
+        assert_eq!(bytes.len(), ENVELOPE_LEN + length as usize);
         assert_eq!(read_u16(bytes, ENVELOPE_LEN).unwrap(), TAG_SET_THEME);
-        assert_eq!(read_u16(bytes, ENVELOPE_LEN + 2).unwrap(), 12);
+        assert_eq!(read_u16(bytes, ENVELOPE_LEN + 2).unwrap(), length);
         assert_eq!(decode_batch(bytes).unwrap(), [Mutation::SetTheme(theme)]);
+    }
+
+    /// A font named for one role leaves every other role on the system font.
+    #[test]
+    fn fr23_a_font_is_named_for_one_role_and_no_others() {
+        let theme = Theme::unified(DesignSystem::Material3).with_font(TypeRole::Display, 3);
+        assert_eq!(theme.font(TypeRole::Display), Some(3));
+        for role in [TypeRole::Body, TypeRole::Title, TypeRole::Mono, TypeRole::Caption] {
+            assert_eq!(theme.font(role), None);
+        }
     }
 
     /// An out-of-range theme tag is an error, never a panic.

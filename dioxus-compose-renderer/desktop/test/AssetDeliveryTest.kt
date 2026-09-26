@@ -1,9 +1,15 @@
 package dioxus.compose.test
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.unit.Density
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -42,6 +48,25 @@ private val ONE_PIXEL_PNG = byteArrayOf(
     0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE.toByte(),
     0x42, 0x60, 0x82.toByte(),
 )
+
+/** A minimal SVG, so the parser has a real document to read rather than a stub. */
+private val SQUARE_SVG = (
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 8 8\">" +
+        "<rect width=\"8\" height=\"8\" fill=\"#336699\"/></svg>"
+    ).toByteArray(Charsets.UTF_8)
+
+/**
+ * The same square, written the way a drawing meant to be scaled is written: single quoted
+ * attributes and a root that says its size is the whole of whatever it is given.
+ *
+ * Both spellings are here because they do not behave the same, and the one an author
+ * reaches for first is the one that was wrong.
+ */
+private val SIZED_SQUARE_SVG = (
+    "<svg xmlns='http://www.w3.org/2000/svg' width='100%' height='100%' " +
+        "viewBox='0 0 8 8' fill='none'>" +
+        "<rect width='8' height='8' fill='#336699'/></svg>"
+    ).toByteArray(Charsets.UTF_8)
 
 private fun iconBytes(role: IconRole): ByteArray {
     val tag = role.ordinal + 1
@@ -85,6 +110,75 @@ class AssetDeliveryTest {
             emptyList(),
             connection.events.filterIsInstance<HostEvent.ProtocolError>(),
             "a registered asset must not be reported as a problem",
+        )
+    }
+
+    /**
+     * Vectors take a different path from rasters all the way through: a different decoder,
+     * a different thing held in the cache, and a different draw. Only one of the two was
+     * covered, and a renderer whose graphics stack cannot parse one reports it rather than
+     * drawing it, so which of the two happened has to be visible.
+     */
+    @Test
+    fun fr16_a_registered_svg_is_drawn_from_the_cache() = runComposeUiTest {
+        val connection = FakeHostConnection(
+            listOf(Mutation.RegisterAsset(ASSET, AssetKind.Svg.ordinal + 1, SQUARE_SVG)) +
+                imageTree(ASSET),
+        )
+        lateinit var host: DioxusHost
+        setContent {
+            host = rememberDioxusHost(connection)
+            DioxusContent(host)
+        }
+        waitForIdle()
+
+        onNodeWithTag(nodeTestTag(IMAGE)).assertIsDisplayed()
+        assertEquals(
+            emptyList(),
+            connection.events.filterIsInstance<HostEvent.ProtocolError>(),
+            "this renderer parses vectors, so nothing is reported",
+        )
+    }
+
+    /**
+     * A drawing fills the box it was given rather than the box its file was written in.
+     *
+     * Named for what it defends: a vector whose size is a `viewBox` and nothing else, which
+     * is how a drawing that means to be scaled is written, has an intrinsic size of exactly
+     * that box. Drawn at one user unit to the pixel it lands in the top left corner of
+     * whatever it was given and is clipped there, which is what a 120 unit garment did in a
+     * card 388 wide. The picture is right, the node is the right size, and the assertion
+     * that the picture is displayed passes the whole time.
+     */
+    @Test
+    fun fr16_a_vector_fills_the_box_it_was_given() = runComposeUiTest {
+        val connection = FakeHostConnection(
+            listOf(Mutation.RegisterAsset(ASSET, AssetKind.Svg.ordinal + 1, SIZED_SQUARE_SVG)) +
+                listOf(
+                    Mutation.Create(IMAGE, WidgetKind.Image),
+                    Mutation.SetModifier(IMAGE, 0, ProtocolModifier.Size(80f, 80f)),
+                    Mutation.SetProp(
+                        IMAGE,
+                        PropertyKind.Asset,
+                        PropertyValue.Integer(ASSET.toLong()),
+                    ),
+                ),
+        )
+        setContent {
+            CompositionLocalProvider(LocalDensity provides Density(1f)) {
+                DioxusContent(rememberDioxusHost(connection))
+            }
+        }
+        waitForIdle()
+
+        // The document is eight units square and the node is eighty pixels square, so a
+        // drawing that scaled reaches the far corner and one that did not stops at an
+        // eighth of the way across.
+        val pixels = onNodeWithTag(nodeTestTag(IMAGE)).captureToImage().toPixelMap()
+        assertEquals(
+            Color(0xFF336699),
+            pixels[pixels.width - 2, pixels.height - 2],
+            "the far corner of the picture is empty, so the drawing was not scaled",
         )
     }
 
@@ -208,8 +302,8 @@ class AssetDeliveryTest {
     }
 
     /**
-     * The same registration comes out as each system's own icon. If the three agreed on
-     * everything, an icon would be one drawing wearing three names.
+     * The same registration comes out as each system's own icon. If the systems agreed on
+     * everything, an icon would be one drawing wearing several names.
      */
     @Test
     fun fr16_one_icon_role_is_drawn_to_each_systems_own_metrics() {
@@ -223,11 +317,15 @@ class AssetDeliveryTest {
         }
 
         assertEquals(styles.size, styles.distinct().size, "each system draws its own icons")
-        assertEquals(
-            styles.size,
-            styles.map { it.cap }.distinct().size,
+        // Not one cap per system: Compose has three stroke ends and there are more systems
+        // than that, so the most that can be asked is that the sets do not all end alike.
+        assertTrue(
+            styles.map { it.cap }.distinct().size > 1,
             "the shape of a stroke's end is the most recognisable difference between the sets",
         )
-        assertNotEquals(styles[0].size, styles[1].size, "the optical sizes differ too")
+        assertTrue(
+            styles.map { it.size }.distinct().size > 1,
+            "the optical sizes differ too",
+        )
     }
 }

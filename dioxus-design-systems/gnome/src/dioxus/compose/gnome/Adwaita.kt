@@ -76,7 +76,25 @@ class GnomeDesignSystem private constructor(
         ColorRole.OutlineVariant -> Color(0xFFE6E3E1)
         // red 3, the destructive colour.
         ColorRole.Error -> Color(0xFFE01B24)
+        // sidebar_bg_color. An Adwaita card in light is white with a hairline around it,
+        // and white on window_bg_color is five parts of grey: the border is what you
+        // actually see. A role that has to be visible on the page on its own cannot be
+        // that, so the layer is the grey Adwaita already puts beside a view.
+        ColorRole.SurfaceContainer -> Color(0xFFEBEBEB)
         ColorRole.OnError -> Color(0xFFFFFFFF)
+        // teal 4, the third GNOME accent after blue and purple. One value across both
+        // schemes, which is how libadwaita ships its accents.
+        ColorRole.Tertiary -> Color(0xFF2190A4)
+        ColorRole.OnTertiary -> Color(0xFFFFFFFF)
+        // Adwaita tints by drawing the accent at a low alpha over whatever is behind.
+        // A role has to answer before it knows what is behind it, so these are that same
+        // tint resolved against the window colour, one per accent.
+        ColorRole.PrimaryContainer -> Color(0xFFD4E5FB)
+        ColorRole.OnPrimaryContainer -> Color(0xFF0D3B70)
+        ColorRole.SecondaryContainer -> Color(0xFFECD9F1)
+        ColorRole.OnSecondaryContainer -> Color(0xFF45164F)
+        ColorRole.TertiaryContainer -> Color(0xFFCFE9ED)
+        ColorRole.OnTertiaryContainer -> Color(0xFF0A3D45)
     }
 
     private fun darkColor(role: ColorRole): Color = when (role) {
@@ -94,7 +112,22 @@ class GnomeDesignSystem private constructor(
         ColorRole.OutlineVariant -> Color(0xFF3A3A3A)
         // red 1. The darker destructive red loses too much contrast on a dark window.
         ColorRole.Error -> Color(0xFFFF7B63)
+        // A step lighter than window_bg_color, which is how dark Adwaita raises a layer.
+        ColorRole.SurfaceContainer -> Color(0xFF303030)
         ColorRole.OnError -> Color(0xFF2A0A06)
+        // teal 4, the third GNOME accent after blue and purple. One value across both
+        // schemes, which is how libadwaita ships its accents.
+        ColorRole.Tertiary -> Color(0xFF2190A4)
+        ColorRole.OnTertiary -> Color(0xFFFFFFFF)
+        // Adwaita tints by drawing the accent at a low alpha over whatever is behind.
+        // A role has to answer before it knows what is behind it, so these are that same
+        // tint resolved against the window colour, one per accent.
+        ColorRole.PrimaryContainer -> Color(0xFF1B3C5E)
+        ColorRole.OnPrimaryContainer -> Color(0xFFCFE0F7)
+        ColorRole.SecondaryContainer -> Color(0xFF44234C)
+        ColorRole.OnSecondaryContainer -> Color(0xFFECD9F1)
+        ColorRole.TertiaryContainer -> Color(0xFF134249)
+        ColorRole.OnTertiaryContainer -> Color(0xFFCFE9ED)
     }
 
     /**
@@ -169,15 +202,15 @@ class GnomeDesignSystem private constructor(
     }
 
     /**
-     * Adwaita rounds moderately: 6px on a button or entry, 12px on a card, dialog or
-     * popover. Pills are used for suggested actions and for search entries.
+     * libadwaita's own named radii: 6px on a button or entry, 12px on a card or popover,
+     * 15px on a window. Pills are used for suggested actions and for search entries.
      */
     override fun shape(role: ShapeRole): Shape = when (role) {
         ShapeRole.None -> RoundedCornerShape(0.dp)
         ShapeRole.ExtraSmall -> RoundedCornerShape(4.dp)
         ShapeRole.Small -> RoundedCornerShape(6.dp)
-        ShapeRole.Medium -> RoundedCornerShape(8.dp)
-        ShapeRole.Large -> RoundedCornerShape(12.dp)
+        ShapeRole.Medium -> RoundedCornerShape(12.dp)
+        ShapeRole.Large -> RoundedCornerShape(15.dp)
         ShapeRole.Full -> RoundedCornerShape(percent = 50)
     }
 
@@ -235,6 +268,17 @@ class GnomeDesignSystem private constructor(
                 shape = ShapeRole.Small,
                 pressedContainer = neutralPressed,
                 pressedContent = onNeutral,
+                pressedBorder = null,
+                ripple = false,
+            )
+            ButtonVariant.Operator -> ButtonStyle(
+                container = neutral,
+                content = accent,
+                border = null,
+                borderWidth = 0.dp,
+                shape = ShapeRole.Small,
+                pressedContainer = neutralPressed,
+                pressedContent = accent,
                 pressedBorder = null,
                 ripple = false,
             )

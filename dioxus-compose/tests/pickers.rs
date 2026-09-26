@@ -113,7 +113,7 @@ fn fr15_date_picker_reports_the_picked_day() {
         &HostEvent {
             node_id: node,
             handler_id: handler,
-            payload: EventPayload::ValueChanged(20_400),
+            payload: EventPayload::ValueChanged(20_400.0),
         },
         &mut encoded,
     )
@@ -180,7 +180,7 @@ fn fr15_dropdown_carries_its_options_as_children() {
         &HostEvent {
             node_id: node,
             handler_id: handler,
-            payload: EventPayload::ValueChanged(1),
+            payload: EventPayload::ValueChanged(1.0),
         },
         &mut encoded,
     )
@@ -209,8 +209,8 @@ fn fr15_no_property_lets_the_host_choose_how_a_picker_is_operated() {
     assert!(
         named.is_empty(),
         "a picker property named how the user picks, or how the value is formatted: {named:?}. \
-         The three design systems are operated differently, and a Host that can ask for one \
-         of them turns the other two into imitations of it.",
+         The design systems are operated differently, and a Host that can ask for one \
+         of them turns the rest into imitations of it.",
     );
 }
 

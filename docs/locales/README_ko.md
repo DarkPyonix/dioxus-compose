@@ -96,12 +96,12 @@ dioxus-compose는 Compose의 런타임 비용을 빼고 렌더러만 가져옵�
 
 | 플랫폼 | 상태 | 내용 |
 |---|---|---|
-| 🍎 **macOS (arm64)** | **처음부터 끝까지 동작** | Rust 호스트 → C ABI → native-image 렌더러 → 화면의 창까지. 2026-09-20 Liberica NIK 25 Full에서 확인. 한글 입력의 기본 경로는 동작하고, IME 체크리스트(`SPEC §6`) 전체는 아직 미완 |
-| 🪟 Windows 데스크톱 | 스크립트 없음 | `NFR-4`의 대상이지만 `build-native.sh`는 현재 macOS 외에서 실행을 거부합니다 |
-| 🐧 Linux 데스크톱 | 스크립트 없음 | 위와 같음. 다만 **Rust 워크스페이스와 JVM 개발 셸은 동작**합니다. CI가 `ubuntu-latest`에서 Rust 게이트를 돌립니다 |
-| 📱 iOS | 설계만, 미구현 | Kotlin/Native `-produce static` + `@CName` 심볼 (마일스톤 M5) |
-| 🤖 Android | 설계만, 미구현 | Kotlin 호스트 + 생성된 JNI 심, `PR-5` (마일스톤 M6) |
-| 🌐 Web (wasm) | 설계만, 실현 가능성 미확정 | Rust wasm ↔ Kotlin/Wasm 직결, JS 브리지 없음, `PR-6` (마일스톤 M7, 열린 질문 **Q3**) |
+| 🍎 **macOS (arm64)** | **처음부터 끝까지 동작** | Rust 호스트 → C ABI → native-image 렌더러 → 화면의 창까지. Liberica NIK 25 Full에서 확인. 한글 입력의 기본 경로는 동작하고, IME 체크리스트(`SPEC §6`) 전체는 아직 미완 |
+| 🪟 Windows 데스크톱 | 빌드되고 실행됨 | 업스트림 GraalVM 25로 빌드되며, 렌더러가 바뀔 때마다 스모크 테스트를 통과합니다. |
+| 🐧 Linux 데스크톱 | 빌드되고 실행됨 | 두 아키텍처(x64, arm64) 모두 CI의 Xvfb 환경에서 빌드 및 헤드리스 시작 스모크 테스트를 통과합니다. |
+| 📱 iOS | 빌드되고 실행됨 | Kotlin/Native `-produce static`으로 동일한 C 심볼을 내보냅니다. XCFramework로 배포됩니다. |
+| 🤖 Android | 빌드됨, 실행 미확인 | Kotlin Activity가 프로세스와 루프를 소유하고 Rust는 cdylib이며, 양쪽 JNI 심은 스키마에서 생성됩니다. 앱과 라이브러리 모두 `arm64-v8a`로 빌드되지만 아직 기기나 에뮬레이터에서 실행해 보지 않았고, 그것이 `PR-5`가 요구하는 부분입니다 (마일스톤 M6) |
+| 🌐 Web (wasm) | **엔드 투 엔드 동작** | Kotlin/Wasm 모듈이 정의한 `WebAssembly.Memory` 하나를 Rust가 import하므로 배치를 쓴 자리에서 그대로 읽고 복사하지 않습니다. Renderer→Host 호출은 생성된 JS forwarder를 거치며 12ns로 실측했습니다. 브라우저에서 메모리 공유와 직접 바인딩을 동시에 가질 수 없기 때문이고, 반대 방향에는 JS가 없습니다. 데스크톱 데모와 같은 Rust 소스로 M0 화면이 브라우저에 뜨고, 클릭이 Rust 핸들러에 도달하며, 상태 변경이 페이지에 나타납니다. `web/scripts/test-boundary.sh`와 `screenshot.sh`가 브라우저에서 테스트하고 사진으로 남깁니다 (`PR-6`, 마일스톤 M7) |
 
 ### 양쪽의 진도 차이
 
@@ -111,15 +111,17 @@ Rust **Host**가 Kotlin **Renderer**보다 앞서 있습니다. 지금 마무리
 | 기능 | Host (Rust) | Renderer (Kotlin) |
 |---|---|---|
 | 노드 트리 mutation: `FR-1` | ✅ | ✅ |
-| 스키마 기반 렌더링: `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
-| 동기 이벤트 전달: `FR-3`, `FR-12` | ✅ | ✅ 키 소비를 `Modifier.onKeyEvent`에 연결 |
+| 스키마 기반 렌더링: `FR-2` | ✅ | ✅ 33개 컴포저블 모두 구현 |
+| 동기 이벤트 전달: `FR-3`, `FR-12` | ✅ | ✅ `on_click`, `on_change`, `on_dismiss`, 키 소비 연결 |
 | 비제어 `TextField`, IME 소유권: `D5` | ✅ | ✅ |
 | 스키마 코드젠 lockstep: `FR-7` | ✅ | ✅ 생성된 `Protocol.gen.kt` |
-| `LazyColumn` 윈도잉: `FR-8` | ✅ 요청받은 구간만 생성 | ⚠️ **당분간 평범한 `Column`으로 렌더링**. 윈도잉 절반이 `TODO(FR-8)`로 남아 있음 |
-| 스트리밍 텍스트 `AppendText`: `FR-9` | ✅ | ✅ |
-| Modifier: `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ 위 전부 |
-| 디자인 프리미티브·디자인 시스템: `FR-13`, `FR-14` | ❌ `Draft`: **명세만 있고 코드는 없음** | ❌ |
-| 서드파티 위젯 확장: `FR-11` | ❌ `Draft`: 후보 검토 중 (**Q2**) | ❌ |
+| `LazyColumn` 윈도잉: `FR-8` | ✅ | ✅ Renderer가 구간 요청 |
+| 스트리밍 텍스트 `AppendText`: `FR-9` | ✅ | ✅ 프레임 단위로 병합 |
+| Modifier: `FR-10` | ✅ | ✅ 13개 속성 전부 구현 |
+| 디자인 프리미티브·디자인 시스템: `FR-13`, `FR-14` | ✅ | ✅ 일곱 가지 시스템, 역할 기반 명세 |
+| 창 크기 클래스 (Window size classes) | ✅ | ✅ `use_window_size()`로 compact/medium/expanded 제공 |
+| 내비게이션 및 시트 (Navigation and sheets) | ✅ | ✅ 레일, 드로어, 하단 바, 시트 구현 |
+| 서드파티 위젯 확장: `FR-11` | ⚠️ 컴파일 타임에만 가능 | ⚠️ `LinearProgressIndicator`가 그 예시 |
 
 마일스톤은 [`PROJECT.md`](../../PROJECT.md)에 있습니다(M0~M8). **M1이 프로젝트의 생사를
 가릅니다.** native-image 빌드에서 한글 조합이 정상이면 나머지는 분량 문제입니다.
@@ -189,7 +191,7 @@ fn main() {
 
 ## 🎨 디자인 시스템
 
-**Material 3**, **Apple HIG**, **WinUI/Fluent** 세 가지를 1급으로 지원하는 것이 계획입니다.
+**Material 3**, **Apple HIG**, **WinUI/Fluent**, **Liquid Glass** 등 일곱 가지를 1급으로 지원하는 것이 계획입니다.
 애플리케이션이 고르며, 모든 플랫폼에서 동일하게 쓰거나 호스트 플랫폼을 따라가게 할 수 있습니다.
 
 ```rust
@@ -207,7 +209,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - **역할을 토큰으로 푸는 쪽은 Host가 아니라 Renderer입니다.** 그래서 다크모드 전환이 트리 전체에
   대한 `SetProp` 폭풍(`O(노드 수)`)이 아니라 `SetTheme` 한 건과 `CompositionLocal` 무효화로
   끝납니다. 프레임 예산에서 빠지는 비용의 차이입니다.
-- 네 번째 디자인 시스템을 추가할 때 위젯 코드, 속성, Modifier, 와이어 포맷은 건드리지 않습니다.
+- 여덟 번째 디자인 시스템을 추가할 때 위젯 코드, 속성, Modifier, 와이어 포맷은 건드리지 않습니다.
   Rust enum 변형 하나, Kotlin 토큰 테이블 하나, 규칙 구현 하나면 됩니다.
 - `adaptive`는 **기본값이 아닙니다.** `with_theme`을 부르지 않으면
   `Theme::unified(DesignSystem::Material3)`입니다. 플랫폼마다 다르게 보이는 것은 기본값으로
@@ -291,6 +293,35 @@ JavaFX 호스트가 쓰는 것과 같은 방식입니다. AWT가 자기 루프�
 ---
 
 ## 🚀 시작하기
+
+### 내 프로젝트에서 쓰기
+
+한 줄이면 끝입니다. `cargo build`가 이 타깃에 필요한 렌더러를 알아내고, 크레이트 버전에
+정확히 맞는 릴리스 아티팩트를 내려받고, 게시된 `.sha256`으로 검증하고, `target/` 밖의
+캐시에 풀어서 링크합니다.
+
+```toml
+[dependencies]
+dioxus-compose = "0.0.0"
+```
+
+설정할 환경 변수도, 손으로 내려받을 파일도, 실행할 스크립트도 없습니다. 캐시는 버전과
+타깃으로 키가 잡혀 있어서 `cargo clean`을 견디고 같은 기계의 프로젝트끼리 한 벌을
+공유합니다.
+
+필요한 경우를 위한 변수가 둘 있고, 둘 다 설치에 필요하지는 않습니다.
+
+| 변수 | 효과 |
+|---|---|
+| `DIOXUS_COMPOSE_RENDERER_DIR` | 이 디렉터리의 렌더러를 씁니다. 가장 먼저 확인하고, 설정돼 있으면 아무것도 내려받지 않습니다. 직접 빌드한 렌더러, 벤더링한 사본, 망 분리 빌드가 모두 이것 하나로 해결됩니다. |
+| `DIOXUS_COMPOSE_CACHE_DIR` | 캐시를 `$HOME/.cache/dioxus-compose`(Windows는 `%LOCALAPPDATA%\dioxus-compose`)에서 옮깁니다. |
+
+네트워크가 없는 빌드는 어떤 파일 둘을 어디에 두면 되는지 말하고, 그 자리에 두면 그것으로
+끝입니다. `default-features = false`는 렌더러 없이 빌드합니다(헤드리스, 문서 빌드). 그렇게
+만든 바이너리를 실행하면 무엇이 없는지 말하고 0이 아닌 상태로 끝납니다. 창을 열지 않은 채
+0을 반환하지 않습니다.
+
+아래는 전부 **이 저장소에서 작업할 때** 필요한 내용이며, 렌더러 툴체인까지 갖춰야 합니다.
 
 ### 0. 개발 환경 점검
 
@@ -383,10 +414,10 @@ cd dioxus-compose-renderer
 cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
-빌드 스크립트는 워크스페이스의
-`dioxus-compose-renderer/build/native-image/dist/lib`에서 렌더러를 찾습니다. 다른 곳에 있는
-렌더러를 쓰려면(내려받은 아티팩트, 벤더링한 복사본, 오프라인 빌드)
-`DIOXUS_COMPOSE_RENDERER_DIR`로 가리키세요(`NFR-10`).
+이 저장소의 체크아웃에서는 빌드 스크립트가 방금 빌드한 워크스페이스의
+`dioxus-compose-renderer/build/native-image/dist/lib`를 내려받기보다 먼저 씁니다. 전체 순서는
+`DIOXUS_COMPOSE_RENDERER_DIR`, 워크스페이스 빌드 결과물, 캐시, 크레이트 버전의 릴리스
+순입니다(`NFR-10`).
 
 ### 7. JVM 개발 셸
 
@@ -467,6 +498,7 @@ dioxus-compose/
 │  ├─ desktop/                      #   JVM 개발 셸
 │  ├─ shared/                       #   공용 Compose 코드
 │  └─ ios/  android/  web/          #   플랫폼 타깃
+├─ samples/                         # 11개의 샘플 앱 (4개는 adaptive, 7개는 unified)
 ├─ scripts/                         # setup-check.sh, check.sh, install-nik.sh, publish-main.sh
 └─ docs/
    ├─ INTENT.md                     # 왜 만드는가, 결정 D1~D10, 폐기한 대안
