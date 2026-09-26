@@ -1451,6 +1451,30 @@ void dxc_native_install_menu(const char *application_name) {
     (void)application_name;
 }
 
+/*
+ * The names below are answered here and do nothing.
+ *
+ * One piece of Kotlin drives every desktop and reaches their windows by name, so each of
+ * these files answers every name, including the ones that mean nothing on it. A missing
+ * one is a warning on the linkers that look names up at load time and a failure on the
+ * ones that do not, which is a defect that travels to whoever builds for the strictest
+ * platform. It travelled three times before this was written down.
+ */
+int32_t dxc_native_clipboard_read(char *out, int32_t capacity) {
+    (void)out;
+    (void)capacity;
+    return 0;
+}
+
+void dxc_native_clipboard_write(const char *text) {
+    (void)text;
+}
+
+void dxc_native_set_frame_callback(void *callback, void *isolate_thread) {
+    (void)callback;
+    (void)isolate_thread;
+}
+
 /** Takes the oldest event, or answers zero when there is none. */
 int32_t dxc_native_poll_event(struct dxc_event *out) {
     if (dxc_event_count == 0) {

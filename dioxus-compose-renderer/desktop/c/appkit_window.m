@@ -346,6 +346,18 @@ void dxc_native_pump(double seconds) {
     }
 }
 
+/*
+ * Answered here and does nothing.
+ *
+ * One piece of Kotlin drives every desktop and names them all, and a name nothing defines
+ * is a link that fails on the platform whose linker asks. This one is how X11 draws inside
+ * a resize; on this platform the layer is asked directly, from the view's own display.
+ */
+void dxc_native_set_frame_callback(void *callback, void *isolate_thread) {
+    (void)callback;
+    (void)isolate_thread;
+}
+
 /** Takes the oldest event, or answers zero when there is none. */
 int32_t dxc_native_poll_event(struct dxc_event *out) {
     int32_t taken = 0;
