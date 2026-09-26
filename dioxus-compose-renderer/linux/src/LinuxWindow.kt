@@ -365,6 +365,10 @@ internal class LinuxWindow private constructor(
     }
 
     private fun handle(event: XEvent) {
+        // Nothing after the window has gone. The rest of a batch can hold a size change for a
+        // window the server has already destroyed, and presenting a frame into one of those is an
+        // X error rather than a frame.
+        if (closed) return
         when (event.type) {
             MotionNotify -> log.heard(
                 WindowEvent(

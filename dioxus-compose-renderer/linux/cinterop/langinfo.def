@@ -6,12 +6,13 @@
 # macOS that is Foundation; on Linux it is `nl_langinfo`, which Kotlin/Native's posix platform
 # library does not declare.
 #
-# Both headers are in Kotlin/Native's own sysroot, so unlike the X11 definition beside this
-# one nothing has to be installed for it.
+# The header is in Kotlin/Native's own sysroot, so unlike the X11 definition beside this one
+# nothing has to be installed for it. Only this one header: `setlocale` is already declared by the
+# posix platform library, and declaring it twice would give the window two names for it.
 package = langinfo
 
-headers = langinfo.h locale.h
-headerFilter = langinfo.h locale.h
+headers = langinfo.h
+headerFilter = langinfo.h
 
 # Which day a week starts on is a GNU extension (`_NL_TIME_FIRST_WEEKDAY`) and is declared
 # only when this is set. Every locale has an answer for it and POSIX has no way to ask.
