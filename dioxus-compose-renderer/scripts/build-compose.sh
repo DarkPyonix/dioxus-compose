@@ -41,9 +41,52 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Which Gradle publication to ask for, and which modules have to be published at all.
+#
+# These differ by target and not by accident. On macOS the only thing missing from what JetBrains
+# published is the text context menu, which lives in two modules, so those two are rebuilt and
+# everything else still resolves from upstream. On Linux there is no published Kotlin/Native target
+# at all: `runtime` is the one module upstream builds for linuxX64, and every other module the
+# renderer draws with has to be built here. A module left off this list is not a build failure in
+# this script; it is an unresolvable dependency in the renderer's own build, tens of minutes later,
+# naming a coordinate nobody recognises.
 case "$target" in
-    macosArm64) publication="MacosArm64" ;;
-    linuxX64) publication="LinuxX64" ;;
+    macosArm64)
+        publication="MacosArm64"
+        modules=(
+            compose:foundation:foundation
+            compose:ui:ui
+        )
+        ;;
+    linuxX64)
+        publication="LinuxX64"
+        modules=(
+            compose:animation:animation
+            compose:animation:animation-core
+            compose:animation:animation-graphics
+            compose:foundation:foundation
+            compose:foundation:foundation-layout
+            compose:material:material
+            compose:material:material-navigation
+            compose:material:material-ripple
+            compose:material3:adaptive:adaptive
+            compose:material3:adaptive:adaptive-layout
+            compose:material3:adaptive:adaptive-navigation
+            compose:material3:adaptive:adaptive-navigation3
+            compose:material3:material3
+            compose:material3:material3-adaptive-navigation-suite
+            compose:material3:material3-window-size-class
+            compose:ui:ui
+            compose:ui:ui-backhandler
+            compose:ui:ui-geometry
+            compose:ui:ui-graphics
+            compose:ui:ui-text
+            compose:ui:ui-tooling-preview
+            compose:ui:ui-unit
+            compose:ui:ui-util
+            navigation:navigation-compose
+        )
+        ;;
     *) die "unknown target '$target'" "known: macosArm64, linuxX64" ;;
 esac
 
@@ -81,15 +124,18 @@ done
 [[ -n "${JAVA_HOME:-}" ]] || die "JAVA_HOME is not set" \
     "The Compose build needs a JDK 17; the toolchain wrapper's does not apply here."
 
-echo "==> publishing compose foundation and ui for $target as $PUBLISHED_AS"
+echo "==> publishing ${#modules[@]} compose module(s) for $target as $PUBLISHED_AS"
+tasks=()
+for module in "${modules[@]}"; do
+    tasks+=(":$module:publish${publication}PublicationToMavenLocal")
+done
 (
     cd "$WORK"
     ./gradlew --no-daemon --no-configuration-cache \
         "-Pjetbrains.publication.version.COMPOSE=$PUBLISHED_AS" \
-        ":compose:foundation:foundation:publish${publication}PublicationToMavenLocal" \
-        ":compose:ui:ui:publish${publication}PublicationToMavenLocal"
+        "${tasks[@]}"
 )
 
 echo
 echo "published to $HOME/.m2/repository/org/jetbrains/compose as $PUBLISHED_AS"
-echo "the renderer's macos module reads mavenLocal first, so the next build links these"
+echo "the renderer's macos and linux modules read mavenLocal first, so the next build links these"
