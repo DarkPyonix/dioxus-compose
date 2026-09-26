@@ -6,12 +6,16 @@
 package dioxus.compose.ui.platform
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.unit.dp
+import dioxus.compose.runtime.WindowCaption
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.platform.DefaultArchitectureComponentsOwner
 import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.platform.WindowInfo
@@ -21,14 +25,28 @@ import androidx.compose.ui.unit.IntSize
 import kotlinx.cinterop.CValue
 import kotlinx.cinterop.useContents
 import platform.CoreGraphics.CGPoint
+import platform.CoreGraphics.CGRect
 import platform.Foundation.NSPointInRect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.enableSavedStateHandles
 import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.Canvas
-import org.jetbrains.skiko.SkiaLayer
-import org.jetbrains.skiko.SkikoRenderDelegate
+import androidx.compose.ui.input.pointer.PointerIcon
 import platform.AppKit.NSBackingStoreBuffered
+import platform.AppKit.NSWindowCloseButton
+import platform.AppKit.NSWindowZoomButton
+import platform.AppKit.NSViewLayerContentsRedrawDuringViewResize
+import platform.CoreGraphics.CGSize
+import platform.Foundation.NSProcessInfo
+import platform.QuartzCore.CALayer
+import platform.QuartzCore.CALayerDelegateProtocol
+import platform.AppKit.NSCursor
+import platform.AppKit.NSDragOperation
+import platform.AppKit.NSDragOperationCopy
+import platform.AppKit.NSDragOperationNone
+import platform.AppKit.NSDraggingDestinationProtocol
+import platform.AppKit.NSDraggingInfoProtocol
+import platform.AppKit.NSFilenamesPboardType
 import platform.AppKit.NSEvent
 import platform.AppKit.NSEventModifierFlagCommand
 import platform.AppKit.NSEventModifierFlagControl
@@ -41,6 +59,15 @@ import platform.AppKit.NSTrackingArea
 import platform.AppKit.NSTrackingInVisibleRect
 import platform.AppKit.NSTrackingMouseEnteredAndExited
 import platform.AppKit.NSTrackingMouseMoved
+import platform.AppKit.NSTextInputClientProtocol
+import platform.Foundation.NSAttributedString
+import platform.Foundation.NSMakeRange
+import platform.Foundation.NSNotFound
+import platform.Foundation.NSRange
+import platform.Foundation.NSRangePointer
+import platform.Foundation.string
+import kotlinx.cinterop.CPointed
+import kotlinx.cinterop.CPointer
 import platform.AppKit.NSView
 import platform.AppKit.NSWindow
 import platform.AppKit.NSWindowStyleMaskClosable
@@ -79,36 +106,117 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
         override val isWindowFocused: Boolean get() = true
         override val containerSize: IntSize get() = measured
     }
-    private val skiaLayer = SkiaLayer()
+    private val metal = MetalSurface()
 
     // What the window says about itself, kept in step with the scene by the listener the
     // context carries. Pushed on change rather than asked for.
     private val semantics = NativeSemantics { elements -> describeToReader(elements) }
+
+    /** Where committed and composing text goes. */
+    private val textInput = NativeTextInput()
+
+    /** Copy, paste and the rest, as the system's own menu draws them. */
+    private val textToolbar = MacosTextToolbar { view }
 
     private val platformContext: PlatformContext =
         object : PlatformContext by PlatformContext.Empty() {
             override val windowInfo get() = this@MacosWindow.windowInfo
             override val architectureComponentsOwner get() = components
             override val semanticsOwnerListener get() = semantics
+            override suspend fun startInputMethod(
+                request: PlatformTextInputMethodRequest,
+            ): Nothing = textInput.run(request)
+
+            /**
+             * The shape the pointer takes over whatever it is on.
+             *
+             * Compose names a few shapes and leaves the rest to the platform. One it does
+             * not name becomes the arrow, which is what a pointer over something
+             * unremarkable looks like anyway.
+             */
+            override fun setPointerIcon(pointerIcon: PointerIcon) {
+                when (pointerIcon) {
+                    PointerIcon.Hand -> NSCursor.pointingHandCursor
+                    PointerIcon.Text -> NSCursor.IBeamCursor
+                    PointerIcon.Crosshair -> NSCursor.crosshairCursor
+                    else -> NSCursor.arrowCursor
+                }.set()
+            }
+
+            /** What a selection offers when it is asked. */
+            override val textToolbar get() = this@MacosWindow.textToolbar
+
+            // Said so that a scene drawing a window with something showing through it
+            // clears to nothing rather than to a colour.
+            override val isWindowTransparent: Boolean
+                get() = !window.isOpaque()
         }
 
     private val scene = CanvasLayersComposeScene(
         coroutineContext = Dispatchers.Main,
         platformContext = platformContext,
-        invalidate = skiaLayer::needRender,
+        // Marked rather than drawn. What asks for a frame here is the composition, which
+        // can do so in the middle of one, and AppKit draws a view that needs it before the
+        // next refresh anyway. Drawing from here as well would draw twice.
+        invalidate = { view.needsDisplay = true },
     )
 
-    private val renderDelegate = object : SkikoRenderDelegate {
-        override fun onRender(canvas: Canvas, width: Int, height: Int, nanoTime: Long) {
-            val size = IntSize(width, height)
-            measured = size
-            scene.size = size
-            scene.render(canvas.asComposeCanvas(), nanoTime)
-            // After the drawing, because that is when what is in the window has been
-            // placed and can say where it is. Asked before, every control answers with an
-            // empty rectangle and a reader finds the screen stacked in one corner.
-            semantics.pushIfChanged(afterDrawing = true)
+    /**
+     * One frame, drawn where AppKit asked for it.
+     *
+     * The whole of the reason this window does not use skiko's layer: this runs inside the
+     * view's own display, so during a drag of the window's edge the drawing and the frame
+     * the window server has already moved are committed together.
+     */
+    private fun paintFrame(canvas: Canvas, widthInPixels: Int, heightInPixels: Int) {
+        val size = IntSize(widthInPixels, heightInPixels)
+        measured = size
+        scene.size = size
+        scene.render(
+            canvas.asComposeCanvas(),
+            (NSProcessInfo.processInfo.systemUptime * 1_000_000_000.0).toLong(),
+        )
+        // After the drawing, because that is when what is in the window has been placed
+        // and can say where it is. Asked before, every control answers with an empty
+        // rectangle and a reader finds the screen stacked in one corner.
+        if (readerIsListening) semantics.pushIfChanged(afterDrawing = true)
+    }
+
+    /** Whether anything has ever asked this window what is in it. */
+    private var readerIsListening = false
+
+    /**
+     * The strip the window's own buttons sit in, for whatever draws across the top of the
+     * window to step its content clear of.
+     *
+     * Content runs to the top of the window here, which is the point of it, and a control
+     * put where the close, minimise and zoom buttons are would leave both unusable. It
+     * happened: every sample drew its heading straight through them.
+     *
+     * Measured from the window rather than written down as a number. The height is the
+     * difference between the window's frame and the part of it below the bar, and the
+     * width is where the last of the three buttons ends, with the gap in front of the
+     * first mirrored after the last. Both follow the system that way rather than drifting
+     * from it the next time Apple changes them.
+     */
+    val caption = mutableStateOf(WindowCaption.None)
+
+    private fun measureCaption() {
+        val scale = 1.0
+        val height = window.frame.useContents { size.height } -
+            window.contentLayoutRect.useContents { size.height }
+        val close = window.standardWindowButton(NSWindowCloseButton)
+        val zoom = window.standardWindowButton(NSWindowZoomButton)
+        val width = if (close == null || zoom == null) 0.0 else {
+            val leading = close.frame.useContents { origin.x }
+            zoom.frame.useContents { origin.x + size.width } + leading
         }
+        caption.value = WindowCaption(
+            height = (height * scale).dp,
+            // The platform's own, and this platform puts them at the leading edge.
+            buttonsWidth = (width * scale).dp,
+            buttonsAtStart = true,
+        )
     }
 
     val window = object : NSWindow(
@@ -127,19 +235,159 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
         override fun canBecomeMainWindow() = true
     }
 
-    private val view = object : NSView(window.frame) {
+
+    private val view: NSView = object : NSView(window.frame), CALayerDelegateProtocol, NSTextInputClientProtocol,
+        NSDraggingDestinationProtocol {
         private var tracking: NSTrackingArea? = null
 
+        // Files let go over the window. Compose's own drag and drop is declared and never
+        // filled in on this platform, so the window takes the drop and the screen hears
+        // about it through the Host event every platform sends.
+        override fun draggingEntered(sender: NSDraggingInfoProtocol): NSDragOperation =
+            if (FileDrop.carriesFiles(sender.draggingPasteboard)) NSDragOperationCopy
+            else NSDragOperationNone
+
+        override fun draggingUpdated(sender: NSDraggingInfoProtocol): NSDragOperation =
+            draggingEntered(sender)
+
+        override fun performDragOperation(sender: NSDraggingInfoProtocol): Boolean {
+            val paths = FileDrop.paths(sender.draggingPasteboard)
+            if (paths.isEmpty()) return false
+            FileDrop.dropped.value = paths
+            return true
+        }
+
+        // What is on screen and not yet chosen. Kept so that the input method can be told how
+        // long it is, which is how it draws the underline under what it is composing.
+        private var marked: String = ""
+
+        override fun insertText(string: Any, replacementRange: CValue<NSRange>) {
+            marked = ""
+            textInput.commit(string.asText())
+        }
+
+        override fun setMarkedText(
+            string: Any,
+            selectedRange: CValue<NSRange>,
+            replacementRange: CValue<NSRange>,
+        ) {
+            marked = string.asText()
+            textInput.compose(marked)
+        }
+
+        override fun unmarkText() {
+            marked = ""
+            textInput.compose("")
+        }
+
+        override fun hasMarkedText(): Boolean = marked.isNotEmpty()
+
+        override fun markedRange(): CValue<NSRange> =
+            if (marked.isEmpty()) NSMakeRange(NSNotFound.toULong(), 0u)
+            else NSMakeRange(0u, marked.length.toULong())
+
+        // The field's own selection is Compose's and is not read back out: what an input
+        // method does with this is place its candidate window, and the caret rectangle below
+        // is the better answer for that.
+        override fun selectedRange(): CValue<NSRange> = NSMakeRange(NSNotFound.toULong(), 0u)
+
+        override fun validAttributesForMarkedText(): List<*> = emptyList<Any>()
+
+        override fun attributedSubstringForProposedRange(
+            range: CValue<NSRange>,
+            actualRange: NSRangePointer?,
+        ): NSAttributedString? = null
+
+        /**
+         * Where the candidate window goes.
+         *
+         * At the caret would be better and Compose does not offer it here, so this is the
+         * window's own origin: the candidates appear at a fixed place rather than following
+         * the text. Wrong-looking rather than wrong, and the alternative is no candidates.
+         */
+        override fun firstRectForCharacterRange(
+            range: CValue<NSRange>,
+            actualRange: NSRangePointer?,
+        ): CValue<CGRect> {
+            val origin = window?.frame?.useContents { CGRectMake(origin.x, origin.y, 0.0, 0.0) }
+            return origin ?: CGRectMake(0.0, 0.0, 0.0, 0.0)
+        }
+
+        override fun characterIndexForPoint(point: CValue<CGPoint>): ULong =
+            NSNotFound.toULong()
+
+        override fun doCommandBySelector(selector: CPointer<out CPointed>?) {
+            // Movement and deletion are Compose's, and it has already seen the key event that
+            // produced this. Doing it again here would do it twice.
+        }
+
+        // An input method hands back either a string or an attributed one, and only the
+        // characters are wanted either way.
+        private fun Any.asText(): String = when (this) {
+            is NSAttributedString -> string
+            else -> toString()
+        }
+
+        // The view's own layer is the one that is drawn into, rather than a layer of
+        // skiko's put on top. That is what lets a frame be drawn inside the view's display
+        // and committed with whatever else the layer tree is committing.
+        override fun makeBackingLayer(): CALayer = metal.layer
+
         override fun wantsUpdateLayer() = true
+
+        /**
+         * Drawn here, which AppKit calls when the view needs displaying.
+         *
+         * During a drag of the window's edge this is reached from the resize itself, so the
+         * drawing and the frame the window server has already moved reach the screen in the
+         * same commit. That is the difference between a window that is attached to the
+         * pointer and one that trails it by a refresh.
+         */
+        /**
+         * Drawn here, which is where a layer asks its delegate for its contents.
+         *
+         * A view that is backed by a layer of its own kind is asked this way rather than
+         * through the view's own drawing, and AppKit has already made the view the layer's
+         * delegate by the time anything needs displaying.
+         */
+        override fun displayLayer(layer: CALayer) = updateLayer()
+
+        override fun updateLayer() {
+            val scale = window?.backingScaleFactor ?: 1.0
+            frame.useContents { metal.resize(size.width, size.height, scale) }
+            metal.draw(::paintFrame)
+        }
+
+        // Redrawn when it is resized rather than stretched, which is what a layer does with
+        // its old contents by default and is exactly the trailing edge this window is for.
+        override fun setFrameSize(newSize: CValue<CGSize>) {
+            super.setFrameSize(newSize)
+            // A window that went full screen has no buttons to avoid, and one that came
+            // back has them again, and both arrive as a change of size.
+            measureCaption()
+            // Drawn here rather than marked. Marking leaves the drawing to the display
+            // cycle, and because this layer presents with the transaction the window's own
+            // frame then waits for it: the edge still never comes away from the drawing,
+            // but it advances in jumps of a hundred pixels instead of following the hand.
+            if (window != null) updateLayer()
+        }
         override fun acceptsFirstResponder() = true
 
-        // The click is ours wherever it lands inside us. Skia's layer puts a view of
-        // its own on top of this one, and the press goes to whatever is on top: the
-        // keyboard arrived because that follows the responder, and no press ever did
-        // because that follows what is under the pointer.
+        // The click is ours wherever it lands inside us.
         override fun hitTest(aPoint: CValue<CGPoint>): NSView? =
             if (NSPointInRect(convertPoint(aPoint, fromView = superview), bounds)) this
             else null
+
+        // Asked only when something is reading the screen, which is what this is for.
+        // Describing the tree costs about a third of a frame, and until now it was paid on
+        // every frame by everyone, whether or not anyone was listening. A drag of the
+        // window's edge is where that showed: every control moves on every frame, so the
+        // comparison that usually makes it free always failed.
+        override fun accessibilityChildren(): List<*>? {
+            readerIsListening = true
+            semantics.pushIfChanged(afterDrawing = true)
+            return super.accessibilityChildren()
+        }
 
         override fun acceptsFirstMouse(event: NSEvent?) = true
         override fun viewWillMoveToWindow(newWindow: NSWindow?) = updateTrackingAreas()
@@ -158,8 +406,13 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
             addTrackingArea(area)
         }
 
-        override fun mouseDown(event: NSEvent) =
+        override fun mouseDown(event: NSEvent) {
+            // Whatever was being composed is finished where it was. The caret is about to
+            // move and the input method would otherwise go on building a syllable at a
+            // place the reader has left, which shows up as the letters coming apart.
+            if (hasMarkedText()) inputContext?.discardMarkedText()
             send(event, PointerEventType.Press, PointerButton.Primary)
+        }
 
         override fun mouseUp(event: NSEvent) =
             send(event, PointerEventType.Release, PointerButton.Primary)
@@ -177,9 +430,16 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
         override fun scrollWheel(event: NSEvent) = send(event, PointerEventType.Scroll)
 
         override fun keyDown(event: NSEvent) {
-            // Only what the screen did not want reaches the system, which is what makes
-            // it sound the alert for a key nothing took.
-            if (!scene.sendKeyEvent(event.compose(KeyEventType.KeyDown))) super.keyDown(event)
+            // Both, and in this order. The scene reads the key as a key: arrows, Enter,
+            // backspace and whatever shortcut the screen has bound. The input method
+            // reads the same key as text, and hands back a letter or a syllable being
+            // built through the methods above.
+            //
+            // Handed to the input context rather than interpreted. Interpreting also
+            // turns keys into editing commands for a text system this window does not
+            // have, and the keys have already gone to the scene, which has its own.
+            scene.sendKeyEvent(event.compose(KeyEventType.KeyDown))
+            inputContext?.handleEvent(event)
         }
 
         override fun keyUp(event: NSEvent) {
@@ -196,13 +456,17 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
         window.titleVisibility = NSWindowTitleHidden
         window.contentView = view
 
-        skiaLayer.renderDelegate = renderDelegate
-        // After the view is in the window, which is what skiko asks for.
-        skiaLayer.attachTo(view)
+        // Said before the view is asked for its layer, because the answer is ours and a
+        // view that was not told to have one never asks.
+        view.wantsLayer = true
+        view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize
 
         window.center()
         window.makeKeyAndOrderFront(null)
         window.makeFirstResponder(view)
+        // Said so that the window is offered drags at all: a view that has registered for
+        // nothing is never asked.
+        view.registerForDraggedTypes(listOf(NSFilenamesPboardType))
 
         // After the window is on screen, and in this order: the density is the screen's
         // and is not known until the window is on one, and a scene given content before
@@ -213,6 +477,7 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
         // Said, rather than assumed. Compose composes for something that is alive, and a
         // scene nobody has resumed stays where it started, which is a window that opens
         // and never draws.
+        measureCaption()
         components.enableSavedStateHandles()
         components.lifecycle.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
@@ -288,7 +553,13 @@ internal class MacosWindow(private val name: String, width: Int, height: Int) {
         KeyEvent(
             key = composeKey(keyCode.toInt()),
             type = type,
-            codePoint = characters?.firstOrNull()?.code ?: 0,
+            // Nothing, deliberately. This platform reads a key as typed text when it
+            // carries a printable character, and the input method is already putting
+            // that text in through `insertText`: sending it here as well types every
+            // letter twice and pushes a syllable along as it is being built. What the
+            // scene is for here is the keys that are not text, and those carry no
+            // printable character anyway.
+            codePoint = 0,
             isAltPressed = modifierFlags and NSEventModifierFlagOption != 0uL,
             isCtrlPressed = modifierFlags and NSEventModifierFlagControl != 0uL,
             isMetaPressed = modifierFlags and NSEventModifierFlagCommand != 0uL,

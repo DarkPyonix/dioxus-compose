@@ -1,5 +1,12 @@
+// Asking the platform to draw the text context menu is behind a flag while it is being
+// finished upstream. It is read here and nowhere else, and pinned to Compose 1.11.1: a
+// version that settles the question removes the flag and fails this file rather than
+// quietly going back to a menu Compose drew.
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package dioxus.compose.ui.platform
 
+import androidx.compose.foundation.ComposeFoundationFlags
 import dioxus.compose.runtime.DioxusContent
 import dioxus.compose.runtime.DioxusHost
 import dioxus.compose.runtime.HostConnection
@@ -29,6 +36,11 @@ internal fun runRenderer(connection: () -> HostConnection): Int {
     // Started before there is a window, because what the window should look like is in
     // the first batch and a window cannot be told afterwards: how big it is and what it
     // is called are settled when it is made.
+    // The menu a selection offers, drawn by the system rather than by Compose. The path
+    // that asks the platform for one is behind a flag while it is being finished
+    // upstream, and this window has a platform that answers, so it is turned on.
+    ComposeFoundationFlags.isNewContextMenuEnabled = true
+
     val host = DioxusHost(connection())
     host.start()
     // What the application asked for. A window that said nothing is listed under whatever
@@ -40,7 +52,7 @@ internal fun runRenderer(connection: () -> HostConnection): Int {
         width = if (asked != null && asked.width > 0) asked.width else 520,
         height = if (asked != null && asked.height > 0) asked.height else 360,
     )
-    window.setContent { DioxusContent(host) }
+    window.setContent { DioxusContent(host, caption = window.caption.value) }
 
     application.activateIgnoringOtherApps(true)
     application.run()
