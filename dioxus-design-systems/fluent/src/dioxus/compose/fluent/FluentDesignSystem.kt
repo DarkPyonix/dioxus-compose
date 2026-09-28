@@ -68,6 +68,16 @@ class FluentDesignSystem private constructor(
         ColorRole.OutlineVariant -> palette.stroke2
         ColorRole.Error -> palette.danger
         ColorRole.OnError -> palette.onDanger
+        // A card sits on the solid background base, one layer lighter than the canvas.
+        ColorRole.SurfaceContainer -> palette.background1
+        ColorRole.Tertiary -> palette.accentTertiary
+        ColorRole.OnTertiary -> palette.onAccentTertiary
+        ColorRole.PrimaryContainer -> palette.accentContainer
+        ColorRole.OnPrimaryContainer -> palette.onAccentContainer
+        ColorRole.SecondaryContainer -> palette.accentSecondaryContainer
+        ColorRole.OnSecondaryContainer -> palette.onAccentSecondaryContainer
+        ColorRole.TertiaryContainer -> palette.accentTertiaryContainer
+        ColorRole.OnTertiaryContainer -> palette.onAccentTertiaryContainer
     }
 
     /**
@@ -162,7 +172,7 @@ class FluentDesignSystem private constructor(
             pressedBorder = null,
             ripple = false,
         )
-        ButtonVariant.Tonal -> ButtonStyle(
+        ButtonVariant.Tonal, ButtonVariant.Operator -> ButtonStyle(
             container = palette.background1,
             content = palette.foreground1,
             // A Fluent standard button always carries its stroke. Without it the button

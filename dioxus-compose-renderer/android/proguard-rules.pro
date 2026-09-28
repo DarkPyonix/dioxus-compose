@@ -19,3 +19,15 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# The boundary is reached by name from native code, in both directions.
+#
+# The shims bind to the class and method names the schema generated, and the runtime
+# resolves them as strings at load time, so a rename or a removal is invisible to the
+# shrinker and shows up as an UnsatisfiedLinkError on the first call instead.
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+-keep class dioxus.compose.ui.platform.HostBridge {
+    public static void onFrameRequested();
+}

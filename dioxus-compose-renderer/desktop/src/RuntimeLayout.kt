@@ -22,8 +22,18 @@ internal fun configureRuntimeLayout(libraryDir: String) {
     System.setProperty("skiko.library.path", lib.absolutePath)
     System.setProperty("skiko.data.path", lib.absolutePath)
 
-    // Setting skiko.buffering here does nothing in a native image, measured: IOSurface
-    // stays at 9408KB across 11 regions either way, while the same property on the JVM
-    // drops it to 7696KB. Skiko's property holder is initialised when the image is built,
-    // so a value written at startup arrives too late to be read.
+    // The window's surface is the largest single thing this process holds. Measured on an
+    // empty window at 800x600 on a 2x display, the surface and the graphics allocations
+    // behind it come to 22MB, and one buffer at that size is 7.7MB, so that is three
+    // buffers. Two is enough to draw without tearing.
+    //
+    // Set here rather than passed to the build, because a shared library has no command
+    // line and there is nothing to carry a `-D` into the image. It is read moments later,
+    // when Skiko's property holder initialises, which is why the image is built with that
+    // one class initialising at run time instead of while it is being built.
+    //
+    // Only where nothing said otherwise, so that an operator can still override either.
+    if (System.getProperty("skiko.buffering") == null) {
+        System.setProperty("skiko.buffering", "DOUBLE")
+    }
 }

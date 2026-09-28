@@ -7,8 +7,16 @@ use dioxus_core::{
 use std::collections::HashMap;
 
 /// The inclusive range of design-property tags. Extension properties follow this range.
-const FIRST_DESIGN_PROPERTY: u16 = PropertyKind::TypeRole as u16;
-const LAST_DESIGN_PROPERTY: u16 = PropertyKind::Variant as u16;
+const FIRST_OPTIONAL_PROPERTY: u16 = PropertyKind::TypeRole as u16;
+const LAST_OPTIONAL_PROPERTY: u16 = PropertyKind::Variant as u16;
+
+/// The bit that tracks whether a node has ever carried a list of text runs.
+///
+/// Outside the range above and kept separately, because widening that range swallowed
+/// values where zero means zero: a picker whose minimum really is 0 stopped sending it
+/// and got the Renderer's default instead. A list of runs has no such value. Empty and
+/// absent are the same state, so the first empty one is worth no record.
+const SPANS_BIT: u32 = 63;
 
 #[derive(Clone, Copy, Debug)]
 struct Handler {
@@ -18,21 +26,55 @@ struct Handler {
     name: &'static str,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PathTarget {
     Node(u32),
-    Slot { parent: u32, index: u32 },
+    /// A template's dynamic child: the node it hangs under, and the marker standing in
+    /// its place until its content arrives.
+    Slot {
+        parent: u32,
+        marker: u32,
+    },
+}
+
+/// One position among a parent's children.
+///
+/// The Renderer counts only the nodes it drew, so the index an Insert carries is the
+/// number of drawn siblings that come first. A placeholder and a template's unfilled
+/// dynamic child are both positions nothing is drawn for, and keeping them here is what
+/// lets the content that arrives later take the position it was promised rather than the
+/// end of the list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    /// A node the Renderer drew.
+    Node(u32),
+    /// A Dioxus placeholder, named by the element it was created for. Placeholders all
+    /// carry node id 0, so the element is the only thing that tells two of them apart.
+    Hole(usize),
+    /// A template's dynamic child, from the moment the template is built until the
+    /// content of that child arrives.
+    Pending(u32),
 }
 
 #[derive(Debug)]
 struct StackNode {
     node_id: u32,
+    /// The element this entry was created for, when it is a placeholder.
+    ///
+    /// A placeholder is not a node in the Compose tree, so every one of them carries node
+    /// id 0. Two placeholders on screen at once still stand in two different places, and
+    /// the element is what tells them apart.
+    element: Option<ElementId>,
     paths: HashMap<Vec<u8>, PathTarget>,
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 11;
+const MODIFIER_SLOTS: usize = 14;
+
+/// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
+/// takes no slot in the Compose tree.
+const PLACEHOLDER_NODE: u32 = 0;
 
 /// `dioxus-core` mutation sink that writes the Compose wire protocol directly.
 pub struct ComposeRenderer {
@@ -41,9 +83,28 @@ pub struct ComposeRenderer {
     next_handler_id: u64,
     nodes: Vec<Option<u32>>,
     handlers: Vec<Handler>,
-    parents: HashMap<u32, (u32, u32)>,
+    /// Which parent each drawn node hangs under.
+    parents: HashMap<u32, u32>,
+    /// Which parent each placeholder stands under, keyed by its element rather than by a
+    /// node id.
+    ///
+    /// Placeholders all share node id 0, so keying them by node id made every one of them
+    /// overwrite the last: a branch that filled in was then attached to whichever other
+    /// placeholder had been seen most recently, which put a subtree under a stranger and,
+    /// when that stranger was its own descendant, left the parent chain with no root.
+    placeholders: HashMap<usize, u32>,
+    /// What stands under each parent, in order.
+    ///
+    /// An index is read off this list rather than remembered from the Insert that put a
+    /// node there. Removing a sibling moves everything after it, so a remembered index is
+    /// only right until the next removal: a menu whose entries came and went handed the
+    /// next set of entries the position the old last entry had held, and they piled up
+    /// past the end of the list instead of taking its place.
+    children: HashMap<u32, Vec<Slot>>,
+    /// The next marker to stand in a template's dynamic child.
+    next_marker: u32,
     /// Which design properties a node has actually been given, one bit per tag.
-    design_props: HashMap<u32, u32>,
+    optional_props: HashMap<u32, u64>,
     /// A border arrives as a width and a colour in separate attributes; this holds
     /// whichever came first until the pair can be written as one modifier.
     pending_borders: HashMap<u32, (Option<f32>, Option<crate::Paint>)>,
@@ -58,6 +119,8 @@ pub struct ComposeRenderer {
     /// owner it would clear the modifier its partner had just written, which is how a
     /// rounded container came out square.
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
+    /// Which application token each observed node was given, for reading a report back.
+    size_tokens: HashMap<u32, u32>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
 }
@@ -69,6 +132,11 @@ impl Default for ComposeRenderer {
 }
 
 impl ComposeRenderer {
+    /// The application's name for an observed node, if that node is observed.
+    pub(crate) fn size_token(&self, node_id: u32) -> Option<u32> {
+        self.size_tokens.get(&node_id).copied()
+    }
+
     pub fn new() -> Self {
         Self {
             encoder: BatchEncoder::with_capacity(16 * 1024, 4 * 1024, 256),
@@ -77,12 +145,24 @@ impl ComposeRenderer {
             nodes: Vec::with_capacity(256),
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
-            design_props: HashMap::with_capacity(64),
+            placeholders: HashMap::with_capacity(16),
+            children: HashMap::with_capacity(256),
+            next_marker: 1,
+            optional_props: HashMap::with_capacity(64),
             pending_borders: HashMap::with_capacity(16),
             modifier_slots: HashMap::with_capacity(64),
+            // Empty until a screen asks, which is the point: a tree that observes nothing
+            // allocates nothing here.
+            size_tokens: HashMap::new(),
             stack: Vec::with_capacity(64),
             error: None,
         }
+    }
+
+    /// The batch arena, so a runtime that reads Host memory through a mapped view can be
+    /// handed one.
+    pub fn arena(&self) -> (*const u8, usize) {
+        self.encoder.arena()
     }
 
     pub fn begin_frame(&mut self) {
@@ -125,6 +205,11 @@ impl ComposeRenderer {
         self.write(Mutation::SetTheme(theme));
     }
 
+    /// The root window record. Written once per rebuild, never per frame.
+    pub fn set_window(&mut self, window: crate::schema::Window) {
+        self.write(Mutation::SetWindow(window));
+    }
+
     pub fn set_text_node(&mut self, node_id: u32, text: &str, selection: Option<crate::Selection>) {
         self.write(Mutation::SetText {
             node_id,
@@ -145,6 +230,25 @@ impl ComposeRenderer {
 
     pub fn release_asset(&mut self, asset_id: u32) {
         self.write(Mutation::ReleaseAsset { asset_id });
+    }
+
+    /// Writes one transient message into the batch.
+    ///
+    /// It names no node, because a message is not in the tree: it is a sentence with a
+    /// lifetime, and that lifetime belongs to the Renderer.
+    pub fn show_message(
+        &mut self,
+        handler_id: u64,
+        text: &str,
+        action: &str,
+        duration: crate::schema::MessageDuration,
+    ) {
+        self.write(Mutation::ShowMessage {
+            handler_id,
+            text,
+            action,
+            duration,
+        });
     }
 
     /// Append the streamed tail to a Text node without resending its whole value.
@@ -189,6 +293,9 @@ impl ComposeRenderer {
         const ELEVATION: u16 = 8;
         const CLICKABLE: u16 = 9;
         const PADDING: u16 = 10;
+        const OBSERVE_SIZE: u16 = 11;
+        const MOTION: u16 = 12;
+        const MATERIAL: u16 = 13;
 
         let float = |value: &AttributeValue| match value {
             AttributeValue::Float(number) => Some(*number as f32),
@@ -213,6 +320,9 @@ impl ComposeRenderer {
             "elevation" => Some(ELEVATION),
             "onclickable" => Some(CLICKABLE),
             "padding" | "padding_role" => Some(PADDING),
+            "observe_size" => Some(OBSERVE_SIZE),
+            "motion" => Some(MOTION),
+            "material" => Some(MATERIAL),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -239,6 +349,14 @@ impl ComposeRenderer {
             .or_insert([""; MODIFIER_SLOTS])[slot as usize] = name;
 
         match name {
+            // The token is the application's name for this node, and it stays here: what
+            // the Renderer reports back is its own node id, so the pairing has to be
+            // remembered at the moment the two are both in hand.
+            "observe_size" => {
+                let token = u32::try_from(integer(value)?).ok()?;
+                self.size_tokens.insert(node_id, token);
+                Some(Some((slot, Modifier::ObserveSize { token })))
+            }
             "fill_max_width" | "fill_max_height" => {
                 let AttributeValue::Bool(enabled) = value else {
                     return Some(None);
@@ -277,6 +395,23 @@ impl ComposeRenderer {
                     },
                 )))
             }
+            // The node says how important its changes are. Which curve and how many
+            // milliseconds that means is the design system's answer, and it is never
+            // asked here.
+            "motion" => Some(Some((
+                MOTION,
+                Modifier::Motion(
+                    crate::MotionRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                ),
+            ))),
+            // What the surface is made of. Blur, tone or a flat fill is the running
+            // design system's answer, and the node does not get to ask for one of them.
+            "material" => Some(Some((
+                MATERIAL,
+                Modifier::Material(
+                    crate::MaterialRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                ),
+            ))),
             "shape_role" => Some(Some((
                 SHAPE,
                 Modifier::ShapeRole(
@@ -382,17 +517,19 @@ impl ComposeRenderer {
                     path.push(index as u8);
                     match child {
                         TemplateNode::Dynamic { .. } => {
+                            let marker = self.reserve_slot(node_id);
                             paths.insert(
                                 path.clone(),
                                 PathTarget::Slot {
                                     parent: node_id,
-                                    index: index as u32,
+                                    marker,
                                 },
                             );
                         }
                         _ => {
                             if let Some(child_id) = self.build_template_node(child, path, paths) {
-                                self.insert_node(node_id, child_id, index as u32);
+                                let end = self.end_of(node_id);
+                                self.insert_node(node_id, child_id, end, None);
                             }
                         }
                     }
@@ -417,25 +554,29 @@ impl ComposeRenderer {
     /// Role tag 0 means "not sent", so a design property at its neutral value
     /// produces no record at all. A property that was set and then cleared still sends
     /// its zero once, which is what tells the Renderer to drop the override.
-    fn should_write_design_property(
+    fn should_write_optional_property(
         &mut self,
         node_id: u32,
         property: PropertyKind,
         neutral: bool,
     ) -> bool {
         let tag = property as u16;
-        if !(FIRST_DESIGN_PROPERTY..=LAST_DESIGN_PROPERTY).contains(&tag) {
+        let index = if (FIRST_OPTIONAL_PROPERTY..=LAST_OPTIONAL_PROPERTY).contains(&tag) {
+            u32::from(tag - FIRST_OPTIONAL_PROPERTY)
+        } else if property == PropertyKind::Spans {
+            SPANS_BIT
+        } else {
             return true;
-        }
-        let bit = 1_u32 << (tag - FIRST_DESIGN_PROPERTY);
-        let seen = self.design_props.get(&node_id).copied().unwrap_or(0);
+        };
+        let bit = 1_u64 << index;
+        let seen = self.optional_props.get(&node_id).copied().unwrap_or(0);
         if neutral {
             if seen & bit == 0 {
                 return false;
             }
-            self.design_props.insert(node_id, seen & !bit);
+            self.optional_props.insert(node_id, seen & !bit);
         } else if seen & bit == 0 {
-            self.design_props.insert(node_id, seen | bit);
+            self.optional_props.insert(node_id, seen | bit);
         }
         true
     }
@@ -456,17 +597,26 @@ impl ComposeRenderer {
             // A drawing command list is the one value that is neither a number nor text.
             // dioxus-core compares it before calling here, so an unchanged list never
             // reaches this point and costs no record.
-            AttributeValue::Any(value) => match value.as_any().downcast_ref::<DrawList>() {
-                Some(list) => PropertyValue::Bytes(list.as_bytes()),
-                None => return,
-            },
+            AttributeValue::Any(value) => {
+                let any = value.as_any();
+                if let Some(list) = any.downcast_ref::<DrawList>() {
+                    PropertyValue::Bytes(list.as_bytes())
+                } else if let Some(spans) = any.downcast_ref::<crate::spans::TextSpans>() {
+                    // Runs inside a string travel the same way a drawing does, and for the
+                    // same reason: a list that has not changed compares equal before it
+                    // reaches here and costs no record at all.
+                    PropertyValue::Bytes(spans.as_bytes())
+                } else {
+                    return;
+                }
+            }
             AttributeValue::Listener(_) => return,
         };
         let neutral = matches!(
             value,
             PropertyValue::None | PropertyValue::Integer(0) | PropertyValue::Float(0.0)
         );
-        if !self.should_write_design_property(node_id, property, neutral) {
+        if !self.should_write_optional_property(node_id, property, neutral) {
             return;
         }
         self.write(Mutation::SetProp {
@@ -476,16 +626,128 @@ impl ComposeRenderer {
         });
     }
 
-    fn insert_stack(&mut self, parent: u32, index: u32, count: usize) {
-        let start = self.stack.len().saturating_sub(count);
-        let nodes: Vec<_> = self.stack.drain(start..).collect();
-        for (offset, node) in nodes.into_iter().enumerate() {
-            self.insert_node(parent, node.node_id, index.saturating_add(offset as u32));
+    /// One past the last position under `parent`.
+    fn end_of(&self, parent: u32) -> usize {
+        self.children.get(&parent).map_or(0, Vec::len)
+    }
+
+    /// Stands a marker in a template's dynamic child until its content arrives, and says
+    /// which marker it was.
+    fn reserve_slot(&mut self, parent: u32) -> u32 {
+        let marker = self.next_marker;
+        self.next_marker = self.next_marker.checked_add(1).unwrap_or(1);
+        self.children
+            .entry(parent)
+            .or_default()
+            .push(Slot::Pending(marker));
+        marker
+    }
+
+    /// Where the given slot stands: the parent it hangs under and its position in that
+    /// parent's list.
+    fn locate(&self, slot: Slot) -> Option<(u32, usize)> {
+        let parent = match slot {
+            Slot::Node(node_id) => *self.parents.get(&node_id)?,
+            Slot::Hole(element) => *self.placeholders.get(&element)?,
+            Slot::Pending(_) => return None,
+        };
+        let position = self
+            .children
+            .get(&parent)?
+            .iter()
+            .position(|standing| *standing == slot)?;
+        Some((parent, position))
+    }
+
+    /// How many drawn nodes stand before `position` under `parent`, which is the index
+    /// the Renderer understands.
+    fn drawn_before(&self, parent: u32, position: usize) -> u32 {
+        self.children.get(&parent).map_or(0, |list| {
+            list.iter()
+                .take(position)
+                .filter(|slot| matches!(slot, Slot::Node(_)))
+                .count() as u32
+        })
+    }
+
+    /// Takes the slot out of wherever it stands, and says where that was.
+    fn detach(&mut self, slot: Slot) -> Option<(u32, usize)> {
+        let (parent, position) = self.locate(slot)?;
+        if let Some(list) = self.children.get_mut(&parent) {
+            list.remove(position);
+        }
+        Some((parent, position))
+    }
+
+    /// Puts the slot under `parent` at `position`, and says which position it took.
+    fn attach(&mut self, parent: u32, slot: Slot, position: usize) -> usize {
+        let mut position = position;
+        if let Some((from, was_at)) = self.detach(slot) {
+            if from == parent && was_at < position {
+                position -= 1;
+            }
+        }
+        let list = self.children.entry(parent).or_default();
+        let position = position.min(list.len());
+        list.insert(position, slot);
+        match slot {
+            Slot::Node(node_id) => {
+                self.parents.insert(node_id, parent);
+            }
+            Slot::Hole(element) => {
+                self.placeholders.insert(element, parent);
+            }
+            Slot::Pending(_) => {}
+        }
+        position
+    }
+
+    /// Forgets a node and everything under it, as the Renderer does when it is removed.
+    /// The caller has already taken the node out of its parent's list.
+    fn forget(&mut self, node_id: u32) {
+        self.parents.remove(&node_id);
+        for slot in self.children.remove(&node_id).unwrap_or_default() {
+            match slot {
+                Slot::Node(child) => self.forget(child),
+                Slot::Hole(element) => {
+                    self.placeholders.remove(&element);
+                }
+                Slot::Pending(_) => {}
+            }
         }
     }
 
-    fn insert_node(&mut self, parent: u32, node_id: u32, index: u32) {
-        let mutation = if self.parents.contains_key(&node_id) {
+    fn insert_stack(&mut self, parent: u32, position: usize, count: usize) {
+        let start = self.stack.len().saturating_sub(count);
+        let nodes: Vec<_> = self.stack.drain(start..).collect();
+        let mut at = position;
+        for node in nodes {
+            at = self.insert_node(parent, node.node_id, at, node.element) + 1;
+        }
+    }
+
+    /// Puts one entry under `parent` at `position` and tells the Renderer about it,
+    /// unless nothing is drawn for it. Says which position it took.
+    fn insert_node(
+        &mut self,
+        parent: u32,
+        node_id: u32,
+        position: usize,
+        element: Option<ElementId>,
+    ) -> usize {
+        if node_id == PLACEHOLDER_NODE {
+            // Nothing is drawn for a placeholder, so nothing is sent. It still holds its
+            // position here, so the branch that fills it in takes that position rather
+            // than the end of the list.
+            let Some(element) = element else {
+                return position;
+            };
+            return self.attach(parent, Slot::Hole(element.0), position);
+        }
+        let moving = self.parents.contains_key(&node_id);
+        let at = self.attach(parent, Slot::Node(node_id), position);
+        let index = self.drawn_before(parent, at);
+        self.write(if moving {
             Mutation::Move {
                 parent_id: parent,
                 node_id,
@@ -497,16 +759,24 @@ impl ComposeRenderer {
                 node_id,
                 index,
             }
-        };
-        self.write(mutation);
-        self.parents.insert(node_id, (parent, index));
+        });
+        at
+    }
+
+    /// Where the given element stands: its own position, or its placeholder's.
+    fn slot_of(&self, id: ElementId) -> Option<(u32, usize)> {
+        match self.node(id) {
+            Some(PLACEHOLDER_NODE) | None => self.locate(Slot::Hole(id.0)),
+            Some(node_id) => self.locate(Slot::Node(node_id)),
+        }
     }
 }
 
 impl WriteMutations for ComposeRenderer {
     fn append_children(&mut self, id: ElementId, m: usize) {
         if let Some(parent) = self.node(id) {
-            self.insert_stack(parent, u32::MAX, m);
+            let end = self.end_of(parent);
+            self.insert_stack(parent, end, m);
         }
     }
 
@@ -524,9 +794,10 @@ impl WriteMutations for ComposeRenderer {
     fn create_placeholder(&mut self, id: ElementId) {
         // A Dioxus placeholder is not materialized in the Compose tree. It is
         // represented by its eventual insertion position.
-        self.map_node(id, 0);
+        self.map_node(id, PLACEHOLDER_NODE);
         self.stack.push(StackNode {
-            node_id: 0,
+            node_id: PLACEHOLDER_NODE,
+            element: Some(id),
             paths: HashMap::new(),
         });
     }
@@ -541,6 +812,7 @@ impl WriteMutations for ComposeRenderer {
         });
         self.stack.push(StackNode {
             node_id,
+            element: None,
             paths: HashMap::new(),
         });
     }
@@ -553,6 +825,7 @@ impl WriteMutations for ComposeRenderer {
             self.map_node(id, root);
             self.stack.push(StackNode {
                 node_id: root,
+                element: None,
                 paths,
             });
         }
@@ -560,10 +833,19 @@ impl WriteMutations for ComposeRenderer {
 
     fn replace_node_with(&mut self, id: ElementId, m: usize) {
         if let Some(node_id) = self.node(id) {
-            let target = self.parents.remove(&node_id);
-            self.write(Mutation::Remove { node_id });
-            if let Some((parent, index)) = target {
-                self.insert_stack(parent, index, m);
+            let target = self.slot_of(id);
+            if node_id == PLACEHOLDER_NODE {
+                self.detach(Slot::Hole(id.0));
+                self.placeholders.remove(&id.0);
+            } else {
+                self.detach(Slot::Node(node_id));
+                self.write(Mutation::Remove { node_id });
+                self.forget(node_id);
+            }
+            // The slot has just been taken out, so what replaces it goes in at the
+            // position it held.
+            if let Some((parent, position)) = target {
+                self.insert_stack(parent, position, m);
                 return;
             }
         }
@@ -578,27 +860,30 @@ impl WriteMutations for ComposeRenderer {
             .get(parent_position)
             .and_then(|loaded| loaded.paths.get(path))
             .copied();
-        if let Some(PathTarget::Slot { parent, index }) = target {
-            let children: Vec<_> = self.stack.drain(parent_position + 1..).collect();
-            for (offset, child) in children.into_iter().enumerate() {
-                self.insert_node(parent, child.node_id, index + offset as u32);
+        if let Some(PathTarget::Slot { parent, marker }) = target {
+            let Some(position) = self
+                .children
+                .get(&parent)
+                .and_then(|list| list.iter().position(|slot| *slot == Slot::Pending(marker)))
+            else {
+                return;
+            };
+            if let Some(list) = self.children.get_mut(&parent) {
+                list.remove(position);
             }
+            self.insert_stack(parent, position, m);
         }
     }
 
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
-        if let Some(anchor) = self.node(id) {
-            if let Some((parent, index)) = self.parents.get(&anchor).copied() {
-                self.insert_stack(parent, index.saturating_add(1), m);
-            }
+        if let Some((parent, position)) = self.slot_of(id) {
+            self.insert_stack(parent, position + 1, m);
         }
     }
 
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
-        if let Some(anchor) = self.node(id) {
-            if let Some((parent, index)) = self.parents.get(&anchor).copied() {
-                self.insert_stack(parent, index, m);
-            }
+        if let Some((parent, position)) = self.slot_of(id) {
+            self.insert_stack(parent, position, m);
         }
     }
 
@@ -674,9 +959,14 @@ impl WriteMutations for ComposeRenderer {
     }
 
     fn remove_node(&mut self, id: ElementId) {
+        self.detach(Slot::Hole(id.0));
+        self.placeholders.remove(&id.0);
         if let Some(node_id) = self.node(id) {
-            self.write(Mutation::Remove { node_id });
-            self.parents.remove(&node_id);
+            if node_id != PLACEHOLDER_NODE {
+                self.detach(Slot::Node(node_id));
+                self.write(Mutation::Remove { node_id });
+                self.forget(node_id);
+            }
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
             *slot = None;
@@ -688,6 +978,7 @@ impl WriteMutations for ComposeRenderer {
         if let Some(node_id) = self.node(id) {
             self.stack.push(StackNode {
                 node_id,
+                element: Some(id),
                 paths: HashMap::new(),
             });
         }
@@ -711,6 +1002,8 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
+        "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),
+        "filesdropped" | "onfilesdropped" => Some(PropertyKind::OnFilesDropped),
         "change" | "onchange" => Some(PropertyKind::OnValueChange),
         _ => None,
     }
@@ -732,7 +1025,12 @@ mod tests {
     }
 
     #[test]
-    fn builds_m0_tree_from_rsx() {
+    /// The M0 screen written as `rsx!` produces the same tree the protocol describes.
+    ///
+    /// Named after the requirement now. It was the only test standing behind that
+    /// requirement and it did not say so, so counting the tests named for each one
+    /// reported none and the requirement read as unimplemented.
+    fn fr6_an_rsx_component_builds_the_same_tree() {
         let mut dom = VirtualDom::new(app);
         let mut renderer = ComposeRenderer::new();
         dom.rebuild(&mut renderer);

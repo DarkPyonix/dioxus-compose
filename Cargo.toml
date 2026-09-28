@@ -1,9 +1,17 @@
 [workspace]
 members = [
     "dioxus-compose",
+    "samples/academic",
     "samples/calculator",
     "samples/chat",
+    "samples/frames",
+    "samples/minimal",
     "samples/notepad",
+    "samples/podcast",
+    "samples/selfcare",
+    "samples/social",
+    "samples/statistics",
+    "samples/store",
     "samples/todo",
 ]
 resolver = "2"

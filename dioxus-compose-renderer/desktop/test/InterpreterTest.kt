@@ -92,9 +92,41 @@ class InterpreterTest {
             waitForIdle()
 
             val errors = connection.events.filterIsInstance<HostEvent.ProtocolError>()
-            assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.events}")
+            assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.nodeEvents}")
             onNodeWithTag(nodeTestTag(LEFT)).assertTextEquals("left")
         }
+
+    /**
+     * A parent chain that loops is a malformed tree, not a tree to walk. Inserting a node
+     * under one of its own descendants would make the two of them each other's ancestor,
+     * and anything that follows the chain (drawing it, or walking up from a node to its
+     * root) would recurse until the stack ran out. The Renderer refuses the Insert,
+     * reports it, and keeps the tree it had.
+     */
+    @Test
+    fun nfr7_an_insert_that_would_loop_the_parent_chain_is_refused() = runComposeUiTest {
+        val connection = FakeHostConnection(
+            twoTextColumn() + listOf(
+                Mutation.Create(BUTTON, WidgetKind.Column),
+                Mutation.Insert(COLUMN, BUTTON, 2),
+                // The Column is already the grandparent of this node's parent.
+                Mutation.Insert(BUTTON, COLUMN, 0),
+            ),
+        )
+        lateinit var host: DioxusHost
+        setContent { host = rememberDioxusHost(connection) ; DioxusContent(host) }
+        waitForIdle()
+
+        val errors = connection.events.filterIsInstance<HostEvent.ProtocolError>()
+        assertEquals(1, errors.size, "expected exactly one ProtocolError: ${connection.nodeEvents}")
+        assertEquals(TableError.CYCLIC_INSERT, errors.first().code)
+        assertEquals(
+            listOf(LEFT, RIGHT, BUTTON),
+            host.table.node(COLUMN)!!.children,
+            "the refused Insert changed the tree",
+        )
+        onNodeWithTag(nodeTestTag(LEFT)).assertTextEquals("left")
+    }
 
     /**
      * Node id 0 is the "no node" sentinel, and the Host inserts it where a Dioxus
@@ -234,7 +266,7 @@ class InterpreterTest {
 
         assertEquals(
             listOf(HostEvent.Clicked(BUTTON, CLICK_HANDLER)),
-            connection.events,
+            connection.nodeEvents,
         )
     }
 

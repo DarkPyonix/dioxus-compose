@@ -56,6 +56,24 @@ internal data class CupertinoPalette(
     /** System red. */
     val danger: Color,
     val onDanger: Color,
+    /** System purple, the third of the platform accents after blue and indigo. */
+    val accentTertiary: Color,
+    val onAccentTertiary: Color,
+    /**
+     * The tinted fills iOS draws by hand, one per accent.
+     *
+     * Apple publishes no container tones, so these are what a tinted card or a selected
+     * row actually looks like: a wash of the accent in light, and a deep, desaturated
+     * version of it in dark. They are opaque for the same reason the labels above are:
+     * a role has to answer with a colour that means something without knowing what is
+     * behind it.
+     */
+    val accentContainer: Color,
+    val onAccentContainer: Color,
+    val accentSecondaryContainer: Color,
+    val onAccentSecondaryContainer: Color,
+    val accentTertiaryContainer: Color,
+    val onAccentTertiaryContainer: Color,
     /** The shadow a raised Cupertino surface casts: wide, soft, and never a tint. */
     val shadow: Color,
 ) {
@@ -80,6 +98,14 @@ internal data class CupertinoPalette(
             fillPressed = Color(0xFFD1D1D6),
             danger = Color(0xFFFF3B30),
             onDanger = Color(0xFFFFFFFF),
+            accentTertiary = Color(0xFFAF52DE),
+            onAccentTertiary = Color(0xFFFFFFFF),
+            accentContainer = Color(0xFFD6E4FF),
+            onAccentContainer = Color(0xFF003070),
+            accentSecondaryContainer = Color(0xFFE2E0FF),
+            onAccentSecondaryContainer = Color(0xFF2A1B70),
+            accentTertiaryContainer = Color(0xFFF3DDFB),
+            onAccentTertiaryContainer = Color(0xFF3D0B52),
             shadow = Color(0x33000000),
         )
 
@@ -100,6 +126,14 @@ internal data class CupertinoPalette(
             fillPressed = Color(0xFF48484A),
             danger = Color(0xFFFF453A),
             onDanger = Color(0xFFFFFFFF),
+            accentTertiary = Color(0xFFBF5AF2),
+            onAccentTertiary = Color(0xFFFFFFFF),
+            accentContainer = Color(0xFF0A2D52),
+            onAccentContainer = Color(0xFFCFE3FF),
+            accentSecondaryContainer = Color(0xFF262663),
+            onAccentSecondaryContainer = Color(0xFFDEDCFF),
+            accentTertiaryContainer = Color(0xFF3F1A52),
+            onAccentTertiaryContainer = Color(0xFFF1D9FA),
             shadow = Color(0x99000000),
         )
     }

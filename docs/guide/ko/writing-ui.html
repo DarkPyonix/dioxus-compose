@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UI 작성하기 · dioxus-compose 가이드</title>
-<meta name="description" content="rsx!, 위젯 집합, Modifier, 이벤트 핸들러, 이벤트 소비, 그리고 비제어 TextField.">
+<meta name="description" content="rsx!, 위젯 집합의 윤곽, Modifier 속성, 이벤트 핸들러, 이벤트 소비, 그리고 비제어 TextField.">
 <link rel="alternate" hreflang="en" href="../en/writing-ui.html">
 <link rel="alternate" hreflang="ko" href="writing-ui.html">
 <link rel="alternate" hreflang="x-default" href="../en/writing-ui.html">
@@ -33,6 +33,7 @@
         <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
         <li><a href="writing-ui.html" aria-current="page">UI 작성하기</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
         <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
         <li><a href="design-systems.html">디자인 시스템</a></li>
         <li><a href="architecture.html">아키텍처</a></li>
@@ -92,41 +93,50 @@
 
     <p>
       <code>launch</code>는 <code>LaunchBuilder::new().launch(app)</code>의 축약입니다. 빌더가
-      갖는 설정은 지금은 루프 모드 하나입니다.
+      갖는 설정은 루프 모드와 테마 둘입니다.
     </p>
 
     <figure class="codeblock" data-copy="복사" data-copied="복사됨">
       <figcaption>rust</figcaption>
 <pre><code><span class="ty">LaunchBuilder</span>::<span class="f">new</span>()
     .<span class="f">with_mode</span>(<span class="ty">LoopMode</span>::Renderer)  <span class="c">// 데스크톱·iOS: Rust main이 렌더러를 돌립니다</span>
+    .<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::Material3))
     .<span class="f">launch</span>(app);</code></pre>
     </figure>
 
     <p>
       <code>LoopMode::Renderer</code>가 기본값이고, 지금 실제로 도는 유일한 모드입니다.
       Android나 브라우저가 루프를 소유하고 Host를 불러 주는 <code>LoopMode::Platform</code>은
-      프로토콜에 정의만 되어 있고 구현은 없습니다.
+      프로토콜에 정의만 되어 있고 구현은 없습니다. 테마를 말하지 않으면
+      <code>Theme::adaptive(DesignSystem::Material3)</code>이 됩니다. 호스트 플랫폼의 생김새를
+      따르되, 자기 생김새가 없는 플랫폼에서는 Material 3를 씁니다.
+      <a href="design-systems.html">디자인 시스템</a>을 보세요.
     </p>
 
     <h2 id="widgets">위젯 집합</h2>
     <p>
-      스키마는 의도적으로 닫혀 있습니다. 렌더러는 정확히 이 여덟 가지만 해석하고, 모르는 타입을
+      스키마는 의도적으로 닫혀 있습니다. 렌더러는 정확히 아래의 위젯만 해석하고, 모르는 종류를
       받으면 크래시 대신 <code>ProtocolError</code> 이벤트를 보냅니다. 위젯을 추가한다는 것은
       Rust 스키마, Kotlin 인터프리터, 코드젠을 함께 넓히는 일입니다.
+    </p>
+    <p>
+      아래는 어휘의 윤곽입니다. 모든 컴포저블과 그 프로퍼티, 기본값, 돌아가는 예제는
+      <a href="composables.html">컴포저블 레퍼런스</a>에 있습니다.
     </p>
 
     <div class="tablewrap">
       <table>
-        <thead><tr><th scope="col">위젯</th><th scope="col">속성</th><th scope="col">메모</th></tr></thead>
+        <thead><tr><th scope="col">묶음</th><th scope="col">컴포저블</th></tr></thead>
         <tbody>
-          <tr><td><code>Column</code></td><td><code>fill_max_width</code>, <code>fill_max_height</code>, children</td><td>세로로 쌓습니다.</td></tr>
-          <tr><td><code>Row</code></td><td><code>fill_max_width</code>, <code>fill_max_height</code>, children</td><td>가로로 쌓습니다.</td></tr>
-          <tr><td><code>Box</code></td><td><code>fill_max_width</code>, <code>fill_max_height</code>, children</td><td>겹쳐 놓는 컨테이너. 아래 이름 주의 사항을 보세요.</td></tr>
-          <tr><td><code>Text</code></td><td><code>text</code></td><td><code>String</code>으로 변환되는 값이면 됩니다.</td></tr>
-          <tr><td><code>TextField</code></td><td><code>placeholder</code>, <code>enabled</code>, <code>multiline</code></td><td>비제어 위젯입니다. <code>value</code> 속성이 없는 것은 의도입니다.</td></tr>
-          <tr><td><code>Button</code></td><td><code>text</code>, <code>enabled</code></td><td><code>enabled</code>의 기본값은 <code>true</code>입니다.</td></tr>
-          <tr><td><code>Spacer</code></td><td><code>width</code>, <code>height</code></td><td>둘 다 <code>f32</code>이고 기본값은 <code>0.0</code>입니다.</td></tr>
-          <tr><td><code>LazyColumn</code></td><td><code>item_count</code>, <code>buffer</code>, <code>key_of</code>, <code>item</code></td><td>윈도잉 목록. Host 쪽은 동작하고 렌더러는 아직 <code>Column</code>으로 그립니다. <a href="lists-and-streaming.html#windowing">목록과 스트리밍</a>을 보세요.</td></tr>
+          <tr><td>레이아웃</td><td><code>Column</code>, <code>Row</code>, <code>Box</code>, <code>ScrollColumn</code>, <code>Spacer</code></td></tr>
+          <tr><td>텍스트와 입력</td><td><code>Text</code>, <code>TextField</code></td></tr>
+          <tr><td>컨트롤</td><td><code>Button</code>, <code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code>, <code>ProgressIndicator</code></td></tr>
+          <tr><td>컨테이너</td><td><code>Card</code>, <code>Surface</code>, <code>TopAppBar</code>, <code>Divider</code>, <code>Separator</code>, <code>Tooltip</code></td></tr>
+          <tr><td>목록</td><td><code>LazyColumn</code>, <code>LazyRow</code></td></tr>
+          <tr><td>내비게이션</td><td><code>Navigation</code>, <code>NavigationItem</code>, <code>Tabs</code></td></tr>
+          <tr><td>오버레이</td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code>, 그리고 트리의 일부가 아닌 <code>show_message</code>와 <code>Message</code></td></tr>
+          <tr><td>그림</td><td><code>Image</code>, <code>Icon</code>, <code>Canvas</code></td></tr>
+          <tr><td>확장 예제</td><td><code>LinearProgressIndicator</code></td></tr>
         </tbody>
       </table>
     </div>
@@ -153,21 +163,45 @@
 
     <h2 id="modifiers">Modifier</h2>
     <p>
+      Compose에서 <code>Modifier</code>가 어떤 컴포저블에나 붙듯이 여기서도 그렇습니다. 모든
+      위젯이 같은 열세 개의 속성을 받으므로, <code>Card</code>에 적용되는 집합과
+      <code>Text</code>에 적용되는 집합은 하나입니다. <code>weight</code>,
+      <code>fill_max_width</code>, <code>fill_max_height</code>, <code>width</code>,
+      <code>height</code>, <code>padding</code>, <code>padding_role</code>,
+      <code>background</code>, <code>shape_role</code>, <code>corner_radius</code>,
+      <code>border_width</code>, <code>border_color</code>, <code>elevation</code>입니다.
+    </p>
+
+    <figure class="codeblock" data-copy="복사" data-copied="복사됨">
+      <figcaption>rust</figcaption>
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">Card</span> {
+        <span class="at">fill_max_width</span>: <span class="k">true</span>,
+        <span class="at">padding_role</span>: <span class="ty">SpaceRole</span>::Md,
+        <span class="at">shape_role</span>: <span class="ty">ShapeRole</span>::Large,
+        <span class="at">background</span>: <span class="ty">Paint</span>::<span class="ty">Role</span>(<span class="ty">ColorRole</span>::SurfaceContainer),
+        <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"패널 안"</span> }
+    }
+}</code></pre>
+    </figure>
+
+    <p>
       Modifier는 값의 리스트로 직렬화됩니다. 예를 들면
-      <code>[Padding(16), FillMaxWidth, Background(argb), Clickable(handler_id)]</code>이고,
-      렌더러가 이것을 Compose <code>Modifier</code> 체인으로 되돌립니다. 지금 프로토콜에 있는
-      변형은 <code>Empty</code>, <code>Padding</code>, <code>FillMaxWidth</code>,
-      <code>FillMaxHeight</code>, <code>Width</code>, <code>Height</code>, <code>Size</code>,
-      <code>Background</code>, <code>Clickable</code>입니다.
+      <code>[PaddingRole(Md), FillMaxWidth, Background(paint)]</code>이고, 렌더러가 이것을
+      Compose <code>Modifier</code> 체인으로 되돌립니다. 쓰지 않은 속성은 0이 아니라 아무것도
+      보내지 않습니다. 여백이 없는 것과 여백이 0인 것은 화면에서 같아 보이지만 그중 하나만
+      뮤테이션 비용을 치러야 하기 때문입니다.
     </p>
 
     <div class="note">
-      <span class="label">지금 실제로 쓸 수 있는 것</span>
+      <span class="label">역할이냐 숫자냐</span>
       <p>
-        <code>rsx!</code> 속성으로 노출된 것은 <code>Column</code>, <code>Row</code>,
-        <code>Box</code>의 <code>fill_max_width</code>와 <code>fill_max_height</code>뿐입니다.
-        패딩, 명시적 크기, 배경색, <code>Clickable</code>은 프로토콜과 렌더러에는 있지만 그것을
-        내보내는 속성이 아직 없습니다. 나머지 변형은 API가 자라 갈 방향이라고 보면 됩니다.
+        <code>padding_role</code>과 <code>shape_role</code>은 디자인 시스템의 답을 가져오고,
+        <code>padding</code>과 <code>corner_radius</code>는 애플리케이션의 답을 씁니다. 각 쌍은
+        슬롯 하나를 공유하므로 둘 중 하나만 쓰세요. 역할 쪽을 권합니다. 밀도와 모서리 반지름은
+        디자인 시스템마다 다르고, 숫자는 그때 열어 둔 하나에 레이아웃을 못 박습니다. 타입과
+        기본값이 붙은 전체 표는
+        <a href="composables.html#modifiers">컴포저블 레퍼런스</a>에 있습니다.
       </p>
     </div>
 
@@ -182,12 +216,14 @@
       <table>
         <thead><tr><th scope="col">핸들러</th><th scope="col">페이로드</th><th scope="col">대상</th></tr></thead>
         <tbody>
-          <tr><td><code>on_click</code></td><td><code>()</code></td><td><code>Button</code></td></tr>
+          <tr><td><code>on_click</code></td><td><code>()</code></td><td><code>Button</code>, <code>NavigationItem</code></td></tr>
           <tr><td><code>on_value_change</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
           <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
-          <tr><td><code>on_range_requested</code></td><td><code>RangeRequest</code></td><td><code>LazyColumn</code>, 컴포넌트 내부에서 처리합니다. 대신 <code>item</code>과 <code>key_of</code>를 넘깁니다</td></tr>
+          <tr><td><code>on_change</code></td><td><code>bool</code>, <code>f32</code>, <code>usize</code>, <code>i64</code>, <code>u32</code></td><td><code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code></td></tr>
+          <tr><td><code>on_dismiss</code></td><td><code>()</code></td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code></td></tr>
+          <tr><td>범위 요청</td><td><code>RangeRequest</code></td><td><code>LazyColumn</code>과 <code>LazyRow</code>, 컴포넌트 내부에서 처리합니다. 대신 <code>item</code>과 <code>key_of</code>를 넘깁니다</td></tr>
         </tbody>
       </table>
     </div>
@@ -283,13 +319,15 @@
           <tr><td>스크롤 위치</td><td>Kotlin</td><td>UI 로컬 상태입니다. Rust가 쥐고 있으면 한 프레임 늦습니다.</td></tr>
           <tr><td>포커스</td><td>Kotlin</td><td>같은 이유이고, 애초에 플랫폼이 포커스를 소유합니다.</td></tr>
           <tr><td>애니메이션 진행</td><td>Kotlin</td><td>Compose 프레임 클록 위에서 돕니다.</td></tr>
+          <tr><td>다이얼로그·메뉴·드롭다운·시트가 열려 있는지</td><td>Kotlin</td><td>넘기는 불리언은 출발점일 뿐이고, 들어오고 나가는 동작은 렌더러가 소유하므로 애니메이션이 왕복하지 않습니다.</td></tr>
+          <tr><td>슬라이더 드래그가 지나가는 위치</td><td>Kotlin</td><td>손가락을 따라가는 데에 경계 호출이 들어서는 안 됩니다.</td></tr>
         </tbody>
       </table>
     </div>
 
     <nav class="pagenav" aria-label="페이지 이동">
       <a class="prev" href="getting-started.html"><span>이전</span>&larr; 시작하기</a>
-      <a class="next" href="lists-and-streaming.html"><span>다음</span>목록과 스트리밍 &rarr;</a>
+      <a class="next" href="composables.html"><span>다음</span>컴포저블 레퍼런스 &rarr;</a>
     </nav>
   </main>
 </div>
@@ -298,7 +336,7 @@
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
     <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>이 가이드는 2026-09-20 기준 저장소 내용과 대조했습니다</span>
+    <span>이 가이드는 2026-09-22 기준 저장소 내용과 대조했습니다</span>
   </div>
 </footer>
 

@@ -31,16 +31,30 @@ enum { STATUS_OK = 0, STATUS_PROTOCOL_ERROR = -1 };
 /* Mutation tags (schema.rs). */
 enum { TAG_ENVELOPE = 0, TAG_CREATE = 1, TAG_SET_PROP = 2, TAG_INSERT = 4 };
 /* WidgetKind tags. */
-enum { WIDGET_COLUMN = 1, WIDGET_TEXT = 4, WIDGET_TEXT_FIELD = 5, WIDGET_BUTTON = 6 };
+enum {
+    WIDGET_COLUMN = 1, WIDGET_TEXT = 4, WIDGET_TEXT_FIELD = 5, WIDGET_BUTTON = 6,
+    WIDGET_NAVIGATION = 30, WIDGET_NAVIGATION_ITEM = 31
+};
 /* PropertyKind tags. */
-enum { PROP_TEXT = 1, PROP_ON_CLICK = 5 };
+enum { PROP_TEXT = 1, PROP_ON_CLICK = 5, PROP_SELECTED_INDEX = 42, PROP_ICON = 60 };
 /* PropertyValue tags. */
 enum { VALUE_TEXT = 1, VALUE_INTEGER = 3 };
 
 #define CLICK_HANDLER 7
 #define LABEL_NODE 2
 
-static uint8_t batch_bytes[512];
+/* Destinations. `IconRole` is sent one higher than its tag so that zero means "not sent". */
+#define NAVIGATION_NODE 10
+#define HOME_NODE 11
+#define SETTINGS_NODE 12
+#define HOME_HANDLER 8
+#define SETTINGS_HANDLER 9
+#define ICON_SETTINGS 7
+#define ICON_HOME 9
+#define HOME_LABEL "Home"
+#define SETTINGS_LABEL "Settings"
+
+static uint8_t batch_bytes[1024];
 static uint32_t batch_length;
 static uint32_t records_length;
 static uint32_t record_count;
@@ -126,6 +140,19 @@ static void end_batch(void) {
  */
 #define IME_FIELD_TEXT "type Korean here"
 
+/*
+ * DIOXUS_COMPOSE_SMOKE_NAVIGATION=1 wraps the screen in a navigation with two destinations.
+ *
+ * Off by default for the same reason the text field is: the byte counts recorded for the
+ * default batch have to stay what they were. It is on for the run that photographs the
+ * chrome, because a navigation is the only declaration that reaches the system's tab bar,
+ * and the default tree has none.
+ */
+static int want_navigation(void) {
+    const char *flag = getenv("DIOXUS_COMPOSE_SMOKE_NAVIGATION");
+    return flag != NULL && flag[0] == '1' && flag[1] == '\0';
+}
+
 /* DIOXUS_COMPOSE_SMOKE_IME=1 adds the text field on any platform. */
 static int want_text_field(void) {
 #ifdef __linux__
@@ -159,12 +186,36 @@ static void build_tree(const char *label) {
         set_text_prop(4, IME_FIELD_TEXT);
         insert(1, 4, 2);
     }
+    uint32_t home_prop = 0;
+    uint32_t settings_prop = 0;
+    if (want_navigation()) {
+        create(NAVIGATION_NODE, WIDGET_NAVIGATION);
+        set_handler(NAVIGATION_NODE, PROP_SELECTED_INDEX, 0);
+        create(HOME_NODE, WIDGET_NAVIGATION_ITEM);
+        home_prop = records_length;
+        set_text_prop(HOME_NODE, HOME_LABEL);
+        set_handler(HOME_NODE, PROP_ICON, ICON_HOME);
+        set_handler(HOME_NODE, PROP_ON_CLICK, HOME_HANDLER);
+        insert(NAVIGATION_NODE, HOME_NODE, 0);
+        create(SETTINGS_NODE, WIDGET_NAVIGATION_ITEM);
+        settings_prop = records_length;
+        set_text_prop(SETTINGS_NODE, SETTINGS_LABEL);
+        set_handler(SETTINGS_NODE, PROP_ICON, ICON_SETTINGS);
+        set_handler(SETTINGS_NODE, PROP_ON_CLICK, SETTINGS_HANDLER);
+        insert(NAVIGATION_NODE, SETTINGS_NODE, 1);
+        /* The column built above becomes the screen the selection leads to. */
+        insert(NAVIGATION_NODE, 1, 2);
+    }
     end_batch();
     batch_length = records_length;
     put_string(label_prop + 12, label);
     put_string(button_prop + 12, "click me");
     if (field_prop != 0) {
         put_string(field_prop + 12, IME_FIELD_TEXT);
+    }
+    if (home_prop != 0) {
+        put_string(home_prop + 12, HOME_LABEL);
+        put_string(settings_prop + 12, SETTINGS_LABEL);
     }
 }
 

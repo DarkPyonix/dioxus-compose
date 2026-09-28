@@ -57,23 +57,38 @@ rsx! {
 한글·일본어·중국어 조합은 있으면 좋은 기능이 아닙니다.
 
 dioxus-compose는 Compose의 런타임 비용을 빼고 렌더러만 가져옵니다. Kotlin 쪽은 사전에 네이티브
-공유 라이브러리로 컴파일되므로(데스크톱은 GraalVM native-image, iOS는 Kotlin/Native) 배포
-산출물에 JVM이 없습니다.
+라이브러리로 컴파일되므로(macOS와 Linux, iOS는 Kotlin/Native, Skia와 링크할 수 있는 Kotlin 타깃이
+없는 플랫폼은 GraalVM 네이티브 이미지) 배포 산출물에 JVM이 없습니다.
 
 ### 무게, 대략의 비교
 
-아래 수치는 모두 [`docs/INTENT.md`](../INTENT.md)에서 가져온 **근사치**입니다. 자릿수 비교일 뿐
-벤치마크가 아닙니다.
+비교 대상의 수치는 [`docs/INTENT.md`](../INTENT.md)에서 가져온 **근사치**이고 자릿수 비교일 뿐
+벤치마크가 아닙니다. 이 프로젝트가 얼마인지는 실측입니다.
 
 | 방식 | 대략의 무게 | 비고 |
 |---|---|---|
 | 웹뷰 스택 (Electron, Tauri 계열) | 가장 무거움. 앱마다 혹은 시스템마다 브라우저 엔진 | **C1**으로 탈락: 메모리와 용량 |
 | Compose + JVM 동봉 (jlink) | JVM만 약 80~120MB | **C2**로 탈락. AppCDS는 시작 시간 해법이지 용량 해법이 아님 |
 | 순수 Rust 툴킷 (Iced 계열) | 약 10~20MB | **C5**로 탈락: 텍스트와 IME 성숙도 |
-| **dioxus-compose** | 렌더러 약 64MB + Skia 약 21MB | Iced보다는 크고, 웹뷰나 JVM 스택보다는 훨씬 작음 |
+| **dioxus-compose** | macOS에서 28.76MB, 파일 하나 | Iced보다는 크고, 웹뷰나 JVM 스택보다는 훨씬 작음 |
 
-`NFR-3`의 목표는 **배포 용량 100MB 미만, 빈 창 RSS 100MB 미만**입니다. 아직 `Draft`이며,
-마일스톤 M1에서 실측으로 확정합니다.
+### 실제로 얼마인가
+
+notepad 샘플을 릴리스로 빌드해 스트립한 것입니다. 실행 파일 하나가 전부이고, 옆에 놓이는
+런타임도 안에 든 가상 머신도 없으며, 링크된 것은 시스템 자신의 라이브러리뿐입니다.
+
+| 플랫폼 | 실행 파일 | 물리 메모리 | 방식 |
+|---|---|---|---|
+| macOS (arm64) | **28.76MB** | **35.1MB** | Kotlin/Native, Metal로 그림 |
+| Linux (x86-64) | **37.93MB** | 아직 재지 않음 | Kotlin/Native, GLX로 그림 |
+| Windows | 아직 재지 않음 | 아직 재지 않음 | GraalVM 네이티브 이미지, Direct3D 12로 그림 |
+
+비교하자면, 같은 샘플이 Kotlin/Native로 옮기기 전에는 파일 네 개에 93.1MB였고 물리 메모리는
+56MB였습니다. 그 대부분이 네이티브 이미지가 지고 다니던 자바 런타임입니다.
+
+`NFR-3`은 배포 100MB 미만, 빈 창 물리 메모리 56MB 미만을 요구합니다. macOS는 둘 다 여유 있게
+넘겼고, 잰 것은 빈 창이 아니라 실제 응용 프로그램입니다. Linux와 Windows는 메모리를 아직 재지
+않았고, 여기서 그 둘에 대해 주장하는 것은 없습니다.
 
 ### 협상 불가 조건
 
@@ -96,12 +111,12 @@ dioxus-compose는 Compose의 런타임 비용을 빼고 렌더러만 가져옵�
 
 | 플랫폼 | 상태 | 내용 |
 |---|---|---|
-| 🍎 **macOS (arm64)** | **처음부터 끝까지 동작** | Rust 호스트 → C ABI → native-image 렌더러 → 화면의 창까지. 2026-09-20 Liberica NIK 25 Full에서 확인. 한글 입력의 기본 경로는 동작하고, IME 체크리스트(`SPEC §6`) 전체는 아직 미완 |
-| 🪟 Windows 데스크톱 | 스크립트 없음 | `NFR-4`의 대상이지만 `build-native.sh`는 현재 macOS 외에서 실행을 거부합니다 |
-| 🐧 Linux 데스크톱 | 스크립트 없음 | 위와 같음. 다만 **Rust 워크스페이스와 JVM 개발 셸은 동작**합니다. CI가 `ubuntu-latest`에서 Rust 게이트를 돌립니다 |
-| 📱 iOS | 설계만, 미구현 | Kotlin/Native `-produce static` + `@CName` 심볼 (마일스톤 M5) |
-| 🤖 Android | 설계만, 미구현 | Kotlin 호스트 + 생성된 JNI 심, `PR-5` (마일스톤 M6) |
-| 🌐 Web (wasm) | 설계만, 실현 가능성 미확정 | Rust wasm ↔ Kotlin/Wasm 직결, JS 브리지 없음, `PR-6` (마일스톤 M7, 열린 질문 **Q3**) |
+| 🍎 **macOS (arm64)** | **처음부터 끝까지 동작** | Rust 호스트 → C ABI → Kotlin/Native 렌더러 → 화면의 창까지. 자바 런타임이 들어 있지 않은 파일 하나입니다. 창과 Metal 레이어, 텍스트 입력은 이 렌더러가 직접 소유합니다. 한글 입력의 기본 경로는 동작하고, IME 체크리스트(`SPEC §6`) 전체는 아직 미완 |
+| 🪟 Windows 데스크톱 | 빌드되고 실행됨 | 업스트림 GraalVM 25로 빌드되며, 렌더러가 바뀔 때마다 스모크 테스트를 통과합니다. |
+| 🐧 Linux 데스크톱 | 빌드되고 실행됨 | 두 아키텍처(x64, arm64) 모두 CI의 Xvfb 환경에서 빌드 및 헤드리스 시작 스모크 테스트를 통과합니다. |
+| 📱 iOS | 빌드되고 실행됨 | Kotlin/Native `-produce static`으로 동일한 C 심볼을 내보냅니다. XCFramework로 배포됩니다. |
+| 🤖 Android | 빌드됨, 실행 미확인 | Kotlin Activity가 프로세스와 루프를 소유하고 Rust는 cdylib이며, 양쪽 JNI 심은 스키마에서 생성됩니다. 앱과 라이브러리 모두 `arm64-v8a`로 빌드되지만 아직 기기나 에뮬레이터에서 실행해 보지 않았고, 그것이 `PR-5`가 요구하는 부분입니다 (마일스톤 M6) |
+| 🌐 Web (wasm) | **엔드 투 엔드 동작** | Kotlin/Wasm 모듈이 정의한 `WebAssembly.Memory` 하나를 Rust가 import하므로 배치를 쓴 자리에서 그대로 읽고 복사하지 않습니다. Renderer→Host 호출은 생성된 JS forwarder를 거치며 12ns로 실측했습니다. 브라우저에서 메모리 공유와 직접 바인딩을 동시에 가질 수 없기 때문이고, 반대 방향에는 JS가 없습니다. 데스크톱 데모와 같은 Rust 소스로 M0 화면이 브라우저에 뜨고, 클릭이 Rust 핸들러에 도달하며, 상태 변경이 페이지에 나타납니다. `web/scripts/test-boundary.sh`와 `screenshot.sh`가 브라우저에서 테스트하고 사진으로 남깁니다 (`PR-6`, 마일스톤 M7) |
 
 ### 양쪽의 진도 차이
 
@@ -111,15 +126,17 @@ Rust **Host**가 Kotlin **Renderer**보다 앞서 있습니다. 지금 마무리
 | 기능 | Host (Rust) | Renderer (Kotlin) |
 |---|---|---|
 | 노드 트리 mutation: `FR-1` | ✅ | ✅ |
-| 스키마 기반 렌더링: `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
-| 동기 이벤트 전달: `FR-3`, `FR-12` | ✅ | ✅ 키 소비를 `Modifier.onKeyEvent`에 연결 |
+| 스키마 기반 렌더링: `FR-2` | ✅ | ✅ 33개 컴포저블 모두 구현 |
+| 동기 이벤트 전달: `FR-3`, `FR-12` | ✅ | ✅ `on_click`, `on_change`, `on_dismiss`, 키 소비 연결 |
 | 비제어 `TextField`, IME 소유권: `D5` | ✅ | ✅ |
 | 스키마 코드젠 lockstep: `FR-7` | ✅ | ✅ 생성된 `Protocol.gen.kt` |
-| `LazyColumn` 윈도잉: `FR-8` | ✅ 요청받은 구간만 생성 | ⚠️ **당분간 평범한 `Column`으로 렌더링**. 윈도잉 절반이 `TODO(FR-8)`로 남아 있음 |
-| 스트리밍 텍스트 `AppendText`: `FR-9` | ✅ | ✅ |
-| Modifier: `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ 위 전부 |
-| 디자인 프리미티브·디자인 시스템: `FR-13`, `FR-14` | ❌ `Draft`: **명세만 있고 코드는 없음** | ❌ |
-| 서드파티 위젯 확장: `FR-11` | ❌ `Draft`: 후보 검토 중 (**Q2**) | ❌ |
+| `LazyColumn` 윈도잉: `FR-8` | ✅ | ✅ Renderer가 구간 요청 |
+| 스트리밍 텍스트 `AppendText`: `FR-9` | ✅ | ✅ 프레임 단위로 병합 |
+| Modifier: `FR-10` | ✅ | ✅ 13개 속성 전부 구현 |
+| 디자인 프리미티브·디자인 시스템: `FR-13`, `FR-14` | ✅ | ✅ 일곱 가지 시스템, 역할 기반 명세 |
+| 창 크기 클래스 (Window size classes) | ✅ | ✅ `use_window_size()`로 compact/medium/expanded 제공 |
+| 내비게이션 및 시트 (Navigation and sheets) | ✅ | ✅ 레일, 드로어, 하단 바, 시트 구현 |
+| 서드파티 위젯 확장: `FR-11` | ⚠️ 컴파일 타임에만 가능 | ⚠️ `LinearProgressIndicator`가 그 예시 |
 
 마일스톤은 [`PROJECT.md`](../../PROJECT.md)에 있습니다(M0~M8). **M1이 프로젝트의 생사를
 가릅니다.** native-image 빌드에서 한글 조합이 정상이면 나머지는 분량 문제입니다.
@@ -189,7 +206,7 @@ fn main() {
 
 ## 🎨 디자인 시스템
 
-**Material 3**, **Apple HIG**, **WinUI/Fluent** 세 가지를 1급으로 지원하는 것이 계획입니다.
+**Material 3**, **Apple HIG**, **WinUI/Fluent**, **Liquid Glass** 등 일곱 가지를 1급으로 지원하는 것이 계획입니다.
 애플리케이션이 고르며, 모든 플랫폼에서 동일하게 쓰거나 호스트 플랫폼을 따라가게 할 수 있습니다.
 
 ```rust
@@ -207,7 +224,7 @@ LaunchBuilder::new().with_theme(Theme::adaptive(DesignSystem::Material3)).launch
 - **역할을 토큰으로 푸는 쪽은 Host가 아니라 Renderer입니다.** 그래서 다크모드 전환이 트리 전체에
   대한 `SetProp` 폭풍(`O(노드 수)`)이 아니라 `SetTheme` 한 건과 `CompositionLocal` 무효화로
   끝납니다. 프레임 예산에서 빠지는 비용의 차이입니다.
-- 네 번째 디자인 시스템을 추가할 때 위젯 코드, 속성, Modifier, 와이어 포맷은 건드리지 않습니다.
+- 여덟 번째 디자인 시스템을 추가할 때 위젯 코드, 속성, Modifier, 와이어 포맷은 건드리지 않습니다.
   Rust enum 변형 하나, Kotlin 토큰 테이블 하나, 규칙 구현 하나면 됩니다.
 - `adaptive`는 **기본값이 아닙니다.** `with_theme`을 부르지 않으면
   `Theme::unified(DesignSystem::Material3)`입니다. 플랫폼마다 다르게 보이는 것은 기본값으로
@@ -263,7 +280,11 @@ PTY 같은 무거운 작업은 Host 워커 스레드에서 돌면서 시그널�
 왕복하지 않습니다. 스크롤 위치, 포커스, 애니메이션 상태도 Renderer의 것입니다.
 
 <details>
-<summary><b>macOS에 Liberica NIK과 작은 우회책 세 개가 필요한 이유</b></summary>
+<summary><b>네이티브 이미지에 Liberica NIK과 작은 우회책 세 개가 필요한 이유</b></summary>
+
+아래는 GraalVM 네이티브 이미지 이야기입니다. Windows를 빌드하는 방식이고, macOS도 Kotlin/Native
+경로 이전에는 이것이었습니다. macOS가 배포하는 렌더러는 AWT를 링크하지 않으므로 아래의 어떤 것도
+필요하지 않습니다.
 
 Compose Desktop의 창은 AWT `JFrame`이고, AOT 컴파일은 어떤 코드 경로가 도는지를 바꾸지 않습니다.
 그래서 native-image에서도 AWT의 IME 경로가 유지됩니다(`D4`). 문제는 upstream GraalVM이 **Darwin에서
@@ -292,6 +313,35 @@ JavaFX 호스트가 쓰는 것과 같은 방식입니다. AWT가 자기 루프�
 
 ## 🚀 시작하기
 
+### 내 프로젝트에서 쓰기
+
+한 줄이면 끝입니다. `cargo build`가 이 타깃에 필요한 렌더러를 알아내고, 크레이트 버전에
+정확히 맞는 릴리스 아티팩트를 내려받고, 게시된 `.sha256`으로 검증하고, `target/` 밖의
+캐시에 풀어서 링크합니다.
+
+```toml
+[dependencies]
+dioxus-compose = "0.0.0"
+```
+
+설정할 환경 변수도, 손으로 내려받을 파일도, 실행할 스크립트도 없습니다. 캐시는 버전과
+타깃으로 키가 잡혀 있어서 `cargo clean`을 견디고 같은 기계의 프로젝트끼리 한 벌을
+공유합니다.
+
+필요한 경우를 위한 변수가 둘 있고, 둘 다 설치에 필요하지는 않습니다.
+
+| 변수 | 효과 |
+|---|---|
+| `DIOXUS_COMPOSE_RENDERER_DIR` | 이 디렉터리의 렌더러를 씁니다. 가장 먼저 확인하고, 설정돼 있으면 아무것도 내려받지 않습니다. 직접 빌드한 렌더러, 벤더링한 사본, 망 분리 빌드가 모두 이것 하나로 해결됩니다. |
+| `DIOXUS_COMPOSE_CACHE_DIR` | 캐시를 `$HOME/.cache/dioxus-compose`(Windows는 `%LOCALAPPDATA%\dioxus-compose`)에서 옮깁니다. |
+
+네트워크가 없는 빌드는 어떤 파일 둘을 어디에 두면 되는지 말하고, 그 자리에 두면 그것으로
+끝입니다. `default-features = false`는 렌더러 없이 빌드합니다(헤드리스, 문서 빌드). 그렇게
+만든 바이너리를 실행하면 무엇이 없는지 말하고 0이 아닌 상태로 끝납니다. 창을 열지 않은 채
+0을 반환하지 않습니다.
+
+아래는 전부 **이 저장소에서 작업할 때** 필요한 내용이며, 렌더러 툴체인까지 갖춰야 합니다.
+
 ### 0. 개발 환경 점검
 
 ```bash
@@ -310,7 +360,10 @@ JavaFX 호스트가 쓰는 것과 같은 방식입니다. AWT가 자기 루프�
 rustup component add rustfmt clippy
 ```
 
-### 2. Liberica NIK 25 **Full**, 렌더러 네이티브 빌드에만 필요
+### 2. Liberica NIK 25 **Full**, GraalVM 네이티브 이미지에만 필요
+
+macOS가 배포하는 렌더러를 빌드하는 데는 필요하지 않습니다. 그쪽은 Kotlin/Native이고, 필요한 것은
+3번의 패치된 Compose입니다.
 
 > ⚠️ **macOS에서는 upstream GraalVM이 동작하지 않습니다.** Darwin에서 AWT 지원을 건너뛰기
 > 때문에([oracle/graal#13272](https://github.com/oracle/graal/issues/13272), 2026-09 기준 open)
@@ -338,23 +391,49 @@ macOS에서는 Xcode 명령줄 도구(`xcode-select --install`)도 필요합니�
 
 **현재 스크립트가 지원하는 것은 macOS뿐입니다.** Linux와 Windows native-image 빌드는 아직입니다.
 
-### 3. Kotlin
+### 3. 패치된 Compose
+
+렌더러는 JetBrains가 발행한 것이 아니라 로컬 Maven 저장소에서 Compose를 찾습니다. 필요한 세 가지가
+이 플랫폼용 공개 빌드에서는 비어 있고, 그것을 담고 있는 모듈 밖에서는 채울 수 없기 때문입니다.
+텍스트 선택 메뉴가 내주는 항목, 복사에 쓰이는 키, 그리고 Linux 타깃입니다. 패치는
+`dioxus-compose-renderer/patches/`에 있고, Compose 리비전 하나에 고정돼 있으며, 각각 무엇을 위한
+것인지 적혀 있습니다.
+
+```bash
+./dioxus-compose-renderer/scripts/build-compose.sh
+```
+
+고정된 리비전을 받아 패치를 얹고, 렌더러가 요구하는 모듈을 발행합니다. 오래 걸리지만 빌드마다 할
+일은 아니고 한 번이면 됩니다. 나머지는 여전히 JetBrains가 발행한 것에서 해결됩니다.
+
+### 4. Kotlin
 
 설치할 것이 없습니다. `dioxus-compose-renderer/kotlin`(Windows는 `kotlin.bat`)이 자체 부트스트랩
 래퍼라, 처음 실행할 때 고정된 버전의 툴체인을 내려받습니다.
 
-### 4. 렌더러 빌드
+### 5. 렌더러 빌드
 
-`dioxus-compose-renderer/build/native-image/dist/lib/`에 렌더러와 Skia, `libjawt`/`libawt_lwawt`
-보조 라이브러리를 만듭니다(`PR-8`). 몇 분 걸립니다.
+`dioxus-compose-renderer/build/macos/`에 Compose와 Skia, 인터프리터가 들어 있는 정적 라이브러리
+하나를 만듭니다(`PR-8`). 몇 분 걸립니다.
 
 ```bash
 cd dioxus-compose-renderer
-./desktop/scripts/build-native.sh
+./desktop/scripts/build-macos.sh --release
+```
+
+```
+build/macos/
+  libdioxus_compose_renderer.a       렌더러 (Compose, Skia, 인터프리터, 우리 코드)
+  libdioxus_compose_renderer_api.h   Kotlin/Native가 생성한 헤더
 ```
 
 <details>
-<summary><b><code>dist/lib/</code>에 생기는 것</b></summary>
+<summary><b>GraalVM 네이티브 이미지와 <code>dist/lib/</code>에 생기는 것</b></summary>
+
+`./desktop/scripts/build-native.sh`는 대신 네이티브 이미지를 빌드합니다. Windows를 빌드하는
+방식이고 `smoke-test.sh`가 링크하는 대상이며, macOS의 배포 방식은 더 이상 이것이 아닙니다.
+결과물은 파일 하나가 아니라 디렉터리입니다. 정적으로 링크된 AWT가 일부 항목을 경로로 찾기
+때문입니다.
 
 ```
 build/native-image/dist/lib/
@@ -365,7 +444,7 @@ build/native-image/dist/lib/
 ```
 </details>
 
-### 5. 스모크 테스트
+### 6. 스모크 테스트
 
 최소한의 C 호스트를 라이브러리에 링크해 `dioxus_compose_renderer_run`을 호출합니다. 창이 뜨고,
 닫으면 0을 반환해야 합니다. `PR-8`의 수용 기준입니다.
@@ -377,18 +456,18 @@ cd dioxus-compose-renderer
 
 무인 실행이 필요하면 `DIOXUS_COMPOSE_AUTOEXIT_MS=6000`으로 창이 스스로 닫히게 할 수 있습니다.
 
-### 6. Rust 데모 실행
+### 7. Rust 데모 실행
 
 ```bash
 cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
-빌드 스크립트는 워크스페이스의
-`dioxus-compose-renderer/build/native-image/dist/lib`에서 렌더러를 찾습니다. 다른 곳에 있는
-렌더러를 쓰려면(내려받은 아티팩트, 벤더링한 복사본, 오프라인 빌드)
-`DIOXUS_COMPOSE_RENDERER_DIR`로 가리키세요(`NFR-10`).
+이 저장소의 체크아웃에서는 빌드 스크립트가 방금 빌드한 워크스페이스의
+`dioxus-compose-renderer/build/native-image/dist/lib`를 내려받기보다 먼저 씁니다. 전체 순서는
+`DIOXUS_COMPOSE_RENDERER_DIR`, 워크스페이스 빌드 결과물, 캐시, 크레이트 버전의 릴리스
+순입니다(`NFR-10`).
 
-### 7. JVM 개발 셸
+### 8. JVM 개발 셸
 
 렌더러 자체를 손볼 때 가장 빠른 반복 경로입니다. hot reload와 `@Preview`를 쓸 수 있고
 native-image 빌드가 필요 없습니다(`NFR-5`, `D7`).
@@ -467,6 +546,7 @@ dioxus-compose/
 │  ├─ desktop/                      #   JVM 개발 셸
 │  ├─ shared/                       #   공용 Compose 코드
 │  └─ ios/  android/  web/          #   플랫폼 타깃
+├─ samples/                         # 11개의 샘플 앱 (4개는 adaptive, 7개는 unified)
 ├─ scripts/                         # setup-check.sh, check.sh, install-nik.sh, publish-main.sh
 └─ docs/
    ├─ INTENT.md                     # 왜 만드는가, 결정 D1~D10, 폐기한 대안

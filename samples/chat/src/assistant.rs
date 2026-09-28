@@ -16,10 +16,72 @@ use std::time::Duration;
 
 use crate::Message;
 
-/// How much text lands at once, and how long the gap is. Roughly 180 characters a second,
-/// which is close to what a hosted model feels like and fast enough that a stall shows.
+/// How much text lands at once. The gap between chunks comes from the speed the user set.
 const CHUNK: usize = 3;
-const GAP: Duration = Duration::from_millis(16);
+
+/// The beat before the first characters, the way a real model takes a moment.
+const FIRST_TOKEN_DELAY: Duration = Duration::from_millis(220);
+
+/// How much the assistant says.
+///
+/// A real model takes this as an instruction in the prompt. Here it is applied to the
+/// canned answer afterwards, which is a different mechanism for the same visible thing:
+/// the setting changes the reply, so it is a setting rather than a switch wired to
+/// nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Length {
+    Brief,
+    Normal,
+    Detailed,
+}
+
+impl Length {
+    pub const ALL: [Self; 3] = [Self::Brief, Self::Normal, Self::Detailed];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Brief => "Brief",
+            Self::Normal => "Normal",
+            Self::Detailed => "Detailed",
+        }
+    }
+}
+
+/// The slowest and fastest the reply is allowed to arrive, in characters a second.
+///
+/// The default is close to what a hosted model feels like, and the range reaches far
+/// enough either side of it that the difference is something you can watch rather than
+/// something you have to measure.
+pub const SLOWEST: f32 = 20.0;
+pub const FASTEST: f32 = 600.0;
+pub const DEFAULT_SPEED: f32 = 180.0;
+
+/// How the assistant answers. Everything here changes what the worker does.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Settings {
+    pub length: Length,
+    /// Whether the reply is typed out or lands whole.
+    pub streaming: bool,
+    /// Characters a second while it is being typed out.
+    pub speed: f32,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            length: Length::Normal,
+            streaming: true,
+            speed: DEFAULT_SPEED,
+        }
+    }
+}
+
+impl Settings {
+    /// How long to wait between two chunks, from the speed in characters a second.
+    fn gap(&self) -> Duration {
+        Duration::from_secs_f32(CHUNK as f32 / self.speed.clamp(SLOWEST, FASTEST))
+    }
+}
 
 /// Cancellation, shared with the UI thread.
 ///
@@ -39,9 +101,35 @@ impl Turns {
     }
 }
 
-/// Reply text for a prompt. Canned, but picked from the prompt so the answers are not all
-/// the same wall of words.
-fn reply_to(prompt: &str) -> String {
+/// Reply text for a prompt and a length.
+///
+/// Brief is the first sentence, which is what "be brief" gets you from a real model.
+/// Detailed adds a closing paragraph. Canned either way, but picked from the prompt so the
+/// answers are not all the same wall of words.
+fn reply_to(prompt: &str, length: Length) -> String {
+    let full = full_reply(prompt);
+    match length {
+        Length::Brief => first_sentence(&full),
+        Length::Normal => full,
+        Length::Detailed => format!(
+            "{full}\n\nOne more thing, since you asked for detail. Everything above \
+arrived on a worker thread a few characters at a time, and the only reason it could is \
+that writing the shared list is all the worker does. It never calls across the boundary. \
+The scheduler notices the write, the Host asks for a frame, and the frame carries the \
+characters that landed since the last one."
+        ),
+    }
+}
+
+/// Up to and including the first full stop, or the whole thing if there is not one.
+fn first_sentence(text: &str) -> String {
+    match text.find(". ") {
+        Some(end) => text[..=end].to_owned(),
+        None => text.to_owned(),
+    }
+}
+
+fn full_reply(prompt: &str) -> String {
     let lowered = prompt.to_lowercase();
     if lowered.contains("hello") || lowered.contains("hi ") || lowered.trim() == "hi" {
         return "Hello. I am a stand-in for a language model: there is no network behind \
@@ -80,17 +168,35 @@ pub fn stream_reply(
     prompt: String,
     token: u64,
     turns: Turns,
+    settings: Settings,
     mut messages: SyncSignal<Vec<Message>>,
 ) {
     std::thread::Builder::new()
         .name("sample-chat-assistant".to_owned())
         .spawn(move || {
-            let reply = reply_to(prompt.trim());
+            let reply = reply_to(prompt.trim(), settings.length);
+            if !settings.streaming {
+                // Not typed out: the whole reply lands in one write, which is the shape a
+                // non-streaming endpoint has. The thread still exists, because the wait
+                // for the answer is still a wait.
+                std::thread::sleep(FIRST_TOKEN_DELAY);
+                if !turns.is_current(token) {
+                    return;
+                }
+                let mut list = messages.write();
+                if let Some(message) = list.last_mut() {
+                    if message.token == token {
+                        message.text.push_str(&reply);
+                        message.streaming = false;
+                    }
+                }
+                return;
+            }
             // Chunk on character boundaries, never on bytes: a reply cut through the middle
             // of a multi-byte character would not be valid UTF-8 to push.
             let characters: Vec<char> = reply.chars().collect();
-            // A beat before the first characters, the way a real model takes a moment.
-            std::thread::sleep(Duration::from_millis(220));
+            let gap = settings.gap();
+            std::thread::sleep(FIRST_TOKEN_DELAY);
             for chunk in characters.chunks(CHUNK) {
                 if !turns.is_current(token) {
                     return;
@@ -105,7 +211,7 @@ pub fn stream_reply(
                         _ => return,
                     }
                 }
-                std::thread::sleep(GAP);
+                std::thread::sleep(gap);
             }
             if turns.is_current(token) {
                 let mut list = messages.write();

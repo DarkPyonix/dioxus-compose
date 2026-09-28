@@ -43,7 +43,10 @@ grep -q 'libskiko-linux-' "$build"
 # hand the shim object to native-image, and it must fail the build if either name is missing.
 grep -q 'cc -shared .*renderer_entry\.o' "$build"
 grep -q -- '-Wl,-soname,' "$build"
-absent 'NativeLinkerOption=$obj' "$build" \
+# The shim's object, and not every object. The window's own object goes through
+# native-image on purpose: nothing outside the image calls into it, so the version script
+# making its symbols local costs nothing, and the image's own code is what calls them.
+absent 'NativeLinkerOption=$obj/renderer_entry.o' "$build" \
     "The C shim is linked in a second step now, because native-image's generated version script marks anything it did not produce as local and then strips it."
 absent 'export-dynamic-symbol' "$build" \
     "That flag chooses among symbols the version script left global, so it cannot rescue a symbol the script made local"

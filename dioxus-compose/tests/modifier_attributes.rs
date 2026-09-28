@@ -183,3 +183,95 @@ fn fr13_an_unset_attribute_does_not_clear_its_partner_in_the_same_slot() {
         last.1
     );
 }
+
+/// Every widget, each one given a size and a fill.
+///
+/// This is here because half of them could not be. `Canvas` documented that its size came
+/// from the Modifier chain and then declared no Modifier props at all, so a chart could
+/// only ever be as large as the box someone wrapped it in. A `Slider` and a `Divider`
+/// could not fill the row they were in, which is the only width either of them is ever
+/// wanted at. An `Image` had no size, so a photograph was whatever size the Renderer
+/// guessed. The attributes existed on the elements the whole time; the components that
+/// wrap them had hand written prop lists, and a prop list is the sort of thing that gets
+/// written once and then not extended.
+///
+/// It is written as one screen holding all of them, because the failure is a compile
+/// error rather than a wrong value: a widget that does not take the attribute cannot be
+/// written down here at all.
+fn every_widget_sized() -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            fill_max_height: true,
+            Canvas {
+                fill_max_width: true,
+                height: 40.0,
+                commands: DrawList::builder()
+                    .circle(Paint::Role(ColorRole::Primary), 10.0, 10.0, 8.0, 0.0)
+                    .build(),
+            }
+            Image { fill_max_width: true, height: 60.0, asset_id: 1 }
+            Icon { width: 24.0, height: 24.0, asset_id: 2 }
+            Checkbox { fill_max_width: true, checked: true }
+            RadioButton { fill_max_width: true, selected: true }
+            Switch { fill_max_width: true, checked: false }
+            Slider { fill_max_width: true, value: 0.5 }
+            ProgressIndicator { fill_max_width: true, value: 0.25 }
+            Divider { fill_max_width: true }
+            DatePicker { fill_max_width: true, value: 20_000 }
+            TimePicker { fill_max_width: true, value: 600 }
+            Dropdown {
+                fill_max_width: true,
+                selected_index: 0,
+                Text { text: "one" }
+            }
+            Navigation {
+                fill_max_width: true,
+                NavigationItem { fill_max_width: true, text: "Home" }
+                Text { text: "page" }
+            }
+        }
+    }
+}
+
+#[test]
+fn fr13_every_widget_takes_the_modifier_chain() {
+    let mut host = Host::new(every_widget_sized);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let filled: Vec<u32> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                node_id,
+                modifier: dioxus_compose::Modifier::FillMaxWidth,
+                ..
+            } => Some(*node_id),
+            _ => None,
+        })
+        .collect();
+    // The column, the twelve children that asked to fill their width, and the one
+    // destination inside the navigation.
+    assert_eq!(
+        filled.len(),
+        14,
+        "{} widgets filled their width rather than 14: {filled:?}",
+        filled.len()
+    );
+
+    let sized: Vec<u32> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                node_id,
+                modifier: dioxus_compose::Modifier::Height(_),
+                ..
+            } => Some(*node_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sized.len(),
+        3,
+        "the canvas, the image and the icon should each carry a height: {sized:?}"
+    );
+}

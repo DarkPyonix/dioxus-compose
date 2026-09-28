@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### The renderer is built for the platform where Compose publishes one
+
+macOS no longer carries a Java runtime. Where Compose publishes a target of its own, the
+renderer is compiled for the platform directly; where it does not, it stays a native image.
+Nothing an application writes changes: the same C ABI, the same protocol bytes, the same
+interpreter sources.
+
+| | Before | Now |
+| --- | --- | --- |
+| A calculator on macOS | 93.1 MB across four files | **28.95 MB in one** |
+| What it holds while open | 56 MB | **39 MB** |
+| Threads | 22 | 10 |
+
+For comparison, Apple's own Calculator holds 45 MB, and its heap is more than twice ours.
+
+Linux and Windows keep the native image, and are lighter for a second reason: the toolkit
+has been taken out of what the image is asked to keep. Nine ways of removing it were
+measured; the six that worked are in the build, and the four that were worth nothing are
+written down, because their failing is what found the cause.
+
+`docs/platforms.md` has the measurements, what each platform can and cannot do, and why.
+
+### Checked by hand on the macOS native path
+
+The calculator draws, a screen reader is given every button by name, a press reaches the
+scene, and the window is the one the application asked for.
+
 ## v0.0.0
 
 The first published version. It is numbered 0.0.0 because the approach is proven and the

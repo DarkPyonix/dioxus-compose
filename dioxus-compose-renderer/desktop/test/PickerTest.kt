@@ -159,7 +159,7 @@ class PickerTest {
         assertEquals(1, changes.size, "one pick is one event")
         assertEquals(PICKER, changes.single().nodeId)
         assertEquals(HANDLER, changes.single().handlerId)
-        assertEquals(MID_MARCH + 5, changes.single().value, "2024-03-20 is five days later")
+        assertEquals((MID_MARCH + 5).toDouble(), changes.single().value, "2024-03-20 is five days later")
     }
 
     /**
@@ -255,7 +255,7 @@ class PickerTest {
 
         val changes = connection.events.filterIsInstance<HostEvent.ValueChanged>()
         assertEquals(1, changes.size)
-        assertEquals(2L, changes.single().value, "the third option is position two")
+        assertEquals(2.0, changes.single().value, "the third option is position two")
     }
 
     /** A time is minutes since midnight, and the range holds the value inside the day. */

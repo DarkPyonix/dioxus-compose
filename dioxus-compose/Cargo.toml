@@ -12,6 +12,7 @@ repository = "https://github.com/DarkPyonix/dioxus-compose"
 homepage = "http://darkpyonix.dev/dioxus-compose/"
 keywords = ["ui", "gui", "dioxus", "compose", "desktop"]
 categories = ["gui"]
+readme = "../README.md"
 
 [lib]
 crate-type = ["rlib", "cdylib", "staticlib"]
@@ -26,7 +27,15 @@ path = "src/bin/codegen.rs"
 bench = false
 
 [features]
-default = []
+# The renderer is what draws, so it is on by default. Adding this crate to a Cargo.toml is
+# meant to be the whole setup: the build script finds a renderer for the target or
+# downloads the release artifact for this exact version, checksum first. Turn it off with
+# `default-features = false` for a headless or documentation build, and know that the
+# resulting binary says so on standard error and exits non-zero rather than opening no
+# window and returning 0.
+default = ["native-renderer"]
+# Drives the boundary with no renderer at all, for tests and for embedding the Host in
+# something that draws for itself. Suppresses the renderer download.
 mock-renderer = []
 native-renderer = []
 
@@ -36,7 +45,17 @@ dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
 dioxus-signals.workspace = true
 
-[dev-dependencies]
+# The Android shims are generated against jni-rs. Nothing here is linked into a desktop,
+# iOS or web build, and the alternative bindings generators were rejected for their
+# per-call cost.
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+
+# Criterion is not built for the browser. Its default features pull in rayon, which
+# refuses to compile for a wasm target, and building the Host as a wasm module compiles
+# dev-dependencies because an example is a dev target. The benchmarks only ever run on the
+# machine that records their numbers.
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 criterion = "0.7"
 
 [[bench]]
@@ -46,3 +65,10 @@ harness = false
 [[example]]
 name = "desktop_demo"
 required-features = ["native-renderer"]
+
+# The browser's Host is a wasm module the page fetches. It has no `main` either: the
+# Renderer's module owns the loop, and `web_main!` registers this example's root component
+# from the entry point the page calls once both modules exist.
+[[example]]
+name = "web_demo"
+crate-type = ["cdylib"]

@@ -8,7 +8,12 @@
 # same file draws the same tree on both platforms, the C ABI really is the same.
 #
 # Usage: ios-smoke-test.sh [--device-name "iPhone 16"] [--screenshot <path>]
-#                          [--await-click [seconds]]
+#                          [--await-click [seconds]] [--navigation]
+#
+# --navigation wraps the smoke host's screen in a navigation with two destinations. On
+# iOS 26 that is what the renderer turns into the system's own tab bar and title bar, and
+# the default tree has no navigation at all, so a screenshot taken without this flag shows
+# nothing of that chrome.
 #
 # --await-click keeps the app up and waits for someone to tap the button, then
 # checks that the tap reached the Rust handler. simctl has no tap command, so
@@ -33,15 +38,17 @@ device_name="iPhone 16"
 screenshot=""
 await_click=0
 await_seconds=120
+navigation=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --device-name) device_name="${2:-}"; shift 2 ;;
         --screenshot) screenshot="${2:-}"; shift 2 ;;
+        --navigation) navigation=1; shift ;;
         --await-click)
             await_click=1
             if [[ "${2:-}" =~ ^[0-9]+$ ]]; then await_seconds="$2"; shift 2; else shift; fi
             ;;
-        -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         *) die "unknown argument '$1'" ;;
     esac
 done
@@ -147,6 +154,10 @@ echo "==> installing and launching"
 xcrun simctl uninstall "$device" "$BUNDLE_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$device" "$app"
 log="$PROJECT_DIR/build/ios/smoke-console.log"
+# simctl passes anything prefixed SIMCTL_CHILD_ through to the app it launches.
+if (( navigation )); then
+    export SIMCTL_CHILD_DIOXUS_COMPOSE_SMOKE_NAVIGATION=1
+fi
 xcrun simctl launch --console-pty --terminate-running-process "$device" "$BUNDLE_ID" \
     >"$log" 2>&1 &
 launch_pid=$!

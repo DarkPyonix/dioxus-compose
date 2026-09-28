@@ -13,7 +13,9 @@ import dioxus.compose.breeze.BreezeDesignSystem
 import dioxus.compose.deepin.DeepinDesignSystem
 import dioxus.compose.fluent.FluentDesignSystem
 import dioxus.compose.gnome.GnomeDesignSystem
+import dioxus.compose.liquidglass.contrastRatio
 import dioxus.compose.material3.Material3DesignSystem
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -91,6 +93,109 @@ class AllDesignSystemsDifferTest {
                 }
                 for (variant in ButtonVariant.entries) system.button(variant)
                 assertTrue(system.motion.pressMillis > 0, "${system.id} presses instantly")
+            }
+        }
+    }
+
+    @Test
+    fun fr14_a_panel_lifts_off_the_page_in_every_system() {
+        // `SurfaceContainer` is the one role a panel can be made of, so it has to be
+        // visible against the page it sits on. `Surface` cannot carry that promise:
+        // several systems give it the same value as the page on purpose, and a panel
+        // painted with it is drawn full size, in the right colour, and cannot be seen.
+        //
+        // Three systems answered this role with their own `Surface` when it was added,
+        // and two of those were within twenty parts of their own page.
+        for (dark in listOf(false, true)) {
+            for (system in systems(dark)) {
+                val panel = system.color(ColorRole.SurfaceContainer)
+                val page = system.color(ColorRole.Background)
+                val apart = (
+                    abs(panel.red - page.red) +
+                        abs(panel.green - page.green) +
+                        abs(panel.blue - page.blue)
+                    ) * 255f
+                assertTrue(
+                    apart >= 24f,
+                    "${system.id} ${if (dark) "dark" else "light"}: a panel and the page " +
+                        "it sits on are $apart apart, so the panel is invisible",
+                )
+                // The accent containers answer the same question for a tinted panel. A
+                // tint nobody can see is a panel that is not there, and these are the
+                // fills a screen made of coloured tiles is built out of.
+                for (role in listOf(
+                    ColorRole.PrimaryContainer,
+                    ColorRole.SecondaryContainer,
+                    ColorRole.TertiaryContainer,
+                )) {
+                    val tint = system.color(role)
+                    val tintApart = (
+                        abs(tint.red - page.red) +
+                            abs(tint.green - page.green) +
+                            abs(tint.blue - page.blue)
+                        ) * 255f
+                    assertTrue(
+                        tintApart >= 24f,
+                        "${system.id} ${if (dark) "dark" else "light"}: $role and the page " +
+                            "are $tintApart apart, so a tinted panel is invisible",
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Every `On*` role is readable on the role it names, in all six systems.
+     *
+     * Only Cupertino was checked before, so the other five could put unreadable ink on
+     * their own fills and nothing here would say so. Breeze shipped white on its
+     * "positive" teal until the port to the running path replaced it with dark ink, and
+     * that pairing was never measured on this side at all.
+     *
+     * The thresholds are the ones the Cupertino test explains: reading surfaces carry
+     * body text and are held to 4.5, accent fills carry short control labels and are
+     * held to the 3.0 that Apple's own systemBlue and systemRed land near.
+     */
+    @Test
+    fun fr14_every_on_role_is_readable_on_its_pair_in_every_system() {
+        // `SurfaceContainer` has no ink of its own: a panel filled with it holds the
+        // page's reading ink, and that is the promise a caller relies on.
+        val reading = listOf(
+            ColorRole.Surface to ColorRole.OnSurface,
+            ColorRole.SurfaceVariant to ColorRole.OnSurfaceVariant,
+            ColorRole.Background to ColorRole.OnBackground,
+            ColorRole.SurfaceContainer to ColorRole.OnSurface,
+            // The accent containers exist so a paragraph can land on a tinted panel, not
+            // just a word, so they are held to the reading bound rather than to the looser
+            // bound their accents keep.
+            ColorRole.PrimaryContainer to ColorRole.OnPrimaryContainer,
+            ColorRole.SecondaryContainer to ColorRole.OnSecondaryContainer,
+            ColorRole.TertiaryContainer to ColorRole.OnTertiaryContainer,
+        )
+        val accent = listOf(
+            ColorRole.Primary to ColorRole.OnPrimary,
+            ColorRole.Secondary to ColorRole.OnSecondary,
+            ColorRole.Tertiary to ColorRole.OnTertiary,
+            ColorRole.Error to ColorRole.OnError,
+        )
+        for (dark in listOf(false, true)) {
+            for (system in systems(dark)) {
+                for ((container, content) in reading) {
+                    val ratio = contrastRatio(system.color(container), system.color(content))
+                    assertTrue(
+                        ratio >= 4.5f,
+                        "${system.id} ${if (dark) "dark" else "light"}: $content on " +
+                            "$container reads at $ratio, below the 4.5 body minimum",
+                    )
+                }
+                for ((container, content) in accent) {
+                    val ratio = contrastRatio(system.color(container), system.color(content))
+                    assertTrue(
+                        ratio >= 3f,
+                        "${system.id} ${if (dark) "dark" else "light"}: $content on " +
+                            "$container reads at $ratio, below the 3.0 control label minimum",
+                    )
+                }
             }
         }
     }

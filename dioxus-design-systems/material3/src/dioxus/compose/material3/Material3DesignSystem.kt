@@ -71,6 +71,19 @@ class Material3DesignSystem(
         ColorRole.OutlineVariant -> colorScheme.outlineVariant
         ColorRole.Error -> colorScheme.error
         ColorRole.OnError -> colorScheme.onError
+        // Material 3's own answer to depth: surface and background are one value here,
+        // and the container roles are what a raised layer is made of.
+        ColorRole.SurfaceContainer -> colorScheme.surfaceContainer
+        // The third accent and the container tones are Material's own idea, so these are
+        // the scheme's members rather than anything derived here.
+        ColorRole.Tertiary -> colorScheme.tertiary
+        ColorRole.OnTertiary -> colorScheme.onTertiary
+        ColorRole.PrimaryContainer -> colorScheme.primaryContainer
+        ColorRole.OnPrimaryContainer -> colorScheme.onPrimaryContainer
+        ColorRole.SecondaryContainer -> colorScheme.secondaryContainer
+        ColorRole.OnSecondaryContainer -> colorScheme.onSecondaryContainer
+        ColorRole.TertiaryContainer -> colorScheme.tertiaryContainer
+        ColorRole.OnTertiaryContainer -> colorScheme.onTertiaryContainer
     }
 
     /**
@@ -162,6 +175,11 @@ class Material3DesignSystem(
         )
         ButtonVariant.Text -> buttonStyle(
             container = Color.Transparent,
+            content = colorScheme.primary,
+            border = null,
+        )
+        ButtonVariant.Operator -> buttonStyle(
+            container = colorScheme.secondaryContainer,
             content = colorScheme.primary,
             border = null,
         )

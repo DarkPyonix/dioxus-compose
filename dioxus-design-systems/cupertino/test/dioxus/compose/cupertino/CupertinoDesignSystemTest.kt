@@ -57,6 +57,7 @@ class CupertinoDesignSystemTest {
         val mustMove = ColorRole.entries - setOf(
             ColorRole.OnPrimary,
             ColorRole.OnSecondary,
+            ColorRole.OnTertiary,
             ColorRole.OnError,
         )
         for (role in mustMove) {

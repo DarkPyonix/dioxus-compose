@@ -11,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import dioxus.compose.protocol.HostEvent
+import dioxus.compose.protocol.MessageDuration
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.Paint
@@ -79,9 +80,13 @@ class ProtocolVectorsTest {
                 is Mutation.AppendText -> mutation.nodeId !in created
                 // The theme applies to the tree, not to a node, so it is never a bad record.
                 is Mutation.SetTheme -> false
+                // Nor does the window: it is about the frame around the tree.
+                is Mutation.SetWindow -> false
                 is Mutation.Create -> false
                 is Mutation.RegisterAsset -> true
                 is Mutation.ReleaseAsset -> true
+                // A message names no node, so there is no node for it to have got wrong.
+                is Mutation.ShowMessage -> false
             }
         }
         assertEquals(
@@ -89,6 +94,26 @@ class ProtocolVectorsTest {
             errors.size,
             "every unknown-node record must be reported, and nothing else: " +
                 errors.map { it.message },
+        )
+    }
+
+    /**
+     * The one record in the vector that is not about a node: both sides have to agree on
+     * its two string references, its duration and the handler id behind its action.
+     */
+    @Test
+    fun fr21_the_message_record_in_the_vector_decodes_to_the_same_values() {
+        val messages = decodeVector("mutations.bin").filterIsInstance<Mutation.ShowMessage>()
+        assertEquals(
+            listOf(
+                Mutation.ShowMessage(
+                    handlerId = 77L,
+                    text = "삭제했습니다",
+                    action = "Undo",
+                    duration = MessageDuration.Long,
+                ),
+            ),
+            messages,
         )
     }
 

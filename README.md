@@ -58,23 +58,39 @@ ago. For an app where typing *is* the interface, an IME that works 90% of the ti
 does not work. Korean, Japanese and Chinese composition is not a nice-to-have.
 
 dioxus-compose takes Compose's renderer without taking Compose's runtime cost: the Kotlin side is
-compiled ahead of time into a native shared library (GraalVM native-image on desktop, Kotlin/Native
-on iOS), so there is no JVM in the shipped artifact.
+compiled ahead of time into a native library (Kotlin/Native on macOS, Linux and iOS, a GraalVM
+native image where Kotlin has no target that can be linked against Skia), so there is no JVM in the
+shipped artifact.
 
 ### Weight, roughly
 
-All figures are **approximate**, taken from [`docs/INTENT.md`](docs/INTENT.md). They are
-order-of-magnitude comparisons, not benchmarks.
+The comparisons are **approximate**, taken from [`docs/INTENT.md`](docs/INTENT.md), and are
+order-of-magnitude rather than benchmarks. What this project weighs is measured.
 
 | Approach | Approximate weight | Notes |
 |---|---|---|
 | Webview stack (Electron, Tauri-class) | Heaviest: a browser engine per app or per system | Rejected by **C1**: memory and size |
 | Compose + bundled JVM (jlink) | ~80–120 MB of JVM alone | Rejected by **C2**. AppCDS fixes startup, not size |
 | Pure Rust toolkit (Iced-class) | ~10–20 MB | Rejected by **C5**: text and IME maturity |
-| **dioxus-compose** | ~64 MB renderer + ~21 MB Skia | Larger than Iced, far smaller than a webview or JVM stack |
+| **dioxus-compose** | 28.76 MB on macOS, one file | Larger than Iced, far smaller than a webview or JVM stack |
 
-The target in `NFR-3` is **under 100 MB distribution size and under 100 MB RSS for an empty
-window**. That requirement is still `Draft`: it gets confirmed by measurement at milestone M1.
+### What it actually weighs
+
+The notepad sample, built for release and stripped. One executable: no runtime beside it, no
+virtual machine inside it, and nothing linked but the system's own libraries.
+
+| Platform | Executable | Physical footprint | How it is built |
+|---|---|---|---|
+| macOS (arm64) | **28.76 MB** | **35.1 MB** | Kotlin/Native, drawing through Metal |
+| Linux (x86-64) | **37.93 MB** | not yet measured | Kotlin/Native, drawing through GLX |
+| Windows | not yet measured | not yet measured | GraalVM native image, drawing through Direct3D 12 |
+
+For scale, the same sample on macOS before the Kotlin/Native path was four files weighing
+93.1 MB with a 56 MB footprint. Most of that was the Java runtime the native image carried.
+
+`NFR-3` asks for under 100 MB distributed and under 56 MB of physical footprint for an empty
+window. macOS meets both with room, measured on an application rather than an empty window.
+Linux and Windows are not measured for footprint yet, and nothing here is claimed for them.
 
 ### Non-negotiables
 
@@ -97,12 +113,12 @@ the API will change.
 
 | Platform | State | Detail |
 |---|---|---|
-| 🍎 **macOS (arm64)** | **Works end to end** | Rust host → C ABI → native-image renderer → window on screen, verified 2026-09-20 on Liberica NIK 25 Full. Basic Korean IME input works; the full IME checklist (`SPEC §6`) is not finished |
-| 🪟 Windows desktop | Not scripted | A target in `NFR-4`, but `build-native.sh` refuses to run outside macOS today |
-| 🐧 Linux desktop | Not scripted | Same. The **Rust workspace and the JVM dev shell do work** on Linux: CI runs the Rust gate on `ubuntu-latest` |
-| 📱 iOS | Designed, not implemented | Kotlin/Native `-produce static` with `@CName` symbols (milestone M5) |
-| 🤖 Android | Designed, not implemented | Kotlin host plus generated JNI shims, `PR-5` (milestone M6) |
-| 🌐 Web (wasm) | Designed, feasibility open | Rust wasm ↔ Kotlin/Wasm linked directly, no JS bridge, `PR-6` (milestone M7, open question **Q3**) |
+| 🍎 **macOS (arm64)** | **Works end to end** | Rust host → C ABI → Kotlin/Native renderer → window on screen, one file with no Java runtime in it. The window, its Metal layer and its text input are this renderer's own. Basic Korean IME input works; the full IME checklist (`SPEC §6`) is not finished |
+| 🪟 Windows desktop | Builds and starts | Built with upstream GraalVM 25 and smoke-tested on every renderer change. |
+| 🐧 Linux desktop | Builds and starts | Both architectures (x64 and arm64) build under Xvfb in CI and pass a headless startup smoke test. |
+| 📱 iOS | Builds and starts | Kotlin/Native `-produce static` exporting the same C symbols. Released as an XCFramework. |
+| 🤖 Android | **Works end to end** | A Kotlin Activity owns the process and the loop, Rust is a cdylib, and the JNI shims on both sides are generated from the schema. `dx build --platform android` is the whole build: the crate carries the renderer's Kotlin, and its build script unpacks it into the generated Gradle project and writes the Activity that hosts it, so an application's `Dioxus.toml` says nothing about the renderer. Sample APKs are built that way and run on an emulator (`PR-5`, milestone M6) |
+| 🌐 Web (wasm) | **Works end to end** | One `WebAssembly.Memory`, defined by the Kotlin/Wasm module and imported by the Rust one, so a batch is read where it was written and nothing is copied. Renderer to Host calls cross a generated JavaScript forwarder, measured at 12 ns, because a browser will not give you a shared memory and a direct binding at the same time; the other direction has no JavaScript on it. The M0 screen comes up in a browser from the same Rust source the desktop demo runs, a click reaches the Rust handler, and the state change appears on the page. Tested and photographed in a browser by `web/scripts/test-boundary.sh` and `screenshot.sh` (`PR-6`, milestone M7) |
 
 ### The two halves
 
@@ -113,15 +129,17 @@ still landing.
 | Capability | Host (Rust) | Renderer (Kotlin) |
 |---|---|---|
 | Node tree mutations: `FR-1` | ✅ | ✅ |
-| Schema-driven rendering: `FR-2` | ✅ | ✅ `Column` `Row` `Box` `Text` `TextField` `Button` `Spacer` `LazyColumn` |
-| Synchronous event dispatch: `FR-3`, `FR-12` | ✅ | ✅ key consumption wired to `Modifier.onKeyEvent` |
+| Schema-driven rendering: `FR-2` | ✅ | ✅ 33 composables, all implemented |
+| Synchronous event dispatch: `FR-3`, `FR-12` | ✅ | ✅ `on_click`, `on_change`, `on_dismiss`, key consumption |
 | Uncontrolled `TextField`, IME ownership: `D5` | ✅ | ✅ |
 | Schema codegen in lockstep: `FR-7` | ✅ | ✅ generated `Protocol.gen.kt` |
-| `LazyColumn` windowing: `FR-8` | ✅ the Host materialises only the requested range | ⚠️ **renders as a plain `Column` for now**: the windowing half is an open `TODO(FR-8)` |
-| Streaming text `AppendText`: `FR-9` | ✅ | ✅ |
-| Modifiers: `FR-10` | ✅ `Padding` `FillMaxWidth/Height` `Width` `Height` `Size` `Background` `Clickable` | ✅ all of the above |
-| Design primitives and design systems: `FR-13`, `FR-14` | ❌ `Draft`: **specified only, no code yet** | ❌ |
-| Third-party widget extension: `FR-11` | ❌ `Draft`: options under evaluation (**Q2**) | ❌ |
+| `LazyColumn` windowing: `FR-8` | ✅ | ✅ renderer asks for a range |
+| Streaming text `AppendText`: `FR-9` | ✅ | ✅ coalesced per frame |
+| Modifiers: `FR-10` | ✅ | ✅ 13 attributes on every widget |
+| Design primitives and design systems: `FR-13`, `FR-14` | ✅ | ✅ Seven systems, role-based contract |
+| Window size classes | ✅ | ✅ `use_window_size()` reports classes |
+| Navigation and sheets | ✅ | ✅ Rail, drawer, bottom bar, sheets |
+| Third-party widget extension: `FR-11` | ⚠️ Compile time only | ⚠️ `LinearProgressIndicator` as worked example |
 
 Milestones live in [`PROJECT.md`](PROJECT.md) (M0–M8). **M1 decides the project**: if Korean IME
 composition holds up in a native-image build, the rest is volume of work.
@@ -192,8 +210,7 @@ Two details worth noticing:
 
 ## 🎨 Design systems
 
-The plan is three first-class design systems, **Material 3**, **Apple HIG** and **WinUI/Fluent** , 
-chosen per application, either unified across every platform or adapted to the host platform:
+The plan is seven first-class design systems, including **Material 3**, **Apple HIG**, **WinUI/Fluent**, and **Liquid Glass**, chosen per application, either unified across every platform or adapted to the host platform:
 
 ```rust
 // The same design system everywhere
@@ -210,7 +227,7 @@ The design is worked out in detail in `FR-13` and `FR-14` of [`docs/SPEC.md`](do
 - **The Renderer resolves roles into tokens**, not the Host. A dark-mode switch is then one
   `SetTheme` mutation plus a `CompositionLocal` invalidation, instead of an `O(nodes)` storm of
   `SetProp` calls charged against the frame budget.
-- Adding a fourth design system must not touch widget code, properties, modifiers or the wire
+- Adding an eighth design system must not touch widget code, properties, modifiers or the wire
   format: one Rust enum variant, one Kotlin token table, one rules implementation.
 - `adaptive` is **not** the default. Without `with_theme` you get
   `Theme::unified(DesignSystem::Material3)`, because a default that looks different on every
@@ -268,7 +285,10 @@ makes a round trip through Rust. Scroll position, focus and animation state belo
 too.
 
 <details>
-<summary><b>Why macOS needs Liberica NIK, and three small shims</b></summary>
+<summary><b>Why the native image needs Liberica NIK, and three small shims</b></summary>
+
+This is the GraalVM native image, which is how Windows is built and how macOS was built before the
+Kotlin/Native path. The renderer macOS ships links no AWT and needs none of what follows.
 
 Compose Desktop's window is an AWT `JFrame`, and AOT compilation does not change which code path
 runs, so the AWT IME path survives native-image (`D4`). But upstream GraalVM **skips AWT entirely
@@ -296,6 +316,36 @@ The JNI mentioned here is entirely internal to the JDK. The Host ↔ Renderer bo
 
 ## 🚀 Getting started
 
+### Using it in your own project
+
+One line. `cargo build` works out which renderer this target needs, downloads the release
+artifact for the crate's exact version, checks it against the published `.sha256`, unpacks it
+into a cache outside `target/`, and links it.
+
+```toml
+[dependencies]
+dioxus-compose = "0.0.0"
+```
+
+There is no environment variable to set, no artifact to fetch by hand and no script to run. The
+cache is keyed by version and target, so it survives `cargo clean` and is shared between projects
+on the machine.
+
+Two variables exist for the cases that need them, and neither is part of installing:
+
+| Variable | Effect |
+|---|---|
+| `DIOXUS_COMPOSE_RENDERER_DIR` | Use the renderer in this directory. Checked first, and nothing is downloaded when it is set, so a renderer you built yourself, a vendored copy or an air-gapped build all work through it. |
+| `DIOXUS_COMPOSE_CACHE_DIR` | Move the cache off `$HOME/.cache/dioxus-compose` (`%LOCALAPPDATA%\dioxus-compose` on Windows). |
+
+A build with no network says which two files to put where, and putting them there is all it takes.
+`default-features = false` builds with no renderer at all, for a headless or documentation build;
+running a binary built that way prints what is missing and exits non-zero rather than opening no
+window and returning 0.
+
+Everything below this point is about working on **this repository**, which needs the renderer
+toolchain as well.
+
 ### 0. Check your machine
 
 ```bash
@@ -314,7 +364,10 @@ so both components are required. The workspace targets Rust **1.85+** (edition 2
 rustup component add rustfmt clippy
 ```
 
-### 2. Liberica NIK 25 **Full**, only for the native renderer build
+### 2. Liberica NIK 25 **Full**, only for the GraalVM native image
+
+Not needed to build the renderer macOS ships. That one is Kotlin/Native, and what it needs is the
+patched Compose in step 3.
 
 > ⚠️ **Upstream GraalVM does not work on macOS.** It skips AWT support on Darwin
 > ([oracle/graal#13272](https://github.com/oracle/graal/issues/13272), still open as of 2026-09), so
@@ -343,23 +396,49 @@ AppKit headers used by `dioxus-compose-renderer/desktop/c/`.
 
 **The scripts support macOS only today.** Linux and Windows native-image builds are not scripted.
 
-### 3. Kotlin
+### 3. The patched Compose
+
+The renderer resolves Compose from your local Maven repository, not from what JetBrains published.
+Three things it needs are empty in the published build for this platform and cannot be filled from
+outside the module that holds them: the entries a text selection's menu offers, the keys that copy,
+and the Linux targets. The patches are in `dioxus-compose-renderer/patches/`, pinned to one Compose
+revision, and each one says what it is for.
+
+```bash
+./dioxus-compose-renderer/scripts/build-compose.sh
+```
+
+It fetches the pinned revision, applies the patches, and publishes the modules the renderer asks
+for. Slow, and run once rather than once per build. Everything else still resolves from what
+JetBrains published.
+
+### 4. Kotlin
 
 Nothing to install. `dioxus-compose-renderer/kotlin` (`kotlin.bat` on Windows) is a
 self-bootstrapping wrapper that downloads the pinned toolchain on first use.
 
-### 4. Build the renderer
+### 5. Build the renderer
 
-Produces the renderer, Skia and the `libjawt` / `libawt_lwawt` helpers in
-`dioxus-compose-renderer/build/native-image/dist/lib/` (`PR-8`). Takes several minutes.
+Produces one static library, with Compose, Skia and the interpreter inside it, in
+`dioxus-compose-renderer/build/macos/` (`PR-8`). Takes several minutes.
 
 ```bash
 cd dioxus-compose-renderer
-./desktop/scripts/build-native.sh
+./desktop/scripts/build-macos.sh --release
+```
+
+```
+build/macos/
+  libdioxus_compose_renderer.a       the renderer (Compose, Skia, the interpreter, our code)
+  libdioxus_compose_renderer_api.h   the header Kotlin/Native generates for it
 ```
 
 <details>
-<summary><b>What lands in <code>dist/lib/</code></b></summary>
+<summary><b>The GraalVM native image, and what lands in <code>dist/lib/</code></b></summary>
+
+`./desktop/scripts/build-native.sh` builds the native image instead. That is how Windows is built
+and what `smoke-test.sh` links against, and it is no longer how macOS ships. Its output is a
+directory rather than one file, because statically linked AWT resolves some things by path:
 
 ```
 build/native-image/dist/lib/
@@ -370,7 +449,7 @@ build/native-image/dist/lib/
 ```
 </details>
 
-### 5. Smoke-test it
+### 6. Smoke-test it
 
 Links a minimal C host against the library and calls `dioxus_compose_renderer_run`. A window should
 open, and closing it should return 0, the `PR-8` acceptance criterion.
@@ -382,18 +461,18 @@ cd dioxus-compose-renderer
 
 For an unattended run, set `DIOXUS_COMPOSE_AUTOEXIT_MS=6000` to make the window close itself.
 
-### 6. Run the Rust demo
+### 7. Run the Rust demo
 
 ```bash
 cargo run -p dioxus-compose --example desktop_demo --features native-renderer
 ```
 
-The build script looks for the renderer inside the workspace, at
-`dioxus-compose-renderer/build/native-image/dist/lib`. To use a renderer from somewhere else, a
-downloaded artifact, a vendored copy, an offline build, point `DIOXUS_COMPOSE_RENDERER_DIR` at it
-(`NFR-10`).
+In a checkout of this repository the build script prefers the renderer you just built, at
+`dioxus-compose-renderer/build/native-image/dist/lib`, over anything it could download. The full
+order is `DIOXUS_COMPOSE_RENDERER_DIR`, then that workspace build, then the cache, then the release
+for the crate's version (`NFR-10`).
 
-### 7. The JVM dev shell
+### 8. The JVM dev shell
 
 The fastest loop when you are working on the renderer itself: hot reload and `@Preview` work, and no
 native-image build is needed (`NFR-5`, `D7`).
@@ -472,6 +551,7 @@ dioxus-compose/
 │  ├─ desktop/                      #   JVM development shell
 │  ├─ shared/                       #   shared Compose code
 │  └─ ios/  android/  web/          #   platform targets
+├─ samples/                         # eleven sample apps (four adaptive, seven unified)
 ├─ scripts/                         # setup-check.sh, check.sh, install-nik.sh, publish-main.sh
 └─ docs/
    ├─ INTENT.md                     # why, decisions D1–D10, rejected alternatives

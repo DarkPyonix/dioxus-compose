@@ -30,15 +30,38 @@ class LinuxDesignSystemsDifferTest {
         assertEquals(3, dark.map { it.id }.toSet().size)
     }
 
+    /**
+     * The roles whose value is settled by contrast rather than chosen by the language.
+     *
+     * The ink on an accent fill, on a second accent and on an error fill is white in
+     * almost every light palette, because those three fills are saturated and white is
+     * what reads on them. Three systems agreeing there is arithmetic, not convergence, and
+     * counting it crowds out the roles where agreement really would mean one theme with
+     * three names.
+     */
+    private val forcedByContrast = setOf(ColorRole.OnPrimary, ColorRole.OnSecondary, ColorRole.OnError)
+
     @Test
     fun fr14_no_two_linux_systems_share_a_palette() {
+        val chosen = ColorRole.entries.filterNot { it in forcedByContrast }
         for (scheme in listOf(light, dark)) {
             forEachPair(scheme) { a, b ->
-                val shared = ColorRole.entries.count { a.color(it) == b.color(it) }
+                // Counted over the roles a language actually chooses. Counting all of them
+                // was the bug this line used to have: the three inks below were excluded
+                // in a list that was then never used, so every ink that reads white in two
+                // systems was charged against the budget for real collisions, and a role
+                // added later moved the count without anything having converged.
+                val same = chosen.filter { a.color(it) == b.color(it) }
+                // Three, not zero. Even among the chosen roles some agreement is
+                // arithmetic: white is the right ink over more than one saturated fill,
+                // and two systems that agree on which fills take white ink are not one
+                // theme. Two that agreed on a fill would be.
                 assertTrue(
-                    shared <= 2,
-                    "${a.id} and ${b.id} give the same answer for $shared of the " +
-                        "${ColorRole.entries.size} colour roles, so they would look like one theme",
+                    same.size <= 3,
+                    "${a.id} and ${b.id} give the same answer for ${same.size} of the " +
+                        "${chosen.size} colour roles they actually choose, so they would " +
+                        "look like one theme. The roles they agree on are " +
+                        same.joinToString { it.name },
                 )
             }
         }

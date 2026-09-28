@@ -23,17 +23,12 @@ long_description = "Dense button grids, nested Row and Column, keyboard input."
 # renderer takes over the chrome.
 bundle_name = "Calculator"
 
-[android]
-# The renderer is Kotlin running on ART rather than an AOT image, which is the one
-# platform where that is true, so Android needs the Compose runtime resolved at build
-# time and an Activity that hosts a Compose view instead of a NativeActivity.
+# There is deliberately no [android] section.
 #
-# Neither line is wired up yet: the Android renderer does not exist (M6). They are here so
-# the shape is visible and reviewable, and they are commented out so a build does not fail
-# on a dependency that is not published.
+# Android is the one platform where the renderer is Kotlin running on ART rather than an
+# AOT image, so it has to be compiled by this application's own Gradle build. None of that
+# appears here: the dioxus-compose build script unpacks the renderer's Kotlin into the
+# generated project, adds Compose to it, and writes the Activity that hosts it, using the
+# package and library name the build already knows.
 #
-# gradle_dependencies = ["androidx.activity:activity-compose:1.13.0"]
-#
-# The Activity is replaced through `application.android_main_activity`, which dx reads as
-# a path to a MainActivity.kt to use instead of its generated one. That is the hook that
-# lets a Compose host replace dx's NativeActivity entry point.
+# That is the point. An application says it depends on dioxus-compose and nothing else.

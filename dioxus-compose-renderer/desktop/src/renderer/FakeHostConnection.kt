@@ -32,6 +32,17 @@ class FakeHostConnection(
     /** Events the interpreter has sent, in order. */
     val events: List<HostEvent> get() = recordedEvents
 
+    /**
+     * Everything that happened inside the window, without what happened to the window.
+     *
+     * A few events are addressed to the Host rather than to a node: a resync, the
+     * lifecycle pair, and the design system the Renderer resolved the theme to. They
+     * carry node id 0 because there is no node they are about. A test that asks what a
+     * click produced is not asking about those, and counting them made seven such tests
+     * fail the day the resolved design system began to be reported.
+     */
+    val nodeEvents: List<HostEvent> get() = recordedEvents.filter { it.nodeId != 0 }
+
     /** Scripts the answer to every event. */
     fun respondWith(responder: (HostEvent) -> HostResponse) {
         this.responder = responder
@@ -49,6 +60,13 @@ class FakeHostConnection(
 
     override fun dispatchEvent(event: HostEvent, onMutation: (Mutation) -> Unit): Long {
         recordedEvents += event
+        // Recorded, and then left alone. A fixture's canned reply stands for a Host
+        // answering something that happened in the window, and the resolved design system
+        // is not that: it is the Renderer telling the Host what it decided, sent once when
+        // the theme resolves. Answering it with the reply meant for a click applied that
+        // reply before the click did, and three tests measured the difference rather than
+        // what they were about.
+        if (event is HostEvent.DesignSystemResolved) return 0
         val response = responder(event)
         response.mutations.forEach(onMutation)
         return response.result

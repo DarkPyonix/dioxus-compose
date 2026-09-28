@@ -4,22 +4,29 @@ package dioxus.compose.protocol
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.charset.CodingErrorAction
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LazyGrid, FileDropTarget, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, OnFilesEntered, OnFilesDropped, Progress }
 
 enum class Key { Enter }
 
 enum class WindowSizeClass { Compact, Medium, Expanded }
 
-enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError }
+enum class WindowHeightClass { Compact, Medium, Expanded }
+
+enum class ColorRole { Primary, OnPrimary, Secondary, OnSecondary, Surface, OnSurface, SurfaceVariant, OnSurfaceVariant, Background, OnBackground, Outline, OutlineVariant, Error, OnError, SurfaceContainer, Tertiary, OnTertiary, PrimaryContainer, OnPrimaryContainer, SecondaryContainer, OnSecondaryContainer, TertiaryContainer, OnTertiaryContainer }
 
 enum class TypeRole { Display, Headline, Title, Subtitle, Body, BodyStrong, Label, Caption, Mono }
 
 enum class ShapeRole { None, ExtraSmall, Small, Medium, Large, Full }
+
+enum class MotionRole { Instant, Quick, Standard, Slow, Emphasized }
+
+enum class TileMode { Clamp, Repeat, Mirror }
+
+enum class MaterialRole { Thin, Regular, Thick, Chrome }
 
 enum class SpaceRole { None, Xs, Sm, Md, Lg, Xl, Xxl }
 
@@ -31,21 +38,43 @@ enum class Arrangement { Start, Center, End, SpaceBetween, SpaceAround, SpaceEve
 
 enum class Alignment { TopStart, TopCenter, TopEnd, CenterStart, Center, CenterEnd, BottomStart, BottomCenter, BottomEnd }
 
-enum class ButtonVariant { Filled, Tonal, Outlined, Text }
+enum class ButtonVariant { Filled, Tonal, Outlined, Text, Operator }
 
-enum class DesignSystem { Material3, Cupertino, Fluent }
+enum class DesignSystem { Material3, Cupertino, Fluent, Gnome, Breeze, Deepin, LiquidGlass }
 
 enum class ColorScheme { Light, Dark, FollowSystem }
 
-enum class AssetKind { Png, Jpeg, Svg, VectorIcon }
+enum class AssetKind { Png, Jpeg, Svg, VectorIcon, Font, Brush }
 
-enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More }
+enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, Home, List, Inbox, Menu, History }
+
+enum class MessageDuration { Short, Long }
+
+enum class Chrome { Modern, System }
+
+enum class SlotRole { TopBar, BottomBar, FloatingAction, Content }
+
+enum class LoopMode(val wire: Byte) {
+    /** The Renderer runs the loop and the Host blocks inside it. Desktop. */
+    Renderer(0),
+
+    /** The platform owns the process and the loop. Android, iOS and the web. */
+    Platform(1),
+}
 
 sealed interface Paint {
     data class Role(val role: ColorRole) : Paint
 
     /** A literal 0xAARRGGBB colour. */
     data class Literal(val argb: Int) : Paint
+
+    /**
+     * A registered brush: a gradient, or a picture laid out as a fill.
+     *
+     * An id, because a list of stops does not fit the two words a paint has and because a
+     * brush has to outlive the frame that draws it.
+     */
+    data class Asset(val assetId: Int) : Paint
 }
 
 data class Theme(
@@ -53,6 +82,52 @@ data class Theme(
     val fallback: DesignSystem,
     val colorScheme: ColorScheme,
     val adaptive: Boolean,
+    /**
+     * The font asset each type role resolves to, indexed by the role's ordinal, with zero
+     * where the role keeps the system font.
+     *
+     * Per theme rather than per node: an application changes what a role is made of and
+     * every piece of text in that role changes with it. A node that could name a font
+     * would be a node deciding typography.
+     */
+    val fonts: List<Int> = List(TypeRole.entries.size) { 0 },
+) {
+
+    /** The font asset for [role], or null where the role keeps the system font. */
+    fun font(role: TypeRole): Int? = fonts.getOrNull(role.ordinal)?.takeIf { it != 0 }
+}
+
+/**
+ * What the application asked of its own window.
+ *
+ * A zero measurement means the application did not ask, so the choice is the Renderer's.
+ * This arrives in the first batch, which the Renderer reads before it stands the window
+ * up; a platform where the window is not ours ignores it.
+ */
+data class Window(
+    val chrome: Chrome,
+    /**
+     * What the window calls itself.
+     *
+     * Empty means the application said nothing and the renderer uses its own name. A
+     * desktop lists windows by this, so a window with no title of its own is listed
+     * under whatever the renderer happened to be called.
+     */
+    val title: String,
+    /**
+     * The picture the window wears, as an asset id, or zero for none.
+     *
+     * An id rather than a path or a name: a path is a fact about the machine the
+     * application was built on, and a name asks the toolkit to find something it may not
+     * have. Zero leaves the toolkit's own icon, which is what every window here wore
+     * until this existed.
+     */
+    val icon: Int,
+    val width: Int,
+    val height: Int,
+    val minWidth: Int,
+    val minHeight: Int,
+    val resizable: Boolean,
 )
 
 sealed interface PropertyValue {
@@ -159,6 +234,15 @@ object DrawCommands {
         12 -> ColorRole.OutlineVariant
         13 -> ColorRole.Error
         14 -> ColorRole.OnError
+        15 -> ColorRole.SurfaceContainer
+        16 -> ColorRole.Tertiary
+        17 -> ColorRole.OnTertiary
+        18 -> ColorRole.PrimaryContainer
+        19 -> ColorRole.OnPrimaryContainer
+        20 -> ColorRole.SecondaryContainer
+        21 -> ColorRole.OnSecondaryContainer
+        22 -> ColorRole.TertiaryContainer
+        23 -> ColorRole.OnTertiaryContainer
         else -> null
     }
 
@@ -181,6 +265,9 @@ sealed interface Modifier {
     data class ShapeRole(val role: dioxus.compose.protocol.ShapeRole) : Modifier
     data class Border(val width: kotlin.Float, val paint: Paint) : Modifier
     data class Elevation(val value: kotlin.Float) : Modifier
+    data class ObserveSize(val token: Int) : Modifier
+    data class Motion(val role: dioxus.compose.protocol.MotionRole) : Modifier
+    data class Material(val role: dioxus.compose.protocol.MaterialRole) : Modifier
 }
 
 sealed interface Mutation {
@@ -193,6 +280,7 @@ sealed interface Mutation {
     data class SetText(val nodeId: Int, val text: String, val selectionStart: Int, val selectionEnd: Int) : Mutation
     data class AppendText(val nodeId: Int, val text: String) : Mutation
     data class SetTheme(val theme: Theme) : Mutation
+    data class SetWindow(val window: Window) : Mutation
 
     /**
      * The bytes of one asset. `kind` is the raw wire tag rather than an [AssetKind],
@@ -213,6 +301,22 @@ sealed interface Mutation {
     }
 
     data class ReleaseAsset(val assetId: Int) : Mutation
+
+    /**
+     * One sentence to say to the user, with an optional thing to do about it.
+     *
+     * It names no node because it is not in the tree. The Host says it once; how long it
+     * stays, where it sits and what happens when a second one arrives while the first is
+     * still up are the Renderer's to decide.
+     *
+     * `handlerId` is 0 when the message has no action, and `action` is then empty.
+     */
+    data class ShowMessage(
+        val handlerId: Long,
+        val text: String,
+        val action: String,
+        val duration: MessageDuration,
+    ) : Mutation
 }
 
 sealed interface HostEvent {
@@ -226,15 +330,21 @@ sealed interface HostEvent {
     data class ProtocolError(override val nodeId: Int, override val handlerId: Long, val code: Int, val message: String) : HostEvent
     data class KeyDown(override val nodeId: Int, override val handlerId: Long, val key: Key, val shiftKey: Boolean, val ctrlKey: Boolean, val altKey: Boolean, val metaKey: Boolean) : HostEvent
     data class RangeRequested(override val nodeId: Int, override val handlerId: Long, val start: Int, val count: Int) : HostEvent
-    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Long) : HostEvent
-    data class WindowSizeChanged(override val nodeId: Int, override val handlerId: Long, val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass) : HostEvent
+    data class ValueChanged(override val nodeId: Int, override val handlerId: Long, val value: Double) : HostEvent
+    data class WindowSizeChanged(override val nodeId: Int, override val handlerId: Long, val widthDp: kotlin.Float, val heightDp: kotlin.Float, val sizeClass: WindowSizeClass, val heightClass: WindowHeightClass) : HostEvent
+    data class Resync(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class LifecycleStart(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class LifecycleStop(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class DesignSystemResolved(override val nodeId: Int, override val handlerId: Long, val system: DesignSystem) : HostEvent
+    data class FilesEntered(override val nodeId: Int, override val handlerId: Long) : HostEvent
+    data class FilesDropped(override val nodeId: Int, override val handlerId: Long, val text: String) : HostEvent
 }
 
 class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = 7806618612347972479L
+    const val SCHEMA_HASH: Long = -2864875678340308953L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -249,7 +359,18 @@ object Protocol {
     private const val TAG_SET_THEME = 9
     private const val TAG_REGISTER_ASSET = 10
     private const val TAG_RELEASE_ASSET = 11
+    private const val TAG_SHOW_MESSAGE = 12
+    private const val TAG_SET_WINDOW = 13
     private const val ENVELOPE_LENGTH = 12
+    /** Four role tags, then one font asset id per type role. */
+    private val THEME_RECORD_LENGTH = 12 + 4 * TypeRole.entries.size
+
+    /**
+     * The high bit of each of eight bytes, which is where UTF-8 stops being ASCII. Written
+     * as a negative literal because 0x8080808080808080 does not fit a signed `Long`; the
+     * bits are what matter and they are the same either way.
+     */
+    private const val ASCII_HIGH_BITS = -0x7f7f7f7f7f7f7f80L
 
     private const val VALUE_NONE = 0
     private const val VALUE_TEXT = 1
@@ -370,10 +491,14 @@ object Protocol {
                         )
                     }
                     TAG_SET_THEME -> {
-                        requireRecordLength(length, 12, offset)
+                        requireRecordLength(length, THEME_RECORD_LENGTH, offset)
                         val adaptive = readU16(batch, base, available, offset + 10)
                         if (adaptive > 1) {
                             throw ProtocolException("invalid adaptive flag $adaptive", offset + 10)
+                        }
+                        // One slot per type role, in the order the wire fixes them in.
+                        val fonts = List(TypeRole.entries.size) { role ->
+                            readU32(batch, base, available, offset + 12 + 4 * role).toInt()
                         }
                         Mutation.SetTheme(
                             Theme(
@@ -381,6 +506,26 @@ object Protocol {
                                 designSystem(readU16(batch, base, available, offset + 6), offset + 6),
                                 colorScheme(readU16(batch, base, available, offset + 8), offset + 8),
                                 adaptive == 1,
+                                fonts,
+                            ),
+                        )
+                    }
+                    TAG_SET_WINDOW -> {
+                        requireRecordLength(length, 28, offset)
+                        val resizable = readU16(batch, base, available, offset + 14)
+                        if (resizable > 1) {
+                            throw ProtocolException("invalid resizable flag $resizable", offset + 14)
+                        }
+                        Mutation.SetWindow(
+                            Window(
+                                chrome(readU16(batch, base, available, offset + 4), offset + 4),
+                                readString(batch, base, available, offset + 16),
+                                readU32(batch, base, available, offset + 24).toInt(),
+                                readU16(batch, base, available, offset + 6),
+                                readU16(batch, base, available, offset + 8),
+                                readU16(batch, base, available, offset + 10),
+                                readU16(batch, base, available, offset + 12),
+                                resizable == 1,
                             ),
                         )
                     }
@@ -395,6 +540,15 @@ object Protocol {
                     TAG_RELEASE_ASSET -> {
                         requireRecordLength(length, 8, offset)
                         Mutation.ReleaseAsset(readU32(batch, base, available, offset + 4).toInt())
+                    }
+                    TAG_SHOW_MESSAGE -> {
+                        requireRecordLength(length, 32, offset)
+                        Mutation.ShowMessage(
+                            readU64(batch, base, available, offset + 4),
+                            readString(batch, base, available, offset + 12),
+                            readString(batch, base, available, offset + 20),
+                            messageDuration(readU16(batch, base, available, offset + 28), offset + 28),
+                        )
                     }
                     else -> throw ProtocolException("unknown mutation tag $tag", offset)
                 }
@@ -426,6 +580,12 @@ object Protocol {
                 is HostEvent.RangeRequested -> null
                 is HostEvent.ValueChanged -> null
                 is HostEvent.WindowSizeChanged -> null
+                is HostEvent.Resync -> null
+                is HostEvent.LifecycleStart -> null
+                is HostEvent.LifecycleStop -> null
+                is HostEvent.DesignSystemResolved -> null
+                is HostEvent.FilesEntered -> null
+                is HostEvent.FilesDropped -> event.text.toByteArray(StandardCharsets.UTF_8)
             }
             val recordLength = when (event) {
                 is HostEvent.Clicked -> 16
@@ -436,7 +596,13 @@ object Protocol {
                 is HostEvent.KeyDown -> 20
                 is HostEvent.RangeRequested -> 24
                 is HostEvent.ValueChanged -> 24
-                is HostEvent.WindowSizeChanged -> 28
+                is HostEvent.WindowSizeChanged -> 32
+                is HostEvent.Resync -> 16
+                is HostEvent.LifecycleStart -> 16
+                is HostEvent.LifecycleStop -> 16
+                is HostEvent.DesignSystemResolved -> 20
+                is HostEvent.FilesEntered -> 16
+                is HostEvent.FilesDropped -> 24
             }
             val totalLength = recordLength.toLong() + (text?.size ?: 0)
             if (totalLength > Int.MAX_VALUE || totalLength > out.remaining().toLong()) {
@@ -450,8 +616,14 @@ object Protocol {
                 is HostEvent.ProtocolError -> 5
                 is HostEvent.KeyDown -> 6
                 is HostEvent.RangeRequested -> 7
-                is HostEvent.ValueChanged -> 8
+                is HostEvent.ValueChanged -> 16
                 is HostEvent.WindowSizeChanged -> 17
+                is HostEvent.Resync -> 18
+                is HostEvent.LifecycleStart -> 19
+                is HostEvent.LifecycleStop -> 20
+                is HostEvent.DesignSystemResolved -> 21
+                is HostEvent.FilesEntered -> 22
+                is HostEvent.FilesDropped -> 23
             }
             out.putShort(tag.toShort())
             out.putShort(recordLength.toShort())
@@ -480,12 +652,21 @@ object Protocol {
                     out.putInt(event.start)
                     out.putInt(event.count)
                 }
-                is HostEvent.ValueChanged -> out.putLong(event.value)
+                is HostEvent.ValueChanged -> out.putDouble(event.value)
                 is HostEvent.WindowSizeChanged -> {
                     out.putFloat(event.widthDp)
                     out.putFloat(event.heightDp)
                     out.putInt(windowSizeClassTag(event.sizeClass))
+                    out.putInt(windowHeightClassTag(event.heightClass))
                 }
+                is HostEvent.Resync -> Unit
+                is HostEvent.LifecycleStart -> Unit
+                is HostEvent.LifecycleStop -> Unit
+                is HostEvent.DesignSystemResolved -> {
+                    out.putInt(designSystemTag(event.system))
+                }
+                is HostEvent.FilesEntered -> Unit
+                is HostEvent.FilesDropped -> writeStringReference(out, recordLength, text!!)
             }
             if (text != null) out.put(text)
             return out.position() - start
@@ -494,8 +675,13 @@ object Protocol {
         }
     }
 
-    /** Handshake payload the Renderer sends to dioxus_compose_host_init. */
-    fun handshake(out: ByteBuffer): Int {
+    /**
+     * Handshake payload the Renderer sends to dioxus_compose_host_init.
+     *
+     * `loopMode` says who owns the frame loop: the Renderer on desktop, the platform on
+     * Android, iOS and the web.
+     */
+    fun handshake(out: ByteBuffer, loopMode: LoopMode = LoopMode.Renderer): Int {
         val start = out.position()
         if (out.remaining() < 12) {
             throw ProtocolException("handshake output buffer is too small", 0)
@@ -505,7 +691,7 @@ object Protocol {
         try {
             out.putLong(SCHEMA_HASH)
             out.putShort(PROTOCOL_VERSION.toShort())
-            out.put(0.toByte()) // LoopMode.Renderer
+            out.put(loopMode.wire)
             out.put(0.toByte()) // Reserved for alignment.
             return out.position() - start
         } finally {
@@ -530,6 +716,12 @@ object Protocol {
         9 -> WidgetKind.ScrollColumn
         10 -> WidgetKind.Image
         11 -> WidgetKind.Icon
+        12 -> WidgetKind.Checkbox
+        13 -> WidgetKind.RadioButton
+        14 -> WidgetKind.Switch
+        15 -> WidgetKind.Slider
+        16 -> WidgetKind.ProgressIndicator
+        17 -> WidgetKind.Divider
         18 -> WidgetKind.Card
         19 -> WidgetKind.Surface
         20 -> WidgetKind.Dialog
@@ -542,6 +734,13 @@ object Protocol {
         27 -> WidgetKind.DatePicker
         28 -> WidgetKind.TimePicker
         29 -> WidgetKind.Dropdown
+        30 -> WidgetKind.Navigation
+        31 -> WidgetKind.NavigationItem
+        32 -> WidgetKind.Sheet
+        33 -> WidgetKind.Scaffold
+        34 -> WidgetKind.ScaffoldSlot
+        35 -> WidgetKind.LazyGrid
+        36 -> WidgetKind.FileDropTarget
         100 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -574,6 +773,11 @@ object Protocol {
         25 -> PropertyKind.Alignment
         26 -> PropertyKind.Variant
         28 -> PropertyKind.Asset
+        32 -> PropertyKind.Checked
+        33 -> PropertyKind.Steps
+        34 -> PropertyKind.Determinate
+        35 -> PropertyKind.Circular
+        36 -> PropertyKind.Vertical
         40 -> PropertyKind.Open
         41 -> PropertyKind.OnDismiss
         42 -> PropertyKind.SelectedIndex
@@ -581,6 +785,13 @@ object Protocol {
         51 -> PropertyKind.Value
         52 -> PropertyKind.Min
         53 -> PropertyKind.Max
+        60 -> PropertyKind.Icon
+        61 -> PropertyKind.Slot
+        62 -> PropertyKind.Columns
+        63 -> PropertyKind.MinColumnWidth
+        64 -> PropertyKind.Spans
+        65 -> PropertyKind.OnFilesEntered
+        66 -> PropertyKind.OnFilesDropped
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -593,6 +804,22 @@ object Protocol {
         WindowSizeClass.Compact -> 0
         WindowSizeClass.Medium -> 1
         WindowSizeClass.Expanded -> 2
+    }
+
+    private fun windowHeightClassTag(heightClass: WindowHeightClass): Int = when (heightClass) {
+        WindowHeightClass.Compact -> 0
+        WindowHeightClass.Medium -> 1
+        WindowHeightClass.Expanded -> 2
+    }
+
+    private fun designSystemTag(system: DesignSystem): Int = when (system) {
+        DesignSystem.Material3 -> 1
+        DesignSystem.Cupertino -> 2
+        DesignSystem.Fluent -> 3
+        DesignSystem.Gnome -> 4
+        DesignSystem.Breeze -> 5
+        DesignSystem.Deepin -> 6
+        DesignSystem.LiquidGlass -> 7
     }
 
     private fun colorRole(tag: Int, offset: Int): ColorRole = when (tag) {
@@ -610,6 +837,15 @@ object Protocol {
         12 -> ColorRole.OutlineVariant
         13 -> ColorRole.Error
         14 -> ColorRole.OnError
+        15 -> ColorRole.SurfaceContainer
+        16 -> ColorRole.Tertiary
+        17 -> ColorRole.OnTertiary
+        18 -> ColorRole.PrimaryContainer
+        19 -> ColorRole.OnPrimaryContainer
+        20 -> ColorRole.SecondaryContainer
+        21 -> ColorRole.OnSecondaryContainer
+        22 -> ColorRole.TertiaryContainer
+        23 -> ColorRole.OnTertiaryContainer
         else -> throw ProtocolException("unknown ColorRole tag $tag", offset)
     }
 
@@ -634,6 +870,30 @@ object Protocol {
         5 -> ShapeRole.Large
         6 -> ShapeRole.Full
         else -> throw ProtocolException("unknown ShapeRole tag $tag", offset)
+    }
+
+    private fun motionRole(tag: Int, offset: Int): MotionRole = when (tag) {
+        1 -> MotionRole.Instant
+        2 -> MotionRole.Quick
+        3 -> MotionRole.Standard
+        4 -> MotionRole.Slow
+        5 -> MotionRole.Emphasized
+        else -> throw ProtocolException("unknown MotionRole tag $tag", offset)
+    }
+
+    private fun tileMode(tag: Int, offset: Int): TileMode = when (tag) {
+        1 -> TileMode.Clamp
+        2 -> TileMode.Repeat
+        3 -> TileMode.Mirror
+        else -> throw ProtocolException("unknown TileMode tag $tag", offset)
+    }
+
+    private fun materialRole(tag: Int, offset: Int): MaterialRole = when (tag) {
+        1 -> MaterialRole.Thin
+        2 -> MaterialRole.Regular
+        3 -> MaterialRole.Thick
+        4 -> MaterialRole.Chrome
+        else -> throw ProtocolException("unknown MaterialRole tag $tag", offset)
     }
 
     private fun spaceRole(tag: Int, offset: Int): SpaceRole = when (tag) {
@@ -690,6 +950,7 @@ object Protocol {
         2 -> ButtonVariant.Tonal
         3 -> ButtonVariant.Outlined
         4 -> ButtonVariant.Text
+        5 -> ButtonVariant.Operator
         else -> throw ProtocolException("unknown ButtonVariant tag $tag", offset)
     }
 
@@ -697,6 +958,10 @@ object Protocol {
         1 -> DesignSystem.Material3
         2 -> DesignSystem.Cupertino
         3 -> DesignSystem.Fluent
+        4 -> DesignSystem.Gnome
+        5 -> DesignSystem.Breeze
+        6 -> DesignSystem.Deepin
+        7 -> DesignSystem.LiquidGlass
         else -> throw ProtocolException("unknown DesignSystem tag $tag", offset)
     }
 
@@ -712,6 +977,8 @@ object Protocol {
         2 -> AssetKind.Jpeg
         3 -> AssetKind.Svg
         4 -> AssetKind.VectorIcon
+        5 -> AssetKind.Font
+        6 -> AssetKind.Brush
         else -> throw ProtocolException("unknown AssetKind tag $tag", offset)
     }
 
@@ -724,7 +991,32 @@ object Protocol {
         6 -> IconRole.Check
         7 -> IconRole.Settings
         8 -> IconRole.More
+        9 -> IconRole.Home
+        10 -> IconRole.List
+        11 -> IconRole.Inbox
+        12 -> IconRole.Menu
+        13 -> IconRole.History
         else -> throw ProtocolException("unknown IconRole tag $tag", offset)
+    }
+
+    private fun messageDuration(tag: Int, offset: Int): MessageDuration = when (tag) {
+        1 -> MessageDuration.Short
+        2 -> MessageDuration.Long
+        else -> throw ProtocolException("unknown MessageDuration tag $tag", offset)
+    }
+
+    private fun chrome(tag: Int, offset: Int): Chrome = when (tag) {
+        1 -> Chrome.Modern
+        2 -> Chrome.System
+        else -> throw ProtocolException("unknown Chrome tag $tag", offset)
+    }
+
+    private fun slotRole(tag: Int, offset: Int): SlotRole = when (tag) {
+        1 -> SlotRole.TopBar
+        2 -> SlotRole.BottomBar
+        3 -> SlotRole.FloatingAction
+        4 -> SlotRole.Content
+        else -> throw ProtocolException("unknown SlotRole tag $tag", offset)
     }
 
     private fun paint(bits: Long, offset: Int): Paint {
@@ -732,6 +1024,7 @@ object Protocol {
         return when (val kind = (bits ushr 32).toInt()) {
             1 -> Paint.Role(colorRole(value, offset))
             2 -> Paint.Literal(value)
+            3 -> Paint.Asset(value)
             else -> throw ProtocolException("unknown paint kind $kind", offset)
         }
     }
@@ -753,6 +1046,9 @@ object Protocol {
         13 -> Modifier.ShapeRole(shapeRole(first.toInt(), offset))
         14 -> Modifier.Border(kotlin.Float.fromBits(first.toInt()), paint(second, offset))
         15 -> Modifier.Elevation(kotlin.Float.fromBits(first.toInt()))
+        16 -> Modifier.ObserveSize(first.toInt())
+        17 -> Modifier.Motion(motionRole(first.toInt(), offset))
+        18 -> Modifier.Material(materialRole(first.toInt(), offset))
         else -> throw ProtocolException("unknown modifier tag $tag", offset)
     }
 
@@ -771,12 +1067,43 @@ object Protocol {
         val length = lengthLong.toInt()
         requireRange(available, offset, length, referenceOffset)
         val copy = ByteArray(length)
-        val view = batch.duplicate()
-        view.position(base + offset)
-        view.get(copy)
+        copyOut(batch, base + offset, copy, length)
         return copy
     }
 
+    /**
+     * Copies a range of the arena into an array.
+     *
+     * The absolute bulk read that says the same thing in one call, `get(index, array,
+     * offset, length)`, arrived in Java 13 and is not in every Android runtime this has to
+     * run on. So the read goes through the buffer's own position, which every version has,
+     * and puts it back afterwards: the arena is read from one thread and a position left
+     * where the last read ended would make the next one read the wrong bytes.
+     *
+     * Nothing is allocated. A `duplicate()` would avoid touching the position and costs an
+     * object per call on a path that runs per string in every batch.
+     */
+    private fun copyOut(batch: ByteBuffer, at: Int, into: ByteArray, length: Int) {
+        val mark = batch.position()
+        batch.position(at)
+        batch.get(into, 0, length)
+        batch.position(mark)
+    }
+
+    /**
+     * The string Compose is handed, and the only copy of the text this side makes.
+     *
+     * Validating and building are two passes rather than one because the two things that
+     * do both are each wrong here. `String(bytes, UTF_8)` replaces a malformed byte with
+     * U+FFFD, and a malformed string means the two sides disagree about the arena, which
+     * has to be reported rather than drawn. A `CharsetDecoder` reports it, but assembles
+     * the text as `char` first, two bytes a character, and then copies that into the
+     * `String`, and it needs a decoder and two buffer views of its own to do it.
+     *
+     * So the bytes are checked where they lie, which allocates nothing, and then copied
+     * once into a buffer this object keeps and handed to `String`, which by then has
+     * nothing left to replace. What remains is the one allocation the string itself is.
+     */
     private fun readString(batch: ByteBuffer, base: Int, available: Int, referenceOffset: Int): String {
         val offsetLong = readU32(batch, base, available, referenceOffset)
         val lengthLong = readU32(batch, base, available, referenceOffset + 4)
@@ -786,18 +1113,109 @@ object Protocol {
         val offset = offsetLong.toInt()
         val length = lengthLong.toInt()
         requireRange(available, offset, length, referenceOffset)
-        val view = batch.duplicate()
-        view.position(base + offset)
-        view.limit(base + offset + length)
-        return try {
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(view.slice())
-                .toString()
-        } catch (_: java.nio.charset.CharacterCodingException) {
-            throw ProtocolException("string is not valid UTF-8", offset)
+        if (length == 0) {
+            return ""
         }
+        requireUtf8(batch, base + offset, length, offset)
+        val scratch = stringBytes(length)
+        copyOut(batch, base + offset, scratch, length)
+        return String(scratch, 0, length, StandardCharsets.UTF_8)
+    }
+
+    /**
+     * Reads a range of the arena as UTF-8 without building anything out of it.
+     *
+     * The bounds are Unicode's, and the ones that look arbitrary are the point. A two byte
+     * sequence starts at 0xc2 because 0xc0 and 0xc1 could only encode what one byte
+     * already encodes; the second byte after 0xe0 starts at 0xa0 and after 0xf0 at 0x90
+     * for the same reason; 0xed stops at 0x9f because the surrogate halves follow it; and
+     * four byte sequences stop at 0xf4 0x8f because U+10FFFF is the last code point. The
+     * platform's decoder refuses every one of those, and this has to refuse them too, or
+     * a range it called text would come out of `String` as replacement characters.
+     */
+    private fun requireUtf8(batch: ByteBuffer, start: Int, length: Int, errorOffset: Int) {
+        var index = 0
+        while (index < length) {
+            val lead = batch.get(start + index).toInt() and 0xff
+            if (lead < 0x80) {
+                index += 1
+                // Eight bytes at a time for as long as the text stays ASCII, which most
+                // text is and all of a streaming append usually is: a long with no high
+                // bit anywhere in it is eight characters that need nothing else checked.
+                // The mask is the same at both ends, so which order the long is read in
+                // does not matter. Entered only after an ASCII byte, so text with no
+                // ASCII in it never pays for the attempt.
+                while (index + 8 <= length &&
+                    batch.getLong(start + index) and ASCII_HIGH_BITS == 0L
+                ) {
+                    index += 8
+                }
+                continue
+            }
+            val width = when {
+                lead >= 0xc2 && lead <= 0xdf -> 2
+                lead >= 0xe0 && lead <= 0xef -> 3
+                lead >= 0xf0 && lead <= 0xf4 -> 4
+                else -> malformedUtf8(errorOffset)
+            }
+            if (index + width > length) {
+                malformedUtf8(errorOffset)
+            }
+            val lowest = when (lead) {
+                0xe0 -> 0xa0
+                0xf0 -> 0x90
+                else -> 0x80
+            }
+            val highest = when (lead) {
+                0xed -> 0x9f
+                0xf4 -> 0x8f
+                else -> 0xbf
+            }
+            val second = batch.get(start + index + 1).toInt() and 0xff
+            if (second < lowest || second > highest) {
+                malformedUtf8(errorOffset)
+            }
+            var step = 2
+            while (step < width) {
+                val continuation = batch.get(start + index + step).toInt() and 0xff
+                if (continuation < 0x80 || continuation > 0xbf) {
+                    malformedUtf8(errorOffset)
+                }
+                step += 1
+            }
+            index += width
+        }
+    }
+
+    private fun malformedUtf8(errorOffset: Int): Nothing =
+        throw ProtocolException("string is not valid UTF-8", errorOffset)
+
+    /**
+     * The buffer every string is copied through, grown to fit and then kept.
+     *
+     * A frame's strings go through it one after another, so a stream of keystrokes costs
+     * nothing here once it is big enough. It doubles rather than fitting exactly, because
+     * text that grows a character at a time would otherwise reallocate on every keystroke.
+     *
+     * One buffer is enough, and it needs no lock, because a batch is decoded on the
+     * Renderer's UI thread and on no other: the Host's worker threads update signals and
+     * ask for a frame, they never call across the boundary themselves. Two threads
+     * decoding at once would hand each other half a string.
+     */
+    private var stringScratch = ByteArray(256)
+
+    private fun stringBytes(length: Int): ByteArray {
+        val scratch = stringScratch
+        if (scratch.size >= length) {
+            return scratch
+        }
+        var size = scratch.size
+        while (size < length) {
+            size = if (size > Int.MAX_VALUE / 2) length else size + size
+        }
+        val grown = ByteArray(size)
+        stringScratch = grown
+        return grown
     }
 
     private fun readU16(batch: ByteBuffer, base: Int, available: Int, offset: Int): Int {
@@ -872,7 +1290,7 @@ class DesignTokenTable(
 object DesignTokens {
     val MATERIAL3: DesignTokenTable = DesignTokenTable(
         DesignSystem.Material3,
-        "Material 3 baseline scheme and type scale, m3.material.io, 2024 baseline",
+        "Material 3 Expressive shape, colour and type scales, m3.material.io, 2025",
         "Roboto",
         "Roboto Mono",
         intArrayOf(
@@ -890,6 +1308,15 @@ object DesignTokens {
             0xffcac4d0.toInt(), // OutlineVariant
             0xffb3261e.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xfff3edf7.toInt(), // SurfaceContainer
+            0xff7d5260.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffeaddff.toInt(), // PrimaryContainer
+            0xff21005d.toInt(), // OnPrimaryContainer
+            0xffe8def8.toInt(), // SecondaryContainer
+            0xff1d192b.toInt(), // OnSecondaryContainer
+            0xffffd8e4.toInt(), // TertiaryContainer
+            0xff31111d.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xffd0bcff.toInt(), // Primary
@@ -906,6 +1333,15 @@ object DesignTokens {
             0xff49454f.toInt(), // OutlineVariant
             0xfff2b8b5.toInt(), // Error
             0xff601410.toInt(), // OnError
+            0xff211f26.toInt(), // SurfaceContainer
+            0xffefb8c8.toInt(), // Tertiary
+            0xff492532.toInt(), // OnTertiary
+            0xff4f378b.toInt(), // PrimaryContainer
+            0xffeaddff.toInt(), // OnPrimaryContainer
+            0xff4a4458.toInt(), // SecondaryContainer
+            0xffe8def8.toInt(), // OnSecondaryContainer
+            0xff633b48.toInt(), // TertiaryContainer
+            0xffffd8e4.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(57.0f, 400, 64.0f, 0.0f, false), // Display
@@ -918,7 +1354,7 @@ object DesignTokens {
             TypeToken(12.0f, 400, 16.0f, 0.4f, false), // Caption
             TypeToken(14.0f, 400, 20.0f, 0.0f, true), // Mono
         ),
-        floatArrayOf(0.0f, 4.0f, 8.0f, 12.0f, 16.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 12.0f, 16.0f, 28.0f, 1000.0f),
         floatArrayOf(0.0f, 4.0f, 8.0f, 16.0f, 24.0f, 32.0f, 48.0f),
     )
 
@@ -942,6 +1378,15 @@ object DesignTokens {
             0xffe5e5ea.toInt(), // OutlineVariant
             0xffff3b30.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xffffffff.toInt(), // SurfaceContainer
+            0xffaf52de.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd6e4ff.toInt(), // PrimaryContainer
+            0xff003070.toInt(), // OnPrimaryContainer
+            0xffe2e0ff.toInt(), // SecondaryContainer
+            0xff2a1b70.toInt(), // OnSecondaryContainer
+            0xfff3ddfb.toInt(), // TertiaryContainer
+            0xff3d0b52.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff0a84ff.toInt(), // Primary
@@ -958,9 +1403,18 @@ object DesignTokens {
             0xff48484a.toInt(), // OutlineVariant
             0xffff453a.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xff1c1c1e.toInt(), // SurfaceContainer
+            0xffbf5af2.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xff0a2d52.toInt(), // PrimaryContainer
+            0xffcfe3ff.toInt(), // OnPrimaryContainer
+            0xff262663.toInt(), // SecondaryContainer
+            0xffdedcff.toInt(), // OnSecondaryContainer
+            0xff3f1a52.toInt(), // TertiaryContainer
+            0xfff1d9fa.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
-            TypeToken(34.0f, 400, 41.0f, 0.37f, false), // Display
+            TypeToken(34.0f, 700, 41.0f, 0.37f, false), // Display
             TypeToken(28.0f, 400, 34.0f, 0.36f, false), // Headline
             TypeToken(22.0f, 400, 28.0f, 0.35f, false), // Title
             TypeToken(17.0f, 600, 22.0f, -0.41f, false), // Subtitle
@@ -994,6 +1448,15 @@ object DesignTokens {
             0xffe0e0e0.toInt(), // OutlineVariant
             0xffc50f1f.toInt(), // Error
             0xffffffff.toInt(), // OnError
+            0xffffffff.toInt(), // SurfaceContainer
+            0xff8764b8.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffcfe4fa.toInt(), // PrimaryContainer
+            0xff0c3b5e.toInt(), // OnPrimaryContainer
+            0xffb4d6fa.toInt(), // SecondaryContainer
+            0xff0b3350.toInt(), // OnSecondaryContainer
+            0xffe8dcf7.toInt(), // TertiaryContainer
+            0xff341a5e.toInt(), // OnTertiaryContainer
         ),
         intArrayOf(
             0xff479ef5.toInt(), // Primary
@@ -1010,6 +1473,15 @@ object DesignTokens {
             0xff3d3d3d.toInt(), // OutlineVariant
             0xffdc626d.toInt(), // Error
             0xff000000.toInt(), // OnError
+            0xff2b2b2b.toInt(), // SurfaceContainer
+            0xffb18cd9.toInt(), // Tertiary
+            0xff22103a.toInt(), // OnTertiary
+            0xff0c3b5e.toInt(), // PrimaryContainer
+            0xffcfe4fa.toInt(), // OnPrimaryContainer
+            0xff123d61.toInt(), // SecondaryContainer
+            0xffb4d6fa.toInt(), // OnSecondaryContainer
+            0xff3b2159.toInt(), // TertiaryContainer
+            0xffe8dcf7.toInt(), // OnTertiaryContainer
         ),
         arrayOf(
             TypeToken(40.0f, 600, 52.0f, 0.0f, false), // Display
@@ -1026,9 +1498,293 @@ object DesignTokens {
         floatArrayOf(0.0f, 2.0f, 4.0f, 8.0f, 12.0f, 20.0f, 32.0f),
     )
 
+    val GNOME: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Gnome,
+        "GNOME Human Interface Guidelines and the libadwaita named colours, GNOME 50",
+        "Cantarell",
+        "Source Code Pro",
+        intArrayOf(
+            0xff3584e4.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff9141ac.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff2e3436.toInt(), // OnSurface
+            0xffebebeb.toInt(), // SurfaceVariant
+            0xff5e5c64.toInt(), // OnSurfaceVariant
+            0xfffafafa.toInt(), // Background
+            0xff2e3436.toInt(), // OnBackground
+            0xffcdc7c2.toInt(), // Outline
+            0xffe6e3e1.toInt(), // OutlineVariant
+            0xffe01b24.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+            0xffebebeb.toInt(), // SurfaceContainer
+            0xff2190a4.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd4e5fb.toInt(), // PrimaryContainer
+            0xff0d3b70.toInt(), // OnPrimaryContainer
+            0xffecd9f1.toInt(), // SecondaryContainer
+            0xff45164f.toInt(), // OnSecondaryContainer
+            0xffcfe9ed.toInt(), // TertiaryContainer
+            0xff0a3d45.toInt(), // OnTertiaryContainer
+        ),
+        intArrayOf(
+            0xff3584e4.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xffc061cb.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xff1e1e1e.toInt(), // Surface
+            0xffffffff.toInt(), // OnSurface
+            0xff303030.toInt(), // SurfaceVariant
+            0xffc0bfbc.toInt(), // OnSurfaceVariant
+            0xff242424.toInt(), // Background
+            0xffffffff.toInt(), // OnBackground
+            0xff52514f.toInt(), // Outline
+            0xff3a3a3a.toInt(), // OutlineVariant
+            0xffff7b63.toInt(), // Error
+            0xff2a0a06.toInt(), // OnError
+            0xff303030.toInt(), // SurfaceContainer
+            0xff2190a4.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xff1b3c5e.toInt(), // PrimaryContainer
+            0xffcfe0f7.toInt(), // OnPrimaryContainer
+            0xff44234c.toInt(), // SecondaryContainer
+            0xffecd9f1.toInt(), // OnSecondaryContainer
+            0xff134249.toInt(), // TertiaryContainer
+            0xffcfe9ed.toInt(), // OnTertiaryContainer
+        ),
+        arrayOf(
+            TypeToken(44.0f, 800, 52.0f, -0.5f, false), // Display
+            TypeToken(32.0f, 800, 40.0f, -0.25f, false), // Headline
+            TypeToken(24.0f, 700, 32.0f, 0.0f, false), // Title
+            TypeToken(20.0f, 700, 28.0f, 0.0f, false), // Subtitle
+            TypeToken(15.0f, 400, 22.0f, 0.0f, false), // Body
+            TypeToken(15.0f, 700, 22.0f, 0.0f, false), // BodyStrong
+            TypeToken(13.0f, 700, 18.0f, 0.1f, false), // Label
+            TypeToken(12.0f, 400, 16.0f, 0.0f, false), // Caption
+            TypeToken(14.0f, 400, 20.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 4.0f, 6.0f, 12.0f, 15.0f, 1000.0f),
+        floatArrayOf(0.0f, 3.0f, 6.0f, 12.0f, 18.0f, 24.0f, 36.0f),
+    )
+
+    val BREEZE: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Breeze,
+        "KDE Breeze colour schemes and the KDE Human Interface Guidelines, Plasma 6",
+        "Noto Sans",
+        "Hack",
+        intArrayOf(
+            0xff3daee9.toInt(), // Primary
+            0xff06222e.toInt(), // OnPrimary
+            0xff16a085.toInt(), // Secondary
+            0xff03201b.toInt(), // OnSecondary
+            0xfffcfcfc.toInt(), // Surface
+            0xff232629.toInt(), // OnSurface
+            0xffe1e3e5.toInt(), // SurfaceVariant
+            0xff4d5052.toInt(), // OnSurfaceVariant
+            0xffeff0f1.toInt(), // Background
+            0xff232629.toInt(), // OnBackground
+            0xffbdc3c7.toInt(), // Outline
+            0xffd8dbdd.toInt(), // OutlineVariant
+            0xffda4453.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+            0xfffcfcfc.toInt(), // SurfaceContainer
+            0xfff67400.toInt(), // Tertiary
+            0xff2b1200.toInt(), // OnTertiary
+            0xffd3ecf9.toInt(), // PrimaryContainer
+            0xff0b3b52.toInt(), // OnPrimaryContainer
+            0xffd2ece5.toInt(), // SecondaryContainer
+            0xff083b31.toInt(), // OnSecondaryContainer
+            0xfffae0c4.toInt(), // TertiaryContainer
+            0xff4a2c00.toInt(), // OnTertiaryContainer
+        ),
+        intArrayOf(
+            0xff3daee9.toInt(), // Primary
+            0xff06222e.toInt(), // OnPrimary
+            0xff1abc9c.toInt(), // Secondary
+            0xff03201b.toInt(), // OnSecondary
+            0xff1b1e20.toInt(), // Surface
+            0xfffcfcfc.toInt(), // OnSurface
+            0xff31363b.toInt(), // SurfaceVariant
+            0xffbdc3c7.toInt(), // OnSurfaceVariant
+            0xff232629.toInt(), // Background
+            0xfffcfcfc.toInt(), // OnBackground
+            0xff4d5155.toInt(), // Outline
+            0xff3f4449.toInt(), // OutlineVariant
+            0xffed8079.toInt(), // Error
+            0xff2a0806.toInt(), // OnError
+            0xff1b1e20.toInt(), // SurfaceContainer
+            0xfff8a44c.toInt(), // Tertiary
+            0xff2b1200.toInt(), // OnTertiary
+            0xff123b4f.toInt(), // PrimaryContainer
+            0xffcde6f5.toInt(), // OnPrimaryContainer
+            0xff103a32.toInt(), // SecondaryContainer
+            0xffcfe8e0.toInt(), // OnSecondaryContainer
+            0xff4a3113.toInt(), // TertiaryContainer
+            0xfff8dfc3.toInt(), // OnTertiaryContainer
+        ),
+        arrayOf(
+            TypeToken(34.0f, 600, 40.0f, 0.0f, false), // Display
+            TypeToken(26.0f, 600, 32.0f, 0.0f, false), // Headline
+            TypeToken(19.0f, 600, 24.0f, 0.0f, false), // Title
+            TypeToken(16.0f, 500, 21.0f, 0.0f, false), // Subtitle
+            TypeToken(13.0f, 400, 19.0f, 0.0f, false), // Body
+            TypeToken(13.0f, 600, 19.0f, 0.0f, false), // BodyStrong
+            TypeToken(12.0f, 500, 16.0f, 0.2f, false), // Label
+            TypeToken(11.0f, 400, 15.0f, 0.0f, false), // Caption
+            TypeToken(12.0f, 400, 17.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 2.0f, 3.0f, 4.0f, 6.0f, 1000.0f),
+        floatArrayOf(0.0f, 2.0f, 4.0f, 8.0f, 12.0f, 18.0f, 24.0f),
+    )
+
+    val DEEPIN: DesignTokenTable = DesignTokenTable(
+        DesignSystem.Deepin,
+        "Deepin Design specification and the DTK control defaults, deepin 23",
+        "Noto Sans",
+        "Noto Sans Mono",
+        intArrayOf(
+            0xff0081ff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xfff2a13c.toInt(), // Secondary
+            0xff2b1a05.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff202020.toInt(), // OnSurface
+            0xffe6e6e6.toInt(), // SurfaceVariant
+            0xff5a5a5a.toInt(), // OnSurfaceVariant
+            0xffffffff.toInt(), // Background
+            0xff202020.toInt(), // OnBackground
+            0xffcdcdcd.toInt(), // Outline
+            0xffe0e0e0.toInt(), // OutlineVariant
+            0xffff5736.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+            0xfff1f1f1.toInt(), // SurfaceContainer
+            0xff7a5bd6.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd8ecff.toInt(), // PrimaryContainer
+            0xff00407f.toInt(), // OnPrimaryContainer
+            0xfffdf0e1.toInt(), // SecondaryContainer
+            0xff79501e.toInt(), // OnSecondaryContainer
+            0xffebe6f8.toInt(), // TertiaryContainer
+            0xff3d2d6b.toInt(), // OnTertiaryContainer
+        ),
+        intArrayOf(
+            0xff3ba2ff.toInt(), // Primary
+            0xff04203a.toInt(), // OnPrimary
+            0xffffb964.toInt(), // Secondary
+            0xff33200a.toInt(), // OnSecondary
+            0xff2a2a2a.toInt(), // Surface
+            0xfff0f0f0.toInt(), // OnSurface
+            0xff3a3a3a.toInt(), // SurfaceVariant
+            0xffb4b4b4.toInt(), // OnSurfaceVariant
+            0xff1a1a1a.toInt(), // Background
+            0xfff0f0f0.toInt(), // OnBackground
+            0xff4d4d4d.toInt(), // Outline
+            0xff333333.toInt(), // OutlineVariant
+            0xffff8a73.toInt(), // Error
+            0xff34110a.toInt(), // OnError
+            0xff2a2a2a.toInt(), // SurfaceContainer
+            0xff9f8ae3.toInt(), // Tertiary
+            0xff1d0f45.toInt(), // OnTertiary
+            0xff203547.toInt(), // PrimaryContainer
+            0xff9dd0ff.toInt(), // OnPrimaryContainer
+            0xff473928.toInt(), // SecondaryContainer
+            0xffffdcb1.toInt(), // OnSecondaryContainer
+            0xff343042.toInt(), // TertiaryContainer
+            0xffcfc4f1.toInt(), // OnTertiaryContainer
+        ),
+        arrayOf(
+            TypeToken(40.0f, 600, 50.0f, 0.0f, false), // Display
+            TypeToken(30.0f, 600, 38.0f, 0.0f, false), // Headline
+            TypeToken(22.0f, 500, 30.0f, 0.0f, false), // Title
+            TypeToken(18.0f, 500, 26.0f, 0.0f, false), // Subtitle
+            TypeToken(14.0f, 400, 21.0f, 0.0f, false), // Body
+            TypeToken(14.0f, 600, 21.0f, 0.0f, false), // BodyStrong
+            TypeToken(13.0f, 500, 18.0f, 0.3f, false), // Label
+            TypeToken(12.0f, 400, 17.0f, 0.0f, false), // Caption
+            TypeToken(13.0f, 400, 19.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 6.0f, 8.0f, 10.0f, 18.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 10.0f, 16.0f, 20.0f, 30.0f, 40.0f),
+    )
+
+    val LIQUID_GLASS: DesignTokenTable = DesignTokenTable(
+        DesignSystem.LiquidGlass,
+        "Apple Human Interface Guidelines, Liquid Glass, system colors and Dynamic Type, 2026",
+        "SF Pro",
+        "SF Mono",
+        intArrayOf(
+            0xff007aff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff5856d6.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xffffffff.toInt(), // Surface
+            0xff000000.toInt(), // OnSurface
+            0xffe9e9eb.toInt(), // SurfaceVariant
+            0xff3c3c43.toInt(), // OnSurfaceVariant
+            0xffffffff.toInt(), // Background
+            0xff000000.toInt(), // OnBackground
+            0xffc6c6c8.toInt(), // Outline
+            0xffe5e5ea.toInt(), // OutlineVariant
+            0xffff3b30.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+            0xfff2f2f7.toInt(), // SurfaceContainer
+            0xffaf52de.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xffd6e4ff.toInt(), // PrimaryContainer
+            0xff003070.toInt(), // OnPrimaryContainer
+            0xffe2e0ff.toInt(), // SecondaryContainer
+            0xff2a1b70.toInt(), // OnSecondaryContainer
+            0xfff3ddfb.toInt(), // TertiaryContainer
+            0xff3d0b52.toInt(), // OnTertiaryContainer
+        ),
+        intArrayOf(
+            0xff0a84ff.toInt(), // Primary
+            0xffffffff.toInt(), // OnPrimary
+            0xff5e5ce6.toInt(), // Secondary
+            0xffffffff.toInt(), // OnSecondary
+            0xff1c1c1e.toInt(), // Surface
+            0xffffffff.toInt(), // OnSurface
+            0xff2c2c2e.toInt(), // SurfaceVariant
+            0xffebebf5.toInt(), // OnSurfaceVariant
+            0xff000000.toInt(), // Background
+            0xffffffff.toInt(), // OnBackground
+            0xff38383a.toInt(), // Outline
+            0xff48484a.toInt(), // OutlineVariant
+            0xffff453a.toInt(), // Error
+            0xffffffff.toInt(), // OnError
+            0xff1c1c1e.toInt(), // SurfaceContainer
+            0xffbf5af2.toInt(), // Tertiary
+            0xffffffff.toInt(), // OnTertiary
+            0xff0a2d52.toInt(), // PrimaryContainer
+            0xffcfe3ff.toInt(), // OnPrimaryContainer
+            0xff262663.toInt(), // SecondaryContainer
+            0xffdedcff.toInt(), // OnSecondaryContainer
+            0xff3f1a52.toInt(), // TertiaryContainer
+            0xfff1d9fa.toInt(), // OnTertiaryContainer
+        ),
+        arrayOf(
+            TypeToken(34.0f, 700, 41.0f, 0.37f, false), // Display
+            TypeToken(28.0f, 700, 34.0f, 0.36f, false), // Headline
+            TypeToken(22.0f, 700, 28.0f, 0.35f, false), // Title
+            TypeToken(17.0f, 600, 22.0f, -0.41f, false), // Subtitle
+            TypeToken(17.0f, 400, 22.0f, -0.41f, false), // Body
+            TypeToken(17.0f, 600, 22.0f, -0.41f, false), // BodyStrong
+            TypeToken(15.0f, 600, 20.0f, -0.24f, false), // Label
+            TypeToken(12.0f, 500, 16.0f, 0.0f, false), // Caption
+            TypeToken(15.0f, 400, 20.0f, 0.0f, true), // Mono
+        ),
+        floatArrayOf(0.0f, 6.0f, 10.0f, 16.0f, 22.0f, 1000.0f),
+        floatArrayOf(0.0f, 4.0f, 10.0f, 18.0f, 24.0f, 36.0f, 48.0f),
+    )
+
     fun of(system: DesignSystem): DesignTokenTable = when (system) {
         DesignSystem.Material3 -> MATERIAL3
         DesignSystem.Cupertino -> CUPERTINO
         DesignSystem.Fluent -> FLUENT
+        DesignSystem.Gnome -> GNOME
+        DesignSystem.Breeze -> BREEZE
+        DesignSystem.Deepin -> DEEPIN
+        DesignSystem.LiquidGlass -> LIQUID_GLASS
     }
 }
