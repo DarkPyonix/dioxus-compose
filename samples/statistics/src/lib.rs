@@ -16,8 +16,8 @@ mod spending;
 use charts::Bar;
 use dioxus_compose::prelude::*;
 use spending::{
-    ALL_TIME_CENTS, MOBILE_SHARE, RETURNING_SHARE, SOURCES, TODAY, WEEK, YESTERDAY, amount, cost,
-    dearest, peak,
+    ALL_TIME_CENTS, MOBILE_SHARE, RETURNING_SHARE, SOURCES, TODAY, WEEK, YESTERDAY, cost, dearest,
+    peak,
 };
 
 mod palette {
@@ -54,24 +54,6 @@ const SOURCE_TILE: f32 = 150.0;
 enum Page {
     Today,
     Costs,
-}
-
-impl Page {
-    const STRIP: [Page; 2] = [Page::Today, Page::Costs];
-
-    fn label(self) -> &'static str {
-        match self {
-            Page::Today => "Today",
-            Page::Costs => "Costs",
-        }
-    }
-
-    fn index(self) -> usize {
-        Self::STRIP
-            .iter()
-            .position(|found| *found == self)
-            .unwrap_or(0)
-    }
 }
 
 /// The week as the chart wants it: heights against the dearest day, with that day filled.
@@ -434,7 +416,8 @@ fn launch_builder() -> dioxus_compose::LaunchBuilder {
     // The name the window carries. A desktop lists windows by it, so a window that said
     // nothing was listed under whatever the renderer happened to be called, and every
     // sample here was listed as DioxusCompose until this line existed.
-    dioxus_compose::LaunchBuilder::new().with_theme(dioxus_compose::demo_theme_for(THEME))
+    dioxus_compose::LaunchBuilder::new()
+        .with_theme(dioxus_compose::demo_theme_for(THEME))
         .with_window(
             dioxus_compose::schema::Window::new()
                 .with_title("Statistics")

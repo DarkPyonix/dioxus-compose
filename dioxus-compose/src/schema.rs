@@ -631,13 +631,13 @@ define_wire_enum!(COLOR_SCHEME_SCHEMA, ColorScheme {
     FollowSystem = 3,
 });
 
-/// Which part of the screen's frame a `Scaffold` slot fills.
-///
-/// What each one becomes is the Renderer's: a top bar may be the window's caption, an
-/// ordinary bar under the system title bar, or a large title that shrinks as the page
-/// scrolls; a bottom bar may be a bar, a rail or a permanent drawer; a floating action
-/// may float, sit in the toolbar, or fold into a menu. The application says which slot
-/// it filled and nothing about the answer.
+// Which part of the screen's frame a `Scaffold` slot fills.
+//
+// What each one becomes is the Renderer's: a top bar may be the window's caption, an
+// ordinary bar under the system title bar, or a large title that shrinks as the page
+// scrolls; a bottom bar may be a bar, a rail or a permanent drawer; a floating action
+// may float, sit in the toolbar, or fold into a menu. The application says which slot
+// it filled and nothing about the answer.
 define_wire_enum!(SLOT_ROLE_SCHEMA, SlotRole {
     TopBar = 1,
     BottomBar = 2,
@@ -996,7 +996,9 @@ pub enum Modifier {
     /// Renderer and is never something the Host chose, so a screen that wants to know how
     /// wide one of its own containers ended up needs a name it gave itself. The Renderer
     /// does not read it.
-    ObserveSize { token: u32 },
+    ObserveSize {
+        token: u32,
+    },
     /// Which curve and length this node's changes run along.
     ///
     /// The node says how important the change is, not how long it takes. Appearing,

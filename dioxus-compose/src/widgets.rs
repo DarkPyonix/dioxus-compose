@@ -10,9 +10,7 @@ use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
     Alignment, Arrangement, ButtonVariant, IconRole, MaterialRole, MotionRole, Paint, ShapeRole,
-    SlotRole,
-    SpaceRole,
-    TextAlign, TextOverflow, TypeRole,
+    SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -1846,6 +1844,15 @@ pub fn Scaffold(
     /// screen that says nothing gets the theme's page colour.
     #[props(default)]
     background: Option<Paint>,
+    /// What the window itself is made of, where the screen wants it to be a material.
+    ///
+    /// Read off the root like the colour above, and asking for it is what stands the
+    /// window up with something behind it to show. `MaterialRole::Chrome` is the window's
+    /// own: on a platform that can put the system's material behind a window, the desktop
+    /// shows through wherever the design system draws chrome; everywhere else the design
+    /// system answers the role the way it answers it on any other node.
+    #[props(default)]
+    material: Option<MaterialRole>,
     /// The bar across the top, where this screen wants one.
     #[props(default)]
     top_bar: Option<Element>,
@@ -1861,6 +1868,7 @@ pub fn Scaffold(
     rsx! {
         scaffold {
             background: opt_paint(background),
+            material: opt_role(material),
             if let Some(bar) = top_bar {
                 scaffoldslot { slot: i64::from(u16::from(SlotRole::TopBar)), {bar} }
             }

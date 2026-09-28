@@ -118,6 +118,10 @@ impl TextSpan {
     }
 }
 
+/// What a marker turns its body into: the bytes that open and close it, and the span the
+/// enclosed run becomes.
+type Marked = (&'static [u8], fn(u32, u32) -> TextSpan);
+
 /// An encoded list of spans, ready to travel.
 ///
 /// Shared rather than copied, for the same reason a draw list is: the same list redrawn
@@ -199,9 +203,7 @@ impl TextSpans {
         let bytes = source.as_bytes();
         let mut at = 0;
         while at < bytes.len() {
-            let (marker, span_of): (&[u8], fn(u32, u32) -> TextSpan) = if bytes[at..]
-                .starts_with(b"**")
-            {
+            let (marker, span_of): Marked = if bytes[at..].starts_with(b"**") {
                 (b"**", |start, length| TextSpan::new(start, length).bold())
             } else if bytes[at] == b'*' {
                 (b"*", |start, length| TextSpan::new(start, length).italic())

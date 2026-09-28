@@ -133,13 +133,61 @@ fn main() {
             // are the frameworks Compose and Skia reach through, and the compression the
             // Kotlin runtime uses for its own resources.
             for framework in [
-                "AppKit", "Foundation", "Metal", "QuartzCore", "CoreGraphics",
-                "CoreText", "CoreServices", "IOKit", "Carbon", "OpenGL",
+                "AppKit",
+                "Foundation",
+                "Metal",
+                "QuartzCore",
+                "CoreGraphics",
+                "CoreText",
+                "CoreServices",
+                "IOKit",
+                "Carbon",
+                "OpenGL",
             ] {
                 println!("cargo:rustc-link-lib=framework={framework}");
             }
             println!("cargo:rustc-link-lib=dylib=c++");
             println!("cargo:rustc-link-lib=dylib=z");
+            println!("cargo:rustc-cfg=renderer_linked");
+            return;
+        }
+    }
+
+    // The same thing on Linux, from `build-linux.sh`, and the same reasons.
+    if target_os == "linux" {
+        if let Some(dir) = std::env::var_os("DXC_LINUX_NATIVE_LIB") {
+            let dir = PathBuf::from(dir);
+            println!("cargo:rerun-if-env-changed=DXC_LINUX_NATIVE_LIB");
+            println!(
+                "cargo:rerun-if-changed={}",
+                dir.join("libdioxus_compose_renderer.a").display()
+            );
+            println!("cargo:rustc-link-search=native={}", dir.display());
+            println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
+            // What the archive itself calls in and Kotlin/Native names none of: the
+            // window's own libraries, the font configuration Skia asks for a font
+            // through, and the compression the Kotlin runtime uses for its resources.
+            // `stdc++` where macOS says `c++`: Skia is C++ and names its standard
+            // library's symbols, and the archive says nothing about which one. Without it
+            // the link fails on eight hundred references to std::string from Skia's text
+            // shaping alone.
+            for library in ["X11", "Xext", "GL", "fontconfig", "freetype", "stdc++", "z"] {
+                println!("cargo:rustc-link-lib=dylib={library}");
+            }
+            // A desktop keeps these where its own convention puts them and the
+            // conventions differ, so both are searched. One that is not there costs
+            // nothing.
+            for path in ["/usr/lib/x86_64-linux-gnu", "/usr/lib64"] {
+                println!("cargo:rustc-link-search=native={path}");
+            }
+            // The Host's own five functions, put where the renderer can find them.
+            //
+            // It resolves them by name at startup with `dlsym`, which reads the dynamic
+            // symbol table, and an executable's table holds only what it was asked to
+            // export. Without this they are in the binary and not in that table, and the
+            // window opens, stays black and reports that
+            // `dioxus_compose_host_init is not in this image`.
+            println!("cargo:rustc-link-arg=-rdynamic");
             println!("cargo:rustc-cfg=renderer_linked");
             return;
         }
@@ -641,7 +689,9 @@ fn read_hash(path: &Path) -> Option<String> {
 /// directory, `examples/` and `deps/` beside it are where examples and tests land, and the
 /// parents of those two are the profile directory and the target directory.
 fn copy_renderer_beside_executables(lib_dir: &Path) {
-    let Some(out_dir) = std::env::var_os("OUT_DIR") else { return };
+    let Some(out_dir) = std::env::var_os("OUT_DIR") else {
+        return;
+    };
     let out_dir = PathBuf::from(out_dir);
     let Some(profile_dir) = out_dir
         .parent()
@@ -663,7 +713,9 @@ fn copy_renderer_beside_executables(lib_dir: &Path) {
     // Whole, for AWT: the parent of every executable's directory. The distribution root is
     // the parent of the directory the libraries are in, which is `bin` on Windows and
     // `lib` everywhere else.
-    let Some(distribution) = lib_dir.parent() else { return };
+    let Some(distribution) = lib_dir.parent() else {
+        return;
+    };
     let mut roots = vec![profile_dir.to_path_buf()];
     if let Some(target_dir) = profile_dir.parent() {
         roots.push(target_dir.to_path_buf());
@@ -683,7 +735,9 @@ fn copy_renderer_beside_executables(lib_dir: &Path) {
 /// These are tens of megabytes and they are copied into five places, so every build would
 /// otherwise move half a gigabyte to no purpose.
 fn copy_newer_files(from: &Path, to: &Path) {
-    let Ok(entries) = std::fs::read_dir(from) else { return };
+    let Ok(entries) = std::fs::read_dir(from) else {
+        return;
+    };
     if std::fs::create_dir_all(to).is_err() {
         return;
     }
