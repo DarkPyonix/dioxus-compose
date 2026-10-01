@@ -22,6 +22,9 @@
 #   embedded_icu.obj      Skia's ICU loader, with the ICU data compiled into it
 #   skia/                 the prebuilt Skia libraries the bridges link against
 #
+# And in the local Maven repository: skiko-mingwx64, and skiko's root metadata extended to
+# name it (extend-skiko-root.py says why).
+#
 # Needs: git, unzip, a JDK 17 (JAVA_HOME), Kotlin/Native's LLVM (in ~/.konan after any
 # Kotlin/Native build), and the MSVC runtime and Windows SDK as cargo-xwin lays them out
 # (run `cargo xwin build --target x86_64-pc-windows-msvc` once in any crate).
@@ -108,6 +111,23 @@ done
         -Pskiko.native.mingw.enabled=true -Pskiko.awt.enabled=false \
         -Pdeploy.version="$PUBLISHED_AS" -Pdeploy.release=true
 )
+
+# 2b. The root module, which is what Compose actually depends on. Gradle resolves
+# `org.jetbrains.skiko:skiko` through its metadata, which lists one variant per target and
+# says which module carries it, and JetBrains' lists no mingw_x64, so a Compose module
+# built for Windows is told skiko does not support it. JetBrains' root is taken as it is
+# published and the two mingw_x64 variants are added, written after the linux_x64 ones
+# with the target and module renamed. Every other variant is untouched, so a build for any
+# other target that finds this copy first resolves exactly what it would have without it.
+root="$HOME/.m2/repository/org/jetbrains/skiko/skiko/$PUBLISHED_AS"
+central="https://repo1.maven.org/maven2/org/jetbrains/skiko/skiko/$PUBLISHED_AS"
+mkdir -p "$root"
+for suffix in .module .pom .jar -sources.jar -kotlin-tooling-metadata.json; do
+    file="skiko-$PUBLISHED_AS$suffix"
+    curl -fsSL -o "$root/$file.download" "$central/$file" || die "could not download $central/$file"
+    mv "$root/$file.download" "$root/$file"
+done
+python3 "$SCRIPT_DIR/extend-skiko-root.py" "$root/skiko-$PUBLISHED_AS.module" "$PUBLISHED_AS"
 
 # 3. Skia for Windows, as JetBrains builds it: MSVC, static runtime.
 skia="$WORK/skia-$SKIA_RELEASE-windows-x64"
