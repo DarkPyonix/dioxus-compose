@@ -14,6 +14,22 @@ int __mingw_vsnprintf(char *buffer, size_t size, const char *format, va_list arg
     return vsnprintf(buffer, size, format, arguments);
 }
 
+// The Kotlin runtime's condition variable waits are timed with it. Wall-clock time to the
+// microsecond, as POSIX defines it: seconds and microseconds since 1970. `struct timeval`
+// is the one windows.h already declares through winsock.
+
+int gettimeofday(struct timeval *now, void *zone) {
+    (void)zone;
+    FILETIME file_time;
+    GetSystemTimePreciseAsFileTime(&file_time);
+    // Hundreds of nanoseconds since 1601, moved to 1970.
+    unsigned long long ticks = ((unsigned long long)file_time.dwHighDateTime << 32) | file_time.dwLowDateTime;
+    ticks -= 116444736000000000ULL;
+    now->tv_sec = (long)(ticks / 10000000ULL);
+    now->tv_usec = (long)((ticks % 10000000ULL) / 10ULL);
+    return 0;
+}
+
 unsigned int sleep(unsigned int seconds) {
     Sleep(seconds * 1000);
     return 0;

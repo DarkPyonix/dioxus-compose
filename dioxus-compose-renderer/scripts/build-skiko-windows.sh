@@ -195,9 +195,11 @@ built=$(ls "$obj"/*.obj | wc -l | tr -d ' ')
 c_flags=(--driver-mode=cl --target=x86_64-pc-windows-msvc /O2 /MT /c /nologo
     -imsvc "$xwin/crt/include" -imsvc "$xwin/sdk/include/ucrt"
     -imsvc "$xwin/sdk/include/um" -imsvc "$xwin/sdk/include/shared")
-"$CLANG" "${c_flags[@]}" "$NATIVE_DIR/mingw_bridge.c" "/Fo$out/mingw_bridge.obj"
+"$CLANG" "${c_flags[@]}" "$NATIVE_DIR/mingw_bridge.c" "/Fo$out/mingw_bridge.obj" ||
+    die "windows/native/mingw_bridge.c did not compile in MSVC mode"
 "$CLANG" "${c_flags[@]}" /std:c++17 /GR- -Wno-c23-extensions "/clang:--embed-dir=$skia_out" \
-    "$NATIVE_DIR/embedded_icu.cpp" "/Fo$out/embedded_icu.obj"
+    "$NATIVE_DIR/embedded_icu.cpp" "/Fo$out/embedded_icu.obj" ||
+    die "windows/native/embedded_icu.cpp did not compile in MSVC mode"
 
 rm -rf "$out/skia"
 mkdir -p "$out/skia"
