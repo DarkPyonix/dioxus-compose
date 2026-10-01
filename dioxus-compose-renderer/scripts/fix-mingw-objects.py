@@ -24,17 +24,44 @@ SELECT_ASSOCIATIVE = 5
 def section_name(buf, at, strtab):
     raw = bytes(buf[at:at + 8])
     name = raw.rstrip(b"\0").decode(errors="replace")
-    if name.startswith("/"):
+    if name.startswith("//"):
+        # An offset past seven decimal digits is written in base64, six characters.
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+        o = 0
+        for character in name[2:]:
+            o = o * 64 + alphabet.index(character)
+        e = buf.index(b"\0", strtab + o)
+        name = bytes(buf[strtab + o:e]).decode()
+    elif name.startswith("/"):
         o = int(name[1:]); e = buf.index(b"\0", strtab + o)
         name = bytes(buf[strtab + o:e]).decode()
     return name
 
+# Two layouts of the same thing. An ordinary COFF object has a 20-byte header, 16-bit
+# section numbers and 18-byte symbols. Kotlin/Native writes its object in the "big object"
+# layout once it has more sections than 16 bits can number, which the renderer's always
+# does: a 56-byte header, 32-bit section numbers and 20-byte symbols. Reading only the
+# first was how a whole renderer once went through this unchanged.
+def layout(buf, base):
+    """Section table, section count, symbol table, symbol count, record size, or None."""
+    machine = struct.unpack_from("<H", buf, base)[0]
+    if machine == 0x8664:
+        _, nsec, _, symptr, nsym, optsize, _ = struct.unpack_from("<HHIIIHH", buf, base)
+        return base + 20 + optsize, nsec, base + symptr, nsym, 18
+    sig1, sig2, version, machine = struct.unpack_from("<HHHH", buf, base)
+    if sig1 == 0 and sig2 == 0xFFFF and version >= 2 and machine == 0x8664:
+        nsec, symptr, nsym = struct.unpack_from("<III", buf, base + 44)
+        return base + 56, nsec, base + symptr, nsym, 20
+    return None
+
+
 def patch(buf, base):
-    machine, nsec, _, symptr, nsym, optsize, _ = struct.unpack_from("<HHIIIHH", buf, base)
-    if machine != 0x8664:
+    found = layout(buf, base)
+    if found is None:
         return 0, 0
-    strtab = base + symptr + nsym * 18
-    table = base + 20 + optsize
+    table, nsec, symtab, nsym, record = found
+    big = record == 20
+    strtab = symtab + nsym * record
     names = []
     ctors = 0
     for i in range(nsec):
@@ -50,12 +77,15 @@ def patch(buf, base):
     associated = 0
     i = 0
     while i < nsym:
-        at = base + symptr + i * 18
+        at = symtab + i * record
         if bytes(buf[at:at + 8]) == CTORS:
             buf[at:at + 8] = CRT
-        secnum = struct.unpack_from("<h", buf, at + 12)[0]
-        storage = buf[at + 16]
-        aux = buf[at + 17]
+        if big:
+            secnum = struct.unpack_from("<i", buf, at + 12)[0]
+            storage, aux = buf[at + 18], buf[at + 19]
+        else:
+            secnum = struct.unpack_from("<h", buf, at + 12)[0]
+            storage, aux = buf[at + 16], buf[at + 17]
         if storage == 3 and aux and secnum > 0:
             name = names[secnum - 1]
             for prefix in (".pdata$", ".xdata$"):
@@ -63,9 +93,12 @@ def patch(buf, base):
                     target = text_index.get(name[len(prefix):])
                     characteristics = struct.unpack_from("<I", buf, table + (secnum - 1) * 40 + 36)[0]
                     if target and characteristics & 0x1000:
-                        a = at + 18
-                        struct.pack_into("<H", buf, a + 12, target)
+                        a = at + record
+                        # Number is 16 bits, plus 16 high bits in the big layout.
+                        struct.pack_into("<H", buf, a + 12, target & 0xFFFF)
                         buf[a + 14] = SELECT_ASSOCIATIVE
+                        if big:
+                            struct.pack_into("<H", buf, a + 16, target >> 16)
                         associated += 1
         i += 1 + aux
     return ctors, associated
@@ -77,7 +110,7 @@ pos, ctors, associated = 8, 0, 0
 while pos + 60 <= len(buf):
     size = int(buf[pos + 48:pos + 58].decode().strip())
     body = pos + 60
-    if buf[body:body + 2] == b"\x64\x86":
+    if layout(buf, body) is not None:
         c, a = patch(buf, body)
         ctors += c; associated += a
     pos = body + size + (size & 1)
