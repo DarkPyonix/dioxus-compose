@@ -1,0 +1,126 @@
+Subject: Add a mingwX64 target that builds only the Kotlin half of skiko
+
+skiko publishes no Kotlin/Native target for Windows. This adds one, with three
+changes and a stub:
+
+- build.gradle.kts declares mingwX64 behind skiko.native.mingw.enabled. It does
+  not go through configureNativeTarget, because that compiles the C++ bridges
+  with the target's own toolchain and embeds them with Skia into the klib. The
+  bridges have to match the MSVC ABI of the prebuilt Windows Skia and the
+  MinGW toolchain cannot produce that, so the klib carries Kotlin only and the
+  bridges are compiled with MSVC elsewhere.
+- The SymbolNameIsInternal opt-in, which was applied only when another native
+  target was enabled, is applied for this one too.
+- sourceHierarchy.kt puts a mingw group beside linux under native.
+- Resources.native.kt: ftell returns C long, which is 32 bits on Windows and 64
+  bits on every other native target, so its result is widened where it is
+  read.
+- SkiaLayer.mingw.kt is the same unimplemented stub Linux has. The renderer
+  draws into a window of its own and never uses SkiaLayer.
+
+---
+diff --git a/skiko/build.gradle.kts b/skiko/build.gradle.kts
+index 3961ddc..9f2b753 100644
+--- a/skiko/build.gradle.kts
++++ b/skiko/build.gradle.kts
+@@ -155,6 +155,13 @@ kotlin {
+         skikoProjectContext.configureNativeTarget(OS.Linux, Arch.X64, linuxX64())
+         skikoProjectContext.configureNativeTarget(OS.Linux, Arch.Arm64, linuxArm64())
+     }
++    // Windows without a JVM. Only the Kotlin half is built here: the C++ half has to match
++    // the MSVC ABI of the prebuilt Skia, and the MinGW toolchain this target compiles with
++    // cannot produce that, so the bridges are compiled with MSVC separately and linked
++    // into the final executable beside Skia. Nothing is embedded into this klib.
++    if (findProperty("skiko.native.mingw.enabled") == "true") {
++        mingwX64().generateVersion(OS.Windows, Arch.X64, skiko)
++    }
+     if (supportNativeIosArm64) {
+         skikoProjectContext.configureNativeTarget(OS.IOS, Arch.Arm64, iosArm64())
+     }
+@@ -221,7 +228,7 @@ kotlin {
+         implementation(kotlin("test-wasm-js"))
+     }
+ 
+-    if (supportAnyNative) {
++    if (supportAnyNative || findProperty("skiko.native.mingw.enabled") == "true") {
+         sourceSets.all {
+             // Really ugly, see https://youtrack.jetbrains.com/issue/KT-46649 why it is required,
+             // note that setting it per source set still keeps it unset in commonized source sets.
+diff --git a/skiko/buildSrc/src/main/kotlin/sourceHierarchy.kt b/skiko/buildSrc/src/main/kotlin/sourceHierarchy.kt
+index 19e138b..d1b1938 100644
+--- a/skiko/buildSrc/src/main/kotlin/sourceHierarchy.kt
++++ b/skiko/buildSrc/src/main/kotlin/sourceHierarchy.kt
+@@ -36,6 +36,10 @@ val skikoSourceSetHierarchyTemplate = KotlinHierarchyTemplate {
+                 withLinux()
+             }
+ 
++            group("mingw") {
++                withMingw()
++            }
++
+             group("darwin") {
+                 group("uikit") {
+                     group("tvos")
+diff --git a/skiko/src/mingwMain/kotlin/org/jetbrains/skiko/SkiaLayer.mingw.kt b/skiko/src/mingwMain/kotlin/org/jetbrains/skiko/SkiaLayer.mingw.kt
+new file mode 100644
+index 0000000..307b729
+--- /dev/null
++++ b/skiko/src/mingwMain/kotlin/org/jetbrains/skiko/SkiaLayer.mingw.kt
+@@ -0,0 +1,42 @@
++package org.jetbrains.skiko
++
++import org.jetbrains.skia.Canvas
++import org.jetbrains.skia.PixelGeometry
++
++actual open class SkiaLayer  {
++    actual var renderApi: GraphicsApi
++        get() = TODO("Not yet implemented")
++        set(value) {}
++    actual val contentScale: Float
++        get() = TODO("Not yet implemented")
++    actual var fullscreen: Boolean
++        get() = TODO("Not yet implemented")
++        set(value) {}
++    actual val component: Any?
++        get() = TODO("Not yet implemented")
++    actual fun needRender(throttledToVsync: Boolean) {
++        TODO("unimplemented")
++    }
++    @Deprecated(
++        message = "Use needRender() instead",
++        replaceWith = ReplaceWith("needRender()")
++    )
++    actual fun needRedraw() = needRender()
++    actual fun attachTo(container: Any) {
++        TODO("unimplemented")
++    }
++    actual fun detach() {
++        TODO("unimplemented")
++    }
++
++    internal actual fun draw(canvas: Canvas) {
++        TODO("unimplemented")
++    }
++
++    actual var renderDelegate: SkikoRenderDelegate? = null
++    actual val pixelGeometry: PixelGeometry
++        get() = TODO("Not yet implemented")
++}
++
++actual val currentSystemTheme: SystemTheme
++    get() = SystemTheme.UNKNOWN
+\ No newline at end of file
+diff --git a/skiko/src/nativeMain/kotlin/org/jetbrains/skiko/Resources.native.kt b/skiko/src/nativeMain/kotlin/org/jetbrains/skiko/Resources.native.kt
+index 2b587ac..fc98ae2 100644
+--- a/skiko/src/nativeMain/kotlin/org/jetbrains/skiko/Resources.native.kt
++++ b/skiko/src/nativeMain/kotlin/org/jetbrains/skiko/Resources.native.kt
+@@ -13,7 +13,8 @@ actual suspend fun loadBytesFromPath(path: String): ByteArray {
+ 
+     val size = file.let {
+         fseek(it, 0, SEEK_END)
+-        val size = ftell(it)
++        // C long is 32 bits on Windows and 64 elsewhere; read it at one width.
++    val size = ftell(it).toLong()
+         fseek(it, 0, SEEK_SET)
+         size
+     }

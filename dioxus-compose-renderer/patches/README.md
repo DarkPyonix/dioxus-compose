@@ -33,3 +33,21 @@ Move the pin, run the script, and read what refuses to apply. A patch that no lo
 applies because upstream has filled the same gap is a patch to delete, and that is the
 outcome to hope for: every one of these is a hole in the platform rather than something
 this project wanted differently.
+
+## skiko
+
+skiko publishes no Kotlin/Native target for Windows, so the Windows renderer cannot be
+built from what JetBrains publishes. These patches are applied to skiko the same way the
+ones above are applied to Compose, by `scripts/build-skiko-windows.sh`.
+
+| Patch | What it answers |
+|---|---|
+| `skiko/0001-mingw-x64-target.patch` | A `mingwX64` target that builds the Kotlin half only; the C++ half is compiled with MSVC by the script, because it has to match the ABI of the prebuilt Windows Skia |
+
+### The pin
+
+    https://github.com/JetBrains/skiko.git
+    9a5b398bb2044fff7e7a84fbfd6f4b803e4427c0   (v0.144.6)
+
+The version Compose 1.11 asks for. Skia is the one that skiko revision names,
+`m144-22f58c9fd4`, from JetBrains' own Skia builds.
