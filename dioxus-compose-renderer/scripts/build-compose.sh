@@ -7,7 +7,7 @@
 # nobody edits by hand, and publishes the result under the version the renderer asks
 # for, so that the modules that are not patched keep resolving from JetBrains.
 #
-# Usage: build-compose.sh [--target macosArm64|linuxX64] [--clean]
+# Usage: build-compose.sh [--target macosArm64|linuxX64|mingwX64] [--clean]
 #
 # The work directory is a sibling of the renderer called compose-build. Set
 # DXC_COMPOSE_BUILD to put it elsewhere. It is not inside the renderer because it is a
@@ -86,7 +86,28 @@ case "$target" in
             compose:ui:ui-util
         )
         ;;
-    *) die "unknown target '$target'" "known: macosArm64, linuxX64" ;;
+    mingwX64)
+        # The same closure as Linux, for the same reason: upstream builds `runtime` for this
+        # target and nothing above it, so everything the renderer draws with is built here.
+        publication="MingwX64"
+        modules=(
+            compose:animation:animation
+            compose:animation:animation-core
+            compose:foundation:foundation
+            compose:foundation:foundation-layout
+            compose:material:material-ripple
+            compose:material3:material3
+            compose:ui:ui
+            compose:ui:ui-backhandler
+            compose:ui:ui-geometry
+            compose:ui:ui-graphics
+            compose:ui:ui-text
+            compose:ui:ui-tooling-preview
+            compose:ui:ui-unit
+            compose:ui:ui-util
+        )
+        ;;
+    *) die "unknown target '$target'" "known: macosArm64, linuxX64, mingwX64" ;;
 esac
 
 [[ $clean -eq 1 ]] && rm -rf "$WORK"
@@ -143,4 +164,4 @@ done
 
 echo
 echo "published to $HOME/.m2/repository/org/jetbrains/compose as $PUBLISHED_AS"
-echo "the renderer's macos and linux modules read mavenLocal first, so the next build links these"
+echo "the renderer's macos, linux and windows modules read mavenLocal first, so the next build links these"

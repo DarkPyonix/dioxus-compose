@@ -1,6 +1,6 @@
 # What Compose has to be patched to do, and why it is here rather than in a fork
 
-The renderer draws with Compose Multiplatform. Three things it needs are not in the
+The renderer draws with Compose Multiplatform. Four things it needs are not in the
 published build, and none of them can be supplied from outside the module that holds
 them: they are `internal actual` declarations, and an `expect` can only be answered
 inside its own module. A published artifact cannot be extended into them and a
@@ -18,6 +18,7 @@ the renderer asks for.
 | `0001-linux-native-targets.patch` | Compose publishes no Kotlin/Native target for Linux at all |
 | `0002-native-text-context-menu.patch` | The context menu is an empty function upstream, the menu entries were never built, and copying with the keyboard threw |
 | `0003-publish-as-1.11.1.patch` | What the patched build publishes as |
+| `0004-mingw-native-targets.patch` | Compose publishes no Kotlin/Native target for Windows; the Linux declarations plus six of Windows' own, and skiko read from the local repository first |
 
 ## The pin
 
