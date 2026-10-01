@@ -37,7 +37,7 @@ Rust에서 Compose API를 직접 호출하지 않습니다. GraalVM `@CEntryPoin
 
 | 플랫폼 | 방식 |
 |---|---|
-| 데스크톱 | native-image `--shared`. macOS는 **Liberica NIK Full**, Windows와 Linux는 upstream GraalVM. macOS에서는 선택의 여지가 없었습니다: upstream은 Darwin에서 AWT 지원을 건너뜁니다(oracle/graal#13272, 2026-09 기준 open). **세 플랫폼을 NIK으로 통일하려 시도했고 2026-09-23에 되돌렸습니다.** 동기는 분명합니다. upstream의 Windows AWT는 JDK DLL 열두 개를 이미지 옆에 내놓고 애플리케이션이 전부 들고 다녀야 해서 배포물이 16개 파일이고, macOS는 NIK이 같은 라이브러리를 `lib/static/`의 정적 아카이브로 실어 주어 4개입니다. Windows NIK에도 그 아카이브가 있다는 것까지 확인했습니다(`lib/static/windows-amd64/`에 `.lib` 52개). 막힌 곳은 링크가 아니라 그 다음입니다: **아카이브를 이미지에 넣는 것과 JVM이 "그 라이브러리는 이미 안에 있다"고 아는 것은 다른 일이고**, AWT의 `Toolkit.loadLibraries`는 런타임에 `System.loadLibrary("awt")`를 부릅니다. GraalVM은 macOS에서 AWT를 빌트인 라이브러리로 등록해 주고 Windows에서는 해 주지 않습니다. 우리가 등록하면 됩니다(skiko에 대해 `StaticSkikoFeature`가 하는 일과 같습니다). 작업은 `feat/windows-nik-static-awt`에 있고, 되돌린 이유는 **확인할 수단 없이 시도할 때마다 CI 한 사이클이 들고 그 사이 Windows 렌더러가 빌드되지 않는 상태로 남기 때문**입니다 |
+| 데스크톱 | native-image `--shared`. macOS는 **Liberica NIK Full**, Windows와 Linux는 upstream GraalVM. macOS에서는 선택의 여지가 없었습니다: upstream은 Darwin에서 AWT 지원을 건너뜁니다(oracle/graal#13272, 2026-09 기준 open). **세 플랫폼을 NIK으로 통일하려 시도했고 2026-09-23에 되돌렸습니다.** 동기는 분명합니다. upstream의 Windows AWT는 JDK DLL 열두 개를 이미지 옆에 내놓고 애플리케이션이 전부 들고 다녀야 해서 배포물이 16개 파일이고, macOS는 NIK이 같은 라이브러리를 `lib/static/`의 정적 아카이브로 실어 주어 4개입니다. Windows NIK에도 그 아카이브가 있다는 것까지 확인했습니다(`lib/static/windows-amd64/`에 `.lib` 52개). 막힌 곳은 링크가 아니라 그 다음입니다: **아카이브를 이미지에 넣는 것과 JVM이 "그 라이브러리는 이미 안에 있다"고 아는 것은 다른 일이고**, AWT의 `Toolkit.loadLibraries`는 런타임에 `System.loadLibrary("awt")`를 부릅니다. GraalVM은 macOS에서 AWT를 빌트인 라이브러리로 등록해 주고 Windows에서는 해 주지 않습니다. 우리가 등록하면 됩니다(skiko에 대해 `StaticSkikoFeature`가 하는 일과 같습니다). 작업은 `feat/windows-nik-static-awt`에 있고, 되돌린 이유는 **확인할 수단 없이 시도할 때마다 CI 한 사이클이 들고 그 사이 Windows 렌더러가 빌드되지 않는 상태로 남기 때문**입니다 | **Windows는 D18에 따라 Kotlin/Native로 옮깁니다.**
 | iOS | Kotlin/Native `-produce static` + `@CName` C 심볼 |
 | Android | 대상 플랫폼. ART라서 native-image가 불가능합니다. Kotlin/Android 앱이 Rust cdylib을 로드하고, 생성된 JNI 심을 씁니다(D9) |
 | Web | 대상 플랫폼. Compose wasmJs + Dioxus wasm. 브라우저에서 실행하는 것이라 앱이 웹뷰를 내장하는 것과는 다르고 C1에 해당하지 않습니다. 메모리는 공유하고 호출만 생성된 JS forwarder를 거칩니다(SPEC PR-6) |
@@ -244,6 +244,50 @@ macOS 26과 iOS 26은 같은 재질을 쓰지만 같은 방식으로 쓰지 않�
 **검증은 macOS에서 먼저 합니다.** 네 항목 모두 Windows에서만 의미가 있지만, 넷 중 셋은 macOS에서도 같은 모양으로 막히고 이 기계에서 바로 돌려 볼 수 있습니다. Windows에서만 확인 가능한 것을 시도마다 CI 한 사이클씩 쓰는 것이 NIK 통일을 되돌린 이유였습니다(D3). 같은 실수를 반복하지 않습니다.
 
 **2026-09-23의 "단일 exe는 비용이 너무 크니 번들을 먼저"는 제안이었고 결정이 아니었습니다.** 기록하지 않아서 결정처럼 굳었고, 그래서 이 항목이 뒤늦게 적힙니다.
+
+**Windows에서는 D18이 네 항목을 다른 길로 풉니다.** native-image를 쓰지 않으므로 1, 2, 3번의 막힘이 생기지 않고, 4번은 우리가 정의한 `SkLoadICU`가 풉니다.
+
+### D18. Windows 렌더러는 Kotlin/Native로 만들고, MinGW는 Kotlin 오브젝트 안에 가둔다
+
+Windows 렌더러는 GraalVM native-image가 아니라 Kotlin/Native(`mingwX64`)로 컴파일하고, Rust 앱이 만드는 MSVC 실행 파일 하나에 정적으로 링크합니다. macOS, Linux와 같은 길입니다.
+
+Kotlin/Native의 Windows 타깃은 MinGW뿐입니다. Rust의 기본 Windows 타깃과 Skia의 Windows 빌드는 MSVC이고, 두 C++ 방식은 한 파일에 섞이지 않습니다. 그래서 경계를 이렇게 긋습니다.
+
+- **MSVC**: Rust, Skia, skiko의 C++ 부분, C 런타임(정적, `/MT`)
+- **MinGW**: Kotlin/Native가 만든 오브젝트(Compose, skiko의 Kotlin 부분, 렌더러)와, 그것이 원래 정적으로 끌고 오는 libstdc++, libgcc, winpthread
+- **둘 사이**: C 함수 호출만. skiko가 원래 그렇게 생겼습니다.
+
+MinGW 오브젝트를 MSVC 링커에 그대로 주면 두 군데가 조용히 틀립니다. 그래서 빌드가 링크 전에 오브젝트를 고칩니다.
+
+1. **정적 생성자.** MinGW는 `.ctors`에 두고, MSVC 런타임은 `.CRT$XCU`만 실행합니다. 섹션 이름을 바꿉니다. 안 바꾸면 링크는 되는데 실행하면 멈춥니다.
+2. **예외 되감기 정보.** MinGW는 `.pdata$함수`를 독립 COMDAT으로 두고 이름으로 짝짓습니다. MSVC 링커는 이것을 버리고, Kotlin 예외가 함수 둘 이상을 지나면 되감기가 무한 루프에 빠집니다. COFF 규격의 '딸린 섹션'(associative)으로 표시를 바꿉니다.
+
+MinGW 보조 라이브러리(`libmingwex`)는 링크하지 않습니다. MSVC 정적 런타임과 함수가 중복 정의되기 때문입니다. 실제로 쓰는 두 함수(`__mingw_vsnprintf`, `sleep`)와 스레드 시작 함수는 작은 C 파일이 MSVC 런타임으로 이어 줍니다.
+
+**D17의 네 항목은 이 경로에서 이렇게 풀립니다.**
+
+1. 정적 라이브러리: Kotlin/Native가 `-produce static`을 냅니다.
+2. Skia를 안으로: Skia와 skiko C++를 우리가 링크합니다. 경로로 찾는 로더가 없습니다.
+3. AWT: 필요 없습니다. 창은 이미 `win32_window.c`입니다.
+4. ICU 데이터: Skia가 부르는 `SkLoadICU`를 우리가 정의해서, 실행 파일 안에 넣은 데이터를 ICU에 넘깁니다.
+
+skiko는 `mingwX64`를 발행하지 않으므로 skiko 0.144.6에 패치를 두고 빌드합니다. Compose 패치와 같은 방식입니다. Compose도 Linux처럼 `mingwX64` 타깃을 더하는 패치로 빌드합니다.
+
+**근거 (2026-10-01, macOS의 Wine 11.0에서 확인):** 실행 파일 하나가 시스템 DLL 외에 아무것도 불러오지 않고, skiko API로 그림과 글자를 그려 픽셀이 맞고, 함수 셋을 지나는 Kotlin 예외 1000회가 정상이고, 잡히지 않은 예외는 Kotlin이 보고하고 종료하고, ICU 파일 없이 한국어 단어 경계가 맞습니다. 생성자와 되감기 정보를 고치지 않은 대조군은 각각 멈추고 무한 루프에 빠졌습니다. **진짜 Windows에서는 아직 확인하지 않았습니다.**
+
+**치르는 값:**
+
+- 실행 파일 안에 C++ 런타임이 둘 들어갑니다. 이름 규칙이 달라 부딪히지는 않지만 크기는 그만큼 늡니다.
+- MinGW 오브젝트를 고치는 빌드 단계가 하나 생깁니다. Kotlin/Native가 오브젝트를 만드는 방식을 바꾸면 이 단계도 다시 확인해야 합니다.
+- MinGW의 크래시 필터 대신 '처리 안 함'을 돌려주는 함수를 둡니다. Kotlin 스레드의 크래시는 MinGW식 신호 변환 대신 Windows 기본 처리로 갑니다.
+- Wine으로 확인한 것은 Windows에서 다시 확인해야 하고, 창, 입력기, 화면 낭독기는 Wine으로 확인할 수 없습니다.
+
+**폐기한 대안:**
+
+- Rust를 `windows-gnu`로: 앱을 빌드하는 사람이 전부 기본값이 아닌 타깃을 써야 해서 D10과 부딪힙니다.
+- Skia를 MinGW로 빌드: Skia가 공식 지원하지 않습니다.
+- 렌더러를 DLL로 나누기: 파일이 3개가 되어 D17을 어깁니다.
+- GraalVM 유지: JVM이 남습니다.
 
 ### D15. iOS의 Liquid Glass는 시스템에게 받아 온다. UIKit을 Kotlin이 직접 몬다
 

@@ -1953,6 +1953,7 @@ pr6 forwarder cost: 12.15 ns/call across the boundary, 0.44 ns/call in this modu
 | NFR-10 | 렌더러 탐색 경로 | `DIOXUS_COMPOSE_RENDERER_DIR` → 워크스페이스 빌드 결과물 → 버전·타깃별 캐시 → 릴리스 다운로드 순서로 찾음. 규격과 수용 기준은 §5.3. **2026-09-21 충족** | Done |
 | NFR-11 | 배포 | 크레이트는 crates.io, 렌더러는 플랫폼별 체크섬 릴리스 아티팩트. 설치는 `Cargo.toml` 한 줄이 전부이고 빌드 스크립트가 아티팩트를 가져옵니다. 규격과 수용 기준은 §5.3 (INTENT D10). **2026-09-21 macOS에서 충족**, Windows와 Linux는 실행 확인 미완료 | Agreed |
 | NFR-12 | 워크트리 빌드 격리 | 워크트리마다 자기 `target/`에 빌드하고, 다른 워크트리의 빌드 디렉터리를 가리키는 설정이 없음. 한 트리에서 컴파일된 codegen 바이너리가 다른 트리에 쓸 수 없음. 규격과 수용 기준은 §5.4 (INTENT D16). **2026-09-22 충족** | Done |
+| NFR-13 | Windows 단일 실행 파일 | Windows 렌더러를 Kotlin/Native로 빌드해 앱 실행 파일 하나에 링크한다. JVM이 없다. 규격과 수용 기준은 §5.5 (INTENT D18) | Draft |
 
 ### 5.1 프레임 예산 (NFR-9)
 
@@ -2178,6 +2179,20 @@ Cargo는 path 패키지의 유닛 해시에 패키지 경로를 넣지 않습니
 1과 3과 4를 `scripts/tests/worktree-target.test.sh`가, 2를 `dioxus-compose/tests/codegen_tree.rs`가 확인합니다. `scripts/setup-check.sh`도 이 체크아웃 하나에 대해 3을 봅니다.
 
 **2026-09-22 측정.** 자기 `target/`에 처음부터 빌드하는 데(`cargo build --workspace --tests`, 레지스트리 캐시는 더운 상태) 23초가 걸렸고 `target/`은 1.0GB가 됐습니다. `scripts/check.sh`를 한 번 돌리면 벤치마크까지 포함해 2.0GB가 됩니다. 워크트리 여덟 개가 같이 쓰던 빌드 디렉터리 하나는 그때 16GB였습니다. 워크트리마다 나누는 쪽이 이 기계에서는 디스크도 덜 씁니다. 공유 디렉터리는 워크트리 여덟 개분의 핑거프린트를 한꺼번에 들고 있으면서 아무도 치우지 않기 때문입니다.
+
+### 5.5 Windows 단일 실행 파일 (NFR-13)
+
+Windows 렌더러는 Kotlin/Native(`mingwX64`)로 빌드한 정적 라이브러리이고, Rust 앱의 MSVC 실행 파일에 링크됩니다. Skia와 skiko의 C++ 부분은 MSVC로 빌드해 같은 실행 파일에 들어갑니다. 경계와 그 이유는 INTENT D18에 있습니다.
+
+수용 기준:
+
+1. 샘플을 빌드한 결과물이 실행 파일 하나이고, 불러오는 DLL이 Windows 시스템 DLL뿐입니다. 빌드 산출물의 import 표를 검사하는 테스트로 확인합니다.
+2. `icudtl.dat` 없이 글자가 그려집니다.
+3. 함수 여러 개를 지나는 Kotlin 예외가 잡히고, 잡히지 않은 예외는 보고된 뒤 종료됩니다(테스트).
+4. MinGW 오브젝트를 고치는 단계를 빼면 2와 3이 실패하는 것을 대조 테스트가 확인합니다.
+5. 스모크 호스트가 창을 띄우고 0으로 끝납니다(Windows CI).
+6. §6 IME 체크리스트 핵심 5개를 통과합니다(Windows에서 손으로 확인).
+7. 접근성 트리가 노출됩니다(NFR-8과 같은 기준, Windows).
 
 ## 6. IME 수용 체크리스트 (FR-5, M1)
 
