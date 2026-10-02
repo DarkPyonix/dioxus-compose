@@ -459,6 +459,7 @@ class NodeTable {
                     widget == WidgetKind.LazyColumn ||
                     widget == WidgetKind.LazyRow ||
                     widget == WidgetKind.ScrollColumn ||
+                    widget == WidgetKind.ScrollRow ||
                     widget == WidgetKind.FileDropTarget
 
                 PropertyKind.Variant -> widget == WidgetKind.Button

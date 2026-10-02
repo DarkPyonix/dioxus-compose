@@ -268,6 +268,27 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
         records += Mutation.Insert(tabs, tab, index)
     }
 
+    // A strip wider than the window, scrolled sideways without the Host windowing it.
+    // Twelve tiles is more than any of the seven systems fits across this window, so the
+    // strip always has somewhere to go, and how its tiles and its scroll edge look is the
+    // design system's like everything above.
+    text(root, slot++, "horizontal scroll", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+    val strip = id()
+    records += Mutation.Create(strip, WidgetKind.ScrollRow)
+    records += Mutation.SetModifier(strip, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetProp(strip, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
+    records += Mutation.Insert(root, strip, slot++)
+    (1..12).forEach { number ->
+        val tile = id()
+        records += Mutation.Create(tile, WidgetKind.Box)
+        records += Mutation.SetModifier(tile, 0, ProtocolModifier.Width(120f))
+        records += Mutation.SetModifier(tile, 1, ProtocolModifier.ShapeRole(ShapeRole.Medium))
+        records += Mutation.SetModifier(tile, 2, ProtocolModifier.Background(Paint.Role(ColorRole.SecondaryContainer)))
+        records += Mutation.SetModifier(tile, 3, ProtocolModifier.PaddingRole(SpaceRole.Md))
+        records += Mutation.Insert(strip, tile, number - 1)
+        text(tile, 0, "Tile $number", TypeRole.Label, ColorRole.OnSecondaryContainer)
+    }
+
     return records
 }
 
