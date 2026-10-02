@@ -1,6 +1,10 @@
 package dioxus.compose.foundation
 
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
@@ -232,10 +236,10 @@ internal fun HostNavigation(
     // destinations paints none of it. That is what a frame does with this: the strip goes
     // in one slot and the frame paints the page behind both.
     val holdsAPage = content.isNotEmpty()
-    // A sidebar the reader has put away. FR-21.2.1 makes being put away the Renderer's
-    // state, and a sidebar that can only be put away by making the window narrower is one
-    // the reader cannot put away at all: every sidebar this language is drawn from has a
-    // button on it that does exactly this.
+    // A sidebar the reader has put away. Whether it is away is the Renderer's state rather
+    // than the application's, and a sidebar that can only be put away by making the window
+    // narrower is one the reader cannot put away at all: every sidebar this language is
+    // drawn from has a button on it that does exactly this.
     var putAway by remember(node.id) { mutableStateOf(false) }
     val presentation = if (putAway && style.presentation == NavigationPresentation.Drawer) {
         NavigationPresentation.PutAway
@@ -458,20 +462,33 @@ private fun SectionHeading(name: String, style: NavigationStyle, theme: Resolved
             fontFamily = theme.family(TypeRole.Caption),
             lineHeight = token.composeLineHeight,
             letterSpacing = token.composeLetterSpacing,
-            color = style.content.copy(alpha = SECTION_HEADING_ALPHA),
+            color = style.headingContent ?: style.content.copy(alpha = SECTION_HEADING_ALPHA),
         ),
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                start = style.itemPadding,
-                end = style.itemPadding,
-                top = theme.space(SpaceRole.Sm),
+                start = style.destinationInset ?: style.itemPadding,
+                end = style.destinationInset ?: style.itemPadding,
+                // More room over a heading than under it, because what the room does is
+                // end the group above rather than open the one below. At the same step top
+                // and bottom the heading sat between two lists instead of over one, which
+                // is what it looked like: measured, the reference leaves twenty five over
+                // its headings and eleven under them.
+                top = theme.space(SpaceRole.Lg),
                 bottom = theme.space(SpaceRole.Xs),
             ),
     )
 }
 
-/** How much quieter a heading is than the rows under it. */
+/**
+ * How much quieter a heading is than the rows under it, where the design system does not
+ * name a colour for one.
+ *
+ * A fraction of the row ink, which works while that ink is the secondary one and stops
+ * working the moment it is not: with the rows set in the reading ink, seven tenths of it
+ * came out 0x434343 against the reference's 0x6F7071, and a heading that dark competes
+ * with the rows it heads instead of standing off them.
+ */
 private const val SECTION_HEADING_ALPHA = 0.7f
 
 /**
@@ -550,6 +567,7 @@ private fun SideStrip(
         foot?.let { key(it) { Screen(listOf(it), table, dispatcher) } }
     }
     val gap = style.destinationGap ?: style.itemSpacing
+    val strip = style.stripPadding ?: style.itemPadding
     if (!floating) {
         Column(
             Modifier
@@ -557,7 +575,7 @@ private fun SideStrip(
                 .width(width)
                 .fillMaxHeight()
                 .background(style.container)
-                .padding(top = captionTop + style.itemPadding, bottom = style.itemPadding),
+                .padding(top = captionTop + strip, bottom = strip),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             // The destinations scroll and the foot does not. The scroll is on the list
@@ -590,10 +608,10 @@ private fun SideStrip(
                 .padding(
                     // The panel starts [inset] down from the top of the window, and the
                     // window buttons sit on it, so its first row starts below them.
-                    top = (captionTop - inset).coerceAtLeast(0.dp) + style.itemPadding,
-                    bottom = style.itemPadding,
-                    start = style.itemPadding,
-                    end = style.itemPadding,
+                    top = (captionTop - inset).coerceAtLeast(0.dp) + strip,
+                    bottom = strip,
+                    start = strip,
+                    end = strip,
                 ),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -700,9 +718,6 @@ internal fun Destination(
     val label = node.text(PropertyKind.Text)
     val role = node.role(PropertyKind.Icon, IconRole.entries.toTypedArray())
     val enabled = node.flag(PropertyKind.Enabled, default = true)
-    val search = role == IconRole.Search &&
-        presentation == NavigationPresentation.Drawer &&
-        style.searchContainer != null
     // The design system decides what "selected" looks like, unless the node names a
     // colour itself. A unified sample is what needs the exception: its reference bar is
     // white icons on black with no accent anywhere, and asking the active system instead
@@ -712,24 +727,15 @@ internal fun Destination(
     // is saying it about itself, not about half of itself, and a sample wanting the two
     // states apart says so by giving each destination its own colour.
     val named = node.paintProp(PropertyKind.Color)?.let { theme.color(it) }
-    val tint = named ?: if (selected && !search) style.selectedContent else style.content
+    val tint = named ?: if (selected) style.selectedContent else style.content
     val showLabel = label.isNotEmpty() &&
         (presentation != NavigationPresentation.Rail || style.labelInRail)
-    val pill = selected && !search && style.indicatorKind == NavigationIndicator.Pill
-    val bar = selected && !search && style.indicatorKind == NavigationIndicator.LeadingEdgeBar
+    val pill = selected && style.indicatorKind == NavigationIndicator.Pill
+    val bar = selected && style.indicatorKind == NavigationIndicator.LeadingEdgeBar
 
     Box(
         modifier
             .testTag(nodeTestTag(node.id))
-            .then(
-                if (search) {
-                    Modifier
-                        .clip(style.indicatorShape)
-                        .background(style.searchContainer)
-                } else {
-                    Modifier
-                },
-            )
             // `selectable` rather than `clickable`: one of a set is chosen, and saying so
             // is what puts "selected" in the accessibility tree instead of leaving a
             // screen reader to announce every destination identically.
@@ -751,10 +757,15 @@ internal fun Destination(
         }
         if (presentation == NavigationPresentation.Drawer) {
             Row(
-                Modifier.fillMaxWidth().padding(
-                    horizontal = style.itemPadding,
-                    vertical = style.itemPadding,
-                ),
+                Modifier
+                    .fillMaxWidth()
+                    .then(
+                        style.destinationHeight?.let { Modifier.height(it) } ?: Modifier,
+                    )
+                    .padding(
+                        horizontal = style.destinationInset ?: style.itemPadding,
+                        vertical = style.itemPadding,
+                    ),
                 horizontalArrangement = Arrangement.spacedBy(style.itemSpacing),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -785,8 +796,65 @@ internal fun Modifier.pageBackdrop(style: NavigationStyle): Modifier {
     val start = style.pageGradientStart ?: return this
     val end = style.pageGradientEnd ?: return this
     val hold = style.pageGradientHold.coerceIn(0f, 0.99f)
-    return background(Brush.verticalGradient(0f to start, hold to start, 1f to end))
+    val wash = Brush.verticalGradient(0f to start, hold to start, 1f to end)
+    val glow = style.pageCornerGlow ?: return background(wash)
+    return drawBehind {
+        drawRect(wash)
+        // Laid over the ramp rather than folded into it, because the two run in different
+        // directions: the ramp turns from top to bottom and these spread from a point, and
+        // one brush cannot do both.
+        glow(glow, Offset(0f, size.height), size.width * LEADING_GLOW_WIDE, size.height * LEADING_GLOW_TALL)
+        glow(glow, Offset(size.width, size.height), size.width * TRAILING_GLOW_WIDE, size.height * TRAILING_GLOW_TALL)
+    }
 }
+
+/**
+ * One corner's glow: the wash's own colour, at full strength where it is anchored and gone
+ * at the edge of an ellipse.
+ *
+ * An ellipse rather than a circle, and a different one at each corner, because that is what
+ * is there to copy. Measured across the reference, the leading corner's reach is wide and
+ * shallow and the trailing corner's is narrow and tall; a pair of circles draws a wash that
+ * is symmetrical, which reads as a shape laid on the page rather than as light in a room.
+ */
+private fun DrawScope.glow(core: Color, at: Offset, wide: Float, tall: Float) {
+    val radius = maxOf(wide, tall)
+    if (radius <= 0f) return
+    // Falling away fast and then trailing, rather than evenly. An even radial puts half
+    // the colour at half the reach, and measured against the reference that came out
+    // twenty levels too deep across the middle of the page while the height the wash began
+    // at was right: the arc is drawn by the last of the light, so what sets where it starts
+    // is the tail and what sets how the page reads is the near half.
+    val brush = Brush.radialGradient(
+        colorStops = arrayOf(
+            0f to core,
+            GLOW_KNEE to core.copy(alpha = GLOW_KNEE_ALPHA),
+            1f to core.copy(alpha = 0f),
+        ),
+        center = at,
+        radius = radius,
+    )
+    scale(wide / radius, tall / radius, pivot = at) {
+        drawCircle(brush, radius = radius, center = at)
+    }
+}
+
+/**
+ * How far each corner's glow reaches, as a fraction of the window's width and height.
+ *
+ * Fitted to the height the reference's wash begins at, read off nine columns across the
+ * window: the two ellipses those points lie on come out at about eleven twentieths of the
+ * width by a third of the height at the leading corner, and a little under a quarter of the
+ * width by three sevenths of the height at the trailing one.
+ */
+/** Where the glow stops falling away quickly, and how much of it is left there. */
+private const val GLOW_KNEE = 0.35f
+private const val GLOW_KNEE_ALPHA = 0.35f
+
+private const val LEADING_GLOW_WIDE = 0.55f
+private const val LEADING_GLOW_TALL = 0.33f
+private const val TRAILING_GLOW_WIDE = 0.23f
+private const val TRAILING_GLOW_TALL = 0.43f
 
 @Composable
 private fun DestinationIcon(role: IconRole?, tint: Color, theme: ResolvedTheme) {
@@ -805,9 +873,10 @@ private fun DestinationLabel(
     theme: ResolvedTheme,
 ) {
     if (!show) return
+    val rung = node.textStyle(theme, style.typeRole)
     BasicText(
         text = label,
-        style = node.textStyle(theme, style.typeRole).copy(color = tint),
+        style = rung.copy(color = tint, fontWeight = style.destinationWeight ?: rung.fontWeight),
     )
 }
 
@@ -911,7 +980,12 @@ private fun PutAwayButton(
     ) {
         // The sidebar's own glyph rather than the three lines. Three lines mean "a menu
         // of things", and this is not that: it puts a panel away and brings it back.
-        RoleIcon(IconRole.Sidebar, style.content, theme, Modifier)
+        //
+        // In the heading ink and not the rows'. It is a control on the chrome rather than
+        // a line in the list, and once the rows were moved to the reading ink this was the
+        // blackest thing in the window: the panel's own hide button, drawn louder than
+        // anything it hides and louder than the button that starts a conversation.
+        RoleIcon(IconRole.Sidebar, style.headingContent ?: style.content, theme, Modifier)
     }
 }
 

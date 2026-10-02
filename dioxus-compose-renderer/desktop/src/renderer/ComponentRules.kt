@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dioxus.compose.protocol.ButtonVariant
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.StrokeJoin
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.IconRole
@@ -810,7 +811,7 @@ internal object CupertinoRules : ComponentRules {
         val presentation = when (sizeClass) {
             // Two platforms draw this language and they answer a narrow window
             // differently. A phone has its own tab bar and the destinations are handed to
-            // it (FR-14.9), so the presentation there stays the bar the shell is offered.
+            // it, so the presentation there stays the bar the shell is offered.
             // A narrow window on a desktop has no tab bar to hand them to, and that
             // platform's answer for a list with no room is to take it off the screen and
             // leave the button that brings it back.
@@ -2847,6 +2848,23 @@ internal object LiquidGlassRules : ComponentRules {
     }
 
     /**
+     * A menu row, which is not a capsule and not a control with room round it.
+     *
+     * The menus this language draws are lists: each row runs the full width of the menu,
+     * is cut shallow so the highlight is a band rather than a pill, and sits on the tight
+     * rhythm a list of names is read at. Left as buttons they came out as a stack of
+     * capsules with air between them, which is the sheet of actions a phone slides up and
+     * not the menu a desktop drops down.
+     */
+    override fun menuEntry(base: ButtonStyle, theme: ResolvedTheme): ButtonStyle = base.copy(
+        shape = theme.shape(ShapeRole.ExtraSmall),
+        horizontalPadding = theme.space(SpaceRole.Sm),
+        verticalPadding = MENU_ROW_PADDING,
+        minHeight = MENU_ROW_HEIGHT,
+        typeRole = TypeRole.Body,
+    )
+
+    /**
      * Every button is a capsule, at every size.
      *
      * That is the single loudest difference from the flat language beside it, where a
@@ -2958,6 +2976,12 @@ internal object LiquidGlassRules : ComponentRules {
                 verticalPadding = theme.space(SpaceRole.Sm),
                 typeRole = TypeRole.BodyStrong,
                 floats = true,
+                // The same eight the sidebar stands off the window at the other corner.
+                // At the ladder's own steps the capsule sat ten in from the trailing edge
+                // and four down from the top while the panel opposite it sat eight from
+                // both, which is three measurements in one window where there is one thing
+                // being measured.
+                floatingInset = SIDEBAR_INSET,
             )
 
             // An alert: centred, capsule buttons inside, over a dimmed screen.
@@ -3140,14 +3164,17 @@ internal object LiquidGlassRules : ComponentRules {
      * reads most as Apple's icon set, and it is shared with the flat language because it
      * is the same icon set.
      */
-    // Twenty at a point and a half, which is what the reference's are. At twenty two and
-    // two the same glyphs came out heavier than everything around them and made a sidebar
-    // of them read darker than the list it belongs to.
+    // Twenty at a point and a quarter. At twenty two and two the same glyphs came out
+    // heavier than everything around them and made a sidebar of them read darker than the
+    // list it belongs to; at a point and a half they were still a third heavier than the
+    // reference's, counted in inked pixels per glyph, because a stroke that wide reaches
+    // full ink in the middle and the reference's hairline never does.
     override fun icon(role: IconRole, theme: ResolvedTheme): IconStyle = IconStyle(
         size = 20.dp,
-        strokeWidth = 1.5.dp,
+        strokeWidth = 1.25.dp,
         cap = StrokeCap.Round,
         join = StrokeJoin.Round,
+        corner = ICON_CORNER,
     )
 
     /**
@@ -3239,7 +3266,7 @@ internal object LiquidGlassRules : ComponentRules {
         val presentation = when (sizeClass) {
             // Two platforms draw this language and they answer a narrow window
             // differently. A phone has its own tab bar and the destinations are handed to
-            // it (FR-14.9), so the presentation there stays the bar the shell is offered.
+            // it, so the presentation there stays the bar the shell is offered.
             // A narrow window on a desktop has no tab bar to hand them to, and that
             // platform's answer for a list with no room is to take it off the screen and
             // leave the button that brings it back.
@@ -3284,11 +3311,42 @@ internal object LiquidGlassRules : ComponentRules {
         // Over the window's own material the page gives some of its opacity up, so the
         // desktop reaches the page as well as the sidebar, only less of it.
         val start = theme.color(ColorRole.Background)
-        val end = theme.color(ColorRole.PrimaryContainer)
+        // The container role on its own is the palest tint of the accent, which is what a
+        // filled chip is made of. The foot of a glass page is a good deal deeper than that:
+        // measured against the reference, the container alone came out at 0xD1E1FF where
+        // the reference's foot is 0x92CCFF, so the tint is carried back towards the accent
+        // it is a tint of.
+        //
+        // Not as far as looked right at first. This platform's accent is a bluer blue than
+        // the reference's wash, so carrying the tint towards it takes the green down as
+        // well as the red: at a third of the way the foot came out 0x8DB9FF against the
+        // reference's 0x92CCFF, right in the red and nineteen low in the green, which is
+        // the difference between a wash that reads as sky and one that reads as violet.
+        val tinted = lerp(
+            theme.color(ColorRole.PrimaryContainer),
+            theme.color(ColorRole.Primary),
+            PAGE_FOOT_TOWARDS_ACCENT,
+        )
+        // Both of the colours that were mixed have the blue channel at the top of its
+        // range, so the mix does too, and measured the wash arrived there a third of the
+        // way down the window and stayed: from that line to the foot the ramp had two
+        // channels to move in instead of three, which flattens it and turns it violet as
+        // it goes. The foot keeps a little of the channel back so the ramp has somewhere
+        // to run.
+        val end = tinted.copy(blue = tinted.blue * FOOT_KEEPS_BACK)
         return NavigationStyle(
             presentation = presentation,
             container = theme.color(ColorRole.SurfaceContainer).copy(alpha = NAVIGATION_ALPHA),
-            content = theme.color(ColorRole.OnSurfaceVariant),
+            // A sidebar's rows are read, so they take the reading ink; a bar's are glanced
+            // at under a thumb, so they take the quieter one and the accent marks the tab
+            // you are on. Both of Apple's sidebars set their rows in the label colour and
+            // keep the secondary one for the headings over them, which is what tells a
+            // heading from a row when neither is marked.
+            content = if (bar) {
+                theme.color(ColorRole.OnSurfaceVariant)
+            } else {
+                theme.color(ColorRole.OnSurface)
+            },
             // A tab bar tints the tab you are on and draws no fill; a strip down the side
             // fills the row and leaves its words alone. Blue words with no fill under them
             // is what a link looks like, and a sidebar of links reads as a list of places
@@ -3296,9 +3354,15 @@ internal object LiquidGlassRules : ComponentRules {
             selectedContent = if (bar) {
                 theme.color(ColorRole.Primary)
             } else {
-                theme.color(ColorRole.OnSurfaceVariant)
+                theme.color(ColorRole.OnSurface)
             },
-            indicator = if (bar) Color.Transparent else tintedFill(theme.dark, TONAL_ALPHA),
+            headingContent = theme.color(ColorRole.OnSurfaceVariant),
+            destinationWeight = if (presentation == NavigationPresentation.Drawer) {
+                FontWeight.Normal
+            } else {
+                null
+            },
+            indicator = if (bar) Color.Transparent else tintedFill(theme.dark, SELECTED_ROW_ALPHA),
             indicatorShape = theme.shape(ShapeRole.Full),
             indicatorKind = NavigationIndicator.Pill,
             indicatorExtent = NavigationExtent.Destination,
@@ -3311,7 +3375,7 @@ internal object LiquidGlassRules : ComponentRules {
             // that product's dense one.
             drawerWidth = SIDEBAR_WIDTH,
             itemSpacing = if (presentation == NavigationPresentation.Drawer) {
-                theme.space(SpaceRole.Xs)
+                DRAWER_ICON_GAP
             } else {
                 theme.space(SpaceRole.Xs)
             },
@@ -3319,6 +3383,16 @@ internal object LiquidGlassRules : ComponentRules {
                 DRAWER_ROW_PADDING
             } else {
                 theme.space(SpaceRole.Xs)
+            },
+            stripPadding = if (presentation == NavigationPresentation.Drawer) {
+                DRAWER_STRIP_PADDING
+            } else {
+                null
+            },
+            destinationInset = if (presentation == NavigationPresentation.Drawer) {
+                DRAWER_ROW_INSET
+            } else {
+                null
             },
             labelInRail = true,
             // A sidebar row is a line of text beside its icon, and it is set smaller than
@@ -3333,18 +3407,26 @@ internal object LiquidGlassRules : ComponentRules {
             },
             pageGradientStart = if (theme.windowBackdrop) start.copy(alpha = PAGE_OVER_WINDOW_TOP) else start,
             pageGradientEnd = if (theme.windowBackdrop) end.copy(alpha = PAGE_OVER_WINDOW_FOOT) else end,
-            searchContainer = tintedFill(theme.dark, TONAL_ALPHA),
             stripMaterial = strip,
             stripShape = if (bar) {
                 theme.shape(ShapeRole.Full)
             } else {
-                ContinuousCornerShape(concentricRadius(WINDOW_CORNER, inset))
+                ContinuousCornerShape(
+                    concentricRadius(WINDOW_CORNER, inset),
+                    exponent = SIDEBAR_CORNER_EXPONENT,
+                )
             },
             floatingInset = inset,
             carriesCaption = !bar,
             pageBehindStrip = !onWindow,
             pageGradientHold = PAGE_GRADIENT_HOLD,
-            destinationGap = if (presentation == NavigationPresentation.Drawer) 2.dp else null,
+            pageCornerGlow = end,
+            destinationGap = if (presentation == NavigationPresentation.Drawer) 0.dp else null,
+            destinationHeight = if (presentation == NavigationPresentation.Drawer) {
+                DRAWER_ROW_HEIGHT
+            } else {
+                null
+            },
         )
     }
 
@@ -3428,7 +3510,7 @@ internal object LiquidGlassRules : ComponentRules {
      * The corner of a macOS 26 window, which a sidebar held inside it is cut concentric
      * with.
      */
-    private val WINDOW_CORNER = 26.dp
+    private val WINDOW_CORNER = APPLE_WINDOW_RADIUS
 
     /**
      * How far a rail or a sidebar stands off the window's leading edge, top and bottom.
@@ -3444,7 +3526,80 @@ internal object LiquidGlassRules : ComponentRules {
      * thirty two, and at six they came out thirty six. A quarter looser across twenty
      * rows is the difference between that product's list and a generic application menu.
      */
-    private val DRAWER_ROW_PADDING = 4.dp
+    private val DRAWER_ROW_PADDING = 6.dp
+
+    /**
+     * How far the strip's own edge stands off the mark behind the selected row.
+     *
+     * The same eight the panel itself stands off the window, so the mark stops short of
+     * the panel by exactly as much as the panel stops short of the window and the two
+     * insets read as one measurement rather than two.
+     */
+    private val DRAWER_STRIP_PADDING = 8.dp
+
+    /**
+     * From a row's edge to its icon, which is what sets the icon column.
+     *
+     * Measured off the reference twice: its icon column is centred thirty three and a half
+     * in from the window's edge, which is eight for the panel and eight for the mark behind
+     * the selected row, then this, then half the box the glyph is drawn in.
+     */
+    private val DRAWER_ROW_INSET = 8.dp
+
+    /**
+     * How tall one row is, whatever it holds.
+     *
+     * Asked for rather than left to the content, because the content differs: a place in
+     * the application carries an icon and a conversation carries only its name, and the two
+     * came out thirty two and thirty apart in the same list. A list whose rows are two
+     * different heights is a list with no rhythm.
+     */
+    private val DRAWER_ROW_HEIGHT = 32.dp
+
+    /**
+     * How square the sidebar's corners are, as a superellipse exponent.
+     *
+     * Traced off the reference along the panel's lit rim, row by row down from its top
+     * edge: the rim comes in fifteen, eleven, seven, three and one points at one, two,
+     * four, eight and twelve rows down. The panel's own radius drawn at 2.8 lands on every
+     * one of those within a point. At the shape's default of 5 the same radius came in
+     * seven, five, three, one and nothing, which is a corner half the size: the sidebar was
+     * cut to twenty six and read as though it were cut to eleven.
+     */
+    private const val SIDEBAR_CORNER_EXPONENT = 2.8
+
+    /** How tall one row of a menu is, and the room above and below what it says. */
+    private val MENU_ROW_HEIGHT = 28.dp
+    private val MENU_ROW_PADDING = 4.dp
+
+    /**
+     * How far back from a corner an icon's line starts to turn.
+     *
+     * Measured off the reference's set, whose frames turn through an arc two or three
+     * points wide at this size: a picture and a film strip drawn with square corners read
+     * as the placeholder a browser draws for an image it could not load.
+     */
+    private val ICON_CORNER = 2.5.dp
+
+    /**
+     * From a row's icon to its label.
+     *
+     * Wider than the space ladder's smallest step. At four the label crowded its icon into
+     * one dark shape. The reference leaves twelve between the ink of one and the ink of the
+     * other, and the glyph does not fill the box it is drawn in, so the box asks for less
+     * than twelve to leave twelve.
+     */
+    private val DRAWER_ICON_GAP = 10.dp
+
+    /**
+     * The mark behind the selected sidebar row.
+     *
+     * Apple's quaternary fill, not the fill a tonal button takes. A fifth of black over a
+     * white panel is a solid grey slab: measured, the row came out at 0xC5C5C5 against the
+     * reference's 0xEAE7E7, which reads as a pressed button rather than as the row you are
+     * on. Selection in a list is the quietest state in the system.
+     */
+    private const val SELECTED_ROW_ALPHA = 0.08f
 
     /**
      * How opaque the page is at its top and at its foot over a window that shows the
@@ -3455,14 +3610,24 @@ internal object LiquidGlassRules : ComponentRules {
     private const val PAGE_OVER_WINDOW_FOOT = 0.82f
 
     /**
-     * The page stays its own colour down a little under half its height before it turns,
-     * which is where the reference's wash begins.
+     * Where the page stops being its own colour and starts turning, as a fraction of its
+     * height.
+     *
+     * Measured against the reference three times. At 0.45 the page was tinted halfway up;
+     * at 0.58 the blue still crept a third of the way up the window where the reference
+     * holds flat white to within a quarter of its foot. The wash belongs in the bottom
+     * quarter, so a whole page of text is read on white.
      */
-    // Where the page stops being white and starts turning. Measured against the
-    // reference: at 0.45 the page was already tinted halfway up, and there it is still
-    // white at the same height. The turn belongs in the lower half, so most of a page of
-    // text is read on white.
-    private const val PAGE_GRADIENT_HOLD = 0.58f
+    private const val PAGE_GRADIENT_HOLD = 0.74f
+
+    /**
+     * How far the foot of the page is carried from the palest tint of the accent back
+     * towards the accent itself.
+     */
+    private const val PAGE_FOOT_TOWARDS_ACCENT = 0.30f
+
+    /** How much of the blue channel the foot of the page leaves itself to run into. */
+    private const val FOOT_KEEPS_BACK = 0.965f
 
     /**
      * The glass caption. Three coloured discs at the leading edge, exactly as the flat
@@ -3516,10 +3681,24 @@ internal object LiquidGlassRules : ComponentRules {
  * has its three buttons a step down and in from where a plain window has them, which is
  * what leaves room for the sidebar's own rounded corner to pass behind them.
  */
-private val APPLE_BUTTON_INSET = 8.dp
+private val APPLE_BUTTON_INSET = 10.dp
 
-/** How round that window is, and how round a plain one is. */
-private val APPLE_WINDOW_RADIUS = 14.dp
+/**
+ * How round that window is, and how round a plain one is.
+ *
+ * This did nothing for a long time and the reason is worth keeping. The window was opaque,
+ * so the system painted its own rounded background at its own radius and the number here
+ * only rounded the layer drawn on top: raising it from fourteen to twenty six and again to
+ * thirty four left the corner pixel for pixel identical, and what showed at the corner was
+ * the system's square shoulder behind the drawing. The window is neither opaque nor painted
+ * now, so the corner on the screen is the one asked for here.
+ *
+ * The ordinary mode is cut a good deal deeper than the plain one, which keeps the system's
+ * own. That is the visible difference between a window that belongs to this language and
+ * one that does not, and it is the same difference the buttons a step in from the corner
+ * make.
+ */
+private val APPLE_WINDOW_RADIUS = 34.dp
 private val APPLE_PLAIN_WINDOW_RADIUS = 10.dp
 
 /**

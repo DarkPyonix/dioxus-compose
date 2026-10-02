@@ -77,6 +77,13 @@ fn title_from(text: &str) -> String {
 /// system this project takes its size classes from.
 const RECENT_CONVERSATIONS: usize = 5;
 
+/// How many places in the application come before the conversations in the strip.
+///
+/// The conversations are destinations in the same set, so a conversation's position in the
+/// list is not its position among the destinations. Without this the conversation you were
+/// in marked the wrong row: starting one lit "Search", which is a row you are never on.
+const DESTINATIONS_ABOVE_THE_CHATS: usize = 4;
+
 /// A new conversation has nothing in it.
 ///
 /// It used to open with one message from the assistant explaining what the screen was,
@@ -90,11 +97,41 @@ fn opening_messages() -> Vec<Message> {
 
 /// How big the mark is where it opens an empty screen, and how far the greeting sits under
 /// it. Both read off the reference.
-const SPARK_ON_THE_EMPTY_SCREEN: f32 = 34.0;
-const SPARK_TO_GREETING: f32 = 20.0;
+///
+/// The gap is measured to the top of the letters and set to the room between them, which is
+/// a smaller number: a line of type carries its own leading above the letters, so a gap
+/// asked for at the reference's twenty came out at thirty five on screen and the mark
+/// floated away from the words it belongs to.
+const SPARK_ON_THE_EMPTY_SCREEN: f32 = 39.0;
+const SPARK_TO_GREETING: f32 = 6.0;
 
 /// And how big it is beside the application's name in the strip.
-const SPARK_IN_THE_STRIP: f32 = 20.0;
+///
+/// Both of these are the box the drawing is given, and the drawing does not fill it: the
+/// mark is inked from two to forty six across a forty eight unit square, so a box asked for
+/// at the reference's thirty six measured thirty two on screen. The numbers are the box, so
+/// they carry the difference.
+const SPARK_IN_THE_STRIP: f32 = 22.0;
+
+/// The room above, below and either end of what the composer holds.
+const ROOM_INSIDE_THE_COMPOSER: f32 = 8.0;
+
+/// How big the key that sends the message is, across and down.
+const THE_SEND_KEY: f32 = 36.0;
+
+/// The room between the composer's keys and what they stand beside.
+const BESIDE_A_COMPOSER_KEY: f32 = 4.0;
+
+/// How big the picture beside who is signed in is, across and down.
+const THE_ACCOUNT_PICTURE: f32 = 20.0;
+
+/// How far the page's own content stands off the window it is drawn in.
+///
+/// The same eight the sidebar stands off it, so the composer at the foot of the page and
+/// the panel beside it stop the same distance from the window's edge. At the space ladder's
+/// own step the composer floated eighteen off the floor against the reference's eight, and
+/// two things held off one edge by two different amounts read as neither being held.
+const PAGE_INSET: f32 = 8.0;
 
 /// The application's mark.
 ///
@@ -132,12 +169,12 @@ fn opening_greeting() -> Element {
             // because a composer that has to explain itself is the thing to fix instead.
             Text {
                 text: "Hello.",
-                type_role: TypeRole::Headline,
+                type_role: TypeRole::Display,
                 text_align: TextAlign::Center,
             }
             Text {
                 text: "What are you thinking about?",
-                type_role: TypeRole::Headline,
+                type_role: TypeRole::Display,
                 text_align: TextAlign::Center,
             }
         }
@@ -409,6 +446,13 @@ pub fn app() -> Element {
     let recent: Vec<Conversation> = conversations()
         .iter()
         .rev()
+        // A conversation nobody has said anything in yet is not in the list. It has no
+        // name of its own, so it was listed under the same words as the row that starts
+        // one: two rows reading "New chat" two hundred points apart, in the same face at
+        // the same size, one a command and the other a document, with nothing but an
+        // indent between them. The reference does not list one either, and the row that
+        // starts a conversation is the row it marks while you are in an empty one.
+        .filter(|entry| !entry.title.is_empty())
         .filter(|entry| query.is_empty() || entry.label().to_lowercase().contains(&query))
         .take(RECENT_CONVERSATIONS)
         .cloned()
@@ -417,7 +461,9 @@ pub fn app() -> Element {
     let selected = recent
         .iter()
         .position(|entry| entry.id == current())
-        .map_or(0, |index| index + usize::from(show_search));
+        .map_or(0, |index| {
+            index + DESTINATIONS_ABOVE_THE_CHATS + usize::from(show_search)
+        });
 
     rsx! {
         // The reference's window has three parts and no bar: a sidebar the window buttons
@@ -510,7 +556,28 @@ pub fn app() -> Element {
                             padding_role: SpaceRole::Sm,
                             space_role: SpaceRole::Sm,
                             alignment: Alignment::CenterStart,
-                            Text { text: "\u{25cf}", type_role: TypeRole::Body, color: Paint::Role(ColorRole::Primary) }
+                            // A round picture, not a bullet with the accent on it. The
+                            // character stood in a twenty point slot and inked eight of
+                            // it, which reads as a status light rather than as a person.
+                            // Someone's initial on a quiet disc. There is no photograph
+                            // to put here, and the two things this was before were both
+                            // wrong for the same reason: a disc of the accent was the most
+                            // saturated thing on the screen, louder than the key that sends
+                            // the message, and a disc of the quiet fill landed two levels
+                            // from the mark behind the row the sidebar was marking. An
+                            // empty circle is a placeholder either way; a letter is not.
+                            dioxus_compose::Box {
+                                width: THE_ACCOUNT_PICTURE,
+                                height: THE_ACCOUNT_PICTURE,
+                                shape_role: ShapeRole::Full,
+                                background: Paint::Role(ColorRole::SecondaryContainer),
+                                alignment: Alignment::Center,
+                                Text {
+                                    text: "L",
+                                    type_role: TypeRole::Caption,
+                                    color: Paint::Role(ColorRole::OnSecondaryContainer),
+                                }
+                            }
                             Column {
                                 Text { text: "Signed in", type_role: TypeRole::Label }
                                 Text {
@@ -565,7 +632,7 @@ pub fn app() -> Element {
                     fill_max_width: measure.is_none(),
                     width: measure,
                     fill_max_height: true,
-                    padding_role: SpaceRole::Md,
+                    padding: PAGE_INSET,
                     space_role: SpaceRole::Md,
 
 
@@ -673,8 +740,19 @@ pub fn app() -> Element {
                         // A step of room inside the pill. A stadium's edge curves in at
                         // the top and bottom, and the field is a rectangle: at the
                         // system's own padding its corners came out through the curve.
-                        padding_role: SpaceRole::Sm,
-                        space_role: SpaceRole::Sm,
+                        //
+                        // Measured rather than taken from the ladder. The reference's bar
+                        // is fifty two tall and its send key is thirty six, which leaves
+                        // exactly this much above and below, and the same number holds the
+                        // key off the trailing end: at the ladder's ten the bar came out
+                        // sixty and the key sat off centre.
+                        padding: ROOM_INSIDE_THE_COMPOSER,
+                        // Tight, because what the room in a composer does is hold the
+                        // message clear of the keys either side of it, and the keys carry
+                        // their own. At the ladder's step the placeholder started forty
+                        // four points after the menu key against the reference's twenty
+                        // two.
+                        spacing: BESIDE_A_COMPOSER_KEY,
                         alignment: Alignment::CenterStart,
                         // No `on_key_down` here on purpose. The Renderer already treats
                         // Enter in a multiline field that has a submit handler as "send"
@@ -762,6 +840,13 @@ pub fn app() -> Element {
                             icon: IconRole::Send,
                             variant: ButtonVariant::Tonal,
                             shape_role: ShapeRole::Full,
+                            width: THE_SEND_KEY,
+                            height: THE_SEND_KEY,
+                            // The arrow reads as ink on a tinted key rather than as more
+                            // of the same tint. In the accent it was a blue mark on a
+                            // pale blue disc, which at this size is a disc with something
+                            // faint on it.
+                            color: Paint::Role(ColorRole::OnSurface),
                             on_click: move |_| send(draft()),
                         }
                     }
@@ -996,6 +1081,8 @@ mod tests {
         sections: HashMap<u32, String>,
         /// Every message the screen has said, in order, with its action label.
         messages: Vec<(String, String)>,
+        /// Which of the destinations the strip last said was the one being looked at.
+        selected: usize,
         event: Vec<u8>,
     }
 
@@ -1069,6 +1156,20 @@ mod tests {
                     _ => None,
                 })
                 .collect();
+            // Read from the first frame rather than waited for, because a property that
+            // never changes is never set again: a strip that opens on the row it means
+            // says so once.
+            let selected = first
+                .iter()
+                .find_map(|mutation| match mutation {
+                    Mutation::SetProp {
+                        property: PropertyKind::SelectedIndex,
+                        value: PropertyValue::Integer(index),
+                        ..
+                    } => Some((*index).max(0) as usize),
+                    _ => None,
+                })
+                .unwrap_or(0);
             drop(first);
             Self {
                 host,
@@ -1082,6 +1183,7 @@ mod tests {
                 destinations,
                 sections,
                 messages: Vec::new(),
+                selected,
                 event: Vec::new(),
             }
         }
@@ -1141,6 +1243,13 @@ mod tests {
                     Mutation::Remove { node_id } => {
                         self.destinations.retain(|found| *found != node_id);
                     }
+                    Mutation::SetProp {
+                        property: PropertyKind::SelectedIndex,
+                        value: PropertyValue::Integer(index),
+                        ..
+                    } => {
+                        self.selected = index.max(0) as usize;
+                    }
                     Mutation::ShowMessage { text, action, .. } => {
                         self.messages.push((text.to_owned(), action.to_owned()));
                     }
@@ -1149,16 +1258,24 @@ mod tests {
             }
         }
 
-        /// What the sidebar is offering, by label. Sorted, because what the destination
-        /// set holds is the claim here and the order it is drawn in is the Renderer's.
+        /// What the sidebar is offering, by label, in the order it was declared in.
+        ///
+        /// Declaration order and not sorted, because the strip says which destination is
+        /// the one being looked at by its position in this list, so the order is part of
+        /// what the screen means rather than the Renderer's business.
         fn destinations(&self) -> Vec<String> {
-            let mut labels: Vec<String> = self
-                .destinations
+            self.destinations
                 .iter()
                 .filter_map(|node| self.texts.get(node).cloned())
-                .collect();
-            labels.sort();
-            labels
+                .collect()
+        }
+
+        /// The label of the destination the strip is marking.
+        fn marked_destination(&self) -> String {
+            self.destinations()
+                .get(self.selected)
+                .cloned()
+                .unwrap_or_default()
         }
 
         /// The destinations in the strip's conversation group, in declaration order.
@@ -1618,6 +1735,34 @@ mod tests {
         );
     }
 
+    /// Which row the strip marks, which is the conversation being read.
+    ///
+    /// The conversations share one set of destinations with the places in the application,
+    /// so a conversation's position among the conversations is not its position among the
+    /// destinations. Without that offset the row marked on a fresh screen was "Search",
+    /// which is a row nobody is ever on.
+    #[test]
+    fn fr22_the_marked_row_is_the_conversation_being_read() {
+        let mut screen = Screen::new();
+        screen.open_window();
+        assert_eq!(
+            screen.marked_destination(),
+            "New chat",
+            "the strip should mark the conversation on screen, and the places in the \
+             application come before the conversations in the same set"
+        );
+
+        screen.send("tell me about streaming");
+        screen.settle();
+        let marked = screen.marked_destination();
+        assert!(
+            screen.conversations().contains(&marked),
+            "the strip marked {marked:?}, which is not one of its conversations {:?}: the \
+             row being read is always a conversation and never a place",
+            screen.conversations()
+        );
+    }
+
     /// The conversations are the destination set, which is what the reference's sidebar
     /// is. One declaration, and the Renderer draws it as a bar, a rail or a sidebar from
     /// the width it measured.
@@ -1631,23 +1776,22 @@ mod tests {
             "the destinations should be one declaration the Renderer can turn into a bar, \
              a rail or a sidebar"
         );
-        let before = screen.conversations();
         assert_eq!(
-            before,
-            vec!["New chat".to_owned()],
-            "a fresh screen should offer the one conversation it has"
+            screen.conversations(),
+            Vec::<String>::new(),
+            "a conversation nobody has said anything in yet has no name of its own, so it \
+             is not in the list: it was listed under the same words as the row that starts \
+             one, which put the command and the document side by side in the same face"
         );
 
         screen.send("tell me about streaming");
         screen.settle();
         screen.press_icon(IconRole::Compose);
-        let mut after = screen.conversations();
-        after.sort();
         assert_eq!(
-            after,
-            vec!["New chat".to_owned(), "tell me about streaming".to_owned()],
-            "the conversation that was on screen should still be in the sidebar, named \
-             after its opening line"
+            screen.conversations(),
+            vec!["tell me about streaming".to_owned()],
+            "the conversation that was on screen should be in the sidebar, named after \
+             its opening line, and the empty one just started should not"
         );
     }
 
