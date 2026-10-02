@@ -29,6 +29,7 @@ import dioxus.compose.design.SurfaceMaterial
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.foundation.FloatingActionArea
+import dioxus.compose.foundation.HostBadge
 import dioxus.compose.foundation.HostButton
 import dioxus.compose.foundation.HostChip
 import dioxus.compose.foundation.HostFloatingAction
@@ -259,6 +260,14 @@ fun RenderNode(
         // The one action a screen is about, in the form its design system gives it. Where
         // it goes is decided by the frame it is in, which asks the same rule.
         WidgetKind.FloatingAction -> HostFloatingAction(node, modifier, dispatcher, theme)
+
+        // A count, a word or a dot, on its child or on its own. Where it sits and how a
+        // large count is written are the design system's.
+        WidgetKind.Badge -> HostBadge(node, modifier, table, dispatcher, theme)
+
+        // Interpreted once text selection lands. Until then it lays its children out
+        // as a plain column, so nothing inside is lost.
+        WidgetKind.SelectionContainer -> Column(modifier) { Children(node, table, dispatcher) }
     }
 }
 
