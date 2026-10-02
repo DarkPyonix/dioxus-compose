@@ -7,9 +7,9 @@
 
 **English** · [한국어](docs/locales/README_ko.md)
 
-**Dioxus apps, drawn natively by Compose Multiplatform through compose-rust.**
+**A Dioxus renderer that draws HTML and CSS natively with Compose Multiplatform through compose-rust, with no webview.**
 
-*`rsx!` with Compose widgets today, HTML tags and CSS next. No webview and no bundled JVM.*
+*No webview and no bundled JVM.*
 
 ```rust
 rsx! {
@@ -21,16 +21,10 @@ rsx! {
 }
 ```
 
-You author components with `rsx!`, hooks and signals, as in any Dioxus app. `dioxus-core`'s
-VirtualDom turns them into mutations and dioxus-compose hands them to
-[compose-rust](https://github.com/DarkPyonix/compose-rust), which owns the widget schema and the
-AOT-compiled Compose renderer. What reaches the screen is a real Compose tree, with Compose's text
-layout, its widgets and its platform IME. (The schema and the renderer still live in this
-repository while they move.)
-
-Today `rsx!` takes compose-rust's widgets (`Column`, `Text`, `Button`). Next it takes `div`, `span`
-and CSS: `blitz-dom` computes styles and layout inside the Host and Compose draws the boxes and the
-text, so a Dioxus app written for the DOM runs natively, without a webview.
+You write a Dioxus app the way you would for the web: `rsx!` with `div`, `span` and CSS, hooks
+and signals. `blitz-dom` computes styles and layout inside the Host, and
+[compose-rust](https://github.com/DarkPyonix/compose-rust)'s AOT-compiled Compose renderer draws
+the boxes and the text, with Compose's text layout and its platform IME.
 
 ---
 
@@ -114,6 +108,10 @@ Linux and Windows are not measured for footprint yet, and nothing here is claime
 
 A **young project under active development**, built spec-first. It is not published to crates.io and
 the API will change.
+
+Today `rsx!` takes compose-rust's widgets (`Column`, `Text`, `Button`), as in the example at the
+top; HTML tags and CSS are being built now. The widget schema and the renderer still live in this
+repository while they move to compose-rust.
 
 ### Platforms
 

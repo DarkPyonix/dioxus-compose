@@ -7,9 +7,9 @@
 
 [English](../../README.md) · **한국어**
 
-**Dioxus 앱을 compose-rust를 거쳐 Compose Multiplatform이 네이티브로 그립니다.**
+**HTML과 CSS로 쓴 Dioxus 앱을 compose-rust를 거쳐 Compose Multiplatform이 웹뷰 없이 네이티브로 그리는 Dioxus 렌더러입니다.**
 
-*지금은 Compose 위젯으로 쓰는 `rsx!`, 다음은 HTML 태그와 CSS. 웹뷰도 동봉된 JVM도 없습니다.*
+*웹뷰도 동봉된 JVM도 없습니다.*
 
 ```rust
 rsx! {
@@ -21,15 +21,10 @@ rsx! {
 }
 ```
 
-여느 Dioxus 앱처럼 `rsx!`와 훅, 시그널로 컴포넌트를 씁니다. `dioxus-core`의 VirtualDom이 이를
-mutation으로 바꾸면 dioxus-compose가 그것을 [compose-rust](https://github.com/DarkPyonix/compose-rust)에
-넘깁니다. 위젯 스키마와 AOT 컴파일된 Compose 렌더러는 compose-rust의 것입니다. 화면에 오르는 것은
-실제 Compose 트리이고, Compose의 텍스트 레이아웃과 위젯, 플랫폼 IME를 그대로 씁니다. (스키마와
-렌더러는 옮기는 동안 아직 이 저장소에 있습니다.)
-
-지금 `rsx!`는 compose-rust의 위젯(`Column`, `Text`, `Button`)을 받습니다. 다음은 `div`, `span`과
-CSS입니다. `blitz-dom`이 Host 안에서 스타일과 레이아웃을 계산하고 Compose가 상자와 글자를 그리므로,
-DOM을 대상으로 쓴 Dioxus 앱이 웹뷰 없이 네이티브로 돕니다.
+웹에서 쓰듯 Dioxus 앱을 씁니다. `div`, `span`과 CSS를 담은 `rsx!`, 훅과 시그널입니다.
+`blitz-dom`이 Host 안에서 스타일과 레이아웃을 계산하고,
+[compose-rust](https://github.com/DarkPyonix/compose-rust)의 AOT 컴파일된 Compose 렌더러가 상자와
+글자를 그립니다. Compose의 텍스트 레이아웃과 플랫폼 IME를 그대로 씁니다.
 
 ---
 
@@ -112,6 +107,10 @@ notepad 샘플을 릴리스로 빌드해 스트립한 것입니다. 실행 파�
 
 스펙을 먼저 쓰는 방식으로 **활발히 개발 중인 초기 프로젝트**입니다. crates.io에 게시하지
 않았으며 API는 바뀝니다.
+
+지금 `rsx!`는 맨 위 예제처럼 compose-rust의 위젯(`Column`, `Text`, `Button`)을 받고, HTML 태그와
+CSS는 지금 만들고 있습니다. 위젯 스키마와 렌더러는 compose-rust로 옮기는 동안 아직 이 저장소에
+있습니다.
 
 ### 플랫폼
 
