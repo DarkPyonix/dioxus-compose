@@ -7,9 +7,9 @@
 
 [English](../../README.md) · **한국어**
 
-**Rust로 선언형 UI를 작성하면, AOT 컴파일된 Compose Multiplatform 엔진이 그립니다.**
+**Dioxus 앱을 compose-rust를 거쳐 Compose Multiplatform이 네이티브로 그립니다.**
 
-*웹뷰도 동봉된 JVM도 없는 Rust 네이티브 데스크톱 UI.*
+*지금은 Compose 위젯으로 쓰는 `rsx!`, 다음은 HTML 태그와 CSS. 웹뷰도 동봉된 JVM도 없습니다.*
 
 ```rust
 rsx! {
@@ -21,9 +21,15 @@ rsx! {
 }
 ```
 
-`rsx!`와 훅, 시그널로 컴포넌트를 씁니다. `dioxus-core`의 VirtualDom이 이를 mutation으로 바꾸고,
-좁은 C ABI가 그 mutation을 경계 너머로 넘기면, Kotlin/Compose 인터프리터가 실제 Compose 트리로
-만들어 냅니다. Compose의 텍스트 레이아웃과 위젯, 그리고 플랫폼 IME를 그대로 쓰면서요.
+여느 Dioxus 앱처럼 `rsx!`와 훅, 시그널로 컴포넌트를 씁니다. `dioxus-core`의 VirtualDom이 이를
+mutation으로 바꾸면 dioxus-compose가 그것을 [compose-rust](https://github.com/DarkPyonix/compose-rust)에
+넘깁니다. 위젯 스키마와 AOT 컴파일된 Compose 렌더러는 compose-rust의 것입니다. 화면에 오르는 것은
+실제 Compose 트리이고, Compose의 텍스트 레이아웃과 위젯, 플랫폼 IME를 그대로 씁니다. (스키마와
+렌더러는 옮기는 동안 아직 이 저장소에 있습니다.)
+
+지금 `rsx!`는 compose-rust의 위젯(`Column`, `Text`, `Button`)을 받습니다. 다음은 `div`, `span`과
+CSS입니다. `blitz-dom`이 Host 안에서 스타일과 레이아웃을 계산하고 Compose가 상자와 글자를 그리므로,
+DOM을 대상으로 쓴 Dioxus 앱이 웹뷰 없이 네이티브로 돕니다.
 
 ---
 

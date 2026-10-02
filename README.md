@@ -7,9 +7,9 @@
 
 **English** · [한국어](docs/locales/README_ko.md)
 
-**Declarative UI in Rust, rendered by an AOT-compiled Compose Multiplatform engine.**
+**Dioxus apps, drawn natively by Compose Multiplatform through compose-rust.**
 
-*Native desktop UI in Rust with no webview and no bundled JVM.*
+*`rsx!` with Compose widgets today, HTML tags and CSS next. No webview and no bundled JVM.*
 
 ```rust
 rsx! {
@@ -21,10 +21,16 @@ rsx! {
 }
 ```
 
-You author components with `rsx!`, hooks and signals. `dioxus-core`'s VirtualDom turns them into
-mutations, a narrow C ABI carries those mutations across the boundary, and a Kotlin/Compose
-interpreter materialises them as a real Compose tree, with Compose's text layout, its widgets, and
-its platform IME.
+You author components with `rsx!`, hooks and signals, as in any Dioxus app. `dioxus-core`'s
+VirtualDom turns them into mutations and dioxus-compose hands them to
+[compose-rust](https://github.com/DarkPyonix/compose-rust), which owns the widget schema and the
+AOT-compiled Compose renderer. What reaches the screen is a real Compose tree, with Compose's text
+layout, its widgets and its platform IME. (The schema and the renderer still live in this
+repository while they move.)
+
+Today `rsx!` takes compose-rust's widgets (`Column`, `Text`, `Button`). Next it takes `div`, `span`
+and CSS: `blitz-dom` computes styles and layout inside the Host and Compose draws the boxes and the
+text, so a Dioxus app written for the DOM runs natively, without a webview.
 
 ---
 
