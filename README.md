@@ -106,8 +106,8 @@ Linux and Windows are not measured for footprint yet, and nothing here is claime
 
 ## 🚦 Status
 
-A **young project under active development**, built spec-first. It is not published to crates.io and
-the API will change.
+A **young project under active development**, built spec-first. Version 0.0.0 is on crates.io as an
+early snapshot; it still carries the old description until the next release. The API will change.
 
 Today `rsx!` takes compose-rust's widgets (`Column`, `Text`, `Button`), as in the example at the
 top; HTML tags and CSS are being built now. The widget schema and the renderer still live in this
