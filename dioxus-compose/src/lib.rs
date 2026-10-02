@@ -54,10 +54,10 @@ pub use schema::{
     TextOverflow, Theme, TileMode, TypeRole, WidgetKind, WindowHeightClass, WindowSizeClass,
 };
 pub use widgets::{
-    Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
+    Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
     Dropdown, FileDrop, FileDropTarget, FloatingAction, Icon, Image, KeyEvent, LazyColumn,
     LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton,
-    RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, Separator, Sheet, Slider, Spacer,
+    RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet, Slider, Spacer,
     Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{NodeSize, WindowSize, node_size, use_node_size, use_window_size, window_size};
@@ -152,13 +152,13 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, AssetKind, Brush, Button, ButtonVariant, Canvas, Card, Checkbox,
+        Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant, Canvas, Card, Checkbox,
         Chip, Color, ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider,
         DrawCommand, DrawList, Dropdown, Element, FileDrop, FileDropTarget, FloatingAction, Icon,
         IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid, LazyRow,
         LinearProgressIndicator, LoopMode, MaterialRole, Menu, Message, MessageDuration, Modifier,
         MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
-        RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, Separator, ShapeRole, Sheet, Slider,
+        RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider,
         SpaceRole, Spacer, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow,
         Theme, TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, WindowHeightClass, WindowSize,
         WindowSizeClass, asset, brush, component, launch, rsx, show_message, use_design_system,
@@ -383,6 +383,13 @@ pub mod elements {
     // The one action a screen is about: what it means, what it is called, and a click.
     // Nothing that could say where it goes, because that is the design system's answer.
     element!(floatingaction, "FloatingAction", [text, icon]);
+    // A count, a word, or with neither a dot. The colour is a role. Where it sits on its
+    // child and how a large count is written are the design system's, so there is nothing
+    // here that could ask for a corner or a ceiling.
+    element!(badge, "Badge", [count, text, color]);
+    // Nothing of its own. Being this widget is the whole of what it says: the text inside
+    // may be selected and copied, and the selection never crosses the boundary.
+    element!(selectioncontainer, "SelectionContainer", []);
 
     #[doc(hidden)]
     pub mod completions {
@@ -426,6 +433,8 @@ pub mod elements {
             sheet {},
             chip {},
             floatingaction {},
+            badge {},
+            selectioncontainer {},
         }
     }
 }
