@@ -1988,110 +1988,114 @@ dependencies = [
 ]
 
 [[package]]
-name = "sample-academic"
-version = "0.1.0"
+name = "sample-html-article"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
+ "sample-html-support",
 ]
 
 [[package]]
-name = "sample-calculator"
-version = "0.1.0"
+name = "sample-html-chat"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
+ "dioxus-core",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
 ]
 
 [[package]]
-name = "sample-chat"
-version = "0.1.0"
+name = "sample-html-dashboard"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
+ "sample-html-support",
 ]
 
 [[package]]
-name = "sample-frames"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
-]
-
-[[package]]
-name = "sample-minimal"
-version = "0.1.0"
+name = "sample-html-gallery"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
+ "sample-html-support",
 ]
 
 [[package]]
-name = "sample-notepad"
-version = "0.1.0"
+name = "sample-html-hello"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "futures-channel",
- "sample-frames",
+ "sample-html-support",
 ]
 
 [[package]]
-name = "sample-podcast"
-version = "0.1.0"
+name = "sample-html-overlay"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
 ]
 
 [[package]]
-name = "sample-selfcare"
-version = "0.1.0"
+name = "sample-html-settings"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
+ "sample-html-support",
 ]
 
 [[package]]
-name = "sample-social"
-version = "0.1.0"
+name = "sample-html-support"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
 ]
 
 [[package]]
-name = "sample-statistics"
-version = "0.1.0"
+name = "sample-html-table"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
+ "sample-html-support",
 ]
 
 [[package]]
-name = "sample-store"
-version = "0.1.0"
+name = "sample-html-theme"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
 ]
 
 [[package]]
-name = "sample-todo"
-version = "0.1.0"
+name = "sample-html-todo"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-html-workbench"
+version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
- "sample-frames",
+ "dioxus-signals",
 ]
 
 [[package]]
