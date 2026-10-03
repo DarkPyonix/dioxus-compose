@@ -1,7 +1,9 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{BatchEncoder, HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::protocol::{
+    BatchEncoder, HostEvent, Mutation, PropertyValue, decode_batch,
+};
 use dioxus_compose::schema::{EventPayload, PropertyKind, WidgetKind};
 use std::time::Instant;
 

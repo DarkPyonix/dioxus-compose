@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "dioxus-compose",
+    "dioxus-compose/benches/dioxus-baseline",
     "samples/article",
     "samples/chat",
     "samples/dashboard",
@@ -13,6 +14,18 @@ members = [
     "samples/theme",
     "samples/todo",
     "samples/workbench",
+    "samples/native-widgets/academic",
+    "samples/native-widgets/calculator",
+    "samples/native-widgets/chat",
+    "samples/native-widgets/frames",
+    "samples/native-widgets/minimal",
+    "samples/native-widgets/notepad",
+    "samples/native-widgets/podcast",
+    "samples/native-widgets/selfcare",
+    "samples/native-widgets/social",
+    "samples/native-widgets/statistics",
+    "samples/native-widgets/store",
+    "samples/native-widgets/todo",
 ]
 resolver = "2"
 
@@ -24,6 +37,9 @@ license = "Apache-2.0"
 rust-version = "1.88"
 
 [workspace.dependencies]
+# For everything in this workspace written with rsx!: the samples and the Dioxus baseline
+# gathered from them.
+dioxus-compose = { path = "dioxus-compose" }
 dioxus-core = "0.7.10"
 dioxus-core-macro = "0.7.10"
 dioxus-hooks = "0.7"

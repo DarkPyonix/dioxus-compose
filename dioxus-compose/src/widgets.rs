@@ -1,77 +1,17 @@
 #![allow(non_snake_case)]
 
-use dioxus_core::{Callback, Element, EventHandler};
+use dioxus_core::{AttributeValue, Callback, Element, EventHandler};
 use dioxus_core_macro::{Props, component, rsx};
 use dioxus_hooks::use_signal;
 use dioxus_signals::WritableExt as _;
 
 use crate as dioxus_elements;
-use crate::Key;
-use crate::drawing::DrawList;
-use crate::schema::{
+use compose_rust::drawing::DrawList;
+use compose_rust::schema::{
     Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole, Paint,
     ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
 };
-use std::cell::Cell;
-use std::rc::Rc;
-
-/// A key-down event whose consumption state is shared with the Host boundary.
-#[derive(Clone, Debug)]
-pub struct KeyEvent {
-    key: Key,
-    shift_key: bool,
-    ctrl_key: bool,
-    alt_key: bool,
-    meta_key: bool,
-    consumed: Rc<Cell<bool>>,
-}
-
-impl KeyEvent {
-    pub(crate) fn new(
-        key: Key,
-        shift_key: bool,
-        ctrl_key: bool,
-        alt_key: bool,
-        meta_key: bool,
-    ) -> Self {
-        Self {
-            key,
-            shift_key,
-            ctrl_key,
-            alt_key,
-            meta_key,
-            consumed: Rc::new(Cell::new(false)),
-        }
-    }
-
-    pub fn key(&self) -> Key {
-        self.key
-    }
-
-    pub fn shift_key(&self) -> bool {
-        self.shift_key
-    }
-
-    pub fn ctrl_key(&self) -> bool {
-        self.ctrl_key
-    }
-
-    pub fn alt_key(&self) -> bool {
-        self.alt_key
-    }
-
-    pub fn meta_key(&self) -> bool {
-        self.meta_key
-    }
-
-    pub fn consume(&self) {
-        self.consumed.set(true);
-    }
-
-    pub fn consumed(&self) -> bool {
-        self.consumed.get()
-    }
-}
+use compose_rust::{FileDrop, KeyEvent, RangeRequest};
 
 /// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
@@ -401,7 +341,7 @@ pub fn Text(
             fill_max_height,
             // Left out entirely when there are none, so a Text that says nothing about
             // runs travels exactly as it did before runs existed.
-            spans: (!spans.is_empty()).then_some(spans),
+            spans: (!spans.is_empty()).then(|| AttributeValue::any_value(spans)),
             text,
             type_role: role(type_role),
             font_size: dp(font_size),
@@ -578,59 +518,6 @@ pub fn Spacer(
             fill_max_width,
             fill_max_height,
         }
-    }
-}
-
-/// The paths of the files a reader let go over a node.
-///
-/// Separated on the wire by a NUL, which is the one byte no path on any of the three
-/// desktops may contain. A newline would have been shorter to read and wrong: a file
-/// called "notes\nfor tuesday" is legal on two of them, and splitting on newlines would
-/// have turned one file into two.
-#[derive(Clone, Debug, PartialEq)]
-pub struct FileDrop {
-    paths: Vec<String>,
-}
-
-impl FileDrop {
-    /// Takes apart the one string the paths travelled in.
-    ///
-    /// Public because the separation is part of what this type promises, and a test that
-    /// could not build one could only check it through a window.
-    pub fn new(joined: &str) -> Self {
-        Self {
-            paths: joined
-                .split('\0')
-                .filter(|path| !path.is_empty())
-                .map(str::to_owned)
-                .collect(),
-        }
-    }
-
-    /// Every path that arrived, in the order the platform gave them.
-    pub fn paths(&self) -> &[String] {
-        &self.paths
-    }
-}
-
-/// The visible item range the Renderer asks the Host to materialise.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RangeRequest {
-    start: u32,
-    count: u32,
-}
-
-impl RangeRequest {
-    pub(crate) fn new(start: u32, count: u32) -> Self {
-        Self { start, count }
-    }
-
-    pub fn start(&self) -> usize {
-        self.start as usize
-    }
-
-    pub fn count(&self) -> usize {
-        self.count as usize
     }
 }
 
@@ -1145,7 +1032,10 @@ pub fn Canvas(
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
-            commands,
+            // A command list is neither a number nor text, so it travels as a value the
+            // runtime compares and the tree writer reads back by type. An unchanged list
+            // compares equal and costs no record.
+            commands: AttributeValue::any_value(commands),
         }
     }
 }
@@ -2279,6 +2169,108 @@ pub fn SelectionContainer(
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
+            {children}
+        }
+    }
+}
+
+/// A side pane and a body, with a divider between them the user drags to change the side
+/// pane's width.
+///
+/// Exactly two children: the side pane first, the body second. The side pane sits at the
+/// start of the reading direction, so it is on the right in a right to left locale.
+///
+/// **The drag is not reported while it happens.** The divider follows the pointer on the
+/// Renderer's side, like a scroll position, and `on_change` is called once, when it is let
+/// go, with the side pane's width in dp. The same happens once when the width was changed
+/// from the keyboard, when the keys are released. Narrowing the window shrinks the side
+/// pane without telling anyone, and widening it again brings back the width the user chose.
+///
+/// `value` is the width the side pane opens at and the way to change it from here. Leave it
+/// out to open at the design system's own sidebar width. Write what `on_change` reports back
+/// into the signal that feeds `value`, the way a slider's value is kept: otherwise sending
+/// the same width again later is not a change and nothing moves.
+///
+/// `min` and `max` bound the drag, in dp; left out, the design system's bounds apply.
+/// With `collapsible`, dragging past `min` folds the side pane away and `on_change` reports
+/// `0.0`; `value: Some(0.0)` opens it folded; a non-zero value, a drag back out or the
+/// keyboard unfolds it to the width it had before, which is reported once. A sidebar toggle
+/// is a button that sends `0.0` or the last width, with `IconRole::Sidebar` on it.
+///
+/// In a narrow place, measured by the split pane's own width rather than the window's, the
+/// design system may show one pane at a time. `selected_index` then says which: `0` for the
+/// side pane, `1` for the body. Choosing something in the side pane is the application's
+/// event, so it is the application that sends `1`. Going back (the platform's back gesture
+/// or the back button the design system draws) shows the side pane at once and calls
+/// `on_dismiss` once, and the application answers by sending `0` and clearing its selection.
+///
+/// `label` names the divider for a screen reader, which reads it with the current width as
+/// an adjustable control. Left out, the Renderer uses the platform's own word for a sidebar.
+#[component]
+pub fn SplitPane(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// The side pane's width in dp, or `0.0` to open it folded. Left out, the design
+    /// system's sidebar width.
+    #[props(default)]
+    value: Option<f32>,
+    /// The narrowest the side pane may be dragged, in dp.
+    #[props(default)]
+    min: Option<f32>,
+    /// The widest the side pane may be dragged, in dp.
+    #[props(default)]
+    max: Option<f32>,
+    /// Whether the side pane may be folded away.
+    #[props(default)]
+    collapsible: bool,
+    /// Which pane shows when only one fits: `0` the side pane, `1` the body.
+    #[props(default)]
+    selected_index: usize,
+    /// What a screen reader calls the divider.
+    #[props(default)]
+    label: Option<String>,
+    /// The side pane's width once a drag or a key press has finished, or `0.0` once folded.
+    #[props(default)]
+    on_change: EventHandler<f32>,
+    /// The user went back from the body to the side pane while one pane shows at a time.
+    #[props(default)]
+    on_dismiss: EventHandler<()>,
+    children: Element,
+) -> Element {
+    rsx! {
+        splitpane {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            value: value.map(f64::from),
+            min: min.map(f64::from),
+            max: max.map(f64::from),
+            collapsible,
+            selected_index: selected_index as i64,
+            text: label,
+            onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as f32),
+            ondismiss: move |_| on_dismiss.call(()),
             {children}
         }
     }
