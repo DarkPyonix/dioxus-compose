@@ -1,0 +1,36 @@
+{
+ "rebuiltSelectors": 11924,
+ "shippedSelectors": 11900,
+ "sharedSelectors": 11900,
+ "onlyInRebuilt": 24,
+ "onlyInShipped": 0,
+ "cssFilesRebuilt": 357,
+ "cssFilesLocated": 351,
+ "cssFilesInShippedOrder": 322,
+ "adjacentInversions": 14,
+ "sampleInversions": [
+  "vs/base/browser/ui/contextview/contextview.css -> vs/base/browser/ui/list/list.css",
+  "vs/platform/actionWidget/browser/actionWidget.css -> vs/base/browser/ui/keybindingLabel/keybindingLabel.css",
+  "vs/editor/contrib/inlineCompletions/browser/hintsWidget/inlineCompletionsHintsWidget.css -> vs/base/browser/ui/hover/hoverWidget.css",
+  "vs/editor/contrib/gotoSymbol/browser/link/goToDefinitionAtPosition.css -> vs/editor/contrib/gotoError/browser/media/gotoErrorWidget.css",
+  "vs/base/browser/ui/grid/gridview.css -> vs/workbench/contrib/comments/browser/media/panel.css",
+  "vs/workbench/contrib/notebook/browser/media/notebookChatEditorOverlay.css -> vs/workbench/contrib/extensions/browser/media/extensionActions.css",
+  "vs/workbench/contrib/chat/browser/voiceClient/media/voiceGlow.css -> vs/workbench/contrib/chat/browser/speechToText/media/dictationSession.css",
+  "vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatSessionCreatedResult.css -> vs/workbench/contrib/chat/browser/widget/chatContentParts/toolInvocationParts/media/toolRiskBadge.css",
+  "vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatTerminalToolProgressPart.css -> vs/workbench/contrib/chat/browser/widget/chatContentParts/media/chatToolConfirmationCarousel.css",
+  "vs/workbench/contrib/debug/browser/media/repl.css -> vs/workbench/contrib/debug/browser/media/callStackEditorContribution.css"
+ ],
+ "sampleOnlyInRebuilt": [
+  "|.monaco-editor.review-widget",
+  "|.monaco-workbench.pane>.pane-body.tree-explorer-viewlet-tree-view>.message.button-container>.monaco-buttonspan",
+  "|.ports-view.monaco-icon-label",
+  "|.settings-editor.search-mode>.settings-body.settings-toc-container.monaco-list-row.settings-toc-count",
+  "|.settings-editor>.settings-body.settings-tree-container.setting-list-widget.setting-list-object-list-row.select-container",
+  "|.settings-editor>.settings-body.settings-tree-container.setting-list-widget.setting-list-object-list-row.select-container>select",
+  "|.monaco-workbench.notebookoverlay.view-zones.cell-editor-part",
+  "|.interactive-editor.input-cell-container",
+  "|.interactive-editor.input-cell-container.input-focus-indicator",
+  "|.interactive-editor.input-cell-container.input-focus-indicator:before"
+ ],
+ "sampleOnlyInShipped": []
+}
