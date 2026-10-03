@@ -1,5 +1,7 @@
 //! Hello: a heading, a paragraph with bold and italic words, and a link that counts how
 //! often it was clicked.
+//!
+//! [`launch`] opens it in a window: the Host lays the page out and compose-rust draws it.
 
 use dioxus_compose::html::prelude::*;
 use dioxus_hooks::use_signal;
@@ -73,4 +75,24 @@ pub fn app() -> Element {
             p { id: "status", class: "status", "{status}" }
         }
     }
+}
+
+/// What the window lays the page out with: the stylesheet, and text measured by Parley.
+pub fn config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![STYLE.to_string()],
+        ..HtmlConfig::default()
+    }
+}
+
+/// Opens the page in a window. Does not return while it is open.
+pub fn launch() {
+    dioxus_compose::LaunchBuilder::new()
+        .with_window(
+            dioxus_compose::schema::Window::new()
+                .with_title("Hello")
+                .with_size(800, 600),
+        )
+        .with_html(config)
+        .launch(app);
 }

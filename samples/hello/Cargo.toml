@@ -18,3 +18,10 @@ dioxus-hooks.workspace = true
 
 [dev-dependencies]
 sample-html-support = { path = "../support" }
+
+# The window. Not a benchmark: without this `cargo bench` runs the binary with
+# Criterion's flags, which its plain test harness rejects.
+[[bin]]
+name = "sample-html-hello"
+path = "src/main.rs"
+bench = false
