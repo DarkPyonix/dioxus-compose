@@ -88,7 +88,7 @@ library, so there is no JVM in what you ship.
 ### What it weighs
 
 The notepad sample (a widget-path app,
-[`samples/native-widgets/notepad`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/native-widgets/notepad)),
+compose-rust's [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/tree/develop/samples/notepad)),
 built for release and stripped. One executable: no runtime beside it and no virtual machine inside
 it.
 
@@ -301,7 +301,6 @@ dioxus-compose/
 │  ├─ examples/           #   desktop_demo, the widget-path demo
 │  └─ tests/              #   the crate's tests
 ├─ samples/               # eleven apps written with HTML and CSS, one crate each
-│  └─ native-widgets/     # apps written with Compose widget names
 ├─ experiments/           # probes worth keeping
 ├─ scripts/               # the quality gate and repository tooling
 └─ docs/
