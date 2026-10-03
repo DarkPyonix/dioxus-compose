@@ -45,3 +45,9 @@ taffy = { version = "0.9", default-features = false, features = [
 [dev-dependencies]
 # The rsx! expansion names dioxus_signals for event handlers and props.
 dioxus-signals.workspace = true
+# The same version the dioxus-compose benchmarks use, so the workspace builds one copy.
+criterion = "0.7"
+
+[[bench]]
+name = "html_frame"
+harness = false
