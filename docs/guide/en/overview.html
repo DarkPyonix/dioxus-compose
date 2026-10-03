@@ -76,8 +76,9 @@
     <div class="warn">
       <span class="label">Where it stands</span>
       <p>
-        The HTML path lays a screen out and produces a drawing plan today, and it does not draw on
-        screen yet. The bridge that hands that plan to the renderer is not built
+        The HTML path lays a screen out, produces a drawing plan and sends it to the renderer
+        through the bridge. What it sends is tested on the Host against the records the renderer
+        receives; drawing it on screen has not been confirmed by running the renderer yet
         (<span class="pill partial">partial</span>,
         <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). Every claim on
         these pages is checked by tests on the Host, and the <a href="status.html">status page</a>
@@ -94,7 +95,7 @@
       <table>
         <thead><tr><th scope="col">You write</th><th scope="col">Import</th><th scope="col">Today</th></tr></thead>
         <tbody>
-          <tr><td>HTML elements and CSS: <code>div</code>, <code>span</code>, <code>input</code>, a stylesheet</td><td><code>dioxus_compose::html::prelude::*</code></td><td><span class="pill partial">partial</span> laid out and planned in the Host, not drawn yet</td></tr>
+          <tr><td>HTML elements and CSS: <code>div</code>, <code>span</code>, <code>input</code>, a stylesheet</td><td><code>dioxus_compose::html::prelude::*</code></td><td><span class="pill partial">partial</span> laid out in the Host and sent to the renderer; not yet confirmed on screen</td></tr>
           <tr><td>Compose widget names: <code>Column</code>, <code>Text</code>, <code>Button</code></td><td><code>dioxus_compose::prelude::*</code></td><td><span class="pill works">implemented</span> drawn through the renderer today</td></tr>
         </tbody>
       </table>
@@ -167,14 +168,17 @@ h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
       <li><strong>Plan the drawing.</strong> <code>plan_from</code> turns the list into a tree of
         drawing elements (boxes placed inside their containers, scroll containers, text, fields,
         images), and <code>diff</code> says what changed between two plans, node by node.</li>
-      <li><strong>Draw.</strong> The renderer draws the plan with Compose.
-        <span class="pill planned">planned</span> This step is the missing bridge
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>Draw.</strong> <code>PlanBridge</code> writes the plan into compose-rust's batch,
+        the whole tree on the first frame and then only what <code>diff</code> reports, and the
+        renderer draws it with Compose.
+        <span class="pill partial">partial</span> The records are tested on the Host; drawing on
+        screen is not yet confirmed (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ol>
     <p>
       Events travel the other way. A click at a point reaches the Dioxus handler of the element
-      under it, and committed text from a field reaches its <code>oninput</code>. Today a test or an
-      embedder calls these on <code>HtmlDom</code> directly, as the renderer will once it draws.
+      under it, and committed text from a field reaches its <code>oninput</code>. The renderer's
+      events arrive through the bridge, and a test or an embedder can call the same methods on
+      <code>HtmlDom</code> directly.
     </p>
 
     <h2 id="rules">Rules the HTML path keeps</h2>

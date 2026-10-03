@@ -39,9 +39,10 @@ pub fn app() -> Element {
 ```
 
 [`samples/hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello) 를 줄인
-것입니다. **지금은 배치까지 되고, 렌더러 다리가 생기면 그려집니다**
-([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). HTML 경로는 Rust 에서 레이아웃과 그리기
-계획을 계산하지만, 아직 화면에 픽셀을 놓지는 않습니다.
+것입니다. **Rust 에서 배치하고, HTML 다리를 거쳐 렌더러로 보냅니다**
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). 렌더러가 받는 레코드는 Host 에서
+테스트합니다. 그것을 창에 그리는 것은 아직 렌더러를 돌려 확인하지 않았으므로, 다리는 아직 부분으로
+표시합니다.
 
 웹에서 쓰듯 Dioxus 앱을 씁니다. `div`, `span` 과 CSS 를 담은 `rsx!`, 훅과 시그널입니다. `blitz-dom` 이
 Host 안에서 스타일과 레이아웃을 계산하고, 상자와 글자를 그리는 것은
@@ -123,8 +124,10 @@ compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/t
 | 구현 | VS Code 가 잰 텍스트 크기로, 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(2026-10-03 macOS 에서 측정) |
 | 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열한 개, 각각 Host 에서 테스트 |
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
-| 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면을 화면에 그리기: 다리가 계획을 compose-rust 의 배치(batch)에 씀(`AbsoluteBox`, `Box`, `Text`, `Image`, 입력 컨트롤). 처음에는 트리 전체, 그 뒤로는 바뀐 것만 보내고, 렌더러의 이벤트는 Dioxus 핸들러에 닿음. 렌더러가 받는 레코드로 Host 에서 테스트했고, 화면에서는 아직 확인하지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면에서 DOM 이벤트로서의 키와 포커스: compose-rust 가 실어 나르는 유일한 키인 Enter 의 `keydown` 과 `keypress`, 입력 칸의 `focus`, `blur`, `focusin`, `focusout`. Host 에서 테스트함. compose-rust 는 입력 칸이 포커스를 잃는 것은 알리지만 얻는 것은 알리지 않아서 `focus` 는 첫 입력과 함께 오고, 키를 뗀 것은 실어 나르지 않아서 `keyup` 은 보내지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면의 `prefers-color-scheme` 은 앱이 실행 중에 테마를 밝게나 어둡게 바꾸면 따라감. 시스템의 변화는 렌더러가 적용하고 Host 에 알리지 않아서, 시스템을 따르는 테마에서는 설정한 색 구성표를 유지함([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 계획 | `translate` 밖의 CSS 변환, CSS transition 과 animation([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |
@@ -138,7 +141,7 @@ compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/t
 
 | 쓰는 것 | import | 지금 |
 |---|---|---|
-| HTML 요소와 CSS: `div`, `span`, `input`, 스타일시트 | `dioxus_compose::html::prelude::*` | Host 에서 배치하고 계획까지, 아직 그리지 않음 |
+| HTML 요소와 CSS: `div`, `span`, `input`, 스타일시트 | `dioxus_compose::html::prelude::*` | Host 에서 배치하고 렌더러로 보냄, 화면에서는 아직 확인하지 않음 |
 | Compose 위젯 이름: `Column`, `Text`, `Button` | `dioxus_compose::prelude::*` | 렌더러가 그림 |
 
 둘 다 늘 크레이트에 있고, 어느 쪽도 기능 플래그로 끄지 않습니다. 두 prelude 가 각자 자기 요소 이름을
@@ -218,8 +221,22 @@ fn main() {
 }
 ```
 
-`cargo run` 은 상자를 출력합니다. 렌더러 다리가 생기기 전까지는 HTML 화면을 그리는 것이 없으므로 아직
-창은 열리지 않습니다. 위젯 경로 앱은 대신 `dioxus_compose::launch(app)` 을 불러 창을 엽니다. 렌더러는
+`cargo run` 은 상자를 출력합니다. 대신 창에 페이지를 열려면 위젯 앱과 같은 방식으로 실행합니다.
+
+```rust
+fn config() -> HtmlConfig {
+    HtmlConfig { stylesheets: vec![STYLE.to_string()], ..HtmlConfig::default() }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new().with_html(config).launch(app);
+}
+```
+
+`dioxus_compose::html::launch(app)` 은 기본 설정으로 같은 일을 합니다. `cargo run -p sample-html-hello`
+가 이 방식으로 `samples/hello` 를 엽니다. 다리의 레코드는 Host 에서 테스트하고, 창 자체는 아직 렌더러를
+돌려 확인하지 않았습니다([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). 위젯 경로 앱은
+`dioxus_compose::launch(app)` 을 부릅니다. 렌더러는
 [compose-rust](https://github.com/DarkPyonix/compose-rust) 의 빌드 스크립트가 대상 플랫폼용으로 내려받는
 미리 빌드된 네이티브 라이브러리이고, 직접 빌드하는 방법은 그쪽에 있습니다.
 
@@ -243,7 +260,7 @@ your component (rsx! with div, span, CSS)
   -> blitz-dom document                Stylo resolves CSS, Taffy lays out
   -> DisplayList                       boxes, colours, text runs, fields, images
   -> Plan, and its diff                drawing elements; only what changed is sent
-  -> Compose renderer (compose-rust)   draws (the bridge is not built yet)
+  -> Compose renderer (compose-rust)   draws (bridge built; on screen not yet confirmed)
 ```
 
 **렌더러는 CSS 를 보지 않습니다.** 사각형, 색, 텍스트 조각을 받습니다. 그래서 렌더러는 작고 모든 앱에

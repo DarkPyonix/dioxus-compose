@@ -324,7 +324,7 @@ dependencies = [
 [[package]]
 name = "compose-rust"
 version = "0.0.1"
-source = "git+https://github.com/DarkPyonix/compose-rust?rev=22822c130a8211de7f65e0320db5e6a4db1a8bb1#22822c130a8211de7f65e0320db5e6a4db1a8bb1"
+source = "git+https://github.com/DarkPyonix/compose-rust?rev=f7e7ce7bd1f40fefa59b931bd6ebf5423862acc8#f7e7ce7bd1f40fefa59b931bd6ebf5423862acc8"
 dependencies = [
  "jni",
 ]

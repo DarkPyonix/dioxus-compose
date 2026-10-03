@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### HTML and CSS screens reach the renderer
+
+An HTML app is launched the way a widget app is: `dioxus_compose::html::launch(app)`, or
+`LaunchBuilder::new().with_html(config).launch(app)` to pass a configuration.
+`cargo run -p sample-html-hello` opens the hello sample in a window.
+
+The bridge writes the drawing plan into compose-rust's batch. The first frame sends the
+whole tree; after that only what the plan diff reports is sent, and a frame where nothing
+changed sends nothing. Every kind of drawing element has a compose-rust widget to become.
+Clicks, typed text, focus leaving a field, Enter in a field, checkbox and radio toggles and
+select choices come back to the Dioxus handlers.
+
+The records the renderer receives are tested on the Host. Drawing them on screen has not
+been confirmed by running the renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
+Text is still measured by Parley, and `font-family` does not reach the screen yet.
+`font-style: italic` and `oblique`, and `text-decoration-line: underline` and `line-through`
+alone or together, are sent as one span over the whole run of text, because compose-rust's
+text style has no slant or lines of its own and its spans do. A box's lines are drawn across
+the text inside it, as a browser draws them, so a link is underlined by the default
+stylesheet. Plain text sends no span.
+
+Keys and focus reach HTML elements as DOM events. Enter pressed in a field, or in a box
+whose element listens for keys, delivers `keydown` and then `keypress`, bubbling from the
+focused element; a handler that prevents the default keeps the field from submitting or
+starting a line. A field delivers `focus` and `focusin` before the first thing the user does
+in it, and `change`, `blur` and `focusout` when it loses the focus. Enter is the one key
+compose-rust carries, it has no key release, and it reports a field losing the focus but not
+gaining it, so `keyup` is never sent and `focus` arrives with the first keystroke.
+
+`prefers-color-scheme` follows the theme: an application that switches its theme to light or
+dark while running has its HTML screen restyled in the same frame, and only the boxes whose
+style changed are sent. A theme that follows the system keeps the configured scheme, because
+the renderer applies a system change without telling the Host.
+
+The hello sample builds for Android, iOS and the web as well as the desktop, with the entry
+points the native-widget samples have. `AbsoluteBox` and the `offset`, `required_size`,
+`border_each`, `corner_each`, `shadow`, `clip` and `alpha` attributes can be written in a
+widget `rsx!` app, as compose-rust's adapter writes them.
+
 ### The renderer is built for the platform where Compose publishes one
 
 macOS no longer carries a Java runtime. Where Compose publishes a target of its own, the

@@ -186,6 +186,17 @@ pub enum TextAlign {
     Justify,
 }
 
+/// The lines `text-decoration-line` draws through or under a run of text.
+///
+/// The property is not inherited, but a box's decoration is drawn across the text of its
+/// in-flow descendants, so a run carries every line set on its element or on a box it sits
+/// in. `overline` is not here: nothing draws it yet.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TextDecoration {
+    pub underline: bool,
+    pub line_through: bool,
+}
+
 /// A run of text and where it goes.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextRun {
@@ -200,6 +211,8 @@ pub struct TextRun {
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
+    /// The lines drawn through or under the text.
+    pub decoration: TextDecoration,
     pub align: TextAlign,
     /// The width the lines were broken at. `None` means the text is one line that was not
     /// constrained; the renderer draws it without wrapping.
@@ -546,6 +559,7 @@ pub(crate) struct MeasuredText {
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
+    pub decoration: TextDecoration,
     pub align: TextAlign,
     pub metrics: TextMetrics,
     pub wrap_width: Option<f32>,

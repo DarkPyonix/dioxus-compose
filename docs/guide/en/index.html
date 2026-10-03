@@ -116,8 +116,10 @@
       <p>blitz-dom resolves your stylesheet and lays the page out inside the Rust process, the same
         engines Dioxus's own native renderer uses. Compose receives rectangles, colours and runs of
         text, never CSS, and draws them with its own text stack and input method.</p>
-      <p>Today the HTML path lays screens out and plans the drawing, and the bridge that draws them
-        is being built (<a href="status.html">status</a>). The widget path draws now.</p>
+      <p>Today the HTML path lays screens out, plans the drawing and sends it to the renderer
+        through the bridge. The records it sends are tested on the Host; drawing them on screen has
+        not been confirmed by running the renderer yet (<a href="status.html">status</a>). The
+        widget path draws now.</p>
     </div>
   </div>
 
@@ -136,7 +138,7 @@
       <thead><tr><th>Part</th><th>State</th></tr></thead>
       <tbody>
         <tr><td>HTML and CSS: layout, events, forms, images, scrolling</td><td><span class="pill works">implemented</span> in the Host, tested by the examples</td></tr>
-        <tr><td>HTML and CSS: drawing on screen</td><td><span class="pill partial">partial</span> the renderer bridge is being built (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+        <tr><td>HTML and CSS: drawing on screen</td><td><span class="pill partial">partial</span> the renderer bridge is built and tested on the Host; not yet confirmed on screen (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
         <tr><td>Text measured by Compose</td><td><span class="pill partial">partial</span> (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
         <tr><td>CSS transforms beyond translate, transitions and animations</td><td><span class="pill planned">planned</span> (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>, <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
         <tr><td>HTML and widgets on one screen</td><td><span class="pill planned">planned</span></td></tr>

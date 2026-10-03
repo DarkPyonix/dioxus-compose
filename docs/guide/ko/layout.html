@@ -60,7 +60,7 @@
         <li><a href="#tables">표</a></li>
         <li><a href="#positioning">위치 지정과 쌓임</a></li>
         <li><a href="#decorations">배경, 테두리, 효과</a></li>
-        <li><a href="#plan">렌더러가 받게 될 것</a></li>
+        <li><a href="#plan">렌더러가 받는 것</a></li>
         <li><a href="#planned">아직 없는 것</a></li>
       </ul>
     </nav>
@@ -221,7 +221,7 @@
 .card.stale { <span class="at">opacity</span>: <span class="n">0.6</span>; }</code></pre>
 </figure>
 
-    <h2 id="plan">렌더러가 받게 될 것</h2>
+    <h2 id="plan">렌더러가 받는 것</h2>
     <p>
       렌더러는 CSS 를 받지 않습니다. <code>plan_from</code> 이 그리기 목록을 그리기 원소로 바꾸고,
       그 과정의 선택들이 트리를 작게 유지합니다.
@@ -237,6 +237,15 @@
       <li>갱신 뒤에 <code>diff</code> 는 바뀐 것만 알려 줍니다. 상자 하나의 배경을 바꾸면 계획에서
         바뀌는 것은 하나이고, 테스트가 바로 그것을 확인합니다.</li>
     </ul>
+    <p>
+      다리는 이 트리를 compose-rust 의 배치(batch)에 씁니다. 첫 프레임에는 전부, 그 뒤로는
+      <code>diff</code> 가 알려 준 것만 쓰고, 바뀐 것이 없는 프레임에는 아무것도 쓰지 않습니다. 그 과정에서
+      모서리는 하나씩(<code>CornerEach</code>) 물리적 순서인 왼쪽 위, 오른쪽 위, 오른쪽 아래, 왼쪽 아래로
+      보내고, <code>box-shadow</code> 목록은 마지막 것부터 보내 CSS 의 첫 그림자가 맨 위에 오게 하며,
+      <code>visible</code> 이 아닌 <code>overflow</code> 는 모두 클립으로 보냅니다. 렌더러가 받는 레코드로
+      Host 에서 테스트했고, 화면에 그려지는 것은 아직 확인하지 않았습니다(<span class="pill partial">부분</span>,
+      <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+    </p>
 
     <h2 id="planned">아직 없는 것</h2>
     <div class="tablewrap">

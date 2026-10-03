@@ -60,7 +60,7 @@
         <li><a href="#tables">Tables</a></li>
         <li><a href="#positioning">Positioning and stacking</a></li>
         <li><a href="#decorations">Backgrounds, borders and effects</a></li>
-        <li><a href="#plan">What the renderer will receive</a></li>
+        <li><a href="#plan">What the renderer receives</a></li>
         <li><a href="#planned">Not yet</a></li>
       </ul>
     </nav>
@@ -223,7 +223,7 @@
 .card.stale { <span class="at">opacity</span>: <span class="n">0.6</span>; }</code></pre>
 </figure>
 
-    <h2 id="plan">What the renderer will receive</h2>
+    <h2 id="plan">What the renderer receives</h2>
     <p>
       The renderer does not get CSS. <code>plan_from</code> turns the display list into drawing
       elements, and the choices it makes keep that tree small:
@@ -240,6 +240,16 @@
       <li>After an update, <code>diff</code> reports only what changed. Changing one box's
         background is one change in the plan, and a test checks exactly that.</li>
     </ul>
+    <p>
+      The bridge writes that tree into compose-rust's batch: all of it on the first frame, then only
+      what <code>diff</code> reported, and nothing for a frame where nothing changed. On the way,
+      corners are sent one by one (<code>CornerEach</code>) in physical order, top left, top right,
+      bottom right, bottom left; a <code>box-shadow</code> list is sent last to first, so the first
+      shadow in CSS ends up on top; and any <code>overflow</code> other than <code>visible</code> is
+      sent as a clip. This is tested on the Host against the records the renderer receives, and
+      drawing on screen is not yet confirmed (<span class="pill partial">partial</span>,
+      <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+    </p>
 
     <h2 id="planned">Not yet</h2>
     <div class="tablewrap">

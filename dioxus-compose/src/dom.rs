@@ -22,12 +22,16 @@ use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
-use dioxus_html::{HasMouseData, HtmlEventConverter, Modifiers, MouseData, PlatformEventData};
+use dioxus_html::{
+    Code, FocusData, HasFocusData, HasKeyboardData, HasMouseData, HtmlEventConverter, Key,
+    KeyboardData, Location, Modifiers, MouseData, PlatformEventData,
+};
 
 use crate::html::NodeId;
 use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
 use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
 use crate::layout::{local, resolve_styles, run_layout};
+use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{DisplayList, DisplayListDiff};
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
@@ -265,6 +269,35 @@ impl HtmlDom {
         self.activate(hit, Some((x, y)))
     }
 
+    /// Delivers a primary-button click on `node` itself, at the centre of its box, and does
+    /// what the click activates, as [`HtmlDom::click`] does for a point. What a renderer
+    /// calls when the user clicked a box it drew for `node`: the renderer has already
+    /// decided which box was under the pointer, so nothing is hit-tested again.
+    pub fn click_node(&mut self, node: NodeId) -> Option<NodeId> {
+        self.activate(node, None)
+    }
+
+    /// Whether a click on `node` does anything of its own: it has a click handler, or it
+    /// is a `<label>`, a `<button>` or a submit `<input>`, which a click activates. A
+    /// renderer makes the boxes of these nodes clickable. Checkboxes, radio buttons, text
+    /// fields and selects are drawn as controls with events of their own.
+    pub fn is_click_target(&self, node: NodeId) -> bool {
+        if self.state.listeners(node).contains(&"click") {
+            return true;
+        }
+        let Some(element) = self.doc.get_node(node) else {
+            return false;
+        };
+        match form::tag(element) {
+            Some("label" | "button") => true,
+            Some("input") => matches!(
+                form::activation_target(&self.doc, node),
+                Some(form::Activation::Submit { .. })
+            ),
+            _ => false,
+        }
+    }
+
     /// What a renderer calls when the user commits text to the field `node` (an
     /// `<input>` or `<textarea>`): delivers an `input` event carrying `value` to the
     /// nearest handler at or around the field. Returns the node whose handler received it.
@@ -340,6 +373,63 @@ impl HtmlDom {
         }
     }
 
+    /// What a renderer calls when the user presses a key while `node` has the focus:
+    /// delivers `keydown` to the nearest handler at or around `node`, bubbling the way
+    /// Dioxus bubbles, and then, when the key produces a character (Enter does) and no
+    /// handler prevented the default, `keypress` the same way. Returns whether a handler
+    /// prevented the default, which for Enter in a field means the field neither submits
+    /// its form nor starts a new line.
+    ///
+    /// A key an input method is still composing with is never delivered: it belongs to the
+    /// composition, and the renderer keeps it.
+    pub fn key_down(&mut self, node: NodeId, key: Key, code: Code, modifiers: Modifiers) -> bool {
+        let data = KeyEventData {
+            key,
+            code,
+            modifiers,
+        };
+        let produces_character = matches!(data.key, Key::Enter | Key::Character(_));
+        if self.send_key(node, "keydown", &data) {
+            return true;
+        }
+        produces_character && self.send_key(node, "keypress", &data)
+    }
+
+    /// What a renderer calls when the user lets go of a key while `node` has the focus:
+    /// delivers `keyup` to the nearest handler at or around `node`. Returns whether a
+    /// handler prevented the default.
+    pub fn key_up(&mut self, node: NodeId, key: Key, code: Code, modifiers: Modifiers) -> bool {
+        let data = KeyEventData {
+            key,
+            code,
+            modifiers,
+        };
+        self.send_key(node, "keyup", &data)
+    }
+
+    /// What a renderer calls when `node` gains the focus: `focus` to the node's own
+    /// handler, which does not bubble, then `focusin` to the nearest handler at or around
+    /// it, which does, in the order a browser sends them.
+    pub fn focus(&mut self, node: NodeId) {
+        self.send_focus(node, "focus", "focusin");
+    }
+
+    /// What a renderer calls when `node` loses the focus: `blur` to the node's own handler,
+    /// then `focusout` bubbling from it. A field whose text changed gets its `change`
+    /// before this, from [`HtmlDom::change`].
+    pub fn blur(&mut self, node: NodeId) {
+        self.send_focus(node, "blur", "focusout");
+    }
+
+    /// Whether a key pressed in or under `node` is for the page: `node` has a `keydown` or
+    /// `keypress` handler. A renderer routes the keys of these nodes' boxes back here.
+    pub fn takes_keys(&self, node: NodeId) -> bool {
+        self.state
+            .listeners(node)
+            .iter()
+            .any(|name| matches!(*name, "keydown" | "keypress"))
+    }
+
     /// Clicks `hit`, at `point` or else at the centre of its box, and does what the click
     /// activates. See [`HtmlDom::click`].
     fn activate(&mut self, hit: NodeId, point: Option<(f32, f32)>) -> Option<NodeId> {
@@ -403,7 +493,7 @@ impl HtmlDom {
             client: (x as f64, y as f64),
             element: ((x - origin.0) as f64, (y - origin.1) as f64),
         };
-        Some((target, self.send(element, "click", Box::new(data))))
+        Some((target, self.send(element, "click", Box::new(data), true)))
     }
 
     /// Delivers `name` (`input` or `change`) to the nearest handler at or around the
@@ -416,7 +506,7 @@ impl HtmlDom {
             .map(|owner| form::form_values(&self.doc, committed, owner, None))
             .unwrap_or_default();
         let data = form::FormEventData { value, values };
-        self.send(element, name, Box::new(data));
+        self.send(element, name, Box::new(data), true);
         Some(target)
     }
 
@@ -430,14 +520,36 @@ impl HtmlDom {
             value: String::new(),
             values,
         };
-        self.send(element, "submit", Box::new(data));
+        self.send(element, "submit", Box::new(data), true);
         Some(target)
     }
 
-    /// Runs the handlers for `name` from `element` up, the way Dioxus bubbles. Returns
-    /// whether one of them prevented the default.
-    fn send(&mut self, element: ElementId, name: &str, data: Box<dyn Any>) -> bool {
-        let event = Event::new(Rc::new(PlatformEventData::new(data)), true);
+    /// Delivers the key event `name` to the nearest handler at or around `node`. Returns
+    /// whether a handler prevented the default.
+    fn send_key(&mut self, node: NodeId, name: &'static str, data: &KeyEventData) -> bool {
+        let Some((_, element)) = self.listener_target(node, name) else {
+            return false;
+        };
+        self.send(element, name, Box::new(data.clone()), true)
+    }
+
+    /// Delivers `own` to the handler of `node` itself, then `bubbling` to the nearest
+    /// handler at or around it.
+    fn send_focus(&mut self, node: NodeId, own: &'static str, bubbling: &'static str) {
+        if self.state.listeners(node).contains(&own)
+            && let Some(element) = self.state.element_of(node)
+        {
+            self.send(element, own, Box::new(FocusEventData), false);
+        }
+        if let Some((_, element)) = self.listener_target(node, bubbling) {
+            self.send(element, bubbling, Box::new(FocusEventData), true);
+        }
+    }
+
+    /// Runs the handlers for `name` at `element`, and from there up when `bubbles`, the way
+    /// Dioxus bubbles. Returns whether one of them prevented the default.
+    fn send(&mut self, element: ElementId, name: &str, data: Box<dyn Any>, bubbles: bool) -> bool {
+        let event = Event::new(Rc::new(PlatformEventData::new(data)), bubbles);
         let probe = event.clone();
         self.vdom
             .runtime()
@@ -462,6 +574,17 @@ impl HtmlDom {
         &mut self.vdom
     }
 
+    /// The scheme `prefers-color-scheme` media queries are answered with.
+    pub fn color_scheme(&self) -> ColorScheme {
+        self.color_scheme
+    }
+
+    /// Answers `prefers-color-scheme` media queries with `scheme` from the next layout on.
+    /// The styles that depend on it are resolved again then; nothing else is.
+    pub fn set_color_scheme(&mut self, scheme: ColorScheme) {
+        self.color_scheme = scheme;
+    }
+
     /// Replaces the text measurer; the next layout uses it.
     pub fn set_measurer(&mut self, measurer: Box<dyn TextMeasurer>) {
         self.measurer = measurer;
@@ -484,6 +607,30 @@ impl HtmlDom {
                 self.color_scheme,
             ));
         }
+    }
+}
+
+impl ClickTargets for HtmlDom {
+    fn takes_clicks(&self, node: NodeId) -> bool {
+        self.is_click_target(node)
+    }
+
+    fn takes_keys(&self, node: NodeId) -> bool {
+        HtmlDom::takes_keys(self, node)
+    }
+
+    fn run_target(&self, owner: NodeId, container: NodeId) -> Option<NodeId> {
+        let mut current = Some(owner);
+        while let Some(id) = current {
+            if id == container {
+                return None;
+            }
+            if self.is_click_target(id) {
+                return Some(id);
+            }
+            current = self.doc.get_node(id).and_then(|node| node.parent);
+        }
+        None
     }
 }
 
@@ -578,6 +725,57 @@ impl HasMouseData for PointerData {
     }
 }
 
+/// The key data a key event carries to its handler. Never part of a composition: a key an
+/// input method is composing with stays in the renderer.
+#[derive(Clone)]
+struct KeyEventData {
+    key: Key,
+    code: Code,
+    modifiers: Modifiers,
+}
+
+impl ModifiersInteraction for KeyEventData {
+    fn modifiers(&self) -> Modifiers {
+        self.modifiers
+    }
+}
+
+impl HasKeyboardData for KeyEventData {
+    fn key(&self) -> Key {
+        self.key.clone()
+    }
+
+    fn code(&self) -> Code {
+        self.code
+    }
+
+    fn location(&self) -> Location {
+        Location::Standard
+    }
+
+    fn is_auto_repeating(&self) -> bool {
+        false
+    }
+
+    fn is_composing(&self) -> bool {
+        false
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// What a focus event carries: nothing beyond which element it is for.
+#[derive(Clone)]
+struct FocusEventData;
+
+impl HasFocusData for FocusEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Dioxus listeners receive a [`PlatformEventData`] and turn it into the event type the
 /// handler takes through one process-wide converter. Registered on the first [`HtmlDom`];
 /// registering it again would replace it with an identical one, so it is done once.
@@ -586,9 +784,9 @@ fn register_event_converter() {
     REGISTER.call_once(|| dioxus_html::set_event_converter(Box::new(Converter)));
 }
 
-/// Turns the events this document sends into Dioxus event data: clicks, and the `input`,
-/// `change` and `submit` events of form controls. Every other conversion is unreachable
-/// from here.
+/// Turns the events this document sends into Dioxus event data: clicks, keys, focus, and
+/// the `input`, `change` and `submit` events of form controls. Every other conversion is
+/// unreachable from here.
 struct Converter;
 
 fn not_sent(kind: &str) -> ! {
@@ -621,8 +819,12 @@ impl HtmlEventConverter for Converter {
     fn convert_drag_data(&self, _: &PlatformEventData) -> dioxus_html::DragData {
         not_sent("drag")
     }
-    fn convert_focus_data(&self, _: &PlatformEventData) -> dioxus_html::FocusData {
-        not_sent("focus")
+    fn convert_focus_data(&self, event: &PlatformEventData) -> FocusData {
+        let data = event
+            .downcast::<FocusEventData>()
+            .expect("every focus event this document sends carries FocusEventData")
+            .clone();
+        FocusData::new(data)
     }
     fn convert_form_data(&self, event: &PlatformEventData) -> dioxus_html::FormData {
         let data = event
@@ -634,8 +836,12 @@ impl HtmlEventConverter for Converter {
     fn convert_image_data(&self, _: &PlatformEventData) -> dioxus_html::ImageData {
         not_sent("image")
     }
-    fn convert_keyboard_data(&self, _: &PlatformEventData) -> dioxus_html::KeyboardData {
-        not_sent("keyboard")
+    fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
+        let data = event
+            .downcast::<KeyEventData>()
+            .expect("every key event this document sends carries KeyEventData")
+            .clone();
+        KeyboardData::new(data)
     }
     fn convert_media_data(&self, _: &PlatformEventData) -> dioxus_html::MediaData {
         not_sent("media")

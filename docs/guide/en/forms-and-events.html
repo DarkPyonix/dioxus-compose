@@ -201,9 +201,10 @@ input {
 
     <h2 id="driving">What the renderer calls</h2>
     <p>
-      Each user action has one call on <code>HtmlDom</code>. The renderer will make them once it
-      draws HTML screens. Today tests and embedders make them, and the examples' tests go through
-      exactly these calls.
+      Each user action has one call on <code>HtmlDom</code>. The renderer's events reach them
+      through the bridge; a click there arrives as <code>click_node</code> on the node that was
+      clicked rather than as a point. Tests and embedders make the same calls, and the examples'
+      tests go through exactly these.
     </p>
     <div class="tablewrap">
       <table>
@@ -281,13 +282,24 @@ input {
     <ul>
       <li><strong>Fields on screen.</strong> <span class="pill partial">partial</span> In the plan an
         <code>input</code> or <code>textarea</code> becomes Compose's own text field and a
-        <code>select</code> a dropdown, so composition is Compose's. Nothing draws them until the
-        renderer bridge lands (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>),
-        and the Korean input checklist is run by hand on the native build once it does.</li>
-      <li><strong>Keyboard events and focus on HTML screens.</strong>
-        <span class="pill planned">planned</span> Key presses and focus moves come from the renderer,
-        so they arrive with the same bridge
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+        <code>select</code> a dropdown, so composition is Compose's. The bridge sends them to the
+        renderer as <code>TextField</code>, <code>Checkbox</code>, <code>RadioButton</code> and
+        <code>Dropdown</code>, and typed text, focus leaving a field, Enter in a single-line field,
+        toggles and choices come back to your handlers. That is tested on the Host and not yet
+        confirmed on screen (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>),
+        and the Korean input checklist is run by hand on the native build once it is.</li>
+      <li><strong>Keys and focus on HTML screens.</strong>
+        <span class="pill partial">partial</span> Enter pressed in a field, or in a box whose
+        element has <code>onkeydown</code> or <code>onkeypress</code>, delivers <code>keydown</code>
+        and then <code>keypress</code>, bubbling from the focused element, with Shift, Control, Alt
+        and Meta. A handler that calls <code>prevent_default()</code> keeps the field from
+        submitting its form or starting a new line. A field delivers <code>focus</code> and
+        <code>focusin</code> before the first thing the user does in it, and <code>change</code>,
+        <code>blur</code> and <code>focusout</code> when it loses the focus. Enter is the one key
+        compose-rust carries and it has no key release, so other keys and <code>onkeyup</code> do
+        not arrive; it reports a field losing the focus but not gaining it, so a field focused and
+        left without a keystroke gets <code>blur</code> without <code>focus</code>. Tested on the
+        Host (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ul>
 
     <nav class="pagenav" aria-label="Pagination">

@@ -4,18 +4,21 @@
 //! (`--name: value`) have been substituted into the properties that use them by then, so
 //! none of them reaches the display list.
 
+use blitz_dom::BaseDocument;
 use style::color::{AbsoluteColor, ColorSpace};
 use style::computed_values::text_wrap_mode::T as TextWrapMode;
 use style::computed_values::white_space_collapse::T as StyloWhiteSpaceCollapse;
 use style::properties::ComputedValues;
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::font::{
     FontStyle as StyloFontStyle, GenericFontFamily, LineHeight, SingleFontFamily,
 };
-use style::values::computed::{Length, Margin, TextTransform};
+use style::values::computed::{Float, Length, Margin, TextDecorationLine, TextTransform};
 use style::values::specified::TextAlignKeyword;
+use style::values::specified::box_::{DisplayInside, DisplayOutside};
 
 use crate::layout::measure::{TextLineHeight, TextStyle, TextWhiteSpace, WhiteSpaceCollapse};
-use crate::paint::display_list::{Rgba, TextAlign};
+use crate::paint::display_list::{Rgba, TextAlign, TextDecoration};
 
 /// An absolute stylo colour as 8-bit sRGB.
 pub(crate) fn rgba(color: &AbsoluteColor) -> Rgba {
@@ -53,6 +56,37 @@ fn generic_family_name(generic: GenericFontFamily) -> &'static str {
         GenericFontFamily::Fantasy => "fantasy",
         GenericFontFamily::SystemUi => "system-ui",
     }
+}
+
+/// The lines drawn across the text of `owner`: its own `text-decoration-line` and that of
+/// every box it sits in. The walk stops after a box whose decoration does not reach out of
+/// it to the text around it, and whose ancestors' decoration does not reach in: one taken
+/// out of flow (positioned absolutely or floated) or an atomic inline (`inline-block`,
+/// `inline-flex` and the like).
+pub(crate) fn text_decoration(doc: &BaseDocument, owner: usize) -> TextDecoration {
+    let mut decoration = TextDecoration::default();
+    let mut current = Some(owner);
+    while let Some(id) = current {
+        let Some(node) = doc.get_node(id) else {
+            break;
+        };
+        if let Some(style) = node.primary_styles() {
+            let line = style.clone_text_decoration_line();
+            decoration.underline |= line.contains(TextDecorationLine::UNDERLINE);
+            decoration.line_through |= line.contains(TextDecorationLine::LINE_THROUGH);
+            let display = style.clone_display();
+            let atomic_inline = display.outside() == DisplayOutside::Inline
+                && display.inside() != DisplayInside::Flow
+                && display.inside() != DisplayInside::Contents;
+            let out_of_flow = matches!(style.clone_position(), Position::Absolute | Position::Fixed)
+                || style.clone_float() != Float::None;
+            if atomic_inline || out_of_flow {
+                break;
+            }
+        }
+        current = node.parent;
+    }
+    decoration
 }
 
 pub(crate) fn font_size(style: &ComputedValues) -> f32 {

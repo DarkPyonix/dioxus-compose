@@ -196,8 +196,9 @@ input {
 
     <h2 id="driving">렌더러가 부르는 것</h2>
     <p>
-      사용자 동작마다 <code>HtmlDom</code> 의 호출이 하나씩 있습니다. 렌더러가 HTML 화면을 그리게 되면
-      렌더러가 부릅니다. 지금은 테스트와 임베더가 부르고, 예제의 테스트도 바로 이 호출을 거칩니다.
+      사용자 동작마다 <code>HtmlDom</code> 의 호출이 하나씩 있습니다. 렌더러의 이벤트는 다리를 거쳐 이
+      호출에 닿고, 렌더러의 클릭은 점이 아니라 눌린 노드에 대한 <code>click_node</code> 로 옵니다.
+      테스트와 임베더도 같은 호출을 부르고, 예제의 테스트도 바로 이 호출을 거칩니다.
     </p>
     <div class="tablewrap">
       <table>
@@ -274,12 +275,23 @@ input {
     <ul>
       <li><strong>화면 위의 입력란.</strong> <span class="pill partial">부분</span> 계획에서
         <code>input</code> 과 <code>textarea</code> 는 Compose 자체의 텍스트 입력란이 되고
-        <code>select</code> 는 드롭다운이 되므로, 조합은 Compose 가 맡습니다. 렌더러 다리가 생기기 전까지는
-        그리는 것이 없고(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), 다리가
-        생기면 한글 입력 체크리스트를 네이티브 빌드에서 손으로 확인합니다.</li>
-      <li><strong>HTML 화면의 키보드 이벤트와 포커스.</strong> <span class="pill planned">계획</span> 키
-        입력과 포커스 이동은 렌더러에서 오므로 같은 다리와 함께 들어옵니다
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+        <code>select</code> 는 드롭다운이 되므로, 조합은 Compose 가 맡습니다. 다리는 이것들을
+        <code>TextField</code>, <code>Checkbox</code>, <code>RadioButton</code>, <code>Dropdown</code> 으로
+        렌더러에 보내고, 타이핑한 글자, 입력란을 떠나는 포커스, 한 줄 입력란의 Enter, 토글과 선택은 핸들러로
+        돌아옵니다. Host 에서 테스트했고 화면에서는 아직 확인하지 않았으며
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), 확인하게 되면 한글 입력
+        체크리스트를 네이티브 빌드에서 손으로 확인합니다.</li>
+      <li><strong>HTML 화면의 키와 포커스.</strong> <span class="pill partial">부분</span>
+        입력 칸에서, 또는 <code>onkeydown</code> 이나 <code>onkeypress</code> 가 있는 요소의 상자 안에서
+        누른 Enter 는 포커스가 있는 요소에서부터 버블링하며 <code>keydown</code> 을, 이어서
+        <code>keypress</code> 를 Shift, Control, Alt, Meta 와 함께 보냅니다.
+        <code>prevent_default()</code> 를 부른 핸들러는 입력 칸이 폼을 제출하거나 줄을 바꾸지 않게
+        합니다. 입력 칸은 사용자가 그 안에서 처음 무언가를 하기 직전에 <code>focus</code> 와
+        <code>focusin</code> 을, 포커스를 잃을 때 <code>change</code>, <code>blur</code>,
+        <code>focusout</code> 을 보냅니다. compose-rust 가 실어 나르는 키는 Enter 하나이고 키를 뗀 것은
+        싣지 않으므로 다른 키와 <code>onkeyup</code> 은 오지 않습니다. 입력 칸이 포커스를 잃는 것은
+        알리지만 얻는 것은 알리지 않으므로, 아무것도 입력하지 않고 지나간 입력 칸은 <code>focus</code>
+        없이 <code>blur</code> 를 받습니다. Host 에서 테스트했습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ul>
 
     <nav class="pagenav" aria-label="페이지 이동">

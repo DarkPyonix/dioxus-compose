@@ -5,6 +5,7 @@
 //! event names. Here that is a `VirtualDom` diffing into a [`ComposeRenderer`], which is the
 //! whole of what this crate adds to the Host.
 
+use crate::html::HtmlConfig;
 use crate::renderer::ComposeRenderer;
 use compose_rust::protocol::{HostEvent, ProtocolError};
 use compose_rust::schema::{EventPayload, LoopMode, Theme, Window};
@@ -135,6 +136,14 @@ impl Host {
         Self(compose_rust::Host::new(runtime_for(app)))
     }
 
+    /// A Host for an application written with HTML elements and CSS. `config` is called
+    /// for each runtime the Host makes; see [`crate::html::runtime_for`].
+    pub fn html(app: fn() -> Element, config: fn() -> HtmlConfig) -> Self {
+        Self(compose_rust::Host::new(crate::html::runtime_for(
+            app, config,
+        )))
+    }
+
     /// The theme the application chose. Choosing nothing follows the host platform, with
     /// Material 3 where the platform has no look of its own.
     pub fn with_theme(app: fn() -> Element, theme: Theme) -> Self {
@@ -161,8 +170,14 @@ impl std::ops::DerefMut for Host {
 }
 
 /// How a Dioxus application starts: compose-rust's launch, given a root component.
+///
+/// The component is written with the Compose widgets unless [`LaunchBuilder::with_html`]
+/// says it is written with HTML elements and CSS.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct LaunchBuilder(compose_rust::LaunchBuilder);
+pub struct LaunchBuilder {
+    core: compose_rust::LaunchBuilder,
+    html: Option<fn() -> HtmlConfig>,
+}
 
 impl LaunchBuilder {
     pub fn new() -> Self {
@@ -170,37 +185,64 @@ impl LaunchBuilder {
     }
 
     pub fn with_mode(self, mode: LoopMode) -> Self {
-        Self(self.0.with_mode(mode))
+        Self {
+            core: self.core.with_mode(mode),
+            ..self
+        }
     }
 
     /// `Theme::unified` for one design system everywhere, `Theme::adaptive` to follow the
     /// host platform. Not calling this follows the host platform, falling back to
     /// Material 3.
     pub fn with_theme(self, theme: Theme) -> Self {
-        Self(self.0.with_theme(theme))
+        Self {
+            core: self.core.with_theme(theme),
+            ..self
+        }
     }
 
     /// What the application asks of its own window: its size, and whether it wears the
     /// platform's title bar or has content run into it.
     pub fn with_window(self, window: Window) -> Self {
-        Self(self.0.with_window(window))
+        Self {
+            core: self.core.with_window(window),
+            ..self
+        }
+    }
+
+    /// The root component is written with HTML elements and CSS, laid out with the
+    /// configuration `config` returns. It is called for each runtime the Host makes, so a
+    /// renderer that asks for the whole tree again gets a fresh document.
+    pub fn with_html(self, config: fn() -> HtmlConfig) -> Self {
+        Self {
+            html: Some(config),
+            ..self
+        }
     }
 
     /// Runs the application. Does not return while it is running, and ends the process
     /// with a failing status if the renderer loop could not run at all.
     pub fn launch(self, app: fn() -> Element) {
-        self.0.launch_runtime(runtime_for(app));
+        self.core.launch_runtime(self.runtime(app));
     }
 
     /// [`LaunchBuilder::launch`] without the exit: the status the renderer loop ended
     /// with, handed back for a caller that has its own idea of what to do with it.
     pub fn try_launch(self, app: fn() -> Element) -> i32 {
-        self.0.try_launch_runtime(runtime_for(app))
+        self.core.try_launch_runtime(self.runtime(app))
     }
 
     /// The compose-rust builder underneath, for an entry point that takes one.
     pub fn into_core(self) -> compose_rust::LaunchBuilder {
-        self.0
+        self.core
+    }
+
+    /// The runtime factory for `app`, written the way this builder says it is.
+    pub fn runtime(self, app: fn() -> Element) -> Box<dyn Fn() -> Box<dyn Runtime> + Send + Sync> {
+        match self.html {
+            Some(config) => Box::new(crate::html::runtime_for(app, config)),
+            None => Box::new(runtime_for(app)),
+        }
     }
 }
 
@@ -213,5 +255,5 @@ pub fn launch(app: fn() -> Element) {
 #[cfg(target_family = "wasm")]
 #[doc(hidden)]
 pub fn web_start(builder: LaunchBuilder, app: fn() -> Element) -> u32 {
-    compose_rust::__web_start(builder.into_core(), runtime_for(app))
+    compose_rust::__web_start(builder.into_core(), builder.runtime(app))
 }

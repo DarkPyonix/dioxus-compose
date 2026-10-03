@@ -51,7 +51,7 @@ use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::TextStyle;
 use crate::paint::display_list::{
     BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
-    Sides, TextAlign, TileRepeat,
+    Sides, TextAlign, TextDecoration, TileRepeat,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -240,9 +240,15 @@ impl PlanKind {
 /// The text of a [`PlanKind::Text`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanText {
+    /// The element the text belongs to: the innermost element that holds all of it, which
+    /// may be an inline element (a link, an emphasis) inside the box the run is drawn in.
+    /// A click on the run is a click on this element.
+    pub owner: NodeId,
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
+    /// The lines drawn through or under the text.
+    pub decoration: TextDecoration,
     pub align: TextAlign,
     /// Whether lines wrap at the node's width. A run laid out as one unconstrained line
     /// does not.
@@ -319,8 +325,8 @@ pub enum PlanModifier {
     },
     /// Rounds each corner by its own radius.
     CornerEach(Corners<f32>),
-    /// One outer shadow, in the node's shape. A box with several shadows has several,
-    /// back to front.
+    /// One outer shadow, in the node's shape. A box with several shadows has several, in
+    /// CSS order: the first is drawn on top.
     Shadow {
         x: f32,
         y: f32,
@@ -1094,9 +1100,11 @@ impl<'a> Builder<'a> {
                         index,
                     },
                     kind: PlanKind::Text(PlanText {
+                        owner: run.owner,
                         text: run.text.clone(),
                         style: run.style.clone(),
                         color,
+                        decoration: run.decoration,
                         align: run.align,
                         soft_wrap: run.wrap_width.is_some(),
                     }),
