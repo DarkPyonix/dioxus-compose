@@ -147,7 +147,7 @@
       </p>
     </div>
 
-    <h2 id="streaming">스트리밍 텍스트 <span class="pill partial">Host 쪽 완료</span></h2>
+    <h2 id="streaming">스트리밍 텍스트 <span class="pill works">동작</span></h2>
     <p>
       LLM 응답은 토큰 단위로 도착합니다. 토큰마다 <code>text</code> 속성을 통째로 바꾸면 매번 메시지
       전체를 다시 보내게 되고, 메시지는 계속 길어지므로 비용이 제곱으로 늡니다. 그래서
@@ -179,9 +179,11 @@ host.<span class="f">append_text</span>(node_id, <span class="s">" token"</span>
     </div>
 
     <p>
-      Host 쪽 실측치입니다. 36&nbsp;KB 텍스트에서도 토큰당 배치가 64바이트 미만이고, 스트리밍
-      프레임 p99는 125&nbsp;ns입니다. 초당 100회 추가 중에도 스크롤과 입력이 끊기지 않는다는 전체
-      수용 기준은 끝에서 끝까지의 이야기라 Renderer를 기다려야 합니다.
+      이쪽은 양쪽 모두 준비되어 있습니다. 인터프리터도 <code>AppendText</code>를 받아 해당
+      <code>Text</code> 노드의 기존 내용 뒤에 붙입니다. Host 쪽 실측치로는 36&nbsp;KB 텍스트에서도
+      토큰당 배치가 64바이트 미만이고 스트리밍 프레임 p99는 125&nbsp;ns입니다. 초당 100회 추가
+      중에도 스크롤과 입력이 끊기지 않는다는 전체 수용 기준은 끝에서 끝까지 재야 하는 값이고,
+      아직 측정하지 않았습니다.
     </p>
 
     <h2 id="workers">워커 스레드에서 스트리밍하기</h2>

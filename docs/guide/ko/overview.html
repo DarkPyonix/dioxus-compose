@@ -187,7 +187,7 @@
           <tr><td>Rust 스키마 → Kotlin 프로토콜 코드젠</td><td><span class="pill works">동작</span></td><td>생성물이 낡으면 테스트가 실패합니다.</td></tr>
           <tr><td><code>fill_max_width</code>·<code>fill_max_height</code> 외의 Modifier</td><td><span class="pill partial">일부</span></td><td>패딩, 크기, 배경, clickable은 프로토콜에는 있지만 <code>rsx!</code> 속성이 아직 없습니다.</td></tr>
           <tr><td><code>LazyColumn</code> 윈도잉 (FR-8)</td><td><span class="pill partial">Host 쪽</span></td><td>컴포넌트·프로토콜·Host 테스트는 통과합니다. Kotlin 인터프리터는 아직 <code>Column</code>으로 그리고 <code>RangeRequested</code>를 보내지 않습니다.</td></tr>
-          <tr><td><code>AppendText</code> 스트리밍 (FR-9)</td><td><span class="pill partial">Host 쪽</span></td><td>Host가 프레임당 한 건으로 모아 flush합니다. <code>rsx!</code> 수준 API는 아직 없고 <code>Host::append_text</code>는 프로토콜 node id를 받습니다.</td></tr>
+          <tr><td><code>AppendText</code> 스트리밍 (FR-9)</td><td><span class="pill works">동작</span></td><td>Host가 프레임당 한 건으로 모으고 인터프리터가 적용합니다. <code>rsx!</code> 수준 API는 아직 없고 <code>Host::append_text</code>는 프로토콜 node id를 받습니다.</td></tr>
           <tr><td>디자인 시스템과 테마 (FR-13, FR-14)</td><td><span class="pill planned">계획</span></td><td>명세는 와이어 태그까지 <code>Agreed</code>지만 구현된 것은 없습니다. 크레이트에 <code>Paint</code>, <code>TypeRole</code>, <code>DesignSystem</code>, <code>SetTheme</code> 모두 아직 없습니다. <a href="design-systems.html">디자인 시스템</a>을 보세요.</td></tr>
         </tbody>
       </table>

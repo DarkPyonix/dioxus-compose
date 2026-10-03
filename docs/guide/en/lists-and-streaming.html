@@ -152,7 +152,7 @@
       </p>
     </div>
 
-    <h2 id="streaming">Streaming text <span class="pill partial">Host side</span></h2>
+    <h2 id="streaming">Streaming text <span class="pill works">Works</span></h2>
     <p>
       An LLM response arrives token by token. Replacing the whole <code>text</code> property on
       every token re-sends the entire message each time, and the message grows, so the cost grows
@@ -185,10 +185,11 @@ host.<span class="f">append_text</span>(node_id, <span class="s">" token"</span>
     </div>
 
     <p>
-      Measured on the Host side: a 36&nbsp;KB message stays under a 64-byte batch per token, and
-      the p99 streaming frame is 125&nbsp;ns. The full criterion, 100 appends per second with
-      scrolling and typing staying smooth, is an end-to-end claim and has to wait for the
-      renderer.
+      Both halves of this one are in place: the interpreter applies <code>AppendText</code> to a
+      <code>Text</code> node&rsquo;s existing content. Measured on the Host side, a 36&nbsp;KB message
+      stays under a 64-byte batch per token and the p99 streaming frame is 125&nbsp;ns. The full
+      criterion, 100 appends per second with scrolling and typing staying smooth, is an
+      end-to-end measurement and has not been taken yet.
     </p>
 
     <h2 id="workers">Streaming from a worker thread</h2>
