@@ -245,9 +245,9 @@ fn fr34_img_with_resolver_size_is_laid_out_at_it_and_planned_as_that_asset() {
 fn real_png_url() -> String {
     let path = std::fs::canonicalize(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../samples/chat/assets/icon.png"
+        "/tests/fixtures/images/icon.png"
     ))
-    .expect("the chat sample's icon is checked in");
+    .expect("the test icon is checked in under tests/fixtures/images");
     Url::from_file_path(&path)
         .expect("an absolute path")
         .to_string()

@@ -1700,7 +1700,7 @@ if design.is_apple() {
 
 허용치는 FR-34의 첫 측정(VS Code 워크벤치의 액티비티 바, 사이드바 트리, 에디터 탭)으로 처음 확인하고, 그 수치를 이 항목에 기록합니다. 허용치를 바꾸는 것은 이 SPEC의 변경입니다.
 
-**첫 측정(2026-10-03, macOS, 배율 1, VS Code 1.138과 Code-OSS CSS).** `experiments/blitz-layout-probe/`와 `dioxus-compose-html/tests/fr34_box_tolerance.rs`.
+**첫 측정(2026-10-03, macOS, 배율 1, VS Code 1.138과 Code-OSS CSS).** `experiments/blitz-layout-probe/`와 `dioxus-compose/tests/fr34_box_tolerance.rs`.
 - Parley가 잰 텍스트: 줄바꿈 불일치 22건 중 6건, 한 줄 폭 차이 최대 14.3%, 글자 위치 차이 최대 39.89px. 허용치를 크게 넘습니다. Parley가 SF 글꼴의 광학 크기를 고르지 않기 때문입니다. 그래서 위의 텍스트 방식이 바뀌었습니다.
 - 상자(VS Code가 잰 텍스트 크기를 넣었을 때): 액티비티 바 29개 중 29개가 1px 이내(최대 0px), 사이드바 203개 중 201개(99.0%, 최대 4.00px), 탭 94개 중 94개(최대 0px). 상자 허용치를 지킵니다. 이 수치는 텍스트 크기가 맞을 때의 상자 경로이고, Compose 측정으로 다시 잰 수치가 수용 기준 1의 증거가 됩니다.
 
@@ -1717,7 +1717,7 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 
 - `translate`, `rotate`, `scale`, `skew`와 그 조합, `matrix()`, `transform-origin`을 상자와 그 안의 내용에 적용합니다.
 - **2D가 먼저, 3D는 다음 단계입니다**(소유자 결정, compose-rust FR-41). M14(10-18)는 위의 2D 변환입니다. `rotateX`, `rotateY`, `rotate3d`, `perspective`, `matrix3d` 같은 3D 변환은 compose-rust FR-41.3(Draft)이 들어오면 이어서 지원하고, "지원하지 않음"이 아닙니다. 그 전까지 3D 변환이 들어간 상자는 2D로 근사하지 않습니다. 그 `transform`을 건너뛰어 변환 없이 그리고, 개발자에게 어느 요소의 어떤 변환을 건너뛰었는지 경고합니다.
-- **지금 상태.** stylo는 `transform`을 계산합니다. dioxus-compose-html은 이동(`translate`, `translateX`, `translateY`)만 상자 위치에 더하고, 그 밖의 변환이 섞이면 상자를 레이아웃 자리에 둡니다. blitz-dom에는 그리는 단계가 없으므로 회전과 확대는 이 프로젝트가 그려야 합니다.
+- **지금 상태.** stylo는 `transform`을 계산합니다. dioxus-compose의 HTML 경로는 이동(`translate`, `translateX`, `translateY`)만 상자 위치에 더하고, 그 밖의 변환이 섞이면 상자를 레이아웃 자리에 둡니다. blitz-dom에는 그리는 단계가 없으므로 회전과 확대는 이 프로젝트가 그려야 합니다.
 - **구현 경로(정해짐).** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
 - 변환은 레이아웃에 영향을 주지 않습니다(CSS와 같음). 적중 판정(FR-34의 이벤트 전달)은 변환된 모양 기준입니다.
 
@@ -1734,9 +1734,9 @@ M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme
 **경로와 날짜(소유자 결정 2026-10-03).** 경로는 "혼합안"입니다. `opacity`, `color`, `background-color`, `transform`처럼 레이아웃에 영향이 없는 속성은 렌더러가 Compose 애니메이션으로 재생하고(아래 (나)), 폭, 높이, 여백 같은 레이아웃 속성만 Host가 매 프레임 blitz에 시각을 넘겨 다시 계산합니다(아래 (가)). 날짜는 "일부 10-18 안"입니다. (나)에 해당하는 `opacity`와 `transform`(FR-34.1 포함)은 10-18(M14) 안에 넣고, 레이아웃 속성 애니메이션은 그 뒤(M15)로 둡니다.
 
 - `transition`과 `@keyframes`/`animation`을 CSS가 정한 시간 함수와 반복대로 재생합니다.
-- **지금 상태.** blitz-dom 0.2.4는 stylo의 애니메이션과 transition 상태를 스타일 단계에서 진행시킵니다. 현재 시각을 받아 값을 계산하고(`BaseDocument::resolve_stylist(now)`), 진행 중인지 알려 줍니다(`BaseDocument::is_animating()`). dioxus-compose-html은 시각을 늘 0으로 넘기므로 지금은 모든 애니메이션이 첫 값에 멈춰 있습니다. 즉 막혀 있는 것은 blitz가 아니라 이 크레이트입니다.
+- **지금 상태.** blitz-dom 0.2.4는 stylo의 애니메이션과 transition 상태를 스타일 단계에서 진행시킵니다. 현재 시각을 받아 값을 계산하고(`BaseDocument::resolve_stylist(now)`), 진행 중인지 알려 줍니다(`BaseDocument::is_animating()`). dioxus-compose의 HTML 경로는 시각을 늘 0으로 넘기므로 지금은 모든 애니메이션이 첫 값에 멈춰 있습니다. 즉 막혀 있는 것은 blitz가 아니라 이 크레이트입니다.
 - **구현 경로 후보 둘.**
-  - **(가) Host가 매 프레임 시각을 넘긴다.** blitz가 계산한 값이 바뀐 노드만 갱신으로 나갑니다. 구현이 가장 짧습니다. 대가: 애니메이션이 도는 동안 매 프레임 Host가 스타일과 레이아웃을 다시 계산합니다. 지금 측정으로 한 프레임이 사이드바 화면에서 약 2~3ms(dioxus-compose-html/benches/baseline.json)이므로 프레임 예산(NFR-9)을 넘깁니다. 또 애니메이션 상태가 Host에 있게 되어 D5와 어긋납니다.
+  - **(가) Host가 매 프레임 시각을 넘긴다.** blitz가 계산한 값이 바뀐 노드만 갱신으로 나갑니다. 구현이 가장 짧습니다. 대가: 애니메이션이 도는 동안 매 프레임 Host가 스타일과 레이아웃을 다시 계산합니다. 지금 측정으로 한 프레임이 사이드바 화면에서 약 2~3ms(dioxus-compose/benches/baseline.json의 `html_frame`)이므로 프레임 예산(NFR-9)을 넘깁니다. 또 애니메이션 상태가 Host에 있게 되어 D5와 어긋납니다.
   - **(나) 렌더러가 Compose 애니메이션으로 재생한다.** Host는 시작 값, 끝 값, 시간, 시간 함수를 한 번 보내고, 렌더러가 `animate*AsState`/`Animatable`과 `graphicsLayer`로 재생합니다. D5(애니메이션 상태는 렌더러)와 맞고 매 프레임 Host 비용이 없습니다. 대가: 레이아웃에 영향을 주는 속성(`width`, `height`, `margin` 등)의 애니메이션은 렌더러가 혼자 재생할 수 없어 (가)로 돌아가야 하고, 애니메이션을 기술하는 레코드가 compose-rust 스키마에 필요합니다.
   - 위의 결정대로 레이아웃에 영향이 없는 속성은 (나), 나머지는 (가)입니다.
 

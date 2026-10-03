@@ -3,7 +3,7 @@
 [![CI](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml)
 [![Native renderer](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../../LICENSE)
-[![Rust 1.86+](https://img.shields.io/badge/rust-1.86%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
 [English](../../README.md) · **한국어**
 
@@ -359,7 +359,7 @@ dioxus-compose = "0.0.0"
 ### 1. Rust
 
 [rustup](https://rustup.rs)으로 설치합니다. `scripts/check.sh`가 `cargo fmt`와 `cargo clippy`를
-쓰므로 두 컴포넌트가 필요합니다. 워크스페이스는 Rust **1.86+**(edition 2024)를 씁니다.
+쓰므로 두 컴포넌트가 필요합니다. 워크스페이스는 Rust **1.88+**(edition 2024)를 씁니다.
 
 ```bash
 rustup component add rustfmt clippy
