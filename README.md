@@ -126,12 +126,12 @@ with the widget path only; the HTML path is on the `develop` branch. The API wil
 | implemented | Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (measured 2026-10-03, macOS) |
 | implemented | Eleven HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
 | implemented | Compose widgets in `rsx!`, drawn by the renderer: macOS, Android and the web end to end; Windows, Linux and iOS build and start |
-| partial | Drawing HTML screens on screen: the plan exists, the bridge to compose-rust's renderer (`AbsoluteBox`) is not built ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| partial | Drawing HTML screens on screen: the plan exists, the bridge to compose-rust's renderer (`AbsoluteBox`) is not built ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43); written in [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67), awaiting review) |
 | partial | Text measured by Compose: the measure call is being implemented in compose-rust; Parley measures text until then ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | planned | CSS transforms beyond `translate`, CSS transitions and animations ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | planned | Zooming HTML screens the way VS Code does |
 | planned | HTML and widgets on one screen |
-| planned | The Markdown crate `dioxus-compose-markdown` ([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24)) |
+| planned | The Markdown crate `dioxus-compose-markdown` ([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24); draft [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
 
 The [status page](http://darkpyonix.dev/dioxus-compose/en/status.html) of the guide has the full
 list.

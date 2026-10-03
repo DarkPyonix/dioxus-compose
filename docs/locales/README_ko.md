@@ -123,12 +123,12 @@ compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/t
 | 구현 | VS Code 가 잰 텍스트 크기로, 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(2026-10-03 macOS 에서 측정) |
 | 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열한 개, 각각 Host 에서 테스트 |
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
-| 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43). [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)에 작성되어 검토 대기) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 계획 | `translate` 밖의 CSS 변환, CSS transition 과 animation([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |
-| 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24)) |
+| 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24). 초안 [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
 
 전체 목록은 가이드의 [현황 페이지](http://darkpyonix.dev/dioxus-compose/ko/status.html)에 있습니다.
 
