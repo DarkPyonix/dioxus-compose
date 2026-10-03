@@ -459,6 +459,7 @@ class NodeTable {
                     widget == WidgetKind.LazyColumn ||
                     widget == WidgetKind.LazyRow ||
                     widget == WidgetKind.ScrollColumn ||
+                    widget == WidgetKind.ScrollRow ||
                     widget == WidgetKind.FileDropTarget
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
@@ -523,6 +524,11 @@ class NodeTable {
                 // Which part of a screen's frame a subtree fills. Only the wrapper a
                 // Scaffold puts around a slot carries it.
                 PropertyKind.Slot -> widget == WidgetKind.ScaffoldSlot
+
+                // Which named group of a strip a destination is in. Only a destination
+                // has one: a group is a run of them, and nothing else in a strip is in a
+                // run of anything.
+                PropertyKind.Section -> widget == WidgetKind.NavigationItem
 
                 // Runs of different treatment inside one string.
                 PropertyKind.Spans -> widget == WidgetKind.Text

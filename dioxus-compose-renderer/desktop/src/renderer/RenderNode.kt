@@ -8,6 +8,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
@@ -172,6 +173,16 @@ fun RenderNode(
             horizontalAlignment = node.horizontalAlignment(),
         ) { Children(node, table, dispatcher) }
 
+        // The same thing on its side: a row that scrolls without the Host windowing it,
+        // so every child is materialised. Use LazyRow when the strip is long. The scroll
+        // state is remembered here, under the node's own key, so a recomposition of the
+        // row or of any child leaves the position where the user put it.
+        WidgetKind.ScrollRow -> Row(
+            modifier = modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = node.horizontalArrangement(theme),
+            verticalAlignment = node.verticalAlignment(),
+        ) { Children(node, table, dispatcher) }
+
         // The containers, the overlays and the tab strip carry no appearance of their own:
         // each one names the kind of container it is and the design system decides what
         // that looks like.
@@ -299,6 +310,7 @@ internal fun NodeTable.stackingAxis(nodeId: Int): StackingAxis = when (node(node
     -> StackingAxis.Vertical
 
     WidgetKind.Row,
+    WidgetKind.ScrollRow,
     WidgetKind.TopAppBar,
     -> StackingAxis.Horizontal
 
