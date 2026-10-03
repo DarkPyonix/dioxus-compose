@@ -736,3 +736,138 @@ fn fr34_input_carries_its_value_and_rect() {
     assert_eq!(input.placeholder.as_deref(), Some("Name"));
     assert!(entry.rect.width > 0.0 && entry.rect.height > 0.0);
 }
+
+/// A scroll container that is not at the page origin measures its content from its own
+/// padding box. The table inside is 640px wide and nothing is drawn past it, so the
+/// content is 640px wide, whatever the 24px of page padding in front of the container.
+///
+/// The cells are laid out by blitz-dom, whose inline layout reports a cell's content as
+/// its border box plus its padding again: Taffy's content size for this container came out
+/// 24px too wide (the two 12px paddings of the last cell), the same 24px the container sits
+/// in from the page's edge.
+#[test]
+fn fr34_scroll_content_of_an_offset_container_is_measured_from_its_padding_box() {
+    let html = r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#page { padding: 24px; }
+#wrap { width: 200px; overflow-x: auto; overflow-y: hidden; }
+#grid { width: 640px; border-collapse: collapse; border-spacing: 0; }
+td { padding: 8px 12px; }
+#list { margin-left: 50px; width: 100px; height: 60px; padding: 10px; overflow-y: auto; }
+.item { height: 50px; }
+</style></head><body><div id="page">
+<div id="wrap"><table id="grid"><tr><td>Alpha</td><td>Beta</td></tr></table></div>
+<div id="list"><div class="item"></div><div class="item"></div><div class="item"></div></div>
+</div></body></html>"#;
+    let mut doc = parse(html, 800, 600);
+    let mut measurer = FakeMeasurer::new(10.0, 20.0);
+    let list = layout_document(&mut doc, &mut measurer);
+
+    let wrap = entry(&list, &doc, "wrap");
+    assert_eq!(wrap.rect.x, 24.0);
+    assert_eq!(wrap.rect.width, 200.0);
+    assert_eq!(entry(&list, &doc, "grid").rect.x, 24.0);
+    assert_eq!(entry(&list, &doc, "grid").rect.right(), 664.0);
+    let scroll = wrap.scroll.expect("overflow-x: auto scrolls");
+    assert!(scroll.horizontal);
+    assert_eq!(scroll.viewport.x, 24.0);
+    assert_eq!(scroll.content_width, 640.0);
+    // Nothing inside the container is drawn past the end of its content.
+    for drawn in &list.entries {
+        let inside = std::iter::successors(drawn.parent, |&node| {
+            list.get(node).and_then(|entry| entry.parent)
+        })
+        .any(|node| node == wrap.node);
+        if inside {
+            assert!(
+                drawn.rect.right() <= scroll.viewport.x + scroll.content_width + 0.01,
+                "node {} ({}) is drawn past the content: {:?}",
+                drawn.node,
+                drawn.tag,
+                drawn.rect
+            );
+        }
+    }
+
+    // A block container 50px in from the page's padding edge, with 10px of padding: three
+    // 50px items, then the bottom padding, measured from the top of the padding box.
+    let scroller = entry(&list, &doc, "list");
+    assert_rect(scroller.rect, 74.0, wrap.rect.bottom(), 120.0, 80.0);
+    let scroll = scroller.scroll.expect("overflow-y: auto scrolls");
+    assert_eq!(scroll.viewport.x, 74.0);
+    assert_eq!(scroll.content_height, 10.0 + 3.0 * 50.0 + 10.0);
+    assert_eq!(scroll.content_width, 120.0);
+}
+
+/// `position: fixed` boxes are placed and sized against the viewport, however deep they
+/// sit and whatever their ancestors' offsets, positions, clips and scroll containers.
+#[test]
+fn fr34_fixed_boxes_are_placed_against_the_viewport() {
+    let html = r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#outer { position: relative; left: 50px; top: 40px; width: 300px; height: 200px; padding: 10px; }
+#pinned { position: fixed; width: 10px; height: 10px; }
+#scroller { width: 200px; height: 100px; overflow: auto; }
+#inner { position: relative; width: 100px; height: 100px; margin-left: 20px; }
+#corner { position: fixed; top: 10px; right: 20px; width: 60px; height: 30px; }
+#cover { position: fixed; top: 0; right: 0; bottom: 0; left: 0; }
+#share { position: fixed; left: 25%; top: 50%; width: 50%; height: 10%; }
+#centred { position: fixed; top: 0; right: 0; bottom: 0; left: 0; width: 100px; height: 50px; margin: auto; }
+#child { width: 20px; height: 20px; margin-left: 5px; }
+</style></head><body><div id="outer"><div id="pinned"></div><div id="scroller"><div id="inner">
+<div id="corner"><div id="child"></div></div><div id="cover"></div><div id="share"></div><div id="centred"></div>
+</div></div></div></body></html>"#;
+    let mut doc = parse(html, 800, 600);
+    let mut measurer = FakeMeasurer::new(10.0, 20.0);
+    let list = layout_document(&mut doc, &mut measurer);
+
+    // The ancestors are where their own CSS puts them.
+    assert_rect(entry(&list, &doc, "outer").rect, 50.0, 40.0, 320.0, 220.0);
+    assert_rect(
+        entry(&list, &doc, "scroller").rect,
+        60.0,
+        50.0,
+        200.0,
+        100.0,
+    );
+    assert_rect(entry(&list, &doc, "inner").rect, 80.0, 50.0, 100.0, 100.0);
+
+    // 20px from the viewport's right edge: 800 - 20 - 60.
+    assert_rect(entry(&list, &doc, "corner").rect, 720.0, 10.0, 60.0, 30.0);
+    // A child of a fixed box is placed inside it as usual.
+    assert_rect(entry(&list, &doc, "child").rect, 725.0, 10.0, 20.0, 20.0);
+    // All four insets zero: the whole viewport.
+    assert_rect(entry(&list, &doc, "cover").rect, 0.0, 0.0, 800.0, 600.0);
+    // Percentages of the viewport, not of #inner's 100px.
+    assert_rect(entry(&list, &doc, "share").rect, 200.0, 300.0, 400.0, 60.0);
+    // Auto margins between zero insets centre it in the viewport.
+    assert_rect(
+        entry(&list, &doc, "centred").rect,
+        350.0,
+        275.0,
+        100.0,
+        50.0,
+    );
+    // No insets: it stays where it would have been in flow, the top left of #outer's
+    // content box, and takes no room there.
+    assert_rect(entry(&list, &doc, "pinned").rect, 60.0, 50.0, 10.0, 10.0);
+
+    // No scroll position or clip of the scroller applies to them, and they sit in the
+    // root box rather than inside the scroller.
+    let root = doc.root_element().id;
+    for id in ["corner", "cover", "share", "centred", "pinned"] {
+        let fixed = entry(&list, &doc, id);
+        assert_eq!(fixed.scroll_parent, None, "#{id}");
+        assert_eq!(fixed.clip, None, "#{id}");
+        assert_eq!(fixed.parent, Some(root), "#{id}");
+    }
+    assert_eq!(entry(&list, &doc, "child").scroll_parent, None);
+    assert_eq!(entry(&list, &doc, "child").clip, None);
+
+    // And they do not make the scroller's content any larger: it is #inner, 20px in.
+    let scroll = entry(&list, &doc, "scroller")
+        .scroll
+        .expect("overflow: auto scrolls");
+    assert_eq!(scroll.content_width, 120.0);
+    assert_eq!(scroll.content_height, 100.0);
+}

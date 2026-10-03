@@ -6,8 +6,9 @@
 //! builds that tree: a [`PlanKind::AbsoluteBox`] for every box that holds something, each
 //! child carrying an [`PlanModifier::Offset`] from its container's origin, scroll containers
 //! as [`PlanKind::ScrollColumn`] and [`PlanKind::ScrollRow`] around their content, text runs
-//! as [`PlanKind::Text`] children, form fields as [`PlanKind::TextField`] and the image of an
-//! `<img>` as [`PlanKind::Image`].
+//! as [`PlanKind::Text`] children, form fields as [`PlanKind::TextField`],
+//! [`PlanKind::Checkbox`], [`PlanKind::RadioButton`] and [`PlanKind::Dropdown`], and the image
+//! of an `<img>` as [`PlanKind::Image`].
 //!
 //! A background colour is a [`PlanModifier::Background`]. A background image or gradient is
 //! a [`PlanModifier::BackgroundBrush`] that names a [`Brush`] by its [`BrushId`]; the plan
@@ -155,7 +156,7 @@ pub enum PlanKey {
     Node(NodeId),
     /// The `index`th text run of a node's entry.
     Text { node: NodeId, index: usize },
-    /// The field drawn for an `<input>` or `<textarea>`.
+    /// The field drawn for an `<input>`, `<textarea>` or `<select>`.
     Field(NodeId),
     /// The padding box of a box that clips its content and has a border: CSS clips to the
     /// inside of the border, Compose clips to a node's own bounds, so the content goes into
@@ -225,6 +226,9 @@ pub enum PlanKind {
     Checkbox { checked: bool },
     /// `<input type="radio">`.
     RadioButton { selected: bool },
+    /// `<select>`: Compose-rust's `Dropdown`, one choice out of a list. The renderer owns
+    /// the choice once the user makes one.
+    Dropdown(PlanDropdown),
 }
 
 impl PlanKind {
@@ -258,10 +262,22 @@ pub struct PlanImage {
     pub draw: Rect,
 }
 
+/// The choices of a [`PlanKind::Dropdown`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanDropdown {
+    /// What each option shows, in order.
+    pub options: Vec<String>,
+    /// The option the Host chose; `None` when there are no options.
+    pub selected: Option<usize>,
+    pub style: TextStyle,
+    pub color: Rgba,
+}
+
 /// The field of a [`PlanKind::TextField`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanTextField {
-    /// A text-like kind: never `Checkbox` or `Radio`, which have kinds of their own.
+    /// A text-like kind: never `Checkbox`, `Radio` or `Select`, which have kinds of their
+    /// own.
     pub input: InputKind,
     /// The value the Host set.
     pub value: String,
@@ -1113,6 +1129,14 @@ impl<'a> Builder<'a> {
         let kind = match &input.kind {
             InputKind::Checkbox { checked } => PlanKind::Checkbox { checked: *checked },
             InputKind::Radio { checked } => PlanKind::RadioButton { selected: *checked },
+            InputKind::Select { options, selected } => PlanKind::Dropdown(PlanDropdown {
+                options: options.clone(),
+                selected: *selected,
+                style: input.style.clone(),
+                color: self
+                    .colours
+                    .resolve(entry.node, ColourUse::Field, input.color),
+            }),
             kind => PlanKind::TextField(PlanTextField {
                 input: kind.clone(),
                 value: input.value.clone(),

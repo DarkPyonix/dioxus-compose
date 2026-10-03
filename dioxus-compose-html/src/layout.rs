@@ -20,11 +20,20 @@
 //! `max-width` of `min-content`, `max-content` and `fit-content` into `auto`. So before a
 //! container is laid out, the children that use them are measured and the result is written
 //! into their Taffy styles as a length.
+//!
+//! A `<select>` is sized here as a control of its own: as wide as its widest option plus
+//! room for the dropdown's indicator, one line tall. Its options are not laid out.
+//!
+//! stylo_taffy reads `position: fixed` as `absolute`, and Taffy places an absolutely
+//! positioned box against its parent. A fixed box belongs to the viewport, so once the tree
+//! is laid out each fixed box is sized and placed again against the viewport, and its
+//! location is kept in viewport coordinates (see [`is_fixed`]).
 
 use std::cell::Ref;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use blitz_dom::{Atom, BaseDocument, LocalName, Node, NodeData};
+use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use style::values::computed::{
     Length, LengthPercentage, MaxSize as StyloMaxSize, Size as StyloSize,
@@ -32,17 +41,29 @@ use style::values::computed::{
 use taffy::{
     AvailableSpace, BoxSizing, CacheTree, Dimension, Display, Layout, LayoutBlockContainer,
     LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput, LayoutPartialTree,
-    Line, NodeId, RequestedAxis, ResolveOrZero, RoundTree, RunMode, Size, SizingMode, Style,
-    TraversePartialTree, TraverseTree, compute_block_layout, compute_cached_layout,
-    compute_flexbox_layout, compute_grid_layout, compute_leaf_layout, compute_root_layout,
-    round_layout,
+    Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero, RoundTree, RunMode,
+    Size, SizingMode, Style, TraversePartialTree, TraverseTree, compute_block_layout,
+    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
+    compute_root_layout, round_layout,
 };
 
 use crate::convert;
 use crate::display_list::{MeasuredText, Rgba, TextAlign};
+use crate::form;
 use crate::measure::{
     TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint,
 };
+
+/// The room a `<select>` keeps beside its widest option for the dropdown's indicator, in
+/// CSS pixels: the size of the arrow icon a Compose dropdown shows.
+pub(crate) const SELECT_INDICATOR_WIDTH: f32 = 24.0;
+
+/// Whether a box is `position: fixed`. Its layout location is then in viewport
+/// coordinates, not its parent's.
+pub(crate) fn is_fixed(node: &Node) -> bool {
+    node.primary_styles()
+        .is_some_and(|style| style.clone_position() == Position::Fixed)
+}
 
 /// Resolves a CSS `calc()` that Taffy carries as an opaque pointer to stylo's value.
 pub(crate) fn resolve_calc_value(calc_ptr: *const (), basis: f32) -> f32 {
@@ -81,6 +102,7 @@ pub(crate) fn run_layout(
     let width = viewport.window_size.0 as f32 / scale;
     let height = viewport.window_size.1 as f32 / scale;
     let root = NodeId::from(doc.root_element().id);
+    size_selects_in_lines(doc, measurer);
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
@@ -96,6 +118,7 @@ pub(crate) fn run_layout(
             height: AvailableSpace::Definite(height),
         },
     );
+    tree.place_fixed_boxes(root, Size { width, height });
     round_layout(&mut tree, root);
     texts
 }
@@ -114,6 +137,8 @@ struct PreparedText {
 
 enum Route {
     Hidden,
+    /// A `<select>`, sized from its options.
+    Select,
     /// Lay this subtree out with blitz-dom's own implementation.
     Blitz,
     /// An inline formatting context sized by the measurer. `None` when it holds no text.
@@ -150,6 +175,12 @@ impl MeasuredTree<'_> {
             NodeData::Document => Route::Block,
             NodeData::Element(element) | NodeData::AnonymousBlock(element) => {
                 let tag: &str = &element.name.local;
+                if tag == "select" && matches!(node.data, NodeData::Element(_)) {
+                    return match node.style.display {
+                        Display::None => Route::Hidden,
+                        _ => Route::Select,
+                    };
+                }
                 // Replaced elements and form controls: blitz-dom sizes them from their
                 // attributes and image data, with no text measurement to replace.
                 if matches!(tag, "textarea" | "input" | "img" | "canvas" | "svg")
@@ -172,6 +203,232 @@ impl MeasuredTree<'_> {
             }
             _ => Route::Hidden,
         }
+    }
+
+    /// A `<select>` as one box: its content is as wide as the widest option's label plus
+    /// [`SELECT_INDICATOR_WIDTH`], and as tall as one line of it.
+    fn compute_select(&mut self, id: usize, inputs: LayoutInput) -> LayoutOutput {
+        let style = self.node(NodeId::from(id)).style.clone();
+        let content = select_content_size(&*self.doc, id, &mut *self.measurer);
+        compute_leaf_layout(inputs, &style, resolve_calc_value, |_, _| content)
+    }
+
+    /// Sizes and places every `position: fixed` box under `root` against the viewport,
+    /// outer boxes before the boxes inside them. A fixed box's location is written in
+    /// viewport coordinates.
+    ///
+    /// The insets, sizes, margins, padding and borders resolve against the viewport, as
+    /// they do against any containing block, by the rules Taffy applies to absolutely
+    /// positioned boxes. On an axis where both insets are `auto` the box stays where it
+    /// would have been in flow (its static position), which Taffy has already worked out
+    /// against its parent; that place is turned into viewport coordinates here, without the
+    /// `transform` of any ancestor.
+    fn place_fixed_boxes(&mut self, root: NodeId, viewport: Size<f32>) {
+        let mut fixed = Vec::new();
+        collect_fixed(&*self.doc, usize::from(root), &mut fixed);
+        let mut placed = HashSet::new();
+        for id in fixed {
+            let static_origin = self.page_origin_of_parent(id, &placed);
+            self.place_fixed(NodeId::from(id), viewport, static_origin);
+            placed.insert(id);
+        }
+    }
+
+    /// Where the parent of `id` is, in viewport coordinates: its layout location and every
+    /// layout ancestor's added up, up to the first fixed one, whose location already is in
+    /// viewport coordinates.
+    fn page_origin_of_parent(&self, id: usize, fixed: &HashSet<usize>) -> Point<f32> {
+        let mut origin = Point { x: 0.0, y: 0.0 };
+        let mut current = self
+            .doc
+            .get_node(id)
+            .and_then(|node| node.layout_parent.get());
+        while let Some(ancestor) = current {
+            let Some(node) = self.doc.get_node(ancestor) else {
+                break;
+            };
+            origin.x += node.unrounded_layout.location.x;
+            origin.y += node.unrounded_layout.location.y;
+            if fixed.contains(&ancestor) {
+                break;
+            }
+            current = node.layout_parent.get();
+        }
+        origin
+    }
+
+    fn place_fixed(&mut self, node: NodeId, viewport: Size<f32>, static_origin: Point<f32>) {
+        let calc = resolve_calc_value;
+        let style = self.node(node).style.clone();
+        let current = self.node(node).unrounded_layout;
+        let (width, height) = (viewport.width, viewport.height);
+
+        let left = style.inset.left.resolve_to_option(width, calc);
+        let right = style.inset.right.resolve_to_option(width, calc);
+        let top = style.inset.top.resolve_to_option(height, calc);
+        let bottom = style.inset.bottom.resolve_to_option(height, calc);
+        // Margins and padding resolve against the containing block's width on both axes.
+        let margin = Rect {
+            left: style.margin.left.resolve_to_option(width, calc),
+            right: style.margin.right.resolve_to_option(width, calc),
+            top: style.margin.top.resolve_to_option(width, calc),
+            bottom: style.margin.bottom.resolve_to_option(width, calc),
+        };
+        let padding = style.padding.resolve_or_zero(Some(width), calc);
+        let border = style.border.resolve_or_zero(Some(width), calc);
+        let insets_x = padding.left + padding.right + border.left + border.right;
+        let insets_y = padding.top + padding.bottom + border.top + border.bottom;
+        let (adjust_x, adjust_y) = match style.box_sizing {
+            BoxSizing::ContentBox => (insets_x, insets_y),
+            BoxSizing::BorderBox => (0.0, 0.0),
+        };
+
+        let resolve = |dimension: Dimension, basis: f32, adjust: f32| {
+            MaybeResolve::<Option<f32>, Option<f32>>::maybe_resolve(dimension, Some(basis), calc)
+                .map(|length| length + adjust)
+        };
+        let min_width = resolve(style.min_size.width, width, adjust_x)
+            .unwrap_or(0.0)
+            .max(insets_x);
+        let min_height = resolve(style.min_size.height, height, adjust_y)
+            .unwrap_or(0.0)
+            .max(insets_y);
+        let max_width = resolve(style.max_size.width, width, adjust_x);
+        let max_height = resolve(style.max_size.height, height, adjust_y);
+        let clamp = |value: f32, min: f32, max: Option<f32>| {
+            max.map_or(value, |max| value.min(max)).max(min)
+        };
+
+        let mut known = Size {
+            width: resolve(style.size.width, width, adjust_x)
+                .map(|value| clamp(value, min_width, max_width)),
+            height: resolve(style.size.height, height, adjust_y)
+                .map(|value| clamp(value, min_height, max_height)),
+        };
+        if let (None, Some(left), Some(right)) = (known.width, left, right) {
+            let stretched =
+                width - margin.left.unwrap_or(0.0) - margin.right.unwrap_or(0.0) - left - right;
+            known.width = Some(clamp(stretched.max(0.0), min_width, max_width));
+        }
+        if let (None, Some(top), Some(bottom)) = (known.height, top, bottom) {
+            let stretched =
+                height - margin.top.unwrap_or(0.0) - margin.bottom.unwrap_or(0.0) - top - bottom;
+            known.height = Some(clamp(stretched.max(0.0), min_height, max_height));
+        }
+        if let Some(ratio) = style.aspect_ratio {
+            match (known.width, known.height) {
+                (Some(known_width), None) => known.height = Some(known_width / ratio),
+                (None, Some(known_height)) => known.width = Some(known_height * ratio),
+                _ => {}
+            }
+        }
+
+        let parent_size = Size {
+            width: Some(width),
+            height: Some(height),
+        };
+        let available_space = Size {
+            width: AvailableSpace::Definite(clamp(width, min_width, max_width)),
+            height: AvailableSpace::Definite(clamp(height, min_height, max_height)),
+        };
+        let measured = if known.width.is_none() || known.height.is_none() {
+            self.compute_child_layout(
+                node,
+                LayoutInput {
+                    run_mode: RunMode::ComputeSize,
+                    sizing_mode: SizingMode::ContentSize,
+                    axis: RequestedAxis::Both,
+                    known_dimensions: known,
+                    parent_size,
+                    available_space,
+                    vertical_margins_are_collapsible: Line::FALSE,
+                },
+            )
+            .size
+        } else {
+            Size::ZERO
+        };
+        let size = Size {
+            width: clamp(known.width.unwrap_or(measured.width), min_width, max_width),
+            height: clamp(
+                known.height.unwrap_or(measured.height),
+                min_height,
+                max_height,
+            ),
+        };
+        let output = self.compute_child_layout(
+            node,
+            LayoutInput {
+                run_mode: RunMode::PerformLayout,
+                sizing_mode: SizingMode::ContentSize,
+                axis: RequestedAxis::Both,
+                known_dimensions: size.map(Some),
+                parent_size,
+                available_space,
+                vertical_margins_are_collapsible: Line::FALSE,
+            },
+        );
+
+        // `auto` margins share what is left between two set insets; otherwise they are
+        // zero.
+        let resolve_margins = |start: Option<f32>,
+                               end: Option<f32>,
+                               inset_start: Option<f32>,
+                               inset_end: Option<f32>,
+                               room: f32,
+                               extent: f32| {
+            match (inset_start, inset_end) {
+                (Some(inset_start), Some(inset_end)) => {
+                    let free = room
+                        - inset_start
+                        - inset_end
+                        - extent
+                        - start.unwrap_or(0.0)
+                        - end.unwrap_or(0.0);
+                    match (start, end) {
+                        (None, None) if free >= 0.0 => (free / 2.0, free / 2.0),
+                        (None, None) => (0.0, free),
+                        (None, Some(end)) => (free, end),
+                        (Some(start), None) => (start, free),
+                        (Some(start), Some(end)) => (start, end),
+                    }
+                }
+                _ => (start.unwrap_or(0.0), end.unwrap_or(0.0)),
+            }
+        };
+        let (margin_left, margin_right) =
+            resolve_margins(margin.left, margin.right, left, right, width, size.width);
+        let (margin_top, margin_bottom) =
+            resolve_margins(margin.top, margin.bottom, top, bottom, height, size.height);
+
+        let location = Point {
+            x: match (left, right) {
+                (Some(left), _) => left + margin_left,
+                (None, Some(right)) => width - right - size.width - margin_right,
+                // Taffy's location already holds the static position and the margin.
+                (None, None) => static_origin.x + current.location.x,
+            },
+            y: match (top, bottom) {
+                (Some(top), _) => top + margin_top,
+                (None, Some(bottom)) => height - bottom - size.height - margin_bottom,
+                (None, None) => static_origin.y + current.location.y,
+            },
+        };
+
+        self.node_mut(node).unrounded_layout = Layout {
+            location,
+            size,
+            content_size: output.content_size,
+            padding,
+            border,
+            margin: Rect {
+                left: margin_left,
+                right: margin_right,
+                top: margin_top,
+                bottom: margin_bottom,
+            },
+            ..current
+        };
     }
 
     fn compute_measured(
@@ -579,6 +836,126 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     }))
 }
 
+/// The content size of a `<select>`: as wide as its widest option's label plus
+/// [`SELECT_INDICATOR_WIDTH`], as tall as one line of it.
+fn select_content_size(
+    doc: &BaseDocument,
+    id: usize,
+    measurer: &mut dyn TextMeasurer,
+) -> Size<f32> {
+    let Some(text_style) = doc
+        .get_node(id)
+        .and_then(|node| node.primary_styles())
+        .map(|computed| convert::text_style(&computed))
+    else {
+        return Size::ZERO;
+    };
+    let mut labels: Vec<String> = form::select_options(doc, id)
+        .into_iter()
+        .map(|option| option.label)
+        .collect();
+    if labels.is_empty() {
+        // An empty select is still a line tall.
+        labels.push(" ".to_string());
+    }
+    let mut size = Size::ZERO;
+    for label in &labels {
+        let metrics = measurer.measure(&TextMeasureRequest {
+            text: label,
+            style: &text_style,
+            width: WidthConstraint::MaxContent,
+            white_space: TextWhiteSpace::NOWRAP,
+        });
+        size.width = f32::max(size.width, metrics.width);
+        size.height = f32::max(size.height, metrics.height);
+    }
+    size.width += SELECT_INDICATOR_WIDTH;
+    size
+}
+
+/// Gives every `<select>` that sits in a line of text its size as a length in its Taffy
+/// style, where its CSS leaves the size `auto`.
+///
+/// A line of text that embeds a box is laid out by blitz-dom, which sizes the boxes on the
+/// line itself and knows nothing of a `<select>`: with its options not drawn, it would find
+/// the select empty and make it zero wide. A select in a block, flex or grid container is
+/// sized by [`MeasuredTree::compute_select`] instead and is left alone.
+fn size_selects_in_lines(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) {
+    let selects: Vec<usize> = doc
+        .tree()
+        .iter()
+        .filter(|(_, node)| form::tag(node) == Some("select"))
+        .map(|(id, _)| id)
+        .collect();
+    for id in selects {
+        let in_line = doc
+            .get_node(id)
+            .and_then(|node| node.layout_parent.get())
+            .and_then(|parent| doc.get_node(parent))
+            .is_some_and(|parent| parent.flags.is_inline_root());
+        if !in_line {
+            continue;
+        }
+        let Some((auto_width, auto_height)) = doc
+            .get_node(id)
+            .and_then(|node| node.primary_styles())
+            .map(|style| {
+                let position = style.get_position();
+                (
+                    matches!(position.width, StyloSize::Auto),
+                    matches!(position.height, StyloSize::Auto),
+                )
+            })
+        else {
+            continue;
+        };
+        let content = select_content_size(doc, id, measurer);
+        let Some(node) = doc.get_node_mut(id) else {
+            continue;
+        };
+        let style = &mut node.style;
+        // A `border-box` length includes the padding and border; they resolve against a
+        // containing block this pass does not know yet, so only lengths count.
+        let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+        let border = style.border.resolve_or_zero(None, resolve_calc_value);
+        let (extra_x, extra_y) = match style.box_sizing {
+            BoxSizing::BorderBox => (
+                padding.left + padding.right + border.left + border.right,
+                padding.top + padding.bottom + border.top + border.bottom,
+            ),
+            BoxSizing::ContentBox => (0.0, 0.0),
+        };
+        if auto_width {
+            style.size.width = Dimension::length(content.width + extra_x);
+        }
+        if auto_height {
+            style.size.height = Dimension::length(content.height + extra_y);
+        }
+        node.cache.clear();
+    }
+}
+
+/// The `position: fixed` boxes below `id` in the layout tree, in tree order, so that a fixed
+/// box comes before the fixed boxes inside it.
+fn collect_fixed(doc: &BaseDocument, id: usize, out: &mut Vec<usize>) {
+    let Some(node) = doc.get_node(id) else {
+        return;
+    };
+    let children = node.layout_children.borrow().clone().unwrap_or_default();
+    for child in children {
+        let Some(child_node) = doc.get_node(child) else {
+            continue;
+        };
+        if child_node.style.display == Display::None {
+            continue;
+        }
+        if is_fixed(child_node) {
+            out.push(child);
+        }
+        collect_fixed(doc, child, out);
+    }
+}
+
 /// What an inline formatting context holds, as far as the measurer is concerned.
 #[derive(Default)]
 struct InlineContent {
@@ -744,6 +1121,7 @@ impl LayoutPartialTree for MeasuredTree<'_> {
             let id = usize::from(node_id);
             match tree.route(id) {
                 Route::Hidden => LayoutOutput::HIDDEN,
+                Route::Select => tree.compute_select(id, inputs),
                 Route::Blitz => <BaseDocument as LayoutPartialTree>::compute_child_layout(
                     &mut *tree.doc,
                     node_id,

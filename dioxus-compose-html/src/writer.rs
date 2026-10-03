@@ -30,6 +30,10 @@ pub(crate) struct WriterState {
     templates: HashMap<Template, Vec<NodeId>>,
     /// Event names with a listener, per node.
     listeners: HashMap<NodeId, Vec<&'static str>>,
+    /// The text the renderer last committed to a field, per node, kept until the app sets
+    /// the field's `value` again. The renderer owns a field's text while the user edits it,
+    /// so this, not the `value` attribute, is what the field holds now.
+    committed: HashMap<NodeId, String>,
 }
 
 impl WriterState {
@@ -59,6 +63,15 @@ impl WriterState {
         self.listeners.get(&node).map(Vec::as_slice).unwrap_or(&[])
     }
 
+    /// Records what the renderer committed to the field `node`.
+    pub(crate) fn commit(&mut self, node: NodeId, value: &str) {
+        self.committed.insert(node, value.to_string());
+    }
+
+    pub(crate) fn committed_values(&self) -> &HashMap<NodeId, String> {
+        &self.committed
+    }
+
     fn map(&mut self, node: NodeId, element: ElementId) {
         if self.element_to_node.len() <= element.0 {
             self.element_to_node.resize(element.0 + 1, None);
@@ -75,6 +88,7 @@ impl WriterState {
     fn forget(&mut self, node: NodeId) {
         self.listeners.remove(&node);
         self.node_to_element.remove(&node);
+        self.committed.remove(&node);
     }
 }
 
@@ -174,6 +188,24 @@ fn set_attribute_value(
         None => mutator.clear_attribute(node, qual_name),
         Some(value) if name == "dangerous_inner_html" => mutator.set_inner_html(node, value),
         Some(value) => mutator.set_attribute(node, qual_name, value),
+    }
+}
+
+/// Makes a checkbox or radio button's checkedness follow its `checked` attribute.
+///
+/// blitz-dom keeps the checkedness of a laid-out checkbox apart from the attribute, seeded
+/// from it once when the box is built. Setting the attribute updates it only for a node in
+/// the document and only for a value that reads as a boolean, and removing the attribute
+/// does not update it at all, so an app that unticks a box would see it stay ticked. The
+/// app's `checked` is what the box shows, so the state is written here on every change.
+fn set_checkedness(mutator: &mut DocumentMutator<'_>, node: NodeId, checked: bool) {
+    if let Some(state) = mutator
+        .doc
+        .get_node_mut(node)
+        .and_then(|node| node.element_data_mut())
+        .and_then(|element| element.checkbox_input_checked_mut())
+    {
+        *state = checked;
     }
 }
 
@@ -319,8 +351,16 @@ impl WriteMutations for DomWriter<'_> {
         let Some(node) = self.node(id) else {
             return;
         };
+        if namespace.is_none() && name == "value" {
+            // The app set the field's value: that is what it holds now, whatever was
+            // typed before.
+            self.state.committed.remove(&node);
+        }
         if is_boolean_off(name, value) {
             set_attribute_value(&mut self.mutator, node, name, namespace, None);
+            if namespace.is_none() && name == "checked" {
+                set_checkedness(&mut self.mutator, node, false);
+            }
             return;
         }
         let text = match value {
@@ -334,6 +374,10 @@ impl WriteMutations for DomWriter<'_> {
             AttributeValue::Listener(_) | AttributeValue::Any(_) => return,
         };
         set_attribute_value(&mut self.mutator, node, name, namespace, text.as_deref());
+        if namespace.is_none() && name == "checked" {
+            // Present means checked, whatever the value; `None` removed it.
+            set_checkedness(&mut self.mutator, node, text.is_some());
+        }
     }
 
     fn set_node_text(&mut self, value: &str, id: ElementId) {

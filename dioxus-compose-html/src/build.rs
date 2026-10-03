@@ -23,8 +23,9 @@ use crate::display_list::{
     Border, BorderLine, BoxShadow, Corners, DisplayList, InputField, InputKind, MeasuredText,
     NodeEntry, Radius, Rect, ScrollContainer, Sides, TextAlign, TextRun,
 };
+use crate::form;
 use crate::image::ImageLookup;
-use crate::layout::local;
+use crate::layout::{is_fixed, local};
 
 /// What the first walk settles for one box.
 struct Placed {
@@ -41,6 +42,10 @@ struct Placed {
     context: Option<i32>,
     /// `position` other than `static`.
     positioned: bool,
+    /// `position: fixed`: placed against the viewport, and moved by no scroll container.
+    fixed: bool,
+    /// `overflow` other than `visible`: nothing inside reaches past the padding box.
+    clips: bool,
 }
 
 /// Inherited down the first walk.
@@ -80,11 +85,26 @@ pub(crate) fn build_display_list(
     if painter.placed.contains_key(&root) {
         painter.paint_context(root);
     }
-    let entries = painter
-        .order
+    let mut entries = Vec::new();
+    let mut index_of = HashMap::new();
+    for &id in &painter.order {
+        if let Some(entry) = painter.entry(id) {
+            index_of.insert(id, entries.len());
+            entries.push(entry);
+        }
+    }
+    let scrollers: Vec<(NodeId, usize)> = index_of
         .iter()
-        .filter_map(|&id| painter.entry(id))
+        .filter(|&(_, &index)| entries[index].scroll.is_some())
+        .map(|(&id, &index)| (id, index))
         .collect();
+    for (id, index) in scrollers {
+        let (width, height) = painter.scroll_content_size(id, &entries, &index_of);
+        if let Some(scroll) = entries[index].scroll.as_mut() {
+            scroll.content_width = width;
+            scroll.content_height = height;
+        }
+    }
     DisplayList { entries }
 }
 
@@ -151,6 +171,20 @@ impl Painter<'_, '_> {
         let (shift_x, shift_y) = style.as_ref().map_or((0.0, 0.0), |style| {
             translation(style, layout.size.width, layout.size.height)
         });
+        let fixed = is_fixed(node);
+        // A fixed box's location is in viewport coordinates already, and no ancestor's
+        // clip or scroll position applies to it.
+        let ambient = if fixed {
+            Ambient {
+                x: 0.0,
+                y: 0.0,
+                clip: None,
+                scroll_parent: None,
+                ..ambient
+            }
+        } else {
+            ambient
+        };
         let rect = Rect::new(
             ambient.x + layout.location.x + shift_x,
             ambient.y + layout.location.y + shift_y,
@@ -183,6 +217,7 @@ impl Painter<'_, '_> {
             opacity,
             scroll_parent: ambient.scroll_parent,
         };
+        let own_clip = style.as_ref().is_some_and(|style| clips(style));
         if let Some(style) = style.as_ref() {
             if clips(style) {
                 let padding = padding_box(&rect, layout);
@@ -197,10 +232,16 @@ impl Painter<'_, '_> {
         }
         drop(style);
 
-        let children: Vec<NodeId> = layout_children(node)
-            .into_iter()
-            .filter(|&child| doc.get_node(child).is_some_and(is_box))
-            .collect();
+        // A `<select>`'s options are listed by the renderer's dropdown, not drawn in the
+        // page.
+        let children: Vec<NodeId> = if form::tag(node) == Some("select") {
+            Vec::new()
+        } else {
+            layout_children(node)
+                .into_iter()
+                .filter(|&child| doc.get_node(child).is_some_and(is_box))
+                .collect()
+        };
         for &child in &children {
             self.place(child, Some(id), inner);
         }
@@ -215,8 +256,88 @@ impl Painter<'_, '_> {
                 children,
                 context,
                 positioned,
+                fixed,
+                clips: own_clip,
             },
         );
+    }
+
+    /// The size of what a scroll container scrolls, measured from its padding box's
+    /// origin: the furthest any box inside it reaches (and the text of every box that does
+    /// not clip), plus its own padding on the far side. An in-flow child counts with its
+    /// margin. See [`ScrollContainer`].
+    ///
+    /// Taffy's own content size is not used. blitz-dom measures an inline formatting
+    /// context with its border box where Taffy expects the content box, so every table cell
+    /// and every block of mixed text it lays out reports content its padding beyond its
+    /// own edge, and the container would scroll past where anything is drawn.
+    fn scroll_content_size(
+        &self,
+        id: NodeId,
+        entries: &[NodeEntry],
+        index_of: &HashMap<NodeId, usize>,
+    ) -> (f32, f32) {
+        let (Some(node), Some(placed)) = (self.doc.get_node(id), self.placed.get(&id)) else {
+            return (0.0, 0.0);
+        };
+        let layout = &node.unrounded_layout;
+        let viewport = padding_box(&placed.rect, layout);
+        let content = content_box(&placed.rect, layout);
+        let mut reach = (content.x, content.y);
+        if let Some(&index) = index_of.get(&id) {
+            for run in &entries[index].texts {
+                reach.0 = reach.0.max(run.rect.right());
+                reach.1 = reach.1.max(run.rect.bottom());
+            }
+        }
+        self.extend_reach(id, true, entries, index_of, &mut reach);
+        (
+            (reach.0 - viewport.x + layout.padding.right).max(0.0),
+            (reach.1 - viewport.y + layout.padding.bottom).max(0.0),
+        )
+    }
+
+    fn extend_reach(
+        &self,
+        id: NodeId,
+        direct: bool,
+        entries: &[NodeEntry],
+        index_of: &HashMap<NodeId, usize>,
+        reach: &mut (f32, f32),
+    ) {
+        let Some(placed) = self.placed.get(&id) else {
+            return;
+        };
+        for &child in &placed.children {
+            let Some(child_placed) = self.placed.get(&child) else {
+                continue;
+            };
+            if child_placed.fixed {
+                continue;
+            }
+            let rect = child_placed.rect;
+            if rect.width > 0.0 && rect.height > 0.0 {
+                let (mut right, mut bottom) = (rect.right(), rect.bottom());
+                if direct && !child_placed.positioned {
+                    if let Some(node) = self.doc.get_node(child) {
+                        right += node.unrounded_layout.margin.right.max(0.0);
+                        bottom += node.unrounded_layout.margin.bottom.max(0.0);
+                    }
+                }
+                reach.0 = reach.0.max(right);
+                reach.1 = reach.1.max(bottom);
+            }
+            if child_placed.clips {
+                continue;
+            }
+            if let Some(&index) = index_of.get(&child) {
+                for run in &entries[index].texts {
+                    reach.0 = reach.0.max(run.rect.right());
+                    reach.1 = reach.1.max(run.rect.bottom());
+                }
+            }
+            self.extend_reach(child, false, entries, index_of, reach);
+        }
     }
 
     /// Paints a stacking context: the box itself, then descendants in negative z-index
@@ -293,10 +414,16 @@ impl Painter<'_, '_> {
             opacity: placed.opacity,
             scroll: None,
             scroll_parent: placed.scroll_parent,
-            parent: placed
-                .parent
-                .and_then(|parent| self.doc.get_node(parent))
-                .map(|parent| display_key(self.doc, parent)),
+            // A fixed box is placed against the viewport, so it goes in the root box, not
+            // inside a parent that may scroll or clip.
+            parent: if placed.fixed && id != self.doc.root_element().id {
+                Some(self.doc.root_element().id)
+            } else {
+                placed
+                    .parent
+                    .and_then(|parent| self.doc.get_node(parent))
+                    .map(|parent| display_key(self.doc, parent))
+            },
             texts: Vec::new(),
             input: None,
             image: None,
@@ -315,8 +442,10 @@ impl Painter<'_, '_> {
                 let viewport = padding_box(&rect, layout);
                 entry.scroll = Some(ScrollContainer {
                     viewport,
-                    content_width: layout.content_size.width,
-                    content_height: layout.content_size.height,
+                    // Measured from the boxes inside once every entry is built:
+                    // `Painter::scroll_content_size`.
+                    content_width: 0.0,
+                    content_height: 0.0,
                     horizontal: scrolls(overflow_x),
                     vertical: scrolls(overflow_y),
                 });
@@ -333,8 +462,11 @@ impl Painter<'_, '_> {
         drop(style);
 
         if entry.visible {
-            entry.texts = self.text_runs(id, node, &rect, layout);
-            entry.input = input_field(node, &rect, layout);
+            // A `<select>` shows its chosen option in the renderer's dropdown.
+            if form::tag(node) != Some("select") {
+                entry.texts = self.text_runs(id, node, &rect, layout);
+            }
+            entry.input = input_field(self.doc, node, &rect, layout);
         }
         Some(entry)
     }
@@ -634,10 +766,33 @@ fn corner_radii(style: &ComputedValues, width: f32, height: f32) -> Option<Corne
     Some(corners)
 }
 
-fn input_field(node: &Node, rect: &Rect, layout: &taffy::Layout) -> Option<InputField> {
+fn input_field(
+    doc: &BaseDocument,
+    node: &Node,
+    rect: &Rect,
+    layout: &taffy::Layout,
+) -> Option<InputField> {
     let element = node.element_data()?;
     let tag: &str = &element.name.local;
     let attr = |name: &str| element.attr(local(name)).map(str::to_string);
+    if tag == "select" && matches!(node.data, NodeData::Element(_)) {
+        let options = form::select_options(doc, node.id);
+        let selected = form::selected_index(doc, node.id, &options);
+        let style = node.primary_styles()?;
+        return Some(InputField {
+            value: selected
+                .map(|index| options[index].value.clone())
+                .unwrap_or_default(),
+            kind: InputKind::Select {
+                options: options.into_iter().map(|option| option.label).collect(),
+                selected,
+            },
+            placeholder: None,
+            content_rect: content_box(rect, layout),
+            style: convert::text_style(&style),
+            color: convert::text_color(&style),
+        });
+    }
     let kind = match tag {
         "textarea" => InputKind::TextArea,
         "input" => {
