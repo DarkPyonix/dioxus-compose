@@ -14,6 +14,12 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
+# host_exports declares a component, and rsx! expands to paths that name these crates
+# directly. This is its own workspace, so the versions are spelled out rather than
+# inherited.
+dioxus-core = "0.7.10"
+dioxus-signals = "0.7"
+dioxus-hooks = "0.7"
 
 [dependencies.dioxus-compose]
 path = ".."
@@ -35,6 +41,13 @@ bench = false
 [[bin]]
 name = "roundtrip"
 path = "fuzz_targets/roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "host_exports"
+path = "fuzz_targets/host_exports.rs"
 test = false
 doc = false
 bench = false
