@@ -6,8 +6,8 @@
 
 use std::cell::RefCell;
 
-use dioxus_compose_html::prelude::*;
-use dioxus_compose_html::{
+use dioxus_compose::html::prelude::*;
+use dioxus_compose::html::{
     HtmlConfig, HtmlDom, InputKind, LiteralColours, NodeId, PlanKey, PlanKind, Rect,
     TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
 };

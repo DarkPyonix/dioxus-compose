@@ -25,9 +25,9 @@
 // experiments/blitz-layout-probe/README.md have put Code-OSS under .scratch/):
 //   node experiments/blitz-layout-probe/scripts/extract-css.mjs .scratch/blitz-layout-probe/vscode \
 //     .scratch/blitz-layout-probe/out/workbench.css
-//   node dioxus-compose-html/tests/fixtures/fr34/extract.mjs \
+//   node dioxus-compose/tests/fixtures/fr34/extract.mjs \
 //     .scratch/blitz-layout-probe/vscode .scratch/blitz-layout-probe/out/workbench.css
-//   node dioxus-compose-html/tests/fixtures/fr34/extract.mjs --report \
+//   node dioxus-compose/tests/fixtures/fr34/extract.mjs --report \
 //     .scratch/blitz-layout-probe/vscode .scratch/blitz-layout-probe/out/workbench.css
 //
 // Run-time stylesheet. The probe also fed blitz-dom captured/runtime.css: every stylesheet
@@ -711,7 +711,7 @@ fs.writeFileSync(path.join(here, 'workbench.css'), [
 	' * workbench fixtures in experiments/blitz-layout-probe/fixtures/, in their original order.',
 	' * Source: the workbench.desktop.main.css that',
 	' * experiments/blitz-layout-probe/scripts/extract-css.mjs rebuilds from Code-OSS.',
-	' * Written by dioxus-compose-html/tests/fixtures/fr34/extract.mjs; do not edit by hand.',
+	' * Written by dioxus-compose/tests/fixtures/fr34/extract.mjs; do not edit by hand.',
 	' *',
 	...SOURCE_NOTE.map(l => ` * ${l}`),
 	' */',
@@ -731,7 +731,7 @@ fs.writeFileSync(path.join(here, 'runtime-rebuilt.css'), [
 	' * Only what sizes a box is written (`content`, `font-family`, `font-size`, the sash',
 	' * lengths): colours do not move one. The icon fonts are not loaded; the test sizes their',
 	' * glyphs itself.',
-	' * Written by dioxus-compose-html/tests/fixtures/fr34/extract.mjs; do not edit by hand.',
+	' * Written by dioxus-compose/tests/fixtures/fr34/extract.mjs; do not edit by hand.',
 	' *',
 	...SOURCE_NOTE.map(l => ` * ${l}`),
 	' */',
@@ -746,7 +746,7 @@ fs.writeFileSync(path.join(here, 'runtime-rebuilt.css'), [
 const textRows = new Map();
 const out = [
 	'# What VS Code drew for the three workbench regions, for fr34_box_tolerance.rs.',
-	'# Written by dioxus-compose-html/tests/fixtures/fr34/extract.mjs; do not edit by hand.',
+	'# Written by dioxus-compose/tests/fixtures/fr34/extract.mjs; do not edit by hand.',
 	'# Sources: experiments/blitz-layout-probe/captured/{activitybar,sidebar,tabs}.json (rects read',
 	'# from the running VS Code with getBoundingClientRect and Range.getClientRects) and',
 	'# captured/{activitybar,sidebar,tabs}.chrome-fixture.json (the fixtures laid out by the same',

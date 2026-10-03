@@ -16,16 +16,16 @@ use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::{BorderStyle, Length, Overflow};
 
-use crate::NodeId;
-use crate::background::{self, Boxes};
-use crate::convert;
-use crate::display_list::{
+use crate::dom::form;
+use crate::html::NodeId;
+use crate::layout::background::{self, Boxes};
+use crate::layout::convert;
+use crate::layout::image::ImageLookup;
+use crate::layout::{is_fixed, local};
+use crate::paint::display_list::{
     Border, BorderLine, BoxShadow, Corners, DisplayList, InputField, InputKind, MeasuredText,
     NodeEntry, Radius, Rect, ScrollContainer, Sides, TextAlign, TextRun,
 };
-use crate::form;
-use crate::image::ImageLookup;
-use crate::layout::{is_fixed, local};
 
 /// What the first walk settles for one box.
 struct Placed {
@@ -318,11 +318,12 @@ impl Painter<'_, '_> {
             let rect = child_placed.rect;
             if rect.width > 0.0 && rect.height > 0.0 {
                 let (mut right, mut bottom) = (rect.right(), rect.bottom());
-                if direct && !child_placed.positioned {
-                    if let Some(node) = self.doc.get_node(child) {
-                        right += node.unrounded_layout.margin.right.max(0.0);
-                        bottom += node.unrounded_layout.margin.bottom.max(0.0);
-                    }
+                if direct
+                    && !child_placed.positioned
+                    && let Some(node) = self.doc.get_node(child)
+                {
+                    right += node.unrounded_layout.margin.right.max(0.0);
+                    bottom += node.unrounded_layout.margin.bottom.max(0.0);
                 }
                 reach.0 = reach.0.max(right);
                 reach.1 = reach.1.max(bottom);

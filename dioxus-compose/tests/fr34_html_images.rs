@@ -14,8 +14,8 @@ use blitz_dom::node::ImageData;
 use blitz_html::HtmlDocument;
 use blitz_traits::net::Url;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use dioxus_compose_html::prelude::*;
-use dioxus_compose_html::{
+use dioxus_compose::html::prelude::*;
+use dioxus_compose::html::{
     AssetId, BackgroundImage, BackgroundLayer, BaseDocument, DisplayList, GradientStop, HtmlConfig,
     HtmlDom, ImageResolver, ImageSize, LiteralColours, ModifierSlot, NodeEntry, PlanChange,
     PlanKey, PlanKind, PlanModifier, Rect, Rgba, TextMeasureRequest, TextMeasurer, TextMetrics,
@@ -245,9 +245,9 @@ fn fr34_img_with_resolver_size_is_laid_out_at_it_and_planned_as_that_asset() {
 fn real_png_url() -> String {
     let path = std::fs::canonicalize(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../samples/chat/assets/icon.png"
+        "/tests/fixtures/images/icon.png"
     ))
-    .expect("the chat sample's icon is checked in");
+    .expect("the test icon is checked in under tests/fixtures/images");
     Url::from_file_path(&path)
         .expect("an absolute path")
         .to_string()
@@ -653,7 +653,7 @@ fn fr34_gradient_stop_colour_change_is_one_plan_change() {
     let added = after.brushes_not_in(&before);
     assert_eq!(added.len(), 1, "one brush to register: {added:#?}");
     assert_eq!(added[0].0, *brush);
-    let dioxus_compose_html::Brush::LinearGradient { stops, .. } = added[0].1 else {
+    let dioxus_compose::html::Brush::LinearGradient { stops, .. } = added[0].1 else {
         panic!("the new brush is the gradient: {:#?}", added[0].1);
     };
     assert_stops(stops, &[(0.0, RED), (1.0, LIME)]);

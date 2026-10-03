@@ -13,7 +13,7 @@ use blitz_dom::{BaseDocument, Node, NodeData};
 use dioxus_html::{FileData, FormValue, HasFileData, HasFormData};
 use style::invalidation::element::restyle_hints::RestyleHint;
 
-use crate::NodeId;
+use crate::html::NodeId;
 use crate::layout::local;
 
 /// The data an `input`, `change` or `submit` event carries.
@@ -226,10 +226,10 @@ pub(crate) fn set_checkedness(doc: &mut BaseDocument, node: NodeId, checked: boo
     doc.snapshot_node(node);
     let parent = doc.get_node(node).and_then(|node| node.parent);
     for id in std::iter::once(node).chain(parent) {
-        if let Some(target) = doc.get_node(id) {
-            if let Some(data) = target.stylo_element_data.borrow_mut().as_mut() {
-                data.hint |= RestyleHint::restyle_subtree();
-            }
+        if let Some(target) = doc.get_node(id)
+            && let Some(data) = target.stylo_element_data.borrow_mut().as_mut()
+        {
+            data.hint |= RestyleHint::restyle_subtree();
         }
     }
 }

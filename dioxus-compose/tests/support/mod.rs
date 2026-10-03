@@ -27,7 +27,7 @@ use std::collections::HashMap;
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use dioxus_compose_html::{
+use dioxus_compose::html::{
     BaseDocument, DisplayList, NodeId, Rect, TextLineHeight, TextMeasureRequest, TextMeasurer,
     TextMetrics, TextRun, layout_document,
 };

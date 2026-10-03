@@ -9,8 +9,8 @@ use std::cell::{Cell, RefCell};
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use dioxus_compose_html::prelude::*;
-use dioxus_compose_html::{
+use dioxus_compose::html::prelude::*;
+use dioxus_compose::html::{
     BaseDocument, BorderSide, Corners, HtmlConfig, HtmlDom, ModifierSlot, Plan, PlanChange,
     PlanKey, PlanKind, PlanModifier, PlanNode, Rgba, TextMeasureRequest, TextMeasurer, TextMetrics,
     WidthConstraint, diff, element_by_id, layout_document, plan_from,

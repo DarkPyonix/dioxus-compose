@@ -70,8 +70,8 @@ pub trait ImageResolver {
 /// against which no relative URL resolves, so `<img src="logo.png">` would take the process
 /// down. This base resolves anything, and [`as_written`] takes it off again, so a relative
 /// URL reaches the application as it was written.
-pub(crate) const UNRESOLVED_BASE: &str = "dioxus-compose-html:/unresolved/";
-const UNRESOLVED_SCHEME: &str = "dioxus-compose-html:";
+pub(crate) const UNRESOLVED_BASE: &str = "dioxus-compose:/unresolved/";
+const UNRESOLVED_SCHEME: &str = "dioxus-compose:";
 const UNRESOLVED_PATH: &str = "/unresolved/";
 
 /// A URL with [`UNRESOLVED_BASE`] taken off again.

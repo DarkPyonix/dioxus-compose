@@ -167,26 +167,30 @@ impl TextSpans {
 
     /// The runs this list holds, decoded again.
     pub fn spans(&self) -> impl Iterator<Item = TextSpan> + '_ {
-        self.as_bytes().chunks_exact(SPAN_LEN).map(|record| {
-            let word = |at: usize| {
-                u32::from_le_bytes([record[at], record[at + 1], record[at + 2], record[at + 3]])
-            };
-            let half = |at: usize| u16::from_le_bytes([record[at], record[at + 1]]);
-            let flags = half(10);
-            let paint = u64::from(word(12)) | (u64::from(word(16)) << 32);
-            let handler = u64::from(word(20)) | (u64::from(word(24)) << 32);
-            TextSpan {
-                start: word(0),
-                length: word(4),
-                type_role: TypeRole::try_from(half(8)).ok(),
-                color: Paint::from_bits(paint),
-                bold: flags & FLAG_BOLD != 0,
-                italic: flags & FLAG_ITALIC != 0,
-                underline: flags & FLAG_UNDERLINE != 0,
-                strikethrough: flags & FLAG_STRIKETHROUGH != 0,
-                on_click: (handler != 0).then_some(handler),
-            }
-        })
+        self.as_bytes()
+            .as_chunks::<SPAN_LEN>()
+            .0
+            .iter()
+            .map(|record| {
+                let word = |at: usize| {
+                    u32::from_le_bytes([record[at], record[at + 1], record[at + 2], record[at + 3]])
+                };
+                let half = |at: usize| u16::from_le_bytes([record[at], record[at + 1]]);
+                let flags = half(10);
+                let paint = u64::from(word(12)) | (u64::from(word(16)) << 32);
+                let handler = u64::from(word(20)) | (u64::from(word(24)) << 32);
+                TextSpan {
+                    start: word(0),
+                    length: word(4),
+                    type_role: TypeRole::try_from(half(8)).ok(),
+                    color: Paint::from_bits(paint),
+                    bold: flags & FLAG_BOLD != 0,
+                    italic: flags & FLAG_ITALIC != 0,
+                    underline: flags & FLAG_UNDERLINE != 0,
+                    strikethrough: flags & FLAG_STRIKETHROUGH != 0,
+                    on_click: (handler != 0).then_some(handler),
+                }
+            })
     }
 
     /// Turns a small, closed subset of markdown into a plain string and its spans.

@@ -183,7 +183,7 @@ pub fn under(category: Category) -> Vec<&'static Product> {
 /// A price, from cents. Whole amounts drop the cents, which is how a shelf label is
 /// written and how the reference writes it.
 pub fn price(cents: u32) -> String {
-    if cents % 100 == 0 {
+    if cents.is_multiple_of(100) {
         format!("${}", thousands(cents / 100))
     } else {
         format!("${}.{:02}", thousands(cents / 100), cents % 100)
@@ -196,7 +196,7 @@ fn thousands(value: u32) -> String {
     let digits = value.to_string();
     let mut out = String::with_capacity(digits.len() + digits.len() / 3);
     for (position, digit) in digits.chars().enumerate() {
-        if position > 0 && (digits.len() - position) % 3 == 0 {
+        if position > 0 && (digits.len() - position).is_multiple_of(3) {
             out.push(',');
         }
         out.push(digit);
