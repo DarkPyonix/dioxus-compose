@@ -46,13 +46,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::NodeId;
-use crate::display_list::{
+use crate::html::NodeId;
+use crate::paint::display_list::{
     BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
     Sides, TextAlign, TileRepeat,
 };
-use crate::image::{AssetId, ImageResolver};
-use crate::measure::TextStyle;
+use crate::layout::image::{AssetId, ImageResolver};
+use crate::layout::measure::TextStyle;
 
 /// How close two lengths must be to count as equal, in CSS pixels.
 const EPSILON: f32 = 0.01;

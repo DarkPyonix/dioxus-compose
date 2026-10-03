@@ -19,9 +19,18 @@ pub use boundary_wasm::web_start as __web_start;
 #[doc(hidden)]
 pub mod codegen;
 pub mod design;
+// Screens written with HTML elements and CSS: the blitz-dom document and its events
+// (`dom`), styles and the layout pass (`layout`), and the display list and plan the
+// renderer draws (`paint`). Their public names are gathered in `html`, apart from the
+// root, because several of them (`Brush`, `ColorScheme`, `TextAlign`) already mean
+// something else here.
+mod dom;
 pub mod drawing;
 mod extensions;
+pub mod html;
+mod layout;
 pub mod message;
+mod paint;
 pub mod protocol;
 pub mod renderer;
 pub mod schema;

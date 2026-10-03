@@ -9,7 +9,7 @@
  * Only what sizes a box is written (`content`, `font-family`, `font-size`, the sash
  * lengths): colours do not move one. The icon fonts are not loaded; the test sizes their
  * glyphs itself.
- * Written by dioxus-compose-html/tests/fixtures/fr34/extract.mjs; do not edit by hand.
+ * Written by dioxus-compose/tests/fixtures/fr34/extract.mjs; do not edit by hand.
  *
  * Rebuilt from Code-OSS (https://github.com/microsoft/vscode) at commit
  * 7debcd0e2acdea1c52de81bf9ee1620444407dda.

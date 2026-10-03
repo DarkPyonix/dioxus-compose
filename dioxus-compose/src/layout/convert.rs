@@ -14,8 +14,8 @@ use style::values::computed::font::{
 use style::values::computed::{Length, Margin, TextTransform};
 use style::values::specified::TextAlignKeyword;
 
-use crate::display_list::{Rgba, TextAlign};
-use crate::measure::{TextLineHeight, TextStyle, TextWhiteSpace, WhiteSpaceCollapse};
+use crate::paint::display_list::{Rgba, TextAlign};
+use crate::layout::measure::{TextLineHeight, TextStyle, TextWhiteSpace, WhiteSpaceCollapse};
 
 /// An absolute stylo colour as 8-bit sRGB.
 pub(crate) fn rgba(color: &AbsoluteColor) -> Rgba {

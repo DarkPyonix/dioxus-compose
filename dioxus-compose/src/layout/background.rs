@@ -22,12 +22,12 @@ use style::values::generics::length::LengthPercentageOrAuto;
 use style::values::specified::background::BackgroundRepeatKeyword;
 use style::values::specified::position::{HorizontalPositionKeyword, VerticalPositionKeyword};
 
-use crate::convert;
-use crate::display_list::{
+use crate::layout::convert;
+use crate::paint::display_list::{
     BackgroundImage, BackgroundLayer, GradientStop, LinearGradient, ObjectFit, RadialGradient,
     Rect, ReplacedImage, Rgba, TileRepeat,
 };
-use crate::image::{ImageLookup, css_url, img_src};
+use crate::layout::image::{ImageLookup, css_url, img_src};
 use crate::layout::local;
 
 /// The three boxes of an element, in document coordinates.

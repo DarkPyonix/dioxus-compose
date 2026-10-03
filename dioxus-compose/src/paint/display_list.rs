@@ -8,8 +8,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::NodeId;
-use crate::measure::{TextMetrics, TextStyle};
+use crate::html::NodeId;
+use crate::layout::measure::{TextMetrics, TextStyle};
 
 /// An 8-bit sRGB colour with straight (not premultiplied) alpha.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -195,7 +195,7 @@ pub struct TextRun {
     /// The text's own box: the lines' extent, not the element's.
     pub rect: Rect,
     /// The text with white space collapsed as CSS does; `\n` is a forced break. Text sized
-    /// by the [`TextMeasurer`](crate::TextMeasurer) also has its `text-transform` applied,
+    /// by the [`TextMeasurer`](crate::html::TextMeasurer) also has its `text-transform` applied,
     /// so it is the string the measurer was asked about.
     pub text: String,
     pub style: TextStyle,
@@ -360,7 +360,7 @@ pub struct ReplacedImage {
     /// outside is not drawn. Without a natural size it is the content box.
     pub image_rect: Rect,
     pub fit: ObjectFit,
-    /// What the application's [`ImageResolver`](crate::ImageResolver) answered for the
+    /// What the application's [`ImageResolver`](crate::html::ImageResolver) answered for the
     /// image's natural size during layout, if anything.
     pub natural_size: Option<(f32, f32)>,
 }

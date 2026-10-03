@@ -1,5 +1,5 @@
 # What VS Code drew for the three workbench regions, for fr34_box_tolerance.rs.
-# Written by dioxus-compose-html/tests/fixtures/fr34/extract.mjs; do not edit by hand.
+# Written by dioxus-compose/tests/fixtures/fr34/extract.mjs; do not edit by hand.
 # Sources: experiments/blitz-layout-probe/captured/{activitybar,sidebar,tabs}.json (rects read
 # from the running VS Code with getBoundingClientRect and Range.getClientRects) and
 # captured/{activitybar,sidebar,tabs}.chrome-fixture.json (the fixtures laid out by the same

@@ -13,7 +13,7 @@ use blitz_dom::{BaseDocument, Node, NodeData};
 use dioxus_html::{FileData, FormValue, HasFileData, HasFormData};
 use style::invalidation::element::restyle_hints::RestyleHint;
 
-use crate::NodeId;
+use crate::html::NodeId;
 use crate::layout::local;
 
 /// The data an `input`, `change` or `submit` event carries.

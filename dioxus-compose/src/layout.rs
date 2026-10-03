@@ -28,6 +28,15 @@
 //! positioned box against its parent. A fixed box belongs to the viewport, so once the tree
 //! is laid out each fixed box is sized and placed again against the viewport, and its
 //! location is kept in viewport coordinates (see [`is_fixed`]).
+//!
+//! The pieces the pass and the display list both read live under it: the text measurer
+//! ([`measure`]), the conversions from stylo's computed values ([`convert`]), backgrounds
+//! and replaced images ([`background`]), and the image lookup ([`image`]).
+
+pub(crate) mod background;
+pub(crate) mod convert;
+pub(crate) mod image;
+pub(crate) mod measure;
 
 use std::cell::Ref;
 use std::collections::{HashMap, HashSet};
@@ -47,10 +56,9 @@ use taffy::{
     compute_root_layout, round_layout,
 };
 
-use crate::convert;
-use crate::display_list::{MeasuredText, Rgba, TextAlign};
-use crate::form;
-use crate::measure::{
+use crate::dom::form;
+use crate::paint::display_list::{MeasuredText, Rgba, TextAlign};
+use measure::{
     TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint,
 };
 

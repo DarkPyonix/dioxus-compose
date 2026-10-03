@@ -574,26 +574,16 @@ dependencies = [
 name = "dioxus-compose"
 version = "0.0.0"
 dependencies = [
- "criterion",
- "dioxus-core",
- "dioxus-core-macro",
- "dioxus-hooks",
- "dioxus-signals",
- "jni",
-]
-
-[[package]]
-name = "dioxus-compose-html"
-version = "0.0.0"
-dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
  "criterion",
  "dioxus-core",
  "dioxus-core-macro",
+ "dioxus-hooks",
  "dioxus-html",
  "dioxus-signals",
+ "jni",
  "parley",
  "stylo",
  "taffy",

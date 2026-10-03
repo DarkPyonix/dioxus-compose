@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "dioxus-compose",
-    "dioxus-compose-html",
     "samples/academic",
     "samples/calculator",
     "samples/chat",
@@ -20,7 +19,8 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"
-rust-version = "1.85"
+# blitz-dom 0.2.4, which lays out the HTML and CSS path, declares 1.86.
+rust-version = "1.86"
 
 [workspace.dependencies]
 dioxus-core = "0.7.10"

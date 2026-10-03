@@ -3,7 +3,7 @@
 [![CI](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml)
 [![Native renderer](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../../LICENSE)
-[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.86+](https://img.shields.io/badge/rust-1.86%2B-orange.svg)](https://www.rust-lang.org)
 
 [English](../../README.md) · **한국어**
 
@@ -359,7 +359,7 @@ dioxus-compose = "0.0.0"
 ### 1. Rust
 
 [rustup](https://rustup.rs)으로 설치합니다. `scripts/check.sh`가 `cargo fmt`와 `cargo clippy`를
-쓰므로 두 컴포넌트가 필요합니다. 워크스페이스는 Rust **1.85+**(edition 2024)를 씁니다.
+쓰므로 두 컴포넌트가 필요합니다. 워크스페이스는 Rust **1.86+**(edition 2024)를 씁니다.
 
 ```bash
 rustup component add rustfmt clippy
@@ -542,7 +542,9 @@ dioxus-compose/
 │  │  ├─ schema.rs                  #   와이어 스키마의 단일 소스
 │  │  ├─ protocol.rs                #   고정 레이아웃 인코딩 (PR-4)
 │  │  ├─ boundary.rs                #   C ABI 표면, launch / LaunchBuilder
-│  │  └─ codegen.rs                 #   Rust 스키마 → Kotlin 타입
+│  │  ├─ codegen.rs                 #   Rust 스키마 → Kotlin 타입
+│  │  ├─ html.rs                    #   HTML과 CSS 화면: HtmlDom, layout_document, plan_from
+│  │  └─ dom/ layout/ paint/        #   blitz-dom 문서와 이벤트, 레이아웃, 디스플레이 리스트
 │  ├─ examples/desktop_demo.rs      #   실행 가능한 데모
 │  ├─ benches/baseline.json         #   기록된 성능 기준선
 │  └─ tests/vectors/                #   양쪽이 함께 검증하는 프로토콜 벡터
