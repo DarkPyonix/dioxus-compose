@@ -6,7 +6,19 @@
 //! builds that tree: a [`PlanKind::AbsoluteBox`] for every box that holds something, each
 //! child carrying an [`PlanModifier::Offset`] from its container's origin, scroll containers
 //! as [`PlanKind::ScrollColumn`] and [`PlanKind::ScrollRow`] around their content, text runs
-//! as [`PlanKind::Text`] children and form fields as [`PlanKind::TextField`].
+//! as [`PlanKind::Text`] children, form fields as [`PlanKind::TextField`] and the image of an
+//! `<img>` as [`PlanKind::Image`].
+//!
+//! A background colour is a [`PlanModifier::Background`]. A background image or gradient is
+//! a [`PlanModifier::BackgroundBrush`] that names a [`Brush`] by its [`BrushId`]; the plan
+//! lists every brush it uses once, in [`Plan::brushes`], so a renderer registers each brush
+//! once and a node refers to it by id. The id is derived from the brush's content: the
+//! same gradient keeps its id from one plan to the next, and a gradient whose stops change
+//! gets a new one, which is one change to the background slot of the node that draws it.
+//!
+//! Images are drawn with the assets an [`ImageResolver`] names for their URLs. A URL it has
+//! no asset for, or any URL when there is no resolver, draws nothing: no image node, no
+//! brush.
 //!
 //! [`diff`] compares two plans node by node and says what a renderer has to change: a
 //! modifier set or removed, a node inserted, removed or moved among its siblings.
@@ -30,12 +42,15 @@
 //! container's scroll position; that only happens where the box overlaps something painted
 //! between the two, which CSS allows and a tree cannot express.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::NodeId;
 use crate::display_list::{
-    Corners, DisplayList, InputKind, NodeEntry, Radius, Rect, Rgba, Sides, TextAlign,
+    BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
+    Sides, TextAlign, TileRepeat,
 };
+use crate::image::{AssetId, ImageResolver};
 use crate::measure::TextStyle;
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -47,6 +62,85 @@ pub struct Plan {
     /// The page: a [`PlanKind::AbsoluteBox`] keyed [`PlanKey::Page`] holding every
     /// top-level box.
     pub root: PlanNode,
+    /// Every brush a [`PlanModifier::BackgroundBrush`] in the tree names, once.
+    pub brushes: BTreeMap<BrushId, Brush>,
+}
+
+/// Names a [`Brush`] by its content: two equal brushes have the same id, in this plan and
+/// in the next.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct BrushId(pub u64);
+
+/// A paint that is not one colour: a gradient, or an image asset. Gradient geometry is
+/// measured from the top-left corner of the tile it fills, so the same gradient on tiles
+/// of the same size is one brush.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Brush {
+    LinearGradient {
+        start: (f32, f32),
+        end: (f32, f32),
+        stops: Vec<GradientStop>,
+        repeating: bool,
+    },
+    RadialGradient {
+        center: (f32, f32),
+        radius_x: f32,
+        radius_y: f32,
+        stops: Vec<GradientStop>,
+        repeating: bool,
+    },
+    /// An image the application registered.
+    Image(AssetId),
+}
+
+impl Brush {
+    /// The id this brush is named by.
+    pub fn id(&self) -> BrushId {
+        fn point(hasher: &mut DefaultHasher, (x, y): (f32, f32)) {
+            x.to_bits().hash(hasher);
+            y.to_bits().hash(hasher);
+        }
+        fn stops(hasher: &mut DefaultHasher, stops: &[GradientStop]) {
+            stops.len().hash(hasher);
+            for stop in stops {
+                stop.offset.to_bits().hash(hasher);
+                stop.color.hash(hasher);
+            }
+        }
+        let mut hasher = DefaultHasher::new();
+        match self {
+            Brush::LinearGradient {
+                start,
+                end,
+                stops: list,
+                repeating,
+            } => {
+                0u8.hash(&mut hasher);
+                point(&mut hasher, *start);
+                point(&mut hasher, *end);
+                stops(&mut hasher, list);
+                repeating.hash(&mut hasher);
+            }
+            Brush::RadialGradient {
+                center,
+                radius_x,
+                radius_y,
+                stops: list,
+                repeating,
+            } => {
+                1u8.hash(&mut hasher);
+                point(&mut hasher, *center);
+                point(&mut hasher, (*radius_x, *radius_y));
+                stops(&mut hasher, list);
+                repeating.hash(&mut hasher);
+            }
+            Brush::Image(asset) => {
+                2u8.hash(&mut hasher);
+                asset.hash(&mut hasher);
+            }
+        }
+        BrushId(hasher.finish())
+    }
 }
 
 /// Names a node of a plan across updates.
@@ -75,6 +169,8 @@ pub enum PlanKey {
     ScrollContent(NodeId),
     /// A clip a box inherits from an ancestor it could not be nested inside.
     InheritedClip(NodeId),
+    /// The image of an `<img>`.
+    Image(NodeId),
 }
 
 impl PlanKey {
@@ -89,7 +185,8 @@ impl PlanKey {
             | PlanKey::ScrollColumn(node)
             | PlanKey::ScrollRow(node)
             | PlanKey::ScrollContent(node)
-            | PlanKey::InheritedClip(node) => Some(node),
+            | PlanKey::InheritedClip(node)
+            | PlanKey::Image(node) => Some(node),
         }
     }
 }
@@ -99,7 +196,8 @@ impl PlanKey {
 pub struct PlanNode {
     pub key: PlanKey,
     pub kind: PlanKind,
-    /// In a fixed order: offset, size, alpha, shape, shadows, background, border, clip.
+    /// In a fixed order: offset, size, alpha, shape, shadows, background, background
+    /// brushes, border, clip.
     pub modifiers: Vec<PlanModifier>,
     /// Back to front.
     pub children: Vec<PlanNode>,
@@ -147,10 +245,17 @@ pub struct PlanText {
     pub soft_wrap: bool,
 }
 
-/// The source of a [`PlanKind::Image`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// The image of a [`PlanKind::Image`]. The node is the `<img>` element's content box.
+#[derive(Clone, Debug, PartialEq)]
 pub struct PlanImage {
+    /// The URL, as the display list records it.
     pub source: String,
+    /// What the application's [`ImageResolver`] named for the URL.
+    pub asset: AssetId,
+    /// Where the image is drawn, from the node's top-left corner, with `object-fit` and
+    /// `object-position` applied. The image is stretched to exactly this rectangle. When it
+    /// reaches outside the node, the node also has a [`PlanModifier::Clip`].
+    pub draw: Rect,
 }
 
 /// The field of a [`PlanKind::TextField`].
@@ -208,6 +313,17 @@ pub enum PlanModifier {
         color: Rgba,
     },
     Background(Rgba),
+    /// One background image or gradient, drawn over the background colour. A box with
+    /// several has several, back to front (the reverse of CSS's order).
+    BackgroundBrush {
+        brush: BrushId,
+        /// Nothing of the brush is drawn outside this, from the node's top-left corner.
+        area: Rect,
+        /// Where one tile of the brush goes, from the node's top-left corner.
+        tile: Rect,
+        repeat_x: TileRepeat,
+        repeat_y: TileRepeat,
+    },
     /// The same width and colour on all four sides.
     Border {
         width: f32,
@@ -231,6 +347,8 @@ pub enum ModifierSlot {
     CornerEach,
     Shadow(usize),
     Background,
+    /// Told apart by their place among the node's brushes, back to front.
+    BackgroundBrush(usize),
     Border,
     BorderEach,
     Clip,
@@ -301,6 +419,17 @@ impl ColourResolver for LiteralColours {
 }
 
 impl Plan {
+    /// The brushes this plan uses that `previous` did not: the ones a renderer has not
+    /// registered yet. The other way round, `previous.brushes_not_in(self)`, they are the
+    /// ones it can release.
+    pub fn brushes_not_in(&self, previous: &Plan) -> Vec<(BrushId, &Brush)> {
+        self.brushes
+            .iter()
+            .filter(|(id, _)| !previous.brushes.contains_key(id))
+            .map(|(id, brush)| (*id, brush))
+            .collect()
+    }
+
     /// The node under `key`, anywhere in the tree.
     pub fn find(&self, key: PlanKey) -> Option<&PlanNode> {
         find_in(&self.root, key)
@@ -358,14 +487,29 @@ fn collect_nodes<'a>(node: &'a PlanNode, out: &mut Vec<&'a PlanNode>) {
     }
 }
 
-/// Builds the plan for a display list, with colours kept literal.
+/// Builds the plan for a display list, with colours kept literal and no images.
 pub fn plan_from(list: &DisplayList) -> Plan {
     plan_from_with(list, &mut LiteralColours)
 }
 
-/// Builds the plan for a display list, expressing colours through `colours`.
+/// Builds the plan for a display list, expressing colours through `colours`. No image
+/// draws: see [`plan_from_images`].
 pub fn plan_from_with(list: &DisplayList, colours: &mut dyn ColourResolver) -> Plan {
-    Builder::new(list, colours).build()
+    plan_from_images(list, colours, None)
+}
+
+/// Builds the plan for a display list, expressing colours through `colours` and drawing
+/// each image with the asset `images` names for its URL. Without `images`, or for a URL it
+/// names no asset for, an image draws nothing.
+pub fn plan_from_images(
+    list: &DisplayList,
+    colours: &mut dyn ColourResolver,
+    images: Option<&mut dyn ImageResolver>,
+) -> Plan {
+    // Reborrowed so all three share the builder's one lifetime: a `&mut dyn` is invariant,
+    // so the resolvers' own lifetimes cannot simply be shortened in place.
+    let images = images.map(|images| -> &mut dyn ImageResolver { &mut *images });
+    Builder::new(list, &mut *colours, images).build()
 }
 
 /// A plan node while the tree is being built: children are indices into the arena.
@@ -389,6 +533,8 @@ struct Slot {
 struct Builder<'a> {
     entries: &'a [NodeEntry],
     colours: &'a mut dyn ColourResolver,
+    images: Option<&'a mut dyn ImageResolver>,
+    brushes: BTreeMap<BrushId, Brush>,
     by_node: HashMap<NodeId, usize>,
     /// Per entry: what it and every box inside it draw.
     subtree: Vec<Option<Rect>>,
@@ -398,7 +544,11 @@ struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    fn new(list: &'a DisplayList, colours: &'a mut dyn ColourResolver) -> Self {
+    fn new(
+        list: &'a DisplayList,
+        colours: &'a mut dyn ColourResolver,
+        images: Option<&'a mut dyn ImageResolver>,
+    ) -> Self {
         let entries = &list.entries[..];
         let by_node: HashMap<NodeId, usize> = entries
             .iter()
@@ -437,6 +587,8 @@ impl<'a> Builder<'a> {
         Builder {
             entries,
             colours,
+            images,
+            brushes: BTreeMap::new(),
             by_node,
             subtree,
             slots: vec![page],
@@ -448,8 +600,10 @@ impl<'a> Builder<'a> {
         for index in 0..self.entries.len() {
             self.place(index);
         }
+        let root = self.finish(0);
         Plan {
-            root: self.finish(0),
+            root,
+            brushes: std::mem::take(&mut self.brushes),
         }
     }
 
@@ -736,6 +890,7 @@ impl<'a> Builder<'a> {
             self.add_texts(entry, content);
         }
         self.add_field(entry, content);
+        self.add_image(entry, content);
         self.content.insert(entry.node, content);
     }
 
@@ -768,6 +923,47 @@ impl<'a> Builder<'a> {
                 background,
             )));
         }
+        // CSS lists the top layer first; a renderer draws modifiers back to front.
+        for layer in entry.backgrounds.iter().rev() {
+            let brush = match &layer.image {
+                BackgroundImage::Url(url) => {
+                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
+                        Some(asset) => Brush::Image(asset),
+                        None => continue,
+                    }
+                }
+                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
+                    start: gradient.start,
+                    end: gradient.end,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
+                    center: gradient.center,
+                    radius_x: gradient.radius_x,
+                    radius_y: gradient.radius_y,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+            };
+            let id = brush.id();
+            self.brushes.entry(id).or_insert(brush);
+            let relative = |rect: Rect| {
+                Rect::new(
+                    rect.x - entry.rect.x,
+                    rect.y - entry.rect.y,
+                    rect.width,
+                    rect.height,
+                )
+            };
+            modifiers.push(PlanModifier::BackgroundBrush {
+                brush: id,
+                area: relative(layer.area),
+                tile: relative(layer.tile),
+                repeat_x: layer.repeat_x,
+                repeat_y: layer.repeat_y,
+            });
+        }
         if let Some(border) = entry.border {
             let mut side = |width: f32, color: Rgba| BorderSide {
                 width,
@@ -794,6 +990,78 @@ impl<'a> Builder<'a> {
                 modifiers.push(PlanModifier::BorderEach(sides));
             }
         }
+    }
+
+    /// Gradient stops with their colours expressed through the colour resolver.
+    fn stops(&mut self, node: NodeId, stops: &[GradientStop]) -> Vec<GradientStop> {
+        stops
+            .iter()
+            .map(|stop| GradientStop {
+                offset: stop.offset,
+                color: self
+                    .colours
+                    .resolve(node, ColourUse::Background, stop.color),
+            })
+            .collect()
+    }
+
+    /// The image of an `<img>`, when the resolver names an asset for it.
+    fn add_image(&mut self, entry: &NodeEntry, content: usize) {
+        let Some(image) = entry.image.as_ref() else {
+            return;
+        };
+        let Some(asset) = self
+            .images
+            .as_mut()
+            .and_then(|images| images.resolve(&image.source))
+        else {
+            return;
+        };
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let bounds = image.content_rect;
+        let draw = Rect::new(
+            image.image_rect.x - bounds.x,
+            image.image_rect.y - bounds.y,
+            image.image_rect.width,
+            image.image_rect.height,
+        );
+        let mut modifiers = vec![
+            PlanModifier::Offset {
+                x: bounds.x - ox,
+                y: bounds.y - oy,
+            },
+            PlanModifier::RequiredSize {
+                width: bounds.width,
+                height: bounds.height,
+            },
+        ];
+        let spills = draw.x < -EPSILON
+            || draw.y < -EPSILON
+            || draw.right() > bounds.width + EPSILON
+            || draw.bottom() > bounds.height + EPSILON;
+        if spills {
+            modifiers.push(PlanModifier::Clip);
+        }
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Image(entry.node),
+                kind: PlanKind::Image(PlanImage {
+                    source: image.source.clone(),
+                    asset,
+                    draw,
+                }),
+                modifiers,
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip,
+                opacity,
+                drawn: None,
+            },
+        );
     }
 
     fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
@@ -957,7 +1225,8 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
         return None;
     }
     let mut bounds = None;
-    let decorated = entry.background.is_some() || entry.border.is_some();
+    let decorated =
+        entry.background.is_some() || entry.border.is_some() || !entry.backgrounds.is_empty();
     if decorated {
         bounds = union(bounds, Some(entry.rect));
     }
@@ -979,6 +1248,11 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     }
     if entry.input.is_some() {
         bounds = union(bounds, Some(entry.rect));
+    }
+    // Whether the image is drawn depends on the resolver; counting it either way only
+    // makes the nesting more careful.
+    if let Some(image) = &entry.image {
+        bounds = union(bounds, Some(image.content_rect));
     }
     match (bounds, entry.clip) {
         (Some(bounds), Some(clip)) => {
@@ -1030,6 +1304,7 @@ fn same_rect(a: &Rect, b: &Rect) -> bool {
 /// The modifiers of a node by slot.
 fn slots(modifiers: &[PlanModifier]) -> Vec<(ModifierSlot, &PlanModifier)> {
     let mut shadows = 0;
+    let mut brushes = 0;
     modifiers
         .iter()
         .map(|modifier| {
@@ -1045,6 +1320,10 @@ fn slots(modifiers: &[PlanModifier]) -> Vec<(ModifierSlot, &PlanModifier)> {
                     ModifierSlot::Shadow(shadows - 1)
                 }
                 PlanModifier::Background(_) => ModifierSlot::Background,
+                PlanModifier::BackgroundBrush { .. } => {
+                    brushes += 1;
+                    ModifierSlot::BackgroundBrush(brushes - 1)
+                }
                 PlanModifier::Border { .. } => ModifierSlot::Border,
                 PlanModifier::BorderEach(_) => ModifierSlot::BorderEach,
                 PlanModifier::Clip => ModifierSlot::Clip,
