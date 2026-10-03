@@ -21,10 +21,10 @@
 use dioxus_compose::html::{
     DisplayList, HtmlDom, LiteralColours, ModifierSlot, NodeEntry, PlanKey, PlanKind, PlanModifier,
 };
-use sample_html_table as table;
 use sample_html_support::{
     Measurer, assert_rect, centre, config, entries_with_tag, entry, node, plan_node, text_of,
 };
+use sample_html_table as table;
 
 const COLUMNS: [(f32, f32); 4] = [
     (24.0, 120.0),
