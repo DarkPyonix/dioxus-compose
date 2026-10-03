@@ -1,0 +1,41 @@
+[package]
+name = "dioxus-compose-html"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+# blitz-dom 0.2.4 declares 1.86, one release above the workspace floor.
+rust-version = "1.86"
+description = "Lays out Dioxus screens written with HTML elements and CSS inside the Host, with blitz-dom, and hands the result over as a neutral display list"
+repository = "https://github.com/DarkPyonix/dioxus-compose"
+publish = false
+
+[dependencies]
+dioxus-core.workspace = true
+dioxus-core-macro.workspace = true
+# Element and event definitions for `div`, `span`, `onclick` and the rest. Without
+# `serialize`: nothing here crosses a wire as JSON.
+dioxus-html = { version = "0.7.10", default-features = false }
+
+# Pinned to the versions experiments/blitz-layout-probe was measured against, so a later
+# release cannot move a box without anyone noticing.
+blitz-dom = "=0.2.4"
+blitz-html = "=0.2.0"
+blitz-traits = "=0.2.0"
+# The versions blitz-dom 0.2.4 resolves. Named here because the layout pass reads Parley's
+# lines and stylo's computed values directly.
+parley = "=0.6.0"
+style = { package = "stylo", version = "=0.8.0" }
+# The same Taffy blitz-dom drives, with the same algorithms switched on: the layout pass
+# implements Taffy's tree traits over blitz-dom's nodes.
+taffy = { version = "0.9", default-features = false, features = [
+    "std",
+    "flexbox",
+    "grid",
+    "block_layout",
+    "content_size",
+    "calc",
+] }
+
+[dev-dependencies]
+# The rsx! expansion names dioxus_signals for event handlers and props.
+dioxus-signals.workspace = true
