@@ -86,12 +86,15 @@ echo "ok    $(echo "$exported" | wc -l | tr -d ' ') host functions are exported,
 # The application has to say this, not the library. Setting it from this crate's build
 # script reached this package's own targets and no application at all, and broke the
 # crate's own cdylib on the way: `/ENTRY:mainCRTStartup` points at a `main` a library does
-# not have. So every sample carries the attribute, and anyone building on this crate has
-# to as well.
+# not have. So every sample with a `main.rs` carries the attribute, and anyone building on
+# this crate has to as well. The samples here are libraries today, so the loop may find
+# nothing, and nothing is not a failure.
 missing=()
+shopt -s nullglob
 for main in samples/*/src/main.rs; do
     grep -q 'windows_subsystem = "windows"' "$main" || missing+=("$main")
 done
+shopt -u nullglob
 if [[ "${#missing[@]}" -gt 0 ]]; then
     echo "fail  ${#missing[@]} sample(s) would open a console beside their window:" >&2
     printf '        %s\n' "${missing[@]}" >&2
