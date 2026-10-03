@@ -355,10 +355,10 @@ pub fn app() -> Element {
         // sidebar tells one from another without asking anybody to name anything.
         {
             let mut list = conversations.write();
-            if let Some(entry) = list.iter_mut().find(|entry| entry.id == conversation) {
-                if entry.title.is_empty() {
-                    entry.title = title_from(&text);
-                }
+            if let Some(entry) = list.iter_mut().find(|entry| entry.id == conversation)
+                && entry.title.is_empty()
+            {
+                entry.title = title_from(&text);
             }
         }
         draft.set(String::new());

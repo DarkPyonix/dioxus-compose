@@ -287,10 +287,10 @@ impl Screen {
                     .find_map(|(child, owner)| (*child == named).then_some(*owner))?;
                 let mut family = vec![parent];
                 while let Some(next) = family.pop() {
-                    if next != named {
-                        if let Some(id) = handler(next) {
-                            return Some((next, id));
-                        }
+                    if next != named
+                        && let Some(id) = handler(next)
+                    {
+                        return Some((next, id));
                     }
                     family.extend(
                         parents
