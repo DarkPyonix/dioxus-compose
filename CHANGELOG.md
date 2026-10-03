@@ -16,8 +16,12 @@ select choices come back to the Dioxus handlers.
 
 The records the renderer receives are tested on the Host. Drawing them on screen has not
 been confirmed by running the renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
-Text is still measured by Parley, and `font-family`, `font-style` and underlines do not reach
-the screen yet.
+Text is still measured by Parley, and `font-family` does not reach the screen yet.
+`font-style: italic` and `oblique`, and `text-decoration-line: underline` and `line-through`
+alone or together, are sent as one span over the whole run of text, because compose-rust's
+text style has no slant or lines of its own and its spans do. A box's lines are drawn across
+the text inside it, as a browser draws them, so a link is underlined by the default
+stylesheet. Plain text sends no span.
 
 Keys and focus reach HTML elements as DOM events. Enter pressed in a field, or in a box
 whose element listens for keys, delivers `keydown` and then `keypress`, bubbling from the
