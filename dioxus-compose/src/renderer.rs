@@ -1,6 +1,7 @@
-use crate::drawing::DrawList;
-use crate::protocol::{BatchEncoder, Mutation, PropertyValue, ProtocolError};
-use crate::schema::{PropertyKind, WidgetKind};
+use compose_rust::Batch;
+use compose_rust::drawing::DrawList;
+use compose_rust::protocol::{Mutation, PropertyValue, ProtocolError};
+use compose_rust::schema::{PropertyKind, WidgetKind};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
@@ -76,9 +77,10 @@ const MODIFIER_SLOTS: usize = 14;
 /// takes no slot in the Compose tree.
 const PLACEHOLDER_NODE: u32 = 0;
 
-/// `dioxus-core` mutation sink that writes the Compose wire protocol directly.
+/// `dioxus-core` mutation sink that writes the Compose wire protocol directly, into the
+/// batch the Host hands the Renderer.
 pub struct ComposeRenderer {
-    encoder: BatchEncoder,
+    batch: Batch,
     next_node_id: u32,
     next_handler_id: u64,
     nodes: Vec<Option<u32>>,
@@ -107,7 +109,7 @@ pub struct ComposeRenderer {
     optional_props: HashMap<u32, u64>,
     /// A border arrives as a width and a colour in separate attributes; this holds
     /// whichever came first until the pair can be written as one modifier.
-    pending_borders: HashMap<u32, (Option<f32>, Option<crate::Paint>)>,
+    pending_borders: HashMap<u32, (Option<f32>, Option<compose_rust::Paint>)>,
     /// Which attribute last wrote each of a node's Modifier slots, or `""` for a slot
     /// nothing has written.
     ///
@@ -122,7 +124,6 @@ pub struct ComposeRenderer {
     /// Which application token each observed node was given, for reading a report back.
     size_tokens: HashMap<u32, u32>,
     stack: Vec<StackNode>,
-    error: Option<ProtocolError>,
 }
 
 impl Default for ComposeRenderer {
@@ -133,13 +134,13 @@ impl Default for ComposeRenderer {
 
 impl ComposeRenderer {
     /// The application's name for an observed node, if that node is observed.
-    pub(crate) fn size_token(&self, node_id: u32) -> Option<u32> {
+    pub fn size_token(&self, node_id: u32) -> Option<u32> {
         self.size_tokens.get(&node_id).copied()
     }
 
     pub fn new() -> Self {
         Self {
-            encoder: BatchEncoder::with_capacity(16 * 1024, 4 * 1024, 256),
+            batch: Batch::new(),
             next_node_id: 1,
             next_handler_id: 1,
             nodes: Vec::with_capacity(256),
@@ -155,26 +156,24 @@ impl ComposeRenderer {
             // allocates nothing here.
             size_tokens: HashMap::new(),
             stack: Vec::with_capacity(64),
-            error: None,
         }
     }
 
-    /// The batch arena, so a runtime that reads Host memory through a mapped view can be
-    /// handed one.
-    pub fn arena(&self) -> (*const u8, usize) {
-        self.encoder.arena()
+    /// The batch this writes into.
+    pub fn batch(&self) -> &Batch {
+        &self.batch
+    }
+
+    pub fn batch_mut(&mut self) -> &mut Batch {
+        &mut self.batch
     }
 
     pub fn begin_frame(&mut self) {
-        self.encoder.clear();
-        self.error = None;
+        self.batch.begin();
     }
 
     pub fn finish_frame(&mut self) -> Result<&[u8], ProtocolError> {
-        if let Some(error) = self.error.take() {
-            return Err(error);
-        }
-        self.encoder.finish()
+        self.batch.finish()
     }
 
     pub fn handler(&self, handler_id: u64) -> Option<(ElementId, u32, &'static str)> {
@@ -188,7 +187,7 @@ impl ComposeRenderer {
         &mut self,
         element: ElementId,
         text: &str,
-        selection: Option<crate::Selection>,
+        selection: Option<compose_rust::Selection>,
     ) {
         let Some(node_id) = self.node(element) else {
             return;
@@ -198,62 +197,6 @@ impl ComposeRenderer {
             text,
             selection,
         });
-    }
-
-    /// The root theme record. Written once per rebuild, never per frame.
-    pub fn set_theme(&mut self, theme: crate::schema::Theme) {
-        self.write(Mutation::SetTheme(theme));
-    }
-
-    /// The root window record. Written once per rebuild, never per frame.
-    pub fn set_window(&mut self, window: crate::schema::Window) {
-        self.write(Mutation::SetWindow(window));
-    }
-
-    pub fn set_text_node(&mut self, node_id: u32, text: &str, selection: Option<crate::Selection>) {
-        self.write(Mutation::SetText {
-            node_id,
-            text,
-            selection,
-        });
-    }
-
-    /// Copies one asset into the batch. The bytes ride behind the records, and the
-    /// Renderer takes its own copy inside the call that carries them.
-    pub fn register_asset(&mut self, asset_id: u32, kind: crate::schema::AssetKind, bytes: &[u8]) {
-        self.write(Mutation::RegisterAsset {
-            asset_id,
-            kind,
-            bytes,
-        });
-    }
-
-    pub fn release_asset(&mut self, asset_id: u32) {
-        self.write(Mutation::ReleaseAsset { asset_id });
-    }
-
-    /// Writes one transient message into the batch.
-    ///
-    /// It names no node, because a message is not in the tree: it is a sentence with a
-    /// lifetime, and that lifetime belongs to the Renderer.
-    pub fn show_message(
-        &mut self,
-        handler_id: u64,
-        text: &str,
-        action: &str,
-        duration: crate::schema::MessageDuration,
-    ) {
-        self.write(Mutation::ShowMessage {
-            handler_id,
-            text,
-            action,
-            duration,
-        });
-    }
-
-    /// Append the streamed tail to a Text node without resending its whole value.
-    pub fn append_text_node(&mut self, node_id: u32, text: &str) {
-        self.write(Mutation::AppendText { node_id, text });
     }
 
     /// Turns a Modifier attribute written in `rsx!` into one slot of the node's chain.
@@ -277,8 +220,8 @@ impl ComposeRenderer {
         node_id: u32,
         name: &'static str,
         value: &AttributeValue,
-    ) -> Option<Option<(u16, crate::Modifier)>> {
-        use crate::Modifier;
+    ) -> Option<Option<(u16, compose_rust::Modifier)>> {
+        use compose_rust::Modifier;
 
         // Slot assignments. Append only: an existing slot never changes meaning, because a
         // node keeps whatever a slot held until something overwrites it.
@@ -342,7 +285,7 @@ impl ComposeRenderer {
                 return Some(None);
             }
             owners[slot as usize] = "";
-            return Some(Some((slot, crate::Modifier::Empty)));
+            return Some(Some((slot, compose_rust::Modifier::Empty)));
         }
         self.modifier_slots
             .entry(node_id)
@@ -379,7 +322,7 @@ impl ComposeRenderer {
             "padding_role" => Some(Some((
                 PADDING,
                 Modifier::PaddingRole(
-                    crate::SpaceRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                    compose_rust::SpaceRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
                 ),
             ))),
             "elevation" => Some(Some((ELEVATION, Modifier::Elevation(float(value)?)))),
@@ -401,7 +344,8 @@ impl ComposeRenderer {
             "motion" => Some(Some((
                 MOTION,
                 Modifier::Motion(
-                    crate::MotionRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                    compose_rust::MotionRole::try_from(u16::try_from(integer(value)?).ok()?)
+                        .ok()?,
                 ),
             ))),
             // What the surface is made of. Blur, tone or a flat fill is the running
@@ -409,20 +353,21 @@ impl ComposeRenderer {
             "material" => Some(Some((
                 MATERIAL,
                 Modifier::Material(
-                    crate::MaterialRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                    compose_rust::MaterialRole::try_from(u16::try_from(integer(value)?).ok()?)
+                        .ok()?,
                 ),
             ))),
             "shape_role" => Some(Some((
                 SHAPE,
                 Modifier::ShapeRole(
-                    crate::ShapeRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
+                    compose_rust::ShapeRole::try_from(u16::try_from(integer(value)?).ok()?).ok()?,
                 ),
             ))),
             // Colour crosses as the bits of a Paint, so a role and a literal colour take
             // the same path and there is one wire representation of colour.
             "background" => Some(Some((
                 BACKGROUND,
-                Modifier::Background(crate::Paint::from_bits(integer(value)? as u64)?),
+                Modifier::Background(compose_rust::Paint::from_bits(integer(value)? as u64)?),
             ))),
             // A border needs a width and a colour, which arrive as two attributes. The
             // half that arrives first is remembered so the pair can be written as one
@@ -432,7 +377,7 @@ impl ComposeRenderer {
                 if name == "border_width" {
                     pending.0 = Some(float(value)?);
                 } else {
-                    pending.1 = Some(crate::Paint::from_bits(integer(value)? as u64)?);
+                    pending.1 = Some(compose_rust::Paint::from_bits(integer(value)? as u64)?);
                 }
                 let (Some(width), Some(paint)) = (pending.0, pending.1) else {
                     return Some(None);
@@ -458,11 +403,7 @@ impl ComposeRenderer {
     }
 
     fn write(&mut self, mutation: Mutation<'_>) {
-        if self.error.is_none()
-            && let Err(error) = self.encoder.encode(&mutation)
-        {
-            self.error = Some(error);
-        }
+        self.batch.write(mutation);
     }
 
     fn allocate_node(&mut self, widget: WidgetKind) -> u32 {
@@ -502,7 +443,7 @@ impl ComposeRenderer {
                 let widget = match widget_kind(tag) {
                     Ok(widget) => widget,
                     Err(error) => {
-                        self.error = Some(error);
+                        self.batch.fail(error);
                         return None;
                     }
                 };
@@ -585,7 +526,7 @@ impl ComposeRenderer {
         let Some(property) = property_kind(name) else {
             // dioxus-core has no fallible WriteMutations methods. Preserve the
             // protocol error and surface it when the batch is finalized.
-            self.error = Some(ProtocolError::InvalidProperty(0));
+            self.batch.fail(ProtocolError::InvalidProperty(0));
             return;
         };
         let value = match value {
@@ -601,7 +542,7 @@ impl ComposeRenderer {
                 let any = value.as_any();
                 if let Some(list) = any.downcast_ref::<DrawList>() {
                     PropertyValue::Bytes(list.as_bytes())
-                } else if let Some(spans) = any.downcast_ref::<crate::spans::TextSpans>() {
+                } else if let Some(spans) = any.downcast_ref::<compose_rust::spans::TextSpans>() {
                     // Runs inside a string travel the same way a drawing does, and for the
                     // same reason: a list that has not changed compares equal before it
                     // reaches here and costs no record at all.

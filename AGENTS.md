@@ -6,12 +6,14 @@ Guidance for working in this repository.
 
 dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-core` VirtualDom, `rsx!`, hooks). An **AOT-compiled Compose Multiplatform** renderer draws the UI and handles text and IME.
 
-- `dioxus-compose/`: Rust side (Host). Dioxus renderer crate, boundary shims, codegen.
-- `dioxus-compose-renderer/`: Kotlin side (Renderer). Amper project. The schema interpreter
-  lives in `desktop/src/renderer/`; `ios/src/shared/` symlinks the same files so there is one
-  copy. `shared/` is the JVM development shell only, not the renderer.
-- `dioxus-design-systems/`: a separate Amper project holding the six design systems and the
-  Liquid Glass material. It must never depend on the renderer, so it can be published alone.
+- `dioxus-compose/`: the crate. The Dioxus adapter (a `VirtualDom` writing compose-rust's
+  records, the widget elements `rsx!` resolves, the hooks) and the HTML and CSS path
+  (`dom`, `layout`, `paint`, gathered in `html`).
+- `samples/`: the HTML and CSS samples; `samples/native-widgets/` holds the Compose
+  widget samples.
+- compose-rust (github.com/DarkPyonix/compose-rust, pinned by rev in
+  `dioxus-compose/Cargo.toml`): the boundary, the protocol, the schema, codegen, the
+  Kotlin renderer and the design systems. A change to any of those is made there.
 - `docs/INTENT.md`: why the project exists, decisions (D1–D9), rejected alternatives.
 - `docs/SPEC.md`: requirements (`FR-*`, `NFR-*`, `PR-*`) with acceptance criteria.
 - `PROJECT.md`: scope, milestones (M0–M7), open questions.
@@ -88,10 +90,10 @@ under `docs/`.
    - throwaway work, probes and downloads: `.scratch/<name>/` (ignored by git);
    - experiments worth keeping: `experiments/<name>/`, committed;
    - build outputs: `target/` and `build/`, where the tools already put them.
-3. A change to another project this one builds on (Compose, skiko) is kept here as a patch
-   under `dioxus-compose-renderer/patches/`, the way the Compose patches already are, and
-   applied to a checkout inside `.scratch/`. A checkout of that project elsewhere is not
-   where the change lives.
+3. A change to another project this one builds on is kept as a patch, applied to a
+   checkout inside `.scratch/`. A checkout of that project elsewhere is not where the
+   change lives. The Compose and skiko patches belong to the renderer, so they are
+   compose-rust's and live there.
 4. Caches a toolchain keeps for itself (`~/.cargo`, `~/.rustup`, `~/.gradle`, `~/.m2`,
    `~/.konan`, cargo-xwin's cache) belong to the tool and stay where it puts them.
    Downloading or installing a tool this project does not already use is not a cache: ask
@@ -108,9 +110,9 @@ none of it.
    `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md` (the last three
    stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
    `.gitignore`. Git-ignored working directories (`.claude/`, `.scratch/`, `target/`)
-   are not part of the list. Until compose-rust's step that takes over the renderer
-   (compose-rust#37 step 4), `dioxus-compose-renderer/`, `dioxus-design-systems/` and
-   `tools/` (the renderer's Linux build container) also remain; they leave together.
+   are not part of the list. The renderer, the design systems and the renderer's Linux
+   build container are compose-rust's (compose-rust#37 step 4), and live in that
+   repository.
 
    **Do not add a folder or a file at the root without the owner's approval.** The owner's
    words, 2026-10-03: "모든 프로젝트에게 프로젝트 루트에 폴더 추가는 함부러 하지 말라고 규정에

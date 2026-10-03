@@ -1,1 +1,0 @@
-../../../desktop/src/protocol/Protocol.gen.kt
