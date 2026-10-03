@@ -75,8 +75,9 @@ dioxus-compose는 Compose의 런타임 비용을 빼고 렌더러만 가져옵�
 
 ### 실제로 얼마인가
 
-notepad 샘플을 릴리스로 빌드해 스트립한 것입니다. 실행 파일 하나가 전부이고, 옆에 놓이는
-런타임도 안에 든 가상 머신도 없으며, 링크된 것은 시스템 자신의 라이브러리뿐입니다.
+notepad 샘플(Compose 위젯 샘플로, 지금은
+[compose-rust](https://github.com/DarkPyonix/compose-rust)에 있습니다)을 릴리스로 빌드해
+스트립한 것입니다. 실행 파일 하나가 전부이고, 옆에 놓이는 런타임도 안에 든 가상 머신도 없으며, 링크된 것은 시스템 자신의 라이브러리뿐입니다.
 
 | 플랫폼 | 실행 파일 | 물리 메모리 | 방식 |
 |---|---|---|---|
@@ -553,7 +554,7 @@ dioxus-compose/
 │  ├─ desktop/                      #   JVM 개발 셸
 │  ├─ shared/                       #   공용 Compose 코드
 │  └─ ios/  android/  web/          #   플랫폼 타깃
-├─ samples/                         # 11개의 샘플 앱 (4개는 adaptive, 7개는 unified)
+├─ samples/                         # HTML과 CSS로 쓴 앱 11개, 하나에 크레이트 하나
 ├─ scripts/                         # setup-check.sh, check.sh, install-nik.sh, publish-main.sh
 └─ docs/
    ├─ INTENT.md                     # 왜 만드는가, 결정 D1~D10, 폐기한 대안

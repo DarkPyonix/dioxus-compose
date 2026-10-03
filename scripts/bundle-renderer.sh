@@ -14,7 +14,7 @@
 # point the executable at the copy by a path relative to itself. Do the copy first; this
 # script only rewrites names, and it checks that what it points at is really there.
 #
-#     scripts/bundle-renderer.sh staging/todo/sample-todo .
+#     scripts/bundle-renderer.sh staging/my-app/my-app .
 #     scripts/bundle-renderer.sh MyApp.app/Contents/MacOS/MyApp ../Frameworks/lib
 #
 # Where to copy the renderer to is not free choice. It finds its own Skia and AWT
