@@ -129,7 +129,7 @@ the launchers inject them ahead of whatever the prompt says.
 
 1. **A background agent never builds the renderer.** Not `./kotlin build`, not
    `./kotlin test`, not Amper, Gradle, dx or native-image, and nothing under
-   `dioxus-compose-renderer/*/scripts/`. Those builds reach outside the worktree into
+   compose-rust's `renderer/scripts/` or `renderer/*/scripts/`. Those builds reach outside the worktree into
    caches every checkout on the machine shares (`~/.m2`, `~/.cache/JetBrains/Kotlin`,
    Gradle's), they cost tens of minutes each, and six agents were once told to run them
    and did, at the same time, which took the machine down.
