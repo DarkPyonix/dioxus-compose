@@ -411,17 +411,14 @@ pub fn app() -> Element {
         // Spelled out, because this file already has a `Message` and it is a line of a
         // conversation. The library's is the one sentence an application says after
         // something happened.
-        dioxus_compose::Message::new(format!(
-            "Deleted \u{201c}{}\u{201d}",
-            removed.label()
-        ))
-        .with_action("Undo", move |()| {
-            conversations.write().insert(at, removed.clone());
-            messages.set(lines.clone());
-            current.set(gone);
-        })
-        .with_duration(MessageDuration::Long)
-        .show();
+        dioxus_compose::Message::new(format!("Deleted \u{201c}{}\u{201d}", removed.label()))
+            .with_action("Undo", move |()| {
+                conversations.write().insert(at, removed.clone());
+                messages.set(lines.clone());
+                current.set(gone);
+            })
+            .with_duration(MessageDuration::Long)
+            .show();
     };
 
     // What is on screen is one conversation's messages. The list holds every
@@ -957,9 +954,7 @@ fn launch_builder() -> dioxus_compose::LaunchBuilder {
     // nothing was listed under whatever the renderer happened to be called, and every
     // sample here was listed under the toolkit's default name until this line existed.
     dioxus_compose::LaunchBuilder::new()
-        .with_theme(with_the_references_typeface(
-            dioxus_compose::demo_theme(),
-        ))
+        .with_theme(with_the_references_typeface(dioxus_compose::demo_theme()))
         .with_window(
             dioxus_compose::schema::Window::new()
                 .with_title("Chat")
@@ -1678,17 +1673,13 @@ mod tests {
             widths_at(420.0).is_empty(),
             "a compact window should not size the thread"
         );
-        assert!(
-            widths_at(700.0)
-                .contains(&dioxus_compose::WindowSizeClass::MEDIUM_MIN_WIDTH_DP)
-        );
+        assert!(widths_at(700.0).contains(&dioxus_compose::WindowSizeClass::MEDIUM_MIN_WIDTH_DP));
         // Not the class's own boundary on a wide window. The column is the reference's,
         // which is narrower than the width at which its class begins, because a line of
         // text stops being readable long before a window stops being wide.
         assert!(widths_at(1200.0).contains(&THREAD_COLUMN));
         assert!(
-            !widths_at(1200.0)
-                .contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+            !widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
             "the thread grew to the width the class starts at, which is a window \
              measurement rather than a reading one"
         );

@@ -2,9 +2,7 @@
 //! windowed list, each taken through the wire and back.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
 use std::cell::RefCell;
 

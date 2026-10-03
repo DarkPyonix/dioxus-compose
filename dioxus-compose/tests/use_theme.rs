@@ -2,9 +2,7 @@
 //! time owned by the crate rather than leaked by the application.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::theme::{current_theme, owned_palette_count};
 use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
 

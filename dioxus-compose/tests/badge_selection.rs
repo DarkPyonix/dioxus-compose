@@ -2,9 +2,7 @@
 //! whose text can be selected and copied. Each is taken through the wire and back.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
 
 /// One decoded record, with borrowed strings turned into owned ones so the batch can be

@@ -15,9 +15,7 @@ use dioxus_compose::boundary::{
     compose_rust_host_release_batch, compose_rust_host_render_frame,
 };
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::schema::{
     EventPayload, PROTOCOL_VERSION, PropertyKind, SCHEMA_HASH, WidgetKind,
 };

@@ -11,9 +11,7 @@
 //! looked at. The width is part of the file name, so the Renderer draws each recording in
 //! a window of the size the Host was told about rather than guessing one.
 
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::schema::{
     ColorScheme, DesignSystem, EventPayload, PropertyKind, Theme, WidgetKind, WindowHeightClass,
     WindowSizeClass,

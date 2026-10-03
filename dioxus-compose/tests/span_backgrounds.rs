@@ -2,9 +2,7 @@
 
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
-use dioxus_compose::spans::{
-    SPAN_BACKGROUND_AT, SPAN_COLOR_AT, SPAN_LEN, TextSpan, TextSpans,
-};
+use dioxus_compose::spans::{SPAN_BACKGROUND_AT, SPAN_COLOR_AT, SPAN_LEN, TextSpan, TextSpans};
 use dioxus_compose::{Host, PropertyKind};
 
 /// A span record is 36 bytes, and the background is its own word after the text's paint,

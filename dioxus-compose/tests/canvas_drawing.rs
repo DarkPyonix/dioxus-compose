@@ -206,10 +206,7 @@ fn fr17_a_point_heavy_path_crosses_as_an_asset_id() {
 
     // However many points the path has, the record is the same size, because the points
     // never enter it.
-    assert_eq!(
-        list.as_bytes().len(),
-        dioxus_compose::drawing::COMMAND_LEN
-    );
+    assert_eq!(list.as_bytes().len(), dioxus_compose::drawing::COMMAND_LEN);
     assert_eq!(
         list.decode().unwrap()[0],
         DrawCommand::PolylineRef {

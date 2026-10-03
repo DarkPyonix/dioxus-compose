@@ -1200,8 +1200,7 @@ mod tests {
 
         assert!(widths_at(420.0).is_empty());
         assert!(
-            widths_at(1200.0)
-                .contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
+            widths_at(1200.0).contains(&dioxus_compose::WindowSizeClass::EXPANDED_MIN_WIDTH_DP),
             "the screen did not take a measure"
         );
     }
