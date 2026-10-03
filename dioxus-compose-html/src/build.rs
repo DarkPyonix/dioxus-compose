@@ -30,6 +30,8 @@ struct Placed {
     clip: Option<Rect>,
     opacity: f32,
     scroll_parent: Option<NodeId>,
+    /// The layout parent, when it is a box too.
+    parent: Option<NodeId>,
     /// Layout children that are boxes, in tree order.
     children: Vec<NodeId>,
     /// Whether this box starts a stacking context, and at which `z-index`.
@@ -61,6 +63,7 @@ pub(crate) fn build_display_list(
     let root = doc.root_element().id;
     painter.place(
         root,
+        None,
         Ambient {
             x: 0.0,
             y: 0.0,
@@ -127,7 +130,7 @@ fn content_box(rect: &Rect, layout: &taffy::Layout) -> Rect {
 }
 
 impl Painter<'_> {
-    fn place(&mut self, id: NodeId, ambient: Ambient) {
+    fn place(&mut self, id: NodeId, parent: Option<NodeId>, ambient: Ambient) {
         // A copy of the shared reference, so nodes borrowed from it do not hold `self`.
         let doc = self.doc;
         let Some(node) = doc.get_node(id) else {
@@ -192,7 +195,7 @@ impl Painter<'_> {
             .filter(|&child| doc.get_node(child).is_some_and(is_box))
             .collect();
         for &child in &children {
-            self.place(child, inner);
+            self.place(child, Some(id), inner);
         }
         self.placed.insert(
             id,
@@ -201,6 +204,7 @@ impl Painter<'_> {
                 clip: ambient.clip,
                 opacity,
                 scroll_parent: ambient.scroll_parent,
+                parent,
                 children,
                 context,
                 positioned,
@@ -281,6 +285,10 @@ impl Painter<'_> {
             opacity: placed.opacity,
             scroll: None,
             scroll_parent: placed.scroll_parent,
+            parent: placed
+                .parent
+                .and_then(|parent| self.doc.get_node(parent))
+                .map(|parent| display_key(self.doc, parent)),
             texts: Vec::new(),
             input: None,
         };

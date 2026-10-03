@@ -6,6 +6,10 @@
 //! order, keyed by node, with [`DisplayListDiff`] carrying only what changed after an
 //! update.
 //!
+//! [`plan_from`] turns a display list into a tree of drawing elements (boxes placed at
+//! offsets inside their containers, scroll containers, text and fields), and [`diff`] says
+//! what changed between two such trees, node by node and modifier by modifier.
+//!
 //! Text is sized by a [`TextMeasurer`] the caller supplies, so the engine that draws the
 //! text can also be the one that decides how much room it takes. [`ParleyMeasurer`] is the
 //! default.
@@ -30,6 +34,7 @@ mod display_list;
 mod dom;
 mod layout;
 mod measure;
+mod plan;
 mod writer;
 
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
@@ -45,6 +50,11 @@ pub use dom::{HtmlConfig, HtmlDom, element_by_id};
 pub use measure::{
     ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
     TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
+};
+pub use plan::{
+    BorderSide, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan, PlanChange,
+    PlanImage, PlanKey, PlanKind, PlanModifier, PlanNode, PlanText, PlanTextField, diff, plan_from,
+    plan_from_with,
 };
 
 /// Lays out a document that did not come from Dioxus (one parsed by `blitz-html`, say) at

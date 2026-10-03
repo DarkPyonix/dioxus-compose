@@ -267,6 +267,10 @@ pub struct NodeEntry {
     pub scroll: Option<ScrollContainer>,
     /// The nearest scrolling ancestor, whose scroll position moves this box.
     pub scroll_parent: Option<NodeId>,
+    /// The nearest ancestor box, listed under the id its own entry has. Paint order alone
+    /// does not say which box sits inside which (a positioned box can be painted after
+    /// boxes that are not its ancestors), and a renderer that nests boxes needs to know.
+    pub parent: Option<NodeId>,
     pub texts: Vec<TextRun>,
     pub input: Option<InputField>,
 }

@@ -84,6 +84,26 @@ pub(crate) struct DomWriter<'a> {
 }
 
 impl<'a> DomWriter<'a> {
+    /// Takes nodes that Dioxus is moving out of wherever they sit now.
+    ///
+    /// blitz-dom 0.2.4 inserts a node at its new place and then removes every occurrence of
+    /// it from its old parent's child list. When the old parent is the new parent, which is
+    /// what a keyed reorder is, that removes the node it has just inserted and the node
+    /// drops out of the tree. Detaching first makes every move an insertion of a node with
+    /// no parent.
+    fn detach_moved(&mut self, nodes: &[NodeId]) {
+        for &node in nodes {
+            let attached = self
+                .mutator
+                .doc
+                .get_node(node)
+                .is_some_and(|n| n.parent.is_some());
+            if attached {
+                self.mutator.remove_node(node);
+            }
+        }
+    }
+
     pub(crate) fn new(doc: &'a mut BaseDocument, state: &'a mut WriterState) -> Self {
         Self {
             mutator: doc.mutate(),
@@ -206,6 +226,7 @@ fn build_template_node(mutator: &mut DocumentMutator<'_>, node: &TemplateNode) -
 impl WriteMutations for DomWriter<'_> {
     fn append_children(&mut self, id: ElementId, m: usize) {
         let children = self.state.take_stack(m);
+        self.detach_moved(&children);
         if let Some(parent) = self.node(id) {
             self.mutator.append_children(parent, &children);
         }
@@ -274,6 +295,7 @@ impl WriteMutations for DomWriter<'_> {
 
     fn insert_nodes_after(&mut self, id: ElementId, m: usize) {
         let nodes = self.state.take_stack(m);
+        self.detach_moved(&nodes);
         if let Some(anchor) = self.node(id) {
             self.mutator.insert_nodes_after(anchor, &nodes);
         }
@@ -281,6 +303,7 @@ impl WriteMutations for DomWriter<'_> {
 
     fn insert_nodes_before(&mut self, id: ElementId, m: usize) {
         let nodes = self.state.take_stack(m);
+        self.detach_moved(&nodes);
         if let Some(anchor) = self.node(id) {
             self.mutator.insert_nodes_before(anchor, &nodes);
         }
