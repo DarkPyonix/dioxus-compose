@@ -238,6 +238,117 @@ pub struct InputField {
     pub color: Rgba,
 }
 
+/// A colour at a point along a gradient.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GradientStop {
+    /// Where the colour sits, as a fraction of the gradient line (linear) or of the
+    /// horizontal radius (radial). Already in order, never decreasing; it may lie outside
+    /// `0..=1` when the CSS put it there.
+    pub offset: f32,
+    pub color: Rgba,
+}
+
+/// A `linear-gradient()` or `repeating-linear-gradient()`, resolved against the tile it
+/// fills.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LinearGradient {
+    /// The direction in degrees, clockwise from pointing up, as CSS measures it. Keywords
+    /// (`to right`, `to top left`) are already turned into the angle they mean for this
+    /// tile's size.
+    pub angle: f32,
+    /// Where the gradient line starts and ends, from the tile's top-left corner. The
+    /// line is as long as CSS makes it: the corners of the tile lie on the lines through
+    /// its ends perpendicular to it.
+    pub start: (f32, f32),
+    pub end: (f32, f32),
+    pub stops: Vec<GradientStop>,
+    /// The stops repeat along the line beyond the last one.
+    pub repeating: bool,
+}
+
+/// A `radial-gradient()` or `repeating-radial-gradient()`, resolved against the tile it
+/// fills.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RadialGradient {
+    /// `circle` rather than `ellipse`. A circle's two radii are equal.
+    pub circle: bool,
+    /// The centre, from the tile's top-left corner.
+    pub center: (f32, f32),
+    /// The ending shape's radii. Extent keywords (`closest-side`, `farthest-corner`) are
+    /// already resolved for this tile and centre.
+    pub radius_x: f32,
+    pub radius_y: f32,
+    pub stops: Vec<GradientStop>,
+    pub repeating: bool,
+}
+
+/// What one background layer draws.
+#[derive(Clone, Debug, PartialEq)]
+pub enum BackgroundImage {
+    /// An image named by URL: as written, resolved against the document's base URL when
+    /// there is one. Loading it is the application's business.
+    Url(String),
+    Linear(LinearGradient),
+    Radial(RadialGradient),
+}
+
+/// How a background tile repeats along one axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TileRepeat {
+    /// One tile, where `tile` says.
+    NoRepeat,
+    /// Tiles edge to edge in both directions from `tile`, as far as the painting area
+    /// reaches. `round` arrives as this, with the tile already resized to fit a whole number
+    /// of times.
+    Repeat,
+    /// `space`: tiles from the start of the positioning area with `gap` between them, as
+    /// many whole tiles as fit.
+    Space { gap: f32 },
+}
+
+/// One layer of a box's background, resolved to rectangles.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BackgroundLayer {
+    pub image: BackgroundImage,
+    /// The painting area (`background-clip`): nothing of the layer is drawn outside it.
+    pub area: Rect,
+    /// Where one tile goes (`background-origin`, `background-size` and
+    /// `background-position` applied). Gradient geometry is measured from its top-left
+    /// corner.
+    pub tile: Rect,
+    pub repeat_x: TileRepeat,
+    pub repeat_y: TileRepeat,
+}
+
+/// `object-fit`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ObjectFit {
+    #[default]
+    Fill,
+    Contain,
+    Cover,
+    None,
+    ScaleDown,
+}
+
+/// The image an `<img>` element shows.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReplacedImage {
+    /// The `src`: as written, resolved against the document's base URL when there is one.
+    pub source: String,
+    pub alt: Option<String>,
+    /// The content box, which the image is clipped to.
+    pub content_rect: Rect,
+    /// Where the image is drawn, with `object-fit` and `object-position` applied. It can
+    /// reach outside the content box (`cover`, or `none` on a large image); what lies
+    /// outside is not drawn. Without a natural size it is the content box.
+    pub image_rect: Rect,
+    pub fit: ObjectFit,
+    /// What the application's [`ImageResolver`](crate::ImageResolver) answered for the
+    /// image's natural size during layout, if anything.
+    pub natural_size: Option<(f32, f32)>,
+}
+
 /// Everything one node contributes to the picture.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeEntry {
@@ -250,6 +361,9 @@ pub struct NodeEntry {
     /// hit.
     pub visible: bool,
     pub background: Option<Rgba>,
+    /// `background-image` layers in CSS order: the first is drawn on top, and all of them
+    /// over the background colour.
+    pub backgrounds: Vec<BackgroundLayer>,
     pub border: Option<Border>,
     /// `None` when every corner is square. Radii are already reduced the way CSS reduces
     /// radii that would overlap.
@@ -273,6 +387,8 @@ pub struct NodeEntry {
     pub parent: Option<NodeId>,
     pub texts: Vec<TextRun>,
     pub input: Option<InputField>,
+    /// Present for an `<img>` with a `src`.
+    pub image: Option<ReplacedImage>,
 }
 
 /// A laid-out document, back to front.

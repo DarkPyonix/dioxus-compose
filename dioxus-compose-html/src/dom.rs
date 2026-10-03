@@ -7,6 +7,7 @@ use std::sync::{Arc, Once};
 
 use blitz_dom::{BaseDocument, DocumentConfig, NodeData};
 use blitz_html::HtmlProvider;
+use blitz_traits::net::{DummyNetProvider, Url};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_core::{Element, ElementId, Event, VirtualDom};
 use dioxus_html::geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint};
@@ -19,8 +20,10 @@ use dioxus_html::{HasMouseData, HtmlEventConverter, Modifiers, MouseData, Platfo
 use crate::NodeId;
 use crate::build::build_display_list;
 use crate::display_list::{DisplayList, DisplayListDiff};
+use crate::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::measure::{ParleyMeasurer, TextMeasurer};
+use crate::plan::{ColourResolver, Plan, plan_from_images};
 use crate::writer::{DomWriter, WriterState, element_name};
 
 /// How an [`HtmlDom`] is set up.
@@ -35,6 +38,14 @@ pub struct HtmlConfig {
     pub measurer: Option<Box<dyn TextMeasurer>>,
     /// Answers `prefers-color-scheme` media queries.
     pub color_scheme: ColorScheme,
+    /// The URL relative `src` attributes and CSS `url()` values resolve against. When
+    /// `None`, or when it is not a URL relative ones can be resolved against, they are
+    /// recorded as written.
+    pub base_url: Option<String>,
+    /// What the application knows about the images the document names: their natural
+    /// sizes during layout, and the assets that draw them when [`HtmlDom::plan`] builds a
+    /// plan. Without one, an `<img>` has no natural size and no image draws anything.
+    pub images: Option<Box<dyn ImageResolver>>,
 }
 
 impl Default for HtmlConfig {
@@ -44,6 +55,8 @@ impl Default for HtmlConfig {
             user_agent_stylesheet: None,
             measurer: None,
             color_scheme: ColorScheme::Light,
+            base_url: None,
+            images: None,
         }
     }
 }
@@ -51,12 +64,17 @@ impl Default for HtmlConfig {
 /// A Dioxus app whose screen is HTML elements and CSS, laid out inside the Host.
 ///
 /// The app's root renders into `<body>`. Nothing is executed from the document: a
-/// `<script>` element is an inert element that the user-agent stylesheet hides.
+/// `<script>` element is an inert element that the user-agent stylesheet hides. Nothing is
+/// fetched either: the document's network provider drops every request blitz-dom makes for
+/// an image, a stylesheet or a font.
 pub struct HtmlDom {
     vdom: VirtualDom,
     doc: BaseDocument,
     state: WriterState,
     measurer: Box<dyn TextMeasurer>,
+    images: Option<Box<dyn ImageResolver>>,
+    /// The base URL the document was given: the application's, or [`UNRESOLVED_BASE`].
+    base_url: String,
     color_scheme: ColorScheme,
     current: Option<DisplayList>,
     previous: Option<DisplayList>,
@@ -70,11 +88,22 @@ impl HtmlDom {
 
     pub fn with_config(app: fn() -> Element, config: HtmlConfig) -> Self {
         register_event_converter();
+        // A base that relative URLs cannot be resolved against (`data:`, `about:blank`)
+        // would make blitz-dom panic on the first relative `<img src>`.
+        let base_url = config
+            .base_url
+            .filter(|base| Url::parse(base).is_ok_and(|url| !url.cannot_be_a_base()))
+            .unwrap_or_else(|| UNRESOLVED_BASE.to_string());
         let mut doc = BaseDocument::new(DocumentConfig {
             ua_stylesheets: config.user_agent_stylesheet.map(|sheet| vec![sheet]),
             // `dangerous_inner_html` is parsed as HTML; scripts in it stay inert.
             html_parser_provider: Some(Arc::new(HtmlProvider)),
             viewport: Some(Viewport::new(0, 0, 1.0, config.color_scheme)),
+            base_url: Some(base_url.clone()),
+            // blitz-dom asks its provider for every `<img src>`, background image, linked
+            // stylesheet and web font. This one drops each request: loading is the
+            // application's business, through its image resolver.
+            net_provider: Some(Arc::new(DummyNetProvider)),
             ..DocumentConfig::default()
         });
 
@@ -102,6 +131,8 @@ impl HtmlDom {
             measurer: config
                 .measurer
                 .unwrap_or_else(|| Box::new(ParleyMeasurer::new())),
+            images: config.images,
+            base_url,
             color_scheme: config.color_scheme,
             current: None,
             previous: None,
@@ -123,9 +154,15 @@ impl HtmlDom {
     /// device pixels per CSS pixel, and returns what to draw.
     pub fn layout(&mut self, width: f32, height: f32, scale: f32) -> &DisplayList {
         self.set_viewport(width, height, scale);
+        let resolver = self
+            .images
+            .as_deref_mut()
+            .map(|images| images as &mut dyn ImageResolver);
+        let mut lookup = ImageLookup::new(resolver, Some(&self.base_url));
         resolve_styles(&mut self.doc);
+        apply_natural_sizes(&mut self.doc, &mut lookup);
         let texts = run_layout(&mut self.doc, &mut *self.measurer);
-        let list = build_display_list(&self.doc, &texts);
+        let list = build_display_list(&self.doc, &texts, &mut lookup);
         self.previous = self.current.replace(list);
         self.current
             .as_ref()
@@ -149,6 +186,23 @@ impl HtmlDom {
     /// The display list of the last [`HtmlDom::layout`].
     pub fn display_list(&self) -> Option<&DisplayList> {
         self.current.as_ref()
+    }
+
+    /// The plan for the last [`HtmlDom::layout`], with colours expressed through
+    /// `colours` and images drawn with the assets the configured
+    /// [`ImageResolver`] names. `None` before the first layout.
+    pub fn plan(&mut self, colours: &mut dyn ColourResolver) -> Option<Plan> {
+        let list = self.current.as_ref()?;
+        let images = self
+            .images
+            .as_deref_mut()
+            .map(|images| images as &mut dyn ImageResolver);
+        Some(plan_from_images(list, colours, images))
+    }
+
+    /// Replaces the image resolver; the next layout and plan use it.
+    pub fn set_image_resolver(&mut self, images: Option<Box<dyn ImageResolver>>) {
+        self.images = images;
     }
 
     /// The topmost node at a point of the last layout, in document coordinates.
