@@ -197,6 +197,24 @@ the launchers inject them ahead of whatever the prompt says.
    **test names** (`fr4_set_prop_does_not_recompose_siblings`) keep theirs, because the
    traceability from a failing test to its requirement is the point of the TDD rules below.
    Anything a test *prints* follows the rule above.
+4. **Install and run examples use uv, ppp (pypackpack) and tcl (toolchain-lite) for anything
+   Python, and cargo for Rust.** No `pip install` examples anywhere: README, guide, docs,
+   comments. This is the owner's rule for every thisisthepy and darkpyonix repository
+   (2026-10-03, relayed by the leaders), so a reader sees one way to install things across
+   the projects. Rust examples stay `cargo add`, `cargo run`, `cargo build` as they are.
+5. **House style for documents is pythonx-compose's.** The reference is
+   `docs/style/writing.md` in thisisthepy/pythonx-compose (develop branch); the owner decided
+   ("문서 말투는 pythonx-compose 쪽 기준으로", 2026-10-03) that every repository's READMEs, guide
+   and docs follow it. In short:
+   - say what is true now, in the present tense, and mark what is not built yet with its
+     status and the issue that tracks it, because a plan described as shipped misleads;
+   - short declarative sentences, one idea each, with the reason beside every rule;
+   - English and Korean carry the same content in the same order, written naturally in each
+     language rather than translated word for word;
+   - Korean user-facing text (README_ko, the guide) is 합니다체, internal records
+     (`PROJECT.md`, `docs/INTENT.md`, `docs/SPEC.md`) are 한다체.
+   Where that file and this one differ, the rules in this file that are specific to this
+   repository (rules 1 to 4 above) still hold, and the rest follows pythonx-compose.
 
 ## Test Driven Development
 
