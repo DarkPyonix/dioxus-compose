@@ -1707,13 +1707,13 @@ if design.is_apple() {
 4. 상자 하나의 배경색만 바꾸는 갱신에서, 그 상자 말고 다른 노드의 레코드가 나가지 않습니다.
 5. `<script>`가 있는 화면을 그려도 스크립트가 실행되지 않고, 프로세스가 중단되지 않습니다.
 
-#### FR-34.1 CSS transform 전부 (`Draft`, 목표 M14)
+#### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
 
-M12 이후 과제입니다. 지원하지 않는다는 뜻이 아니라, M12(10-15)의 범위 뒤에 오는 일입니다(소유자 결정 2026-10-03).
+M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "M12 이후 과제로 SPEC에 남기도록 해", 날짜는 "일부 10-18 안"에서 transform을 10-18 안에 포함).
 
 - `translate`, `rotate`, `scale`, `skew`와 그 조합, `matrix()`, `transform-origin`을 상자와 그 안의 내용에 적용합니다.
 - **지금 상태.** stylo는 `transform`을 계산합니다. dioxus-compose-html은 이동(`translate`, `translateX`, `translateY`)만 상자 위치에 더하고, 그 밖의 변환이 섞이면 상자를 레이아웃 자리에 둡니다. blitz-dom에는 그리는 단계가 없으므로 회전과 확대는 이 프로젝트가 그려야 합니다.
-- **구현 경로 후보.** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
+- **구현 경로(정해짐).** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
 - 변환은 레이아웃에 영향을 주지 않습니다(CSS와 같음). 적중 판정(FR-34의 이벤트 전달)은 변환된 모양 기준입니다.
 
 수용 기준:
@@ -1722,23 +1722,27 @@ M12 이후 과제입니다. 지원하지 않는다는 뜻이 아니라, M12(10-1
 3. 회전된 상자의 모서리 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불립니다.
 4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
 
-#### FR-34.2 CSS transition과 animation (`Draft`, 목표 M14)
+#### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
 
 M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme에 transition 확인을 넣습니다.
+
+**경로와 날짜(소유자 결정 2026-10-03).** 경로는 "혼합안"입니다. `opacity`, `color`, `background-color`, `transform`처럼 레이아웃에 영향이 없는 속성은 렌더러가 Compose 애니메이션으로 재생하고(아래 (나)), 폭, 높이, 여백 같은 레이아웃 속성만 Host가 매 프레임 blitz에 시각을 넘겨 다시 계산합니다(아래 (가)). 날짜는 "일부 10-18 안"입니다. (나)에 해당하는 `opacity`와 `transform`(FR-34.1 포함)은 10-18(M14) 안에 넣고, 레이아웃 속성 애니메이션은 그 뒤(M15)로 둡니다.
 
 - `transition`과 `@keyframes`/`animation`을 CSS가 정한 시간 함수와 반복대로 재생합니다.
 - **지금 상태.** blitz-dom 0.2.4는 stylo의 애니메이션과 transition 상태를 스타일 단계에서 진행시킵니다. 현재 시각을 받아 값을 계산하고(`BaseDocument::resolve_stylist(now)`), 진행 중인지 알려 줍니다(`BaseDocument::is_animating()`). dioxus-compose-html은 시각을 늘 0으로 넘기므로 지금은 모든 애니메이션이 첫 값에 멈춰 있습니다. 즉 막혀 있는 것은 blitz가 아니라 이 크레이트입니다.
 - **구현 경로 후보 둘.**
   - **(가) Host가 매 프레임 시각을 넘긴다.** blitz가 계산한 값이 바뀐 노드만 갱신으로 나갑니다. 구현이 가장 짧습니다. 대가: 애니메이션이 도는 동안 매 프레임 Host가 스타일과 레이아웃을 다시 계산합니다. 지금 측정으로 한 프레임이 사이드바 화면에서 약 2~3ms(dioxus-compose-html/benches/baseline.json)이므로 프레임 예산(NFR-9)을 넘깁니다. 또 애니메이션 상태가 Host에 있게 되어 D5와 어긋납니다.
   - **(나) 렌더러가 Compose 애니메이션으로 재생한다.** Host는 시작 값, 끝 값, 시간, 시간 함수를 한 번 보내고, 렌더러가 `animate*AsState`/`Animatable`과 `graphicsLayer`로 재생합니다. D5(애니메이션 상태는 렌더러)와 맞고 매 프레임 Host 비용이 없습니다. 대가: 레이아웃에 영향을 주는 속성(`width`, `height`, `margin` 등)의 애니메이션은 렌더러가 혼자 재생할 수 없어 (가)로 돌아가야 하고, 애니메이션을 기술하는 레코드가 compose-rust 스키마에 필요합니다.
-  - 제안: 레이아웃에 영향이 없는 속성(`opacity`, `transform`, `color`, `background-color`)은 (나), 나머지는 (가). 경로 결정은 소유자 몫입니다.
+  - 위의 결정대로 레이아웃에 영향이 없는 속성은 (나), 나머지는 (가)입니다.
 
 수용 기준:
 1. `opacity`, `transform`, `background-color`의 transition이 CSS가 정한 시간과 시간 함수대로 진행되고, 끝 값이 Chromium과 같습니다.
 2. `@keyframes`의 반복(`infinite` 포함)과 `animation-direction`, `animation-delay`가 지켜집니다.
-3. 레이아웃에 영향이 없는 속성의 애니메이션이 도는 동안 Host의 프레임당 작업이 0입니다(경로 (나)를 택한 경우).
+3. 레이아웃에 영향이 없는 속성의 애니메이션이 도는 동안 Host의 프레임당 작업이 0입니다.
 4. 애니메이션이 도는 동안 프레임 시간이 NFR-9 예산 안이고, 수치를 이 항목에 기록합니다.
 5. `prefers-reduced-motion: reduce`이면 CSS가 그 조건으로 정한 대로 동작합니다.
+
+기준 1, 3과 `opacity`/`transform`에 대한 기준 2, 5는 M14(10-18)에서, 레이아웃 속성에 대한 기준 2, 4, 5는 M15에서 확인합니다.
 
 ### FR-37 마크다운 크레이트 (`Agreed`)
 
