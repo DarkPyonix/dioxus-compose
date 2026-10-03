@@ -458,10 +458,10 @@ impl ComposeRenderer {
     }
 
     fn write(&mut self, mutation: Mutation<'_>) {
-        if self.error.is_none() {
-            if let Err(error) = self.encoder.encode(&mutation) {
-                self.error = Some(error);
-            }
+        if self.error.is_none()
+            && let Err(error) = self.encoder.encode(&mutation)
+        {
+            self.error = Some(error);
         }
     }
 
@@ -682,10 +682,11 @@ impl ComposeRenderer {
     /// Puts the slot under `parent` at `position`, and says which position it took.
     fn attach(&mut self, parent: u32, slot: Slot, position: usize) -> usize {
         let mut position = position;
-        if let Some((from, was_at)) = self.detach(slot) {
-            if from == parent && was_at < position {
-                position -= 1;
-            }
+        if let Some((from, was_at)) = self.detach(slot)
+            && from == parent
+            && was_at < position
+        {
+            position -= 1;
         }
         let list = self.children.entry(parent).or_default();
         let position = position.min(list.len());
@@ -961,12 +962,12 @@ impl WriteMutations for ComposeRenderer {
     fn remove_node(&mut self, id: ElementId) {
         self.detach(Slot::Hole(id.0));
         self.placeholders.remove(&id.0);
-        if let Some(node_id) = self.node(id) {
-            if node_id != PLACEHOLDER_NODE {
-                self.detach(Slot::Node(node_id));
-                self.write(Mutation::Remove { node_id });
-                self.forget(node_id);
-            }
+        if let Some(node_id) = self.node(id)
+            && node_id != PLACEHOLDER_NODE
+        {
+            self.detach(Slot::Node(node_id));
+            self.write(Mutation::Remove { node_id });
+            self.forget(node_id);
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
             *slot = None;

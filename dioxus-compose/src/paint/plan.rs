@@ -46,13 +46,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::NodeId;
-use crate::display_list::{
+use crate::html::NodeId;
+use crate::layout::image::{AssetId, ImageResolver};
+use crate::layout::measure::TextStyle;
+use crate::paint::display_list::{
     BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
     Sides, TextAlign, TileRepeat,
 };
-use crate::image::{AssetId, ImageResolver};
-use crate::measure::TextStyle;
 
 /// How close two lengths must be to count as equal, in CSS pixels.
 const EPSILON: f32 = 0.01;
@@ -644,10 +644,10 @@ impl<'a> Builder<'a> {
             if !seen.insert(id) {
                 break;
             }
-            if let Some(&container) = self.content.get(&id) {
-                if !self.drawn_after(container, bounds) {
-                    return container;
-                }
+            if let Some(&container) = self.content.get(&id)
+                && !self.drawn_after(container, bounds)
+            {
+                return container;
             }
             parent = self
                 .by_node

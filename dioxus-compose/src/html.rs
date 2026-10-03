@@ -30,8 +30,13 @@
 //! [`HtmlDom::check`] and [`HtmlDom::submit`], which a renderer calls with what the user
 //! committed in its own fields.
 //!
+//! The names live here rather than at the crate root because the Compose widget path
+//! already uses some of them there for something else: [`Brush`], [`ColorScheme`] and
+//! [`TextAlign`] are the HTML path's own, and the crate root's are the widgets'. The code
+//! behind them is in the crate's `dom`, `layout` and `paint` modules.
+//!
 //! ```ignore
-//! use dioxus_compose_html::prelude::*;
+//! use dioxus_compose::html::prelude::*;
 //!
 //! fn app() -> Element {
 //!     rsx! { div { style: "display: flex; gap: 8px", span { "Hello" } } }
@@ -41,40 +46,32 @@
 //! let list = dom.layout(800.0, 600.0, 2.0);
 //! ```
 
-mod background;
-mod build;
-mod convert;
-mod display_list;
-mod dom;
-mod form;
-mod image;
-mod layout;
-mod measure;
-mod plan;
-mod writer;
+use crate::dom;
+use crate::layout::{self, image};
+use crate::paint::build;
 
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
 pub type NodeId = usize;
 
-pub use blitz_dom::BaseDocument;
-pub use blitz_traits::shell::ColorScheme;
-pub use display_list::{
+pub use crate::dom::{HtmlConfig, HtmlDom, element_by_id};
+pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
+pub use crate::layout::measure::{
+    ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
+    TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
+};
+pub use crate::paint::display_list::{
     BackgroundImage, BackgroundLayer, Border, BorderLine, BoxShadow, Corners, DisplayList,
     DisplayListDiff, GradientStop, InputField, InputKind, LinearGradient, NodeEntry, ObjectFit,
     RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides, TextAlign, TextRun,
     TileRepeat,
 };
-pub use dom::{HtmlConfig, HtmlDom, element_by_id};
-pub use image::{AssetId, ImageResolver, ImageSize};
-pub use measure::{
-    ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
-    TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
-};
-pub use plan::{
+pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,
     PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier, PlanNode, PlanText,
     PlanTextField, diff, plan_from, plan_from_images, plan_from_with,
 };
+pub use blitz_dom::BaseDocument;
+pub use blitz_traits::shell::ColorScheme;
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
@@ -114,9 +111,18 @@ pub fn layout_document_with(
 }
 
 /// What an app needs in scope to write `rsx!` with HTML elements.
+///
+/// This is not the crate's own [`prelude`](crate::prelude): that one names the Compose
+/// widgets as `dioxus_elements`, and this one names the HTML elements, so an `rsx!` block
+/// takes one or the other.
 pub mod prelude {
-    pub use crate::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize};
+    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize};
     pub use dioxus_core::{Element, VirtualDom};
     pub use dioxus_core_macro::rsx;
     pub use dioxus_html as dioxus_elements;
+    // The crates `rsx!` expands into references to, under the names it expands into, for
+    // the same reason the crate's own prelude carries them: an application that added only
+    // `dioxus-compose` has neither in its dependency graph by name.
+    pub use dioxus_core;
+    pub use dioxus_signals;
 }

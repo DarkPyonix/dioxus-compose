@@ -13,7 +13,7 @@ use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
 
-use crate::NodeId;
+use crate::html::NodeId;
 
 const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 

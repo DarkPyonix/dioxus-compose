@@ -11,8 +11,8 @@ use std::rc::Rc;
 use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
-use dioxus_compose_html::prelude::*;
-use dioxus_compose_html::{
+use dioxus_compose::html::prelude::*;
+use dioxus_compose::html::{
     BaseDocument, BorderLine, DisplayList, HtmlConfig, HtmlDom, InputKind, NodeEntry, Rect, Rgba,
     TextMeasureRequest, TextMeasurer, TextMetrics, TextWhiteSpace, WidthConstraint, element_by_id,
     layout_document,

@@ -3,7 +3,7 @@
 [![CI](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml)
 [![Native renderer](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/native-renderer.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust 1.85+](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
 **English** · [한국어](docs/locales/README_ko.md)
 
@@ -362,7 +362,7 @@ everything below assumes it passes.
 ### 1. Rust
 
 Install through [rustup](https://rustup.rs). `scripts/check.sh` runs `cargo fmt` and `cargo clippy`,
-so both components are required. The workspace targets Rust **1.85+** (edition 2024).
+so both components are required. The workspace targets Rust **1.88+** (edition 2024).
 
 ```bash
 rustup component add rustfmt clippy
@@ -546,7 +546,9 @@ dioxus-compose/
 │  │  ├─ schema.rs                  #   the single source of truth for the wire schema
 │  │  ├─ protocol.rs                #   fixed-layout encoding (PR-4)
 │  │  ├─ boundary.rs                #   C ABI surface, launch / LaunchBuilder
-│  │  └─ codegen.rs                 #   Rust schema → Kotlin types
+│  │  ├─ codegen.rs                 #   Rust schema → Kotlin types
+│  │  ├─ html.rs                    #   HTML and CSS screens: HtmlDom, layout_document, plan_from
+│  │  └─ dom/ layout/ paint/        #   blitz-dom document and events, layout pass, display list
 │  ├─ examples/desktop_demo.rs      #   the runnable demo
 │  ├─ benches/baseline.json         #   the recorded performance baseline
 │  └─ tests/vectors/                #   protocol vectors both sides assert against

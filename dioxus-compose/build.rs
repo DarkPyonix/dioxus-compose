@@ -116,81 +116,81 @@ fn main() {
     // A static archive rather than a library beside the binary, because Kotlin/Native
     // produces one and because what is inside it is most of Compose and all of Skia: what
     // the application does not reach, the linker drops.
-    if target_os == "macos" {
-        if let Some(dir) = std::env::var_os("DXC_MACOS_NATIVE_LIB") {
-            let dir = PathBuf::from(dir);
-            println!("cargo:rerun-if-env-changed=DXC_MACOS_NATIVE_LIB");
-            // The archive itself, not only the variable naming it. Rebuilding the
-            // renderer and not saying so left Cargo linking yesterday's one and
-            // reporting a build that finished in no time at all.
-            println!(
-                "cargo:rerun-if-changed={}",
-                dir.join("libdioxus_compose_renderer.a").display()
-            );
-            println!("cargo:rustc-link-search=native={}", dir.display());
-            println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
-            // What the archive itself calls in. Kotlin/Native names none of these: they
-            // are the frameworks Compose and Skia reach through, and the compression the
-            // Kotlin runtime uses for its own resources.
-            for framework in [
-                "AppKit",
-                "Foundation",
-                "Metal",
-                "QuartzCore",
-                "CoreGraphics",
-                "CoreText",
-                "CoreServices",
-                "IOKit",
-                "Carbon",
-                "OpenGL",
-            ] {
-                println!("cargo:rustc-link-lib=framework={framework}");
-            }
-            println!("cargo:rustc-link-lib=dylib=c++");
-            println!("cargo:rustc-link-lib=dylib=z");
-            println!("cargo:rustc-cfg=renderer_linked");
-            return;
+    if target_os == "macos"
+        && let Some(dir) = std::env::var_os("DXC_MACOS_NATIVE_LIB")
+    {
+        let dir = PathBuf::from(dir);
+        println!("cargo:rerun-if-env-changed=DXC_MACOS_NATIVE_LIB");
+        // The archive itself, not only the variable naming it. Rebuilding the
+        // renderer and not saying so left Cargo linking yesterday's one and
+        // reporting a build that finished in no time at all.
+        println!(
+            "cargo:rerun-if-changed={}",
+            dir.join("libdioxus_compose_renderer.a").display()
+        );
+        println!("cargo:rustc-link-search=native={}", dir.display());
+        println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
+        // What the archive itself calls in. Kotlin/Native names none of these: they
+        // are the frameworks Compose and Skia reach through, and the compression the
+        // Kotlin runtime uses for its own resources.
+        for framework in [
+            "AppKit",
+            "Foundation",
+            "Metal",
+            "QuartzCore",
+            "CoreGraphics",
+            "CoreText",
+            "CoreServices",
+            "IOKit",
+            "Carbon",
+            "OpenGL",
+        ] {
+            println!("cargo:rustc-link-lib=framework={framework}");
         }
+        println!("cargo:rustc-link-lib=dylib=c++");
+        println!("cargo:rustc-link-lib=dylib=z");
+        println!("cargo:rustc-cfg=renderer_linked");
+        return;
     }
 
     // The same thing on Linux, from `build-linux.sh`, and the same reasons.
-    if target_os == "linux" {
-        if let Some(dir) = std::env::var_os("DXC_LINUX_NATIVE_LIB") {
-            let dir = PathBuf::from(dir);
-            println!("cargo:rerun-if-env-changed=DXC_LINUX_NATIVE_LIB");
-            println!(
-                "cargo:rerun-if-changed={}",
-                dir.join("libdioxus_compose_renderer.a").display()
-            );
-            println!("cargo:rustc-link-search=native={}", dir.display());
-            println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
-            // What the archive itself calls in and Kotlin/Native names none of: the
-            // window's own libraries, the font configuration Skia asks for a font
-            // through, and the compression the Kotlin runtime uses for its resources.
-            // `stdc++` where macOS says `c++`: Skia is C++ and names its standard
-            // library's symbols, and the archive says nothing about which one. Without it
-            // the link fails on eight hundred references to std::string from Skia's text
-            // shaping alone.
-            for library in ["X11", "Xext", "GL", "fontconfig", "freetype", "stdc++", "z"] {
-                println!("cargo:rustc-link-lib=dylib={library}");
-            }
-            // A desktop keeps these where its own convention puts them and the
-            // conventions differ, so both are searched. One that is not there costs
-            // nothing.
-            for path in ["/usr/lib/x86_64-linux-gnu", "/usr/lib64"] {
-                println!("cargo:rustc-link-search=native={path}");
-            }
-            // The Host's own five functions, put where the renderer can find them.
-            //
-            // It resolves them by name at startup with `dlsym`, which reads the dynamic
-            // symbol table, and an executable's table holds only what it was asked to
-            // export. Without this they are in the binary and not in that table, and the
-            // window opens, stays black and reports that
-            // `dioxus_compose_host_init is not in this image`.
-            println!("cargo:rustc-link-arg=-rdynamic");
-            println!("cargo:rustc-cfg=renderer_linked");
-            return;
+    if target_os == "linux"
+        && let Some(dir) = std::env::var_os("DXC_LINUX_NATIVE_LIB")
+    {
+        let dir = PathBuf::from(dir);
+        println!("cargo:rerun-if-env-changed=DXC_LINUX_NATIVE_LIB");
+        println!(
+            "cargo:rerun-if-changed={}",
+            dir.join("libdioxus_compose_renderer.a").display()
+        );
+        println!("cargo:rustc-link-search=native={}", dir.display());
+        println!("cargo:rustc-link-lib=static=dioxus_compose_renderer");
+        // What the archive itself calls in and Kotlin/Native names none of: the
+        // window's own libraries, the font configuration Skia asks for a font
+        // through, and the compression the Kotlin runtime uses for its resources.
+        // `stdc++` where macOS says `c++`: Skia is C++ and names its standard
+        // library's symbols, and the archive says nothing about which one. Without it
+        // the link fails on eight hundred references to std::string from Skia's text
+        // shaping alone.
+        for library in ["X11", "Xext", "GL", "fontconfig", "freetype", "stdc++", "z"] {
+            println!("cargo:rustc-link-lib=dylib={library}");
         }
+        // A desktop keeps these where its own convention puts them and the
+        // conventions differ, so both are searched. One that is not there costs
+        // nothing.
+        for path in ["/usr/lib/x86_64-linux-gnu", "/usr/lib64"] {
+            println!("cargo:rustc-link-search=native={path}");
+        }
+        // The Host's own five functions, put where the renderer can find them.
+        //
+        // It resolves them by name at startup with `dlsym`, which reads the dynamic
+        // symbol table, and an executable's table holds only what it was asked to
+        // export. Without this they are in the binary and not in that table, and the
+        // window opens, stays black and reports that
+        // `dioxus_compose_host_init is not in this image`.
+        println!("cargo:rustc-link-arg=-rdynamic");
+        println!("cargo:rustc-cfg=renderer_linked");
+        return;
     }
 
     let manifest_dir = PathBuf::from(

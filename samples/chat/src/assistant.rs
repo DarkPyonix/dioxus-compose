@@ -184,11 +184,11 @@ pub fn stream_reply(
                     return;
                 }
                 let mut list = messages.write();
-                if let Some(message) = list.last_mut() {
-                    if message.token == token {
-                        message.text.push_str(&reply);
-                        message.streaming = false;
-                    }
+                if let Some(message) = list.last_mut()
+                    && message.token == token
+                {
+                    message.text.push_str(&reply);
+                    message.streaming = false;
                 }
                 return;
             }

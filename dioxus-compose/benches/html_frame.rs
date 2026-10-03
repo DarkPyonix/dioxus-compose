@@ -54,8 +54,8 @@ use std::time::{Duration, Instant};
 use blitz_dom::{BaseDocument, LocalName, Namespace, QualName};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use criterion::{Criterion, criterion_group, criterion_main};
-use dioxus_compose_html::prelude::*;
-use dioxus_compose_html::{
+use dioxus_compose::html::prelude::*;
+use dioxus_compose::html::{
     DisplayList, DisplayListDiff, NodeId, Plan, PlanChange, TextLineHeight, TextMeasureRequest,
     TextMeasurer, TextMetrics, diff, layout_document, plan_from,
 };

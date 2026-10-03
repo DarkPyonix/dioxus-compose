@@ -1,5 +1,12 @@
 //! A Dioxus app over a blitz-dom document: mutations in, display lists out, pointers routed
 //! back to handlers.
+//!
+//! The form controls' behaviour (what a click on a checkbox or a submit button does, and
+//! the values a form event carries) is in [`form`], and the writer that applies Dioxus
+//! mutations to the document in `writer`.
+
+pub(crate) mod form;
+mod writer;
 
 use std::any::Any;
 use std::rc::Rc;
@@ -17,15 +24,14 @@ use dioxus_html::point_interaction::{
 };
 use dioxus_html::{HasMouseData, HtmlEventConverter, Modifiers, MouseData, PlatformEventData};
 
-use crate::NodeId;
-use crate::build::build_display_list;
-use crate::display_list::{DisplayList, DisplayListDiff};
-use crate::form;
-use crate::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
+use crate::html::NodeId;
+use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
+use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
 use crate::layout::{local, resolve_styles, run_layout};
-use crate::measure::{ParleyMeasurer, TextMeasurer};
-use crate::plan::{ColourResolver, Plan, plan_from_images};
-use crate::writer::{DomWriter, WriterState, element_name};
+use crate::paint::build::build_display_list;
+use crate::paint::display_list::{DisplayList, DisplayListDiff};
+use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
+use writer::{DomWriter, WriterState, element_name};
 
 /// What a browser's own stylesheet says about `<select>` and blitz-dom's does not: the
 /// control is a box of its own, and its options are not drawn in the page, since the
@@ -224,10 +230,10 @@ impl HtmlDom {
     pub fn listener_target(&self, node: NodeId, event: &str) -> Option<(NodeId, ElementId)> {
         let mut current = Some(node);
         while let Some(id) = current {
-            if self.state.listeners(id).contains(&event) {
-                if let Some(element) = self.state.element_of(id) {
-                    return Some((id, element));
-                }
+            if self.state.listeners(id).contains(&event)
+                && let Some(element) = self.state.element_of(id)
+            {
+                return Some((id, element));
             }
             current = self
                 .doc
@@ -587,7 +593,7 @@ struct Converter;
 
 fn not_sent(kind: &str) -> ! {
     panic!(
-        "dioxus-compose-html does not send {kind} events yet, so it has no {kind} data to \
+        "the HTML path does not send {kind} events yet, so it has no {kind} data to \
          convert; something else delivered one through the shared event converter"
     )
 }

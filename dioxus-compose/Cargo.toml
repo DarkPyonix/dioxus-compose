@@ -44,6 +44,31 @@ dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
 dioxus-signals.workspace = true
+# Element and event definitions for `div`, `span`, `onclick` and the rest, for screens
+# written with HTML elements and CSS. Without `serialize`: nothing here crosses a wire as
+# JSON.
+dioxus-html = { version = "0.7.10", default-features = false }
+
+# Screens written with HTML and CSS are laid out inside the Host by blitz-dom. Pinned to
+# the versions experiments/blitz-layout-probe was measured against, so a later release
+# cannot move a box without anyone noticing.
+blitz-dom = "=0.2.4"
+blitz-html = "=0.2.0"
+blitz-traits = "=0.2.0"
+# The versions blitz-dom 0.2.4 resolves. Named here because the layout pass reads Parley's
+# lines and stylo's computed values directly.
+parley = "=0.6.0"
+style = { package = "stylo", version = "=0.8.0" }
+# The same Taffy blitz-dom drives, with the same algorithms switched on: the layout pass
+# implements Taffy's tree traits over blitz-dom's nodes.
+taffy = { version = "0.9", default-features = false, features = [
+    "std",
+    "flexbox",
+    "grid",
+    "block_layout",
+    "content_size",
+    "calc",
+] }
 
 # The Android shims are generated against jni-rs. Nothing here is linked into a desktop,
 # iOS or web build, and the alternative bindings generators were rejected for their
@@ -60,6 +85,12 @@ criterion = "0.7"
 
 [[bench]]
 name = "host"
+harness = false
+
+# What one frame of the HTML and CSS path costs the Host. Its recorded numbers are under
+# `html_frame` in benches/baseline.json.
+[[bench]]
+name = "html_frame"
 harness = false
 
 [[example]]

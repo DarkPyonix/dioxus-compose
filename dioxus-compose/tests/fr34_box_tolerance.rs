@@ -15,13 +15,13 @@
 //! The fixtures, the captured geometry and the measurer are in `tests/support/`, which says
 //! where each comes from; the frame benchmarks lay out the same fixtures.
 //!
-//! [`TextMeasurer`]: dioxus_compose_html::TextMeasurer
+//! [`TextMeasurer`]: dioxus_compose::html::TextMeasurer
 
 mod support;
 
 use std::collections::HashMap;
 
-use dioxus_compose_html::{BaseDocument, DisplayList, NodeEntry, Rect};
+use dioxus_compose::html::{BaseDocument, DisplayList, NodeEntry, Rect};
 
 use support::{CapturedMeasurer, Region, SETI_ADVANCE_EM, Status, captured, lay_out, region};
 

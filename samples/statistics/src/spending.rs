@@ -79,7 +79,7 @@ pub fn amount(cents: u32) -> String {
     let mut out = String::with_capacity(digits.len() + digits.len() / 3 + 4);
     out.push('$');
     for (position, digit) in digits.chars().enumerate() {
-        if position > 0 && (digits.len() - position) % 3 == 0 {
+        if position > 0 && (digits.len() - position).is_multiple_of(3) {
             out.push(',');
         }
         out.push(digit);

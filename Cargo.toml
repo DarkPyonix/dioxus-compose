@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "dioxus-compose",
-    "dioxus-compose-html",
     "samples/academic",
     "samples/calculator",
     "samples/chat",
@@ -20,7 +19,9 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"
-rust-version = "1.85"
+# The HTML and CSS path pulls in stylo, whose icu_* 2.3 crates and encoding_rs 0.8.42
+# declare 1.88 (blitz-dom 0.2.4 itself declares 1.86).
+rust-version = "1.88"
 
 [workspace.dependencies]
 dioxus-core = "0.7.10"
