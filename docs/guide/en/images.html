@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Images and backgrounds · dioxus-compose guide</title>
+<meta name="description" content="Images on HTML screens: img, object-fit, CSS background images, linear and radial gradients, and the ImageResolver that decides what an image URL draws. Nothing is fetched. With code from samples/gallery.">
+<link rel="alternate" hreflang="en" href="images.html">
+<link rel="alternate" hreflang="ko" href="../ko/images.html">
+<link rel="alternate" hreflang="x-default" href="images.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="images.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/images.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html" aria-current="page">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#resolver">The image resolver</a></li>
+        <li><a href="#urls">URLs</a></li>
+        <li><a href="#img">The img element</a></li>
+        <li><a href="#backgrounds">Background images</a></li>
+        <li><a href="#gradients">Gradients</a></li>
+        <li><a href="#planned">Not yet</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Images and backgrounds</p>
+    <h1>The app decides what an image is</h1>
+    <p class="lede">
+      dioxus-compose never fetches anything. An <code>&lt;img src&gt;</code> or a CSS
+      <code>url()</code> is recorded as written, and an image resolver you supply says how big it
+      is and which asset draws it. Gradients need no resolver, because they are computed from the
+      CSS alone.
+    </p>
+
+    <h2 id="resolver">The image resolver</h2>
+    <p>
+      An app may already have its images in memory, may want to fetch them itself, or may want to
+      refuse some. So loading is the app's decision, made through one trait:
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>dioxus_compose::html</figcaption>
+<pre><code><span class="k">pub</span> <span class="k">trait</span> <span class="ty">ImageResolver</span> {
+    <span class="c">/// The asset that draws the image at `url`, or None to draw nothing.</span>
+    <span class="c">/// Asked while a plan is built, never during layout.</span>
+    <span class="k">fn</span> <span class="f">resolve</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">AssetId</span>&gt;;
+
+    <span class="c">/// The natural size, when the app knows it without fetching anything.</span>
+    <span class="c">/// Asked during layout. None, the default, leaves the image without one.</span>
+    <span class="k">fn</span> <span class="f">size</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">_url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">ImageSize</span>&gt; {
+        <span class="k">None</span>
+    }
+}</code></pre>
+</figure>
+    <p>
+      <code>AssetId</code> is your own number for an image you registered with the renderer; it is
+      handed back in the plan and never looked into. <code>ImageSize</code> is in CSS pixels, so an
+      image made for a screen of two device pixels per CSS pixel is half its pixel size here.
+    </p>
+    <p>
+      The resolver goes in <code>HtmlConfig::images</code>, or later through
+      <code>HtmlDom::set_image_resolver</code>. Without one, an <code>&lt;img&gt;</code> takes only
+      the size its attributes and CSS give it, and no image draws anything.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/support/src/lib.rs, trimmed: a resolver that knows a fixed list</figcaption>
+<pre><code><span class="k">impl</span> <span class="ty">ImageResolver</span> <span class="k">for</span> <span class="ty">Images</span> {
+    <span class="k">fn</span> <span class="f">resolve</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">AssetId</span>&gt; {
+        <span class="k">self</span>.<span class="f">find</span>(url).<span class="f">map</span>(|(_, _, asset)| *asset)
+    }
+
+    <span class="k">fn</span> <span class="f">size</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">ImageSize</span>&gt; {
+        <span class="k">self</span>.<span class="f">find</span>(url).<span class="f">map</span>(|(_, size, _)| *size)
+    }
+}</code></pre>
+</figure>
+
+    <h2 id="urls">URLs</h2>
+    <p>
+      <code>HtmlConfig::base_url</code> is what relative <code>src</code> attributes and CSS
+      <code>url()</code> values resolve against. Without one, or with one that nothing can be
+      resolved against, such as a <code>data:</code> URL, a relative URL reaches your resolver
+      exactly as it was written: <code>photos/tram.jpg</code> stays <code>photos/tram.jpg</code>.
+    </p>
+
+    <h2 id="img">The img element</h2>
+    <p>
+      An <code>&lt;img&gt;</code> with no size of its own is laid out at the size the resolver gave.
+      <code>object-fit</code> decides where inside its box the picture is drawn. In
+      <code>samples/gallery</code> the 48 by 48 avatar keeps its natural size, the photos
+      <code>cover</code> their tiles, and the route map is shown whole with <code>contain</code>.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.avatar { <span class="at">border-radius</span>: <span class="n">50</span>%; }
+
+.tile {
+    <span class="at">margin</span>: <span class="n">0</span>;
+    <span class="at">border-radius</span>: <span class="n">8px</span>;
+    <span class="at">overflow</span>: hidden;
+}
+
+.tile img {
+    <span class="at">display</span>: block;
+    <span class="at">width</span>: <span class="n">100</span>%;
+    <span class="at">height</span>: <span class="n">100</span>%;
+    <span class="at">object-fit</span>: cover;
+}
+
+.tile img.whole { <span class="at">object-fit</span>: contain; }</code></pre>
+</figure>
+
+    <h2 id="backgrounds">Background images</h2>
+    <p>
+      <code>background-image</code> layers keep their CSS order: the first is drawn on top, and all
+      of them over the background colour. <code>background-size</code> (<code>cover</code>,
+      <code>contain</code> or lengths), <code>background-position</code> and
+      <code>background-repeat</code> are resolved into rectangles, so the renderer draws an image
+      into a box rather than interpreting CSS.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.postcard {
+    <span class="at">background-image</span>: url(textures/postcard.png);
+    <span class="at">background-size</span>: cover;
+    <span class="at">background-position</span>: center;
+}</code></pre>
+</figure>
+
+    <h2 id="gradients">Gradients</h2>
+    <p>
+      <code>linear-gradient()</code>, <code>radial-gradient()</code> and their repeating forms are
+      resolved against the tile they fill. Keywords such as <code>to right</code> become the angle
+      they mean for that tile's size, and every stop gets its offset and colour. The gallery header
+      is one gradient:
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.hero {
+    <span class="at">display</span>: flex;
+    <span class="at">align-items</span>: center;
+    <span class="at">gap</span>: <span class="n">16px</span>;
+    <span class="at">height</span>: <span class="n">160px</span>;
+    <span class="at">padding</span>: <span class="n">0</span> <span class="n">32px</span>;
+    <span class="at">background-image</span>: linear-gradient(to right, <span class="n">#4f46e5</span>, <span class="n">#06b6d4</span>);
+    <span class="at">color</span>: <span class="n">#ffffff</span>;
+}</code></pre>
+</figure>
+    <p>
+      Changing one stop's colour is one change in the plan, the same as changing a background
+      colour.
+    </p>
+
+    <h2 id="planned">Not yet</h2>
+    <ul>
+      <li><strong>Images on screen.</strong> <span class="pill partial">partial</span> The plan names
+        the asset for every image and background, and nothing draws it until the renderer bridge
+        lands (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="forms-and-events.html"><span>Previous</span>&larr; Forms and events</a>
+      <a class="next" href="scrolling-and-overlays.html"><span>Next</span>Scrolling and overlays &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>
