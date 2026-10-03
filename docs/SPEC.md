@@ -1716,6 +1716,7 @@ if design.is_apple() {
 M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "M12 이후 과제로 SPEC에 남기도록 해", 날짜는 "일부 10-18 안"에서 transform을 10-18 안에 포함).
 
 - `translate`, `rotate`, `scale`, `skew`와 그 조합, `matrix()`, `transform-origin`을 상자와 그 안의 내용에 적용합니다.
+- **2D가 먼저, 3D는 다음 단계입니다**(소유자 결정, compose-rust FR-41). M14(10-18)는 위의 2D 변환입니다. `rotateX`, `rotateY`, `rotate3d`, `perspective`, `matrix3d` 같은 3D 변환은 compose-rust FR-41.3(Draft)이 들어오면 이어서 지원하고, "지원하지 않음"이 아닙니다. 그 전까지 3D 변환이 들어간 상자는 2D로 근사하지 않습니다. 그 `transform`을 건너뛰어 변환 없이 그리고, 개발자에게 어느 요소의 어떤 변환을 건너뛰었는지 경고합니다.
 - **지금 상태.** stylo는 `transform`을 계산합니다. dioxus-compose-html은 이동(`translate`, `translateX`, `translateY`)만 상자 위치에 더하고, 그 밖의 변환이 섞이면 상자를 레이아웃 자리에 둡니다. blitz-dom에는 그리는 단계가 없으므로 회전과 확대는 이 프로젝트가 그려야 합니다.
 - **구현 경로(정해짐).** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
 - 변환은 레이아웃에 영향을 주지 않습니다(CSS와 같음). 적중 판정(FR-34의 이벤트 전달)은 변환된 모양 기준입니다.
