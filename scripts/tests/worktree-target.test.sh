@@ -50,10 +50,13 @@ if [[ ! -f "$launcher" ]]; then
          "this test can hold it to the same rule as scripts/setup-worktrees.sh."
 else
     launcher_body="$(grep -vE '^[[:space:]]*#' "$launcher")"
-    if grep -qE 'target[-_]dir|CARGO_TARGET_DIR' <<<"$launcher_body"; then
+    # Only a line that sets the build directory counts. The rules the launcher hands its
+    # agents name CARGO_TARGET_DIR in order to forbid it, and that prose sets nothing.
+    sets_build_dir='CARGO_TARGET_DIR[[:space:]]*=|target[-_]dir[[:space:]]*=|--target-dir'
+    if grep -qE "$sets_build_dir" <<<"$launcher_body"; then
         fail "nfr12_the_launcher_leaves_the_build_directory_to_one_script" \
              "$launcher decides the build directory itself:" \
-             "$(grep -nE 'target[-_]dir|CARGO_TARGET_DIR' <<<"$launcher_body")" \
+             "$(grep -nE "$sets_build_dir" <<<"$launcher_body")" \
              "It has to call scripts/setup-worktrees.sh instead."
     elif ! grep -q 'setup-worktrees.sh' <<<"$launcher_body"; then
         fail "nfr12_the_launcher_leaves_the_build_directory_to_one_script" \
