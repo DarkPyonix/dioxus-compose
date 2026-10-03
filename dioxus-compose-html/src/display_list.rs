@@ -155,6 +155,12 @@ pub struct BoxShadow {
 ///
 /// The scroll position belongs to the renderer. Every entry inside the container is
 /// positioned as if it were scrolled to the origin; the renderer moves the content.
+///
+/// The content size is measured from the boxes laid out inside the container: from the
+/// padding box's origin to the furthest edge any of them (or their text) reaches, plus the
+/// container's own padding on the far side, as a browser lets you scroll past the last
+/// item to the padding. A box that clips its own content counts with its border box only,
+/// and a `position: fixed` box does not count, since it does not move with the content.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ScrollContainer {
     /// The visible area: the padding box.
@@ -203,7 +209,7 @@ pub struct TextRun {
     pub baseline: f32,
 }
 
-/// What kind of form field an `<input>` or `<textarea>` is.
+/// What kind of form field an `<input>`, `<textarea>` or `<select>` is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputKind {
     Text,
@@ -220,6 +226,15 @@ pub enum InputKind {
         checked: bool,
     },
     TextArea,
+    /// A `<select>`: one choice out of a list.
+    Select {
+        /// What each `<option>` shows (its `label`, or its text), in document order, those
+        /// inside an `<optgroup>` included.
+        options: Vec<String>,
+        /// The option chosen: the one whose value is the select's `value`, else the last
+        /// one marked `selected`, else the first. `None` when there are no options.
+        selected: Option<usize>,
+    },
     /// Any other `type`, by name.
     Other(String),
 }
@@ -229,7 +244,8 @@ pub enum InputKind {
 pub struct InputField {
     pub kind: InputKind,
     /// The value as the Host last set it. The renderer owns the field's text while the user
-    /// edits it, so this is the starting value, not a mirror of every keystroke.
+    /// edits it, so this is the starting value, not a mirror of every keystroke. For a
+    /// `<select>`, the chosen option's value.
     pub value: String,
     pub placeholder: Option<String>,
     /// The content box, where the text goes.
