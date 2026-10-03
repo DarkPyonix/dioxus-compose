@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### HTML and CSS screens reach the renderer
+
+An HTML app is launched the way a widget app is: `dioxus_compose::html::launch(app)`, or
+`LaunchBuilder::new().with_html(config).launch(app)` to pass a configuration.
+`cargo run -p sample-html-hello` opens the hello sample in a window.
+
+The bridge writes the drawing plan into compose-rust's batch. The first frame sends the
+whole tree; after that only what the plan diff reports is sent, and a frame where nothing
+changed sends nothing. Every kind of drawing element has a compose-rust widget to become.
+Clicks, typed text, focus leaving a field, Enter in a field, checkbox and radio toggles and
+select choices come back to the Dioxus handlers.
+
+The records the renderer receives are tested on the Host. Drawing them on screen has not
+been confirmed by running the renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
+Text is still measured by Parley, `font-family`, `font-style` and underlines do not reach the
+screen yet, and keyboard events on HTML elements are still to come.
+
 ### The renderer is built for the platform where Compose publishes one
 
 macOS no longer carries a Java runtime. Where Compose publishes a target of its own, the

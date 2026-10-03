@@ -207,9 +207,10 @@
 
     <h2 id="planned">아직 없는 것</h2>
     <ul>
-      <li><strong>화면 위의 스크롤.</strong> <span class="pill partial">부분</span> 계획에서 스크롤
-        컨테이너는 내용을 담은 Compose 스크롤 컨테이너가 되고, 스크롤 위치는 렌더러가 갖습니다.
-        렌더러 다리가 생기기 전까지는 스크롤되는 것이 없습니다
+      <li><strong>화면 위의 스크롤.</strong> <span class="pill partial">부분</span> 다리는 스크롤
+        컨테이너를 내용을 담은 <code>ScrollColumn</code> 이나 <code>ScrollRow</code> 로 보내고, 스크롤
+        위치는 렌더러가 갖습니다. 페이지 자체는 창 크기의 세로 스크롤 안에 놓입니다. Host 에서 테스트했고
+        화면에서는 아직 확인하지 않았습니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>움직이는 오버레이.</strong> <span class="pill planned">계획</span> CSS transition 으로
         나타나거나 미끄러져 들어오는 메뉴와 대화 상자는 지금 움직이지 않습니다. 애니메이션 속성이 첫

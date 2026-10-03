@@ -76,10 +76,13 @@
 
     <h2 id="no-window">HTML 앱이 창을 열지 않습니다</h2>
     <p>
-      지금은 정상입니다. <code>HtmlDom</code> 은 앱을 실행하고 배치해서 그리기 목록과 계획을 돌려주지만,
-      그 계획을 렌더러에 넘기는 것이 아직 없습니다
-      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 화면은 대신 레이아웃으로
-      확인합니다. 항목을 출력하거나 예제처럼 테스트합니다.
+      <code>HtmlDom</code> 만으로는 창이 열리지 않습니다. 앱을 실행하고 배치해서 그리기 목록과 계획을
+      돌려줄 뿐이고, 테스트가 쓰는 것이 이것입니다. 창은 앱을 실행해야 열립니다.
+      <code>dioxus_compose::html::launch(app)</code> 을 부르거나, 설정을 넘기려면
+      <code>LaunchBuilder::new().with_html(config).launch(app)</code> 을 부릅니다
+      (<a href="getting-started.html#window">창에서 열기</a> 참고). 계획을 렌더러에 넘기는 다리는 Host
+      에서 테스트했고, 화면에 그려지는 것은 아직 렌더러를 돌려 확인하지 않았습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 창에
+      보이는 것이 레이아웃과 다르면 먼저 레이아웃을 확인합니다. 항목을 출력하거나 예제처럼 테스트합니다.
     </p>
 
     <h2 id="stale">클릭이나 변경이 보이지 않습니다</h2>
@@ -130,6 +133,11 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
       <li><code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>,
         <code>transform-origin</code> 은 그리지 않고, <code>translate</code> 는 그립니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+      <li><code>font-family</code>, <code>font-style</code>, <code>text-decoration</code> 은 화면에 닿지
+        않습니다. compose-rust 의 <code>Text</code> 가 글꼴 패밀리와 기울임을 받지 않으므로 텍스트는
+        디자인 시스템의 글꼴로 그려집니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li>비율이 다른 이미지의 <code>object-fit: fill</code> 은 여백을 두고 그려집니다. compose-rust 의
+        <code>Image</code> 가 그림을 통째로 가운데에 그리기 때문입니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li>transition 과 animation 은 재생되지 않습니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
         <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>).</li>

@@ -210,9 +210,10 @@
 
     <h2 id="planned">Not yet</h2>
     <ul>
-      <li><strong>Scrolling on screen.</strong> <span class="pill partial">partial</span> In the plan
-        a scroll container becomes a Compose scroll container holding its content, and the renderer
-        will own the scroll position. Nothing scrolls until the renderer bridge lands
+      <li><strong>Scrolling on screen.</strong> <span class="pill partial">partial</span> The bridge
+        sends a scroll container as a <code>ScrollColumn</code> or <code>ScrollRow</code> holding its
+        content, and the renderer owns the scroll position. The page itself sits in a vertical scroll
+        the size of the window. This is tested on the Host and not yet confirmed on screen
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>Animated overlays.</strong> <span class="pill planned">planned</span> A menu or
         dialog that fades or slides in with a CSS transition does not animate today: its animated

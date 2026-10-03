@@ -77,10 +77,14 @@
 
     <h2 id="no-window">An HTML app opens no window</h2>
     <p>
-      This is expected today. <code>HtmlDom</code> runs the app, lays it out and returns a display
-      list and a plan, and nothing hands the plan to the renderer yet
-      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). Check your screen
-      by its layout instead: print the entries, or test them the way the examples do.
+      <code>HtmlDom</code> on its own never opens one. It runs the app, lays it out and returns a
+      display list and a plan, which is what tests use. A window comes from launching the app:
+      <code>dioxus_compose::html::launch(app)</code>, or
+      <code>LaunchBuilder::new().with_html(config).launch(app)</code> to pass a configuration (see
+      <a href="getting-started.html#window">Open it in a window</a>). The bridge that hands the plan
+      to the renderer is tested on the Host, and drawing on screen has not been confirmed by running
+      the renderer yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). If the window shows something other than the layout, check
+      the layout first: print the entries, or test them the way the examples do.
     </p>
 
     <h2 id="stale">A click or a change does not show</h2>
@@ -135,6 +139,12 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
       <li><code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code> and
         <code>transform-origin</code> are not drawn; <code>translate</code> is
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+      <li><code>font-family</code>, <code>font-style</code> and <code>text-decoration</code> do not
+        reach the screen. Text is drawn in the design system's typeface, because compose-rust's
+        <code>Text</code> takes no font family or italic (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><code>object-fit: fill</code> on an image with a different aspect ratio is drawn
+        letterboxed, because compose-rust's <code>Image</code> draws a picture whole and centred
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li>Transitions and animations do not play
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
         <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>).</li>

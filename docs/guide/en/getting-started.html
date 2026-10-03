@@ -57,6 +57,7 @@
         <li><a href="#page">Write a page</a></li>
         <li><a href="#layout">Lay it out</a></li>
         <li><a href="#click">Click it</a></li>
+        <li><a href="#window">Open it in a window</a></li>
         <li><a href="#samples">Run the examples</a></li>
         <li><a href="#widgets">The widget path, which draws today</a></li>
         <li><a href="#repository">Working on this repository</a></li>
@@ -68,9 +69,10 @@
     <p class="eyebrow">Getting started</p>
     <h1>From an empty crate to a laid-out page</h1>
     <p class="lede">
-      This page adds the crate, writes a page with HTML and CSS, lays it out and clicks it. Today the
-      result is a list of boxes rather than a window, because the HTML path does not draw on screen
-      yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+      This page adds the crate, writes a page with HTML and CSS, lays it out, clicks it and opens it in
+      a window. The window goes through the renderer bridge, whose records are tested on the Host;
+      what it draws has not been confirmed by running the renderer yet
+      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>
 
     <h2 id="add">Add the crate</h2>
@@ -163,15 +165,15 @@ p { margin: 12px 0; }
 }</code></pre>
 </figure>
     <p>
-      <code>cargo run</code> prints the boxes and exits. No window opens: drawing them is the
-      bridge that is not built yet. <code>HtmlConfig</code> also takes a text measurer, a colour
+      <code>cargo run</code> prints the boxes and exits. <a href="#window">Open it in a window</a>
+      shows the <code>main</code> that hands the page to the renderer instead. <code>HtmlConfig</code> also takes a text measurer, a colour
       scheme, a base URL and an image resolver, which the following pages cover.
     </p>
 
     <h2 id="click">Click it</h2>
     <p>
       A click at a point goes to the handler of the element under it, the way a pointer event from
-      the renderer will. This is the hello example's own test, trimmed. The numbers come from its
+      the renderer does. This is the hello example's own test, trimmed. The numbers come from its
       stylesheet and a test measurer that makes every character half the font size wide.
     </p>
 <figure class="codeblock" data-copy="Copy" data-copied="Copied">
@@ -192,6 +194,35 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
     <p>
       Handlers run during <code>click</code>. <code>render</code> applies what they changed to the
       document, and the next <code>layout</code> shows it.
+    </p>
+
+    <h2 id="window">Open it in a window</h2>
+    <p>
+      An HTML app is launched the way a widget app is. <code>LaunchBuilder::with_html</code> takes a
+      function that returns the <code>HtmlConfig</code>, because the Host makes a fresh document
+      each time the renderer asks for the whole tree again.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>src/main.rs, instead of the main above</figcaption>
+<pre><code><span class="k">fn</span> <span class="f">config</span>() -&gt; <span class="ty">HtmlConfig</span> {
+    <span class="ty">HtmlConfig</span> { <span class="at">stylesheets</span>: <span class="f">vec!</span>[<span class="ty">STYLE</span>.<span class="f">to_string</span>()], ..<span class="ty">HtmlConfig</span>::<span class="f">default</span>() }
+}
+
+<span class="k">fn</span> <span class="f">main</span>() {
+    dioxus_compose::<span class="ty">LaunchBuilder</span>::<span class="f">new</span>().<span class="f">with_html</span>(config).<span class="f">launch</span>(app);
+}</code></pre>
+</figure>
+    <p>
+      <code>dioxus_compose::html::launch(app)</code> does the same with the default configuration.
+      In a checkout of this repository, <code>cargo run -p sample-html-hello</code> opens the hello
+      example this way; it is the only example with a desktop binary so far. On Android and in the
+      browser the entry macros take the same builder as their first argument, for example
+      <code>android_main!(LaunchBuilder::new().with_html(config), app)</code>, and
+      <code>web_main!</code> likewise. The page sits in a vertical scroll the size of the window, and clicks, typed
+      text and form controls reach your handlers through the bridge. Key events such as
+      <code>onkeydown</code> do not reach HTML elements yet, and text is drawn in the design
+      system's typeface rather than the stylesheet's <code>font-family</code>. The bridge is tested
+      on the Host and drawing on screen is not yet confirmed (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>
 
     <h2 id="samples">Run the examples</h2>

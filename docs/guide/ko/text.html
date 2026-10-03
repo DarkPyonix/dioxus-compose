@@ -198,6 +198,10 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
 
     <h2 id="planned">아직 없는 것</h2>
     <ul>
+      <li><strong>화면 위의 글꼴, 기울임, 밑줄.</strong> <span class="pill partial">부분</span> compose-rust
+        의 <code>Text</code> 가 글꼴 패밀리와 기울임을 받지 않으므로, 다리는 텍스트를 디자인 시스템의
+        글꼴로 그립니다. 그래서 <code>font-family</code>, <code>font-style</code>,
+        <code>text-decoration</code> 은 Host 의 배치에는 쓰이지만 아직 화면에 닿지 않습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>시스템 글자 크기와 확대.</strong> <span class="pill planned">계획</span> HTML 화면은
         VS Code 의 <code>window.zoomLevel</code> 처럼 화면 전체가 확대되어, 행과 아이콘과 글자가 같이
         커지고 잘리는 것이 없게 됩니다. 확대의 시작값은 시스템 글자 크기를 따릅니다.</li>

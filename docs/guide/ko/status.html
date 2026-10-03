@@ -86,11 +86,12 @@
           <tr><td><span class="pill works">구현</span></td><td><code>&lt;script&gt;</code> 를 실행하지 않음</td></tr>
           <tr><td><span class="pill works">구현</span></td><td>VS Code 가 잰 텍스트 크기로 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(<code>dioxus-compose/tests/fr34_box_tolerance.rs</code>, 2026-10-03 macOS 에서 측정)</td></tr>
           <tr><td><span class="pill works">구현</span></td><td><code>samples/</code> 의 예제 열한 개. 각각 손으로 계산한 배치와, 렌더러가 부를 것과 같은 호출로 Host 에서 테스트됨</td></tr>
-          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 그리기 원소의 계획은 있지만, 그것을 compose-rust 렌더러(그 <code>AbsoluteBox</code>)에 넘기는 다리가 없어 아직 그려지지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 다리가 계획을 compose-rust 의 배치(batch)에 씀. 첫 프레임에는 트리 전체, 그 뒤로는 계획 diff 가 알려 주는 것만 보내고, 바뀐 것이 없는 프레임은 아무것도 보내지 않음. 계획의 모든 종류가 compose-rust 위젯(<code>AbsoluteBox</code>, <code>Box</code>, <code>Text</code>, <code>Image</code>, 스크롤 행과 열, 입력란, 체크박스, 라디오 버튼, 드롭다운)이 되고, 렌더러의 이벤트는 Dioxus 핸들러에 닿음. 렌더러가 받는 레코드로 Host 에서 테스트했고, 화면에 그려지는 것은 아직 렌더러를 돌려 확인하지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>화면의 텍스트 스타일과 이미지 맞춤. compose-rust 의 <code>Text</code> 가 글꼴 패밀리와 기울임을 받지 않으므로 텍스트는 디자인 시스템의 글꼴로 그려지고, <code>font-family</code>, <code>font-style</code>, <code>text-decoration</code> 은 아직 화면에 닿지 않음. compose-rust 의 <code>Image</code> 는 그림을 통째로 가운데에 그리므로, 비율이 다른 <code>object-fit: fill</code> 은 여백을 두고 그려짐(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>Compose 로 텍스트 재기. 측정기는 글꼴이 하나인 텍스트를 재고, 글꼴이 섞인 문단, 표 칸, 입력 컨트롤은 Parley 가 잼. 동기 측정 호출은 compose-rust 에서 만드는 중(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>CSS 변환: <code>translate</code> 는 동작, <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code> 은 그리지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>CSS transition 과 animation: 불투명도, 변환, 색은 렌더러에서(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>), 폭, 높이, 여백은 Host 를 거쳐(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
-          <tr><td><span class="pill planned">계획</span></td><td>HTML 화면의 키보드 이벤트와 포커스, 실행 중 시스템 색 구성표 변화 따라가기. 둘 다 렌더러 다리와 함께 옴(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>HTML 화면에서 DOM 이벤트로서의 키보드 이벤트(<code>onkeydown</code> 등)와 포커스, 실행 중 시스템 색 구성표 변화 따라가기. 다리는 이것들 없이 들어왔고, 여전히 계획 단계임(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>시스템 글자 크기에서 시작해 VS Code 처럼 HTML 화면 확대하기(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/58">#58</a>)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>한 화면에 HTML 과 위젯 함께 두기(<a href="mixing.html">두 방식 섞기</a>)(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/59">#59</a>)</td></tr>
         </tbody>
@@ -131,8 +132,9 @@
     <h2 id="faq">FAQ</h2>
     <dl>
       <dt>Dioxus 웹 앱을 그대로 가져올 수 있나요?</dt>
-      <dd>HTML 경로가 받는 것이 그 <code>rsx!</code> 와 CSS 이므로 화면은 배치됩니다. 렌더러 다리가 생기기
-        전까지는 그려지지 않고, 브라우저 API 나 JavaScript 를 부르는 부분은 여기에 대응하는 것이 없습니다.</dd>
+      <dd>HTML 경로가 받는 것이 그 <code>rsx!</code> 와 CSS 이므로 화면은 배치되고 다리를 거쳐 렌더러로
+        갑니다(화면에 그려지는 것은 아직 확인하지 않았습니다, <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 브라우저 API 나 JavaScript 를
+        부르는 부분은 여기에 대응하는 것이 없습니다.</dd>
       <dt>JavaScript 를 실행하나요?</dt>
       <dd>아니요. <code>&lt;script&gt;</code> 는 아무 일도 하지 않습니다. 동작은 Rust 로 씁니다.</dd>
       <dt>어딘가에 웹뷰가 있나요?</dt>

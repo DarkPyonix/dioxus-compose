@@ -86,11 +86,12 @@
           <tr><td><span class="pill works">implemented</span></td><td><code>&lt;script&gt;</code> is never run</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (<code>dioxus-compose/tests/fr34_box_tolerance.rs</code>, measured 2026-10-03 on macOS)</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Eleven examples in <code>samples/</code>, each tested on the Host against hand-worked layout and through the same calls a renderer makes</td></tr>
-          <tr><td><span class="pill partial">partial</span></td><td>Drawing HTML screens on screen. The plan of drawing elements exists; the bridge that hands it to compose-rust's renderer (its <code>AbsoluteBox</code>) is not built, so nothing is drawn yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">partial</span></td><td>Drawing HTML screens on screen. The bridge writes the plan into compose-rust's batch: the whole tree on the first frame, then only what the plan diff reports, and nothing for an unchanged frame. Every plan kind becomes a compose-rust widget (<code>AbsoluteBox</code>, <code>Box</code>, <code>Text</code>, <code>Image</code>, scroll rows and columns, fields, checkboxes, radio buttons, dropdowns), and renderer events reach the Dioxus handlers. It is tested on the Host against the records the renderer receives; drawing on screen has not been confirmed by running the renderer yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">partial</span></td><td>Text styles and image fitting on screen. Text is drawn in the design system's typeface, because compose-rust's <code>Text</code> takes no font family or italic, so <code>font-family</code>, <code>font-style</code> and <code>text-decoration</code> do not reach the screen yet. <code>object-fit: fill</code> with a different aspect ratio is drawn letterboxed, because compose-rust's <code>Image</code> draws a picture whole and centred (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Text measured by Compose. Your measurer sizes single-font text; mixed fonts, table cells and form controls are measured by Parley. The synchronous measure call is being built in compose-rust (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>CSS transforms: <code>translate</code> works; <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code> and <code>transform-origin</code> are not drawn (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
           <tr><td><span class="pill planned">planned</span></td><td>CSS transitions and animations: opacity, transforms and colours in the renderer (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>); width, height and margins through the Host (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
-          <tr><td><span class="pill planned">planned</span></td><td>Keyboard events and focus on HTML screens, and following a system colour scheme change while running; both come with the renderer bridge (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill planned">planned</span></td><td>Keyboard events (<code>onkeydown</code> and the like) and focus as DOM events on HTML screens, and following a system colour scheme change while running. The bridge landed without them, and they are still planned (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill planned">planned</span></td><td>Zooming HTML screens the way VS Code does, starting from the system text size (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/58">#58</a>)</td></tr>
           <tr><td><span class="pill planned">planned</span></td><td>HTML and widgets on one screen (<a href="mixing.html">Mixing the two</a>) (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/59">#59</a>)</td></tr>
         </tbody>
@@ -131,9 +132,9 @@
     <h2 id="faq">FAQ</h2>
     <dl>
       <dt>Can I bring my Dioxus web app?</dt>
-      <dd>Its <code>rsx!</code> and CSS are what the HTML path takes, so the screens lay out. They
-        are not drawn until the renderer bridge lands, and anything that calls browser APIs or
-        JavaScript has no counterpart here.</dd>
+      <dd>Its <code>rsx!</code> and CSS are what the HTML path takes, so the screens lay out and
+        reach the renderer through the bridge (drawing on screen is not yet confirmed, <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+        Anything that calls browser APIs or JavaScript has no counterpart here.</dd>
       <dt>Does it run JavaScript?</dt>
       <dd>No. A <code>&lt;script&gt;</code> element is inert. Behaviour is written in Rust.</dd>
       <dt>Is there a webview anywhere?</dt>

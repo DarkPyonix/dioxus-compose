@@ -76,8 +76,9 @@
     <div class="warn">
       <span class="label">지금 상태</span>
       <p>
-        HTML 경로는 지금 화면을 배치하고 그리기 계획을 만들지만, 아직 화면에 그리지는 않습니다.
-        그 계획을 렌더러에 넘기는 다리가 아직 없습니다(<span class="pill partial">부분</span>,
+        HTML 경로는 지금 화면을 배치하고 그리기 계획을 만들어, 다리를 거쳐 렌더러로 보냅니다. 보내는
+        것은 렌더러가 받는 레코드로 Host 에서 테스트하고, 화면에 그려지는 것은 아직 렌더러를 돌려
+        확인하지 않았습니다(<span class="pill partial">부분</span>,
         <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 이 가이드의 모든
         설명은 Host 에서 테스트로 확인한 것이고, 구현 / 부분 / 계획의 구분은
         <a href="status.html">현황 페이지</a>에 있습니다.
@@ -93,7 +94,7 @@
       <table>
         <thead><tr><th scope="col">쓰는 것</th><th scope="col">import</th><th scope="col">지금</th></tr></thead>
         <tbody>
-          <tr><td>HTML 요소와 CSS: <code>div</code>, <code>span</code>, <code>input</code>, 스타일시트</td><td><code>dioxus_compose::html::prelude::*</code></td><td><span class="pill partial">부분</span> Host 에서 배치하고 계획까지 만듦, 아직 그리지 않음</td></tr>
+          <tr><td>HTML 요소와 CSS: <code>div</code>, <code>span</code>, <code>input</code>, 스타일시트</td><td><code>dioxus_compose::html::prelude::*</code></td><td><span class="pill partial">부분</span> Host 에서 배치하고 렌더러로 보냄, 화면에서는 아직 확인하지 않음</td></tr>
           <tr><td>Compose 위젯 이름: <code>Column</code>, <code>Text</code>, <code>Button</code></td><td><code>dioxus_compose::prelude::*</code></td><td><span class="pill works">구현</span> 지금 렌더러가 그림</td></tr>
         </tbody>
       </table>
@@ -166,15 +167,16 @@ h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
       <li><strong>그리기 계획.</strong> <code>plan_from</code> 이 목록을 그리기 원소의 트리(컨테이너
         안에 놓인 상자, 스크롤 컨테이너, 텍스트, 입력란, 이미지)로 바꾸고, <code>diff</code> 가 두
         계획 사이에서 바뀐 것을 노드 단위로 알려 줍니다.</li>
-      <li><strong>그리기.</strong> 렌더러가 Compose 로 계획을 그립니다.
-        <span class="pill planned">계획</span> 이 단계가 아직 없는 다리입니다
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>그리기.</strong> <code>PlanBridge</code> 가 계획을 compose-rust 의 배치(batch)에
+        씁니다. 첫 프레임에는 트리 전체를, 그 뒤로는 <code>diff</code> 가 알려 주는 것만 쓰고, 렌더러가
+        그것을 Compose 로 그립니다.
+        <span class="pill partial">부분</span> 레코드는 Host 에서 테스트하고, 화면에 그려지는 것은
+        아직 확인하지 않았습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ol>
     <p>
       이벤트는 반대 방향으로 갑니다. 한 점을 누르면 그 아래 요소의 Dioxus 핸들러로 가고, 입력란에서
-      확정된 글자는 그 요소의 <code>oninput</code> 으로 갑니다. 지금은 테스트나 임베더가
-      <code>HtmlDom</code> 의 메서드를 직접 부르고, 렌더러가 그리게 되면 렌더러가 같은 메서드를
-      부릅니다.
+      확정된 글자는 그 요소의 <code>oninput</code> 으로 갑니다. 렌더러의 이벤트는 다리를 거쳐 오고,
+      테스트나 임베더는 같은 메서드를 <code>HtmlDom</code> 에서 직접 부를 수 있습니다.
     </p>
 
     <h2 id="rules">HTML 경로가 지키는 규칙</h2>

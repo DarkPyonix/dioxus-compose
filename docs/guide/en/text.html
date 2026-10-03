@@ -204,6 +204,11 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
 
     <h2 id="planned">Not yet</h2>
     <ul>
+      <li><strong>Typefaces, italics and underlines on screen.</strong>
+        <span class="pill partial">partial</span> The bridge draws text in the design system's
+        typeface, because compose-rust's <code>Text</code> takes no font family or italic. So
+        <code>font-family</code>, <code>font-style</code> and <code>text-decoration</code> shape the
+        layout in the Host but do not reach the screen yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>System text size and zoom.</strong> <span class="pill planned">planned</span>
         HTML screens will zoom as a whole, the way VS Code's <code>window.zoomLevel</code> does, so
         rows, icons and text grow together and nothing is clipped. The starting zoom will follow the

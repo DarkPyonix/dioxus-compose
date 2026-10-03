@@ -27,14 +27,26 @@ so a window can show it and a test can lay it out without one.
 
 ## Where they are drawn
 
-Today these are laid out by the Host and nowhere else. `HtmlDom` runs the app, stylo resolves
+The Host lays them out. `HtmlDom` runs the app, stylo resolves
 the CSS, Taffy lays out blocks, flex and grid, and the result is a display list and a plan of
 drawing elements: absolute rectangles, colours, borders, text runs, form fields, scroll
 containers and images. Each sample's tests check that layout against numbers worked out by
 hand, and click, type and submit through the same events a renderer would send.
 
-Drawing them waits for the bridge from that plan to the renderer. Once it lands, the same
-`app()` and `STYLE` are what a window shows, and nothing in the samples changes.
+The HTML bridge writes that plan into the renderer's batch, the whole tree on the first frame
+and then only what changed, and the renderer's clicks, typing and choices come back to the
+same handlers. `hello` has a binary that opens it in a window through the bridge:
+
+```
+cargo run -p sample-html-hello
+```
+
+Its library has `config()`, which hands `STYLE` to an `HtmlConfig`, and `launch()`, which calls
+`LaunchBuilder::new().with_html(config).launch(app)`. The other samples expose the same `app()`
+and `STYLE` and are launched the same way with `LaunchBuilder::with_html`; they have no binary
+of their own yet. The bridge is tested on the Host against the records the renderer receives
+(`samples/hello/tests/hello.rs`). What a window shows has not been confirmed by running the
+renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
 
 ## Running the tests
 

@@ -39,9 +39,10 @@ pub fn app() -> Element {
 ```
 
 This is [`samples/hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello),
-trimmed. **It is laid out today and drawn once the renderer bridge lands**
-([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)): the HTML path computes the layout
-and a drawing plan in Rust, and does not put pixels on screen yet.
+trimmed. **It is laid out in Rust and sent to the renderer through the HTML bridge**
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). The records the renderer receives
+are tested on the Host; drawing them in a window has not been confirmed by running the renderer
+yet, so the bridge is still marked partial.
 
 You write a Dioxus app the way you would for the web: `rsx!` with `div`, `span` and CSS, hooks
 and signals. `blitz-dom` computes styles and layout inside the Host, and
@@ -126,8 +127,9 @@ with the widget path only; the HTML path is on the `develop` branch. The API wil
 | implemented | Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (measured 2026-10-03, macOS) |
 | implemented | Eleven HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
 | implemented | Compose widgets in `rsx!`, drawn by the renderer: macOS, Android and the web end to end; Windows, Linux and iOS build and start |
-| partial | Drawing HTML screens on screen: the plan exists, the bridge to compose-rust's renderer (`AbsoluteBox`) is not built ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| partial | Drawing HTML screens on screen: the bridge writes the plan into compose-rust's batch (`AbsoluteBox`, `Box`, `Text`, `Image`, fields), first the whole tree and then only what changed, and renderer events reach the Dioxus handlers. Tested on the Host against the records the renderer receives; not yet confirmed on screen ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | partial | Text measured by Compose: the measure call is being implemented in compose-rust; Parley measures text until then ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| planned | Keyboard events and focus as DOM events on HTML screens, and following a system colour scheme change while running ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | planned | CSS transforms beyond `translate`, CSS transitions and animations ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | planned | Zooming HTML screens the way VS Code does |
 | planned | HTML and widgets on one screen |
@@ -142,7 +144,7 @@ list.
 
 | You write | Import | Today |
 |---|---|---|
-| HTML elements and CSS: `div`, `span`, `input`, a stylesheet | `dioxus_compose::html::prelude::*` | Laid out and planned in the Host, not drawn yet |
+| HTML elements and CSS: `div`, `span`, `input`, a stylesheet | `dioxus_compose::html::prelude::*` | Laid out in the Host and sent to the renderer; not yet confirmed on screen |
 | Compose widget names: `Column`, `Text`, `Button` | `dioxus_compose::prelude::*` | Drawn by the renderer |
 
 Both are always in the crate; no feature flag turns either off. An `rsx!` block uses one vocabulary
@@ -222,9 +224,24 @@ fn main() {
 }
 ```
 
-`cargo run` prints the boxes. No window opens yet, because nothing draws HTML screens until the
-renderer bridge lands. A widget-path app calls `dioxus_compose::launch(app)` instead and opens a
-window. The renderer is a prebuilt native library that
+`cargo run` prints the boxes. To open the page in a window instead, launch it the way a widget app
+is launched:
+
+```rust
+fn config() -> HtmlConfig {
+    HtmlConfig { stylesheets: vec![STYLE.to_string()], ..HtmlConfig::default() }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new().with_html(config).launch(app);
+}
+```
+
+`dioxus_compose::html::launch(app)` does the same with the default configuration.
+`cargo run -p sample-html-hello` opens `samples/hello` this way. The bridge's records are tested on
+the Host, and the window itself has not been checked by running the renderer yet
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). A widget-path app calls
+`dioxus_compose::launch(app)`. The renderer is a prebuilt native library that
 [compose-rust](https://github.com/DarkPyonix/compose-rust)'s build script downloads for your target;
 building it yourself is covered there.
 
@@ -248,7 +265,7 @@ your component (rsx! with div, span, CSS)
   -> blitz-dom document                Stylo resolves CSS, Taffy lays out
   -> DisplayList                       boxes, colours, text runs, fields, images
   -> Plan, and its diff                drawing elements; only what changed is sent
-  -> Compose renderer (compose-rust)   draws (the bridge is not built yet)
+  -> Compose renderer (compose-rust)   draws (bridge built; on screen not yet confirmed)
 ```
 
 **The renderer never sees CSS.** It gets rectangles, colours and runs of text. That keeps the
