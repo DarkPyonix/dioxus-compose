@@ -156,6 +156,13 @@ fn surface() -> Element {
                     Image { asset_id: 7, width: 64.0, height: 64.0 }
                     Icon { asset_id: 8, color: TERTIARY }
                 }
+                SelectionContainer {
+                    Badge {
+                        value: 3,
+                        color: ColorRole::Primary,
+                        Text { text: "Inbox" }
+                    }
+                }
                 ScrollRow {
                     fill_max_width: true,
                     Chip {
@@ -522,6 +529,14 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
         ),
         (W::ScrollColumn, vec![]),
         (W::ScrollRow, vec![]),
+        (W::SelectionContainer, vec![]),
+        (
+            W::Badge,
+            vec![
+                (P::Count, int(3)),
+                (P::Color, int(paint_bits(Paint::Role(ColorRole::Primary)))),
+            ],
+        ),
         (
             W::Chip,
             vec![
