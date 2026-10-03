@@ -107,7 +107,11 @@
     <h2 id="scheme">Light and dark</h2>
     <p>
       <code>HtmlConfig::color_scheme</code> answers <code>prefers-color-scheme</code>. It is
-      <code>ColorScheme::Light</code> unless you say otherwise.
+      <code>ColorScheme::Light</code> unless you say otherwise. While the app runs, the theme
+      decides: when a handler calls <code>use_theme().set_color_scheme(ColorScheme::Dark)</code>
+      (or <code>Light</code>), the page is restyled in the same frame and only the boxes whose
+      style changed are sent. A theme that follows the system leaves the configured scheme in
+      place.
     </p>
 <figure class="codeblock" data-copy="Copy" data-copied="Copied">
   <figcaption>samples/theme/tests/theme.rs, trimmed</figcaption>
@@ -166,9 +170,10 @@
     <h2 id="planned">Not yet</h2>
     <ul>
       <li><strong>Following the system while running.</strong>
-        <span class="pill planned">planned</span> The colour scheme is fixed when the
-        <code>HtmlDom</code> is made. The renderer learns of a system change first, and passing it
-        on to the HTML screen did not come with the bridge, so this is still planned
+        <span class="pill planned">planned</span> The renderer learns of a system change first and
+        applies it on its own side; compose-rust has no event that tells the Host, so an HTML screen
+        whose theme follows the system keeps its configured scheme. A theme switched to light or
+        dark by the application is followed (see above)
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>CSS variables as colour roles.</strong> <span class="pill planned">planned</span>
         On a screen that mixes HTML and widgets, both will follow one theme, with the CSS variables

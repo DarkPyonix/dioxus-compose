@@ -126,7 +126,8 @@ notepad 예제(위젯 경로 앱,
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
 | 부분 | HTML 화면을 화면에 그리기: 다리가 계획을 compose-rust 의 배치(batch)에 씀(`AbsoluteBox`, `Box`, `Text`, `Image`, 입력 컨트롤). 처음에는 트리 전체, 그 뒤로는 바뀐 것만 보내고, 렌더러의 이벤트는 Dioxus 핸들러에 닿음. 렌더러가 받는 레코드로 Host 에서 테스트했고, 화면에서는 아직 확인하지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
-| 계획 | HTML 화면에서 DOM 이벤트로서의 키보드 이벤트와 포커스, 실행 중 시스템 색 구성표 변화 따라가기([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면에서 DOM 이벤트로서의 키와 포커스: compose-rust 가 실어 나르는 유일한 키인 Enter 의 `keydown` 과 `keypress`, 입력 칸의 `focus`, `blur`, `focusin`, `focusout`. Host 에서 테스트함. compose-rust 는 입력 칸이 포커스를 잃는 것은 알리지만 얻는 것은 알리지 않아서 `focus` 는 첫 입력과 함께 오고, 키를 뗀 것은 실어 나르지 않아서 `keyup` 은 보내지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면의 `prefers-color-scheme` 은 앱이 실행 중에 테마를 밝게나 어둡게 바꾸면 따라감. 시스템의 변화는 렌더러가 적용하고 Host 에 알리지 않아서, 시스템을 따르는 테마에서는 설정한 색 구성표를 유지함([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 계획 | `translate` 밖의 CSS 변환, CSS transition 과 animation([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |

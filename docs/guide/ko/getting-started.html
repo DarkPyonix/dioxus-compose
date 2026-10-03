@@ -215,9 +215,13 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
       데스크톱 바이너리가 있는 예제는 아직 이것 하나입니다. Android 와 브라우저에서는 진입점 매크로가
       같은 빌더를 첫 인자로 받습니다. 예를 들어
       <code>android_main!(LaunchBuilder::new().with_html(config), app)</code> 이고,
-      <code>web_main!</code> 도 같습니다.
-      페이지는 창 크기의 세로 스크롤 안에 놓이고, 클릭, 타이핑한 글자, 폼 컨트롤은 다리를 거쳐 핸들러에
-      닿습니다. <code>onkeydown</code> 같은 키 이벤트는 아직 HTML 요소에 오지 않고, 텍스트는 스타일시트의
+      <code>web_main!</code> 도 같습니다. iOS 에서는 <code>ios_main!(launch)</code> 가 같은
+      <code>launch</code> 를 부릅니다. hello 예제는 셋을 모두 선언하므로 네이티브 위젯 예제가 빌드되는
+      모든 플랫폼에서 빌드됩니다.
+      페이지는 창 크기의 세로 스크롤 안에 놓이고, 클릭, 타이핑한 글자, 폼 컨트롤, Enter
+      (<code>onkeydown</code>, <code>onkeypress</code>), 입력 칸의 포커스는 다리를 거쳐 핸들러에
+      닿습니다. 다른 키와 <code>onkeyup</code> 은 오지 않습니다. compose-rust 가 실어 나르는 것이
+      Enter 를 누른 것뿐이기 때문입니다. 텍스트는 스타일시트의
       <code>font-family</code> 가 아니라 디자인 시스템의 글꼴로 그려집니다. 다리는 Host 에서 테스트했고,
       화면에 그려지는 것은 아직 확인하지 않았습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>

@@ -281,10 +281,17 @@ input {
         돌아옵니다. Host 에서 테스트했고 화면에서는 아직 확인하지 않았으며
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), 확인하게 되면 한글 입력
         체크리스트를 네이티브 빌드에서 손으로 확인합니다.</li>
-      <li><strong>HTML 화면의 키보드 이벤트와 포커스.</strong> <span class="pill planned">계획</span>
-        <code>onkeydown</code> 같은 키 이벤트와 DOM 이벤트로서의 포커스는 아직 HTML 요소에 오지 않습니다.
-        다리는 이것들 없이 들어왔고, 여전히 계획 단계입니다
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>HTML 화면의 키와 포커스.</strong> <span class="pill partial">부분</span>
+        입력 칸에서, 또는 <code>onkeydown</code> 이나 <code>onkeypress</code> 가 있는 요소의 상자 안에서
+        누른 Enter 는 포커스가 있는 요소에서부터 버블링하며 <code>keydown</code> 을, 이어서
+        <code>keypress</code> 를 Shift, Control, Alt, Meta 와 함께 보냅니다.
+        <code>prevent_default()</code> 를 부른 핸들러는 입력 칸이 폼을 제출하거나 줄을 바꾸지 않게
+        합니다. 입력 칸은 사용자가 그 안에서 처음 무언가를 하기 직전에 <code>focus</code> 와
+        <code>focusin</code> 을, 포커스를 잃을 때 <code>change</code>, <code>blur</code>,
+        <code>focusout</code> 을 보냅니다. compose-rust 가 실어 나르는 키는 Enter 하나이고 키를 뗀 것은
+        싣지 않으므로 다른 키와 <code>onkeyup</code> 은 오지 않습니다. 입력 칸이 포커스를 잃는 것은
+        알리지만 얻는 것은 알리지 않으므로, 아무것도 입력하지 않고 지나간 입력 칸은 <code>focus</code>
+        없이 <code>blur</code> 를 받습니다. Host 에서 테스트했습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ul>
 
     <nav class="pagenav" aria-label="페이지 이동">

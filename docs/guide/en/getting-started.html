@@ -218,9 +218,12 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
       example this way; it is the only example with a desktop binary so far. On Android and in the
       browser the entry macros take the same builder as their first argument, for example
       <code>android_main!(LaunchBuilder::new().with_html(config), app)</code>, and
-      <code>web_main!</code> likewise. The page sits in a vertical scroll the size of the window, and clicks, typed
-      text and form controls reach your handlers through the bridge. Key events such as
-      <code>onkeydown</code> do not reach HTML elements yet, and text is drawn in the design
+      <code>web_main!</code> likewise; on iOS <code>ios_main!(launch)</code> calls the same
+      <code>launch</code>. The hello sample declares all three, so it builds for each platform the
+      native-widget samples do. The page sits in a vertical scroll the size of the window, and clicks, typed
+      text, form controls, Enter (<code>onkeydown</code>, <code>onkeypress</code>) and a field's
+      focus reach your handlers through the bridge. Other keys and <code>onkeyup</code> do not,
+      because Enter key presses are all compose-rust carries, and text is drawn in the design
       system's typeface rather than the stylesheet's <code>font-family</code>. The bridge is tested
       on the Host and drawing on screen is not yet confirmed (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>

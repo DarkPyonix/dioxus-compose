@@ -288,11 +288,18 @@ input {
         toggles and choices come back to your handlers. That is tested on the Host and not yet
         confirmed on screen (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>),
         and the Korean input checklist is run by hand on the native build once it is.</li>
-      <li><strong>Keyboard events and focus on HTML screens.</strong>
-        <span class="pill planned">planned</span> Key events such as <code>onkeydown</code> and
-        focus as a DOM event are not delivered to HTML elements yet. The bridge landed without them,
-        and they are still planned
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>Keys and focus on HTML screens.</strong>
+        <span class="pill partial">partial</span> Enter pressed in a field, or in a box whose
+        element has <code>onkeydown</code> or <code>onkeypress</code>, delivers <code>keydown</code>
+        and then <code>keypress</code>, bubbling from the focused element, with Shift, Control, Alt
+        and Meta. A handler that calls <code>prevent_default()</code> keeps the field from
+        submitting its form or starting a new line. A field delivers <code>focus</code> and
+        <code>focusin</code> before the first thing the user does in it, and <code>change</code>,
+        <code>blur</code> and <code>focusout</code> when it loses the focus. Enter is the one key
+        compose-rust carries and it has no key release, so other keys and <code>onkeyup</code> do
+        not arrive; it reports a field losing the focus but not gaining it, so a field focused and
+        left without a keystroke gets <code>blur</code> without <code>focus</code>. Tested on the
+        Host (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ul>
 
     <nav class="pagenav" aria-label="Pagination">

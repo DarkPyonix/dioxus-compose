@@ -42,9 +42,11 @@ cargo run -p sample-html-hello
 ```
 
 Its library has `config()`, which hands `STYLE` to an `HtmlConfig`, and `launch()`, which calls
-`LaunchBuilder::new().with_html(config).launch(app)`. The other samples expose the same `app()`
-and `STYLE` and are launched the same way with `LaunchBuilder::with_html`; they have no binary
-of their own yet. The bridge is tested on the Host against the records the renderer receives
+`LaunchBuilder::new().with_html(config).launch(app)`. The same builder goes to `android_main!`,
+`web_main!` and, through `launch()`, `ios_main!`, so `hello` is a cdylib for an Android Activity
+and a browser page and a staticlib for iOS, like the native-widget samples, with the same
+`Dioxus.toml` and `ios/main.c`. The other samples expose the same `app()` and `STYLE` and are
+launched the same way with `LaunchBuilder::with_html`; they have no binary of their own yet. The bridge is tested on the Host against the records the renderer receives
 (`samples/hello/tests/hello.rs`). What a window shows has not been confirmed by running the
 renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
 
