@@ -28,7 +28,10 @@ import dioxus.compose.design.LocalGlassDepth
 import dioxus.compose.design.SurfaceMaterial
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.foundation.FloatingActionArea
 import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostChip
+import dioxus.compose.foundation.HostFloatingAction
 import dioxus.compose.foundation.HostLazyGrid
 import dioxus.compose.foundation.HostRichText
 import dioxus.compose.foundation.HostScaffold
@@ -248,6 +251,14 @@ fun RenderNode(
         WidgetKind.ScaffoldSlot -> Column(modifier = modifier) {
             Children(node, table, dispatcher)
         }
+
+        // A label, perhaps a glyph, and the chosen state exactly as the Host sent it. The
+        // shape of the token is the design system's.
+        WidgetKind.Chip -> HostChip(node, modifier, dispatcher, theme)
+
+        // The one action a screen is about, in the form its design system gives it. Where
+        // it goes is decided by the frame it is in, which asks the same rule.
+        WidgetKind.FloatingAction -> HostFloatingAction(node, modifier, dispatcher, theme)
     }
 }
 
@@ -378,10 +389,24 @@ private fun RowScope.WeightedChild(childId: Int, table: NodeTable, dispatcher: E
     )
 }
 
-/** A Box has no weight axis, so its children are drawn as they are. */
+/**
+ * A Box has no weight axis, so its children are drawn as they are.
+ *
+ * Except the one action a screen is about. A Box is how a screen holds its page, so an
+ * action declared in one belongs to that page and is laid over it, at the corner the design
+ * system names, without taking any of the room the page is laid out in.
+ */
 @Composable
 private fun BoxScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
-    node.children.forEach { childId -> key(childId) { RenderNode(childId, table, dispatcher) } }
+    node.children.forEach { childId ->
+        key(childId) {
+            if (table.node(childId)?.widget == WidgetKind.FloatingAction) {
+                FloatingActionArea(LocalDesignTheme.current) { RenderNode(childId, table, dispatcher) }
+            } else {
+                RenderNode(childId, table, dispatcher)
+            }
+        }
+    }
 }
 
 /** The label of a Button follows the design system's button type role unless overridden. */

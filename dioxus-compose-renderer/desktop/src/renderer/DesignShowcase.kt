@@ -3,10 +3,12 @@ package dioxus.compose.tooling
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import dioxus.compose.protocol.Alignment
 import dioxus.compose.protocol.ButtonVariant
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
+import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.Paint
@@ -288,6 +290,52 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
         records += Mutation.Insert(strip, tile, number - 1)
         text(tile, 0, "Tile $number", TypeRole.Label, ColorRole.OnSecondaryContainer)
     }
+
+    // A row of chips, one chosen, one not and one with a glyph, then a page holding its one
+    // action. The chips are where a filled pill, an outlined tag and a ticked filter chip
+    // part company. The page is where the action shows which corner its system puts it
+    // in: over the bottom of the page, at the top beside the bar's actions, or at the head
+    // of the command bar. Six of them drawn in one place would mean nobody answered.
+    text(root, slot++, "chips and the primary action", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+
+    val chips = id()
+    records += Mutation.Create(chips, WidgetKind.Row)
+    records += Mutation.SetProp(chips, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
+    records += Mutation.Insert(root, chips, slot++)
+    listOf(
+        Triple("All", true, null),
+        Triple("Unread", false, null),
+        Triple("Recent", false, IconRole.History),
+    ).forEachIndexed { index, (label, chosen, icon) ->
+        val chip = id()
+        records += Mutation.Create(chip, WidgetKind.Chip)
+        records += Mutation.SetProp(chip, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(chip, PropertyKind.Checked, PropertyValue.Bool(chosen))
+        if (icon != null) {
+            records += Mutation.SetProp(chip, PropertyKind.Icon, PropertyValue.Integer(icon.ordinal + 1L))
+        }
+        // The Host holds which chip is chosen, so pressing one here reports the click and
+        // nothing on screen moves.
+        records += Mutation.SetProp(chip, PropertyKind.OnClick, PropertyValue.Integer(1L))
+        records += Mutation.Insert(chips, chip, index)
+    }
+
+    val page = id()
+    records += Mutation.Create(page, WidgetKind.Box)
+    records += Mutation.SetModifier(page, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetModifier(page, 1, ProtocolModifier.Height(180f))
+    records += Mutation.SetModifier(page, 2, ProtocolModifier.ShapeRole(ShapeRole.Medium))
+    records += Mutation.SetModifier(page, 3, ProtocolModifier.Background(Paint.Role(ColorRole.Surface)))
+    records += Mutation.SetModifier(page, 4, ProtocolModifier.PaddingRole(SpaceRole.Md))
+    records += Mutation.SetProp(page, PropertyKind.Alignment, PropertyValue.Integer(Alignment.Center.ordinal + 1L))
+    records += Mutation.Insert(root, page, slot++)
+    text(page, 0, "A page with one action on it", TypeRole.Body, ColorRole.OnSurfaceVariant)
+    val action = id()
+    records += Mutation.Create(action, WidgetKind.FloatingAction)
+    records += Mutation.SetProp(action, PropertyKind.Text, PropertyValue.Text("New"))
+    records += Mutation.SetProp(action, PropertyKind.Icon, PropertyValue.Integer(IconRole.Add.ordinal + 1L))
+    records += Mutation.SetProp(action, PropertyKind.OnClick, PropertyValue.Integer(1L))
+    records += Mutation.Insert(page, action, 1)
 
     return records
 }
