@@ -240,6 +240,10 @@ impl PlanKind {
 /// The text of a [`PlanKind::Text`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanText {
+    /// The element the text belongs to: the innermost element that holds all of it, which
+    /// may be an inline element (a link, an emphasis) inside the box the run is drawn in.
+    /// A click on the run is a click on this element.
+    pub owner: NodeId,
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
@@ -319,8 +323,8 @@ pub enum PlanModifier {
     },
     /// Rounds each corner by its own radius.
     CornerEach(Corners<f32>),
-    /// One outer shadow, in the node's shape. A box with several shadows has several,
-    /// back to front.
+    /// One outer shadow, in the node's shape. A box with several shadows has several, in
+    /// CSS order: the first is drawn on top.
     Shadow {
         x: f32,
         y: f32,
@@ -1094,6 +1098,7 @@ impl<'a> Builder<'a> {
                         index,
                     },
                     kind: PlanKind::Text(PlanText {
+                        owner: run.owner,
                         text: run.text.clone(),
                         style: run.style.clone(),
                         color,

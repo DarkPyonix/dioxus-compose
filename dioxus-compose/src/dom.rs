@@ -28,6 +28,7 @@ use crate::html::NodeId;
 use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
 use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
 use crate::layout::{local, resolve_styles, run_layout};
+use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{DisplayList, DisplayListDiff};
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
@@ -265,6 +266,35 @@ impl HtmlDom {
         self.activate(hit, Some((x, y)))
     }
 
+    /// Delivers a primary-button click on `node` itself, at the centre of its box, and does
+    /// what the click activates, as [`HtmlDom::click`] does for a point. What a renderer
+    /// calls when the user clicked a box it drew for `node`: the renderer has already
+    /// decided which box was under the pointer, so nothing is hit-tested again.
+    pub fn click_node(&mut self, node: NodeId) -> Option<NodeId> {
+        self.activate(node, None)
+    }
+
+    /// Whether a click on `node` does anything of its own: it has a click handler, or it
+    /// is a `<label>`, a `<button>` or a submit `<input>`, which a click activates. A
+    /// renderer makes the boxes of these nodes clickable. Checkboxes, radio buttons, text
+    /// fields and selects are drawn as controls with events of their own.
+    pub fn is_click_target(&self, node: NodeId) -> bool {
+        if self.state.listeners(node).contains(&"click") {
+            return true;
+        }
+        let Some(element) = self.doc.get_node(node) else {
+            return false;
+        };
+        match form::tag(element) {
+            Some("label" | "button") => true,
+            Some("input") => matches!(
+                form::activation_target(&self.doc, node),
+                Some(form::Activation::Submit { .. })
+            ),
+            _ => false,
+        }
+    }
+
     /// What a renderer calls when the user commits text to the field `node` (an
     /// `<input>` or `<textarea>`): delivers an `input` event carrying `value` to the
     /// nearest handler at or around the field. Returns the node whose handler received it.
@@ -484,6 +514,26 @@ impl HtmlDom {
                 self.color_scheme,
             ));
         }
+    }
+}
+
+impl ClickTargets for HtmlDom {
+    fn takes_clicks(&self, node: NodeId) -> bool {
+        self.is_click_target(node)
+    }
+
+    fn run_target(&self, owner: NodeId, container: NodeId) -> Option<NodeId> {
+        let mut current = Some(owner);
+        while let Some(id) = current {
+            if id == container {
+                return None;
+            }
+            if self.is_click_target(id) {
+                return Some(id);
+            }
+            current = self.doc.get_node(id).and_then(|node| node.parent);
+        }
+        None
     }
 }
 

@@ -30,6 +30,12 @@
 //! [`HtmlDom::check`] and [`HtmlDom::submit`], which a renderer calls with what the user
 //! committed in its own fields.
 //!
+//! [`launch`] runs such an app in a window, the way [`crate::launch`] runs one written with
+//! the Compose widgets: every frame that changes something is laid out, planned, and
+//! written to compose-rust by a [`PlanBridge`], which sends only what differs from the
+//! frame before. [`HtmlRuntime`] is that path as a compose-rust runtime, for a Host built
+//! by hand.
+//!
 //! The names live here rather than at the crate root because the Compose widget path
 //! already uses some of them there for something else: [`Brush`], [`ColorScheme`] and
 //! [`TextAlign`] are the HTML path's own, and the crate root's are the widgets'. The code
@@ -50,6 +56,8 @@ use crate::dom;
 use crate::layout::{self, image};
 use crate::paint::build;
 
+mod runtime;
+
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
 pub type NodeId = usize;
 
@@ -59,6 +67,7 @@ pub use crate::layout::measure::{
     ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
     TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
 };
+pub use crate::paint::bridge::{BridgeEvent, BridgeHandler, ClickTargets, PlanBridge, widget_for};
 pub use crate::paint::display_list::{
     BackgroundImage, BackgroundLayer, Border, BorderLine, BoxShadow, Corners, DisplayList,
     DisplayListDiff, GradientStop, InputField, InputKind, LinearGradient, NodeEntry, ObjectFit,
@@ -72,6 +81,7 @@ pub use crate::paint::plan::{
 };
 pub use blitz_dom::BaseDocument;
 pub use blitz_traits::shell::ColorScheme;
+pub use runtime::{HtmlRuntime, launch, runtime_for};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
@@ -116,7 +126,7 @@ pub fn layout_document_with(
 /// widgets as `dioxus_elements`, and this one names the HTML elements, so an `rsx!` block
 /// takes one or the other.
 pub mod prelude {
-    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize};
+    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, launch};
     pub use dioxus_core::{Element, VirtualDom};
     pub use dioxus_core_macro::rsx;
     pub use dioxus_html as dioxus_elements;
