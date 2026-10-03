@@ -19,6 +19,10 @@
 //! no `focus`. The keys compose-rust carries are key presses, and of those only Enter, so
 //! `keyup` is never delivered from here.
 //!
+//! `prefers-color-scheme` follows the theme's colour scheme when the application says
+//! light or dark. When it follows the system, the renderer applies the system's choice
+//! without telling the Host, so the page keeps the scheme its configuration names.
+//!
 //! Text is measured by the configured [`TextMeasurer`](crate::html::TextMeasurer), Parley by
 //! default. compose-rust has no call that asks the renderer to measure a string, so the
 //! page is laid out with Parley's answers and the renderer draws each run at the width
@@ -30,13 +34,13 @@ use std::pin::pin;
 use std::task::{Context, Poll};
 
 use compose_rust::protocol::{HostEvent, ProtocolError};
-use compose_rust::schema::{EventPayload, Key as WireKey};
+use compose_rust::schema::{ColorScheme as ThemeScheme, EventPayload, Key as WireKey};
 use compose_rust::{Batch, Runtime};
 use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Modifiers};
 
 use crate::dom::{HtmlConfig, HtmlDom};
-use crate::html::NodeId;
+use crate::html::{ColorScheme, NodeId};
 use crate::paint::bridge::{BridgeEvent, PlanBridge};
 use crate::paint::plan::LiteralColours;
 
@@ -56,6 +60,9 @@ pub struct HtmlRuntime {
     edited: HashSet<NodeId>,
     /// The field that has the focus, as far as the page has been told.
     focused: Option<NodeId>,
+    /// The scheme the configuration names, for an application whose theme follows the
+    /// system.
+    configured_scheme: ColorScheme,
 }
 
 impl HtmlRuntime {
@@ -64,8 +71,10 @@ impl HtmlRuntime {
     }
 
     pub fn with_config(app: fn() -> Element, config: HtmlConfig) -> Self {
+        let configured_scheme = config.color_scheme;
         Self {
             focused: None,
+            configured_scheme,
             dom: HtmlDom::with_config(app, config),
             bridge: PlanBridge::new(),
             batch: Batch::new(),
@@ -87,6 +96,14 @@ impl HtmlRuntime {
         } else {
             FALLBACK_VIEWPORT
         };
+        // A media query that asks for the scheme is answered with the theme's, so a page
+        // switched to dark with the rest of the application is restyled with it.
+        let scheme = match compose_rust::theme::current_theme().color_scheme {
+            ThemeScheme::Light => ColorScheme::Light,
+            ThemeScheme::Dark => ColorScheme::Dark,
+            ThemeScheme::FollowSystem => self.configured_scheme,
+        };
+        self.dom.set_color_scheme(scheme);
         // One CSS pixel is one dp, so the page is laid out at a scale of one. The renderer
         // turns dp into device pixels.
         self.dom.layout(viewport.0, viewport.1, 1.0);

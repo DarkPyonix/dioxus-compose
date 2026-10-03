@@ -925,3 +925,67 @@ fn fr34_focus_and_blur_reach_the_dom_handler() {
         vec!["input focus".to_string(), "div focusin".to_string()]
     );
 }
+
+fn schemed_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![
+            "html, body { margin: 0; padding: 0; } \
+             #panel { width: 100px; height: 20px; background-color: rgb(255, 255, 255); } \
+             #other { width: 100px; height: 20px; background-color: rgb(0, 128, 0); } \
+             #switch { width: 100px; height: 20px; } \
+             @media (prefers-color-scheme: dark) { \
+                 #panel { background-color: rgb(0, 0, 0); } \
+             }"
+            .to_string(),
+        ],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+fn schemed() -> Element {
+    let theme = dioxus_compose::use_theme();
+    rsx! {
+        div { id: "panel" }
+        div { id: "other" }
+        div {
+            id: "switch",
+            onclick: move |_| theme.set_color_scheme(dioxus_compose::schema::ColorScheme::Dark),
+        }
+    }
+}
+
+/// The application turns its theme dark, the page's `prefers-color-scheme: dark` rules
+/// apply from the same frame, and the batch carries only the box whose style they changed.
+///
+/// compose-rust does not tell the Host when the system's scheme changes: the renderer
+/// applies it on its own side. So the page follows the scheme the application's theme
+/// names, and keeps its configured one while the theme follows the system.
+#[test]
+fn fr34_prefers_color_scheme_follows_the_theme() {
+    let mut host = Host::html(schemed, schemed_config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let panel = node_with(&first, &Modifier::Background(rgb(255, 255, 255)));
+    let index = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Modifier(node, index, Modifier::Background(_)) if *node == panel => {
+                Some(*index)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    let after = click(&mut host, clickable(&first));
+    assert_eq!(
+        after,
+        vec![Record::Modifier(
+            panel,
+            index,
+            Modifier::Background(rgb(0, 0, 0))
+        )]
+    );
+
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new(), "the scheme is applied once");
+}

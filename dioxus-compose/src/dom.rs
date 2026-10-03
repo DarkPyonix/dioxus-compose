@@ -574,6 +574,17 @@ impl HtmlDom {
         &mut self.vdom
     }
 
+    /// The scheme `prefers-color-scheme` media queries are answered with.
+    pub fn color_scheme(&self) -> ColorScheme {
+        self.color_scheme
+    }
+
+    /// Answers `prefers-color-scheme` media queries with `scheme` from the next layout on.
+    /// The styles that depend on it are resolved again then; nothing else is.
+    pub fn set_color_scheme(&mut self, scheme: ColorScheme) {
+        self.color_scheme = scheme;
+    }
+
     /// Replaces the text measurer; the next layout uses it.
     pub fn set_measurer(&mut self, measurer: Box<dyn TextMeasurer>) {
         self.measurer = measurer;

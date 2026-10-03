@@ -31,7 +31,8 @@
 //! committed in its own fields. Keys go to the focused element's `keydown`, `keypress` and
 //! `keyup` handlers through [`HtmlDom::key_down`] and [`HtmlDom::key_up`], and focus to its
 //! `focus`, `blur`, `focusin` and `focusout` handlers through [`HtmlDom::focus`] and
-//! [`HtmlDom::blur`].
+//! [`HtmlDom::blur`]. `prefers-color-scheme` is answered with the configured scheme until
+//! [`HtmlDom::set_color_scheme`] changes it.
 //!
 //! [`launch`] runs such an app in a window, the way [`crate::launch`] runs one written with
 //! the Compose widgets: every frame that changes something is laid out, planned, and
