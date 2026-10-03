@@ -137,14 +137,17 @@ impl Painter<'_> {
             return;
         }
         let layout = &node.unrounded_layout;
+        let style = node.primary_styles();
+        let (shift_x, shift_y) = style.as_ref().map_or((0.0, 0.0), |style| {
+            translation(style, layout.size.width, layout.size.height)
+        });
         let rect = Rect::new(
-            ambient.x + layout.location.x,
-            ambient.y + layout.location.y,
+            ambient.x + layout.location.x + shift_x,
+            ambient.y + layout.location.y + shift_y,
             layout.size.width,
             layout.size.height,
         );
 
-        let style = node.primary_styles();
         let own_opacity = style.as_ref().map_or(1.0, |style| style.clone_opacity());
         let positioned = style
             .as_ref()
@@ -519,6 +522,29 @@ struct Layers {
     normal: Vec<NodeId>,
     positioned: Vec<NodeId>,
     positive: Vec<(i32, NodeId)>,
+}
+
+/// How far a box's `transform` moves it and everything inside it, when the transform only
+/// translates. A translation changes where a box is drawn and nothing else, so it is folded
+/// into the box's position. Anything else in the list (a rotation, a scale) is not carried
+/// by this display list, and the box is left where layout put it rather than half-moved.
+fn translation(style: &ComputedValues, width: f32, height: f32) -> (f32, f32) {
+    use style::values::generics::transform::GenericTransformOperation as Operation;
+
+    let mut x = 0.0;
+    let mut y = 0.0;
+    for operation in style.get_box().transform.0.iter() {
+        match operation {
+            Operation::Translate(tx, ty) => {
+                x += tx.resolve(Length::new(width)).px();
+                y += ty.resolve(Length::new(height)).px();
+            }
+            Operation::TranslateX(t) => x += t.resolve(Length::new(width)).px(),
+            Operation::TranslateY(t) => y += t.resolve(Length::new(height)).px(),
+            _ => return (0.0, 0.0),
+        }
+    }
+    (x, y)
 }
 
 fn border_line(style: BorderStyle) -> BorderLine {

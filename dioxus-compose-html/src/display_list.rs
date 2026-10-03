@@ -188,7 +188,9 @@ pub struct TextRun {
     pub owner: NodeId,
     /// The text's own box: the lines' extent, not the element's.
     pub rect: Rect,
-    /// The text with white space collapsed as CSS does; `\n` is a forced break.
+    /// The text with white space collapsed as CSS does; `\n` is a forced break. Text sized
+    /// by the [`TextMeasurer`](crate::TextMeasurer) also has its `text-transform` applied,
+    /// so it is the string the measurer was asked about.
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,

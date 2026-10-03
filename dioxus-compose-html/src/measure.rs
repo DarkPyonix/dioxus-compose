@@ -91,13 +91,66 @@ impl WidthConstraint {
     }
 }
 
+/// `white-space-collapse`: what happens to spaces, tabs and newlines in the source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WhiteSpaceCollapse {
+    /// Runs of white space collapse to one space (`white-space: normal` and `nowrap`).
+    Collapse,
+    /// Spaces, tabs and newlines are kept (`white-space: pre` and `pre-wrap`).
+    Preserve,
+    /// Spaces collapse and newlines stay as forced breaks (`white-space: pre-line`).
+    PreserveBreaks,
+    /// Like `Preserve`, and spaces at the end of a line take room and may break
+    /// (`white-space: break-spaces`).
+    BreakSpaces,
+}
+
+/// CSS `white-space`, as the two longhands it sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextWhiteSpace {
+    pub collapse: WhiteSpaceCollapse,
+    /// `text-wrap-mode`. `false` (`white-space: nowrap` and `pre`) means lines break only at
+    /// forced breaks, whatever room there is.
+    pub wrap: bool,
+}
+
+impl TextWhiteSpace {
+    /// `white-space: normal`.
+    pub const NORMAL: Self = Self {
+        collapse: WhiteSpaceCollapse::Collapse,
+        wrap: true,
+    };
+    /// `white-space: nowrap`.
+    pub const NOWRAP: Self = Self {
+        collapse: WhiteSpaceCollapse::Collapse,
+        wrap: false,
+    };
+    /// `white-space: pre`.
+    pub const PRE: Self = Self {
+        collapse: WhiteSpaceCollapse::Preserve,
+        wrap: false,
+    };
+}
+
+impl Default for TextWhiteSpace {
+    fn default() -> Self {
+        Self::NORMAL
+    }
+}
+
 /// One question to a [`TextMeasurer`].
 #[derive(Clone, Copy, Debug)]
 pub struct TextMeasureRequest<'a> {
-    /// The text with CSS white space already collapsed. A `\n` is a forced line break.
+    /// The text as it is drawn: CSS white space already collapsed and `text-transform`
+    /// already applied, so `Explorer` under `text-transform: uppercase` arrives as
+    /// `EXPLORER`. A `\n` is a forced line break.
     pub text: &'a str,
     pub style: &'a TextStyle,
+    /// How much room the lines have. Text that may not wrap ([`TextWhiteSpace::wrap`] is
+    /// `false`) is always asked about with [`WidthConstraint::MaxContent`].
     pub width: WidthConstraint,
+    /// How the text treats white space, and whether it may wrap.
+    pub white_space: TextWhiteSpace,
 }
 
 /// A [`TextMeasurer`]'s answer, in CSS pixels.
@@ -191,6 +244,8 @@ impl TextMeasurer for ParleyMeasurer {
         let mut layout: Layout<()> = builder.build(request.text);
 
         let max_advance = match request.width {
+            // Text that may not wrap breaks only where it has a forced break.
+            _ if !request.white_space.wrap => None,
             WidthConstraint::MinContent => Some(layout.calculate_content_widths().min),
             WidthConstraint::MaxContent => None,
             WidthConstraint::AtMost(width) => Some(width),

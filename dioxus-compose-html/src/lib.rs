@@ -44,7 +44,7 @@ pub use display_list::{
 pub use dom::{HtmlConfig, HtmlDom, element_by_id};
 pub use measure::{
     ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
-    WidthConstraint,
+    TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
 };
 
 /// Lays out a document that did not come from Dioxus (one parsed by `blitz-html`, say) at

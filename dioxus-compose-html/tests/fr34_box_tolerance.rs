@@ -61,6 +61,13 @@ const WORST_ALLOWED: f32 = 4.0;
 /// cannot move a box.
 const SETI_ADVANCE_EM: f32 = 1.0;
 
+/// Texts geometry.txt records as they stand in the DOM but that VS Code drew in capitals:
+/// workbench.css sets `text-transform: uppercase` on the sidebar title's `h2` and on the
+/// pane headers' `h3.title`. `Range.getClientRects` measured the capitals, and the layout
+/// applies `text-transform` before it asks the measurer, so the measurer is asked about
+/// `EXPLORER`, not `Explorer`.
+const DRAWN_IN_CAPITALS: [&str; 4] = ["Explorer", "workspace", "Outline", "Timeline"];
+
 // ------------------------------------------------------------------------------------------
 // The captured data.
 
@@ -226,8 +233,21 @@ impl CapturedMeasurer {
     fn new(captured: &Captured) -> Self {
         let mut glyphs = captured.glyphs.clone();
         glyphs.insert("seti".to_string(), SETI_ADVANCE_EM);
+        // The table is keyed by the text VS Code measured, which for these is the capitals
+        // it drew; the source text is no longer an answer the layout can get.
+        let texts = captured
+            .texts
+            .iter()
+            .map(|(key, measured)| {
+                let mut key = key.clone();
+                if DRAWN_IN_CAPITALS.contains(&key.text.as_str()) {
+                    key.text = key.text.to_uppercase();
+                }
+                (key, *measured)
+            })
+            .collect();
         Self {
-            texts: captured.texts.clone(),
+            texts,
             glyphs,
             width_errors: HashMap::new(),
             answered: Vec::new(),
@@ -580,7 +600,6 @@ fn region<'a>(captured: &'a Captured, name: &str) -> &'a Region {
 /// sizes VS Code measured, meet the box tolerance: at least 95 percent of the elements in
 /// each region within 1px of where VS Code drew them, and none more than 4px off.
 #[test]
-#[ignore = "red: text inside inline elements (a tab label is div > span > a > text) is still measured by Parley, not the caller's measurer, and ::before boxes from content rules come out 0x0; remove this line in the change that fixes both"]
 fn fr34_boxes_meet_the_tolerance_with_text_sized_as_vs_code_measured() {
     let captured = captured();
     assert_eq!(
@@ -608,6 +627,8 @@ fn fr34_boxes_meet_the_tolerance_with_text_sized_as_vs_code_measured() {
         .map(Comparison::summary)
         .collect::<Vec<_>>()
         .join("\n");
+    // Printed on success too: these are the numbers the requirement records.
+    eprintln!("{summary}");
     let failures = comparisons
         .iter()
         .filter(|comparison| !comparison.meets_tolerance())
@@ -631,7 +652,6 @@ fn fr34_boxes_meet_the_tolerance_with_text_sized_as_vs_code_measured() {
 /// The measurer's answer is what sizes the text: README.md 20px wider than VS Code
 /// measured makes the first tab 20px wider and moves the second tab 20px to the right.
 #[test]
-#[ignore = "red: text inside inline elements (a tab label is div > span > a > text) is still measured by Parley, not the caller's measurer, and ::before boxes from content rules come out 0x0; remove this line in the change that fixes both"]
 fn fr34_box_tolerance_measurer_answers_reach_the_layout() {
     let captured = captured();
     let tabs = region(&captured, "tabs");

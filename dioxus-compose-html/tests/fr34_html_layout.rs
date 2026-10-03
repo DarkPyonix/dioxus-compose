@@ -14,7 +14,8 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose_html::prelude::*;
 use dioxus_compose_html::{
     BaseDocument, BorderLine, DisplayList, HtmlConfig, HtmlDom, InputKind, NodeEntry, Rect, Rgba,
-    TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint, element_by_id, layout_document,
+    TextMeasureRequest, TextMeasurer, TextMetrics, TextWhiteSpace, WidthConstraint, element_by_id,
+    layout_document,
 };
 use dioxus_core::ScopeId;
 
@@ -282,6 +283,162 @@ html, body { margin: 0; }
     assert_eq!(run.wrap_width, Some(70.0));
     assert_eq!(run.line_count, 2);
     assert_rect(run.rect, 0.0, 0.0, 70.0, 40.0);
+}
+
+/// A label wrapped in inline elements that add no room of their own (VS Code's
+/// `div > span > a > text`) is measured by the measurer as one run, owned by the innermost
+/// element around the text. An inline element with side padding moves the text after it,
+/// which one measurement cannot say, so that context is left to Parley.
+#[test]
+fn fr34_text_inside_inline_elements_is_measured_by_the_measurer() {
+    let html = r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#row { display: flex; align-items: flex-start; }
+#plain, #padded { white-space: nowrap; }
+#padded span { padding-left: 5px; }
+#box { width: 30px; height: 30px; }
+</style></head><body><div id="row"><div id="plain"><span id="wrap"><a id="name">Label</a></span></div><div id="box"></div></div><div id="padded"><span>Other</span></div></body></html>"#;
+    let mut doc = parse(html, 800, 600);
+    let mut measurer = FakeMeasurer::new(10.0, 20.0);
+    let calls = measurer.calls.clone();
+    let list = layout_document(&mut doc, &mut measurer);
+
+    let asked = |wanted: &str| calls.borrow().iter().any(|(text, _, _)| text == wanted);
+    assert!(asked("Label"), "{:?}", calls.borrow());
+    assert!(!asked("Other"), "{:?}", calls.borrow());
+
+    let plain = entry(&list, &doc, "plain");
+    assert_rect(plain.rect, 0.0, 0.0, 50.0, 20.0);
+    assert_rect(entry(&list, &doc, "box").rect, 50.0, 0.0, 30.0, 30.0);
+    assert_eq!(plain.texts.len(), 1);
+    assert_eq!(plain.texts[0].text, "Label");
+    assert_eq!(plain.texts[0].owner, element_by_id(&doc, "name").unwrap());
+}
+
+/// `::before` content is text of its box like any other: a box holding nothing but
+/// `content: "abc"` is three characters wide, 30px at 10px each, and moves the box after it.
+#[test]
+fn fr34_generated_content_is_measured_and_sized() {
+    let html = r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#row { display: flex; align-items: flex-start; }
+#icon::before { content: "abc"; }
+#after { width: 30px; height: 30px; }
+</style></head><body><div id="row"><div id="icon"></div><div id="after"></div></div></body></html>"#;
+    let mut doc = parse(html, 800, 600);
+    let mut measurer = FakeMeasurer::new(10.0, 20.0);
+    let calls = measurer.calls.clone();
+    let list = layout_document(&mut doc, &mut measurer);
+
+    assert!(
+        calls.borrow().iter().any(|(text, _, _)| text == "abc"),
+        "{:?}",
+        calls.borrow()
+    );
+    let icon = entry(&list, &doc, "icon");
+    assert_rect(icon.rect, 0.0, 0.0, 30.0, 20.0);
+    assert_eq!(icon.texts.len(), 1);
+    assert_eq!(icon.texts[0].text, "abc");
+    assert_rect(entry(&list, &doc, "after").rect, 30.0, 0.0, 30.0, 30.0);
+}
+
+/// The measurer is asked about the text as it is drawn, `text-transform` applied, and is
+/// told the `white-space` it sits in. Text that may not wrap is asked about at its
+/// max-content width, however narrow its box, and is drawn unwrapped.
+#[test]
+fn fr34_measurer_gets_transformed_text_and_white_space() {
+    let html = r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#upper { text-transform: uppercase; white-space: nowrap; width: 20px; }
+#title { text-transform: capitalize; }
+#pre { white-space: pre; }
+#plain { width: 70px; }
+</style></head><body><div id="upper">Hello world</div><div id="title">hello (wide) world</div><div id="pre">a b</div><div id="plain">aaa bbb ccc</div></body></html>"#;
+    /// The fake measurer, remembering the white space and width of every request.
+    struct Recording {
+        fake: FakeMeasurer,
+        seen: Vec<(String, TextWhiteSpace, WidthConstraint)>,
+    }
+    impl TextMeasurer for Recording {
+        fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics {
+            self.seen
+                .push((request.text.to_string(), request.white_space, request.width));
+            self.fake.measure(request)
+        }
+    }
+
+    let mut doc = parse(html, 800, 600);
+    let mut measurer = Recording {
+        fake: FakeMeasurer::new(10.0, 20.0),
+        seen: Vec::new(),
+    };
+    let list = layout_document(&mut doc, &mut measurer);
+
+    let requests = &measurer.seen;
+    let asked = |text: &str| {
+        requests
+            .iter()
+            .filter(|(asked, _, _)| asked == text)
+            .map(|(_, white_space, width)| (*white_space, *width))
+            .collect::<Vec<_>>()
+    };
+    let upper = asked("HELLO WORLD");
+    assert!(!upper.is_empty(), "{requests:?}");
+    assert!(
+        upper.iter().all(
+            |&(white_space, width)| white_space == TextWhiteSpace::NOWRAP
+                && width == WidthConstraint::MaxContent
+        ),
+        "{upper:?}"
+    );
+    assert!(!asked("Hello (Wide) World").is_empty(), "{requests:?}");
+    assert!(
+        asked("a b")
+            .iter()
+            .all(|&(white_space, _)| white_space == TextWhiteSpace::PRE),
+        "{requests:?}"
+    );
+    assert!(
+        asked("aaa bbb ccc")
+            .iter()
+            .all(|&(white_space, _)| white_space == TextWhiteSpace::NORMAL),
+        "{requests:?}"
+    );
+    assert!(
+        requests.iter().all(|(text, _, _)| text != "Hello world"),
+        "the source text is never measured: {requests:?}"
+    );
+
+    let upper = entry(&list, &doc, "upper");
+    assert_rect(upper.rect, 0.0, 0.0, 20.0, 20.0);
+    let run = &upper.texts[0];
+    assert_eq!(run.text, "HELLO WORLD");
+    assert_eq!(run.wrap_width, None);
+    assert_eq!(run.line_count, 1);
+    assert_eq!(run.rect.width, 110.0);
+}
+
+/// `min-width: fit-content` on a fixed-width flex item: a 50px box whose nowrap text is
+/// 110px wide grows to 110px and pushes the next box to x = 110; with 20px of text it stays
+/// 50px.
+#[test]
+fn fr34_min_width_fit_content_grows_a_fixed_width_box() {
+    for (label, expected) in [("Hello world", 110.0), ("Hi", 50.0)] {
+        let html = format!(
+            r#"<!DOCTYPE html><html><head><style>
+html, body {{ margin: 0; }}
+#row {{ display: flex; align-items: flex-start; }}
+#tab {{ width: 50px; min-width: fit-content; flex-shrink: 0; white-space: nowrap; }}
+#next {{ width: 30px; height: 30px; flex-shrink: 0; }}
+</style></head><body><div id="row"><div id="tab">{label}</div><div id="next"></div></div></body></html>"#
+        );
+        let mut doc = parse(&html, 800, 600);
+        let mut measurer = FakeMeasurer::new(10.0, 20.0);
+        let list = layout_document(&mut doc, &mut measurer);
+
+        assert_rect(entry(&list, &doc, "tab").rect, 0.0, 0.0, expected, 20.0);
+        assert_rect(entry(&list, &doc, "next").rect, expected, 0.0, 30.0, 30.0);
+    }
 }
 
 #[test]
