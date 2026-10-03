@@ -407,7 +407,9 @@ class NodeTable {
                         // which is its accessible name where the system draws the glyph
                         // alone.
                         widget == WidgetKind.Chip ||
-                        widget == WidgetKind.FloatingAction
+                        widget == WidgetKind.FloatingAction ||
+                        // A badge's short word, shown where a count would be.
+                        widget == WidgetKind.Badge
 
                 // Note: SpacerProps has width and height in the Rust schema, but there are
                 // no matching PropertyKind variants, so a Spacer can only be sized with
@@ -450,7 +452,10 @@ class NodeTable {
                                     // than written, so there is no Text underneath to
                                     // colour instead.
                                     widget == WidgetKind.Tabs ||
-                                    widget == WidgetKind.Slider
+                                    widget == WidgetKind.Slider ||
+                                    // A badge's fill. Only its role is read: a badge
+                                    // has no literal colour.
+                                    widget == WidgetKind.Badge
                                 )
                         )
 
@@ -545,6 +550,9 @@ class NodeTable {
 
                 // Runs of different treatment inside one string.
                 PropertyKind.Spans -> widget == WidgetKind.Text
+
+                // How many a badge counts. Nothing else counts anything.
+                PropertyKind.Count -> widget == WidgetKind.Badge
 
                 // Files over a node and files let go on it. Only the widget that exists
                 // to receive them, because a handler is attached whether or not a screen

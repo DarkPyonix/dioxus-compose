@@ -54,11 +54,11 @@ pub use schema::{
     TextOverflow, Theme, TileMode, TypeRole, WidgetKind, WindowHeightClass, WindowSizeClass,
 };
 pub use widgets::{
-    Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box, DatePicker, Dialog, Divider,
-    Dropdown, FileDrop, FileDropTarget, FloatingAction, Icon, Image, KeyEvent, LazyColumn,
+    Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box, DatePicker, Dialog,
+    Divider, Dropdown, FileDrop, FileDropTarget, FloatingAction, Icon, Image, KeyEvent, LazyColumn,
     LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton,
-    RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet, Slider, Spacer,
-    Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet,
+    Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 pub use window::{NodeSize, WindowSize, node_size, use_node_size, use_window_size, window_size};
 
@@ -152,17 +152,17 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant, Canvas, Card, Checkbox,
-        Chip, Color, ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog, Divider,
-        DrawCommand, DrawList, Dropdown, Element, FileDrop, FileDropTarget, FloatingAction, Icon,
-        IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid, LazyRow,
-        LinearProgressIndicator, LoopMode, MaterialRole, Menu, Message, MessageDuration, Modifier,
-        MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props, RadioButton,
-        RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider,
-        SpaceRole, Spacer, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow,
-        Theme, TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, WindowHeightClass, WindowSize,
-        WindowSizeClass, asset, brush, component, launch, rsx, show_message, use_design_system,
-        use_node_size, use_window_size,
+        Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant, Canvas, Card,
+        Checkbox, Chip, Color, ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog,
+        Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop, FileDropTarget,
+        FloatingAction, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid,
+        LazyRow, LinearProgressIndicator, LoopMode, MaterialRole, Menu, Message, MessageDuration,
+        Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props,
+        RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
+        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, Stop, Surface, Switch, Tabs, Text,
+        TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip, TopAppBar,
+        TypeRole, WindowHeightClass, WindowSize, WindowSizeClass, asset, brush, component, launch,
+        rsx, show_message, use_design_system, use_node_size, use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
