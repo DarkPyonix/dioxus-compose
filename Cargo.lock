@@ -589,6 +589,7 @@ dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "criterion",
  "dioxus-core",
  "dioxus-core-macro",
  "dioxus-html",
