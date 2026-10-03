@@ -87,7 +87,7 @@ Compose 에서 빌려 옵니다. Compose 쪽은 미리 네이티브 라이브러
 ### 무게
 
 notepad 예제(위젯 경로 앱,
-[`samples/native-widgets/notepad`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/native-widgets/notepad))를
+compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/tree/develop/samples/notepad))를
 릴리스로 빌드해 스트립한 것입니다. 실행 파일 하나이고, 옆에 놓이는 런타임도 안에 든 가상 머신도
 없습니다.
 
@@ -294,7 +294,6 @@ dioxus-compose/
 │  ├─ examples/           #   desktop_demo, 위젯 경로 데모
 │  └─ tests/              #   크레이트 테스트
 ├─ samples/               # HTML 과 CSS 로 쓴 앱 열한 개, 하나에 크레이트 하나
-│  └─ native-widgets/     # Compose 위젯 이름으로 쓴 앱
 ├─ experiments/           # 남겨 둘 만한 실험
 ├─ scripts/               # 품질 검사와 저장소 도구
 └─ docs/

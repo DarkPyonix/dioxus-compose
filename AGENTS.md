@@ -9,8 +9,7 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 - `dioxus-compose/`: the crate. The Dioxus adapter (a `VirtualDom` writing compose-rust's
   records, the widget elements `rsx!` resolves, the hooks) and the HTML and CSS path
   (`dom`, `layout`, `paint`, gathered in `html`).
-- `samples/`: the HTML and CSS samples; `samples/native-widgets/` holds the Compose
-  widget samples.
+- `samples/`: the HTML and CSS samples. The Compose widget samples are compose-rust's.
 - compose-rust (github.com/DarkPyonix/compose-rust, pinned by rev in
   `dioxus-compose/Cargo.toml`): the boundary, the protocol, the schema, codegen, the
   Kotlin renderer and the design systems. A change to any of those is made there.

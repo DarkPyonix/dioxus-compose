@@ -14,18 +14,6 @@ members = [
     "samples/theme",
     "samples/todo",
     "samples/workbench",
-    "samples/native-widgets/academic",
-    "samples/native-widgets/calculator",
-    "samples/native-widgets/chat",
-    "samples/native-widgets/frames",
-    "samples/native-widgets/minimal",
-    "samples/native-widgets/notepad",
-    "samples/native-widgets/podcast",
-    "samples/native-widgets/selfcare",
-    "samples/native-widgets/social",
-    "samples/native-widgets/statistics",
-    "samples/native-widgets/store",
-    "samples/native-widgets/todo",
 ]
 resolver = "2"
 
