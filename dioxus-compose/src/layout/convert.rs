@@ -78,8 +78,9 @@ pub(crate) fn text_decoration(doc: &BaseDocument, owner: usize) -> TextDecoratio
             let atomic_inline = display.outside() == DisplayOutside::Inline
                 && display.inside() != DisplayInside::Flow
                 && display.inside() != DisplayInside::Contents;
-            let out_of_flow = matches!(style.clone_position(), Position::Absolute | Position::Fixed)
-                || style.clone_float() != Float::None;
+            let out_of_flow =
+                matches!(style.clone_position(), Position::Absolute | Position::Fixed)
+                    || style.clone_float() != Float::None;
             if atomic_inline || out_of_flow {
                 break;
             }
