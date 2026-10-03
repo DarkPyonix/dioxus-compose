@@ -579,24 +579,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-baseline"
-version = "0.0.0"
-dependencies = [
- "dioxus-compose",
- "sample-academic",
- "sample-calculator",
- "sample-chat",
- "sample-minimal",
- "sample-notepad",
- "sample-podcast",
- "sample-selfcare",
- "sample-social",
- "sample-statistics",
- "sample-store",
- "sample-todo",
-]
-
-[[package]]
 name = "dioxus-compose"
 version = "0.0.0"
 dependencies = [
