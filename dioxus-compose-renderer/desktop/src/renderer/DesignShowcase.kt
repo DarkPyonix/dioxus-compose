@@ -3,10 +3,13 @@ package dioxus.compose.tooling
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import dioxus.compose.protocol.Alignment
+import dioxus.compose.protocol.Arrangement
 import dioxus.compose.protocol.ButtonVariant
 import dioxus.compose.protocol.ColorRole
 import dioxus.compose.protocol.ColorScheme
 import dioxus.compose.protocol.DesignSystem
+import dioxus.compose.protocol.IconRole
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.protocol.Mutation
 import dioxus.compose.protocol.Paint
@@ -267,6 +270,142 @@ fun designShowcaseRecords(theme: Theme): List<Mutation> {
         records += Mutation.SetProp(tab, PropertyKind.OnClick, PropertyValue.Integer(1L))
         records += Mutation.Insert(tabs, tab, index)
     }
+
+    // A strip wider than the window, scrolled sideways without the Host windowing it.
+    // Twelve tiles is more than any of the seven systems fits across this window, so the
+    // strip always has somewhere to go, and how its tiles and its scroll edge look is the
+    // design system's like everything above.
+    text(root, slot++, "horizontal scroll", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+    val strip = id()
+    records += Mutation.Create(strip, WidgetKind.ScrollRow)
+    records += Mutation.SetModifier(strip, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetProp(strip, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
+    records += Mutation.Insert(root, strip, slot++)
+    (1..12).forEach { number ->
+        val tile = id()
+        records += Mutation.Create(tile, WidgetKind.Box)
+        records += Mutation.SetModifier(tile, 0, ProtocolModifier.Width(120f))
+        records += Mutation.SetModifier(tile, 1, ProtocolModifier.ShapeRole(ShapeRole.Medium))
+        records += Mutation.SetModifier(tile, 2, ProtocolModifier.Background(Paint.Role(ColorRole.SecondaryContainer)))
+        records += Mutation.SetModifier(tile, 3, ProtocolModifier.PaddingRole(SpaceRole.Md))
+        records += Mutation.Insert(strip, tile, number - 1)
+        text(tile, 0, "Tile $number", TypeRole.Label, ColorRole.OnSecondaryContainer)
+    }
+
+    // A row of chips, one chosen, one not and one with a glyph, then a page holding its one
+    // action. The chips are where a filled pill, an outlined tag and a ticked filter chip
+    // part company. The page is where the action shows which corner its system puts it
+    // in: over the bottom of the page, at the top beside the bar's actions, or at the head
+    // of the command bar. Six of them drawn in one place would mean nobody answered.
+    text(root, slot++, "chips and the primary action", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+
+    val chips = id()
+    records += Mutation.Create(chips, WidgetKind.Row)
+    records += Mutation.SetProp(chips, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Sm.ordinal + 1L))
+    records += Mutation.Insert(root, chips, slot++)
+    listOf(
+        Triple("All", true, null),
+        Triple("Unread", false, null),
+        Triple("Recent", false, IconRole.History),
+    ).forEachIndexed { index, (label, chosen, icon) ->
+        val chip = id()
+        records += Mutation.Create(chip, WidgetKind.Chip)
+        records += Mutation.SetProp(chip, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(chip, PropertyKind.Checked, PropertyValue.Bool(chosen))
+        if (icon != null) {
+            records += Mutation.SetProp(chip, PropertyKind.Icon, PropertyValue.Integer(icon.ordinal + 1L))
+        }
+        // The Host holds which chip is chosen, so pressing one here reports the click and
+        // nothing on screen moves.
+        records += Mutation.SetProp(chip, PropertyKind.OnClick, PropertyValue.Integer(1L))
+        records += Mutation.Insert(chips, chip, index)
+    }
+
+    val page = id()
+    records += Mutation.Create(page, WidgetKind.Box)
+    records += Mutation.SetModifier(page, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.SetModifier(page, 1, ProtocolModifier.Height(180f))
+    records += Mutation.SetModifier(page, 2, ProtocolModifier.ShapeRole(ShapeRole.Medium))
+    records += Mutation.SetModifier(page, 3, ProtocolModifier.Background(Paint.Role(ColorRole.Surface)))
+    records += Mutation.SetModifier(page, 4, ProtocolModifier.PaddingRole(SpaceRole.Md))
+    records += Mutation.SetProp(page, PropertyKind.Alignment, PropertyValue.Integer(Alignment.Center.ordinal + 1L))
+    records += Mutation.Insert(root, page, slot++)
+    text(page, 0, "A page with one action on it", TypeRole.Body, ColorRole.OnSurfaceVariant)
+    val action = id()
+    records += Mutation.Create(action, WidgetKind.FloatingAction)
+    records += Mutation.SetProp(action, PropertyKind.Text, PropertyValue.Text("New"))
+    records += Mutation.SetProp(action, PropertyKind.Icon, PropertyValue.Integer(IconRole.Add.ordinal + 1L))
+    records += Mutation.SetProp(action, PropertyKind.OnClick, PropertyValue.Integer(1L))
+    records += Mutation.Insert(page, action, 1)
+    // Badges, attached and standing alone, carrying a count, a word and nothing at all.
+    // The count of 120 is the one to compare: some systems write it out, some cut it at
+    // their ceiling, and one puts it at the end of the line instead of on the corner.
+    text(root, slot++, "badges", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+
+    fun badge(parent: Int, index: Int, count: Long?, word: String?): Int {
+        val node = id()
+        records += Mutation.Create(node, WidgetKind.Badge)
+        if (count != null) {
+            records += Mutation.SetProp(node, PropertyKind.Count, PropertyValue.Integer(count))
+        }
+        if (word != null) {
+            records += Mutation.SetProp(node, PropertyKind.Text, PropertyValue.Text(word))
+        }
+        records += Mutation.Insert(parent, node, index)
+        return node
+    }
+
+    val attached = id()
+    records += Mutation.Create(attached, WidgetKind.Row)
+    records += Mutation.SetProp(attached, PropertyKind.SpaceRole, PropertyValue.Integer(SpaceRole.Lg.ordinal + 1L))
+    records += Mutation.Insert(root, attached, slot++)
+    listOf(
+        Triple("Inbox", 3L, null),
+        Triple("Updates", 120L, null),
+        Triple("Drafts", null, null),
+        Triple("Releases", null, "new"),
+    ).forEachIndexed { index, (label, count, word) ->
+        val holder = badge(attached, index, count, word)
+        val button = id()
+        records += Mutation.Create(button, WidgetKind.Button)
+        records += Mutation.SetProp(button, PropertyKind.Text, PropertyValue.Text(label))
+        records += Mutation.SetProp(button, PropertyKind.Variant, PropertyValue.Integer(ButtonVariant.Tonal.ordinal + 1L))
+        records += Mutation.SetProp(button, PropertyKind.OnClick, PropertyValue.Integer(1L))
+        records += Mutation.Insert(holder, button, 0)
+    }
+
+    // Alone, at the end of a list row, which is where a count stands when there is no icon
+    // to put it on.
+    listOf(
+        Triple("Unread", 120L, null),
+        Triple("Mentions", null, null),
+        Triple("Labels", null, "beta"),
+    ).forEach { (label, count, word) ->
+        val line = id()
+        records += Mutation.Create(line, WidgetKind.Row)
+        records += Mutation.SetModifier(line, 0, ProtocolModifier.FillMaxWidth)
+        records += Mutation.SetProp(line, PropertyKind.Arrangement, PropertyValue.Integer(Arrangement.SpaceBetween.ordinal + 1L))
+        records += Mutation.SetProp(line, PropertyKind.Alignment, PropertyValue.Integer(Alignment.CenterStart.ordinal + 1L))
+        records += Mutation.Insert(root, line, slot++)
+        text(line, 0, label, TypeRole.Body)
+        badge(line, 1, count, word)
+    }
+
+    // A message whose text can be dragged over and copied in one go: a paragraph, a list
+    // item and a line of code, with a button inside that is pressed rather than selected.
+    text(root, slot++, "selectable text", TypeRole.Headline, ColorRole.OnSurfaceVariant)
+    val region = id()
+    records += Mutation.Create(region, WidgetKind.SelectionContainer)
+    records += Mutation.SetModifier(region, 0, ProtocolModifier.FillMaxWidth)
+    records += Mutation.Insert(root, region, slot++)
+    text(region, 0, "Drag across these three blocks and copy them.", TypeRole.Body)
+    text(region, 1, "- each block arrives on its own line", TypeRole.Body)
+    text(region, 2, "let copied = clipboard.text();", TypeRole.Mono)
+    val inside = id()
+    records += Mutation.Create(inside, WidgetKind.Button)
+    records += Mutation.SetProp(inside, PropertyKind.Text, PropertyValue.Text("Pressed, not selected"))
+    records += Mutation.SetProp(inside, PropertyKind.OnClick, PropertyValue.Integer(1L))
+    records += Mutation.Insert(region, inside, 3)
 
     return records
 }

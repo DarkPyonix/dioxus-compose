@@ -120,6 +120,15 @@ data class Theme(
 data class Window(
     val chrome: Chrome,
     /**
+     * Which of the two title bars this window has.
+     *
+     * `Chrome` says who draws the caption; this says, inside that, what kind of window the
+     * caption belongs to. What it is worth in pixels is this side's answer: on macOS how
+     * far in the buttons sit and how round the window is, on Windows and Linux how tall
+     * the caption is.
+     */
+    val titleBar: TitleBar,
+    /**
      * What the window calls itself.
      *
      * Empty means the application said nothing and the renderer uses its own name. A
@@ -446,20 +455,21 @@ object Protocol {
                         )
                     }
                     TAG_SET_WINDOW -> {
-                        requireRecordLength(length, 28, offset)
-                        val resizable = readU16(batch, base, available, offset + 14)
+                        requireRecordLength(length, 32, offset)
+                        val resizable = readU16(batch, base, available, offset + 16)
                         if (resizable > 1) {
-                            throw ProtocolException("invalid resizable flag $resizable", offset + 14)
+                            throw ProtocolException("invalid resizable flag $resizable", offset + 16)
                         }
                         Mutation.SetWindow(
                             Window(
                                 chrome(readU16(batch, base, available, offset + 4), offset + 4),
-                                readString(batch, base, available, offset + 16),
-                                readU32(batch, base, available, offset + 24).toInt(),
-                                readU16(batch, base, available, offset + 6),
+                                titleBar(readU16(batch, base, available, offset + 6), offset + 6),
+                                readString(batch, base, available, offset + 20),
+                                readU32(batch, base, available, offset + 28).toInt(),
                                 readU16(batch, base, available, offset + 8),
                                 readU16(batch, base, available, offset + 10),
                                 readU16(batch, base, available, offset + 12),
+                                readU16(batch, base, available, offset + 14),
                                 resizable == 1,
                             ),
                         )
@@ -1388,6 +1398,46 @@ pub fn generate_mutation_vector() -> Result<Vec<u8>, ProtocolError> {
             property: PropertyKind::Commands,
             value: PropertyValue::Bytes(canvas_vector_bytes.as_bytes()),
         },
+        // A chosen chip and the screen's one action, so both sides agree on the two tags
+        // and on the properties each of them carries.
+        Mutation::Create {
+            node_id: 6,
+            widget: WidgetKind::Chip,
+        },
+        Mutation::SetProp {
+            node_id: 6,
+            property: PropertyKind::Text,
+            value: PropertyValue::String("필터"),
+        },
+        Mutation::SetProp {
+            node_id: 6,
+            property: PropertyKind::Checked,
+            value: PropertyValue::Bool(true),
+        },
+        Mutation::SetProp {
+            node_id: 6,
+            property: PropertyKind::OnClick,
+            value: PropertyValue::Integer(101),
+        },
+        Mutation::Create {
+            node_id: 7,
+            widget: WidgetKind::FloatingAction,
+        },
+        Mutation::SetProp {
+            node_id: 7,
+            property: PropertyKind::Text,
+            value: PropertyValue::String("New"),
+        },
+        Mutation::SetProp {
+            node_id: 7,
+            property: PropertyKind::Icon,
+            value: PropertyValue::Integer(crate::schema::IconRole::Add as i64),
+        },
+        Mutation::SetProp {
+            node_id: 7,
+            property: PropertyKind::OnClick,
+            value: PropertyValue::Integer(102),
+        },
         Mutation::RegisterAsset {
             asset_id: 5,
             kind: crate::schema::AssetKind::Png,
@@ -1493,8 +1543,8 @@ pub fn generate_vector_description() -> String {
   "mutations": {{
     "file": "mutations.bin",
     "description": "One batch covering every record, property value, modifier layout, drawing command, asset and message",
-    "recordCount": 33,
-    "strings": ["안녕", "compose", " token", "삭제했습니다", "Undo"],
+    "recordCount": 41,
+    "strings": ["안녕", "compose", " token", "필터", "New", "삭제했습니다", "Undo"],
     "assets": [{{ "assetId": 5, "kind": "Png", "bytes": "89504e47" }}]
   }},
   "events": {{

@@ -8,6 +8,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +28,11 @@ import dioxus.compose.design.LocalGlassDepth
 import dioxus.compose.design.SurfaceMaterial
 import dioxus.compose.protocol.Modifier as ProtocolModifier
 import dioxus.compose.design.ResolvedTheme
+import dioxus.compose.foundation.FloatingActionArea
+import dioxus.compose.foundation.HostBadge
 import dioxus.compose.foundation.HostButton
+import dioxus.compose.foundation.HostChip
+import dioxus.compose.foundation.HostFloatingAction
 import dioxus.compose.foundation.HostLazyGrid
 import dioxus.compose.foundation.HostRichText
 import dioxus.compose.foundation.HostScaffold
@@ -53,6 +58,8 @@ import dioxus.compose.foundation.HostTabs
 import dioxus.compose.foundation.HostTooltip
 import dioxus.compose.foundation.HostTopAppBar
 import dioxus.compose.foundation.HostTextField
+import dioxus.compose.foundation.SelectableRegion
+import dioxus.compose.foundation.Unselectable
 import dioxus.compose.foundation.hostKeyEvents
 import dioxus.compose.runtime.EventDispatcher
 import dioxus.compose.ui.boxAlignment
@@ -142,8 +149,11 @@ fun RenderNode(
         WidgetKind.Text -> HostRichText(node, modifier, dispatcher, theme)
 
         WidgetKind.Spacer -> Spacer(modifier)
-        WidgetKind.Button -> HostButton(node, modifier, dispatcher, theme)
-        WidgetKind.TextField -> HostTextField(node, modifier, dispatcher)
+        // The controls are drawn through `Unselectable`, which leaves them out of a
+        // selectable region around them: a label is pressed, not copied. Outside a region
+        // it adds nothing.
+        WidgetKind.Button -> Unselectable { HostButton(node, modifier, dispatcher, theme) }
+        WidgetKind.TextField -> Unselectable { HostTextField(node, modifier, dispatcher) }
         WidgetKind.LazyColumn -> HostLazyColumn(node, modifier, table, dispatcher)
 
         // The same window as a list, rounded to whole rows because a row is what a grid
@@ -172,6 +182,16 @@ fun RenderNode(
             horizontalAlignment = node.horizontalAlignment(),
         ) { Children(node, table, dispatcher) }
 
+        // The same thing on its side: a row that scrolls without the Host windowing it,
+        // so every child is materialised. Use LazyRow when the strip is long. The scroll
+        // state is remembered here, under the node's own key, so a recomposition of the
+        // row or of any child leaves the position where the user put it.
+        WidgetKind.ScrollRow -> Row(
+            modifier = modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = node.horizontalArrangement(theme),
+            verticalAlignment = node.verticalAlignment(),
+        ) { Children(node, table, dispatcher) }
+
         // The containers, the overlays and the tab strip carry no appearance of their own:
         // each one names the kind of container it is and the design system decides what
         // that looks like.
@@ -184,7 +204,7 @@ fun RenderNode(
         WidgetKind.TopAppBar -> HostTopAppBar(node, modifier, table, dispatcher, theme)
         WidgetKind.Dialog -> HostDialog(node, modifier, table, dispatcher, theme)
         WidgetKind.Menu -> HostMenu(node, modifier, table, dispatcher, theme)
-        WidgetKind.Tabs -> HostTabs(node, modifier, table, dispatcher, theme)
+        WidgetKind.Tabs -> Unselectable { HostTabs(node, modifier, table, dispatcher, theme) }
         WidgetKind.Tooltip -> HostTooltip(node, modifier, table, dispatcher, theme)
         WidgetKind.LazyRow -> HostLazyRow(node, modifier, table, dispatcher)
 
@@ -192,14 +212,19 @@ fun RenderNode(
         // was sent: the tick, the track, the thumb, the sweep and the weight of a rule are
         // the design system's, so the same declaration is a Material control here and a
         // Cupertino one there.
-        WidgetKind.Checkbox ->
+        WidgetKind.Checkbox -> Unselectable {
             HostToggle(ToggleRole.Checkbox, node, modifier, dispatcher, theme)
+        }
 
-        WidgetKind.RadioButton ->
+        WidgetKind.RadioButton -> Unselectable {
             HostToggle(ToggleRole.RadioButton, node, modifier, dispatcher, theme)
+        }
 
-        WidgetKind.Switch -> HostToggle(ToggleRole.Switch, node, modifier, dispatcher, theme)
-        WidgetKind.Slider -> HostSlider(node, modifier, dispatcher, theme)
+        WidgetKind.Switch -> Unselectable {
+            HostToggle(ToggleRole.Switch, node, modifier, dispatcher, theme)
+        }
+
+        WidgetKind.Slider -> Unselectable { HostSlider(node, modifier, dispatcher, theme) }
         WidgetKind.ProgressIndicator -> HostProgressIndicator(node, modifier, theme)
         WidgetKind.Divider -> HostDivider(node, modifier, theme)
 
@@ -211,9 +236,10 @@ fun RenderNode(
         // The pickers carry a value, a range and a change handler. Which way of picking the
         // user gets, a calendar grid, a wheel, a dial or a flyout, is the design system's
         // decision, and there is no property that could ask for one of them.
-        WidgetKind.DatePicker -> HostDatePicker(node, modifier, dispatcher, theme)
-        WidgetKind.TimePicker -> HostTimePicker(node, modifier, dispatcher, theme)
-        WidgetKind.Dropdown -> HostDropdown(node, modifier, table, dispatcher, theme)
+        WidgetKind.DatePicker -> Unselectable { HostDatePicker(node, modifier, dispatcher, theme) }
+        WidgetKind.TimePicker -> Unselectable { HostTimePicker(node, modifier, dispatcher, theme) }
+        WidgetKind.Dropdown ->
+            Unselectable { HostDropdown(node, modifier, table, dispatcher, theme) }
 
         // One declaration, three presentations. Which one this is comes from the design
         // system, asked about the size class this window is in, so the Host that declared
@@ -222,7 +248,7 @@ fun RenderNode(
 
         // Normally drawn by the Navigation it belongs to, which knows whether it is the
         // selected one. On its own it is a destination nobody has chosen.
-        WidgetKind.NavigationItem -> HostNavigationItem(node, modifier, theme)
+        WidgetKind.NavigationItem -> Unselectable { HostNavigationItem(node, modifier, theme) }
 
         // A temporary surface from an edge of the window. Which edge is this side's
         // decision, and so is everything about the drag that closes it.
@@ -236,6 +262,25 @@ fun RenderNode(
         // this is. On its own it is a tree with a label nobody read.
         WidgetKind.ScaffoldSlot -> Column(modifier = modifier) {
             Children(node, table, dispatcher)
+        }
+
+        // A label, perhaps a glyph, and the chosen state exactly as the Host sent it. The
+        // shape of the token is the design system's.
+        WidgetKind.Chip -> HostChip(node, modifier, dispatcher, theme)
+
+        // The one action a screen is about, in the form its design system gives it. Where
+        // it goes is decided by the frame it is in, which asks the same rule.
+        WidgetKind.FloatingAction -> HostFloatingAction(node, modifier, dispatcher, theme)
+
+        // A count, a word or a dot, on its child or on its own. Where it sits and how a
+        // large count is written are the design system's.
+        WidgetKind.Badge -> HostBadge(node, modifier, table, dispatcher, theme)
+
+        // Every Text inside, however deep, is one selection. The modifier goes on the
+        // region rather than the column inside it, so a weight the parent gave it still
+        // reaches the parent's scope.
+        WidgetKind.SelectionContainer -> SelectableRegion(modifier) {
+            Column { Children(node, table, dispatcher) }
         }
     }
 }
@@ -296,9 +341,11 @@ internal fun NodeTable.stackingAxis(nodeId: Int): StackingAxis = when (node(node
     WidgetKind.ScrollColumn,
     WidgetKind.Card,
     WidgetKind.Surface,
+    WidgetKind.SelectionContainer,
     -> StackingAxis.Vertical
 
     WidgetKind.Row,
+    WidgetKind.ScrollRow,
     WidgetKind.TopAppBar,
     -> StackingAxis.Horizontal
 
@@ -366,10 +413,24 @@ private fun RowScope.WeightedChild(childId: Int, table: NodeTable, dispatcher: E
     )
 }
 
-/** A Box has no weight axis, so its children are drawn as they are. */
+/**
+ * A Box has no weight axis, so its children are drawn as they are.
+ *
+ * Except the one action a screen is about. A Box is how a screen holds its page, so an
+ * action declared in one belongs to that page and is laid over it, at the corner the design
+ * system names, without taking any of the room the page is laid out in.
+ */
 @Composable
 private fun BoxScope.Children(node: Node, table: NodeTable, dispatcher: EventDispatcher) {
-    node.children.forEach { childId -> key(childId) { RenderNode(childId, table, dispatcher) } }
+    node.children.forEach { childId ->
+        key(childId) {
+            if (table.node(childId)?.widget == WidgetKind.FloatingAction) {
+                FloatingActionArea(LocalDesignTheme.current) { RenderNode(childId, table, dispatcher) }
+            } else {
+                RenderNode(childId, table, dispatcher)
+            }
+        }
+    }
 }
 
 /** The label of a Button follows the design system's button type role unless overridden. */

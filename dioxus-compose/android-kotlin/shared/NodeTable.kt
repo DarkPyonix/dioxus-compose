@@ -402,7 +402,14 @@ class NodeTable {
                         // caption. It is a property rather than a child because three
                         // design systems centre it, and a bar whose children are an
                         // arbitrary tree gives no way to tell which of them to centre.
-                        widget == WidgetKind.TopAppBar
+                        widget == WidgetKind.TopAppBar ||
+                        // A chip's label, and the name of the one action a screen is about,
+                        // which is its accessible name where the system draws the glyph
+                        // alone.
+                        widget == WidgetKind.Chip ||
+                        widget == WidgetKind.FloatingAction ||
+                        // A badge's short word, shown where a count would be.
+                        widget == WidgetKind.Badge
 
                 // Note: SpacerProps has width and height in the Rust schema, but there are
                 // no matching PropertyKind variants, so a Spacer can only be sized with
@@ -445,7 +452,10 @@ class NodeTable {
                                     // than written, so there is no Text underneath to
                                     // colour instead.
                                     widget == WidgetKind.Tabs ||
-                                    widget == WidgetKind.Slider
+                                    widget == WidgetKind.Slider ||
+                                    // A badge's fill. Only its role is read: a badge
+                                    // has no literal colour.
+                                    widget == WidgetKind.Badge
                                 )
                         )
 
@@ -459,6 +469,7 @@ class NodeTable {
                     widget == WidgetKind.LazyColumn ||
                     widget == WidgetKind.LazyRow ||
                     widget == WidgetKind.ScrollColumn ||
+                    widget == WidgetKind.ScrollRow ||
                     widget == WidgetKind.FileDropTarget
 
                 PropertyKind.Variant -> widget == WidgetKind.Button
@@ -485,7 +496,10 @@ class NodeTable {
                 PropertyKind.Checked ->
                     widget == WidgetKind.Checkbox ||
                         widget == WidgetKind.RadioButton ||
-                        widget == WidgetKind.Switch
+                        widget == WidgetKind.Switch ||
+                        // A chosen chip is the same fact again. It is the Host's, so it
+                        // arrives here and is never set by the chip itself.
+                        widget == WidgetKind.Chip
 
                 PropertyKind.Steps -> widget == WidgetKind.Slider
 
@@ -518,14 +532,27 @@ class NodeTable {
                 // because every toolbar worth copying is a row of icon buttons and
                 // nothing else in the vocabulary can place one.
                 PropertyKind.Icon ->
-                    widget == WidgetKind.NavigationItem || widget == WidgetKind.Button
+                    widget == WidgetKind.NavigationItem ||
+                        widget == WidgetKind.Button ||
+                        // A glyph before a chip's label, and what the one action a screen
+                        // is about means.
+                        widget == WidgetKind.Chip ||
+                        widget == WidgetKind.FloatingAction
 
                 // Which part of a screen's frame a subtree fills. Only the wrapper a
                 // Scaffold puts around a slot carries it.
                 PropertyKind.Slot -> widget == WidgetKind.ScaffoldSlot
 
+                // Which named group of a strip a destination is in. Only a destination
+                // has one: a group is a run of them, and nothing else in a strip is in a
+                // run of anything.
+                PropertyKind.Section -> widget == WidgetKind.NavigationItem
+
                 // Runs of different treatment inside one string.
                 PropertyKind.Spans -> widget == WidgetKind.Text
+
+                // How many a badge counts. Nothing else counts anything.
+                PropertyKind.Count -> widget == WidgetKind.Badge
 
                 // Files over a node and files let go on it. Only the widget that exists
                 // to receive them, because a handler is attached whether or not a screen

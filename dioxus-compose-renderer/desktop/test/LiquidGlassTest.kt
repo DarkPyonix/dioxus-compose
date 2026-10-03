@@ -32,6 +32,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 
 /**
  * The Liquid Glass design system, and the window width that decides how far its glass
@@ -79,6 +80,77 @@ class LiquidGlassTest {
      * used. macOS 26 and iOS 26 draw themselves in glass, so answering with the previous
      * generation's language would be a choice the application never made.
      */
+    /**
+     * A window that has lost the key draws no glass.
+     *
+     * The third condition, beside reduced transparency and a platform that cannot blur,
+     * and it takes the same answer: the opaque fallback, no blur pass, no lift. On a
+     * screen with several windows open, which one is translucent is what says which one is
+     * yours, and a window that kept showing through after it stopped being yours would be
+     * the only one on the screen that did not sink.
+     */
+    /**
+     * A tinted button is tinted with the accent, not with grey.
+     *
+     * This language's tinted style is the accent at low opacity carrying accent content:
+     * a pale blue capsule with blue in it. Ours was black or white at low opacity, which
+     * over a white surface is grey, and grey is what every other neutral fill on the
+     * screen already is. The one in the reference's composer reads as a quiet blue and
+     * ours read as a disabled control.
+     *
+     * Checked by the channels rather than by a stored colour. Composited over the surface
+     * it sits on, a neutral tint leaves red, green and blue equal; an accent tint in a
+     * language whose accent is blue leaves blue ahead of red.
+     */
+    @Test
+    fun fr14_1_2_a_tinted_button_is_tinted_with_the_accent() {
+        for (dark in listOf(false, true)) {
+            val theme = glassTheme(dark, WindowSizeClass.Expanded)
+            val tonal = theme.rules.button(ButtonVariant.Tonal, theme)
+            val over = compositeOver(tonal.container, theme.color(ColorRole.Surface))
+            assertTrue(
+                over.blue > over.red + ACCENT_LEAD,
+                "the tinted button came out neutral in ${if (dark) "dark" else "light"}: " +
+                    "red ${over.red}, blue ${over.blue}. A grey capsule is what every " +
+                    "other neutral fill on the screen already is",
+            )
+        }
+    }
+
+    private companion object {
+        /** How far ahead of red the blue has to be before the fill is carrying a hue. */
+        const val ACCENT_LEAD = 0.02f
+    }
+
+    @Test
+    fun fr14_1_5_an_inactive_window_draws_its_fallback() {
+        assertFalse(
+            drawsAsGlass(reduceTransparency = false, blurAvailable = true, windowActive = false),
+            "an inactive window still draws glass, so nothing on the screen says which " +
+                "window is the one being used",
+        )
+        assertTrue(
+            drawsAsGlass(reduceTransparency = false, blurAvailable = true, windowActive = true),
+            "the active window stopped drawing glass",
+        )
+    }
+
+    /** And the blur pass goes with it, which is the cost rather than the look. */
+    @Test
+    fun fr14_1_5_an_inactive_window_pays_for_no_blur() {
+        val glass = LiquidGlass.material(
+            dark = false,
+            prominence = GlassProminence.Regular,
+            backdrop = Color.White,
+            content = Color.Black,
+        )
+        assertEquals(
+            0.dp,
+            glassBlurRadius(glass, reduceTransparency = false, blurAvailable = true, windowActive = false),
+            "an inactive window is still blurring a backdrop nobody is looking through",
+        )
+    }
+
     @Test
     fun fr14_1_3_adaptive_takes_the_apple_slot_for_glass_and_the_flat_system_is_named() {
         assertEquals(

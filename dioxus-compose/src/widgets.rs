@@ -9,8 +9,8 @@ use crate as dioxus_elements;
 use crate::Key;
 use crate::drawing::DrawList;
 use crate::schema::{
-    Alignment, Arrangement, ButtonVariant, IconRole, MaterialRole, MotionRole, Paint, ShapeRole,
-    SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole, Paint,
+    ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
 };
 use std::cell::Cell;
 use std::rc::Rc;
@@ -293,6 +293,46 @@ pub fn ScrollColumn(
 ) -> Element {
     rsx! {
         scrollcolumn {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            {children}
+        }
+    }
+}
+
+/// The whole content with a horizontal scroll attached: a [`ScrollColumn`] on its side.
+/// Every child is materialised, so a long horizontal list belongs in a [`LazyRow`]. The
+/// scroll position is the Renderer's, so scrolling never reaches the Host.
+#[component]
+pub fn ScrollRow(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    children: Element,
+) -> Element {
+    rsx! {
+        scrollrow {
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1670,6 +1710,15 @@ pub fn Navigation(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] selected_index: usize,
+    /// What sits above the destinations in a strip: a mark, a name, a control.
+    ///
+    /// Drawn only where the destinations are a strip down the side. A bar along the bottom
+    /// is five destinations standing side by side and has nowhere to put this.
+    #[props(default)]
+    head: Option<Element>,
+    /// What sits below them. An account row, usually.
+    #[props(default)]
+    foot: Option<Element>,
     children: Element,
 ) -> Element {
     rsx! {
@@ -1688,6 +1737,14 @@ pub fn Navigation(
             fill_max_width,
             fill_max_height,
             selected_index: selected_index as i64,
+            // The same slot widget a Scaffold's bars arrive in, because it says the same
+            // thing: where inside my parent this content goes.
+            if let Some(head) = head {
+                scaffoldslot { slot: i64::from(u16::from(SlotRole::TopBar)), {head} }
+            }
+            if let Some(foot) = foot {
+                scaffoldslot { slot: i64::from(u16::from(SlotRole::BottomBar)), {foot} }
+            }
             {children}
         }
     }
@@ -1729,6 +1786,13 @@ pub fn NavigationItem(
     #[props(default)]
     color: Option<Paint>,
     #[props(default = true)] enabled: bool,
+    /// The named group of the strip this destination belongs to.
+    ///
+    /// Neighbouring destinations carrying the same name are one group and the name is its
+    /// heading. A destination that names none belongs to no group and is drawn where it
+    /// always was. What a heading looks like is the design system's.
+    #[props(default)]
+    section: Option<String>,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
@@ -1750,6 +1814,7 @@ pub fn NavigationItem(
             icon: opt_role(icon),
             color: opt_paint(color),
             enabled,
+            section,
             onclick: move |_| on_click.call(()),
         }
     }
@@ -2018,6 +2083,202 @@ pub fn FileDropTarget(
             onfilesdropped: move |event: dioxus_core::Event<FileDrop>| {
                 on_files_dropped.call(event.data().as_ref().clone());
             },
+            {children}
+        }
+    }
+}
+
+/// A small token that is chosen or filters: a row of them narrows a list, or picks one
+/// option out of a few.
+///
+/// Whether it is chosen is the Host's. `selected` is what it draws, and the only thing that
+/// changes it is the Host's own `on_click` changing the value it passes in, so the chip on
+/// screen and the filter the Host is applying cannot disagree. A chip that is a filter
+/// toggles its own value; a chip that is one of a set clears its neighbours'. Which of the
+/// two it is is the Host's business, so the click carries nothing.
+///
+/// `selected` is the Compose name for that state. On the wire it is the same "is this on"
+/// boolean the toggles send.
+///
+/// What it looks like is the design system's: a Material filter chip with a tick, a
+/// rounded Apple filter pill, a Fluent tag button, a GNOME pill button, and the rest.
+#[component]
+pub fn Chip(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] fill_max_width: bool,
+    #[props(into)] text: String,
+    /// The meaning of a glyph before the label, never a picture.
+    #[props(default)]
+    icon: Option<IconRole>,
+    #[props(default)] selected: bool,
+    #[props(default = true)] enabled: bool,
+    #[props(default)] on_click: EventHandler<()>,
+) -> Element {
+    rsx! {
+        chip {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            fill_max_width,
+            text,
+            icon: opt_role(icon),
+            checked: selected,
+            enabled,
+            onclick: move |_| on_click.call(()),
+        }
+    }
+}
+
+/// The one action a screen is about: compose, add, new.
+///
+/// It carries what the action means, what it is called and what happens when it is
+/// pressed, and nothing else. **Floating is one design system's answer, not the concept.**
+/// Material floats a disc over the bottom corner of the page; the Apple systems put a plus
+/// at the trailing end of the bar; Fluent sets an accent button at the head of the command
+/// bar. Which one this is, and where it goes, is decided where the design system is, so
+/// there is no modifier here that could place it and no property that could ask for a
+/// shape.
+///
+/// Put it in a [`Scaffold`]'s `floating_action` slot, or as a child of the [`Box`] that
+/// holds the page. Either way the frame it is in asks the design system where it goes.
+/// Anywhere else, inside a row of a bar for example, it stays where it was declared.
+///
+/// The label is always sent. A system that draws the glyph alone still names the action
+/// with it, so assistive technology never meets an unnamed control.
+///
+/// [`Box`]: crate::Box
+#[component]
+pub fn FloatingAction(
+    #[props(default)] icon: Option<IconRole>,
+    #[props(into)] text: String,
+    #[props(default)] on_click: EventHandler<()>,
+) -> Element {
+    rsx! {
+        floatingaction {
+            text,
+            icon: opt_role(icon),
+            onclick: move |_| on_click.call(()),
+        }
+    }
+}
+
+/// A small mark on something else that says how many, that there is something new, or one
+/// short word.
+///
+/// With one child it is attached to that child: an icon, an avatar, a destination. With no
+/// child it stands on its own, the count at the end of a list row. Compose calls the first
+/// a `BadgedBox` and the second a `Badge`; here they are one widget, because whether there
+/// is something to attach to is already said by the children.
+///
+/// `value` is a count and `text` is a short word. With neither it is a dot. Where it sits
+/// on its child, what shape it is, and whether 120 is written out or shortened to `99+`
+/// are the design system's, so there is no property for a corner or a ceiling.
+///
+/// The colour is a role and never a literal, and it defaults to the error role the way
+/// every one of these systems draws an unread count. The content is read out as part of
+/// the child it is attached to, and never on its own.
+#[component]
+pub fn Badge(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// How many. Leave it out for a dot or a word: no count is not the same as a count of
+    /// nothing, and only the screen knows which one it means.
+    #[props(default)]
+    value: Option<u32>,
+    /// One short word, shown where a count would be. A count wins where both are given.
+    #[props(default)]
+    text: Option<String>,
+    /// The role the mark is filled with. The error role where it is not given.
+    #[props(default)]
+    color: Option<ColorRole>,
+    #[props(default)] children: Element,
+) -> Element {
+    rsx! {
+        badge {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            count: value.map(i64::from),
+            text,
+            color: opt_paint(color.map(Paint::Role)),
+            {children}
+        }
+    }
+}
+
+/// A region whose text can be dragged over and copied as one selection.
+///
+/// Every `Text` inside it, however deep and however many, is part of the same selection,
+/// so a whole message of paragraphs, list items and code can be picked up in one drag and
+/// copied with a line break between each block. Text outside one cannot be selected at all,
+/// which is what keeps button labels and destinations from being dragged over as though
+/// the screen were a document.
+///
+/// Buttons, checkboxes and the other controls inside it are left out of the selection and
+/// keep working as they always do.
+///
+/// Nothing about selecting or copying reaches this side. What is selected, the copy
+/// shortcut, the context menu and the clipboard all belong to the Renderer, so there is no
+/// event to handle and no way to read or set the selection from here.
+#[component]
+pub fn SelectionContainer(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    children: Element,
+) -> Element {
+    rsx! {
+        selectioncontainer {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
             {children}
         }
     }

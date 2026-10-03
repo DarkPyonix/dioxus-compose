@@ -8,6 +8,8 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import dioxus.compose.design.NavigationPresentation
+import dioxus.compose.protocol.IconRole
 import androidx.compose.ui.unit.height
 import androidx.compose.ui.unit.width
 import kotlin.test.Test
@@ -266,20 +268,147 @@ class DesignTokenWiringTest {
         assertNotEquals(deepinNumber.content, deepinOperator.content)
     }
 
+    /**
+     * The sidebar's measurements, all four read off the reference window.
+     *
+     * Asserted together because they are one measurement: the icon column is where every
+     * inset from the window's edge inwards adds up to, and the row pitch is the icon plus
+     * the room above and below it with nothing between one row and the next.
+     */
     @Test
-    fun fr22_liquid_glass_navigation_has_a_translucent_gradient_and_search_pill() {
+    fun fr21_2_1_a_glass_sidebar_is_measured_off_the_reference() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val style = glass.rules.navigation(WindowSizeClass.Expanded, glass)
+        assertEquals(NavigationPresentation.Drawer, style.presentation)
+        val icon = glass.rules.icon(IconRole.Search, glass).size
+        val padding = style.itemPadding
+        assertEquals(32.dp, icon + padding * 2, "a row is not as tall as the reference's")
+        assertEquals(0.dp, style.destinationGap, "the rows do not touch")
+        // Where the middle of the icon column falls, measured from the window's own edge:
+        // the panel stands off it, the mark behind the selected row stands off the panel,
+        // the row's own room stands off the mark, and then half the box the glyph is drawn
+        // in. The reference's is thirty three and a half.
+        val column = style.floatingInset +
+            (style.stripPadding ?: padding) +
+            (style.destinationInset ?: padding) +
+            icon / 2
+        assertEquals(34.dp, column, "the icon column is not where the reference's is")
+        assertEquals(10.dp, style.itemSpacing, "the label does not clear its icon")
+    }
+
+    /**
+     * The sidebar's corner, traced the way the reference was: how far in the outline is at
+     * each of a few rows down from the panel's top edge.
+     *
+     * Measured along the reference's lit rim, those are fifteen, eleven, seven, three and
+     * one points at one, two, four, eight and twelve rows down. The panel was cut to the
+     * right radius and drawn as a superellipse squarer than the reference's, so it came in
+     * seven, five, three, one and nothing: a corner that read as half the size it was.
+     */
+    @Test
+    fun fr21_2_1_the_glass_sidebar_corner_is_the_reference_corner() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val shape = glass.rules.navigation(WindowSizeClass.Expanded, glass).stripShape
+        val size = androidx.compose.ui.geometry.Size(230f, 844f)
+        val outline = shape.createOutline(
+            size,
+            androidx.compose.ui.unit.LayoutDirection.Ltr,
+            androidx.compose.ui.unit.Density(1f),
+        ) as androidx.compose.ui.graphics.Outline.Generic
+        val measure = androidx.compose.ui.graphics.PathMeasure()
+        measure.setPath(outline.path, false)
+        // The furthest right the outline reaches on a row, which near the top right corner
+        // is how far in the corner has pulled it.
+        fun inset(rowsDown: Float): Float {
+            var furthest = 0f
+            val steps = 20_000
+            for (i in 0..steps) {
+                val p = measure.getPosition(measure.length * i / steps)
+                if (kotlin.math.abs(p.y - rowsDown) < 0.35f && p.x > furthest) furthest = p.x
+            }
+            return size.width - furthest
+        }
+        val reference = listOf(1f to 15f, 2f to 11f, 4f to 7f, 8f to 3f, 12f to 1f)
+        for ((rows, expected) in reference) {
+            val actual = inset(rows)
+            assertTrue(
+                kotlin.math.abs(actual - expected) <= 2f,
+                "$rows rows down the sidebar's corner is $actual in where the reference's " +
+                    "is $expected, so the corner reads as a different size",
+            )
+        }
+    }
+
+    /**
+     * The mark behind the row you are on is the quietest state in the system, and quieter
+     * than any button. A fifth of black over a white panel came out a solid grey slab.
+     */
+    @Test
+    fun fr21_2_1_the_selected_sidebar_row_is_quieter_than_a_button() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val style = glass.rules.navigation(WindowSizeClass.Expanded, glass)
+        val tonal = glass.rules.button(ButtonVariant.Tonal, glass)
+        assertTrue(
+            style.indicator.alpha < tonal.container.alpha,
+            "the selected row is as loud as a tinted button",
+        )
+    }
+
+    /**
+     * A menu's entries are declared as buttons and are not drawn as ones.
+     *
+     * What they are to the application is a thing with a name that does something; what
+     * they are to the reader is a list. Drawn as buttons under a system that cuts every
+     * button into a capsule, the list came out as a stack of pills with air between them.
+     */
+    @Test
+    fun fr14_a_glass_menu_row_is_a_line_in_a_list_and_not_a_capsule() {
+        val glass = resolved(DesignSystem.LiquidGlass)
+        val button = glass.rules.button(ButtonVariant.Text, glass)
+        val row = glass.rules.menuEntry(button, glass)
+        assertNotEquals(button.shape, row.shape, "a menu row is cut like a button")
+        assertTrue(row.minHeight < button.minHeight, "a menu row is as tall as a button")
+        assertTrue(
+            row.verticalPadding < button.verticalPadding,
+            "a menu row keeps as much room round it as a button does",
+        )
+        // And the systems that draw their menus out of their own buttons are left alone.
+        val fluent = resolved(DesignSystem.Fluent)
+        val plain = fluent.rules.button(ButtonVariant.Text, fluent)
+        assertEquals(plain, fluent.rules.menuEntry(plain, fluent))
+    }
+
+    @Test
+    fun fr22_liquid_glass_navigation_has_a_translucent_gradient() {
         val glass = resolved(DesignSystem.LiquidGlass)
         val style = glass.rules.navigation(WindowSizeClass.Expanded, glass)
         assertTrue(style.container.alpha < 1f, "the drawer hides the page behind it")
         assertEquals(glass.color(ColorRole.Background), style.pageGradientStart)
-        assertEquals(glass.color(ColorRole.PrimaryContainer), style.pageGradientEnd)
-        assertTrue(style.searchContainer != null, "the search destination has no pill fill")
+        // The foot of the page is the container role carried back towards the accent it is
+        // a tint of, so it is deeper than the container on its own and still short of the
+        // accent: the palest tint alone reads as a fill rather than as light.
+        val container = glass.color(ColorRole.PrimaryContainer)
+        val accent = glass.color(ColorRole.Primary)
+        val foot = style.pageGradientEnd
+        assertTrue(foot != null, "the page has no foot colour")
+        assertTrue(
+            foot!!.red < container.red && foot.red > accent.red,
+            "the foot is not between the container and the accent",
+        )
+        assertTrue(
+            foot.green < container.green && foot.green > accent.green,
+            "the foot is not between the container and the accent",
+        )
+        // And the light that rises from it, without which the wash is one colour across the
+        // whole window and reads as a fill.
+        assertTrue(style.pageCornerGlow != null, "the page has no light at its corners")
+
 
         val fluent = resolved(DesignSystem.Fluent)
         val flat = fluent.rules.navigation(WindowSizeClass.Expanded, fluent)
         assertEquals(null, flat.pageGradientStart)
         assertEquals(null, flat.pageGradientEnd)
-        assertEquals(null, flat.searchContainer)
+        assertEquals(null, flat.pageCornerGlow)
     }
 }
 

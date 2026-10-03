@@ -7,9 +7,9 @@
 
 [English](../../README.md) · **한국어**
 
-**Rust로 선언형 UI를 작성하면, AOT 컴파일된 Compose Multiplatform 엔진이 그립니다.**
+**HTML과 CSS로 쓴 Dioxus 앱을 compose-rust를 거쳐 Compose Multiplatform이 웹뷰 없이 네이티브로 그리는 Dioxus 렌더러입니다.**
 
-*웹뷰도 동봉된 JVM도 없는 Rust 네이티브 데스크톱 UI.*
+*웹뷰도 동봉된 JVM도 없습니다.*
 
 ```rust
 rsx! {
@@ -21,9 +21,10 @@ rsx! {
 }
 ```
 
-`rsx!`와 훅, 시그널로 컴포넌트를 씁니다. `dioxus-core`의 VirtualDom이 이를 mutation으로 바꾸고,
-좁은 C ABI가 그 mutation을 경계 너머로 넘기면, Kotlin/Compose 인터프리터가 실제 Compose 트리로
-만들어 냅니다. Compose의 텍스트 레이아웃과 위젯, 그리고 플랫폼 IME를 그대로 쓰면서요.
+웹에서 쓰듯 Dioxus 앱을 씁니다. `div`, `span`과 CSS를 담은 `rsx!`, 훅과 시그널입니다.
+`blitz-dom`이 Host 안에서 스타일과 레이아웃을 계산하고,
+[compose-rust](https://github.com/DarkPyonix/compose-rust)의 AOT 컴파일된 Compose 렌더러가 상자와
+글자를 그립니다. Compose의 텍스트 레이아웃과 플랫폼 IME를 그대로 씁니다.
 
 ---
 
@@ -104,8 +105,12 @@ notepad 샘플을 릴리스로 빌드해 스트립한 것입니다. 실행 파�
 
 ## 🚦 현재 상태
 
-스펙을 먼저 쓰는 방식으로 **활발히 개발 중인 초기 프로젝트**입니다. crates.io에 게시하지
-않았으며 API는 바뀝니다.
+스펙을 먼저 쓰는 방식으로 **활발히 개발 중인 초기 프로젝트**입니다. crates.io에는
+0.0.0이 초기 스냅숏으로 올라가 있고, 다음 릴리스까지는 예전 설명이 그대로 보입니다. API는 바뀝니다.
+
+지금 `rsx!`는 맨 위 예제처럼 compose-rust의 위젯(`Column`, `Text`, `Button`)을 받고, HTML 태그와
+CSS는 지금 만들고 있습니다. 위젯 스키마와 렌더러는 compose-rust로 옮기는 동안 아직 이 저장소에
+있습니다.
 
 ### 플랫폼
 
@@ -622,7 +627,7 @@ CI도 같은 방식으로 나뉩니다. [`ci.yml`](../../.github/workflows/ci.ym
 | [PROJECT.md](../../PROJECT.md) | 범위, 개발 방식, 마일스톤 M0~M8, 열린 질문 |
 | [docs/INTENT.md](../INTENT.md) | 동기, 협상 불가 조건, 결정 D1~D10, 폐기한 대안 |
 | [docs/SPEC.md](../SPEC.md) | 기능·비기능 요구사항, 경계 프로토콜, 수용 기준 |
-| [CLAUDE.md](../../CLAUDE.md) | 이 저장소에서 일하는 방식 |
+| [AGENTS.md](../../AGENTS.md) | 이 저장소에서 일하는 방식 |
 
 기획 문서(`PROJECT.md`, `INTENT.md`, `SPEC.md`)는 한국어로 씁니다. README와 가이드 사이트는
 영어가 기본이고 한국어 번역을 함께 둡니다.

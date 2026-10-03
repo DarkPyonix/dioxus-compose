@@ -7,9 +7,9 @@
 
 **English** · [한국어](docs/locales/README_ko.md)
 
-**Declarative UI in Rust, rendered by an AOT-compiled Compose Multiplatform engine.**
+**A Dioxus renderer that draws HTML and CSS natively with Compose Multiplatform through compose-rust, with no webview.**
 
-*Native desktop UI in Rust with no webview and no bundled JVM.*
+*No webview and no bundled JVM.*
 
 ```rust
 rsx! {
@@ -21,10 +21,10 @@ rsx! {
 }
 ```
 
-You author components with `rsx!`, hooks and signals. `dioxus-core`'s VirtualDom turns them into
-mutations, a narrow C ABI carries those mutations across the boundary, and a Kotlin/Compose
-interpreter materialises them as a real Compose tree, with Compose's text layout, its widgets, and
-its platform IME.
+You write a Dioxus app the way you would for the web: `rsx!` with `div`, `span` and CSS, hooks
+and signals. `blitz-dom` computes styles and layout inside the Host, and
+[compose-rust](https://github.com/DarkPyonix/compose-rust)'s AOT-compiled Compose renderer draws
+the boxes and the text, with Compose's text layout and its platform IME.
 
 ---
 
@@ -106,8 +106,12 @@ Linux and Windows are not measured for footprint yet, and nothing here is claime
 
 ## 🚦 Status
 
-A **young project under active development**, built spec-first. It is not published to crates.io and
-the API will change.
+A **young project under active development**, built spec-first. Version 0.0.0 is on crates.io as an
+early snapshot; it still carries the old description until the next release. The API will change.
+
+Today `rsx!` takes compose-rust's widgets (`Column`, `Text`, `Button`), as in the example at the
+top; HTML tags and CSS are being built now. The widget schema and the renderer still live in this
+repository while they move to compose-rust.
 
 ### Platforms
 
@@ -627,7 +631,7 @@ started, writing UI, lists and streaming, architecture and troubleshooting.
 | [PROJECT.md](PROJECT.md) | Scope, method, milestones M0–M8, open questions |
 | [docs/INTENT.md](docs/INTENT.md) | Motivation, non-negotiables, decisions D1–D10, rejected alternatives |
 | [docs/SPEC.md](docs/SPEC.md) | Functional and non-functional requirements, boundary protocol, acceptance criteria |
-| [CLAUDE.md](CLAUDE.md) | Working agreements for this repository |
+| [AGENTS.md](AGENTS.md) | Working agreements for this repository |
 
 The planning documents (`PROJECT.md`, `INTENT.md`, `SPEC.md`) are written in Korean. This README and
 the guide site are English, with Korean translations.

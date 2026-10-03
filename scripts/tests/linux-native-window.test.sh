@@ -121,17 +121,50 @@ grep -Eq '^compilerOpts = .*-idirafter' "$definition" ||
 # ---------------------------------------------------------------------------
 #
 # Compose Multiplatform publishes `runtime` for linuxX64 and nothing else, so every module the
-# patch teaches the target has to be built and published here. One left off the list is not a
-# failure of that script: it is an unresolvable dependency tens of minutes into the renderer's own
-# build, naming a coordinate nobody recognises. `ui-test` is the one exception and is deliberate,
-# because nothing the renderer links reaches it.
-linux_publications="$(sed -n '/linuxX64)/,/;;/p' "$compose_script")"
+# renderer draws with has to be built and published here. One left off the list is not a failure
+# of that script: it is an unresolvable dependency tens of minutes into the renderer's own build,
+# naming a coordinate nobody recognises.
+#
+# Three lists have to agree: what the linux module asks for, what build-compose.sh publishes, and
+# what the patch teaches the target. Modules are compared whole, because `compose:material:material`
+# is a prefix of `compose:material:material-ripple` and a substring match lets one stand in for
+# the other.
+linux_publications="$(sed -n '/linuxX64)/,/;;/p' "$compose_script" |
+    grep -Eo 'compose:[A-Za-z0-9:_-]+' | sort -u)"
+patched_modules="$(grep -E '^\+\+\+ b/.*/build\.gradle$' "$compose_patch" |
+    sed -E 's#^\+\+\+ b/##; s#/build\.gradle$##; s#/#:#g' | sort -u)"
+[[ -n "$linux_publications" ]] ||
+    fail "found no linuxX64 module list in build-compose.sh, so nothing below compares against it"
+
+# What the renderer links. Each coordinate names one target's klib and brings nothing in behind
+# it, so this list is the renderer's whole closure, and each entry has to be something published.
+required=0
+while IFS= read -r coordinate; do
+    required=$((required + 1))
+    group="$(sed -E 's#^org\.jetbrains\.compose\.([^:]+):.*#\1#' <<< "$coordinate")"
+    artifact="$(sed -E 's#^[^:]+:([^:]+)-linuxx64:.*#\1#' <<< "$coordinate")"
+    grep -Fxq "compose:$group:$artifact" <<< "$linux_publications" ||
+        fail "the linux module asks for $coordinate and build-compose.sh does not publish compose:$group:$artifact"
+done < <(grep -Eo 'org\.jetbrains\.compose\.[a-z0-9]+:[A-Za-z0-9_-]+-linuxx64:[^ ]+' "$module")
+(( required > 0 )) ||
+    fail "the linux module names no Compose module by its linuxx64 coordinate, so nothing is checked against what is published"
+
+# A module published without the patch teaching it the target has no task to publish it with.
 while IFS= read -r gradle_path; do
-    [[ "$gradle_path" == "compose:ui:ui-test" ]] && continue
-    grep -Fq "$gradle_path" <<< "$linux_publications" ||
+    grep -Fxq "$gradle_path" <<< "$patched_modules" ||
+        fail "build-compose.sh publishes $gradle_path for linuxX64 and the patch does not add that target to it"
+done <<< "$linux_publications"
+
+# A module the patch teaches the target and nobody publishes is a target declared and never built.
+# Two are taught it on purpose: `ui-test` and Material 2 are what the test source sets of ui,
+# foundation and material3 depend on, and those source sets compile for every native target the
+# module has. Nothing the renderer links reaches either of them.
+test_only_modules=$'compose:material:material\ncompose:ui:ui-test'
+while IFS= read -r gradle_path; do
+    grep -Fxq "$gradle_path" <<< "$test_only_modules" && continue
+    grep -Fxq "$gradle_path" <<< "$linux_publications" ||
         fail "the patch adds a linuxX64 target to $gradle_path and build-compose.sh does not publish it"
-done < <(grep -E '^\+\+\+ b/.*/build\.gradle$' "$compose_patch" |
-    sed -E 's#^\+\+\+ b/##; s#/build\.gradle$##; s#/#:#g' | sort -u)
+done <<< "$patched_modules"
 
 # ---------------------------------------------------------------------------
 # The frame that belongs to a resize is drawn where the resize is handled.

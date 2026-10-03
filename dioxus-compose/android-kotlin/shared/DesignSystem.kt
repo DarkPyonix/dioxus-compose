@@ -29,6 +29,7 @@ import dioxus.compose.protocol.TypeRole
 import dioxus.compose.protocol.TypeToken
 import dioxus.compose.protocol.WindowSizeClass
 import java.lang.System
+import dioxus.compose.protocol.TitleBar
 
 /**
  * The platforms `Theme::adaptive` distinguishes.
@@ -149,6 +150,17 @@ class ResolvedTheme(
      * which is every platform but one and every window that did not ask.
      */
     val windowBackdrop: Boolean = false,
+
+    /**
+     * Which platform this is running on.
+     *
+     * A design system is not a platform and mostly does not need to know, which is why
+     * this arrived late. One rule does: the Apple language is drawn on two platforms whose
+     * answer for a set of destinations with no room differs, because one of them has its
+     * own tab bar to hand the destinations to and the other has a sidebar that
+     * is put away behind a button.
+     */
+    val platform: HostPlatform = HostPlatform.Unknown,
 ) {
     fun color(role: ColorRole): Color =
         rules.color(role, dark, sizeClass) ?: Color(tokens.color(role, dark))
@@ -302,6 +314,16 @@ interface ComponentRules {
         shape: Shape,
         theme: ResolvedTheme,
     ): androidx.compose.ui.Modifier
+
+    /**
+     * What that button becomes when it is a line in a menu rather than a control on a page.
+     *
+     * The default is that it becomes nothing: the system draws its menu out of its own
+     * buttons. Override it where a menu row is its own thing, which on the Apple systems it
+     * is: a row there runs the width of the menu, is cut shallow rather than into a capsule,
+     * and is read as a list rather than as a stack of controls.
+     */
+    fun menuEntry(base: ButtonStyle, theme: ResolvedTheme): ButtonStyle = base
 
     /** How a `ButtonVariant` looks, resting and pressed. */
     fun button(
@@ -461,7 +483,7 @@ interface ComponentRules {
      * The default is a plain set at the trailing edge with a tinted hover, which is what
      * most of these systems do. A system overrides what it actually differs about.
      */
-    fun caption(theme: ResolvedTheme): CaptionStyle = CaptionStyle(
+    fun caption(theme: ResolvedTheme, titleBar: TitleBar = TitleBar.Normal): CaptionStyle = CaptionStyle(
         side = CaptionSide.End,
         buttonWidth = 32.dp,
         buttonHeight = 32.dp,
@@ -503,6 +525,144 @@ interface ComponentRules {
         borderColor = Color.Transparent,
         typeRole = TypeRole.Body,
     )
+
+    /**
+     * How a chip looks, chosen and not.
+     *
+     * The chip sends a label, perhaps a glyph, and whether it is chosen, and nothing else.
+     * The corner, the height, whether choosing it fills it or ticks it, and whether it has a
+     * line around it are all answered here, which is why one declaration comes out as a
+     * Material filter chip, an Apple filter pill and a Fluent tag button.
+     *
+     * The default is an outlined capsule that fills with the accent when chosen, made of
+     * this system's own tokens.
+     */
+    fun chip(theme: ResolvedTheme): ChipStyle = ChipStyle(
+        container = Color.Transparent,
+        selectedContainer = theme.color(ColorRole.Primary),
+        content = theme.color(ColorRole.OnSurface),
+        selectedContent = theme.color(ColorRole.OnPrimary),
+        borderWidth = 1.dp,
+        borderColor = theme.color(ColorRole.Outline),
+        selectedBorderColor = Color.Transparent,
+        shape = theme.shape(ShapeRole.Full),
+        height = 32.dp,
+        horizontalPadding = theme.space(SpaceRole.Md),
+        iconGap = theme.space(SpaceRole.Xs),
+        typeRole = TypeRole.Label,
+        leadingCheck = false,
+        pressedAlpha = 0.7f,
+        disabledAlpha = 0.38f,
+    )
+
+    /**
+     * How the one action a screen is about is drawn, and where the frame it is in puts it.
+     *
+     * **Floating is one system's answer, not the concept.** The Host sends an icon, a label
+     * and a click, so whether this is a disc over the corner of the page, a plus at the
+     * end of the bar or an accent button at the head of a command bar is decided here and
+     * nowhere else. The width is part of the question because a few systems answer it
+     * differently on a phone, where the thumb is at the bottom, and on a desktop, where the
+     * pointer is already at the top.
+     *
+     * The default floats a disc where the window is phone-shaped and sets a labelled button
+     * at the trailing end of the top elsewhere, in this system's own colours.
+     */
+    fun floatingAction(sizeClass: WindowSizeClass, theme: ResolvedTheme): FloatingActionStyle {
+        val floats = dioxus.compose.foundation.floatingActionFloats(sizeClass)
+        return FloatingActionStyle(
+            placement = if (floats) {
+                FloatingActionPlacement.OverPageBottomEnd
+            } else {
+                FloatingActionPlacement.BarEnd
+            },
+            form = if (floats) FloatingActionForm.Disc else FloatingActionForm.Labelled,
+            container = theme.color(ColorRole.Primary),
+            content = theme.color(ColorRole.OnPrimary),
+            shape = theme.shape(ShapeRole.Full),
+            size = if (floats) 56.dp else 36.dp,
+            horizontalPadding = theme.space(SpaceRole.Md),
+            elevation = if (floats) 6.dp else 0.dp,
+            borderWidth = 0.dp,
+            borderColor = Color.Transparent,
+            typeRole = TypeRole.Label,
+            inset = if (floats) theme.space(SpaceRole.Lg) else theme.space(SpaceRole.Sm),
+            pressedAlpha = 0.8f,
+        )
+    }
+
+    /**
+     * How a badge is drawn: where it sits on what it is attached to, what shape it is, and
+     * how a large count is written.
+     *
+     * The Host sends a count, a word or neither, and a colour role. Whether the mark
+     * overlaps the corner of an icon or waits at the end of a row, and whether 120 is
+     * written out or cut to `99+`, are this system's answers, and the same declaration
+     * comes out differently under each of them.
+     *
+     * The default is the overlapping capsule most of these systems draw, writing every
+     * count out, in this system's own colours.
+     */
+    fun badge(theme: ResolvedTheme): BadgeStyle = BadgeStyle(
+        placement = BadgePlacement.Overlap,
+        maxCount = null,
+        height = 16.dp,
+        dotSize = 6.dp,
+        horizontalPadding = 4.dp,
+        shape = theme.shape(ShapeRole.Full),
+        labelSize = 11.sp,
+        labelWeight = FontWeight.Medium,
+        offsetX = (-4).dp,
+        offsetY = 4.dp,
+        ringWidth = 0.dp,
+        ring = Color.Transparent,
+        gap = theme.space(SpaceRole.Sm),
+    )
+}
+
+/**
+ * Where a badge goes relative to the thing it is attached to.
+ *
+ * `Overlap` centres the mark on the top trailing corner and lets it hang over the edge,
+ * the way an unread count sits on an icon. `Trailing` sets it beside the thing at the end
+ * of its line, the way a sidebar row carries its count. A badge with nothing attached is
+ * drawn on its own under either.
+ */
+enum class BadgePlacement { Overlap, Trailing }
+
+/** Everything a badge needs from the design system, answered in one call. */
+data class BadgeStyle(
+    val placement: BadgePlacement,
+    /**
+     * The largest count written out in full. Above it the mark reads as this number and a
+     * plus. Null where this system writes every count out.
+     */
+    val maxCount: Int?,
+    /** The height of a mark that carries a count or a word. It is never narrower. */
+    val height: Dp,
+    /** The diameter of a mark that carries neither. */
+    val dotSize: Dp,
+    val horizontalPadding: Dp,
+    val shape: Shape,
+    val labelSize: TextUnit,
+    val labelWeight: FontWeight,
+    /**
+     * How far an overlapping mark is moved from being centred on the corner. Negative x
+     * moves it in towards the start, positive y moves it down onto the child.
+     */
+    val offsetX: Dp,
+    val offsetY: Dp,
+    /** A ring around the mark that separates it from what it overlaps. Zero for none. */
+    val ringWidth: Dp,
+    val ring: Color,
+    /** The room between the thing and a trailing mark. */
+    val gap: Dp,
+) {
+    /** What a count reads as here: written out, or cut at this system's ceiling. */
+    fun label(count: Long): String {
+        val ceiling = maxCount ?: return count.toString()
+        return if (count > ceiling) "$ceiling+" else count.toString()
+    }
 }
 
 /** Which end of the caption the window buttons sit at. */
@@ -550,6 +710,29 @@ data class CaptionStyle(
     val spacing: Dp,
     val edgePadding: Dp,
     val titleAlignment: CaptionTitleAlignment,
+    /**
+     * How far in from the window's corner the platform's own buttons sit.
+     *
+     * macOS only, and only where the window's buttons are the system's. Everywhere else
+     * the caption's buttons are ours and drawn where [side] says, so there is no corner to
+     * come in from. Zero leaves them where the system put them.
+     */
+    val platformButtonInset: Dp = 0.dp,
+    /**
+     * How round the window's own corners are, or zero to leave the system's.
+     *
+     * macOS only, for the same reason. On Windows and Linux the window's outline belongs
+     * to the compositor rather than to the application.
+     */
+    val windowCornerRadius: Dp = 0.dp,
+    /**
+     * How tall the caption is where the application draws it.
+     *
+     * Windows and Linux. Zero means the design system has nothing to say and the caption
+     * is whatever it was, which is what every system answered before the two title bar
+     * modes existed.
+     */
+    val height: Dp = 0.dp,
 )
 
 /**
@@ -583,6 +766,15 @@ enum class NavigationPresentation {
 
     /** A wide column down the leading edge, labels beside their icons. */
     Drawer,
+
+    /**
+     * Not on the screen, with a button that brings it back over the page.
+     *
+     * What every macOS sidebar does when there is no room for it, and the only one of
+     * these four where the page has the whole window. The button belongs with the window's
+     * own buttons where the platform hands its caption over.
+     */
+    PutAway,
 }
 
 /**
@@ -603,6 +795,13 @@ data class NavigationStyle(
     val indicatorKind: NavigationIndicator,
     /** Whether that mark covers the icon alone or the whole destination. */
     val indicatorExtent: NavigationExtent = NavigationExtent.Icon,
+    /**
+     * The ink a group's heading is set in, or null to take a quieter shade of the rows'.
+     *
+     * Named where the rows are set in the reading ink, because then there is a role for
+     * this and a fraction of black is not it.
+     */
+    val headingContent: Color? = null,
     /** The hairline between the destinations and the screen, null where there is none. */
     val separator: Color?,
     val barHeight: Dp,
@@ -613,11 +812,19 @@ data class NavigationStyle(
     /** Whether a rail, which is narrow, still writes the label under the icon. */
     val labelInRail: Boolean,
     val typeRole: TypeRole,
+    /**
+     * The weight a drawer's rows are set in, or null to take the rung's own.
+     *
+     * Named where the rung a sidebar row borrows is heavier than a row should be. The
+     * rungs that label something are set heavier in the systems that draw on glass,
+     * because a label on a translucent surface competes with whatever shows through it,
+     * and that reasoning is about the label on a button, a segment or a section head. A
+     * sidebar row is not labelling a control; it is a line in a list you read.
+     */
+    val destinationWeight: FontWeight? = null,
     /** Optional page gradient behind both the destinations and their content. */
     val pageGradientStart: Color? = null,
     val pageGradientEnd: Color? = null,
-    /** A search destination becomes a field-shaped action when this is non-null. */
-    val searchContainer: Color? = null,
     /**
      * What the strip is made of when it floats, or null for a strip painted [container]
      * straight onto the window's edge.
@@ -661,6 +868,38 @@ data class NavigationStyle(
      * and its label, and a drawer wants the rows closer together than that.
      */
     val destinationGap: Dp? = null,
+    /**
+     * The room the strip keeps around its destinations, or null to use [itemPadding].
+     *
+     * Separate because the two are measured against different things. The strip's own
+     * inset is what sets how far the selected row's mark stops short of the panel's edge,
+     * and the room inside a row is what sets where the icon column falls; a sidebar that
+     * uses one number for both puts its icons wherever its mark happens to want to stop.
+     */
+    val stripPadding: Dp? = null,
+    /**
+     * The colour that rises from the window's two bottom corners, or null for a page whose
+     * wash is level all the way across.
+     *
+     * A wash that turns at the same height at every horizontal position is a band, and a
+     * band reads as a fill rather than as light. Measured across the reference, the height
+     * its wash begins at runs from six hundred and forty two under the middle of the window
+     * to four hundred and ninety six at the trailing edge: two glows anchored in the bottom
+     * corners, arcing up over a level ramp.
+     */
+    val pageCornerGlow: Color? = null,
+    /**
+     * The room inside one drawer row, from the row's edge to its icon, or null to use
+     * [itemPadding].
+     */
+    val destinationInset: Dp? = null,
+    /**
+     * How tall one drawer row is, or null to let what it holds decide.
+     *
+     * A row with an icon and a row with only a name are not the same height when nothing
+     * says they are, and a list whose rows are two heights has no rhythm.
+     */
+    val destinationHeight: Dp? = null,
 )
 
 /** The edge a sheet comes in from. */
@@ -886,6 +1125,15 @@ data class ContainerStyle(
      * which is how a toolbar looks in the systems that draw glass.
      */
     val floats: Boolean = false,
+    /**
+     * How far the floating pieces of a bar stand off the edges of the window, or null to
+     * take the space ladder's own step.
+     *
+     * Named where a window already holds something else off its edge, so that the capsule
+     * at one corner and the panel at the other are held off by one measurement rather than
+     * by two that happen to be close.
+     */
+    val floatingInset: Dp? = null,
 )
 
 /**
@@ -925,6 +1173,16 @@ data class IconStyle(
     val strokeWidth: Dp,
     val cap: androidx.compose.ui.graphics.StrokeCap,
     val join: androidx.compose.ui.graphics.StrokeJoin,
+    /**
+     * How far back from each corner the line starts to turn, or zero for a corner that is
+     * met rather than turned.
+     *
+     * A join says what happens where two strokes meet at a point; this says that they do
+     * not meet at a point at all. The rounded sets draw a frame as a square with its
+     * corners cut into arcs a good deal wider than the stroke, and a join cannot say that
+     * however round it is.
+     */
+    val corner: Dp = 0.dp,
 )
 
 /** Which of the three toggles is being drawn. */
@@ -1103,6 +1361,95 @@ data class ButtonStyle(
 )
 
 /**
+ * How a chip is drawn, chosen and not.
+ *
+ * Both states are fields of one style rather than two calls, so a chip that the Host has
+ * just chosen can move from one to the other without asking the rules again. The chip
+ * never decides which of the two it is in: that arrives from the Host.
+ */
+data class ChipStyle(
+    val container: Color,
+    val selectedContainer: Color,
+    val content: Color,
+    val selectedContent: Color,
+    val borderWidth: Dp,
+    val borderColor: Color,
+    /** The edge of a chosen chip. Transparent where choosing one drops the line. */
+    val selectedBorderColor: Color,
+    val shape: Shape,
+    val height: Dp,
+    val horizontalPadding: Dp,
+    /** The room between a glyph and the label. */
+    val iconGap: Dp,
+    val typeRole: TypeRole,
+    /**
+     * Whether a chosen chip leads with a tick.
+     *
+     * Material's filter chip does, which is how it tells a chosen chip from a merely
+     * tinted one without colour alone. The pills of the other systems say it with the fill.
+     */
+    val leadingCheck: Boolean,
+    /** How much of the chip is left while it is held down. */
+    val pressedAlpha: Float,
+    val disabledAlpha: Float,
+)
+
+/**
+ * Where the one action a screen is about is put.
+ *
+ * Read by whatever frame the action is in, never by the action itself: a Scaffold and the
+ * Box that holds a page both know where their corners and their bar are, and the action
+ * does not.
+ */
+enum class FloatingActionPlacement {
+    /** Over the page at its bottom trailing corner, taking none of it. Material's answer. */
+    OverPageBottomEnd,
+
+    /** At the trailing end of the top of the page, where a bar's actions are. Apple's plus. */
+    BarEnd,
+
+    /**
+     * At the leading end of the top of the page, where a command bar or a header bar
+     * starts. The Fluent primary command and the GNOME header button sit here.
+     */
+    BarStart,
+}
+
+/** What the action is drawn as. */
+enum class FloatingActionForm {
+    /** A raised disc, or a rounded square, holding the glyph alone. */
+    Disc,
+
+    /**
+     * The glyph alone, as a bar button is: on no container at all, or on the quiet fill
+     * the system gives a bar's buttons. Never raised.
+     */
+    Glyph,
+
+    /** A button carrying the glyph and the label side by side. */
+    Labelled,
+}
+
+/** How the one action a screen is about is drawn, and where its frame puts it. */
+data class FloatingActionStyle(
+    val placement: FloatingActionPlacement,
+    val form: FloatingActionForm,
+    val container: Color,
+    val content: Color,
+    val shape: Shape,
+    /** The height, and for a [FloatingActionForm.Disc] the width as well. */
+    val size: Dp,
+    val horizontalPadding: Dp,
+    val elevation: Dp,
+    val borderWidth: Dp,
+    val borderColor: Color,
+    val typeRole: TypeRole,
+    /** How far in from the edges of its frame the action is put. */
+    val inset: Dp,
+    val pressedAlpha: Float,
+)
+
+/**
  * Resolves the Host's `SetTheme` into the table and rules used for this frame.
  *
  * The Host's choice is read, never second-guessed: `adaptive` follows the platform only
@@ -1159,6 +1506,7 @@ fun resolveTheme(
         fonts,
         brushOf,
         windowBackdrop,
+        platform,
     )
 }
 

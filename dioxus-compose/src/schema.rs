@@ -69,8 +69,8 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget;",
-    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans,on_files_entered,on_files_dropped;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget,ScrollRow,Chip,FloatingAction,Badge,SelectionContainer;",
+    "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans,on_files_entered,on_files_dropped,section,count;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize,Motion,Material;",
     "keys=Enter;",
     "events=Clicked,TextChanged,TextSubmitted,FocusLost,ProtocolError,KeyDown,RangeRequested,ValueChanged,WindowSizeChanged,DesignSystemResolved,FilesEntered,FilesDropped;",
@@ -315,6 +315,29 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     // not one is never offered as a target, so the platform shows no drop cursor over it
     // and nothing is reported.
     FileDropTarget = 36,
+    // The whole content with a horizontal scroll, which is a ScrollColumn turned on its
+    // side. Every child is materialised and the scroll position is the Renderer's, so
+    // nothing about scrolling crosses the boundary; a long horizontal list is a LazyRow.
+    ScrollRow = 37,
+    // A small token that is chosen or filters. It carries its label and whether it is
+    // chosen, and the chosen state is the Host's: it changes only because the Host's own
+    // click handler changed it. The shape is the design system's.
+    Chip = 38,
+    // The one action a screen is about. It carries an icon, a label and a click. Where it
+    // goes and what it is drawn as is the design system's: a disc floating over the page
+    // is one system's answer, a plus at the trailing end of the bar is another's, and an
+    // accent button at the head of the command bar is a third.
+    FloatingAction = 39,
+    // A small mark on something else that says how many, that there is something new, or
+    // one short word. With one child it is attached to that child; with none it stands on
+    // its own, at the end of a row. Where it sits on the child, its shape, and how a large
+    // count is shortened are the design system's: nothing here can ask for a corner or a
+    // ceiling.
+    Badge = 40,
+    // A region whose text can be dragged over and copied, as one selection across every
+    // Text inside it. Text outside one cannot be selected. The selection and the copy are
+    // the Renderer's entirely, so nothing about either crosses the boundary.
+    SelectionContainer = 41,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -624,6 +647,21 @@ define_wire_enum!(ICON_ROLE_SCHEMA, IconRole {
     // neither could be said with the three above.
     Menu = 12,
     History = 13,
+    // What putting the samples beside the applications they are drawn from turned up: eight
+    // meanings the set could not say. Each is a meaning rather than a picture, so a system
+    // that draws sending as a paper aeroplane is still answering `Send`.
+    //
+    // None of them is an existing role used loosely. A composer's send was drawn with
+    // `Forward` for a while, and an arrow pointing sideways says "on to the next one"
+    // rather than "send this".
+    Send = 14,
+    Mic = 15,
+    Image = 16,
+    Video = 17,
+    Library = 18,
+    Sidebar = 19,
+    Compose = 20,
+    Collapse = 21,
 });
 
 // How long a transient message stays on screen. Closed, and deliberately short: a message
@@ -749,6 +787,10 @@ pub const ROLE_ENUM_SCHEMA: &[RoleEnumSchema] = &[
         variants: CHROME_SCHEMA,
     },
     RoleEnumSchema {
+        name: "TitleBar",
+        variants: TITLE_BAR_SCHEMA,
+    },
+    RoleEnumSchema {
         name: "SlotRole",
         variants: SLOT_ROLE_SCHEMA,
     },
@@ -809,6 +851,22 @@ define_wire_enum!(CHROME_SCHEMA, Chrome {
     System = 2,
 });
 
+// Which of two title bars this window has. `Chrome` chooses who draws the caption; this
+// chooses, inside that, what kind of window the caption belongs to.
+//
+// What each one means is not the same on every platform, and the numbers are never the
+// Host's. On macOS the buttons sit further in and the window is rounded more; on Windows
+// and Linux the caption is a different height and the buttons stay where that platform
+// puts them.
+define_wire_enum!(TITLE_BAR_SCHEMA, TitleBar {
+    // What an application on that platform actually looks like now, which is why it is the
+    // default.
+    Normal = 1,
+    // An ordinary window. For tool applications, for the places the other reads oddly, and
+    // as the way back.
+    Simple = 2,
+});
+
 /// What an application may decide about its own window.
 ///
 /// The window belongs to the Renderer, so this is short and stays short. What is here is
@@ -818,6 +876,8 @@ define_wire_enum!(CHROME_SCHEMA, Chrome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Window {
     pub chrome: Chrome,
+    /// Which of the two title bars this window has.
+    pub title_bar: TitleBar,
     /// What the window calls itself.
     ///
     /// Empty means the application said nothing, and the renderer uses its own name for
@@ -844,6 +904,7 @@ impl Window {
     pub const fn new() -> Self {
         Self {
             chrome: Chrome::Modern,
+            title_bar: TitleBar::Normal,
             title: "",
             icon: 0,
             width: 0,
@@ -852,6 +913,16 @@ impl Window {
             min_height: 0,
             resizable: true,
         }
+    }
+
+    /// Which of the two title bars this window has.
+    ///
+    /// `Normal` unless it is said otherwise, because that is the window an application on
+    /// this platform has now. What the mode is worth in pixels is the design system's, so
+    /// nothing here is a measurement.
+    pub const fn with_title_bar(mut self, title_bar: TitleBar) -> Self {
+        self.title_bar = title_bar;
+        self
     }
 
     /// Names the window. A literal, because this is read once before the window is stood
@@ -1364,6 +1435,18 @@ crate::extensions::define_property_schema_with_extensions!(define_wire_enum; PRO
     // screen from lighting up every container it has.
     OnFilesEntered = 65,
     OnFilesDropped = 66,
+    // Which named group of a navigation's strip this destination belongs to. Neighbouring
+    // destinations carrying the same string are one group and the string is its heading.
+    //
+    // 76 rather than 67, because 67 through 74 are reserved for the gestures and 75 for a
+    // button's kind. A reservation is not a free tag.
+    Section = 76,
+    // How many a badge counts. Absent rather than zero when the badge is a dot or a word,
+    // because "no count" and "a count of nothing" are different things to show.
+    //
+    // 80 opens a fresh block of ten for widget tags 40 onwards, after the last tag in use
+    // anywhere, so two pieces of work landing in either order cannot collide.
+    Count = 80,
 });
 
 #[derive(Clone, Debug, PartialEq)]

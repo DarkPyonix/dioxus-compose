@@ -12,12 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import dioxus.compose.design.FloatingActionPlacement
 import dioxus.compose.design.NavigationPresentation
 import dioxus.compose.design.ResolvedTheme
 import dioxus.compose.protocol.PropertyKind
 import dioxus.compose.protocol.PropertyValue
 import dioxus.compose.protocol.SlotRole
-import dioxus.compose.protocol.SpaceRole
 import dioxus.compose.protocol.WidgetKind
 import dioxus.compose.protocol.WindowSizeClass
 import dioxus.compose.runtime.EventDispatcher
@@ -26,6 +26,10 @@ import dioxus.compose.runtime.LocalWindowSizeClass
 import dioxus.compose.ui.node.Node
 import dioxus.compose.ui.node.NodeTable
 import dioxus.compose.ui.node.RenderNode
+import dioxus.compose.design.rememberGlassBackdropState
+import dioxus.compose.design.recordsGlassBackdrop
+import dioxus.compose.design.LocalGlassBackdrop
+import androidx.compose.runtime.CompositionLocalProvider
 
 /**
  * How a screen's frame is arranged at one window width.
@@ -39,6 +43,12 @@ internal enum class ScaffoldFrame {
 
     /** The destinations run down the leading edge beside the page. A tablet or a desktop. */
     SideBySide,
+
+    /**
+     * The destinations are over the page rather than in the frame, and only when asked
+     * for. The page has the whole window.
+     */
+    Overlaid,
 }
 
 /**
@@ -62,15 +72,21 @@ internal fun scaffoldFrame(
     when {
         !destinationsCanTurn -> ScaffoldFrame.Stacked
         presentation == NavigationPresentation.Bar -> ScaffoldFrame.Stacked
+        // Neither beside the page nor under it. A frame that stood it beside the page left
+        // the width the destinations would have had as an empty band, and the page came
+        // out pushed off centre by a strip that was not on the screen.
+        presentation == NavigationPresentation.PutAway -> ScaffoldFrame.Overlaid
         else -> ScaffoldFrame.SideBySide
     }
 
 /**
- * Where the one action a screen is about goes.
+ * Where the one action a screen is about goes, for a design system that has no opinion of
+ * its own.
  *
  * It floats over the page where there is room below for a thumb to reach it, and moves
- * into the top bar where the window is wide and the pointer is already up there. Compact
- * is the phone case and the only one that floats.
+ * to the top where the window is wide and the pointer is already up there. Compact is the
+ * phone case and the only one that floats. A system that answers differently says so in
+ * its own `floatingAction` rule, and the frame follows that answer rather than this one.
  */
 internal fun floatingActionFloats(sizeClass: WindowSizeClass): Boolean =
     sizeClass == WindowSizeClass.Compact
@@ -109,6 +125,12 @@ internal fun HostScaffold(
     val frame = scaffoldFrame(navigation.presentation, destinationsCanTurn = holdsNavigation)
     val floatingAction = slots[SlotRole.FloatingAction]
     val content = slots[SlotRole.Content]
+    // Where the action goes is the design system's answer, asked once for this width. A
+    // frame with no action never asks.
+    val action = floatingAction?.let { theme.rules.floatingAction(sizeClass, theme) }
+    val actionFloats = action?.placement == FloatingActionPlacement.OverPageBottomEnd
+    val actionAtStart = action?.placement == FloatingActionPlacement.BarStart
+    val actionAtEnd = action?.placement == FloatingActionPlacement.BarEnd
 
     @Composable
     fun slot(child: Node?, slotModifier: Modifier = Modifier) {
@@ -122,11 +144,11 @@ internal fun HostScaffold(
     fun page(pageModifier: Modifier) {
         Box(pageModifier) {
             slot(content, Modifier.fillMaxSize())
-            if (floatingAction != null && floatingActionFloats(sizeClass)) {
+            if (action != null && actionFloats) {
                 Box(
                     Modifier
                         .align(Alignment.BottomEnd)
-                        .padding(theme.space(SpaceRole.Lg)),
+                        .padding(action.inset),
                 ) { slot(floatingAction) }
             }
         }
@@ -139,10 +161,17 @@ internal fun HostScaffold(
     val backdrop = holdsNavigation && navigation.pageBehindStrip
     val besideBackdrop = holdsNavigation && !navigation.pageBehindStrip
 
+    // What the chrome is a lens over. The page records itself into it and the bars and the
+    // strips read it back, blurred, through their own outlines. Provided here, above both,
+    // because the two are siblings: a local given inside the page would not reach a bar,
+    // and a bar inside the recording would be blurring itself.
+    val backdropState = rememberGlassBackdropState()
+
     // A rail or a sidebar that runs to the top of the window. The top bar stops where the
     // strip starts rather than running across it, because the strip is what the window
     // buttons sit on and the bar's actions float over the page beside it, on the same
     // line as the buttons.
+    CompositionLocalProvider(LocalGlassBackdrop provides backdropState) {
     if (frame == ScaffoldFrame.SideBySide && navigation.carriesCaption && LocalStripTakesTheTop.current) {
         Row(modifier.fillMaxSize().then(if (backdrop) Modifier.pageBackdrop(navigation) else Modifier)) {
             slot(bottomBar)
@@ -157,21 +186,29 @@ internal fun HostScaffold(
                         if (topBar != null) {
                             Row(Modifier.fillMaxWidth()) { slot(topBar) }
                         }
-                        page(Modifier.weight(1f).fillMaxWidth())
+                        Row(Modifier.weight(1f).fillMaxWidth()) {
+                            if (action != null && actionAtStart) {
+                                Box(Modifier.align(Alignment.Top).padding(action.inset)) {
+                                    slot(floatingAction)
+                                }
+                            }
+                            page(Modifier.weight(1f).fillMaxHeight().recordsGlassBackdrop(backdropState))
+                        }
                     }
                 }
             }
-            if (floatingAction != null && !floatingActionFloats(sizeClass)) {
-                Box(Modifier.align(Alignment.Top).padding(theme.space(SpaceRole.Sm))) {
+            if (action != null && actionAtEnd) {
+                Box(Modifier.align(Alignment.Top).padding(action.inset)) {
                     slot(floatingAction)
                 }
             }
         }
-        return
+        return@CompositionLocalProvider
     }
 
+    Box(modifier.fillMaxSize()) {
     Column(
-        modifier.fillMaxSize().then(
+        Modifier.fillMaxSize().then(
             if (holdsNavigation) Modifier.pageBackdrop(navigation) else Modifier,
         ),
     ) {
@@ -185,12 +222,18 @@ internal fun HostScaffold(
             if (frame == ScaffoldFrame.SideBySide) {
                 slot(bottomBar)
             }
-            page(Modifier.weight(1f).fillMaxSize())
-            // Wide windows put it at the trailing end of the top bar's row instead, which
-            // is where a pointer already is. Drawn here rather than inside the bar so the
-            // bar stays whatever the application put in it.
-            if (floatingAction != null && !floatingActionFloats(sizeClass)) {
-                Box(Modifier.align(Alignment.Top).padding(theme.space(SpaceRole.Sm))) {
+            // A system that puts the action at the head of its command bar or header bar
+            // gets it at the leading end of the top of the page, and one that puts it with
+            // the bar's actions gets it at the trailing end. Drawn here rather than inside
+            // the bar so the bar stays whatever the application put in it.
+            if (action != null && actionAtStart) {
+                Box(Modifier.align(Alignment.Top).padding(action.inset)) {
+                    slot(floatingAction)
+                }
+            }
+            page(Modifier.weight(1f).fillMaxSize().recordsGlassBackdrop(backdropState))
+            if (action != null && actionAtEnd) {
+                Box(Modifier.align(Alignment.Top).padding(action.inset)) {
                     slot(floatingAction)
                 }
             }
@@ -202,6 +245,13 @@ internal fun HostScaffold(
                 horizontalArrangement = Arrangement.Center,
             ) { slot(bottomBar) }
         }
+    }
+    // Over the page and taking none of it. The slot draws the button that brings the
+    // destinations out and, while they are out, the strip and the press that dismisses it.
+    if (frame == ScaffoldFrame.Overlaid) {
+        slot(bottomBar)
+    }
+    }
     }
 }
 

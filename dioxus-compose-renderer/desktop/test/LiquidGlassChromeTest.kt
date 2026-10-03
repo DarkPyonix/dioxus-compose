@@ -180,14 +180,112 @@ class LiquidGlassChromeTest {
     }
 
     /**
-     * A bar on a phone, a rail on a tablet and a sidebar on a desktop, and none of the
-     * three is a strip on the window's edge.
+     * A narrow window puts the sidebar away and leaves the button that brings it back.
+     *
+     * A state the destinations used to lack. Notes, Mail, Finder and the application the chat
+     * sample is drawn from all do this, and none of them shows a column of icons with the
+     * words taken off instead. A sidebar that cannot be put away is not this platform's
+     * sidebar.
+     *
+     * Compact is where it happens, because that is the width at which a sidebar and a page
+     * cannot both be read. Above it the sidebar stays, with its labels, at every width.
+     */
+    @Test
+    fun fr21_2_1_a_narrow_window_puts_the_destinations_away() {
+        val phone = glass(WindowSizeClass.Compact)
+        val put = phone.rules.navigation(WindowSizeClass.Compact, phone)
+        assertEquals(
+            NavigationPresentation.PutAway,
+            put.presentation,
+            "a phone width still draws a strip of destinations, so the page does not have " +
+                "the window",
+        )
+        for (sizeClass in listOf(WindowSizeClass.Medium, WindowSizeClass.Expanded)) {
+            val theme = glass(sizeClass)
+            assertEquals(
+                NavigationPresentation.Drawer,
+                theme.rules.navigation(sizeClass, theme).presentation,
+                "$sizeClass does not keep its sidebar",
+            )
+        }
+
+        // The other platform this language is drawn on answers the same width differently,
+        // and has to: a phone has its own tab bar and the destinations are handed to it
+        // rather than put away behind a button nobody on a phone would look for.
+        val onIos = resolveTheme(
+            theme = Theme(
+                DesignSystem.LiquidGlass,
+                DesignSystem.LiquidGlass,
+                ColorScheme.Light,
+                adaptive = false,
+            ),
+            platform = HostPlatform.Ios,
+            systemDark = false,
+            sizeClass = WindowSizeClass.Compact,
+        )
+        assertEquals(
+            NavigationPresentation.Bar,
+            onIos.rules.navigation(WindowSizeClass.Compact, onIos).presentation,
+            "a phone lost its tab bar, which is the one the platform itself draws",
+        )
+    }
+
+    /**
+     * In a strip down the side, a selected destination is marked by its fill and keeps the
+     * colour of the words around it.
+     *
+     * The Apple references put a rounded fill behind the selected row and leave its words
+     * the colour every other row's words are. Blue words with no fill is what a link looks
+     * like, and a sidebar of links reads as a list of things to go and fetch rather than as
+     * a place you already are.
+     *
+     * A tab bar is the other way round and stays that way: iOS tints the selected tab and
+     * draws no fill at all, because a fill behind one tab of five is a button in a row of
+     * labels.
+     */
+    @Test
+    fun fr21_a_selected_destination_in_a_strip_keeps_the_colour_of_the_others() {
+        for (sizeClass in WindowSizeClass.entries) {
+            val theme = glass(sizeClass)
+            val style = theme.rules.navigation(sizeClass, theme)
+            if (style.presentation == NavigationPresentation.Bar) {
+                assertEquals(
+                    0f,
+                    style.indicator.alpha,
+                    "a tab bar fills its selected tab, which makes one tab a button",
+                )
+                continue
+            }
+            assertEquals(
+                style.content,
+                style.selectedContent,
+                "the $sizeClass navigation colours its selected words differently, so the " +
+                    "fill is not what says which one you are on",
+            )
+            assertTrue(
+                style.indicator.alpha > 0f,
+                "nothing fills the selected destination, so with the words left alone " +
+                    "there is no mark on it at all",
+            )
+        }
+    }
+
+    /**
+     * A bar on a phone and a sidebar from a tablet up, and neither is a strip on the
+     * window's edge.
+     *
+     * No rail. A column of icons without their labels is Material's answer to a medium
+     * window and it is not Apple's: Notes, Mail and Finder keep a sidebar with its labels
+     * at every width a Mac window can be dragged to, and the one thing they do when there
+     * is no room is take it away entirely behind a button. None of the three shows icons
+     * with the words removed. A rail at 780dp was this project's own invention in an
+     * Apple language.
      */
     @Test
     fun fr21_liquid_glass_floats_its_navigation_at_every_width() {
         val expected = mapOf(
-            WindowSizeClass.Compact to NavigationPresentation.Bar,
-            WindowSizeClass.Medium to NavigationPresentation.Rail,
+            WindowSizeClass.Compact to NavigationPresentation.PutAway,
+            WindowSizeClass.Medium to NavigationPresentation.Drawer,
             WindowSizeClass.Expanded to NavigationPresentation.Drawer,
         )
         for ((sizeClass, presentation) in expected) {
@@ -196,18 +294,11 @@ class LiquidGlassChromeTest {
             assertEquals(presentation, style.presentation)
             assertTrue(style.floatingInset > 0.dp, "the $presentation is attached to the window's edge")
             assertTrue(style.stripMaterial is SurfaceMaterial.Glass, "the $presentation is not glass")
-            assertEquals(
-                presentation != NavigationPresentation.Bar,
+            assertTrue(
                 style.carriesCaption,
-                "only a strip down the side runs to the top of the window and carries its buttons",
+                "a strip down the side runs to the top of the window and carries its buttons",
             )
         }
-        val phone = glass(WindowSizeClass.Compact)
-        assertEquals(
-            phone.shape(ShapeRole.Full),
-            phone.rules.navigation(WindowSizeClass.Compact, phone).stripShape,
-            "the bar on a phone is a capsule",
-        )
 
         // And the flat systems keep their strips, exactly as they were.
         for (system in listOf(DesignSystem.Material3, DesignSystem.Fluent, DesignSystem.Cupertino)) {
@@ -298,12 +389,23 @@ class LiquidGlassChromeTest {
         assertNear(8.dp, strip.left, "the sidebar's leading edge")
         assertNear(8.dp, strip.top, "the sidebar's top")
         assertNear(792.dp, strip.bottom, "the sidebar's foot")
-        assertNear(260.dp, strip.right - strip.left, "the sidebar's width")
+        // Measured off the application the chat sample is drawn from. It was 260 here, and
+        // beside the reference the extra thirty read as a generic application menu rather
+        // than that product's dense one.
+        assertNear(230.dp, strip.right - strip.left, "the sidebar's width")
     }
 
-    /** On a phone the destinations are a capsule held off both sides and the bottom. */
+    /**
+     * On a phone the destinations are not on the screen until they are asked for.
+     *
+     * This used to draw a capsule along the bottom, which is a tab bar, which is for a set
+     * of places an application switches between. A list of conversations or of folders is
+     * not that, and the platform's answer for a list with no room is to take it off the
+     * screen. So the strip is absent until the button brings it out, and the page has the
+     * whole window in the meantime.
+     */
     @Test
-    fun fr21_the_bar_floats_off_the_edges_of_a_phone() = runDesktopComposeUiTest(400, 800) {
+    fun fr21_2_1_a_phone_has_no_strip_until_it_is_asked_for() = runDesktopComposeUiTest(400, 800) {
         setContent {
             CompositionLocalProvider(
                 LocalFrameRequests provides frames,
@@ -316,11 +418,7 @@ class LiquidGlassChromeTest {
             }
         }
         waitForIdle()
-        val bar = onNodeWithTag(navigationStripTestTag(NAVIGATION)).getBoundsInRoot()
-        assertTrue(bar.left >= 8.dp, "the bar touches the leading edge at ${bar.left}")
-        assertTrue(bar.right <= 392.dp, "the bar touches the trailing edge at ${bar.right}")
-        assertTrue(bar.bottom <= 796.dp, "the bar sits on the bottom edge at ${bar.bottom}")
-        assertNear(56.dp, bar.bottom - bar.top, "the bar's height")
+        onNodeWithTag(navigationStripTestTag(NAVIGATION)).assertDoesNotExist()
     }
 
     /**

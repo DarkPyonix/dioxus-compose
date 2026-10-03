@@ -6,9 +6,9 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets
 
-enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LazyGrid, FileDropTarget, LinearProgressIndicator }
+enum class WidgetKind { Column, Row, Box, Text, TextField, Button, Spacer, LazyColumn, ScrollColumn, Image, Icon, Checkbox, RadioButton, Switch, Slider, ProgressIndicator, Divider, Card, Surface, Dialog, Menu, Tabs, TopAppBar, LazyRow, Tooltip, Canvas, DatePicker, TimePicker, Dropdown, Navigation, NavigationItem, Sheet, Scaffold, ScaffoldSlot, LazyGrid, FileDropTarget, ScrollRow, Chip, FloatingAction, Badge, SelectionContainer, LinearProgressIndicator }
 
-enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, OnFilesEntered, OnFilesDropped, Progress }
+enum class PropertyKind { Text, Placeholder, Enabled, Multiline, OnClick, OnValueChange, OnSubmit, OnFocusLost, OnKeyDown, ItemCount, ItemKey, OnRangeRequested, TypeRole, FontSize, FontWeight, LineHeight, LetterSpacing, Color, TextAlign, MaxLines, Overflow, Arrangement, Spacing, SpaceRole, Alignment, Variant, Asset, Checked, Steps, Determinate, Circular, Vertical, Open, OnDismiss, SelectedIndex, Commands, Value, Min, Max, Icon, Slot, Columns, MinColumnWidth, Spans, OnFilesEntered, OnFilesDropped, Section, Count, Progress }
 
 enum class Key { Enter }
 
@@ -46,11 +46,13 @@ enum class ColorScheme { Light, Dark, FollowSystem }
 
 enum class AssetKind { Png, Jpeg, Svg, VectorIcon, Font, Brush }
 
-enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, Home, List, Inbox, Menu, History }
+enum class IconRole { Back, Forward, Close, Search, Add, Check, Settings, More, Home, List, Inbox, Menu, History, Send, Mic, Image, Video, Library, Sidebar, Compose, Collapse }
 
 enum class MessageDuration { Short, Long }
 
 enum class Chrome { Modern, System }
+
+enum class TitleBar { Normal, Simple }
 
 enum class SlotRole { TopBar, BottomBar, FloatingAction, Content }
 
@@ -106,6 +108,15 @@ data class Theme(
  */
 data class Window(
     val chrome: Chrome,
+    /**
+     * Which of the two title bars this window has.
+     *
+     * `Chrome` says who draws the caption; this says, inside that, what kind of window the
+     * caption belongs to. What it is worth in pixels is this side's answer: on macOS how
+     * far in the buttons sit and how round the window is, on Windows and Linux how tall
+     * the caption is.
+     */
+    val titleBar: TitleBar,
     /**
      * What the window calls itself.
      *
@@ -344,7 +355,7 @@ class ProtocolException(message: String, val offset: Int) :
     IllegalArgumentException("$message at byte offset $offset")
 
 object Protocol {
-    const val SCHEMA_HASH: Long = -2864875678340308953L
+    const val SCHEMA_HASH: Long = 2002928469790392534L
     const val PROTOCOL_VERSION: Int = 1
 
     private const val TAG_ENVELOPE = 0
@@ -511,20 +522,21 @@ object Protocol {
                         )
                     }
                     TAG_SET_WINDOW -> {
-                        requireRecordLength(length, 28, offset)
-                        val resizable = readU16(batch, base, available, offset + 14)
+                        requireRecordLength(length, 32, offset)
+                        val resizable = readU16(batch, base, available, offset + 16)
                         if (resizable > 1) {
-                            throw ProtocolException("invalid resizable flag $resizable", offset + 14)
+                            throw ProtocolException("invalid resizable flag $resizable", offset + 16)
                         }
                         Mutation.SetWindow(
                             Window(
                                 chrome(readU16(batch, base, available, offset + 4), offset + 4),
-                                readString(batch, base, available, offset + 16),
-                                readU32(batch, base, available, offset + 24).toInt(),
-                                readU16(batch, base, available, offset + 6),
+                                titleBar(readU16(batch, base, available, offset + 6), offset + 6),
+                                readString(batch, base, available, offset + 20),
+                                readU32(batch, base, available, offset + 28).toInt(),
                                 readU16(batch, base, available, offset + 8),
                                 readU16(batch, base, available, offset + 10),
                                 readU16(batch, base, available, offset + 12),
+                                readU16(batch, base, available, offset + 14),
                                 resizable == 1,
                             ),
                         )
@@ -741,6 +753,11 @@ object Protocol {
         34 -> WidgetKind.ScaffoldSlot
         35 -> WidgetKind.LazyGrid
         36 -> WidgetKind.FileDropTarget
+        37 -> WidgetKind.ScrollRow
+        38 -> WidgetKind.Chip
+        39 -> WidgetKind.FloatingAction
+        40 -> WidgetKind.Badge
+        41 -> WidgetKind.SelectionContainer
         100 -> WidgetKind.LinearProgressIndicator
         else -> throw ProtocolException("unknown widget tag $tag", offset)
     }
@@ -792,6 +809,8 @@ object Protocol {
         64 -> PropertyKind.Spans
         65 -> PropertyKind.OnFilesEntered
         66 -> PropertyKind.OnFilesDropped
+        76 -> PropertyKind.Section
+        80 -> PropertyKind.Count
         27 -> PropertyKind.Progress
         else -> throw ProtocolException("unknown property tag $tag", offset)
     }
@@ -996,6 +1015,14 @@ object Protocol {
         11 -> IconRole.Inbox
         12 -> IconRole.Menu
         13 -> IconRole.History
+        14 -> IconRole.Send
+        15 -> IconRole.Mic
+        16 -> IconRole.Image
+        17 -> IconRole.Video
+        18 -> IconRole.Library
+        19 -> IconRole.Sidebar
+        20 -> IconRole.Compose
+        21 -> IconRole.Collapse
         else -> throw ProtocolException("unknown IconRole tag $tag", offset)
     }
 
@@ -1009,6 +1036,12 @@ object Protocol {
         1 -> Chrome.Modern
         2 -> Chrome.System
         else -> throw ProtocolException("unknown Chrome tag $tag", offset)
+    }
+
+    private fun titleBar(tag: Int, offset: Int): TitleBar = when (tag) {
+        1 -> TitleBar.Normal
+        2 -> TitleBar.Simple
+        else -> throw ProtocolException("unknown TitleBar tag $tag", offset)
     }
 
     private fun slotRole(tag: Int, offset: Int): SlotRole = when (tag) {
