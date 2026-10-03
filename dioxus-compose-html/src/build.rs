@@ -6,6 +6,7 @@
 //! appendix E, simplified as noted on [`Painter::paint_context`]) and reads each box's
 //! decorations from its computed style.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use blitz_dom::node::SpecialElementData;
@@ -16,11 +17,13 @@ use style::properties::generated::longhands::position::computed_value::T as Posi
 use style::values::computed::{BorderStyle, Length, Overflow};
 
 use crate::NodeId;
+use crate::background::{self, Boxes};
 use crate::convert;
 use crate::display_list::{
     Border, BorderLine, BoxShadow, Corners, DisplayList, InputField, InputKind, MeasuredText,
     NodeEntry, Radius, Rect, ScrollContainer, Sides, TextAlign, TextRun,
 };
+use crate::image::ImageLookup;
 use crate::layout::local;
 
 /// What the first walk settles for one box.
@@ -53,10 +56,12 @@ struct Ambient {
 pub(crate) fn build_display_list(
     doc: &BaseDocument,
     texts: &HashMap<usize, MeasuredText>,
+    images: &mut ImageLookup<'_>,
 ) -> DisplayList {
     let mut painter = Painter {
         doc,
         texts,
+        images: RefCell::new(images),
         placed: HashMap::new(),
         order: Vec::new(),
     };
@@ -83,9 +88,11 @@ pub(crate) fn build_display_list(
     DisplayList { entries }
 }
 
-struct Painter<'a> {
+struct Painter<'a, 'i> {
     doc: &'a BaseDocument,
     texts: &'a HashMap<usize, MeasuredText>,
+    /// Natural sizes for background images, and the base `<img>` sources resolve against.
+    images: RefCell<&'a mut ImageLookup<'i>>,
     placed: HashMap<NodeId, Placed>,
     order: Vec<NodeId>,
 }
@@ -129,7 +136,7 @@ fn content_box(rect: &Rect, layout: &taffy::Layout) -> Rect {
     })
 }
 
-impl Painter<'_> {
+impl Painter<'_, '_> {
     fn place(&mut self, id: NodeId, parent: Option<NodeId>, ambient: Ambient) {
         // A copy of the shared reference, so nodes borrowed from it do not hold `self`.
         let doc = self.doc;
@@ -277,6 +284,7 @@ impl Painter<'_> {
             rect,
             visible: true,
             background: None,
+            backgrounds: Vec::new(),
             border: None,
             radii: None,
             shadows: Vec::new(),
@@ -291,6 +299,7 @@ impl Painter<'_> {
                 .map(|parent| display_key(self.doc, parent)),
             texts: Vec::new(),
             input: None,
+            image: None,
         };
 
         let style = node.primary_styles();
@@ -316,6 +325,9 @@ impl Painter<'_> {
             // its parent, which draws its own background.
             if entry.visible && !matches!(node.data, NodeData::AnonymousBlock(_)) {
                 self.decorate(&mut entry, style, layout);
+                let images = self.images.borrow();
+                entry.image =
+                    background::replaced_image(node, style, content_box(&rect, layout), &images);
             }
         }
         drop(style);
@@ -332,6 +344,14 @@ impl Painter<'_> {
         if !background.is_transparent() {
             entry.background = Some(background);
         }
+        let boxes = Boxes {
+            border: entry.rect,
+            padding: padding_box(&entry.rect, layout),
+            content: content_box(&entry.rect, layout),
+        };
+        let mut images = self.images.borrow_mut();
+        entry.backgrounds = background::background_layers(style, &boxes, &mut images);
+        drop(images);
 
         let widths = Sides {
             top: layout.border.top,
