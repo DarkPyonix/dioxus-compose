@@ -8,7 +8,16 @@
 //! bridge gave out and reach the DOM node's Dioxus handler: a click through
 //! [`HtmlDom::click_node`], text through [`HtmlDom::input`] and [`HtmlDom::change`], Enter
 //! through [`HtmlDom::submit`], a checkbox through [`HtmlDom::check`] and a select through
-//! [`HtmlDom::select`].
+//! [`HtmlDom::select`]. A key goes through [`HtmlDom::key_down`], from the field it was
+//! pressed in or from the box of an element that listens for keys, and a field's focus
+//! through [`HtmlDom::focus`] and [`HtmlDom::blur`].
+//!
+//! compose-rust tells the Host when a field loses the focus, not when it gains it. A
+//! field has the focus by the time anything the user does in it arrives, so `focus` is
+//! delivered just before the first of those: the first text, key or Enter since the field
+//! last lost the focus. A field focused and left without a keystroke gets its `blur` and
+//! no `focus`. The keys compose-rust carries are key presses, and of those only Enter, so
+//! `keyup` is never delivered from here.
 //!
 //! Text is measured by the configured [`TextMeasurer`](crate::html::TextMeasurer), Parley by
 //! default. compose-rust has no call that asks the renderer to measure a string, so the
@@ -21,9 +30,10 @@ use std::pin::pin;
 use std::task::{Context, Poll};
 
 use compose_rust::protocol::{HostEvent, ProtocolError};
-use compose_rust::schema::EventPayload;
+use compose_rust::schema::{EventPayload, Key as WireKey};
 use compose_rust::{Batch, Runtime};
 use dioxus_core::{Element, ScopeId};
+use dioxus_html::{Code, Key, Modifiers};
 
 use crate::dom::{HtmlConfig, HtmlDom};
 use crate::html::NodeId;
@@ -44,6 +54,8 @@ pub struct HtmlRuntime {
     typed: HashMap<NodeId, String>,
     /// Fields whose text changed since they last delivered `change`.
     edited: HashSet<NodeId>,
+    /// The field that has the focus, as far as the page has been told.
+    focused: Option<NodeId>,
 }
 
 impl HtmlRuntime {
@@ -53,6 +65,7 @@ impl HtmlRuntime {
 
     pub fn with_config(app: fn() -> Element, config: HtmlConfig) -> Self {
         Self {
+            focused: None,
             dom: HtmlDom::with_config(app, config),
             bridge: PlanBridge::new(),
             batch: Batch::new(),
@@ -84,8 +97,32 @@ impl HtmlRuntime {
             .apply(plan, viewport, &self.dom, &mut self.batch);
     }
 
+    /// The user did something in the field `node`, so it has the focus: `focus`, if the
+    /// page has not been told yet, after `blur` for a field it still thinks has it.
+    fn deliver_focus(&mut self, node: NodeId) {
+        if self.focused == Some(node) {
+            return;
+        }
+        if let Some(previous) = self.focused.take() {
+            self.dom.blur(previous);
+        }
+        self.focused = Some(node);
+        self.dom.focus(node);
+    }
+
+    /// The field `node` lost the focus: `change` if its text changed, then `blur`, in the
+    /// order a browser sends them.
+    fn deliver_blur(&mut self, node: NodeId) {
+        self.deliver_change(node);
+        if self.focused == Some(node) {
+            self.focused = None;
+        }
+        self.dom.blur(node);
+    }
+
     /// The text of a field reached the page: `input`, once per distinct text.
     fn deliver_text(&mut self, node: NodeId, text: &str) {
+        self.deliver_focus(node);
         self.bridge.user_typed(node, text);
         if self.typed.get(&node).is_some_and(|typed| typed == text) {
             return;
@@ -139,13 +176,45 @@ impl Runtime for HtmlRuntime {
                 self.deliver_text(node, text);
             }
             // Enter commits the text, ends the edit and submits the form, in the order a
-            // browser does them.
+            // browser does them. That is all Enter does in a single-line field, so the key
+            // is answered as used and goes no further up the renderer's tree, where the
+            // boxes around the field would deliver its `keydown` a second time.
             (BridgeEvent::TextSubmit, EventPayload::TextSubmitted(text)) => {
                 self.deliver_text(node, text);
                 self.deliver_change(node);
                 self.dom.submit(node);
+                return Ok(1);
             }
-            (BridgeEvent::FocusLost, EventPayload::FocusLost) => self.deliver_change(node),
+            (BridgeEvent::FocusLost, EventPayload::FocusLost) => self.deliver_blur(node),
+            (
+                kind @ (BridgeEvent::KeyDown | BridgeEvent::FieldKeyDown),
+                EventPayload::KeyDown {
+                    key,
+                    shift_key,
+                    ctrl_key,
+                    alt_key,
+                    meta_key,
+                },
+            ) => {
+                let (key, code) = match key {
+                    WireKey::Enter => (Key::Enter, Code::Enter),
+                };
+                let mut modifiers = Modifiers::empty();
+                modifiers.set(Modifiers::SHIFT, *shift_key);
+                modifiers.set(Modifiers::CONTROL, *ctrl_key);
+                modifiers.set(Modifiers::ALT, *alt_key);
+                modifiers.set(Modifiers::META, *meta_key);
+                let from_field = kind == BridgeEvent::FieldKeyDown;
+                if from_field {
+                    self.deliver_focus(node);
+                }
+                let prevented = self.dom.key_down(node, key, code, modifiers);
+                // In a field, a key nobody prevented goes on to the field: Enter submits
+                // or starts a line. From a box, the key has been offered to the element
+                // and, by bubbling, to every element around it, so the boxes around this
+                // one must not offer it again.
+                return Ok(i64::from(prevented || !from_field));
+            }
             (BridgeEvent::Toggle, EventPayload::ValueChanged(value)) => {
                 self.dom.check(node, *value != 0.0);
             }

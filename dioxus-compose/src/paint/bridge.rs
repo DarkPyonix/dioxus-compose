@@ -56,7 +56,7 @@ const NORMAL_LINE_HEIGHT: f32 = 1.2;
 /// on the wire.
 const ZERO_LETTER_SPACING: f32 = f32::MIN_POSITIVE;
 
-/// What the page says about clicks, which a plan does not carry.
+/// What the page says about clicks and keys, which a plan does not carry.
 pub trait ClickTargets {
     /// Whether a click on the box drawn for `node` does anything of its own.
     fn takes_clicks(&self, node: NodeId) -> bool;
@@ -66,6 +66,13 @@ pub trait ClickTargets {
     /// element whose box the run is drawn in. `None` when there is none, so a click on the
     /// run falls through to the box.
     fn run_target(&self, owner: NodeId, container: NodeId) -> Option<NodeId>;
+
+    /// Whether a key pressed in the box drawn for `node`, or in anything inside it that
+    /// has the focus, is for the page. A page that says nothing takes no keys there.
+    fn takes_keys(&self, node: NodeId) -> bool {
+        let _ = node;
+        false
+    }
 }
 
 /// What a renderer event on a node the bridge made means for the page.
@@ -80,6 +87,11 @@ pub enum BridgeEvent {
     TextSubmit,
     /// A field lost focus.
     FocusLost,
+    /// The user pressed a key in a box whose element listens for keys, or in something
+    /// inside it that has the focus.
+    KeyDown,
+    /// The user pressed a key in an `<input>` or `<textarea>`.
+    FieldKeyDown,
     /// The user ticked or cleared a checkbox, or picked a radio button.
     Toggle,
     /// The user picked an option of a `<select>`.
@@ -150,6 +162,9 @@ struct Placed {
     handlers: Vec<u64>,
     /// The click handler, and the DOM node it is for.
     click: Option<(u64, NodeId)>,
+    /// The key handler of a box whose element listens for keys, and that element. A
+    /// field's key handler is set once, with its other handlers, and is not this.
+    keys: Option<(u64, NodeId)>,
     /// What a text field shows: the last value the Host sent or the user typed, whichever
     /// came last.
     shown: String,
@@ -312,7 +327,8 @@ impl PlanBridge {
         let nodes = plan.nodes();
         for node in &nodes {
             if let Some(placed) = self.nodes.get(&node.key)
-                && placed.click.map(|(_, target)| target) != click_target(node, clicks)
+                && (placed.click.map(|(_, target)| target) != click_target(node, clicks)
+                    || placed.keys.map(|(_, target)| target) != key_target(node, clicks))
             {
                 dirty.insert(node.key);
             }
@@ -357,6 +373,7 @@ impl PlanBridge {
                 extras: Vec::new(),
                 handlers: Vec::new(),
                 click: None,
+                keys: None,
                 shown: String::new(),
             },
         );
@@ -630,6 +647,15 @@ impl PlanBridge {
             if !field.multiline {
                 self.add_handler(batch, key, PropertyKind::OnSubmit, BridgeEvent::TextSubmit);
             }
+            // Keys pressed in a field go to the page whether or not anything listens yet:
+            // the renderer asks before Enter submits or starts a line, and the answer
+            // depends on handlers that may be added later.
+            self.add_handler(
+                batch,
+                key,
+                PropertyKind::OnKeyDown,
+                BridgeEvent::FieldKeyDown,
+            );
         } else if let Some(placed) = self.nodes.get_mut(&key) {
             // The renderer owns the text while the user edits it. The Host's value goes out
             // only when the app set a new one, and not when it is what the field already
@@ -813,6 +839,37 @@ impl PlanBridge {
             }
         };
 
+        let keys = key_target(node, clicks);
+        if placed.keys.map(|(_, target)| target) != keys {
+            if let Some((handler_id, _)) = placed.keys.take() {
+                placed.handlers.retain(|handler| *handler != handler_id);
+                self.handlers.remove(&handler_id);
+            }
+            let value = match keys {
+                Some(target) => {
+                    let handler_id = self.next_handler_id;
+                    self.next_handler_id += 1;
+                    placed.handlers.push(handler_id);
+                    placed.keys = Some((handler_id, target));
+                    self.handlers.insert(
+                        handler_id,
+                        BridgeHandler {
+                            node_id: placed.id,
+                            node: target,
+                            event: BridgeEvent::KeyDown,
+                        },
+                    );
+                    PropertyValue::Integer(handler_id as i64)
+                }
+                None => PropertyValue::None,
+            };
+            batch.write(Mutation::SetProp {
+                node_id: placed.id,
+                property: PropertyKind::OnKeyDown,
+                value,
+            });
+        }
+
         let mut modifiers = wire_modifiers(node);
         if key == PlanKey::Page {
             modifiers.insert(
@@ -992,6 +1049,25 @@ fn click_target(node: &PlanNode, clicks: &dyn ClickTargets) -> Option<NodeId> {
         ) => clicks.run_target(text.owner, container),
         _ => None,
     }
+}
+
+/// The DOM node a key pressed in the box of a plan node is for, if the page takes keys
+/// there. Only an element's own box, and not the box of an `<input>` or `<textarea>`
+/// drawn as a text field: the field routes its keys itself, and a second handler around
+/// it would offer the page the same key twice. A run of text cannot hold the focus.
+fn key_target(node: &PlanNode, clicks: &dyn ClickTargets) -> Option<NodeId> {
+    match node.key {
+        PlanKey::Node(dom) if !draws_text_field(node, dom) => clicks.takes_keys(dom).then_some(dom),
+        _ => None,
+    }
+}
+
+/// Whether the text field of the element `dom` is inside `node`.
+fn draws_text_field(node: &PlanNode, dom: NodeId) -> bool {
+    node.children.iter().any(|child| {
+        (child.key == PlanKey::Field(dom) && matches!(child.kind, PlanKind::TextField(_)))
+            || draws_text_field(child, dom)
+    })
 }
 
 /// The widget a plan node is drawn with.

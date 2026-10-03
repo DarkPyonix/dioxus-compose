@@ -28,7 +28,10 @@
 //! button submits its form), and the `input`, `change` and `submit` events of form controls
 //! through [`HtmlDom::input`], [`HtmlDom::change`], [`HtmlDom::select`],
 //! [`HtmlDom::check`] and [`HtmlDom::submit`], which a renderer calls with what the user
-//! committed in its own fields.
+//! committed in its own fields. Keys go to the focused element's `keydown`, `keypress` and
+//! `keyup` handlers through [`HtmlDom::key_down`] and [`HtmlDom::key_up`], and focus to its
+//! `focus`, `blur`, `focusin` and `focusout` handlers through [`HtmlDom::focus`] and
+//! [`HtmlDom::blur`].
 //!
 //! [`launch`] runs such an app in a window, the way [`crate::launch`] runs one written with
 //! the Compose widgets: every frame that changes something is laid out, planned, and

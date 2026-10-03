@@ -10,6 +10,7 @@
 use std::cell::RefCell;
 
 use dioxus_compose::Host;
+use dioxus_compose::html::prelude::dioxus_elements::point_interaction::ModifiersInteraction;
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
@@ -711,5 +712,216 @@ fn fr34_typed_text_reaches_oninput_and_is_not_sent_back() {
             .iter()
             .all(|record| !matches!(record, Record::SetText(..))),
         "{after:#?}"
+    );
+}
+
+thread_local! {
+    static HEARD: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+fn heard(line: impl Into<String>) {
+    HEARD.with(|heard| heard.borrow_mut().push(line.into()));
+}
+
+fn take_heard() -> Vec<String> {
+    HEARD.with(|heard| std::mem::take(&mut *heard.borrow_mut()))
+}
+
+/// Every node given a handler for `property`, with the handler.
+fn handlers_for(records: &[Record], property: PropertyKind) -> Vec<(u32, u64)> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(node, given, Value::Int(handler)) if *given == property => {
+                Some((*node, *handler as u64))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn enter(host: &mut Host, (node_id, handler_id): (u32, u64), ctrl_key: bool) -> i64 {
+    let (_, result) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::KeyDown {
+                key: dioxus_compose::schema::Key::Enter,
+                shift_key: true,
+                ctrl_key,
+                alt_key: false,
+                meta_key: false,
+            },
+        })
+        .expect("the key is dispatched");
+    result
+}
+
+fn keyed() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 40px",
+            onkeydown: move |event| heard(format!("div keydown {}", event.key())),
+            input {
+                style: "width: 120px; height: 24px",
+                onkeydown: move |event| {
+                    let modifiers = event.modifiers();
+                    heard(format!(
+                        "input keydown {} shift={} ctrl={}",
+                        event.key(),
+                        modifiers.contains(dioxus_elements::Modifiers::SHIFT),
+                        modifiers.contains(dioxus_elements::Modifiers::CONTROL),
+                    ));
+                    if modifiers.contains(dioxus_elements::Modifiers::CONTROL) {
+                        event.prevent_default();
+                    }
+                },
+                onkeypress: move |event| heard(format!("input keypress {}", event.key())),
+            }
+        }
+    }
+}
+
+/// Enter pressed in a field reaches the field's `onkeydown` with its modifiers, bubbles to
+/// the element around it, and is followed by `keypress`. The renderer is told the key was
+/// not used, so the field still does what Enter does; when a handler prevents the default
+/// it is told the key was used, and `keypress` does not follow. The box of an element that
+/// listens for keys gets a handler of its own, for keys pressed in whatever inside it has
+/// the focus, and the field's own box does not, so no key reaches the page twice.
+#[test]
+fn fr34_key_reaches_the_focused_dom_handler() {
+    take_heard();
+    let mut host = Host::html(keyed, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let field = created(&first, WidgetKind::TextField)[0];
+    let field_keys = (field, handler_of(&first, field, PropertyKind::OnKeyDown));
+    let box_keys: Vec<(u32, u64)> = handlers_for(&first, PropertyKind::OnKeyDown)
+        .into_iter()
+        .filter(|(node, _)| *node != field)
+        .collect();
+    assert_eq!(
+        box_keys.len(),
+        1,
+        "only the div's box takes keys besides the field: {first:#?}"
+    );
+    assert!(created(&first, WidgetKind::AbsoluteBox).contains(&box_keys[0].0));
+
+    assert_eq!(enter(&mut host, field_keys, false), 0);
+    assert_eq!(
+        take_heard(),
+        vec![
+            "input keydown Enter shift=true ctrl=false".to_string(),
+            "div keydown Enter".to_string(),
+            "input keypress Enter".to_string(),
+        ]
+    );
+
+    assert_eq!(enter(&mut host, field_keys, true), 1);
+    assert_eq!(
+        take_heard(),
+        vec![
+            "input keydown Enter shift=true ctrl=true".to_string(),
+            "div keydown Enter".to_string(),
+        ]
+    );
+
+    // From the div's box the key has already been offered to every element around the
+    // div, so the renderer is told it was used.
+    assert_eq!(enter(&mut host, box_keys[0], false), 1);
+    assert_eq!(take_heard(), vec!["div keydown Enter".to_string()]);
+
+    assert!(
+        host.dispatch(HostEvent {
+            node_id: field + 1000,
+            handler_id: field_keys.1,
+            payload: EventPayload::KeyDown {
+                key: dioxus_compose::schema::Key::Enter,
+                shift_key: false,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+            },
+        })
+        .is_err(),
+        "a key handler is only reached from the node it was set on"
+    );
+}
+
+fn focusable() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 40px",
+            onfocus: move |_| heard("div focus"),
+            onblur: move |_| heard("div blur"),
+            onfocusin: move |_| heard("div focusin"),
+            onfocusout: move |_| heard("div focusout"),
+            input {
+                style: "width: 120px; height: 24px",
+                onfocus: move |_| heard("input focus"),
+                onblur: move |_| heard("input blur"),
+                onchange: move |_| heard("input change"),
+            }
+        }
+    }
+}
+
+fn type_into(host: &mut Host, (node_id, handler_id): (u32, u64), text: &str) {
+    host.dispatch(HostEvent {
+        node_id,
+        handler_id,
+        payload: EventPayload::TextChanged(text),
+    })
+    .expect("the text is dispatched");
+}
+
+/// A field's `focus` reaches its handler when the user first does something in it, with
+/// `focusin` bubbling after it; leaving the field delivers `change`, then `blur`, then
+/// `focusout` bubbling. `focus` and `blur` do not bubble, so the element around the field
+/// hears only `focusin` and `focusout`.
+#[test]
+fn fr34_focus_and_blur_reach_the_dom_handler() {
+    take_heard();
+    let mut host = Host::html(focusable, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let field = created(&first, WidgetKind::TextField)[0];
+    let typing = (
+        field,
+        handler_of(&first, field, PropertyKind::OnValueChange),
+    );
+    let leaving = (field, handler_of(&first, field, PropertyKind::OnFocusLost));
+
+    type_into(&mut host, typing, "a");
+    assert_eq!(
+        take_heard(),
+        vec!["input focus".to_string(), "div focusin".to_string()]
+    );
+    type_into(&mut host, typing, "ab");
+    assert_eq!(
+        take_heard(),
+        Vec::<String>::new(),
+        "focus is delivered once"
+    );
+
+    host.dispatch(HostEvent {
+        node_id: leaving.0,
+        handler_id: leaving.1,
+        payload: EventPayload::FocusLost,
+    })
+    .expect("the focus loss is dispatched");
+    assert_eq!(
+        take_heard(),
+        vec![
+            "input change".to_string(),
+            "input blur".to_string(),
+            "div focusout".to_string(),
+        ]
+    );
+
+    // Back in the field: it has the focus again.
+    let keys = (field, handler_of(&first, field, PropertyKind::OnKeyDown));
+    enter(&mut host, keys, false);
+    assert_eq!(
+        take_heard(),
+        vec!["input focus".to_string(), "div focusin".to_string()]
     );
 }
