@@ -1,150 +1,61 @@
-# Sample apps
+# Samples
 
-Each of these is a real application written the way someone using this project would
-write one: Rust only, `rsx!` and hooks, no Kotlin.
-
-They exist to be used rather than admired. The widget vocabulary was chosen by reasoning
-about what applications need, and reasoning is not evidence. Every place a sample has to
-reach for an extension, work around a missing widget, or give up, is a finding about the
-vocabulary, and belongs in an issue rather than in a workaround.
-
-Each one is also clone coded from a real application, and the reference is part of the
-requirement rather than a mood board: the pictures are in
-`docs/references/design-systems/README.md` under "Sample Apps". The design follows the
-platform the application is running on, and the layout follows the window size class, so
-one declaration is a phone screen, a tablet screen and a desktop window.
-
-| Sample | Clone coded from | What it exercises |
-|---|---|---|
-| `calculator` | The Windows, macOS and Deepin calculators | Dense button grids, `Row` and `Column` nesting, a memory register, numeric formatting, a tape that stands beside the keys or arrives in a sheet |
-| `notepad` | The iOS and Windows memo applications | Multiline text editing, IME, file I/O from a worker thread, several open documents with the list beside the page or in a sheet |
-| `todo` | A macOS task list and a mobile task scheduler | Lists with stable keys, checkboxes, filtering as a destination set, `LazyColumn` windowing over thousands of rows, file persistence from a worker thread |
-| `chat` | Google Gemini | Conversations as a destination set, scrollback, a composer where Enter sends and Shift+Enter starts a new line, and a reply streamed in from a worker thread |
-
-The four above are **adaptive**: they take whichever design system the platform picks, so
-the same declaration is a Material 3 screen on Android and a Liquid Glass one on a Mac. The
-ones below are **unified**. Each names one design system and draws the same way
-everywhere, which is what an application does when the design is the product rather than
-the platform's convention. All of them are rebuilds of published iOS designs, so all of
-them name Cupertino.
-
-| Sample | What it exercises |
-|---|---|
-| `minimal` | A playground: every control the schema has, all nine fills with the ink each carries, the type and corner ladders, and a `Canvas` drawing |
-| `store` | A clothing shop: a carousel with page dots, a category strip, a two-up grid, a product page with sizes and a stepper, and a bag that adds up |
-| `statistics` | Charts: a dial and a week of costs drawn with `Canvas`, both painted entirely in roles, on a tinted page |
-| `selfcare` | A mood picker whose answers are colours, a drawn face per feeling, a chip grid, a windowing row of session cards and a week as a line |
-| `podcast` | A player whose waveform is a `Canvas`, a cover per show, and a full-screen page that covers the navigation bar |
-| `academic` | A grid of subject tiles, a stage strip, open and locked lessons, and the one place the role vocabulary ran out |
-| `social` | A meditation app whose every card carries an illustration, three shelves, and a course page that covers the navigation bar |
-
-Each of them names its colour scheme as well as its design system, because the design each
-is a rebuild of is a light one or a dark one and a screen that flips with the machine it is
-running on is not that design. `DXC_DESIGN` and `DXC_SCHEME` override the half they name,
-so any of them can be looked at in any of the seven systems in either scheme.
-
-A unified sample names its colours too. The picture a reference shows has its own accent
-and its own flat fills, and a `ColorRole` hands those back to whichever design system is
-running: wherever the reference had a colour of its own, the screen came out in the
-theme's blue, and the cards came out of the accent containers as pale lilac and powder
-blue. So a unified sample holds a `palette` module of the literals its picture is made of,
-with a test that pins each value and asserts each one is a literal. For the same reason it
-draws its own bar along the bottom: the references have icons alone, with the one you are
-on in the accent, and a labelled bar with a selection pill is what `Navigation` is right to
-give an application that has not been drawn one.
-
-## The pictures
-
-Five of the unified samples carry artwork, in each one's `assets/` directory: the shop's
-eight garments and its banner, the check-in's four faces, the podcast's three covers, the
-meditation app's three scenes and the drum school's four subject marks. Twenty-two files,
-about eighty kilobytes in total.
-
-**All of them are original drawings made for this repository**, hand-written SVG rather
-than exported from a tool, which is why they are a few hundred bytes each and why they are
-legible as source. Nothing here is taken from the references: the reference designs are
-photography and commissioned illustration, and neither is something a repository can carry.
-Where the reference has a photograph, the sample draws the same subject instead, and says
-so where it matters.
-
-The samples with no artwork have none because their references have none. `minimal` is a
-component sheet, and `statistics` is charts and typography, apart from two service logos
-this deliberately does not copy.
-
-An application registers a picture by drawing it:
+Eleven Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
+signals, with `use dioxus_compose::html::prelude::*` and nothing else from this crate. Each is
+a crate of its own, and each exposes the same two things:
 
 ```rust
-static HERO: &[u8] = include_bytes!("../assets/hero.svg");
-
-rsx! { Image { asset_id: asset(AssetKind::Svg, HERO), height: 240.0 } }
+pub fn app() -> Element;     // the root component
+pub const STYLE: &str;       // its stylesheet
 ```
 
-The bytes cross the boundary once. Everything after that is the id, so drawing the same
-picture on every frame costs a lookup. A drawing has to say its `viewBox`, or it has no
-size to be scaled from and is drawn at one user unit to the pixel in the corner of whatever
-box it was given.
+so a window can show it and a test can lay it out without one.
 
-Each one is an ordinary dx project: a `Dioxus.toml`, an `assets/` directory and
-`src/main.rs`, the layout `dx new` produces. That is deliberate, because a sample exists to
-be copied, and an arrangement that only works inside this repository teaches nothing.
+| Sample | What it shows |
+|---|---|
+| `hello` | A heading, a paragraph with bold and italic words, and a link that counts how often it was clicked |
+| `article` | A reading page: headings, wrapping paragraphs, ordered and unordered lists, a quotation and a code block |
+| `dashboard` | A top bar, a sidebar of sections and a wrapping row of metric cards, all flexbox |
+| `gallery` | A photo grid in CSS grid under a header painted with a gradient. Images are named by URL and never fetched: what draws them is the application's image resolver |
+| `settings` | A form: a text field, a text area, a select, a checkbox, a radio group and a save button. The fields are uncontrolled, and `oninput` keeps what was typed until it is saved |
+| `table` | Invoices in an HTML table, wider than the page on a narrow screen so it scrolls sideways inside its wrapper. The amount header sorts |
+| `chat` | A conversation that scrolls above a composer pinned to the bottom, and an assistant reply that grows as its text arrives, appended through a context any worker can reach |
+| `todo` | Add, tick off, delete and reorder items. Rows are keyed by id, so moving an item moves its row rather than rewriting every row's text |
+| `overlay` | A dropdown menu positioned against its button, a confirmation dialog over a dimmed `position: fixed` backdrop, and a preview that clips its banner to rounded corners |
+| `theme` | Every colour a CSS custom property: a light set, a dark set under `prefers-color-scheme: dark`, and a button that overrides the system's choice |
+| `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
 
-```
-cd samples/calculator
-dx serve
-```
+## Where they are drawn
 
-Building with cargo directly works too:
+Today these are laid out by the Host and nowhere else. `HtmlDom` runs the app, stylo resolves
+the CSS, Taffy lays out blocks, flex and grid, and the result is a display list and a plan of
+drawing elements: absolute rectangles, colours, borders, text runs, form fields, scroll
+containers and images. Each sample's tests check that layout against numbers worked out by
+hand, and click, type and submit through the same events a renderer would send.
 
-```
-cargo run -p sample-calculator
-```
+Drawing them waits for the bridge from that plan to the renderer. Once it lands, the same
+`app()` and `STYLE` are what a window shows, and nothing in the samples changes.
 
-That downloads the released renderer for the crate's version on first use. To run against a
-renderer you have just built instead, name it. The path must be absolute: a build script runs
-with the package directory as its working directory, not the workspace root.
-
-```
-DIOXUS_COMPOSE_RENDERER_DIR=$PWD/dioxus-compose-renderer/build/native-image/dist/lib \
-  cargo run -p sample-calculator
-```
-
-## The other platforms
-
-A sample is a library with a one line binary in front of it, because only the desktop
-runs a `main` of ours. Android's Activity and a browser page each own the process and the
-frame loop and reach the application through an entry point instead, and on iOS the
-renderer is a static archive linked into the application, so there the application is the
-library.
+## Running the tests
 
 ```
-./scripts/build-sample-apks.sh                  # an APK per sample
-./scripts/build-sample-pages.sh                 # a browser page per sample, plus an index
-./dioxus-compose-renderer/desktop/scripts/build-sample-ios.sh calculator
+cargo test -p sample-html-hello
+cargo test -p sample-html-hello -p sample-html-chat -p sample-html-todo
 ```
 
-Everything a sample settles before it launches is in one `launch_builder()` that all
-three entry points share, so a page and an APK draw the same design its desktop binary
-does. An entry point that made its own builder would drop the theme, and seven of the
-eleven samples name one.
+or all of them with the rest of the workspace, `cargo test --workspace`.
 
-iOS is the simulator only. A bundle for a device has to be signed by a certificate Apple
-issued, against a provisioning profile naming that device, and a self-signed one is
-refused; the simulator does not check.
+The tests measure text with a measurer whose answers can be worked out on paper: every
+character is half the font size wide and every line 1.25 times the font size tall. It lives
+in `support/` (the `sample-html-support` crate), a dev-dependency of the samples that use it,
+so the numbers in every sample's tests come from the one measurer. `chat`, `todo`, `overlay`,
+`theme` and `workbench` define their own measurers in their test files and do not depend on
+it.
 
-Pushing a `sample-v*` tag builds all of them for all seven platforms and attaches the
-results to a GitHub Release: four desktop archives, an APK, a simulator bundle, and the
-pages as one archive.
+## The native-widget samples
 
-## Pictures
-
-`scripts/sample-shots.sh` photographs every sample in every design system, both colour
-schemes and the three window widths each of them changes shape at. It is two steps, because
-the two halves of a screen live in two languages: the samples record the bytes their Host
-would have sent, and the Renderer draws those bytes in a window of the size the recording's
-name carries. Nothing is restated in Kotlin, so what comes out is what an application would
-really have produced.
-
-```
-./scripts/sample-shots.sh /tmp/shots            # all of them
-./scripts/sample-shots.sh /tmp/shots Todo-      # one sample, everywhere
-```
+The twelve crates that used to live here (`calculator`, `notepad`, `todo`, `chat`,
+`minimal`, `store`, `statistics`, `selfcare`, `podcast`, `academic`, `social` and the
+`frames` helper their tests shared), written with the Compose widgets (`Column`, `Text`, `Button`), are in
+[compose-rust](https://github.com/DarkPyonix/compose-rust) with the tooling that built them
+for Android, iOS and the browser and photographed them.

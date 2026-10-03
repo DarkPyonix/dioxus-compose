@@ -1,0 +1,17 @@
+[package]
+name = "sample-html-support"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "What the samples' tests share: a text measurer worked out by hand, a fixed image resolver, and display list lookups"
+publish = false
+
+# Only ever a dev-dependency of the samples. One crate rather than a copy of the same module
+# under every sample's tests/, so the measurer the expected numbers are worked out from is
+# the same measurer in every sample.
+[lib]
+bench = false
+
+[dependencies]
+dioxus-compose = { path = "../../dioxus-compose" }

@@ -269,8 +269,8 @@ fn main() {
         //
         // An application says it for itself, with `#![windows_subsystem = "windows"]` at
         // the top of its `main.rs`. That is one line, it is the ordinary way to do it in
-        // Rust, and the samples here carry it. Without it a window application also opens
-        // a console, and closing that console kills it.
+        // Rust, and every application built on this crate has to carry it. Without it a
+        // window application also opens a console, and closing that console kills it.
         //
         // The renderer attaches to a parent console at startup so that saying it costs no
         // diagnostics: run from a terminal the messages still appear, run from Explorer

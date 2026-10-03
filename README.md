@@ -76,8 +76,10 @@ order-of-magnitude rather than benchmarks. What this project weighs is measured.
 
 ### What it actually weighs
 
-The notepad sample, built for release and stripped. One executable: no runtime beside it, no
-virtual machine inside it, and nothing linked but the system's own libraries.
+The notepad sample (a Compose-widget sample, now kept in
+[compose-rust](https://github.com/DarkPyonix/compose-rust)), built for release and stripped.
+One executable: no runtime beside it, no virtual machine inside it, and nothing linked but
+the system's own libraries.
 
 | Platform | Executable | Physical footprint | How it is built |
 |---|---|---|---|
@@ -557,7 +559,7 @@ dioxus-compose/
 │  ├─ desktop/                      #   JVM development shell
 │  ├─ shared/                       #   shared Compose code
 │  └─ ios/  android/  web/          #   platform targets
-├─ samples/                         # eleven sample apps (four adaptive, seven unified)
+├─ samples/                         # eleven apps written with HTML and CSS, one crate each
 ├─ scripts/                         # setup-check.sh, check.sh, install-nik.sh, publish-main.sh
 └─ docs/
    ├─ INTENT.md                     # why, decisions D1–D10, rejected alternatives
