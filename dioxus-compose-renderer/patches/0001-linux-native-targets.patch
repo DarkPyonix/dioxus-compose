@@ -68,18 +68,6 @@ index 00000000..c6f9e44e
 + */
 +@OptIn(ExperimentalForeignApi::class)
 +internal actual fun getCurrentThread(): Any = pthread_self()
-diff --git a/compose/animation/animation-graphics/build.gradle b/compose/animation/animation-graphics/build.gradle
-index 3f269e4d..a56047b6 100644
---- a/compose/animation/animation-graphics/build.gradle
-+++ b/compose/animation/animation-graphics/build.gradle
-@@ -37,6 +37,7 @@ androidXMultiplatform {
-         androidResources.enable = true
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
 diff --git a/compose/animation/animation/build.gradle b/compose/animation/animation/build.gradle
 index ec53baf7..de57f96d 100644
 --- a/compose/animation/animation/build.gradle
@@ -1082,18 +1070,6 @@ index 00000000..67357fb0
 +    manager: TextFieldSelectionManager,
 +    coroutineScope: CoroutineScope,
 +): Modifier = nativeBasicTextFieldTextContextMenuComponents(manager, coroutineScope)
-diff --git a/compose/material/material-navigation/build.gradle b/compose/material/material-navigation/build.gradle
-index fc2e5489..ed5bdfe6 100644
---- a/compose/material/material-navigation/build.gradle
-+++ b/compose/material/material-navigation/build.gradle
-@@ -32,6 +32,7 @@ androidXMultiplatform {
-         namespace = "androidx.compose.material.navigation"
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
 diff --git a/compose/material/material-ripple/build.gradle b/compose/material/material-ripple/build.gradle
 index 5aa59658..a1fc0bb1 100644
 --- a/compose/material/material-ripple/build.gradle
@@ -1112,78 +1088,6 @@ index 1df1cc46..9d68a1f5 100644
 +++ b/compose/material/material/build.gradle
 @@ -39,6 +39,7 @@ androidXMultiplatform {
          androidResources.enable = true
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
-diff --git a/compose/material3/adaptive/adaptive-layout/build.gradle b/compose/material3/adaptive/adaptive-layout/build.gradle
-index 0599ae3f..bb0746bb 100644
---- a/compose/material3/adaptive/adaptive-layout/build.gradle
-+++ b/compose/material3/adaptive/adaptive-layout/build.gradle
-@@ -39,6 +39,7 @@ androidXMultiplatform {
-         androidResources.enable = true
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
-diff --git a/compose/material3/adaptive/adaptive-navigation/build.gradle b/compose/material3/adaptive/adaptive-navigation/build.gradle
-index 7839d146..9706ebfe 100644
---- a/compose/material3/adaptive/adaptive-navigation/build.gradle
-+++ b/compose/material3/adaptive/adaptive-navigation/build.gradle
-@@ -37,6 +37,7 @@ androidXMultiplatform {
-         namespace = "androidx.compose.material3.adaptive.navigation"
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
-diff --git a/compose/material3/adaptive/adaptive-navigation3/build.gradle b/compose/material3/adaptive/adaptive-navigation3/build.gradle
-index 83479d88..be544b73 100644
---- a/compose/material3/adaptive/adaptive-navigation3/build.gradle
-+++ b/compose/material3/adaptive/adaptive-navigation3/build.gradle
-@@ -38,6 +38,7 @@ androidXMultiplatform {
-         androidResources.enable = true
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
-diff --git a/compose/material3/adaptive/adaptive/build.gradle b/compose/material3/adaptive/adaptive/build.gradle
-index d92a09a9..273afdda 100644
---- a/compose/material3/adaptive/adaptive/build.gradle
-+++ b/compose/material3/adaptive/adaptive/build.gradle
-@@ -38,6 +38,7 @@ androidXMultiplatform {
-         namespace = "androidx.compose.material3.adaptive"
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
-diff --git a/compose/material3/material3-adaptive-navigation-suite/build.gradle b/compose/material3/material3-adaptive-navigation-suite/build.gradle
-index ea407c3f..c4d21b54 100644
---- a/compose/material3/material3-adaptive-navigation-suite/build.gradle
-+++ b/compose/material3/material3-adaptive-navigation-suite/build.gradle
-@@ -38,6 +38,7 @@ androidXMultiplatform {
-         compileSdk = 35
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
-diff --git a/compose/material3/material3-window-size-class/build.gradle b/compose/material3/material3-window-size-class/build.gradle
-index b615c663..118c377c 100644
---- a/compose/material3/material3-window-size-class/build.gradle
-+++ b/compose/material3/material3-window-size-class/build.gradle
-@@ -37,6 +37,7 @@ androidXMultiplatform {
-         compileSdk = 35
      }
      desktop()
 +    linux()
@@ -2725,15 +2629,3 @@ index d79080db..bcf22025 100644
 +
 +/** The same question, for whatever else in this build needs to know. */
 +internal val platformMainDispatcher: CoroutineDispatcher? get() = mainDispatcherIfThereIsOne
-diff --git a/navigation/navigation-compose/build.gradle b/navigation/navigation-compose/build.gradle
-index 01f2d88f..bf203c6d 100644
---- a/navigation/navigation-compose/build.gradle
-+++ b/navigation/navigation-compose/build.gradle
-@@ -33,6 +33,7 @@ androidXMultiplatform {
-         androidResources.enable = true
-     }
-     desktop()
-+    linux()
-     mac()
-     ios()
-     js()
