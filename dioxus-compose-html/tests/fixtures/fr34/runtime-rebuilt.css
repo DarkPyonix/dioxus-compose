@@ -1,0 +1,51 @@
+/*
+ * The rules VS Code writes into the page at run time that can move a box in the three
+ * workbench fixtures, rebuilt from the Code-OSS code that writes them:
+ *   the sash size: src/vs/workbench/contrib/sash/browser/sash.ts, at the default setting;
+ *   codicons: src/vs/platform/theme/browser/iconsStyleSheet.ts, with the characters from
+ *     src/vs/base/common/codiconsLibrary.ts and the ids registered with registerIcon();
+ *   file icons: src/vs/workbench/services/themes/browser/fileIconThemeData.ts over
+ *     extensions/theme-seti/icons/vs-seti-icon-theme.json.
+ * Only what sizes a box is written (`content`, `font-family`, `font-size`, the sash
+ * lengths): colours do not move one. The icon fonts are not loaded; the test sizes their
+ * glyphs itself.
+ * Written by dioxus-compose-html/tests/fixtures/fr34/extract.mjs; do not edit by hand.
+ *
+ * Rebuilt from Code-OSS (https://github.com/microsoft/vscode) at commit
+ * 7debcd0e2acdea1c52de81bf9ee1620444407dda.
+ * Copyright (c) Microsoft Corporation. Licensed under the MIT License.
+ */
+.monaco-workbench { --vscode-sash-size: 4px; --vscode-sash-hover-size: 4px; }
+.codicon-accounts-view-bar-icon:before { content: '\eb99'; }
+.codicon-breadcrumb-separator:before { content: '\eab6'; }
+.codicon-close-small:before { content: '\ecee'; }
+.codicon-collapse-all:before { content: '\eac5'; }
+.codicon-explorer-view-icon:before { content: '\eaf0'; }
+.codicon-extensions-view-icon:before { content: '\eae6'; }
+.codicon-new-file:before { content: '\ea7f'; }
+.codicon-new-folder:before { content: '\ea80'; }
+.codicon-open-preview:before { content: '\eb28'; }
+.codicon-outline-view-icon:before { content: '\eb5b'; }
+.codicon-preview:before { content: '\eb2f'; }
+.codicon-refresh:before { content: '\eb37'; }
+.codicon-run-view-icon:before { content: '\eb91'; }
+.codicon-search-view-icon:before { content: '\ec70'; }
+.codicon-settings-view-bar-icon:before { content: '\eb51'; }
+.codicon-source-control-view-icon:before { content: '\ea68'; }
+.codicon-split-horizontal:before { content: '\eb56'; }
+.codicon-symbol-string:before { content: '\eb8d'; }
+.codicon-timeline-filter:before { content: '\eaf1'; }
+.codicon-timeline-pin:before { content: '\eb2b'; }
+.codicon-timeline-refresh:before { content: '\eb37'; }
+.codicon-timeline-view-icon:before { content: '\ea82'; }
+.codicon-toolbar-more:before { content: '\ea7c'; }
+.codicon-tree-item-expanded:before { content: '\eab4'; }
+.codicon-view-pane-container-collapsed:before { content: '\eab6'; }
+.codicon-view-pane-container-expanded:before { content: '\eab4'; }
+.show-file-icons .file-icon::before, .show-file-icons .folder-icon::before, .show-file-icons .rootfolder-icon::before { font-family: 'seti'; font-size: 150%; }
+.show-file-icons .file-icon::before { content: '\E023'; }
+.show-file-icons .test\.tsx-ext-file-icon.tsx-ext-file-icon.ext-file-icon.file-icon::before { content: '\E07D'; }
+.show-file-icons .typescriptreact-lang-file-icon.file-icon::before { content: '\E07D'; }
+.show-file-icons .typescript-lang-file-icon.file-icon::before { content: '\E099'; }
+.show-file-icons .json-lang-file-icon.file-icon::before { content: '\E055'; }
+.show-file-icons .readme\.md-name-file-icon.name-file-icon.file-icon::before { content: '\E04D'; }
