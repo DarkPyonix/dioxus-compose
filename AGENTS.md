@@ -103,6 +103,21 @@ This is written down because it happened. Probes and their builds went to `/tmp`
 download went to `/tmp`, and worktrees went to `../agent-runs`, and the owner had agreed to
 none of it.
 
+6. **The repository root holds only these entries**, approved by the owner (issue #52,
+   2026-10-03): `.github/`, `dioxus-compose/`, `docs/`, `experiments/`, `samples/`,
+   `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md` (the last three
+   stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
+   `.gitignore`. Git-ignored working directories (`.claude/`, `.scratch/`, `target/`)
+   are not part of the list. Until compose-rust's step that takes over the renderer
+   (compose-rust#37 step 4), `dioxus-compose-renderer/`, `dioxus-design-systems/` and
+   `tools/` (the renderer's Linux build container) also remain; they leave together.
+
+   **Do not add a folder or a file at the root without the owner's approval.** The owner's
+   words, 2026-10-03: "모든 프로젝트에게 프로젝트 루트에 폴더 추가는 함부러 하지 말라고 규정에
+   추가하라고 전해". If something seems to need a new root entry, propose it with the reason
+   and why no existing directory fits, and wait. Approved additions go into this list in
+   the same change.
+
 ## Background agents
 
 These bind the agent and whoever dispatches it equally. Both have been broken by the
