@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>문제 해결 · dioxus-compose 가이드</title>
-<meta name="description" content="렌더러 라이브러리 없음, 잘못된 JDK, IME 실패 등 실제로 겪은 문제를 알아보는 방법.">
+<meta name="description" content="dioxus-compose 에서 만날 수 있는 문제와 알아보는 방법. 창이 열리지 않는 HTML 화면, 텍스트 크기, 그려지지 않는 이미지, 아무 데도 닿지 않는 클릭, 렌더러 다운로드, IME 조합, ProtocolError 이벤트를 다룹니다.">
 <link rel="alternate" hreflang="en" href="../en/troubleshooting.html">
 <link rel="alternate" hreflang="ko" href="troubleshooting.html">
 <link rel="alternate" hreflang="x-default" href="../en/troubleshooting.html">
@@ -28,202 +28,142 @@
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <nav aria-label="가이드">
-      <h2>가이드</h2>
+      <h2>HTML과 CSS</h2>
       <ul>
         <li><a href="overview.html">개요</a></li>
         <li><a href="getting-started.html">시작하기</a></li>
-        <li><a href="writing-ui.html">UI 작성하기</a></li>
+        <li><a href="layout.html">레이아웃과 CSS</a></li>
+        <li><a href="text.html">텍스트</a></li>
+        <li><a href="forms-and-events.html">폼과 이벤트</a></li>
+        <li><a href="images.html">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html">rsx! 의 위젯</a></li>
         <li><a href="composables.html">컴포저블 레퍼런스</a></li>
-        <li><a href="lists-and-streaming.html">목록과 스트리밍</a></li>
-        <li><a href="design-systems.html">디자인 시스템</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html">현황</a></li>
         <li><a href="architecture.html">아키텍처</a></li>
         <li><a href="troubleshooting.html" aria-current="page">문제 해결</a></li>
       </ul>
       <h2>이 페이지</h2>
       <ul>
-        <li><a href="#no-library">렌더러를 못 찾음</a></li>
-        <li><a href="#no-window">실행되는데 창이 없음</a></li>
-        <li><a href="#wrong-jdk">잘못된 JDK</a></li>
-        <li><a href="#main-thread">바로 끝나거나 안 끝남</a></li>
-        <li><a href="#ime">IME 문제</a></li>
-        <li><a href="#protocol">ProtocolError</a></li>
-        <li><a href="#stale">생성된 Kotlin이 낡음</a></li>
+        <li><a href="#no-window">HTML 앱이 창을 열지 않습니다</a></li>
+        <li><a href="#stale">클릭이나 변경이 보이지 않습니다</a></li>
+        <li><a href="#typing">타이핑해도 페이지가 바뀌지 않습니다</a></li>
+        <li><a href="#text">텍스트 크기가 브라우저와 다릅니다</a></li>
+        <li><a href="#images">이미지가 그려지지 않거나 크기가 없습니다</a></li>
+        <li><a href="#css">CSS 기능이 효과가 없습니다</a></li>
+        <li><a href="#renderer">빌드가 렌더러를 받지 못합니다</a></li>
+        <li><a href="#ime">위젯 경로의 IME 문제</a></li>
+        <li><a href="#protocol">ProtocolError 이벤트</a></li>
       </ul>
     </nav>
   </aside>
 
   <main id="main">
     <p class="eyebrow">문제 해결</p>
-    <h1>실제로 겪은 실패와 그것을 알아보는 법</h1>
+    <h1>문제와 알아보는 방법</h1>
     <p class="lede">
-      이 페이지의 거의 모든 문제는 옷만 바꿔 입은 세 가지입니다. 렌더러 라이브러리가 링커가
-      기대하는 자리에 없거나, JDK가 다른 것이거나, 건드리면 안 되는 텍스트 경로를 건드린
-      것입니다.
+      HTML 경로에서 놀라는 일은 대부분 아직 만들어지지 않은 것에서, 위젯 경로에서는 대부분 텍스트 입력
+      규칙에서 옵니다. 절마다 어떤 경우인지와 왜 그렇게 동작하는지를 적었습니다.
     </p>
 
-    <h2 id="no-library">링커가 렌더러를 찾지 못함</h2>
+    <h2 id="no-window">HTML 앱이 창을 열지 않습니다</h2>
     <p>
-      증상: <code>cargo run</code>이
-      <code>library not found for -ldioxus_compose_renderer</code>로 실패하거나, 링크는 됐는데
-      실행 직후 <code>libdioxus_compose_renderer.dylib</code>을 언급하는 동적 로더 오류로
-      죽습니다.
-    </p>
-    <p>
-      이 저장소 밖에서는 빌드가 렌더러를 내려받으므로, 여기서 실패하면 무엇을 시도했고 무엇을
-      하면 되는지 말하는 메시지가 함께 나옵니다. 그 메시지를 읽으세요. 네트워크가 없는 경우와
-      릴리스에 해당 타깃이 없는 경우를 구분하고, 네트워크가 없는 경우에는 놓아야 할 파일 두
-      개와 놓을 디렉터리를 이름으로 말합니다.
-    </p>
-    <p>
-      체크아웃 안에서는 빌드가 워크스페이스의
-      <code>dioxus-compose-renderer/build/native-image/dist/lib</code>를 내려받기보다 먼저 쓰고,
-      그 라이브러리에게 자기가 거기 산다고 알려 줍니다. 그것을 링크하는 쪽은 같은 경로를 그대로
-      기록합니다. 그 디렉터리가 있는데 비어 있다면 렌더러를 아직 빌드하지 않은 것입니다.
-    </p>
-    <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>shell</figcaption>
-<pre><code>ls dioxus-compose-renderer/build/native-image/dist/lib
-<span class="c"># 기대: libdioxus_compose_renderer.dylib, libskiko-macos-*.dylib,</span>
-<span class="c">#       libjawt.dylib, libawt_lwawt.dylib</span>
-
-./dioxus-compose-renderer/desktop/scripts/build-native.sh</code></pre>
-    </figure>
-    <p>
-      네 파일을 따로 떼어 옮기지 마세요. 렌더러는 <code>dladdr</code>로 자기 위치를 알아낸 다음
-      그 디렉터리에서 <code>java.home</code>, <code>skiko.library.path</code>,
-      <code>skiko.data.path</code>를 끌어냅니다. 혼자 다른 곳에 복사된 라이브러리는 로드는 되고
-      Skia나 AWT를 못 찾습니다.
+      지금은 정상입니다. <code>HtmlDom</code> 은 앱을 실행하고 배치해서 그리기 목록과 계획을 돌려주지만,
+      그 계획을 렌더러에 넘기는 것이 아직 없습니다
+      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 화면은 대신 레이아웃으로
+      확인합니다. 항목을 출력하거나 예제처럼 테스트합니다.
     </p>
 
-    <h2 id="no-window">빌드도 실행도 되는데 창이 안 뜸</h2>
+    <h2 id="stale">클릭이나 변경이 보이지 않습니다</h2>
     <p>
-      <code>default-features = false</code>로 만든 바이너리는 이제 조용히 그러지 않습니다.
-      무엇이 없는지 말하고 0이 아닌 상태로 끝나므로, 아무 말 없이 창만 안 뜨는 상황은 그 경우가
-      아닙니다. <code>mock-renderer</code> 기능으로 만든 빌드는 창 없는 Host를 요청한 것이므로
-      의도적으로 조용합니다.
+      핸들러는 <code>click</code>, <code>input</code> 같은 호출 안에서 실행되고, 문서는
+      <code>render</code> 를 불러야 바뀝니다. 그리기 목록은 다음 <code>layout</code> 에서야 바뀝니다.
+      그래서 순서는 언제나 호출, <code>render</code>, <code>layout</code> 입니다.
     </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code>dom.<span class="f">click</span>(x, y);
+dom.<span class="f">render</span>();
+dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">600.0</span>, <span class="n">1.0</span>);</code></pre>
+</figure>
     <p>
-      기능이 켜져 있는데도 그렇다면, 양쪽을 분리해 보세요. 스모크 테스트는 최소한의 C 호스트를
-      라이브러리에 링크해 <code>run</code>을 직접 부릅니다.
-    </p>
-    <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>shell</figcaption>
-<pre><code>./dioxus-compose-renderer/desktop/scripts/smoke-test.sh</code></pre>
-    </figure>
-    <p>
-      여기서는 창이 뜨는데 Rust에서는 안 뜬다면 바이너리 링크 문제입니다. 여기서도 안 뜨면
-      렌더러 라이브러리 자체가 잘못된 것이고, 보통 다음 문제입니다.
+      그 자리 아래에 듣는 것이 없으면 <code>click</code> 은 <code>None</code> 을 돌려줍니다. 그 점이 잘라
+      내는 조상의 바깥이거나 <code>z-index</code> 가 더 높은 상자 아래에 있을 때도 그렇습니다. 그 자리에 어떤
+      노드가 있는지는 <code>hit_test(x, y)</code> 가 알려 줍니다.
     </p>
 
-    <h2 id="wrong-jdk">잘못된 JDK: Darwin AWT 함정</h2>
+    <h2 id="typing">타이핑해도 페이지가 바뀌지 않습니다</h2>
     <p>
-      증상: 빌드 스크립트가
-      <code>error: set GRAALVM_HOME to a Liberica NIK 25 Full installation</code>로 멈춥니다.
-      이건 좋은 경우입니다. 문제를 대신 잡아 준 것이니까요.
-    </p>
-    <p>
-      나쁜 경우는 <code>PATH</code>에 upstream GraalVM의 <code>native-image</code>가 있어서
-      빌드는 되는데, 실행 시 AWT 클래스나 심볼이 없다고 죽거나 창이 아예 뜨지 않는 것입니다.
-      upstream GraalVM은 Darwin에서 AWT를 건너뜁니다
-      (<a href="https://github.com/oracle/graal/issues/13272">oracle/graal#13272</a>). Liberica
-      NIK Full은 정적으로 링크합니다. 실제로 무엇을 가리키고 있는지 확인하세요.
-    </p>
-    <figure class="codeblock" data-copy="복사" data-copied="복사됨">
-      <figcaption>shell</figcaption>
-<pre><code><span class="k">echo</span> <span class="s">"$GRAALVM_HOME"</span>
-<span class="s">"$GRAALVM_HOME"</span>/bin/native-image --version   <span class="c"># Liberica NIK 25 빌드여야 합니다</span></code></pre>
-    </figure>
-    <p>
-      비슷한 변형이 하나 더 있습니다. 메타데이터를 수집하는 JVM 실행과 네이티브 빌드는 같은
-      JDK여야 합니다. 스크립트는 <code>GRAALVM_HOME</code>으로 <code>JAVA_HOME</code>을 설정해서
-      이를 강제합니다. 다른 JVM에서 렌더러를 돌린 뒤 이미지를 빌드하면, 컴파일 대상이 아닌 JDK를
-      묘사한 reachability 메타데이터를 쓰게 됩니다.
+      입력란은 일부러 비제어입니다. 글자는 렌더러가 갖고, 확정된 글자가 <code>oninput</code> 으로 옵니다.
+      페이지는 핸들러가 무언가 그리는 데 쓰이는 시그널에 써야 바뀝니다. <code>samples/chat</code> 이 초안으로
+      그렇게 합니다. <a href="forms-and-events.html#fields">입력란은 비제어입니다</a>를 보십시오.
     </p>
 
-    <h2 id="main-thread">시작하자마자 끝나거나, 끝나지 않음</h2>
+    <h2 id="text">텍스트 크기가 브라우저와 다릅니다</h2>
     <p>
-      <code>dioxus_compose_renderer_run</code>은 프로세스 메인 스레드에서 불러야 합니다. macOS에서
-      다른 스레드에서 부르면 아무 일도 하지 않고 <code>RUN_NOT_MAIN_THREAD</code>(<code>-4</code>)를
-      반환합니다. 같은 진입점의 다른 음수 코드도 알아 두면 좋습니다.
-    </p>
-    <div class="tablewrap">
-      <table>
-        <thead><tr><th scope="col">코드</th><th scope="col">의미</th></tr></thead>
-        <tbody>
-          <tr><td><code>-1</code></td><td>GraalVM isolate를 만들지 못했습니다.</td></tr>
-          <tr><td><code>-2</code></td><td><code>run</code>이 두 번 호출됐습니다.</td></tr>
-          <tr><td><code>-3</code></td><td>라이브러리가 자기 경로를 알아내지 못해 런타임 레이아웃을 모릅니다.</td></tr>
-          <tr><td><code>-4</code></td><td>메인 스레드가 아닙니다.</td></tr>
-          <tr><td><code>-5</code></td><td>렌더러 스레드를 시작하지 못했습니다.</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>
-      반대로 창은 닫혔는데 프로세스가 끝나지 않는다면 AppKit 재진입 문제입니다. AWT가 이벤트
-      루프를 소유해 <code>[NSApp run]</code>에 다시 들어갔고, 그래서 제어가 Host로 돌아오지
-      않습니다. 메인 스레드가 <code>NSApplication</code>을 직접 돌리고 렌더러를 보조 스레드에 두는
-      설계가 바로 이걸 피하기 위한 것입니다.
+      측정기를 따로 넘기지 않으면 Parley 가 텍스트를 재고, macOS 에서 Parley 의 크기는 Chromium 과 줄바꿈이
+      달라질 만큼 차이 납니다. 글꼴이 섞인 문단, 표 칸, 입력 컨트롤은 측정기를 넘겨도 Parley 가 잽니다.
+      Compose 로 재는 것은 <span class="pill partial">부분</span> 입니다
+      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 텍스트 크기가 맞으면 상자
+      배치 자체는 VS Code 와 1px 이내로 맞습니다.
     </p>
 
-    <h2 id="ime">IME 문제</h2>
-    <p>헷갈리기 쉬운 세 가지 실패입니다.</p>
-    <h3>Enter가 조합 중이던 글자를 삼키고 전송됨</h3>
+    <h2 id="images">이미지가 그려지지 않거나 크기가 없습니다</h2>
+    <ul>
+      <li><code>ImageResolver</code> 가 없거나 <code>None</code> 으로 답했습니다. 아무것도 내려받지 않으므로
+        리졸버가 모르는 이미지는 그려지지 않습니다.</li>
+      <li><code>width</code> 나 <code>height</code> 가 없는 <code>&lt;img&gt;</code> 는 리졸버의
+        <code>size</code> 에서 크기를 받습니다. 그 답이 없으면 본래 크기가 없습니다.</li>
+      <li>URL 이 예상과 다릅니다. 상대 URL 은 <code>HtmlConfig::base_url</code> 기준으로 풀리고, 기준이
+        없으면 쓴 그대로 갑니다. 리졸버가 받는 질문을 기록해 보십시오.</li>
+    </ul>
+
+    <h2 id="css">CSS 기능이 효과가 없습니다</h2>
+    <ul>
+      <li><code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>,
+        <code>transform-origin</code> 은 그리지 않고, <code>translate</code> 는 그립니다
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+      <li>transition 과 animation 은 재생되지 않습니다
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
+        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>).</li>
+      <li><code>&lt;script&gt;</code> 는 설계상 아무 일도 하지 않습니다. 동작은 Rust 로 씁니다.</li>
+      <li>사용자 에이전트 스타일시트는 브라우저처럼 <code>body</code> 에 8px 여백을 줍니다. 예제들은
+        스타일시트를 <code>body { margin: 0; }</code> 로 시작합니다.</li>
+    </ul>
+
+    <h2 id="renderer">빌드가 렌더러를 받지 못합니다</h2>
     <p>
-      한글을 치다가 글자를 확정하려고 <kbd>Enter</kbd>를 눌렀는데 그 글자가 빠진 채 메시지가
-      전송됩니다. 조합 중에 키 이벤트가 Host까지 올라왔다는 뜻입니다. 규칙은 조합 중에는 렌더러가
-      키 이벤트를 아예 전달하지 않는 것이고, 조합 중의 <kbd>Enter</kbd>는 제출이 아니라 확정입니다.
-      이 증상을 보면 버그는 핸들러가 아니라 렌더러 쪽 키 경로에 있습니다.
+      렌더러는 미리 빌드된 네이티브 라이브러리이고, compose-rust 의 빌드 스크립트가 대상 플랫폼용을 내려받아
+      공개된 체크섬과 대조합니다. 실패하면 빌드가 무엇을 시도했는지 알려 줍니다. 네트워크 없이 빌드하기,
+      직접 빌드한 렌더러 쓰기, 다운로드 캐시 옮기기는
+      <a href="https://github.com/DarkPyonix/compose-rust">compose-rust</a> README 에 있습니다.
     </p>
-    <h3>입력 중에 조합이 리셋됨</h3>
-    <p>
-      글자를 만드는 도중 글자가 사라지거나 순서가 흐트러집니다. 텍스트가 Host를 왕복한 전형적인
-      증상으로, 조합 중에 Rust가 필드 값을 설정한 것입니다. <code>TextField</code>가 비제어인 이유가
-      이것이고, <code>SetText</code> 명령도 조합이 끝날 때까지 기다리도록 정의돼 있습니다.
-    </p>
-    <h3>네이티브 이미지에서만 조합이 안 됨</h3>
-    <p>
-      JVM에서 렌더러를 돌리면 한글이 되는데 네이티브 이미지에서는 안 됩니다. 이것은 설계상
-      <em>설정</em> 문제로 다룹니다. AOT 컴파일은 어떤 코드 경로가 도는지를 바꾸지 않기 때문입니다.
-      순서대로 확인하세요. <code>InputMethodDescriptor</code> ServiceLoader 리소스, JNI/리플렉션
-      메타데이터, 로케일과 문자셋 리소스, 그리고 CJK 폰트 폴백입니다.
-    </p>
-    <div class="warn">
-      <span class="label">메타데이터는 한글을 실제로 입력하면서 수집하세요</span>
-      <p>
-        tracing agent는 실제로 실행된 코드 경로만 기록합니다. 앱을 띄웠다가 그냥 닫으면 IME에 대해
-        아무것도 기록되지 않습니다. <code>collect-metadata.sh</code>를 돌린 다음 창에 한글을 입력하고,
-        이것저것 눌러 보고, 창이 스스로 닫히게 두세요. 그렇게 하지 않고 모은 메타데이터는 정확히 이
-        증상으로 텍스트 입력이 깨진 네이티브 이미지를 만듭니다.
-      </p>
-    </div>
-    <p>
-      전체 수동 체크리스트: "안녕하세요" 조합, 자모 단위 백스페이스, 화살표 이동 시 조합 확정,
-      문장 중간 삽입, 멀티라인에서의 Enter 처리, 한글 섞인 텍스트 붙여넣기, 일본어·중국어 후보창,
-      두부 문자 없음, 은 SPEC §6에 있고 JVM 셸이 아니라 네이티브 이미지에서 확인합니다.
-    </p>
+
+    <h2 id="ime">위젯 경로의 IME 문제</h2>
+    <p><strong>Enter 가 제출하면서 음절을 잃습니다.</strong> 한글을 치고 음절을 확정하려고
+      <kbd>Enter</kbd> 를 눌렀는데 그 음절 없이 메시지가 보내집니다. 조합 중에 키 이벤트가 Rust 에 닿은
+      것이고, 렌더러는 그것을 절대 허용하면 안 됩니다. 핸들러가 아니라 렌더러의 버그입니다.</p>
+    <p><strong>타이핑하는 동안 조합이 초기화됩니다.</strong> 음절을 만드는 동안 글자가 사라지거나 순서가
+      바뀝니다. 조합 중에 무언가 Rust 에서 입력란의 글자를 정한 것입니다. <code>TextField</code> 에
+      <code>value</code> 가 없는 이유가 바로 이것이고, 입력란은 새 정체성을 주어 비웁니다.</p>
 
     <h2 id="protocol">ProtocolError 이벤트</h2>
     <p>
-      렌더러가 모르는 위젯 타입이나 속성, Modifier가 와도 아무것도 죽지 않습니다. 렌더러가 코드와
-      메시지를 담은 <code>ProtocolError</code> 이벤트를 보냅니다. 이 이벤트가 보인다면 양쪽이
-      스키마에 대해 다른 생각을 하고 있다는 뜻이고, 보통은 지금 돌리는 Rust 크레이트와 다른
-      소스에서 빌드된 렌더러 라이브러리입니다. 렌더러를 다시 빌드하세요.
-    </p>
-    <p>
-      완전한 불일치는 더 일찍 걸립니다. 핸드셰이크가 스키마 해시와 프로토콜 버전을 비교해 다르면
-      초기화를 실패시킵니다.
-    </p>
-
-    <h2 id="stale">생성된 Kotlin 때문에 테스트가 실패함</h2>
-    <p>
-      생성된 Kotlin과 저장소의 파일을 비교하는 테스트가 실패했다면, Rust 스키마를 고치고
-      재생성하지 않은 것입니다. 의도된 경보입니다. 스키마가 단일 소스이므로, 갱신되지 않은 Kotlin
-      인터프리터는 런타임에 어긋나는 대신 빌드에서 막혀야 합니다.
+      렌더러가 모르는 위젯, 속성, 모디파이어는 아무것도 멈추게 하지 않습니다. 렌더러는 코드와 메시지를 담은
+      <code>ProtocolError</code> 이벤트를 보냅니다. 두 쪽이 스키마에 대해 다르게 알고 있다는 뜻이고, 보통은
+      빌드가 링크한 것과 다른 compose-rust 버전의 렌더러입니다. 더 큰 불일치는 더 일찍 잡힙니다. 시작할 때
+      스키마 해시를 비교하고, 두 쪽이 함께 돌기를 거부합니다.
     </p>
 
     <nav class="pagenav" aria-label="페이지 이동">
       <a class="prev" href="architecture.html"><span>이전</span>&larr; 아키텍처</a>
-      <a class="next" href="overview.html"><span>다음</span>개요 &rarr;</a>
     </nav>
   </main>
 </div>
@@ -231,8 +171,8 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
-    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>이 가이드는 2026-09-20 기준 저장소 내용과 대조했습니다</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
   </div>
 </footer>
 

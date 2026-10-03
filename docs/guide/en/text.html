@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Text · dioxus-compose guide</title>
+<meta name="description" content="How dioxus-compose sizes and places text on HTML screens: inline runs, white-space and text-transform, the TextMeasurer trait, which text it measures today, and the move to measuring with Compose.">
+<link rel="alternate" hreflang="en" href="text.html">
+<link rel="alternate" hreflang="ko" href="../ko/text.html">
+<link rel="alternate" hreflang="x-default" href="text.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="text.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/text.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html" aria-current="page">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#runs">Runs of text</a></li>
+        <li><a href="#css">White space and transforms</a></li>
+        <li><a href="#measurer">The measurer</a></li>
+        <li><a href="#coverage">Which text goes through it</a></li>
+        <li><a href="#compose">Measuring with Compose</a></li>
+        <li><a href="#planned">Not yet</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Text</p>
+    <h1>Text is measured where it is drawn</h1>
+    <p class="lede">
+      Text is the one thing both halves must agree on. The Host decides where each line breaks, and
+      the renderer draws it with the same font in the width it was given. If the two engines
+      measured differently, letters would overlap or leave gaps, so the measurer is something you
+      can replace.
+    </p>
+
+    <h2 id="runs">Runs of text</h2>
+    <p>
+      Every piece of text in the display list is a <code>TextRun</code>: the text as it is drawn,
+      its rectangle, the element that owns it and how many lines it took. A paragraph that mixes
+      styles has a run per style, in source order. In <code>samples/article</code> a paragraph
+      wraps at the column width, and the code block does not, because <code>pre</code> keeps its
+      lines as written.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/article/src/lib.rs, trimmed</figcaption>
+<pre><code>p { <span class="at">id</span>: <span class="s">"first"</span>,
+    <span class="s">"A Dioxus app written with HTML tags and CSS does not need a browser to be laid "</span>
+    <span class="s">"out. The Host runs the same style and layout engines a browser would, and hands "</span>
+    <span class="s">"the renderer nothing but rectangles, colours and runs of text."</span>
+}
+pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span class="s">"{SAMPLE}"</span> } }</code></pre>
+</figure>
+
+    <h2 id="css">White space and transforms</h2>
+    <p>
+      Text reaches the measurer as it will be drawn. White space is already collapsed or preserved
+      according to <code>white-space</code> (<code>normal</code>, <code>nowrap</code>,
+      <code>pre</code>, <code>pre-wrap</code>, <code>pre-line</code>, <code>break-spaces</code>), and
+      <code>text-transform</code> is already applied. The article's kicker is written "Field notes"
+      under <code>text-transform: uppercase</code>, and the measurer is only ever asked about
+      "FIELD NOTES".
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/workbench/src/lib.rs</figcaption>
+<pre><code>.tree-row {
+    <span class="at">display</span>: flex;
+    <span class="at">align-items</span>: center;
+    <span class="at">height</span>: <span class="n">22px</span>;
+    <span class="at">white-space</span>: nowrap;
+}</code></pre>
+</figure>
+    <p>
+      <code>letter-spacing</code>, <code>line-height</code>, <code>font-family</code>,
+      <code>font-size</code>, <code>font-weight</code> and <code>font-style</code> all reach the
+      measurer in a <code>TextStyle</code>. Generated content (<code>::before</code> and
+      <code>::after</code>) is measured like any other text.
+    </p>
+
+    <h2 id="measurer">The measurer</h2>
+    <p>
+      <code>HtmlConfig::measurer</code> takes anything that implements <code>TextMeasurer</code>.
+      Without one, <code>ParleyMeasurer</code> measures with Parley, the text engine blitz-dom
+      ships with. The trait has one method:
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>dioxus_compose::html</figcaption>
+<pre><code><span class="k">pub</span> <span class="k">trait</span> <span class="ty">TextMeasurer</span> {
+    <span class="k">fn</span> <span class="f">measure</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">request</span>: &amp;<span class="ty">TextMeasureRequest</span>&lt;'_&gt;) -&gt; <span class="ty">TextMetrics</span>;
+}
+
+<span class="c">// The request: text, style, width and white space.</span>
+<span class="c">// WidthConstraint is MaxContent, MinContent or AtMost(width).</span>
+<span class="c">// The answer: width, height, first_baseline and line_count, in CSS pixels.</span></code></pre>
+</figure>
+    <p>
+      Layout may ask about the same text several times under different widths, because a flex item
+      is asked for its narrowest and widest sizes before it gets its final one. So the answer must
+      depend only on the request.
+    </p>
+    <p>
+      The examples' tests use a measurer whose answers can be worked out on paper: every character
+      is half the font size wide and every line 1.25 times the font size tall. That is why their
+      expected rectangles are exact numbers.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/support/src/lib.rs, trimmed</figcaption>
+<pre><code><span class="k">impl</span> <span class="ty">TextMeasurer</span> <span class="k">for</span> <span class="ty">Measurer</span> {
+    <span class="k">fn</span> <span class="f">measure</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">request</span>: &amp;<span class="ty">TextMeasureRequest</span>&lt;'_&gt;) -&gt; <span class="ty">TextMetrics</span> {
+        <span class="k">let</span> advance = request.style.font_size * <span class="n">0.5</span> + request.style.letter_spacing;
+        <span class="k">let</span> line = <span class="f">line_height</span>(request.style);
+        <span class="k">let</span> max_chars = <span class="k">match</span> request.width {
+            <span class="ty">WidthConstraint</span>::<span class="ty">MaxContent</span> =&gt; usize::<span class="ty">MAX</span>,
+            <span class="ty">WidthConstraint</span>::<span class="ty">MinContent</span> =&gt; <span class="n">0</span>,
+            <span class="ty">WidthConstraint</span>::<span class="ty">AtMost</span>(width) =&gt; (width / advance + <span class="n">1e</span>-<span class="n">3</span>).<span class="f">floor</span>() <span class="k">as</span> usize,
+        };
+        <span class="k">let</span> lines = <span class="f">break_lines</span>(request.text, max_chars);
+        <span class="k">let</span> width = lines
+            .<span class="f">iter</span>()
+            .<span class="f">map</span>(|line| line.<span class="f">chars</span>().<span class="f">count</span>() <span class="k">as</span> f32 * advance)
+            .<span class="f">fold</span>(<span class="n">0.0</span>, f32::max);
+        <span class="ty">TextMetrics</span> {
+            width,
+            <span class="at">height</span>: lines.<span class="f">len</span>() <span class="k">as</span> f32 * line,
+            <span class="at">first_baseline</span>: line * <span class="n">0.75</span>,
+            <span class="at">line_count</span>: lines.<span class="f">len</span>() <span class="k">as</span> u32,
+        }
+    }
+}</code></pre>
+</figure>
+
+    <h2 id="coverage">Which text goes through it</h2>
+    <p>
+      Your measurer sizes a run of text that is all in one font, with no inline box in it and no
+      inline element that pads or borders it. That covers most labels, headings and paragraphs, and
+      text inside a plain inline element such as an <code>a</code>. Everything else is handed back
+      to blitz-dom's own layout and measured by Parley:
+    </p>
+    <ul>
+      <li>a paragraph that mixes fonts, such as plain text with <code>strong</code> or
+        <code>em</code> in it;</li>
+      <li>text inside table cells;</li>
+      <li>form controls and replaced elements such as <code>img</code>.</li>
+    </ul>
+    <p>
+      This is <span class="pill partial">partial</span>, because the plan is for every run to be
+      measured by the engine that draws it.
+    </p>
+
+    <h2 id="compose">Measuring with Compose</h2>
+    <p>
+      Parley's sizes do not match Chromium's closely enough. On the VS Code workbench, 6 of 22 line
+      breaks fell in a different place, a line's width differed by up to 14.3%, and a glyph
+      moved by up to 39.89px, mostly because Parley does not pick the optical size of Apple's system font. Boxes
+      matched to within 1px when the text was sized as VS Code sized it.
+    </p>
+    <p>
+      So the Host will ask the renderer how big a run is, during layout, in one synchronous call,
+      and Compose will answer with the font it draws with. The renderer side of that call is being
+      written in compose-rust (<span class="pill partial">partial</span>,
+      <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). The
+      <code>TextMeasurer</code> trait is the seam it plugs into, so an app that sets no measurer
+      gets Compose's answers without changing anything.
+    </p>
+
+    <h2 id="planned">Not yet</h2>
+    <ul>
+      <li><strong>System text size and zoom.</strong> <span class="pill planned">planned</span>
+        HTML screens will zoom as a whole, the way VS Code's <code>window.zoomLevel</code> does, so
+        rows, icons and text grow together and nothing is clipped. The starting zoom will follow the
+        system's text size.</li>
+      <li><strong>Markdown.</strong> <span class="pill planned">planned</span> A separate crate,
+        <code>dioxus-compose-markdown</code>, that turns Markdown into an ordinary <code>rsx!</code>
+        tree of Compose widgets, streaming included
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="layout.html"><span>Previous</span>&larr; Layout and CSS</a>
+      <a class="next" href="forms-and-events.html"><span>Next</span>Forms and events &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

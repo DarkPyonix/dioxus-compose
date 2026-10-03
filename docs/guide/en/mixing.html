@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mixing the two · dioxus-compose guide</title>
+<meta name="description" content="The plan for putting HTML and CSS and Compose widgets on one screen in dioxus-compose: HTML islands inside widgets, widgets inside HTML, and one theme for both. Planned, not built.">
+<link rel="alternate" hreflang="en" href="mixing.html">
+<link rel="alternate" hreflang="ko" href="../ko/mixing.html">
+<link rel="alternate" hreflang="x-default" href="mixing.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="mixing.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/mixing.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html" aria-current="page">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#today">Today</a></li>
+        <li><a href="#worlds">One node, one world</a></li>
+        <li><a href="#islands">HTML inside a widget</a></li>
+        <li><a href="#widgets-in-html">Widgets inside HTML</a></li>
+        <li><a href="#rules">The rules across the seam</a></li>
+        <li><a href="#status">Status</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Mixing the two</p>
+    <h1>HTML and widgets on one screen <span class="pill planned">planned</span></h1>
+    <p class="lede">
+      Both vocabularies are in the crate today, and an <code>rsx!</code> block uses one of them.
+      Putting both on one screen is decided and not built. This page describes the design so you
+      can see where it is going; none of it works yet.
+    </p>
+
+    <h2 id="today">Today</h2>
+    <p>
+      An app picks one prelude. <code>dioxus_compose::html::prelude::*</code> names the HTML elements
+      and <code>dioxus_compose::prelude::*</code> names the widgets, each as
+      <code>dioxus_elements</code>, so a block of <code>rsx!</code> sees one set or the other. The
+      widget path draws today; the HTML path is laid out and planned but not drawn
+      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), and mixing builds
+      on that bridge.
+    </p>
+
+    <h2 id="worlds">One node, one world</h2>
+    <p>
+      Every node will belong to exactly one world, decided by its element name: a widget name this
+      crate defines is a widget, and anything else is HTML. The two meet only at placeholder nodes,
+      so neither world has to understand the other's rules.
+    </p>
+
+    <h2 id="islands">HTML inside a widget</h2>
+    <p>
+      An <code>HtmlView</code> widget will hold an HTML island. Its size comes from the Compose
+      layout around it, and the Host lays the HTML out at that width. When the window resizes, only
+      that island is laid out again.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>illustrative: HtmlView is planned and does not compile today</figcaption>
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">Column</span> {
+        <span class="at">fill_max_width</span>: <span class="k">true</span>,
+        <span class="ty">TopAppBar</span> { <span class="at">title</span>: <span class="s">"Release notes"</span> }
+        <span class="ty">HtmlView</span> {
+            <span class="at">weight</span>: <span class="n">1.0</span>,
+            article { <span class="at">class</span>: <span class="s">"notes"</span>,
+                h1 { <span class="s">"Version 0.2"</span> }
+                p { <span class="s">"Screens written with HTML and CSS are drawn."</span> }
+            }
+        }
+    }
+}</code></pre>
+</figure>
+
+    <h2 id="widgets-in-html">Widgets inside HTML</h2>
+    <p>
+      A widget inside HTML will be a box whose contents CSS does not know, like an image. Its natural
+      size will be asked of the renderer during layout, with the same synchronous call that measures
+      text, so a <code>TextField</code> or a <code>DatePicker</code> sits on a line at the size
+      Compose gives it and the text around it flows past.
+    </p>
+
+    <h2 id="rules">The rules across the seam</h2>
+    <ul>
+      <li><strong>CSS styles the HTML world only.</strong> A widget node takes the properties that
+        place its box (position, size, margins), and its inside is drawn by the design system.</li>
+      <li><strong>Events follow each world.</strong> HTML hit-testing stops at a widget's box, and
+        Compose handles what is inside it. A click on a widget inside a <code>div</code> reaches the
+        widget's handler first and then bubbles to the <code>div</code>'s <code>onclick</code>, as
+        CSS event flow says.</li>
+      <li><strong>Scroll, focus and selection belong to the renderer</strong> in both worlds, and a
+        field follows the same input method rules in both.</li>
+      <li><strong>One theme.</strong> Both worlds will use the same colour roles, with CSS variables
+        tied to them, so a theme change reaches both in the same frame.</li>
+    </ul>
+
+    <h2 id="status">Status</h2>
+    <p>
+      <span class="pill planned">planned</span> The design is settled and is scheduled after the
+      HTML path draws on screen. <a href="https://github.com/DarkPyonix/dioxus-compose/issues/59">#59</a> tracks it; it builds on
+      <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>.
+    </p>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="composables.html"><span>Previous</span>&larr; Composable reference</a>
+      <a class="next" href="status.html"><span>Next</span>Status &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

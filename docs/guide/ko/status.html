@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>현황 · dioxus-compose 가이드</title>
+<meta name="description" content="dioxus-compose 가 지금 하는 것. HTML 과 CSS 경로와 Compose 위젯 경로의 항목마다 구현, 부분, 계획과 그것을 추적하는 GitHub 이슈를 적었습니다. 짧은 FAQ 도 있습니다.">
+<link rel="alternate" hreflang="en" href="../en/status.html">
+<link rel="alternate" hreflang="ko" href="status.html">
+<link rel="alternate" hreflang="x-default" href="../en/status.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/status.html" hreflang="en">EN</a>
+    <a href="status.html" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>HTML과 CSS</h2>
+      <ul>
+        <li><a href="overview.html">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="layout.html">레이아웃과 CSS</a></li>
+        <li><a href="text.html">텍스트</a></li>
+        <li><a href="forms-and-events.html">폼과 이벤트</a></li>
+        <li><a href="images.html">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html">rsx! 의 위젯</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html" aria-current="page">현황</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>이 페이지</h2>
+      <ul>
+        <li><a href="#html">HTML 과 CSS 경로</a></li>
+        <li><a href="#widgets">Compose 위젯 경로</a></li>
+        <li><a href="#platforms">위젯 경로의 플랫폼</a></li>
+        <li><a href="#faq">FAQ</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">현황</p>
+    <h1>지금 되는 것</h1>
+    <p class="lede">
+      구현은 이 저장소의 코드와 그것을 실행하는 통과 테스트가 함께 있다는 뜻입니다. 부분은 일부가 있고,
+      어느 부분인지 이 페이지에 적었다는 뜻입니다. 계획은 설계했지만 만들지 않았다는 뜻입니다.
+    </p>
+
+    <h2 id="html">HTML 과 CSS 경로</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">상태</th><th scope="col">항목</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill works">구현</span></td><td>HTML 요소로 쓴 Dioxus 앱을 창 없는 blitz-dom 문서(<code>HtmlDom</code>)에서 실행하고, 스타일시트를 Stylo 로 풀기</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>레이아웃: 블록과 인라인 흐름, flexbox, grid, 표, <code>position</code> relative / absolute / fixed, <code>z-index</code>, <code>min-width: fit-content</code>, <code>box-sizing</code></td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>장식: 배경색, 변마다의 테두리, 모서리 반지름, <code>box-shadow</code>, <code>opacity</code>, <code>visibility</code></td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>overflow: 클리핑, 두 축 어느 쪽이든 스크롤 컨테이너</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>배경: 선형과 원형 그라디언트, 배경 이미지, <code>object-fit</code>. 앱이 넘기는 <code>ImageResolver</code> 를 거치며 아무것도 내려받지 않음</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>텍스트: 인라인 조각, <code>white-space</code>, <code>text-transform</code>, <code>letter-spacing</code>, 생성된 내용, 바꿔 끼울 수 있는 <code>TextMeasurer</code></td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>이벤트: 전파와 브라우저 기본 동작을 포함한 클릭, <code>input</code> / <code>change</code> / <code>submit</code>, <code>select</code>, 체크박스, 라디오 그룹, label, 비제어 입력란</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>키가 있는 목록, 바뀐 것만 알려 주는 그리기 목록 diff 와 계획 diff</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>사용자 정의 속성과 <code>prefers-color-scheme</code> 으로 테마 주기</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td><code>&lt;script&gt;</code> 를 실행하지 않음</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>VS Code 가 잰 텍스트 크기로 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(<code>dioxus-compose/tests/fr34_box_tolerance.rs</code>, 2026-10-03 macOS 에서 측정)</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td><code>samples/</code> 의 예제 열한 개. 각각 손으로 계산한 배치와, 렌더러가 부를 것과 같은 호출로 Host 에서 테스트됨</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 그리기 원소의 계획은 있지만, 그것을 compose-rust 렌더러(그 <code>AbsoluteBox</code>)에 넘기는 다리가 없어 아직 그려지지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>Compose 로 텍스트 재기. 측정기는 글꼴이 하나인 텍스트를 재고, 글꼴이 섞인 문단, 표 칸, 입력 컨트롤은 Parley 가 잼. 동기 측정 호출은 compose-rust 에서 만드는 중(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>CSS 변환: <code>translate</code> 는 동작, <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code> 은 그리지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>CSS transition 과 animation: 불투명도, 변환, 색은 렌더러에서(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>), 폭, 높이, 여백은 Host 를 거쳐(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>HTML 화면의 키보드 이벤트와 포커스, 실행 중 시스템 색 구성표 변화 따라가기. 둘 다 렌더러 다리와 함께 옴(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>시스템 글자 크기에서 시작해 VS Code 처럼 HTML 화면 확대하기(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/58">#58</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>한 화면에 HTML 과 위젯 함께 두기(<a href="mixing.html">두 방식 섞기</a>)(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/59">#59</a>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="widgets">Compose 위젯 경로</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">상태</th><th scope="col">항목</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill works">구현</span></td><td>위젯 목록, 모디파이어, 키 소비를 포함한 이벤트, 비제어 <code>TextField</code></td></tr>
+          <tr><td><span class="pill works">구현</span></td><td><code>LazyColumn</code> 과 <code>LazyRow</code> 창 단위 처리: 렌더러가 범위를 묻고 Host 는 그 범위만 만듦</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td>역할 기반 계약 하나 뒤의 디자인 시스템 일곱 개, 통일 또는 호스트 플랫폼 따르기</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>스트리밍 텍스트: 덧붙인 꼬리를 프레임마다 모으지만 <code>rsx!</code> 수준 API 는 없음</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>마크다운 크레이트 <code>dioxus-compose-markdown</code>, 스트리밍을 포함해 마크다운을 위젯으로(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="platforms">위젯 경로의 플랫폼</h2>
+    <p>
+      렌더러와 그 빌드는 compose-rust 의 것입니다. 플랫폼마다 지금까지 보인 것은 다음과 같습니다.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">플랫폼</th><th scope="col">상태</th><th scope="col">근거</th></tr></thead>
+        <tbody>
+          <tr><td>macOS (arm64)</td><td><span class="pill works">구현</span></td><td>한글 입력을 포함해 직접 써 봄. Java 런타임 없는 파일 하나</td></tr>
+          <tr><td>Android</td><td><span class="pill works">구현</span></td><td>예제 앱이 에뮬레이터에서 돎</td></tr>
+          <tr><td>Web (wasm)</td><td><span class="pill works">구현</span></td><td>브라우저에서 화면이 그려지고 클릭이 Rust 에 닿음</td></tr>
+          <tr><td>Windows, Linux</td><td><span class="pill partial">부분</span></td><td>CI 에서 빌드되고 시작됨. 직접 써 보지는 않음</td></tr>
+          <tr><td>iOS</td><td><span class="pill partial">부분</span></td><td>시뮬레이터 스모크 테스트에서 빌드되고 시작됨</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="faq">FAQ</h2>
+    <dl>
+      <dt>Dioxus 웹 앱을 그대로 가져올 수 있나요?</dt>
+      <dd>HTML 경로가 받는 것이 그 <code>rsx!</code> 와 CSS 이므로 화면은 배치됩니다. 렌더러 다리가 생기기
+        전까지는 그려지지 않고, 브라우저 API 나 JavaScript 를 부르는 부분은 여기에 대응하는 것이 없습니다.</dd>
+      <dt>JavaScript 를 실행하나요?</dt>
+      <dd>아니요. <code>&lt;script&gt;</code> 는 아무 일도 하지 않습니다. 동작은 Rust 로 씁니다.</dd>
+      <dt>어딘가에 웹뷰가 있나요?</dt>
+      <dd>아니요. CSS 는 Rust 에서 blitz-dom 이 계산하고, 그 결과를 Compose 가 그립니다.</dd>
+      <dt>crates.io 에 있나요?</dt>
+      <dd>0.0.0 이 위젯 경로만 있는 초기 스냅숏으로 있습니다. HTML 경로는 <code>develop</code> 브랜치에
+        있습니다. <a href="getting-started.html">시작하기</a>를 보십시오.</dd>
+      <dt>Kotlin 을 알아야 하나요?</dt>
+      <dd>아니요. 렌더러는 compose-rust 를 거쳐 미리 빌드된 채로 오고, 코드는 Rust 만 씁니다.</dd>
+    </dl>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="prev" href="mixing.html"><span>이전</span>&larr; 두 방식 섞기</a>
+      <a class="next" href="architecture.html"><span>다음</span>아키텍처 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

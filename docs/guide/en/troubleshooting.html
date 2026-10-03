@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Troubleshooting · dioxus-compose guide</title>
-<meta name="description" content="How to recognise a missing renderer library, the wrong JDK, an IME that aborts, and the other failures this project actually hit.">
+<meta name="description" content="Problems you can hit with dioxus-compose and how to recognise them: HTML screens that open no window, text sizes, images that draw nothing, clicks that reach nothing, the renderer download, IME composition, and ProtocolError events.">
 <link rel="alternate" hreflang="en" href="troubleshooting.html">
 <link rel="alternate" hreflang="ko" href="../ko/troubleshooting.html">
 <link rel="alternate" hreflang="x-default" href="troubleshooting.html">
@@ -28,209 +28,151 @@
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <nav aria-label="Guide">
-      <h2>Guide</h2>
+      <h2>HTML and CSS</h2>
       <ul>
         <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
-        <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
         <li><a href="composables.html">Composable reference</a></li>
-        <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
-        <li><a href="design-systems.html">Design systems</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
         <li><a href="architecture.html">Architecture</a></li>
         <li><a href="troubleshooting.html" aria-current="page">Troubleshooting</a></li>
       </ul>
       <h2>On this page</h2>
       <ul>
-        <li><a href="#no-library">No renderer library</a></li>
-        <li><a href="#no-window">Builds, but no window</a></li>
-        <li><a href="#wrong-jdk">Wrong JDK</a></li>
-        <li><a href="#main-thread">Nothing happens, or the app hangs</a></li>
-        <li><a href="#ime">IME problems</a></li>
-        <li><a href="#protocol">Protocol errors</a></li>
-        <li><a href="#stale">Stale generated Kotlin</a></li>
+        <li><a href="#no-window">An HTML app opens no window</a></li>
+        <li><a href="#stale">A click or a change does not show</a></li>
+        <li><a href="#typing">Typing does not update the page</a></li>
+        <li><a href="#text">Text is a different size than in a browser</a></li>
+        <li><a href="#images">An image draws nothing or has no size</a></li>
+        <li><a href="#css">A CSS feature has no effect</a></li>
+        <li><a href="#renderer">The build cannot get the renderer</a></li>
+        <li><a href="#ime">IME problems on the widget path</a></li>
+        <li><a href="#protocol">ProtocolError events</a></li>
       </ul>
     </nav>
   </aside>
 
   <main id="main">
     <p class="eyebrow">Troubleshooting</p>
-    <h1>Failures we actually hit, and how to recognise them</h1>
+    <h1>Problems, and how to recognise them</h1>
     <p class="lede">
-      Almost every problem on this page is one of three things wearing different clothes: the
-      renderer library is not where the linker expects it, the JDK is the wrong one, or something
-      touched the text path that should not have.
+      Most surprises on the HTML path come from what is not built yet, and most on the widget path
+      from the text input rules. Each section says which case you are in and why it behaves that
+      way.
     </p>
 
-    <h2 id="no-library">The linker cannot find the renderer</h2>
+    <h2 id="no-window">An HTML app opens no window</h2>
     <p>
-      Symptoms: <code>cargo run</code> fails with
-      <code>library not found for -ldioxus_compose_renderer</code>, or the binary links but dies at
-      startup with a dynamic-loader error naming
-      <code>libdioxus_compose_renderer.dylib</code>.
-    </p>
-    <p>
-      Outside this repository the build downloads the renderer, so a failure here comes with a
-      message that says what it tried and what to do. Read it: it distinguishes no network from a
-      release that does not carry your target, and the offline case names the two files to place
-      and the directory to place them in.
-    </p>
-    <p>
-      Inside a checkout the build prefers the workspace copy at
-      <code>dioxus-compose-renderer/build/native-image/dist/lib</code> over anything downloadable,
-      and tells that library it lives there, so that anything linking it records the same path.
-      If that directory exists but is empty, the renderer has not been built.
-    </p>
-    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>shell</figcaption>
-<pre><code>ls dioxus-compose-renderer/build/native-image/dist/lib
-<span class="c"># expect: libdioxus_compose_renderer.dylib, libskiko-macos-*.dylib,</span>
-<span class="c">#         libjawt.dylib, libawt_lwawt.dylib</span>
-
-./dioxus-compose-renderer/desktop/scripts/build-native.sh</code></pre>
-    </figure>
-    <p>
-      Do not move the four files apart. The renderer finds itself with <code>dladdr</code> and
-      derives <code>java.home</code>, <code>skiko.library.path</code> and
-      <code>skiko.data.path</code> from that one directory. A library copied somewhere on its own
-      will load and then fail to find Skia or AWT.
+      This is expected today. <code>HtmlDom</code> runs the app, lays it out and returns a display
+      list and a plan, and nothing hands the plan to the renderer yet
+      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). Check your screen
+      by its layout instead: print the entries, or test them the way the examples do.
     </p>
 
-    <h2 id="no-window">It builds and runs, but no window appears</h2>
+    <h2 id="stale">A click or a change does not show</h2>
     <p>
-      A binary built with <code>default-features = false</code> no longer does this quietly: it
-      prints what is missing and exits non-zero, so a silent window-less run is not that case. A
-      build with the <code>mock-renderer</code> feature is silent on purpose, because it is asking
-      for a Host with no window.
+      Handlers run inside <code>click</code>, <code>input</code> and the other calls, and the
+      document changes only when you call <code>render</code>. The display list changes only on the
+      next <code>layout</code>. So the order is always: the call, <code>render</code>,
+      <code>layout</code>.
     </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code>dom.<span class="f">click</span>(x, y);
+dom.<span class="f">render</span>();
+dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">600.0</span>, <span class="n">1.0</span>);</code></pre>
+</figure>
     <p>
-      If the feature <em>is</em> on, isolate the halves. Run the smoke test: it links a minimal C
-      host against the library and calls <code>run</code> directly.
-    </p>
-    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>shell</figcaption>
-<pre><code>./dioxus-compose-renderer/desktop/scripts/smoke-test.sh</code></pre>
-    </figure>
-    <p>
-      A window there and none from Rust points at the linking of your binary. No window there
-      either means the renderer library itself is bad, usually the next problem.
+      <code>click</code> returns <code>None</code> when nothing under the point listens, which is
+      also what happens when the point is outside a clipping ancestor, or under a box with a higher
+      <code>z-index</code>. <code>hit_test(x, y)</code> tells you which node is there.
     </p>
 
-    <h2 id="wrong-jdk">Wrong JDK: the AWT-on-Darwin trap</h2>
+    <h2 id="typing">Typing does not update the page</h2>
     <p>
-      Symptom: the build script stops with
-      <code>error: set GRAALVM_HOME to a Liberica NIK 25 Full installation</code>. That is the good
-      case, it caught the problem for you.
-    </p>
-    <p>
-      The bad case is a <code>native-image</code> on <code>PATH</code> from upstream GraalVM that
-      builds something which then fails at runtime with missing AWT classes or symbols, or opens no
-      window at all. Upstream GraalVM skips AWT on Darwin
-      (<a href="https://github.com/oracle/graal/issues/13272">oracle/graal#13272</a>); Liberica NIK
-      Full links it statically. Check what you are actually pointing at:
-    </p>
-    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>shell</figcaption>
-<pre><code><span class="k">echo</span> <span class="s">"$GRAALVM_HOME"</span>
-<span class="s">"$GRAALVM_HOME"</span>/bin/native-image --version   <span class="c"># expect a Liberica NIK 25 build</span></code></pre>
-    </figure>
-    <p>
-      A related variant: the JVM metadata run and the native build must use the same JDK. The
-      scripts enforce this by setting <code>JAVA_HOME</code> from <code>GRAALVM_HOME</code> for the
-      metadata run. If you run the renderer on some other JVM and then build the image, the
-      reachability metadata describes a JDK that is not the one being compiled.
+      Fields are uncontrolled on purpose: the renderer owns their text, and committed text reaches
+      <code>oninput</code>. The page changes only if your handler writes a signal that something
+      renders from, as <code>samples/chat</code> does with its draft. See
+      <a href="forms-and-events.html#fields">Fields are uncontrolled</a>.
     </p>
 
-    <h2 id="main-thread">The app starts and immediately returns, or hangs on exit</h2>
+    <h2 id="text">Text is a different size than in a browser</h2>
     <p>
-      <code>dioxus_compose_renderer_run</code> must be called on the process main thread. Called
-      anywhere else on macOS it returns <code>RUN_NOT_MAIN_THREAD</code> (<code>-4</code>) without
-      doing anything. Other negative codes from the same entry point are worth knowing:
-    </p>
-    <div class="tablewrap">
-      <table>
-        <thead><tr><th scope="col">Code</th><th scope="col">Meaning</th></tr></thead>
-        <tbody>
-          <tr><td><code>-1</code></td><td>The GraalVM isolate could not be created.</td></tr>
-          <tr><td><code>-2</code></td><td><code>run</code> was called twice.</td></tr>
-          <tr><td><code>-3</code></td><td>The library could not work out its own path, so the runtime layout is unknown.</td></tr>
-          <tr><td><code>-4</code></td><td>Not on the main thread.</td></tr>
-          <tr><td><code>-5</code></td><td>The renderer thread could not be started.</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>
-      If instead the window closes but the process never exits, that is the AppKit re-entry
-      problem: AWT was allowed to own the event loop and re-entered <code>[NSApp run]</code>, so
-      control never returns to the Host. The design keeps the main thread running
-      <code>NSApplication</code> itself and the renderer on a secondary thread precisely to avoid
-      this.
+      Without a measurer of your own, text is measured by Parley, and Parley's sizes differ from
+      Chromium's on macOS by enough to move line breaks. Mixed-font paragraphs, table cells and form
+      controls are measured by Parley even when you supply a measurer. Measuring with Compose is
+      <span class="pill partial">partial</span>
+      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). Box layout itself
+      matches VS Code to within 1px when the text sizes match.
     </p>
 
-    <h2 id="ime">IME problems</h2>
-    <p>Three distinct failures, easy to confuse:</p>
-    <h3>Enter submits and eats the syllable</h3>
+    <h2 id="images">An image draws nothing or has no size</h2>
+    <ul>
+      <li>There is no <code>ImageResolver</code>, or it answered <code>None</code>. Nothing is ever
+        fetched, so an image the resolver does not know draws nothing.</li>
+      <li>An <code>&lt;img&gt;</code> with no <code>width</code> or <code>height</code> takes its
+        size from the resolver's <code>size</code>. Without that answer it has no natural size.</li>
+      <li>The URL is not the one you expected. Relative URLs are resolved against
+        <code>HtmlConfig::base_url</code>, or passed as written when there is none. Log what your
+        resolver is asked.</li>
+    </ul>
+
+    <h2 id="css">A CSS feature has no effect</h2>
+    <ul>
+      <li><code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code> and
+        <code>transform-origin</code> are not drawn; <code>translate</code> is
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+      <li>Transitions and animations do not play
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
+        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>).</li>
+      <li>A <code>&lt;script&gt;</code> does nothing, by design. Behaviour is written in Rust.</li>
+      <li>The user-agent stylesheet gives <code>body</code> an 8px margin, as a browser's does.
+        The examples start their stylesheets with <code>body { margin: 0; }</code>.</li>
+    </ul>
+
+    <h2 id="renderer">The build cannot get the renderer</h2>
     <p>
-      You type Korean, press <kbd>Enter</kbd> to commit the syllable, and the message is sent
-      without it. This means key events reached the Host while composition was in progress. The
-      rule is that the renderer does not forward key events during composition at all; an
-      <kbd>Enter</kbd> mid-composition is a commit, not a submit. If you see this, the bug is on
-      the renderer side of the key path, not in your handler.
+      The renderer is a prebuilt native library, downloaded for your target by compose-rust's build
+      script and checked against its published checksum. When that fails, the build says what it
+      tried. Building with no network, using a renderer you built yourself, and moving the download
+      cache are covered in <a href="https://github.com/DarkPyonix/compose-rust">compose-rust</a>'s
+      README.
     </p>
-    <h3>Composition resets as you type</h3>
-    <p>
-      Characters disappear or re-order while a syllable is being built. That is the signature of
-      text round-tripping through the Host: something set the field's value from Rust during
-      composition. <code>TextField</code> is uncontrolled for this reason, and the
-      <code>SetText</code> command is defined to wait until composition ends.
-    </p>
-    <h3>No composition at all in the native image</h3>
-    <p>
-      Korean input works when the renderer runs on the JVM but not in the native image. By design
-      this is treated as a <em>configuration</em> problem, not an implementation one: AOT
-      compilation does not change which code paths run. Check, in order, the
-      <code>InputMethodDescriptor</code> ServiceLoader resources, the JNI and reflection metadata,
-      the locale and charset resources, and CJK font fallback.
-    </p>
-    <div class="warn">
-      <span class="label">Collect metadata while typing Korean</span>
-      <p>
-        The tracing agent only records code paths that actually execute. Running the app and
-        closing it records nothing about the IME. Run
-        <code>collect-metadata.sh</code>, then type Korean into the window, click things and let the
-        window close on its own. Metadata collected without doing that will produce a native image
-        whose text input is broken in exactly this way.
-      </p>
-    </div>
-    <p>
-      The full manual checklist, composing 안녕하세요, jamo-level backspace, cursor movement
-      committing the composition, insertion mid-sentence, Enter handling in a multiline field,
-      pasting mixed text, candidate windows for Japanese and Chinese, no tofu glyphs, lives in
-      SPEC §6 and is run against the native image, not the JVM shell.
-    </p>
+
+    <h2 id="ime">IME problems on the widget path</h2>
+    <p><strong>Enter submits and the syllable is lost.</strong> You type Korean, press
+      <kbd>Enter</kbd> to commit the syllable, and the message is sent without it. Key events reached
+      Rust during composition, which the renderer must never allow. That is a renderer bug, not a
+      problem in your handler.</p>
+    <p><strong>Composition resets as you type.</strong> Characters vanish or reorder while a
+      syllable is being built. Something set the field's text from Rust during composition.
+      <code>TextField</code> has no <code>value</code> for exactly this reason; clear a field by
+      giving it a new identity.</p>
 
     <h2 id="protocol">ProtocolError events</h2>
     <p>
-      A widget type, property or modifier the renderer does not recognise does not crash anything.
-      The renderer sends a <code>ProtocolError</code> event carrying a code and a message. Seeing
-      one means the two sides disagree about the schema, normally a renderer library built from
-      different sources than the Rust crate you are running. Rebuild the renderer.
-    </p>
-    <p>
-      An outright mismatch is caught earlier: the handshake compares a schema hash and a protocol
-      version and refuses to initialise if they differ.
-    </p>
-
-    <h2 id="stale">The test suite fails on generated Kotlin</h2>
-    <p>
-      A failing test that compares generated Kotlin against the checked-in file means you changed
-      the Rust schema without regenerating. This is the intended alarm: the schema is the single
-      source of truth, and a Kotlin interpreter that was not updated should fail the build rather
-      than produce a mismatch at runtime.
+      A widget, property or modifier the renderer does not recognise does not crash anything. The
+      renderer sends a <code>ProtocolError</code> event with a code and a message. It means the two
+      halves disagree about the schema, normally a renderer from a different compose-rust version
+      than the one your build links. A larger mismatch is caught earlier: the schema hash is compared
+      at start-up, and the two halves refuse to run together.
     </p>
 
     <nav class="pagenav" aria-label="Pagination">
       <a class="prev" href="architecture.html"><span>Previous</span>&larr; Architecture</a>
-      <a class="next" href="overview.html"><span>Next</span>Overview &rarr;</a>
     </nav>
   </main>
 </div>
@@ -238,8 +180,8 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
-    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>Guide last reviewed against the repository on 2026-09-20</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
   </div>
 </footer>
 

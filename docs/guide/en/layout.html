@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Layout and CSS · dioxus-compose guide</title>
+<meta name="description" content="Which CSS layout dioxus-compose computes today (block, inline, flexbox, grid, tables, positioning, box decorations) with examples from samples/, and what is still planned.">
+<link rel="alternate" hreflang="en" href="layout.html">
+<link rel="alternate" hreflang="ko" href="../ko/layout.html">
+<link rel="alternate" hreflang="x-default" href="layout.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="layout.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/layout.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html" aria-current="page">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#stylesheets">Stylesheets</a></li>
+        <li><a href="#flow">Block and inline flow</a></li>
+        <li><a href="#flex">Flexbox</a></li>
+        <li><a href="#grid">Grid</a></li>
+        <li><a href="#tables">Tables</a></li>
+        <li><a href="#positioning">Positioning and stacking</a></li>
+        <li><a href="#decorations">Backgrounds, borders and effects</a></li>
+        <li><a href="#plan">What the renderer will receive</a></li>
+        <li><a href="#planned">Not yet</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Layout and CSS</p>
+    <h1>The CSS you already write</h1>
+    <p class="lede">
+      Layout is blitz-dom's: Stylo resolves the CSS and Taffy places the boxes, the same engines
+      Dioxus's own native renderer uses. So the support is broad, and this page shows it through
+      the examples rather than as a list of properties.
+    </p>
+
+    <h2 id="stylesheets">Stylesheets</h2>
+    <p>
+      Stylesheets go in <code>HtmlConfig::stylesheets</code>, applied in order after the user-agent
+      sheet, as if each were a <code>&lt;style&gt;</code> in <code>&lt;head&gt;</code>. The
+      <code>style</code> attribute works too. The user-agent sheet is blitz-dom's, much like a
+      browser's (<code>body { margin: 8px }</code>), and
+      <code>HtmlConfig::user_agent_stylesheet</code> replaces it when you want a blank start.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code><span class="k">let</span> dom = <span class="ty">HtmlDom</span>::<span class="f">with_config</span>(app, <span class="ty">HtmlConfig</span> {
+    <span class="at">stylesheets</span>: <span class="f">vec!</span>[<span class="ty">STYLE</span>.<span class="f">to_string</span>()],
+    ..<span class="ty">HtmlConfig</span>::<span class="f">default</span>()
+});</code></pre>
+</figure>
+
+    <h2 id="flow">Block and inline flow</h2>
+    <p>
+      Blocks stack and their vertical margins collapse. In <code>samples/hello</code> the heading's
+      16px bottom margin and the paragraph's 12px top margin collapse to 16px, so the paragraph sits
+      at y = 96 rather than 108. A paragraph that mixes plain text, <code>strong</code> and
+      <code>em</code> is one inline formatting context with a run per style, all on one line.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/hello/src/lib.rs</figcaption>
+<pre><code>p { <span class="at">id</span>: <span class="s">"intro"</span>,
+    <span class="s">"This page is "</span>
+    strong { <span class="at">id</span>: <span class="s">"bold"</span>, <span class="s">"HTML"</span> }
+    <span class="s">" and "</span>
+    em { <span class="at">id</span>: <span class="s">"italic"</span>, <span class="s">"CSS"</span> }
+    <span class="s">", laid out by the Host."</span>
+}</code></pre>
+</figure>
+
+    <h2 id="flex">Flexbox</h2>
+    <p>
+      <code>samples/dashboard</code> is flexbox from top to bottom: a column for the page, a row for
+      the top bar, a column for the sidebar and a wrapping row of cards. In a 1000px viewport three
+      200px cards fit a row; at 700px the row holds two and the rest wrap. Its tests check both.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/dashboard/src/lib.rs</figcaption>
+<pre><code>.app { <span class="at">display</span>: flex; <span class="at">flex-direction</span>: column; <span class="at">height</span>: <span class="n">100vh</span>; }
+
+.topbar {
+    <span class="at">display</span>: flex;
+    <span class="at">justify-content</span>: space-between;
+    <span class="at">align-items</span>: center;
+    <span class="at">flex-shrink</span>: <span class="n">0</span>;
+    <span class="at">height</span>: <span class="n">56px</span>;
+}
+
+.body { <span class="at">display</span>: flex; <span class="at">flex</span>: <span class="n">1</span>; <span class="at">align-items</span>: stretch; <span class="at">min-height</span>: <span class="n">0</span>; }
+
+.cards {
+    <span class="at">display</span>: flex;
+    <span class="at">flex-wrap</span>: wrap;
+    <span class="at">gap</span>: <span class="n">16px</span>;
+    <span class="at">justify-content</span>: flex-start;
+    <span class="at">align-items</span>: flex-start;
+}</code></pre>
+</figure>
+    <p>
+      <code>min-width: fit-content</code> works as well. In <code>samples/workbench</code> a tab is
+      120px wide unless its name needs more, so <code>layout_engine.rs</code> gets 185px while
+      <code>main.rs</code> keeps 120px.
+    </p>
+
+    <h2 id="grid">Grid</h2>
+    <p>
+      <code>samples/gallery</code> uses <code>repeat(auto-fill, minmax(160px, 1fr))</code>. In an
+      800px viewport that is four 183px columns, and a tile with <code>grid-column: span 2</code>
+      covers two of them (378px).
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.grid {
+    <span class="at">display</span>: grid;
+    <span class="at">grid-template-columns</span>: repeat(auto-fill, minmax(<span class="n">160px</span>, <span class="n">1fr</span>));
+    <span class="at">grid-auto-rows</span>: <span class="n">140px</span>;
+    <span class="at">gap</span>: <span class="n">12px</span>;
+    <span class="at">padding</span>: <span class="n">16px</span>;
+}
+
+.tile.wide { <span class="at">grid-column</span>: span <span class="n">2</span>; }</code></pre>
+</figure>
+
+    <h2 id="tables">Tables</h2>
+    <p>
+      <code>table</code>, <code>thead</code>, <code>tbody</code>, <code>tr</code>, <code>th</code>
+      and <code>td</code> lay out as a table. In <code>samples/table</code> the column widths come
+      from the header cells, <code>border-collapse: collapse</code> shares borders, and
+      <code>text-align: right</code> puts the amounts against the right edge. The table is at least
+      640px wide, so on a 480px page it scrolls sideways inside its wrapper (see
+      <a href="scrolling-and-overlays.html">Scrolling and overlays</a>).
+    </p>
+
+    <h2 id="positioning">Positioning and stacking</h2>
+    <p>
+      <code>position: relative</code>, <code>absolute</code> and <code>fixed</code> work, and
+      <code>z-index</code> decides both the paint order and which box a click lands on. In
+      <code>samples/overlay</code> a menu is placed at <code>top: 100%</code> of its button's
+      wrapper and paints over the content below it, and a dialog is fixed to the centre of the
+      viewport over a fixed backdrop.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/overlay/src/lib.rs</figcaption>
+<pre><code>.menu-anchor { <span class="at">position</span>: relative; <span class="at">display</span>: flex; }
+.menu { <span class="at">position</span>: absolute; <span class="at">top</span>: <span class="n">100</span>%; <span class="at">left</span>: <span class="n">0</span>; <span class="at">z-index</span>: <span class="n">10</span>; <span class="at">width</span>: <span class="n">180px</span>; }
+
+.dialog {
+    <span class="at">position</span>: fixed;
+    <span class="at">top</span>: <span class="n">50</span>%;
+    <span class="at">left</span>: <span class="n">50</span>%;
+    <span class="at">z-index</span>: <span class="n">101</span>;
+    <span class="at">width</span>: <span class="n">320px</span>;
+    <span class="at">transform</span>: translate(-<span class="n">50</span>%, -<span class="n">50</span>%);
+}</code></pre>
+</figure>
+    <p>
+      The dialog's <code>translate(-50%, -50%)</code> works because translations are added to the
+      box's position. Other transforms are not drawn yet; see <a href="#planned">below</a>.
+    </p>
+
+    <h2 id="decorations">Backgrounds, borders and effects</h2>
+    <p>
+      Every box carries its resolved decorations into the display list: background colour and
+      background images (<a href="images.html">Images and backgrounds</a>), borders per side with
+      their own widths and colours, corner radii reduced the way CSS reduces radii that would
+      overlap, <code>box-shadow</code>, and <code>opacity</code> multiplied down through its
+      ancestors. <code>visibility: hidden</code> keeps a box's place and draws nothing, and
+      <code>display: none</code> removes it.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/dashboard/src/lib.rs</figcaption>
+<pre><code>.card {
+    <span class="at">width</span>: <span class="n">200px</span>;
+    <span class="at">height</span>: <span class="n">120px</span>;
+    <span class="at">padding</span>: <span class="n">16px</span>;
+    <span class="at">background</span>: <span class="n">#ffffff</span>;
+    <span class="at">border</span>: <span class="n">1px</span> solid <span class="n">#d0d7de</span>;
+    <span class="at">border-radius</span>: <span class="n">12px</span>;
+    <span class="at">box-shadow</span>: <span class="n">0</span> <span class="n">1px</span> <span class="n">3px</span> rgba(<span class="n">31</span>, <span class="n">35</span>, <span class="n">40</span>, <span class="n">0.2</span>);
+}
+
+.card.alert { <span class="at">border-left</span>: <span class="n">4px</span> solid <span class="n">#cf222e</span>; }
+.card.stale { <span class="at">opacity</span>: <span class="n">0.6</span>; }</code></pre>
+</figure>
+
+    <h2 id="plan">What the renderer will receive</h2>
+    <p>
+      The renderer does not get CSS. <code>plan_from</code> turns the display list into drawing
+      elements, and the choices it makes keep that tree small:
+    </p>
+    <ul>
+      <li>Equal borders become one border; unequal ones become one per side. Equal radii become one
+        shape; unequal ones one radius per corner.</li>
+      <li>Absolute positions become offsets inside the parent box, so a moved box is one offset
+        change rather than a change to every descendant.</li>
+      <li><code>overflow: auto</code> or <code>scroll</code> becomes a scroll container holding its
+        content.</li>
+      <li><code>opacity</code> becomes one alpha on the group, and <code>z-index</code> becomes child
+        order.</li>
+      <li>After an update, <code>diff</code> reports only what changed. Changing one box's
+        background is one change in the plan, and a test checks exactly that.</li>
+    </ul>
+
+    <h2 id="planned">Not yet</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">CSS</th><th scope="col">Today</th><th scope="col">Status</th></tr></thead>
+        <tbody>
+          <tr><td><code>transform</code>: <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code></td><td>Stylo computes them; only translations reach the box. A box with any other transform stays where layout put it.</td><td><span class="pill planned">planned</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a></td></tr>
+          <tr><td><code>transition</code>, <code>animation</code>, <code>@keyframes</code></td><td>Every animated value stays at its first value.</td><td><span class="pill planned">planned</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a> (opacity, transform, colours), <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a> (width, height, margins)</td></tr>
+          <tr><td>Page zoom like VS Code's (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>+</kbd>)</td><td>The page is laid out at the scale you pass to <code>layout</code>.</td><td><span class="pill planned">planned</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Animations will be split by what they move. Properties that do not change layout (opacity,
+      transforms, colours) will play in the renderer on Compose's own animation clock, so the Host
+      does no work per frame. Properties that do change layout will be recomputed by the Host each
+      frame, because only the layout engine can say where everything else moves.
+    </p>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="getting-started.html"><span>Previous</span>&larr; Getting started</a>
+      <a class="next" href="text.html"><span>Next</span>Text &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

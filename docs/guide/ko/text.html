@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>텍스트 · dioxus-compose 가이드</title>
+<meta name="description" content="dioxus-compose 가 HTML 화면에서 텍스트의 크기와 자리를 정하는 방법. 인라인 조각, white-space 와 text-transform, TextMeasurer 트레이트, 지금 측정기를 거치는 텍스트, 그리고 Compose 로 재는 방향을 설명합니다.">
+<link rel="alternate" hreflang="en" href="../en/text.html">
+<link rel="alternate" hreflang="ko" href="text.html">
+<link rel="alternate" hreflang="x-default" href="../en/text.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/text.html" hreflang="en">EN</a>
+    <a href="text.html" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>HTML과 CSS</h2>
+      <ul>
+        <li><a href="overview.html">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="layout.html">레이아웃과 CSS</a></li>
+        <li><a href="text.html" aria-current="page">텍스트</a></li>
+        <li><a href="forms-and-events.html">폼과 이벤트</a></li>
+        <li><a href="images.html">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html">rsx! 의 위젯</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html">현황</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>이 페이지</h2>
+      <ul>
+        <li><a href="#runs">텍스트 조각</a></li>
+        <li><a href="#css">공백과 변환</a></li>
+        <li><a href="#measurer">측정기</a></li>
+        <li><a href="#coverage">측정기를 거치는 텍스트</a></li>
+        <li><a href="#compose">Compose 로 재기</a></li>
+        <li><a href="#planned">아직 없는 것</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">텍스트</p>
+    <h1>텍스트는 그리는 곳에서 잽니다</h1>
+    <p class="lede">
+      텍스트는 두 쪽이 반드시 같은 답을 내야 하는 유일한 것입니다. Host 가 줄이 어디서 끊길지 정하고,
+      렌더러는 받은 폭 안에서 같은 글꼴로 그립니다. 두 엔진이 다르게 재면 글자가 겹치거나 틈이
+      생기므로, 측정기는 바꿔 끼울 수 있게 되어 있습니다.
+    </p>
+
+    <h2 id="runs">텍스트 조각</h2>
+    <p>
+      그리기 목록의 모든 텍스트는 <code>TextRun</code> 입니다. 그려질 글자, 사각형, 그 글자를 가진
+      요소, 차지한 줄 수를 담습니다. 스타일이 섞인 문단은 스타일마다 조각이 하나씩 원문 순서대로
+      있습니다. <code>samples/article</code> 에서 문단은 열 폭에서 줄바꿈되고, 코드 블록은
+      <code>pre</code> 가 쓴 그대로의 줄을 지키므로 줄바꿈되지 않습니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/article/src/lib.rs, 줄임</figcaption>
+<pre><code>p { <span class="at">id</span>: <span class="s">"first"</span>,
+    <span class="s">"A Dioxus app written with HTML tags and CSS does not need a browser to be laid "</span>
+    <span class="s">"out. The Host runs the same style and layout engines a browser would, and hands "</span>
+    <span class="s">"the renderer nothing but rectangles, colours and runs of text."</span>
+}
+pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span class="s">"{SAMPLE}"</span> } }</code></pre>
+</figure>
+
+    <h2 id="css">공백과 변환</h2>
+    <p>
+      측정기에는 그려질 모습 그대로의 텍스트가 갑니다. 공백은 <code>white-space</code>
+      (<code>normal</code>, <code>nowrap</code>, <code>pre</code>, <code>pre-wrap</code>,
+      <code>pre-line</code>, <code>break-spaces</code>)에 따라 이미 합쳐지거나 보존되어 있고,
+      <code>text-transform</code> 도 이미 적용되어 있습니다. article 의 머리 문구는
+      <code>text-transform: uppercase</code> 아래에 "Field notes" 로 쓰여 있고, 측정기가 받는 것은
+      언제나 "FIELD NOTES" 입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/workbench/src/lib.rs</figcaption>
+<pre><code>.tree-row {
+    <span class="at">display</span>: flex;
+    <span class="at">align-items</span>: center;
+    <span class="at">height</span>: <span class="n">22px</span>;
+    <span class="at">white-space</span>: nowrap;
+}</code></pre>
+</figure>
+    <p>
+      <code>letter-spacing</code>, <code>line-height</code>, <code>font-family</code>,
+      <code>font-size</code>, <code>font-weight</code>, <code>font-style</code> 는 모두
+      <code>TextStyle</code> 에 담겨 측정기로 갑니다. 생성된 내용(<code>::before</code>,
+      <code>::after</code>)도 다른 텍스트와 똑같이 잽니다.
+    </p>
+
+    <h2 id="measurer">측정기</h2>
+    <p>
+      <code>HtmlConfig::measurer</code> 는 <code>TextMeasurer</code> 를 구현한 것이면 무엇이든
+      받습니다. 넘기지 않으면 blitz-dom 에 딸린 텍스트 엔진 Parley 로 재는
+      <code>ParleyMeasurer</code> 를 씁니다. 트레이트의 메서드는 하나입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>dioxus_compose::html</figcaption>
+<pre><code><span class="k">pub</span> <span class="k">trait</span> <span class="ty">TextMeasurer</span> {
+    <span class="k">fn</span> <span class="f">measure</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">request</span>: &amp;<span class="ty">TextMeasureRequest</span>&lt;'_&gt;) -&gt; <span class="ty">TextMetrics</span>;
+}
+
+<span class="c">// The request: text, style, width and white space.</span>
+<span class="c">// WidthConstraint is MaxContent, MinContent or AtMost(width).</span>
+<span class="c">// The answer: width, height, first_baseline and line_count, in CSS pixels.</span></code></pre>
+</figure>
+    <p>
+      flex 항목은 최종 폭을 받기 전에 가장 좁은 크기와 가장 넓은 크기를 먼저 질문받으므로, 레이아웃은
+      같은 텍스트를 다른 폭으로 여러 번 물을 수 있습니다. 그래서 답은 요청에만 달려 있어야 합니다.
+    </p>
+    <p>
+      예제의 테스트는 종이에서 계산할 수 있는 측정기를 씁니다. 모든 글자는 글꼴 크기의 절반 폭이고,
+      한 줄은 글꼴 크기의 1.25 배 높이입니다. 그래서 테스트의 기대 사각형이 정확한 수치입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/support/src/lib.rs, 줄임</figcaption>
+<pre><code><span class="k">impl</span> <span class="ty">TextMeasurer</span> <span class="k">for</span> <span class="ty">Measurer</span> {
+    <span class="k">fn</span> <span class="f">measure</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">request</span>: &amp;<span class="ty">TextMeasureRequest</span>&lt;'_&gt;) -&gt; <span class="ty">TextMetrics</span> {
+        <span class="k">let</span> advance = request.style.font_size * <span class="n">0.5</span> + request.style.letter_spacing;
+        <span class="k">let</span> line = <span class="f">line_height</span>(request.style);
+        <span class="k">let</span> max_chars = <span class="k">match</span> request.width {
+            <span class="ty">WidthConstraint</span>::<span class="ty">MaxContent</span> =&gt; usize::<span class="ty">MAX</span>,
+            <span class="ty">WidthConstraint</span>::<span class="ty">MinContent</span> =&gt; <span class="n">0</span>,
+            <span class="ty">WidthConstraint</span>::<span class="ty">AtMost</span>(width) =&gt; (width / advance + <span class="n">1e</span>-<span class="n">3</span>).<span class="f">floor</span>() <span class="k">as</span> usize,
+        };
+        <span class="k">let</span> lines = <span class="f">break_lines</span>(request.text, max_chars);
+        <span class="k">let</span> width = lines
+            .<span class="f">iter</span>()
+            .<span class="f">map</span>(|line| line.<span class="f">chars</span>().<span class="f">count</span>() <span class="k">as</span> f32 * advance)
+            .<span class="f">fold</span>(<span class="n">0.0</span>, f32::max);
+        <span class="ty">TextMetrics</span> {
+            width,
+            <span class="at">height</span>: lines.<span class="f">len</span>() <span class="k">as</span> f32 * line,
+            <span class="at">first_baseline</span>: line * <span class="n">0.75</span>,
+            <span class="at">line_count</span>: lines.<span class="f">len</span>() <span class="k">as</span> u32,
+        }
+    }
+}</code></pre>
+</figure>
+
+    <h2 id="coverage">측정기를 거치는 텍스트</h2>
+    <p>
+      측정기는 글꼴이 하나뿐이고, 안에 인라인 상자가 없고, 글자에 여백이나 테두리를 주는 인라인 요소가
+      없는 텍스트를 잽니다. 대부분의 라벨, 제목, 문단과 <code>a</code> 같은 단순한 인라인 요소 안의
+      텍스트가 여기에 들어갑니다. 나머지는 blitz-dom 자체의 레이아웃으로 돌아가 Parley 가 잽니다.
+    </p>
+    <ul>
+      <li>보통 글자에 <code>strong</code> 이나 <code>em</code> 이 섞인 문단처럼 글꼴이 섞인 문단</li>
+      <li>표 칸 안의 텍스트</li>
+      <li>입력 컨트롤과 <code>img</code> 같은 대체 요소</li>
+    </ul>
+    <p>
+      모든 조각을 그리는 엔진이 재는 것이 목표이므로 이 부분은 <span class="pill partial">부분</span>
+      입니다.
+    </p>
+
+    <h2 id="compose">Compose 로 재기</h2>
+    <p>
+      Parley 의 크기는 Chromium 과 충분히 맞지 않습니다. VS Code 워크벤치에서 줄바꿈 22 곳 중 6 곳이
+      다른 자리에서 끊겼고, 한 줄의 폭이 최대 14.3% 달랐고, 글자 위치가 최대 39.89px 어긋났습니다.
+      주된 이유는 Parley 가 Apple 시스템 글꼴의 광학 크기를 고르지 않는 것입니다. 텍스트 크기를
+      VS Code 가 잰 값으로 넣으면 상자는 1px 이내로 맞았습니다.
+    </p>
+    <p>
+      그래서 Host 는 레이아웃 도중 동기 호출 한 번으로 렌더러에 텍스트 조각의 크기를 묻고, Compose 는
+      자신이 그릴 글꼴로 답하게 됩니다. 그 호출의 렌더러 쪽은 compose-rust 에서 만들고 있습니다
+      (<span class="pill partial">부분</span>,
+      <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 그 호출이 끼워지는
+      자리가 <code>TextMeasurer</code> 트레이트이므로, 측정기를 정하지 않은 앱은 아무것도 바꾸지 않고
+      Compose 의 답을 받게 됩니다.
+    </p>
+
+    <h2 id="planned">아직 없는 것</h2>
+    <ul>
+      <li><strong>시스템 글자 크기와 확대.</strong> <span class="pill planned">계획</span> HTML 화면은
+        VS Code 의 <code>window.zoomLevel</code> 처럼 화면 전체가 확대되어, 행과 아이콘과 글자가 같이
+        커지고 잘리는 것이 없게 됩니다. 확대의 시작값은 시스템 글자 크기를 따릅니다.</li>
+      <li><strong>마크다운.</strong> <span class="pill planned">계획</span> 마크다운을 Compose 위젯으로
+        된 보통의 <code>rsx!</code> 트리로 바꾸는 별도 크레이트 <code>dioxus-compose-markdown</code>
+        이며, 스트리밍도 포함합니다
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="prev" href="layout.html"><span>이전</span>&larr; 레이아웃과 CSS</a>
+      <a class="next" href="forms-and-events.html"><span>다음</span>폼과 이벤트 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>
