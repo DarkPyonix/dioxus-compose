@@ -354,10 +354,6 @@ const EXTENSION_PROPERTY_TAGS: &[u16] = &[27];
 /// A widget or property in the tables that the descriptor leaves out is one that a
 /// generator reading the descriptor would not know exists.
 #[test]
-#[ignore = "red today: the property table has Section (tag 76) and SCHEMA_DESCRIPTOR does \
-            not name it. Adding `section` to the descriptor changes SCHEMA_HASH, which means \
-            regenerating Protocol.gen.kt and the vectors and rebuilding the Renderer, so it \
-            waits for whoever can do that. Remove this line in the same change."]
 fn fr7_the_schema_descriptor_names_every_widget_and_property_in_order() {
     let widgets = descriptor_list(SCHEMA_DESCRIPTOR, "widgets");
     let core_widgets: Vec<&str> = WIDGET_SCHEMA
