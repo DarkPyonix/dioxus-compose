@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scrolling and overlays · dioxus-compose guide</title>
+<meta name="description" content="Scroll containers from CSS overflow, clipping, a chat that grows as text arrives, and things drawn over the page (menus, dialogs, fixed backdrops) on HTML screens. With code from samples/chat, samples/table and samples/overlay.">
+<link rel="alternate" hreflang="en" href="scrolling-and-overlays.html">
+<link rel="alternate" hreflang="ko" href="../ko/scrolling-and-overlays.html">
+<link rel="alternate" hreflang="x-default" href="scrolling-and-overlays.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="scrolling-and-overlays.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/scrolling-and-overlays.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html" aria-current="page">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#scroll">Scroll containers</a></li>
+        <li><a href="#growing">A conversation that grows</a></li>
+        <li><a href="#clip">Clipping</a></li>
+        <li><a href="#overlays">Menus and dialogs</a></li>
+        <li><a href="#planned">Not yet</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Scrolling and overlays</p>
+    <h1>Scroll containers, clips and layers</h1>
+    <p class="lede">
+      <code>overflow</code> decides what scrolls and what clips, and positioning decides what sits
+      over the page. The Host lays out each scroll container's full content once; the renderer
+      scrolls it, because a scroll position owned by Rust would always be a frame behind.
+    </p>
+
+    <h2 id="scroll">Scroll containers</h2>
+    <p>
+      A box with <code>overflow: auto</code> or <code>scroll</code> on an axis scrolls on that axis.
+      Its display-list entry carries a scroll container: the viewport you see through, the size of
+      everything inside, and which axes scroll. <code>overflow: hidden</code> on the other axis
+      clips without scrolling. Every box inside records its nearest scrolling ancestor, so the
+      renderer knows what moves with each scroll position.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/chat/src/lib.rs</figcaption>
+<pre><code>.chat { <span class="at">display</span>: flex; <span class="at">flex-direction</span>: column; <span class="at">height</span>: <span class="n">100</span>%; }
+
+.messages {
+    <span class="at">flex</span>: <span class="n">1</span>;
+    <span class="at">min-height</span>: <span class="n">0</span>;
+    <span class="at">overflow-x</span>: hidden;
+    <span class="at">overflow-y</span>: auto;
+    <span class="at">display</span>: flex;
+    <span class="at">flex-direction</span>: column;
+    <span class="at">gap</span>: <span class="n">8px</span>;
+    <span class="at">padding</span>: <span class="n">12px</span>;
+}
+
+.composer { <span class="at">display</span>: flex; <span class="at">gap</span>: <span class="n">8px</span>; <span class="at">padding</span>: <span class="n">12px</span>; <span class="at">border-top</span>: <span class="n">1px</span> solid <span class="n">#e2e8f0</span>; }</code></pre>
+</figure>
+    <p>
+      In <code>samples/chat</code> the message list takes the room above the composer and scrolls
+      vertically only. <code>min-height: 0</code> matters here, as it does in a browser: without it
+      a flex item will not shrink below its content, and the list would push the composer off the
+      bottom.
+    </p>
+    <p>
+      <code>samples/table</code> scrolls the other way. Its table is at least 640px wide, so on a
+      480px page the 432px wrapper scrolls sideways through all 640px.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/table/src/lib.rs</figcaption>
+<pre><code>.table-wrap {
+    <span class="at">overflow-x</span>: auto;
+    <span class="at">overflow-y</span>: hidden;
+    <span class="at">border-radius</span>: <span class="n">8px</span>;
+}
+
+.invoices { <span class="at">width</span>: <span class="n">100</span>%; <span class="at">min-width</span>: <span class="n">640px</span>; <span class="at">border-collapse</span>: collapse; }</code></pre>
+</figure>
+
+    <h2 id="growing">A conversation that grows</h2>
+    <p>
+      An assistant's reply arrives a piece at a time. <code>samples/chat</code> keeps the
+      conversation in signals provided as context, and <code>Chat::receive</code> appends each piece
+      to the last message. Only that message's entry changes, in its text and its size. Nothing
+      else in the list is sent again.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/chat/src/lib.rs, trimmed</figcaption>
+<pre><code><span class="k">pub</span> <span class="k">fn</span> <span class="f">receive</span>(<span class="k">mut</span> <span class="k">self</span>, <span class="at">chunk</span>: &amp;str) {
+    <span class="k">let</span> <span class="k">mut</span> messages = <span class="k">self</span>.messages.<span class="f">write</span>();
+    <span class="k">if</span> <span class="k">let</span> <span class="k">Some</span>(last) = messages
+        .<span class="f">last_mut</span>()
+        .<span class="f">filter</span>(|last| last.from == <span class="ty">Sender</span>::<span class="ty">Assistant</span>)
+    {
+        last.text.<span class="f">push_str</span>(chunk);
+        <span class="k">return</span>;
+    }
+    <span class="c">// A piece that arrives after the user has spoken starts a new reply.</span>
+}</code></pre>
+</figure>
+    <p>
+      The test appends ", where to?" to "Sure" and checks that the layout diff names one changed
+      entry, the reply, with no removals and no change of order.
+    </p>
+
+    <h2 id="clip">Clipping</h2>
+    <p>
+      A box whose <code>overflow</code> is anything but <code>visible</code> clips its descendants to
+      its padding box, with its rounded corners. Each descendant's entry records the clip its
+      ancestors impose, and a click outside that clip does not reach it. In
+      <code>samples/overlay</code> a 400 by 160 banner inside a 240 by 80 preview is cut to the
+      preview, and a click where the banner would have been, outside the preview, misses it.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/overlay/src/lib.rs</figcaption>
+<pre><code>.preview {
+    <span class="at">width</span>: <span class="n">240px</span>;
+    <span class="at">height</span>: <span class="n">80px</span>;
+    <span class="at">overflow</span>: hidden;
+    <span class="at">border-radius</span>: <span class="n">8px</span>;
+}
+.preview-banner { <span class="at">width</span>: <span class="n">400px</span>; <span class="at">height</span>: <span class="n">160px</span>; <span class="at">background-color</span>: <span class="n">#6366f1</span>; }</code></pre>
+</figure>
+
+    <h2 id="overlays">Menus and dialogs</h2>
+    <p>
+      An overlay is ordinary HTML: show it with <code>if</code>, place it with positioning, and stack
+      it with <code>z-index</code>. Paint order and hit-testing both follow the stacking, so a click
+      on the backdrop reaches the backdrop and not the button under it.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/overlay/src/lib.rs, trimmed</figcaption>
+<pre><code><span class="k">if</span> show_dialog {
+    div { <span class="at">id</span>: <span class="s">"backdrop"</span>, <span class="at">class</span>: <span class="s">"backdrop"</span>, <span class="at">onclick</span>: <span class="k">move</span> |_| dialog_open.<span class="f">set</span>(<span class="k">false</span>) }
+    div { <span class="at">id</span>: <span class="s">"dialog"</span>, <span class="at">class</span>: <span class="s">"dialog"</span>, <span class="at">role</span>: <span class="s">"dialog"</span>,
+        h2 { <span class="at">id</span>: <span class="s">"dialog-title"</span>, <span class="s">"Delete project?"</span> }
+        p { <span class="s">"This cannot be undone."</span> }
+        div { <span class="at">class</span>: <span class="s">"actions"</span>,
+            button { <span class="at">id</span>: <span class="s">"cancel"</span>, <span class="at">onclick</span>: <span class="k">move</span> |_| dialog_open.<span class="f">set</span>(<span class="k">false</span>), <span class="s">"Cancel"</span> }
+            button {
+                <span class="at">id</span>: <span class="s">"confirm"</span>,
+                <span class="at">class</span>: <span class="s">"danger"</span>,
+                <span class="at">onclick</span>: <span class="k">move</span> |_| {
+                    deleted.<span class="f">set</span>(<span class="k">true</span>);
+                    dialog_open.<span class="f">set</span>(<span class="k">false</span>);
+                },
+                <span class="s">"Delete"</span>
+            }
+        }
+    }
+}</code></pre>
+</figure>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/overlay/src/lib.rs</figcaption>
+<pre><code>.backdrop {
+    <span class="at">position</span>: fixed;
+    <span class="at">top</span>: <span class="n">0</span>;
+    <span class="at">right</span>: <span class="n">0</span>;
+    <span class="at">bottom</span>: <span class="n">0</span>;
+    <span class="at">left</span>: <span class="n">0</span>;
+    <span class="at">z-index</span>: <span class="n">100</span>;
+    <span class="at">background-color</span>: <span class="n">#0f172a</span>;
+    <span class="at">opacity</span>: <span class="n">0.5</span>;
+}</code></pre>
+</figure>
+    <p>
+      A <code>position: fixed</code> box is placed against the viewport wherever it sits in the
+      document, so the backdrop covers the whole window and the dialog is centred in it.
+    </p>
+
+    <h2 id="planned">Not yet</h2>
+    <ul>
+      <li><strong>Scrolling on screen.</strong> <span class="pill partial">partial</span> In the plan
+        a scroll container becomes a Compose scroll container holding its content, and the renderer
+        will own the scroll position. Nothing scrolls until the renderer bridge lands
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>Animated overlays.</strong> <span class="pill planned">planned</span> A menu or
+        dialog that fades or slides in with a CSS transition does not animate today: its animated
+        properties stay at their first value
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="images.html"><span>Previous</span>&larr; Images and backgrounds</a>
+      <a class="next" href="theming.html"><span>Next</span>Theming &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

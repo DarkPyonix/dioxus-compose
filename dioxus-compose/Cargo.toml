@@ -15,41 +15,58 @@ categories = ["gui"]
 readme = "../README.md"
 
 [lib]
-crate-type = ["rlib", "cdylib", "staticlib"]
+# An rlib only. The boundary's C, JNI and wasm exports are compose-rust's, and so is the
+# cdylib and staticlib that carry them: an application's own crate is the shared library
+# or the archive (see the samples), and this crate is linked into it like any other.
 # The lib has no #[bench] items, but `cargo bench` would still run its default test
 # harness, which rejects Criterion's flags (--quick, --noplot). Benchmarks live in
 # benches/host.rs with harness = false.
 bench = false
 
-[[bin]]
-name = "codegen"
-path = "src/bin/codegen.rs"
-bench = false
-
 [features]
-# The renderer is what draws, so it is on by default. Adding this crate to a Cargo.toml is
-# meant to be the whole setup: the build script finds a renderer for the target or
-# downloads the release artifact for this exact version, checksum first. Turn it off with
-# `default-features = false` for a headless or documentation build, and know that the
-# resulting binary says so on standard error and exits non-zero rather than opening no
-# window and returning 0.
+# The renderer is compose-rust's to find, download and link. These only pass the choice
+# through, so an application that names this crate alone gets compose-rust's defaults:
+# `native-renderer` resolves or downloads the renderer for the target, and
+# `mock-renderer` drives the boundary with no renderer at all, for tests and for
+# embedding the Host in something that draws for itself.
 default = ["native-renderer"]
-# Drives the boundary with no renderer at all, for tests and for embedding the Host in
-# something that draws for itself. Suppresses the renderer download.
-mock-renderer = []
-native-renderer = []
+mock-renderer = ["compose-rust/mock-renderer"]
+native-renderer = ["compose-rust/native-renderer"]
 
 [dependencies]
+# The boundary, the protocol, the schema and the renderer it links. Pinned to one commit,
+# because the records the Host writes and the renderer reads are versioned together: a
+# different compose-rust is a different wire format.
+compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", rev = "22822c130a8211de7f65e0320db5e6a4db1a8bb1", default-features = false }
 dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
 dioxus-signals.workspace = true
+# Element and event definitions for `div`, `span`, `onclick` and the rest, for screens
+# written with HTML elements and CSS. Without `serialize`: nothing here crosses a wire as
+# JSON.
+dioxus-html = { version = "0.7.10", default-features = false }
 
-# The Android shims are generated against jni-rs. Nothing here is linked into a desktop,
-# iOS or web build, and the alternative bindings generators were rejected for their
-# per-call cost.
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
+# Screens written with HTML and CSS are laid out inside the Host by blitz-dom. Pinned to
+# the versions experiments/blitz-layout-probe was measured against, so a later release
+# cannot move a box without anyone noticing.
+blitz-dom = "=0.2.4"
+blitz-html = "=0.2.0"
+blitz-traits = "=0.2.0"
+# The versions blitz-dom 0.2.4 resolves. Named here because the layout pass reads Parley's
+# lines and stylo's computed values directly.
+parley = "=0.6.0"
+style = { package = "stylo", version = "=0.8.0" }
+# The same Taffy blitz-dom drives, with the same algorithms switched on: the layout pass
+# implements Taffy's tree traits over blitz-dom's nodes.
+taffy = { version = "0.9", default-features = false, features = [
+    "std",
+    "flexbox",
+    "grid",
+    "block_layout",
+    "content_size",
+    "calc",
+] }
 
 # Criterion is not built for the browser. Its default features pull in rayon, which
 # refuses to compile for a wasm target, and building the Host as a wasm module compiles
@@ -60,6 +77,12 @@ criterion = "0.7"
 
 [[bench]]
 name = "host"
+harness = false
+
+# What one frame of the HTML and CSS path costs the Host. Its recorded numbers are under
+# `html_frame` in benches/baseline.json.
+[[bench]]
+name = "html_frame"
 harness = false
 
 [[example]]

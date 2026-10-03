@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Overview · dioxus-compose guide</title>
-<meta name="description" content="dioxus-compose lets Rust code author declarative UI with Dioxus while an AOT-compiled Compose Multiplatform renderer draws it. No webview, no bundled JVM.">
-<link rel="alternate" hreflang="en" href="../en/overview.html">
+<meta name="description" content="What dioxus-compose is: a Dioxus renderer for apps written with HTML tags and CSS, drawn natively by Compose Multiplatform with no webview. How the HTML path works, what it does today, and the second way to write a screen with Compose widget names.">
+<link rel="alternate" hreflang="en" href="overview.html">
 <link rel="alternate" hreflang="ko" href="../ko/overview.html">
-<link rel="alternate" hreflang="x-default" href="../en/overview.html">
+<link rel="alternate" hreflang="x-default" href="overview.html">
 <link rel="stylesheet" href="../assets/style.css?v=20">
 <script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 </head>
@@ -28,208 +28,215 @@
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <nav aria-label="Guide">
-      <h2>Guide</h2>
+      <h2>HTML and CSS</h2>
       <ul>
         <li><a href="overview.html" aria-current="page">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
-        <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
         <li><a href="composables.html">Composable reference</a></li>
-        <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
-        <li><a href="design-systems.html">Design systems</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
         <li><a href="architecture.html">Architecture</a></li>
         <li><a href="troubleshooting.html">Troubleshooting</a></li>
       </ul>
-      <h2>Repository</h2>
+      <h2>On this page</h2>
       <ul>
-        <li><a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></li>
-        <li><a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a></li>
-        <li><a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/PROJECT.md">PROJECT.md</a></li>
+        <li><a href="#two-ways">Two ways to write a screen</a></li>
+        <li><a href="#example">What an app looks like</a></li>
+        <li><a href="#how">How the HTML path works</a></li>
+        <li><a href="#rules">Rules the HTML path keeps</a></li>
+        <li><a href="#accuracy">How close it is to a browser</a></li>
+        <li><a href="#why">Why it exists</a></li>
+        <li><a href="#next">Where to go next</a></li>
       </ul>
     </nav>
   </aside>
 
   <main id="main">
-    <div class="hero">
-      <p class="eyebrow">Native UI, written in Rust</p>
-      <h1>Author your UI with Dioxus. Let Compose draw it.</h1>
-      <p class="lede">
-        dioxus-compose is a GUI stack in which Rust code describes the interface with
-        <code>rsx!</code>, components and hooks, and an ahead-of-time compiled Compose
-        Multiplatform renderer paints it. No webview is embedded, and no JVM ships with
-        your application.
+    <p class="eyebrow">Overview</p>
+    <h1>A Dioxus renderer for HTML and CSS, drawn by Compose</h1>
+    <p class="lede">
+      dioxus-compose runs a Dioxus app written the way one is written for the web, with
+      <code>div</code>, <code>h1</code>, flexbox and a stylesheet, and draws it natively with
+      Compose Multiplatform through compose-rust. There is no webview and no JVM in what you ship.
+    </p>
+
+    <div class="warn">
+      <span class="label">Where it stands</span>
+      <p>
+        The HTML path lays a screen out and produces a drawing plan today, and it does not draw on
+        screen yet. The bridge that hands that plan to the renderer is not built
+        (<span class="pill partial">partial</span>,
+        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). Every claim on
+        these pages is checked by tests on the Host, and the <a href="status.html">status page</a>
+        lists what is implemented, partial and planned.
       </p>
-      <div class="cta">
-        <a class="btn" href="getting-started.html">Get started</a>
-        <a class="btn secondary" href="architecture.html">How it works</a>
-      </div>
     </div>
 
-    <h2>Why it exists</h2>
+    <h2 id="two-ways">Two ways to write a screen</h2>
     <p>
-      This stack is aimed at applications that stay open all day, where weight is felt every
-      hour. Web-based shells are not light: a webview brings a browser engine with it, and a
-      bundled JRE adds 80 to 120&nbsp;MB even after <code>jlink</code>.
+      The crate takes two vocabularies in <code>rsx!</code>, and both are always there. No feature
+      flag turns either one off, because the owner decided that one crate serves both kinds of app.
     </p>
-    <p>
-      The obvious answer, a pure-Rust UI framework, fails on the part that matters most for
-      anything text-driven: text itself. Korean, Japanese and Chinese input goes through the platform IME, and an
-      IME that is 90% right is an app you cannot use. Compose Multiplatform already has mature
-      text, IME and widget behaviour, so this project borrows exactly that and nothing else: Rust
-      keeps the application code, Compose becomes an interpreter for a UI tree that Rust sends it.
-    </p>
-
     <div class="tablewrap">
       <table>
-        <thead>
-          <tr><th scope="col">Constraint</th><th scope="col">Consequence</th></tr>
-        </thead>
+        <thead><tr><th scope="col">You write</th><th scope="col">Import</th><th scope="col">Today</th></tr></thead>
         <tbody>
-          <tr><td>No webview</td><td>No WKWebView, WebView2 or WebKitGTK; no Tauri, no wry.</td></tr>
-          <tr><td>No bundled JVM</td><td>Desktop ships as a GraalVM <code>native-image</code> shared library; iOS as a Kotlin/Native static archive.</td></tr>
-          <tr><td>No hand-written JNI or cinterop</td><td>Every boundary shim is generated from the Rust schema.</td></tr>
-          <tr><td>UI code lives in Rust</td><td>Kotlin is an implementation detail of the renderer, not a place you write features.</td></tr>
-          <tr><td>Compose-quality text and IME</td><td>No code path may bypass Compose's platform text input.</td></tr>
+          <tr><td>HTML elements and CSS: <code>div</code>, <code>span</code>, <code>input</code>, a stylesheet</td><td><code>dioxus_compose::html::prelude::*</code></td><td><span class="pill partial">partial</span> laid out and planned in the Host, not drawn yet</td></tr>
+          <tr><td>Compose widget names: <code>Column</code>, <code>Text</code>, <code>Button</code></td><td><code>dioxus_compose::prelude::*</code></td><td><span class="pill works">implemented</span> drawn through the renderer today</td></tr>
         </tbody>
       </table>
     </div>
-
-    <h2>What it looks like</h2>
     <p>
-      This is the <code>desktop_demo</code> example from the repository, shortened. The widget
-      names are Compose's; the attributes are their <code>snake_case</code> Rust spellings.
+      The HTML path is the centre of this guide, because most Dioxus apps are written that way. The
+      widget path has its own pages under <a href="widgets.html">Compose widgets</a>. An
+      <code>rsx!</code> block uses one vocabulary or the other, since each prelude names its own
+      elements. Putting both on one screen is <a href="mixing.html">planned</a>.
     </p>
 
-    <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>dioxus-compose/examples/desktop_demo.rs</figcaption>
-<pre><code><span class="k">use</span> dioxus_compose::prelude::*;
+    <h2 id="example">What an app looks like</h2>
+    <p>
+      This is the whole of <code>samples/hello</code>: a component and its stylesheet. Nothing in
+      it is specific to this crate except the import.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/hello/src/lib.rs, trimmed</figcaption>
+<pre><code><span class="k">use</span> dioxus_compose::html::prelude::*;
+<span class="k">use</span> dioxus_hooks::use_signal;
 
-<span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
-    <span class="k">let</span> <span class="k">mut</span> messages = <span class="f">use_signal</span>(<span class="ty">Vec</span>::&lt;<span class="ty">String</span>&gt;::new);
-    <span class="k">let</span> <span class="k">mut</span> draft = <span class="f">use_signal</span>(<span class="ty">String</span>::new);
+<span class="k">pub</span> <span class="k">const</span> <span class="ty">STYLE</span>: &amp;str = <span class="s">r#"
+body { margin: 0; font-family: system-ui, sans-serif; font-size: 16px; line-height: 1.5; }
+.page { padding: 40px 48px; }
+h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
+.link { color: #0969da; text-decoration: underline; cursor: pointer; }
+"#</span>;
+
+<span class="k">pub</span> <span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
+    <span class="k">let</span> <span class="k">mut</span> hellos = <span class="f">use_signal</span>(|| <span class="n">0u32</span>);
 
     <span class="f">rsx!</span> {
-        <span class="ty">Column</span> {
-            <span class="at">fill_max_width</span>: <span class="k">true</span>,
-            <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"dioxus-compose chat"</span> }
-            <span class="k">for</span> message <span class="k">in</span> messages() {
-                <span class="ty">Text</span> { <span class="at">text</span>: message }
-            }
-            <span class="ty">TextField</span> {
-                <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
-                <span class="at">multiline</span>: <span class="k">true</span>,
-                <span class="at">on_value_change</span>: <span class="k">move</span> |value| draft.<span class="f">set</span>(value),
-                <span class="at">on_key_down</span>: <span class="k">move</span> |event: <span class="ty">KeyEvent</span>| {
-                    <span class="k">if</span> event.<span class="f">key</span>() == <span class="ty">Key</span>::Enter &amp;&amp; !event.<span class="f">shift_key</span>() {
-                        <span class="c">// … push the draft into messages …</span>
-                        event.<span class="f">consume</span>();
-                    }
+        main { <span class="at">class</span>: <span class="s">"page"</span>,
+            h1 { <span class="at">id</span>: <span class="s">"title"</span>, <span class="s">"Hello, Dioxus"</span> }
+            p { <span class="at">id</span>: <span class="s">"action"</span>,
+                a {
+                    <span class="at">id</span>: <span class="s">"greet"</span>,
+                    <span class="at">class</span>: <span class="s">"link"</span>,
+                    <span class="at">href</span>: <span class="s">"#"</span>,
+                    <span class="at">onclick</span>: <span class="k">move</span> |event| {
+                        event.<span class="f">prevent_default</span>();
+                        hellos += <span class="n">1</span>;
+                    },
+                    <span class="s">"Say hello"</span>
                 }
             }
         }
     }
-}
-
-<span class="k">fn</span> <span class="f">main</span>() {
-    dioxus_compose::<span class="f">launch</span>(app);
 }</code></pre>
-    </figure>
+</figure>
 
-    <h2>Status</h2>
+    <h2 id="how">How the HTML path works</h2>
     <p>
-      This is an honest table, not a roadmap dressed as a feature list. macOS desktop is the
-      platform that has been used by hand; the others are built and smoke-tested by CI, which
-      proves rather less. Everything marked <em>planned</em> is designed and not implemented.
+      Styles and layout are computed inside the Host, the Rust side, by
+      <a href="https://github.com/DioxusLabs/blitz">blitz-dom</a> running without a window. The
+      renderer never sees CSS. It gets rectangles, colours and runs of text, which is all Compose
+      needs to draw them.
+    </p>
+    <ol>
+      <li><strong>Run the app.</strong> <code>HtmlDom</code> runs your component in a Dioxus
+        <code>VirtualDom</code> and applies its output to a blitz-dom document. Your root renders
+        into <code>&lt;body&gt;</code>.</li>
+      <li><strong>Resolve styles.</strong> Stylo, the CSS engine from Firefox, resolves your
+        stylesheets and the cascade.</li>
+      <li><strong>Lay out.</strong> Taffy places blocks, flex and grid containers and tables. Text is
+        sized by a <code>TextMeasurer</code> you can supply (see <a href="text.html">Text</a>).</li>
+      <li><strong>List what to draw.</strong> The result is a <code>DisplayList</code>: one entry per
+        box, in paint order, with its rectangle, background, border, radii, shadows, clip, opacity,
+        text runs, form field, image and scroll container.</li>
+      <li><strong>Plan the drawing.</strong> <code>plan_from</code> turns the list into a tree of
+        drawing elements (boxes placed inside their containers, scroll containers, text, fields,
+        images), and <code>diff</code> says what changed between two plans, node by node.</li>
+      <li><strong>Draw.</strong> The renderer draws the plan with Compose.
+        <span class="pill planned">planned</span> This step is the missing bridge
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+    </ol>
+    <p>
+      Events travel the other way. A click at a point reaches the Dioxus handler of the element
+      under it, and committed text from a field reaches its <code>oninput</code>. Today a test or an
+      embedder calls these on <code>HtmlDom</code> directly, as the renderer will once it draws.
     </p>
 
+    <h2 id="rules">Rules the HTML path keeps</h2>
+    <ul>
+      <li><strong>JavaScript never runs.</strong> A <code>&lt;script&gt;</code> element is an
+        ordinary element that the user-agent stylesheet hides, so a page cannot execute code you did
+        not write in Rust.</li>
+      <li><strong>Nothing is fetched.</strong> An <code>&lt;img src&gt;</code> or a CSS
+        <code>url()</code> is recorded as written. What draws it is your
+        <a href="images.html">image resolver</a>, so the app decides what it loads and from where.</li>
+      <li><strong>Fields are uncontrolled.</strong> The renderer owns a field's text while the user
+        edits it, and only committed text reaches Rust. Korean, Japanese and Chinese composition
+        never round-trips, because a round trip resets the syllable being typed.</li>
+      <li><strong>Scroll position, focus and selection belong to the renderer.</strong> They change
+        every frame, and owning them in Rust would put them a frame behind.</li>
+    </ul>
+
+    <h2 id="accuracy">How close it is to a browser</h2>
+    <p>
+      The reference is Chromium, which is what VS Code draws with. On 2026-10-03 three regions of
+      the VS Code workbench (the activity bar, the sidebar tree and the editor tabs) were laid out
+      with the Code-OSS CSS at scale 1 on macOS. With text sized as VS Code measured it, the boxes
+      came out as follows.
+    </p>
     <div class="tablewrap">
       <table>
-        <thead>
-          <tr><th scope="col">Platform</th><th scope="col">Status</th><th scope="col">How it is meant to work</th></tr>
-        </thead>
+        <thead><tr><th scope="col">Region</th><th scope="col">Boxes within 1px of VS Code</th><th scope="col">Largest difference</th></tr></thead>
         <tbody>
-          <tr>
-            <td>macOS desktop (arm64)</td>
-            <td><span class="pill works">Works</span></td>
-            <td>Renderer built with GraalVM <code>native-image --shared</code> on Liberica NIK 25 Full; the Rust binary links it. The Korean IME checklist and VoiceOver were confirmed by hand on this build on 2026-09-21.</td>
-          </tr>
-          <tr>
-            <td>Windows desktop (x64)</td>
-            <td><span class="pill partial">Builds and starts</span></td>
-            <td>Built with upstream GraalVM 25 and smoke-tested on every renderer change: the window opens, draws, closes cleanly and returns 0. A hosted runner cannot click, so pointer input is unproven there, and nobody has used it interactively.</td>
-          </tr>
-          <tr>
-            <td>Linux desktop (x64 and arm64)</td>
-            <td><span class="pill partial">Builds and starts</span></td>
-            <td>Both architectures build under Xvfb in CI and pass a headless startup smoke test. That is all it proves: no Linux desktop session has drawn this renderer.</td>
-          </tr>
-          <tr>
-            <td>iOS</td>
-            <td><span class="pill partial">Builds and starts</span></td>
-            <td>Kotlin/Native <code>-produce static</code> exporting the same C symbols. The protocol codec tests run on Kotlin/Native, the device and simulator archives build, and a simulator smoke test takes a screenshot. Released as an XCFramework.</td>
-          </tr>
-          <tr>
-            <td>Android</td>
-            <td><span class="pill partial">Runs on an emulator</span></td>
-            <td>Kotlin owns the process and the loop; Rust is a cdylib reached through generated JNI shims. Verified on an API&nbsp;36 emulator: the screen draws, rotation and a dark mode change keep the same process rather than rebuilding the tree, and a killed process comes back. One boundary call measured 101&nbsp;ns there, or 4.5&nbsp;ns for the one call short enough to skip the thread state transition, against a frame that is called a handful of times rather than once per node.</td>
-          </tr>
-          <tr>
-            <td>Web (wasm)</td>
-            <td><span class="pill partial">Draws in a browser</span></td>
-            <td>Kotlin owns the wasm linear memory and Rust imports it, so the batch arena is shared in place with no copying. Each boundary call goes through a generated JS forwarder, measured at about 12&nbsp;ns in Safari and not yet re-measured elsewhere.</td>
-          </tr>
+          <tr><td>Activity bar</td><td>29 of 29</td><td>0px</td></tr>
+          <tr><td>Sidebar tree</td><td>201 of 203 (99.0%)</td><td>4.00px</td></tr>
+          <tr><td>Editor tabs</td><td>94 of 94</td><td>0px</td></tr>
         </tbody>
       </table>
     </div>
+    <p>
+      The test is <code>dioxus-compose/tests/fr34_box_tolerance.rs</code>. Text measured by Parley,
+      the Host's own text engine, did not match: 6 of 22 line breaks fell in a different place. That
+      is why text will be measured by Compose, the engine that draws it
+      (<span class="pill partial">partial</span>,
+      <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+    </p>
 
-    <h3>Feature status</h3>
-    <div class="tablewrap">
-      <table>
-        <thead>
-          <tr><th scope="col">Feature</th><th scope="col">Status</th><th scope="col">Notes</th></tr>
-        </thead>
-        <tbody>
-          <tr><td>The widget vocabulary</td><td><span class="pill works">Works</span></td><td>Thirty-three composables, with a renderer half for every one of them. The schema is closed: anything else has to be added to it first. See the <a href="composables.html">composable reference</a>.</td></tr>
-          <tr><td>Events and synchronous consumption</td><td><span class="pill works">Works</span></td><td><code>on_click</code>, <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code>, <code>on_key_down</code> with <code>event.consume()</code>, <code>on_change</code> and <code>on_dismiss</code>.</td></tr>
-          <tr><td>Uncontrolled <code>TextField</code></td><td><span class="pill works">Works</span></td><td>Edit and composition state live in the renderer.</td></tr>
-          <tr><td>Kotlin protocol codegen from the Rust schema</td><td><span class="pill works">Works</span></td><td>A stale Kotlin file fails the test suite.</td></tr>
-          <tr><td>Modifiers</td><td><span class="pill works">Works</span></td><td>Thirteen attributes on every widget: weight, fill, explicit size, padding in dp or by role, background, shape by role or radius, border and elevation. <code>Clickable</code> is on the wire but has no typed prop.</td></tr>
-          <tr><td>Design systems and theming</td><td><span class="pill works">Works</span></td><td>Seven design systems behind one role-based contract, chosen unified or following the host platform. See <a href="design-systems.html">Design systems</a>.</td></tr>
-          <tr><td><code>LazyColumn</code> and <code>LazyRow</code> windowing</td><td><span class="pill works">Works</span></td><td>The renderer asks for a range, the Host materialises exactly that range. See <a href="lists-and-streaming.html">Lists &amp; streaming</a>.</td></tr>
-          <tr><td>Navigation, sheets and transient messages</td><td><span class="pill works">Works</span></td><td>The renderer picks bar, rail or drawer from the width it measured, and the same for which edge a sheet enters from.</td></tr>
-          <tr><td>Window size classes</td><td><span class="pill works">Works</span></td><td><code>use_window_size()</code> reports compact, medium or expanded, and only wakes a component when the class changes.</td></tr>
-          <tr><td>Custom drawing</td><td><span class="pill works">Works</span></td><td><code>Canvas</code> takes a <code>DrawList</code> value. Two equal lists send nothing.</td></tr>
-          <tr><td><code>AppendText</code> streaming</td><td><span class="pill partial">No rsx! API</span></td><td>Coalesced per frame by the Host and applied by the renderer. There is no <code>rsx!</code>-level API: <code>Host::append_text</code> takes a protocol node id.</td></tr>
-          <tr><td>Third-party widget extension</td><td><span class="pill partial">Compile time only</span></td><td>An extension is a Rust and Kotlin source pair built into both sides, with <code>LinearProgressIndicator</code> as the worked example. A deployed renderer cannot load a new widget.</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <h2 id="why">Why it exists</h2>
+    <p>
+      Desktop apps built on a browser engine are heavy, and an app that stays open all day pays for
+      that every hour. Rust UI toolkits are light, but their text input does not yet reach what
+      Compose does, and an input method that is right 90% of the time is an app you cannot type
+      Korean in. dioxus-compose keeps the Dioxus and CSS that apps are already written in and
+      borrows Compose for the pixels, the text and the input method.
+    </p>
+    <p>
+      The Compose side is compiled ahead of time into a native library, so there is no JVM in the
+      shipped program. The notepad sample built with the widget path is one 28.76&nbsp;MB file on
+      macOS, measured on an M1.
+    </p>
 
-    <h2>Where to go next</h2>
+    <h2 id="next">Where to go next</h2>
     <div class="cards">
-      <a class="card" href="getting-started.html">
-        <h3>Getting started</h3>
-        <p>Add one dependency, write a component, run it.</p>
-      </a>
-      <a class="card" href="writing-ui.html">
-        <h3>Writing UI</h3>
-        <p>Event handlers, key consumption, and the uncontrolled text field.</p>
-      </a>
-      <a class="card" href="composables.html">
-        <h3>Composable reference</h3>
-        <p>Every composable, its props and defaults, the role vocabulary, and where each one keeps its state.</p>
-      </a>
-      <a class="card" href="lists-and-streaming.html">
-        <h3>Lists &amp; streaming</h3>
-        <p>Windowed lists and token streaming, and which side owns the scroll position.</p>
-      </a>
-      <a class="card" href="design-systems.html">
-        <h3>Design systems</h3>
-        <p>Seven design systems, the colour, type, shape and spacing roles, and the two theme modes.</p>
-      </a>
-      <a class="card" href="architecture.html">
-        <h3>Architecture</h3>
-        <p>The Host/Renderer split, the C ABI, the wire protocol and the frame model.</p>
-      </a>
+      <a class="card" href="getting-started.html"><h3>Getting started</h3><p>Add the crate, write a page, lay it out.</p></a>
+      <a class="card" href="layout.html"><h3>Layout and CSS</h3><p>Block, inline, flex, grid, tables and positioning.</p></a>
+      <a class="card" href="forms-and-events.html"><h3>Forms and events</h3><p>Clicks, fields, selects, checkboxes and keyed lists.</p></a>
+      <a class="card" href="status.html"><h3>Status</h3><p>What is implemented, partial and planned, with issues.</p></a>
     </div>
 
     <nav class="pagenav" aria-label="Pagination">
@@ -241,8 +248,8 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
-    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>Guide last reviewed against the repository on 2026-09-22</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
   </div>
 </footer>
 

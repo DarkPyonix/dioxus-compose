@@ -1,0 +1,20 @@
+[package]
+name = "sample-html-hello"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "A heading, a paragraph with bold and italic words, and a link that counts its clicks, written with HTML and CSS"
+publish = false
+
+[lib]
+# The sample is an application and its tests, not a benchmark. Without this `cargo bench`
+# runs the lib's test harness with Criterion's flags, which it rejects.
+bench = false
+
+[dependencies]
+dioxus-compose = { path = "../../dioxus-compose" }
+dioxus-hooks.workspace = true
+
+[dev-dependencies]
+sample-html-support = { path = "../support" }

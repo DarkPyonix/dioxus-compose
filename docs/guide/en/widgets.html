@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Widgets in rsx! · dioxus-compose guide</title>
+<meta name="description" content="The second way to write a dioxus-compose screen: Compose widget names (Column, Text, Button) in rsx!, drawn by the renderer today. Launching, the widget set, modifiers, events and key consumption, the uncontrolled TextField, lists and streaming, design systems.">
+<link rel="alternate" hreflang="en" href="widgets.html">
+<link rel="alternate" hreflang="ko" href="../ko/widgets.html">
+<link rel="alternate" hreflang="x-default" href="widgets.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="widgets.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/widgets.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html" aria-current="page">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#shape">The shape of an app</a></li>
+        <li><a href="#widgets">The widget set</a></li>
+        <li><a href="#modifiers">Modifiers</a></li>
+        <li><a href="#events">Events and key consumption</a></li>
+        <li><a href="#textfield">The uncontrolled TextField</a></li>
+        <li><a href="#lists">Lists and streaming</a></li>
+        <li><a href="#design-systems">Design systems</a></li>
+        <li><a href="#state">Where state lives</a></li>
+        <li><a href="#samples">Examples</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Compose widgets</p>
+    <h1>Widgets in rsx!</h1>
+    <p class="lede">
+      The same crate also takes Compose's widget names in <code>rsx!</code>: <code>Column</code>,
+      <code>Text</code>, <code>Button</code> and about thirty more. This path is
+      <span class="pill works">implemented</span> and draws through the renderer today. Use it when
+      you want Compose's own widgets and a design system rather than CSS.
+    </p>
+
+    <h2 id="shape">The shape of an app</h2>
+    <p>
+      An application is a function returning <code>Element</code> and a call to
+      <code>launch</code>. The crate's root prelude brings in the widgets, the hooks and the macros.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code><span class="k">use</span> dioxus_compose::prelude::*;
+
+<span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
+    <span class="k">let</span> <span class="k">mut</span> count = <span class="f">use_signal</span>(|| <span class="n">0i32</span>);
+
+    <span class="f">rsx!</span> {
+        <span class="ty">Column</span> {
+            <span class="at">fill_max_width</span>: <span class="k">true</span>,
+            <span class="ty">Text</span> { <span class="at">text</span>: <span class="f">format!</span>(<span class="s">"count: {}"</span>, <span class="f">count</span>()) }
+            <span class="ty">Button</span> {
+                <span class="at">text</span>: <span class="s">"increment"</span>,
+                <span class="at">on_click</span>: <span class="k">move</span> |_| count += <span class="n">1</span>,
+            }
+        }
+    }
+}
+
+<span class="k">fn</span> <span class="f">main</span>() {
+    dioxus_compose::<span class="f">launch</span>(app);
+}</code></pre>
+</figure>
+    <p>
+      <code>launch</code> is shorthand for <code>LaunchBuilder::new().launch(app)</code>. The
+      builder also takes a theme and a window description. On desktop and iOS, Rust's
+      <code>main</code> drives the renderer. On Android and in the browser the platform owns the
+      loop, and <code>android_main!</code> and <code>web_main!</code> declare the entry point
+      instead.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code><span class="ty">LaunchBuilder</span>::<span class="f">new</span>()
+    .<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::<span class="ty">Material3</span>))
+    .<span class="f">launch</span>(app);</code></pre>
+</figure>
+
+    <h2 id="widgets">The widget set</h2>
+    <p>
+      The set is closed on purpose. The renderer interprets exactly these, and a kind it does not
+      recognise produces a <code>ProtocolError</code> event rather than a crash. Every composable,
+      with its props and defaults, is in the <a href="composables.html">composable reference</a>.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Group</th><th scope="col">Composables</th></tr></thead>
+        <tbody>
+          <tr><td>Layout</td><td><code>Column</code>, <code>Row</code>, <code>Box</code>, <code>ScrollColumn</code>, <code>ScrollRow</code>, <code>Spacer</code></td></tr>
+          <tr><td>Text and input</td><td><code>Text</code>, <code>TextField</code>, <code>SelectionContainer</code></td></tr>
+          <tr><td>Controls</td><td><code>Button</code>, <code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code>, <code>ProgressIndicator</code>, <code>Chip</code>, <code>FloatingAction</code></td></tr>
+          <tr><td>Containers</td><td><code>Card</code>, <code>Surface</code>, <code>Scaffold</code>, <code>TopAppBar</code>, <code>Divider</code>, <code>Separator</code>, <code>Tooltip</code>, <code>Badge</code></td></tr>
+          <tr><td>Lists</td><td><code>LazyColumn</code>, <code>LazyRow</code>, <code>LazyGrid</code></td></tr>
+          <tr><td>Navigation</td><td><code>Navigation</code>, <code>NavigationItem</code>, <code>Tabs</code></td></tr>
+          <tr><td>Overlays</td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code>, and <code>show_message</code>, which is not part of the tree</td></tr>
+          <tr><td>Pictures</td><td><code>Image</code>, <code>Icon</code>, <code>Canvas</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="warn">
+      <span class="label">Write <code>dioxus_compose::Box</code>, not <code>Box</code></span>
+      <p>
+        The <code>rsx!</code> expansion in dioxus-core 0.7 refers to an unqualified
+        <code>Box&lt;T&gt;</code>. A Compose <code>Box</code> in the glob prelude would shadow
+        <code>std::boxed::Box</code> and break that expansion, so the prelude leaves it out. Use the
+        qualified path.
+      </p>
+    </div>
+
+    <h2 id="modifiers">Modifiers</h2>
+    <p>
+      In Compose a <code>Modifier</code> applies to any composable, and the same holds here. Every
+      widget takes the same thirteen attributes: <code>weight</code>, <code>fill_max_width</code>,
+      <code>fill_max_height</code>, <code>width</code>, <code>height</code>, <code>padding</code>,
+      <code>padding_role</code>, <code>background</code>, <code>shape_role</code>,
+      <code>corner_radius</code>, <code>border_width</code>, <code>border_color</code> and
+      <code>elevation</code>.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">Card</span> {
+        <span class="at">fill_max_width</span>: <span class="k">true</span>,
+        <span class="at">padding_role</span>: <span class="ty">SpaceRole</span>::<span class="ty">Md</span>,
+        <span class="at">shape_role</span>: <span class="ty">ShapeRole</span>::<span class="ty">Large</span>,
+        <span class="at">background</span>: <span class="ty">Paint</span>::<span class="ty">Role</span>(<span class="ty">ColorRole</span>::<span class="ty">SurfaceContainer</span>),
+        <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"in a panel"</span> }
+    }
+}</code></pre>
+</figure>
+    <p>
+      <code>padding_role</code> and <code>shape_role</code> take the design system's answer;
+      <code>padding</code> and <code>corner_radius</code> take yours. Prefer the role, because
+      density and corner radius differ per design system and a number pins your layout to one of
+      them. An attribute you did not write sends nothing at all.
+    </p>
+
+    <h2 id="events">Events and key consumption</h2>
+    <p>
+      Handlers are ordinary closures, called synchronously on the renderer's UI thread. The diff
+      they cause travels back in the same call, so nothing is queued.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">Handler</th><th scope="col">Payload</th><th scope="col">On</th></tr></thead>
+        <tbody>
+          <tr><td><code>on_click</code></td><td><code>()</code></td><td><code>Button</code>, <code>NavigationItem</code> and other clickable widgets</td></tr>
+          <tr><td><code>on_value_change</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_change</code></td><td>the control's value</td><td><code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code></td></tr>
+          <tr><td><code>on_dismiss</code></td><td><code>()</code></td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      A chat input needs <kbd>Enter</kbd> to send and <kbd>Shift</kbd>+<kbd>Enter</kbd> to break the
+      line. Dioxus 0.7 handlers return nothing, so a handler marks the event consumed instead, the
+      same idea as <code>preventDefault()</code> on the web.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>dioxus-compose/examples/desktop_demo.rs</figcaption>
+<pre><code><span class="ty">TextField</span> {
+    <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
+    <span class="at">multiline</span>: <span class="k">true</span>,
+    <span class="at">on_value_change</span>: <span class="k">move</span> |value| draft.<span class="f">set</span>(value),
+    <span class="at">on_key_down</span>: <span class="k">move</span> |event: <span class="ty">KeyEvent</span>| {
+        <span class="k">if</span> event.<span class="f">key</span>() == <span class="ty">Key</span>::<span class="ty">Enter</span> &amp;&amp; !event.<span class="f">shift_key</span>() {
+            <span class="k">let</span> message = <span class="f">draft</span>().<span class="f">trim</span>().<span class="f">to_owned</span>();
+            <span class="k">if</span> !message.<span class="f">is_empty</span>() {
+                messages.<span class="f">write</span>().<span class="f">push</span>(message);
+                draft.<span class="f">set</span>(<span class="ty">String</span>::<span class="f">new</span>());
+            }
+            event.<span class="f">consume</span>();   <span class="c">// the renderer's onKeyEvent returns true</span>
+        }
+    }
+}</code></pre>
+</figure>
+    <div class="note">
+      <span class="label">Enter during IME composition</span>
+      <p>
+        While an input method is composing, the renderer sends no key events to Rust. An
+        <kbd>Enter</kbd> pressed mid-composition commits the syllable; it does not submit. That is
+        why the simple condition above is correct and not merely convenient.
+      </p>
+    </div>
+
+    <h2 id="textfield">The uncontrolled TextField</h2>
+    <p>
+      <code>TextField</code> has no <code>value</code> property. The edit buffer, the selection and
+      the composition belong to the renderer, and Rust hears about them through
+      <code>on_value_change</code>, <code>on_submit</code> and <code>on_focus_lost</code>. Hangul is
+      assembled from jamo as you type, so a value echoed back from Rust mid-syllable would destroy
+      it. Keeping the buffer in the renderer makes that failure impossible rather than rare. The
+      usual way to clear a field from a component is to give it a new identity, as in any Dioxus
+      app.
+    </p>
+
+    <h2 id="lists">Lists and streaming</h2>
+    <p>
+      A <code>Column</code> with a <code>for</code> loop is fine for the hundreds of rows an ordinary
+      screen holds. Updating one row sends one change and leaves its siblings alone. For long lists,
+      <code>LazyColumn</code> turns the flow around: the renderer says which range is visible and
+      the Host builds exactly that range plus a buffer. With 10,000 items and 20 visible rows the
+      Host builds 28.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">LazyColumn</span> {
+        <span class="at">item_count</span>: messages.<span class="f">len</span>(),
+        <span class="at">buffer</span>: <span class="n">4</span>,
+        <span class="at">key_of</span>: <span class="k">move</span> |index| <span class="f">messages</span>()[index].id.<span class="f">clone</span>(),
+        <span class="at">item</span>: <span class="k">move</span> |index| <span class="f">rsx!</span> {
+            <span class="ty">Text</span> { <span class="at">text</span>: <span class="f">messages</span>()[index].body.<span class="f">clone</span>() }
+        },
+    }
+}</code></pre>
+</figure>
+    <p>
+      Work that blocks (a network stream, a file, a PTY) belongs on a worker thread. A worker writes
+      to a signal, and the Host asks the renderer for a frame itself; requests coalesce into one
+      frame. Text that grows a token at a time is sent as appended tails, coalesced per frame, so a
+      long reply does not resend itself on every token. There is no <code>rsx!</code>-level API for
+      that yet: <code>Host::append_text</code> takes a protocol node id, so component code streams
+      by writing to a signal.
+    </p>
+
+    <h2 id="design-systems">Design systems</h2>
+    <p>
+      Widgets name roles, not colours: a colour role, a type role, a shape role, a spacing role. The
+      renderer resolves them through the design system, so switching to dark mode is one theme
+      change rather than a change to every node. Seven systems are built in:
+      <code>Material3</code>, <code>Cupertino</code>, <code>Fluent</code>, <code>Gnome</code>,
+      <code>Breeze</code>, <code>Deepin</code> and <code>LiquidGlass</code>.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+<pre><code><span class="c">// The same design system everywhere</span>
+<span class="ty">LaunchBuilder</span>::<span class="f">new</span>().<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::<span class="ty">Material3</span>)).<span class="f">launch</span>(app);
+
+<span class="c">// Follow the host platform; the fallback covers platforms with no look of their own</span>
+<span class="ty">LaunchBuilder</span>::<span class="f">new</span>().<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">adaptive</span>(<span class="ty">DesignSystem</span>::<span class="ty">Material3</span>)).<span class="f">launch</span>(app);</code></pre>
+</figure>
+    <p>
+      Saying nothing follows the host platform, with Material 3 as the fallback, because a desktop
+      app should look like its desktop without configuration. <code>use_design_system()</code>
+      reports which system the renderer chose. The design systems themselves are Compose code and
+      live in <a href="https://github.com/DarkPyonix/compose-rust">compose-rust</a>.
+    </p>
+
+    <h2 id="state">Where state lives</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">State</th><th scope="col">Owner</th><th scope="col">Why</th></tr></thead>
+        <tbody>
+          <tr><td>Application and domain state</td><td>Rust (signals)</td><td>It is your program; Dioxus reconciles it into changes.</td></tr>
+          <tr><td>Text being edited, IME composition</td><td>Renderer</td><td>Composition must never round-trip.</td></tr>
+          <tr><td>Scroll position, focus</td><td>Renderer</td><td>UI-local, and a frame behind if Rust owned it.</td></tr>
+          <tr><td>Animation progress</td><td>Renderer</td><td>Runs on the Compose frame clock.</td></tr>
+          <tr><td>Whether a dialog, menu or sheet is open</td><td>Renderer</td><td>The boolean you pass seeds it; the renderer owns the enter and exit.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="samples">Examples</h2>
+    <p>
+      The native-widget samples are in <code>samples/native-widgets/</code>: a calculator, a
+      notepad, a chat, a to-do list, a store and others. The notepad, built for release on macOS, is
+      one 28.76&nbsp;MB file with no runtime beside it.
+    </p>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="theming.html"><span>Previous</span>&larr; Theming</a>
+      <a class="next" href="composables.html"><span>Next</span>Composable reference &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

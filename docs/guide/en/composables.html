@@ -28,14 +28,26 @@
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <nav aria-label="Guide">
-      <h2>Guide</h2>
+      <h2>HTML and CSS</h2>
       <ul>
         <li><a href="overview.html">Overview</a></li>
         <li><a href="getting-started.html">Getting started</a></li>
-        <li><a href="writing-ui.html">Writing UI</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
         <li><a href="composables.html" aria-current="page">Composable reference</a></li>
-        <li><a href="lists-and-streaming.html">Lists &amp; streaming</a></li>
-        <li><a href="design-systems.html">Design systems</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
         <li><a href="architecture.html">Architecture</a></li>
         <li><a href="troubleshooting.html">Troubleshooting</a></li>
       </ul>
@@ -168,7 +180,7 @@
       colour&quot;, &quot;the heading rung&quot;, &quot;a medium corner&quot;) and the renderer
       resolves it against the active design system's token table. That is what lets one
       <code>rsx!</code> tree come out as Material 3 on one machine and Cupertino on another. See
-      <a href="design-systems.html">Design systems</a> for how the table is chosen.
+      <a href="widgets.html#design-systems">Design systems</a> for how the table is chosen.
     </p>
 
     <h3 id="paint">Paint and Color</h3>
@@ -446,7 +458,7 @@
       The edit buffer, the selection and the IME composition state live in the renderer, and Rust
       learns about changes through events. This is the central design decision of the project, not
       a simplification: round-tripping in-progress text would reset a Hangul syllable mid-assembly.
-      <a href="writing-ui.html#textfield">Writing UI</a> explains it in full.
+      <a href="widgets.html#textfield">Widgets in rsx!</a> explains it in full.
     </p>
 
     <div class="tablewrap">
@@ -765,7 +777,7 @@
       knows how far ahead to ask. Widening the range in Rust would break the renderer's placement,
       because the first index it receives is what lets it draw a real Compose lazy list of
       <code>item_count</code> items. Your data stays in the Host, so scrolling back rebuilds an
-      identical subtree. <a href="lists-and-streaming.html">Lists &amp; streaming</a> has the whole
+      identical subtree. <a href="widgets.html#lists">Lists and streaming</a> has the whole
       story.
     </p>
 
@@ -817,7 +829,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust, in the shape samples/academic uses</figcaption>
+      <figcaption>rust, in the shape samples/native-widgets/academic uses</figcaption>
 <pre><code><span class="f">rsx!</span> {
     <span class="ty">Navigation</span> {
         <span class="at">fill_max_width</span>: <span class="k">true</span>,
@@ -880,7 +892,7 @@
     </p>
 
     <figure class="codeblock" data-copy="Copy" data-copied="Copied">
-      <figcaption>rust, in the shape samples/todo uses</figcaption>
+      <figcaption>rust, in the shape samples/native-widgets/todo uses</figcaption>
 <pre><code><span class="f">rsx!</span> {
     <span class="ty">Menu</span> {
         <span class="at">expanded</span>: <span class="f">menu_open</span>() == <span class="ty">Some</span>(task.id),
@@ -911,8 +923,8 @@
         not terminate: a <code>Menu</code> whose children are a conditional or a loop, inside a
         <code>LazyColumn</code> item, recurses until the stack overflows. Declaring the entries
         whether the menu is open or not costs one anchor and a few entries per visible row, which
-        tracks the window rather than the list. <code>samples/todo</code> does it this way and says
-        so in a comment.
+        tracks the window rather than the list. <code>samples/native-widgets/todo</code> does it this way and
+        says so in a comment.
       </p>
     </div>
 
@@ -1098,8 +1110,8 @@
     </p>
 
     <nav class="pagenav" aria-label="Pagination">
-      <a class="prev" href="writing-ui.html"><span>Previous</span>&larr; Writing UI</a>
-      <a class="next" href="lists-and-streaming.html"><span>Next</span>Lists &amp; streaming &rarr;</a>
+      <a class="prev" href="widgets.html"><span>Previous</span>&larr; Widgets in rsx!</a>
+      <a class="next" href="mixing.html"><span>Next</span>Mixing the two &rarr;</a>
     </nav>
   </main>
 </div>
@@ -1107,8 +1119,8 @@
 <footer class="site">
   <div class="inner">
     <span>dioxus-compose &middot; Apache License 2.0</span>
-    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/SPEC.md">SPEC.md</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/blob/develop/docs/INTENT.md">INTENT.md</a></span>
-    <span>Guide last reviewed against the repository on 2026-09-22</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
   </div>
 </footer>
 

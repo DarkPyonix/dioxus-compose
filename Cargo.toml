@@ -1,28 +1,45 @@
 [workspace]
 members = [
     "dioxus-compose",
-    "dioxus-compose-html",
-    "samples/academic",
-    "samples/calculator",
+    "dioxus-compose/benches/dioxus-baseline",
+    "samples/article",
     "samples/chat",
-    "samples/frames",
-    "samples/minimal",
-    "samples/notepad",
-    "samples/podcast",
-    "samples/selfcare",
-    "samples/social",
-    "samples/statistics",
-    "samples/store",
+    "samples/dashboard",
+    "samples/gallery",
+    "samples/hello",
+    "samples/overlay",
+    "samples/settings",
+    "samples/support",
+    "samples/table",
+    "samples/theme",
     "samples/todo",
+    "samples/workbench",
+    "samples/native-widgets/academic",
+    "samples/native-widgets/calculator",
+    "samples/native-widgets/chat",
+    "samples/native-widgets/frames",
+    "samples/native-widgets/minimal",
+    "samples/native-widgets/notepad",
+    "samples/native-widgets/podcast",
+    "samples/native-widgets/selfcare",
+    "samples/native-widgets/social",
+    "samples/native-widgets/statistics",
+    "samples/native-widgets/store",
+    "samples/native-widgets/todo",
 ]
 resolver = "2"
 
 [workspace.package]
 edition = "2024"
 license = "Apache-2.0"
-rust-version = "1.85"
+# The HTML and CSS path pulls in stylo, whose icu_* 2.3 crates and encoding_rs 0.8.42
+# declare 1.88 (blitz-dom 0.2.4 itself declares 1.86).
+rust-version = "1.88"
 
 [workspace.dependencies]
+# For everything in this workspace written with rsx!: the samples and the Dioxus baseline
+# gathered from them.
+dioxus-compose = { path = "dioxus-compose" }
 dioxus-core = "0.7.10"
 dioxus-core-macro = "0.7.10"
 dioxus-hooks = "0.7"

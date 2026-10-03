@@ -16,12 +16,26 @@ cd "$repo_root"
 failures=0
 missing=()
 
+# The protocol, the boundary and the renderer are compose-rust's, and so are their tests.
+# Cargo checks out the whole compose-rust repository at the pinned rev, so its tests are
+# searched where that checkout is. Without cargo, or offline before the first fetch, only
+# this repository is searched, and the names that live there are reported missing.
+roots=(dioxus-compose samples)
+if command -v cargo >/dev/null; then
+    compose_rust_manifest="$(cargo metadata --format-version 1 2>/dev/null |
+        grep -oE '"manifest_path":"[^"]*/compose-rust/Cargo.toml"' | head -1 |
+        sed -E 's/^"manifest_path":"(.*)"$/\1/')"
+    if [[ -n "$compose_rust_manifest" ]]; then
+        roots+=("$(dirname "$(dirname "$compose_rust_manifest")")")
+    fi
+fi
+
 # A test name in the SPEC looks like `fr14_something_or_other`: a requirement prefix, an
 # underscore, and lowercase words. Anything else in backticks is a type, a path or a flag.
 while read -r name; do
     if ! grep -rq "fn $name\b\|fun $name\b" \
         --include='*.rs' --include='*.kt' \
-        dioxus-compose dioxus-compose-renderer samples 2>/dev/null; then
+        "${roots[@]}" 2>/dev/null; then
         missing+=("$name")
     fi
 done < <(grep -oE '`(fr|nfr|pr)[0-9]+(_[0-9]+)*_[a-z0-9_]+`' docs/SPEC.md |

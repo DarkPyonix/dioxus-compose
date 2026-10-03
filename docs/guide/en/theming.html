@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Theming · dioxus-compose guide</title>
+<meta name="description" content="Theming HTML screens with CSS custom properties, prefers-color-scheme and a class that overrides the system, with code from samples/theme. How the colour scheme is chosen today and what is planned.">
+<link rel="alternate" hreflang="en" href="theming.html">
+<link rel="alternate" hreflang="ko" href="../ko/theming.html">
+<link rel="alternate" hreflang="x-default" href="theming.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>guide</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">Menu</button>
+  <nav class="langswitch" aria-label="Language">
+    <a href="theming.html" aria-current="true" hreflang="en">EN</a>
+    <a href="../ko/theming.html" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="Dark" data-light="Light" aria-pressed="false">Dark</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="Guide">
+      <h2>HTML and CSS</h2>
+      <ul>
+        <li><a href="overview.html">Overview</a></li>
+        <li><a href="getting-started.html">Getting started</a></li>
+        <li><a href="layout.html">Layout and CSS</a></li>
+        <li><a href="text.html">Text</a></li>
+        <li><a href="forms-and-events.html">Forms and events</a></li>
+        <li><a href="images.html">Images and backgrounds</a></li>
+        <li><a href="scrolling-and-overlays.html">Scrolling and overlays</a></li>
+        <li><a href="theming.html" aria-current="page">Theming</a></li>
+      </ul>
+      <h2>Compose widgets</h2>
+      <ul>
+        <li><a href="widgets.html">Widgets in rsx!</a></li>
+        <li><a href="composables.html">Composable reference</a></li>
+      </ul>
+      <h2>Project</h2>
+      <ul>
+        <li><a href="mixing.html">Mixing the two</a></li>
+        <li><a href="status.html">Status</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="troubleshooting.html">Troubleshooting</a></li>
+      </ul>
+      <h2>On this page</h2>
+      <ul>
+        <li><a href="#variables">Custom properties</a></li>
+        <li><a href="#scheme">Light and dark</a></li>
+        <li><a href="#override">Overriding the system</a></li>
+        <li><a href="#planned">Not yet</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Theming</p>
+    <h1>Colours as CSS variables</h1>
+    <p class="lede">
+      A theme on an HTML screen is what it is on the web: custom properties, a
+      <code>prefers-color-scheme</code> media query, and a class when the user overrides the system.
+      Nothing in this crate replaces that, so a stylesheet written for a browser keeps its themes.
+    </p>
+
+    <h2 id="variables">Custom properties</h2>
+    <p>
+      <code>samples/theme</code> writes every colour as a <code>var()</code>. A light set is the
+      default, a dark set applies under <code>prefers-color-scheme: dark</code>, and a class on the
+      app's root wins over both.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/theme/src/lib.rs, trimmed</figcaption>
+<pre><code>:root, .app.light {
+    <span class="at">--bg</span>: <span class="n">#ffffff</span>;
+    <span class="at">--surface</span>: <span class="n">#f3f4f6</span>;
+    <span class="at">--text</span>: <span class="n">#111827</span>;
+    <span class="at">--accent</span>: <span class="n">#2563eb</span>;
+}
+
+<span class="k">@media</span> (prefers-color-scheme: dark) {
+    :root {
+        <span class="at">--bg</span>: <span class="n">#111827</span>;
+        <span class="at">--surface</span>: <span class="n">#1f2937</span>;
+        <span class="at">--text</span>: <span class="n">#f9fafb</span>;
+        <span class="at">--accent</span>: <span class="n">#60a5fa</span>;
+    }
+}
+
+.app.dark {
+    <span class="at">--bg</span>: <span class="n">#111827</span>;
+    <span class="at">--surface</span>: <span class="n">#1f2937</span>;
+    <span class="at">--text</span>: <span class="n">#f9fafb</span>;
+    <span class="at">--accent</span>: <span class="n">#60a5fa</span>;
+}
+
+.app { <span class="at">height</span>: <span class="n">100</span>%; <span class="at">padding</span>: <span class="n">24px</span>; <span class="at">background-color</span>: var(--bg); <span class="at">color</span>: var(--text); }</code></pre>
+</figure>
+
+    <h2 id="scheme">Light and dark</h2>
+    <p>
+      <code>HtmlConfig::color_scheme</code> answers <code>prefers-color-scheme</code>. It is
+      <code>ColorScheme::Light</code> unless you say otherwise.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/theme/tests/theme.rs, trimmed</figcaption>
+<pre><code><span class="k">let</span> dom = <span class="ty">HtmlDom</span>::<span class="f">with_config</span>(
+    theme::app,
+    <span class="ty">HtmlConfig</span> {
+        <span class="at">stylesheets</span>: <span class="f">vec!</span>[theme::<span class="ty">STYLE</span>.<span class="f">to_string</span>()],
+        <span class="at">color_scheme</span>: <span class="ty">ColorScheme</span>::<span class="ty">Dark</span>,
+        ..<span class="ty">HtmlConfig</span>::<span class="f">default</span>()
+    },
+);</code></pre>
+</figure>
+    <p>
+      With no class on the app, <code>Dark</code> picks the dark set. The test checks every colour
+      on the page against both sets.
+    </p>
+
+    <h2 id="override">Overriding the system</h2>
+    <p>
+      The toggle button puts <code>light</code> or <code>dark</code> on the root element. That is a
+      class change and nothing else, so only colours change.
+    </p>
+<figure class="codeblock" data-copy="Copy" data-copied="Copied">
+  <figcaption>samples/theme/src/lib.rs, trimmed</figcaption>
+<pre><code><span class="c">// None follows the system through the media query.</span>
+<span class="k">let</span> <span class="k">mut</span> theme = <span class="f">use_signal</span>(|| <span class="k">None</span>::&lt;<span class="ty">Theme</span>&gt;);
+<span class="k">let</span> class = <span class="k">match</span> theme.<span class="f">cloned</span>() {
+    <span class="k">None</span> =&gt; <span class="s">"app"</span>,
+    <span class="k">Some</span>(<span class="ty">Theme</span>::<span class="ty">Light</span>) =&gt; <span class="s">"app light"</span>,
+    <span class="k">Some</span>(<span class="ty">Theme</span>::<span class="ty">Dark</span>) =&gt; <span class="s">"app dark"</span>,
+};
+
+<span class="f">rsx!</span> {
+    div { <span class="at">id</span>: <span class="s">"app"</span>, <span class="at">class</span>: <span class="s">"{class}"</span>,
+        button {
+            <span class="at">id</span>: <span class="s">"theme-toggle"</span>,
+            <span class="at">class</span>: <span class="s">"toggle"</span>,
+            <span class="at">onclick</span>: <span class="k">move</span> |_| {
+                <span class="k">let</span> next = <span class="k">match</span> theme.<span class="f">cloned</span>() {
+                    <span class="k">Some</span>(<span class="ty">Theme</span>::<span class="ty">Dark</span>) =&gt; <span class="ty">Theme</span>::<span class="ty">Light</span>,
+                    _ =&gt; <span class="ty">Theme</span>::<span class="ty">Dark</span>,
+                };
+                theme.<span class="f">set</span>(<span class="k">Some</span>(next));
+            },
+            <span class="s">"Toggle theme"</span>
+        }
+    }
+}</code></pre>
+</figure>
+    <p>
+      The test clicks the toggle and checks the layout diff: entries changed, none were added or
+      removed, the order is the same, and every changed entry differs from before in its colours
+      only.
+    </p>
+
+    <h2 id="planned">Not yet</h2>
+    <ul>
+      <li><strong>Following the system while running.</strong>
+        <span class="pill planned">planned</span> The colour scheme is fixed when the
+        <code>HtmlDom</code> is made. The renderer learns of a system change first, so it will pass
+        that change on once it draws HTML screens
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>CSS variables as colour roles.</strong> <span class="pill planned">planned</span>
+        On a screen that mixes HTML and widgets, both will follow one theme, with the CSS variables
+        tied to the widgets' colour roles. The plan already has the seam for it: a
+        <code>ColourResolver</code> may replace a computed colour with the role it stands for, so a
+        theme change will not need a new layout. See <a href="mixing.html">Mixing the two</a>.</li>
+      <li><strong>Animated theme changes.</strong> <span class="pill planned">planned</span>
+        A <code>transition: background-color</code> does not play today
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="Pagination">
+      <a class="prev" href="scrolling-and-overlays.html"><span>Previous</span>&larr; Scrolling and overlays</a>
+      <a class="next" href="widgets.html"><span>Next</span>Widgets in rsx! &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">Samples</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>Guide last reviewed against the repository on 2026-10-04</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

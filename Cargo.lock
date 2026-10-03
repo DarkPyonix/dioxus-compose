@@ -322,6 +322,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "compose-rust"
+version = "0.0.1"
+source = "git+https://github.com/DarkPyonix/compose-rust?rev=22822c130a8211de7f65e0320db5e6a4db1a8bb1#22822c130a8211de7f65e0320db5e6a4db1a8bb1"
+dependencies = [
+ "jni",
+]
+
+[[package]]
 name = "const_format"
 version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -571,27 +579,35 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-compose"
+name = "dioxus-baseline"
 version = "0.0.0"
 dependencies = [
- "criterion",
- "dioxus-core",
- "dioxus-core-macro",
- "dioxus-hooks",
- "dioxus-signals",
- "jni",
+ "dioxus-compose",
+ "sample-academic",
+ "sample-calculator",
+ "sample-chat",
+ "sample-minimal",
+ "sample-notepad",
+ "sample-podcast",
+ "sample-selfcare",
+ "sample-social",
+ "sample-statistics",
+ "sample-store",
+ "sample-todo",
 ]
 
 [[package]]
-name = "dioxus-compose-html"
+name = "dioxus-compose"
 version = "0.0.0"
 dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "compose-rust",
  "criterion",
  "dioxus-core",
  "dioxus-core-macro",
+ "dioxus-hooks",
  "dioxus-html",
  "dioxus-signals",
  "parley",
@@ -2029,6 +2045,117 @@ name = "sample-frames"
 version = "0.1.0"
 dependencies = [
  "dioxus-compose",
+]
+
+[[package]]
+name = "sample-html-article"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-chat"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-html-dashboard"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-gallery"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-hello"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-overlay"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-html-settings"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-support"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+]
+
+[[package]]
+name = "sample-html-table"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-theme"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-html-todo"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
+]
+
+[[package]]
+name = "sample-html-workbench"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
 ]
 
 [[package]]

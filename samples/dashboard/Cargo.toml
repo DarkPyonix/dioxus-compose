@@ -1,0 +1,21 @@
+[package]
+name = "sample-html-dashboard"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "A top bar, a sidebar of sections and a wrapping row of metric cards, laid out with flexbox"
+publish = false
+
+[lib]
+# The sample is an application and its tests, not a benchmark. Without this `cargo bench`
+# runs the lib's test harness with Criterion's flags, which it rejects.
+bench = false
+
+[dependencies]
+dioxus-compose = { path = "../../dioxus-compose" }
+dioxus-hooks.workspace = true
+dioxus-signals.workspace = true
+
+[dev-dependencies]
+sample-html-support = { path = "../support" }
