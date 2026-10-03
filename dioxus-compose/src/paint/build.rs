@@ -16,16 +16,16 @@ use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::{BorderStyle, Length, Overflow};
 
+use crate::dom::form;
 use crate::html::NodeId;
 use crate::layout::background::{self, Boxes};
 use crate::layout::convert;
+use crate::layout::image::ImageLookup;
+use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     Border, BorderLine, BoxShadow, Corners, DisplayList, InputField, InputKind, MeasuredText,
     NodeEntry, Radius, Rect, ScrollContainer, Sides, TextAlign, TextRun,
 };
-use crate::dom::form;
-use crate::layout::image::ImageLookup;
-use crate::layout::{is_fixed, local};
 
 /// What the first walk settles for one box.
 struct Placed {

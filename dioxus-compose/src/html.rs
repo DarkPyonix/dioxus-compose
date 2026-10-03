@@ -65,13 +65,13 @@ pub use crate::paint::display_list::{
     RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides, TextAlign, TextRun,
     TileRepeat,
 };
-pub use blitz_dom::BaseDocument;
-pub use blitz_traits::shell::ColorScheme;
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,
     PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier, PlanNode, PlanText,
     PlanTextField, diff, plan_from, plan_from_images, plan_from_with,
 };
+pub use blitz_dom::BaseDocument;
+pub use blitz_traits::shell::ColorScheme;
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are

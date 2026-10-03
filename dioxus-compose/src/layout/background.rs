@@ -23,12 +23,12 @@ use style::values::specified::background::BackgroundRepeatKeyword;
 use style::values::specified::position::{HorizontalPositionKeyword, VerticalPositionKeyword};
 
 use crate::layout::convert;
+use crate::layout::image::{ImageLookup, css_url, img_src};
+use crate::layout::local;
 use crate::paint::display_list::{
     BackgroundImage, BackgroundLayer, GradientStop, LinearGradient, ObjectFit, RadialGradient,
     Rect, ReplacedImage, Rgba, TileRepeat,
 };
-use crate::layout::image::{ImageLookup, css_url, img_src};
-use crate::layout::local;
 
 /// The three boxes of an element, in document coordinates.
 pub(crate) struct Boxes {
