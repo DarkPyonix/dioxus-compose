@@ -37,7 +37,13 @@ pub struct TextSpan {
     pub italic: bool,
     pub underline: bool,
     pub strikethrough: bool,
-    /// The handler a press on this run reports to, if it is a link.
+    /// What a press on this run reports, if it is a link.
+    ///
+    /// The value is the application's own name for the link, and it comes back unchanged
+    /// to the `on_link` handler of the `Text` that carries the run. Zero is the same as
+    /// `None`, because the wire has no other way to say "not a link". The Host swaps the
+    /// value for a handler id of its own on the way out, so two `Text`s can both call a
+    /// link 1 and still report to the right place.
     pub on_click: Option<u64>,
 }
 
@@ -237,6 +243,16 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .windows(needle.len())
         .position(|window| window == needle)
 }
+
+/// A `Text`'s string marked as one that usually grows at the end.
+///
+/// Carried in place of a plain string when `Text { streaming: true }` is set. The Host
+/// remembers how much of it the Renderer already holds, and when the new string starts
+/// with exactly that, it sends only the tail as an `AppendText` instead of the whole
+/// string again. A string that changed anywhere else is sent whole, so the flag can never
+/// make the screen disagree with the Host; it only makes the common case cheap.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct GrowingText(pub(crate) String);
 
 impl dioxus_core::IntoAttributeValue for TextSpans {
     fn into_value(self) -> dioxus_core::AttributeValue {

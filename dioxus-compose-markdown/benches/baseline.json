@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "measured_at": null,
+  "note": "Not yet measured. Run `cargo bench -p dioxus-compose-markdown --bench streaming` on the reference machine and copy the lines it prints into the fields below.",
+  "environment": null,
+  "measurements": {
+    "markdown_delta_without_prefix": {
+      "p99_ns": null,
+      "spec_p99_ceiling_ns": 1000000
+    },
+    "markdown_delta_after_100kb": {
+      "p99_ns": null,
+      "spec_p99_ceiling_ns": 1000000,
+      "ratio_to_without_prefix": null,
+      "spec_ratio_ceiling": 1.2
+    },
+    "markdown_delta_allocations": {
+      "after_50kb": null,
+      "after_100kb": null,
+      "spec": "after_100kb must not exceed after_50kb"
+    },
+    "markdown_close_5000_line_code_block_frame": {
+      "frame_ns": null,
+      "spec_ceiling_ns": 1000000
+    },
+    "binary_size_increase": {
+      "note": "Measure a sample built with and without a Markdown in it, per platform.",
+      "bytes": null
+    }
+  }
+}

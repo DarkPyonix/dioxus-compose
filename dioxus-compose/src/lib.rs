@@ -471,6 +471,9 @@ pub mod events {
     }
 
     event!(onclick, ());
+    // A press on one run of a `Text`, carrying the value the application gave that run.
+    // It travels as a click on a handler of the run's own, so no new event exists for it.
+    event!(onlink, u64);
     event!(onvaluechange, String);
     event!(onsubmit, String);
     event!(onfocuslost, ());

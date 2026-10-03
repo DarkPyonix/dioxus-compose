@@ -397,7 +397,13 @@ impl Host {
             return Err(ProtocolError::InvalidValueKind(0));
         }
         let mut key_event = None;
+        // A press on a link run arrives as a click on the handler the run was given, and
+        // reaches the `Text`'s link listener with the value the application named it by.
+        let link = self.renderer.link_value(event.handler_id);
         let event_data = match event.payload {
+            EventPayload::Clicked if link.is_some() => {
+                Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
+            }
             EventPayload::Clicked | EventPayload::FocusLost => {
                 Event::new(Rc::new(()), true).into_any()
             }

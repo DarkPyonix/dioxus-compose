@@ -1,0 +1,126 @@
+# Every crate an application links when it depends on dioxus-compose-markdown, with its
+# licence as an SPDX expression. One crate per line: the name, then the expression.
+#
+# `tests/licenses.rs` walks Cargo.lock from this crate and fails for any crate that is
+# missing here or whose licence is not on its permissive list. When it names a crate,
+# read that crate's licence before adding the line: the point of the list is that a person
+# looked.
+#
+# The grammar and theme files bundled inside two-face carry licences of their own. They
+# are listed in README.md, and the same test checks them through two-face's own record of
+# them.
+
+# The parser.
+pulldown-cmark MIT
+unicase MIT OR Apache-2.0
+bitflags MIT OR Apache-2.0
+memchr Unlicense OR MIT
+
+# The highlighter: two-face, the syntect it re-exports, and what syntect's parsing needs
+# with the pure-Rust regex engine.
+two-face MIT OR Apache-2.0
+syntect MIT
+fancy-regex MIT
+regex-automata MIT OR Apache-2.0
+regex-syntax MIT OR Apache-2.0
+aho-corasick Unlicense OR MIT
+bit-set Apache-2.0 OR MIT
+bit-vec Apache-2.0 OR MIT
+bincode MIT
+flate2 MIT OR Apache-2.0
+miniz_oxide MIT OR Zlib OR Apache-2.0
+simd-adler32 MIT
+adler2 0BSD OR MIT OR Apache-2.0
+crc32fast MIT OR Apache-2.0
+fnv Apache-2.0 OR MIT
+walkdir Unlicense/MIT
+same-file Unlicense/MIT
+winapi-util Unlicense OR MIT
+thiserror MIT OR Apache-2.0
+thiserror-impl MIT OR Apache-2.0
+serde MIT OR Apache-2.0
+serde_core MIT OR Apache-2.0
+serde_derive MIT OR Apache-2.0
+once_cell MIT OR Apache-2.0
+
+# dioxus-compose and Dioxus, which every application here links already.
+dioxus-core MIT OR Apache-2.0
+dioxus-core-macro MIT OR Apache-2.0
+dioxus-core-types MIT OR Apache-2.0
+dioxus-hooks MIT OR Apache-2.0
+dioxus-rsx MIT OR Apache-2.0
+dioxus-signals MIT OR Apache-2.0
+generational-box MIT OR Apache-2.0
+subsecond MIT OR Apache-2.0
+subsecond-types MIT OR Apache-2.0
+warnings MIT OR Apache-2.0
+warnings-macro MIT OR Apache-2.0
+anyhow MIT OR Apache-2.0
+bumpalo MIT OR Apache-2.0
+bytes MIT
+cesu8 Apache-2.0/MIT
+cfg-if MIT OR Apache-2.0
+combine MIT
+const_format Zlib
+const_format_proc_macros Zlib
+convert_case MIT
+errno MIT OR Apache-2.0
+futures-channel MIT OR Apache-2.0
+futures-core MIT OR Apache-2.0
+futures-task MIT OR Apache-2.0
+futures-util MIT OR Apache-2.0
+jni MIT/Apache-2.0
+jni-sys MIT OR Apache-2.0
+jni-sys-macros MIT OR Apache-2.0
+js-sys MIT OR Apache-2.0
+konst Zlib
+konst_macro_rules Zlib
+libc MIT OR Apache-2.0
+libloading ISC
+linux-raw-sys Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+lock_api MIT OR Apache-2.0
+log MIT OR Apache-2.0
+longest-increasing-subsequence MIT/Apache-2.0
+memfd MIT OR Apache-2.0
+memmap2 MIT OR Apache-2.0
+parking_lot MIT OR Apache-2.0
+parking_lot_core MIT OR Apache-2.0
+pin-project Apache-2.0 OR MIT
+pin-project-internal Apache-2.0 OR MIT
+pin-project-lite Apache-2.0 OR MIT
+proc-macro2 MIT OR Apache-2.0
+proc-macro2-diagnostics MIT/Apache-2.0
+quote MIT OR Apache-2.0
+redox_syscall MIT
+rustc-hash Apache-2.0 OR MIT
+rustix Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
+rustversion MIT OR Apache-2.0
+scopeguard MIT OR Apache-2.0
+slab MIT
+slotmap Zlib
+smallvec MIT OR Apache-2.0
+syn MIT OR Apache-2.0
+tracing MIT
+tracing-attributes MIT
+tracing-core MIT
+unicode-ident (MIT OR Apache-2.0) AND Unicode-3.0
+unicode-segmentation MIT OR Apache-2.0
+unicode-xid MIT OR Apache-2.0
+version_check MIT/Apache-2.0
+wasm-bindgen MIT OR Apache-2.0
+wasm-bindgen-futures MIT OR Apache-2.0
+wasm-bindgen-macro MIT OR Apache-2.0
+wasm-bindgen-macro-support MIT OR Apache-2.0
+wasm-bindgen-shared MIT OR Apache-2.0
+web-sys MIT OR Apache-2.0
+windows-link MIT OR Apache-2.0
+windows-sys MIT OR Apache-2.0
+windows-targets MIT OR Apache-2.0
+windows_aarch64_gnullvm MIT OR Apache-2.0
+windows_aarch64_msvc MIT OR Apache-2.0
+windows_i686_gnu MIT OR Apache-2.0
+windows_i686_gnullvm MIT OR Apache-2.0
+windows_i686_msvc MIT OR Apache-2.0
+windows_x86_64_gnu MIT OR Apache-2.0
+windows_x86_64_gnullvm MIT OR Apache-2.0
+windows_x86_64_msvc MIT OR Apache-2.0

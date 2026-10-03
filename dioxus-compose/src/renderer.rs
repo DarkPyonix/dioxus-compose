@@ -5,6 +5,8 @@ use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
 use std::collections::HashMap;
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 
 /// The inclusive range of design-property tags. Extension properties follow this range.
 const FIRST_OPTIONAL_PROPERTY: u16 = PropertyKind::TypeRole as u16;
@@ -24,7 +26,14 @@ struct Handler {
     element: ElementId,
     node_id: u32,
     name: &'static str,
+    /// The application's value for a link run, when this handler stands for one. Zero for
+    /// every handler a listener attribute created.
+    link: u64,
 }
+
+/// The listener name a link run's press is delivered to, without the `on` that the
+/// attribute is spelled with.
+pub(crate) const LINK_EVENT: &str = "link";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PathTarget {
@@ -121,6 +130,21 @@ pub struct ComposeRenderer {
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
     /// Which application token each observed node was given, for reading a report back.
     size_tokens: HashMap<u32, u32>,
+    /// For each `Text` whose string is marked as growing, how many bytes the Renderer holds
+    /// and a keyed hash of them.
+    ///
+    /// A hash rather than a copy, so a growing string costs sixteen bytes here instead of
+    /// being held twice. The key is random per process, so text that arrives from outside,
+    /// which an agent's output is, cannot be written to collide on purpose.
+    sent_text: HashMap<u32, (usize, u64)>,
+    text_hasher: RandomState,
+    /// For each `Text` with link runs, the handler id each of its link values was given.
+    /// Kept, so a run that is resent with the same value keeps the same id and the list of
+    /// runs compares equal to what the Renderer already has.
+    link_handlers: HashMap<u32, Vec<(u64, u64)>>,
+    /// Where a list of runs is rewritten with the Host's handler ids before it is sent.
+    /// Reused, so resending runs does not allocate once it has grown.
+    span_scratch: Vec<u8>,
     stack: Vec<StackNode>,
     error: Option<ProtocolError>,
 }
@@ -154,6 +178,11 @@ impl ComposeRenderer {
             // Empty until a screen asks, which is the point: a tree that observes nothing
             // allocates nothing here.
             size_tokens: HashMap::new(),
+            // Empty until a growing string or a link run arrives, for the same reason.
+            sent_text: HashMap::new(),
+            text_hasher: RandomState::new(),
+            link_handlers: HashMap::new(),
+            span_scratch: Vec::new(),
             stack: Vec::with_capacity(64),
             error: None,
         }
@@ -184,6 +213,15 @@ impl ComposeRenderer {
             .map(|handler| (handler.element, handler.node_id, handler.name))
     }
 
+    /// The application's value for the link run this handler stands for, if it stands for
+    /// one.
+    pub fn link_value(&self, handler_id: u64) -> Option<u64> {
+        self.handlers
+            .iter()
+            .find(|handler| handler.id == handler_id)
+            .and_then(|handler| (handler.link != 0).then_some(handler.link))
+    }
+
     pub fn set_text(
         &mut self,
         element: ElementId,
@@ -211,6 +249,9 @@ impl ComposeRenderer {
     }
 
     pub fn set_text_node(&mut self, node_id: u32, text: &str, selection: Option<crate::Selection>) {
+        // The Renderer's copy is no longer the one remembered, so the next growing string
+        // for this node is sent whole.
+        self.sent_text.remove(&node_id);
         self.write(Mutation::SetText {
             node_id,
             text,
@@ -253,6 +294,7 @@ impl ComposeRenderer {
 
     /// Append the streamed tail to a Text node without resending its whole value.
     pub fn append_text_node(&mut self, node_id: u32, text: &str) {
+        self.sent_text.remove(&node_id);
         self.write(Mutation::AppendText { node_id, text });
     }
 
@@ -450,6 +492,7 @@ impl ComposeRenderer {
                     element,
                     node_id,
                     name,
+                    link: 0,
                 });
                 Some(Some((CLICKABLE, Modifier::Clickable { handler_id })))
             }
@@ -510,7 +553,12 @@ impl ComposeRenderer {
                 paths.insert(path.clone(), PathTarget::Node(node_id));
                 for attribute in *attrs {
                     if let TemplateAttribute::Static { name, value, .. } = attribute {
-                        self.set_property(node_id, name, &AttributeValue::Text((*value).into()));
+                        self.set_property(
+                            node_id,
+                            None,
+                            name,
+                            &AttributeValue::Text((*value).into()),
+                        );
                     }
                 }
                 for (index, child) in children.iter().enumerate() {
@@ -581,13 +629,36 @@ impl ComposeRenderer {
         true
     }
 
-    fn set_property(&mut self, node_id: u32, name: &str, value: &AttributeValue) {
+    fn set_property(
+        &mut self,
+        node_id: u32,
+        element: Option<ElementId>,
+        name: &str,
+        value: &AttributeValue,
+    ) {
         let Some(property) = property_kind(name) else {
             // dioxus-core has no fallible WriteMutations methods. Preserve the
             // protocol error and surface it when the batch is finalized.
             self.error = Some(ProtocolError::InvalidProperty(0));
             return;
         };
+        if let AttributeValue::Any(value) = value {
+            let any = value.as_any();
+            if let Some(growing) = any.downcast_ref::<crate::spans::GrowingText>() {
+                if property == PropertyKind::Text {
+                    self.set_growing_text(node_id, &growing.0);
+                    return;
+                }
+            }
+            if let (Some(spans), Some(element)) =
+                (any.downcast_ref::<crate::spans::TextSpans>(), element)
+            {
+                if spans.spans().any(|span| span.on_click.is_some()) {
+                    self.set_linked_spans(node_id, element, property, spans);
+                    return;
+                }
+            }
+        }
         let value = match value {
             AttributeValue::Text(value) => PropertyValue::String(value),
             AttributeValue::Float(value) => PropertyValue::Float(*value as f32),
@@ -624,6 +695,93 @@ impl ComposeRenderer {
             property,
             value,
         });
+    }
+
+    /// Sends a growing string: only its tail when the Renderer already holds the rest,
+    /// and the whole string otherwise.
+    fn set_growing_text(&mut self, node_id: u32, text: &str) {
+        let full = self.text_hasher.hash_one(text.as_bytes());
+        let held = self.sent_text.get(&node_id).copied();
+        self.sent_text.insert(node_id, (text.len(), full));
+        if let Some((length, hash)) = held {
+            if text.len() > length
+                && text.is_char_boundary(length)
+                && self.text_hasher.hash_one(&text.as_bytes()[..length]) == hash
+            {
+                self.write(Mutation::AppendText {
+                    node_id,
+                    text: &text[length..],
+                });
+                return;
+            }
+        }
+        self.write(Mutation::SetProp {
+            node_id,
+            property: PropertyKind::Text,
+            value: PropertyValue::String(text),
+        });
+    }
+
+    /// Sends a list of runs with every link value swapped for a handler id of the Host's.
+    ///
+    /// The value is the application's name for the link and means nothing to the
+    /// Renderer, which reports a press on a run by the id the run carries. So each value
+    /// gets a handler of its own, registered against this node under the link event, and
+    /// a press comes back with the value it stood for.
+    fn set_linked_spans(
+        &mut self,
+        node_id: u32,
+        element: ElementId,
+        property: PropertyKind,
+        spans: &crate::spans::TextSpans,
+    ) {
+        const HANDLER_AT: usize = 20;
+        let mut scratch = std::mem::take(&mut self.span_scratch);
+        scratch.clear();
+        scratch.extend_from_slice(spans.as_bytes());
+        for record in scratch.chunks_exact_mut(crate::spans::SPAN_LEN) {
+            let mut word = [0_u8; 8];
+            word.copy_from_slice(&record[HANDLER_AT..HANDLER_AT + 8]);
+            let value = u64::from_le_bytes(word);
+            if value == 0 {
+                continue;
+            }
+            let handler_id = self.link_handler(node_id, element, value);
+            record[HANDLER_AT..HANDLER_AT + 8].copy_from_slice(&handler_id.to_le_bytes());
+        }
+        self.should_write_optional_property(node_id, property, false);
+        self.write(Mutation::SetProp {
+            node_id,
+            property,
+            value: PropertyValue::Bytes(&scratch),
+        });
+        self.span_scratch = scratch;
+    }
+
+    /// The handler id a link value on this node reports through, made the first time the
+    /// value is seen.
+    fn link_handler(&mut self, node_id: u32, element: ElementId, value: u64) -> u64 {
+        if let Some(known) = self
+            .link_handlers
+            .get(&node_id)
+            .and_then(|links| links.iter().find(|(link, _)| *link == value))
+        {
+            return known.1;
+        }
+        let handler_id = self.next_handler_id;
+        self.next_handler_id += 1;
+        self.handlers.push(Handler {
+            id: handler_id,
+            element,
+            node_id,
+            name: LINK_EVENT,
+            link: value,
+        });
+        self.link_handlers
+            .entry(node_id)
+            .or_default()
+            .push((value, handler_id));
+        handler_id
     }
 
     /// One past the last position under `parent`.
@@ -706,6 +864,10 @@ impl ComposeRenderer {
     /// The caller has already taken the node out of its parent's list.
     fn forget(&mut self, node_id: u32) {
         self.parents.remove(&node_id);
+        self.sent_text.remove(&node_id);
+        if self.link_handlers.remove(&node_id).is_some() {
+            self.handlers.retain(|handler| handler.node_id != node_id);
+        }
         for slot in self.children.remove(&node_id).unwrap_or_default() {
             match slot {
                 Slot::Node(child) => self.forget(child),
@@ -905,7 +1067,7 @@ impl WriteMutations for ComposeRenderer {
                 }
                 return;
             }
-            self.set_property(node_id, name, value);
+            self.set_property(node_id, Some(id), name, value);
         }
     }
 
@@ -930,6 +1092,7 @@ impl WriteMutations for ComposeRenderer {
             element: id,
             node_id,
             name,
+            link: 0,
         });
         if let Some(property) = event_property(name) {
             self.write(Mutation::SetProp {
