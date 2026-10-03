@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>폼과 이벤트 · dioxus-compose 가이드</title>
+<meta name="description" content="HTML 화면의 클릭, input, change, submit 이벤트. 텍스트 입력란, 텍스트 영역, select, 체크박스, 라디오 버튼, 비제어 입력란, 키가 있는 목록을 samples/settings, samples/todo, samples/chat 의 코드로 설명합니다.">
+<link rel="alternate" hreflang="en" href="../en/forms-and-events.html">
+<link rel="alternate" hreflang="ko" href="forms-and-events.html">
+<link rel="alternate" hreflang="x-default" href="../en/forms-and-events.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/forms-and-events.html" hreflang="en">EN</a>
+    <a href="forms-and-events.html" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>HTML과 CSS</h2>
+      <ul>
+        <li><a href="overview.html">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="layout.html">레이아웃과 CSS</a></li>
+        <li><a href="text.html">텍스트</a></li>
+        <li><a href="forms-and-events.html" aria-current="page">폼과 이벤트</a></li>
+        <li><a href="images.html">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html">rsx! 의 위젯</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html">현황</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>이 페이지</h2>
+      <ul>
+        <li><a href="#clicks">클릭</a></li>
+        <li><a href="#fields">입력란은 비제어입니다</a></li>
+        <li><a href="#controls">select, 체크박스, 라디오 버튼</a></li>
+        <li><a href="#driving">렌더러가 부르는 것</a></li>
+        <li><a href="#lists">키가 있는 목록</a></li>
+        <li><a href="#state">함께 쓰는 상태</a></li>
+        <li><a href="#planned">아직 없는 것</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">폼과 이벤트</p>
+    <h1>핸들러는 Dioxus 핸들러 그대로입니다</h1>
+    <p class="lede">
+      <code>onclick</code>, <code>oninput</code>, <code>onchange</code>, <code>onsubmit</code> 을 웹에서처럼
+      씁니다. 클릭은 포인터 아래 요소에 닿아 위로 전파되고, 폼은 브라우저의 폼이 하는 일을 합니다.
+      입력란은 비제어이므로 타이핑이 Rust 를 왕복하지 않습니다.
+    </p>
+
+    <h2 id="clicks">클릭</h2>
+    <p>
+      클릭은 그리는 순서와 <code>z-index</code> 로 정해지는 그 자리의 맨 위 요소로 가고, 듣고 있는
+      가장 가까운 조상까지 전파됩니다. 그다음 브라우저의 기본 동작이 이어집니다.
+    </p>
+    <ul>
+      <li>포인터 아래 체크박스는 체크되거나 해제되고, 라디오 버튼은 선택되며, 둘 다
+        <code>input</code> 과 <code>change</code> 를 보냅니다.</li>
+      <li>제출 버튼은 자기 폼을 제출합니다.</li>
+      <li><code>label</code> 은 자기가 가리키는 컨트롤을 클릭합니다.</li>
+    </ul>
+    <p>
+      체크박스는 클릭 핸들러가 실행되기 전에 바뀌므로 핸들러는 새 상태를 보고, 핸들러 중 하나가
+      <code>prevent_default()</code> 를 부르면 되돌아갑니다. 링크에서는 <code>samples/hello</code> 처럼
+      <code>prevent_default()</code> 가 페이지를 그 자리에 둡니다.
+    </p>
+
+    <h2 id="fields">입력란은 비제어입니다</h2>
+    <p>
+      사용자가 고치는 동안 입력란의 글자는 렌더러가 갖습니다. Rust 에는 <code>oninput</code> 으로 확정된
+      글자만 오고, 입력기가 아직 조합 중인 글자는 오지 않습니다. 한글, 일본어, 중국어 입력을 지키는
+      규칙이 이것입니다. 음절 하나는 여러 번의 키 입력으로 만들어지는데, 그때마다 Rust 에서 되돌려
+      쓰면 음절이 초기화됩니다.
+    </p>
+    <p>
+      <code>samples/settings</code> 가 그 방식을 보여 줍니다. 입력란은 저장된 값에서 시작합니다. 친
+      글자는 아무것도 그것으로 그리지 않는 초안에 들어가므로, 타이핑해도 폼이 다시 그려지지 않고
+      고치는 중인 입력란에 글자를 되돌려 쓰지도 않습니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/settings/src/lib.rs, 줄임</figcaption>
+<pre><code><span class="c">// What was last saved. The fields start from it.</span>
+<span class="k">let</span> <span class="k">mut</span> saved = <span class="f">use_signal</span>(<span class="ty">Profile</span>::initial);
+<span class="c">// What has been typed since. Nothing renders from it.</span>
+<span class="k">let</span> <span class="k">mut</span> draft = <span class="f">use_signal</span>(<span class="ty">Profile</span>::initial);
+<span class="k">let</span> profile = <span class="f">saved</span>();
+
+<span class="f">rsx!</span> {
+    form {
+        <span class="at">id</span>: <span class="s">"settings"</span>,
+        <span class="at">class</span>: <span class="s">"settings"</span>,
+        <span class="c">// Pressing Enter in a field submits the form.</span>
+        <span class="at">onsubmit</span>: <span class="k">move</span> |event| {
+            event.<span class="f">prevent_default</span>();
+            saved.<span class="f">set</span>(<span class="f">draft</span>());
+        },
+        input {
+            <span class="at">id</span>: <span class="s">"name"</span>,
+            <span class="at">class</span>: <span class="s">"control"</span>,
+            r#<span class="k">type</span>: <span class="s">"text"</span>,
+            <span class="at">value</span>: <span class="s">"{profile.name}"</span>,
+            <span class="at">placeholder</span>: <span class="s">"Your name"</span>,
+            <span class="at">oninput</span>: <span class="k">move</span> |event| {
+                draft.<span class="f">write</span>().name = event.<span class="f">value</span>();
+            },
+        }
+        textarea {
+            <span class="at">id</span>: <span class="s">"bio"</span>,
+            <span class="at">class</span>: <span class="s">"control"</span>,
+            <span class="at">value</span>: <span class="s">"{profile.bio}"</span>,
+            <span class="at">oninput</span>: <span class="k">move</span> |event| {
+                draft.<span class="f">write</span>().bio = event.<span class="f">value</span>();
+            },
+        }
+    }
+}</code></pre>
+</figure>
+    <p>
+      입력란은 앱이 <code>value</code> 를 다시 정할 때까지 확정된 글자를 갖고 있고, 폼은 그 값을
+      제출합니다. 앱이 글자를 바꾸는 방법은 <code>value</code> 를 정하는 것입니다. 예를 들어
+      <code>samples/chat</code> 과 <code>samples/todo</code> 는 보낸 뒤 입력란을 그렇게 비웁니다.
+    </p>
+
+    <h2 id="controls">select, 체크박스, 라디오 버튼</h2>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/settings/src/lib.rs, 줄임</figcaption>
+<pre><code>select {
+    <span class="at">id</span>: <span class="s">"theme"</span>,
+    <span class="at">class</span>: <span class="s">"control"</span>,
+    <span class="at">value</span>: <span class="s">"{profile.theme}"</span>,
+    <span class="at">onchange</span>: <span class="k">move</span> |event| {
+        draft.<span class="f">write</span>().theme = event.<span class="f">value</span>();
+    },
+    option { <span class="at">value</span>: <span class="s">"light"</span>, <span class="s">"Light"</span> }
+    option { <span class="at">value</span>: <span class="s">"dark"</span>, <span class="s">"Dark"</span> }
+    option { <span class="at">value</span>: <span class="s">"system"</span>, <span class="s">"Match the system"</span> }
+}
+
+input {
+    <span class="at">id</span>: <span class="s">"weekly"</span>,
+    r#<span class="k">type</span>: <span class="s">"checkbox"</span>,
+    <span class="at">checked</span>: <span class="f">weekly</span>(),
+    <span class="at">onclick</span>: <span class="k">move</span> |_| weekly.<span class="f">toggle</span>(),
+}
+
+<span class="k">for</span> (index, choice) <span class="k">in</span> <span class="ty">DENSITIES</span>.<span class="f">into_iter</span>().<span class="f">enumerate</span>() {
+    label { <span class="at">key</span>: <span class="s">"{choice}"</span>, <span class="at">class</span>: <span class="s">"check"</span>,
+        input {
+            <span class="at">id</span>: <span class="s">"density-{index}"</span>,
+            r#<span class="k">type</span>: <span class="s">"radio"</span>,
+            <span class="at">name</span>: <span class="s">"density"</span>,
+            <span class="at">value</span>: <span class="s">"{choice}"</span>,
+            <span class="at">checked</span>: <span class="f">density</span>() == choice,
+            <span class="at">onclick</span>: <span class="k">move</span> |_| density.<span class="f">set</span>(choice),
+        }
+        <span class="s">"{choice}"</span>
+    }
+}</code></pre>
+</figure>
+    <p>
+      <code>select</code> 는 입력란 하나이고, 선택지는 렌더러가 자기 드롭다운에 나열하며 페이지 안에는
+      그리지 않습니다. 하나를 고르면 브라우저처럼 <code>input</code> 다음에 <code>change</code> 가
+      갑니다. <code>name</code> 이 같은 라디오 버튼은 한 그룹이므로 하나를 고르면 나머지가 해제됩니다.
+    </p>
+    <p>
+      입력 종류 <code>text</code>, <code>password</code>, <code>email</code>, <code>number</code>,
+      <code>search</code>, <code>tel</code>, <code>url</code>, <code>checkbox</code>, <code>radio</code>
+      와 <code>textarea</code>, <code>select</code> 는 각각 종류, 시작 값, placeholder, 글자가 들어갈
+      상자를 담은 입력란으로 그리기 목록에 들어갑니다.
+    </p>
+
+    <h2 id="driving">렌더러가 부르는 것</h2>
+    <p>
+      사용자 동작마다 <code>HtmlDom</code> 의 호출이 하나씩 있습니다. 렌더러가 HTML 화면을 그리게 되면
+      렌더러가 부릅니다. 지금은 테스트와 임베더가 부르고, 예제의 테스트도 바로 이 호출을 거칩니다.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">호출</th><th scope="col">사용자</th><th scope="col">앱에 오는 것</th></tr></thead>
+        <tbody>
+          <tr><td><code>click(x, y)</code></td><td>한 점을 클릭</td><td><code>onclick</code>, 그다음 브라우저 기본 동작</td></tr>
+          <tr><td><code>input(node, value)</code></td><td>입력란에 글자를 확정</td><td><code>oninput</code></td></tr>
+          <tr><td><code>change(node, value)</code></td><td>입력란을 다 고침</td><td><code>onchange</code></td></tr>
+          <tr><td><code>select(node, index)</code></td><td>선택지를 고름</td><td><code>oninput</code>, <code>onchange</code></td></tr>
+          <tr><td><code>check(node, checked)</code></td><td>체크박스를 체크하거나 라디오를 고름</td><td><code>onclick</code>, <code>oninput</code>, <code>onchange</code></td></tr>
+          <tr><td><code>submit(node)</code></td><td>한 줄 입력란에서 Enter</td><td>제출 버튼이 있으면 그 <code>onclick</code>, 그다음 <code>onsubmit</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/settings/tests/settings.rs, 줄임</figcaption>
+<pre><code><span class="f">assert_eq!</span>(dom.<span class="f">input</span>(name, <span class="s">"Grace Hopper"</span>), <span class="k">Some</span>(name));
+<span class="f">assert_eq!</span>(dom.<span class="f">select</span>(theme, <span class="n">1</span>), <span class="k">Some</span>(theme));
+<span class="f">relayout</span>(&amp;<span class="k">mut</span> dom);
+<span class="c">// Typing renders nothing: the field's text stays the renderer's.</span>
+<span class="f">assert_eq!</span>(<span class="f">entry</span>(&amp;dom, <span class="s">"name"</span>).input.<span class="f">as_ref</span>().<span class="f">unwrap</span>().value, <span class="s">"Ada Lovelace"</span>);
+
+<span class="f">assert_eq!</span>(dom.<span class="f">submit</span>(name), <span class="k">Some</span>(form));
+<span class="f">relayout</span>(&amp;<span class="k">mut</span> dom);
+<span class="f">assert_eq!</span>(<span class="f">text_of</span>(<span class="f">entry</span>(&amp;dom, <span class="s">"status"</span>)), <span class="s">"Saved"</span>);
+<span class="f">assert_eq!</span>(<span class="f">entry</span>(&amp;dom, <span class="s">"name"</span>).input.<span class="f">as_ref</span>().<span class="f">unwrap</span>().value, <span class="s">"Grace Hopper"</span>);</code></pre>
+</figure>
+    <p>
+      핸들러는 이 호출 안에서 실행됩니다. <code>render</code> 가 핸들러가 바꾼 것을 적용하고, 다음
+      <code>layout</code> 에 나타납니다.
+    </p>
+
+    <h2 id="lists">키가 있는 목록</h2>
+    <p>
+      다른 Dioxus 앱에서처럼 행마다 <code>key</code> 를 줍니다. <code>samples/todo</code> 에서 항목을 위로
+      옮기면 모든 행의 글자를 다시 쓰는 것이 아니라 그 행이 움직이고, 체크하면 그 행만 바뀌고, 추가하면
+      행 하나가 들어갑니다. 계획의 <code>diff</code> 는 바로 그 삽입, 삭제, 이동만 알려 주며, 그래서
+      렌더러 쪽 갱신이 작게 유지됩니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/todo/src/lib.rs, 줄임</figcaption>
+<pre><code>ul { <span class="at">id</span>: <span class="s">"todos"</span>, <span class="at">class</span>: <span class="s">"todos"</span>,
+    <span class="k">for</span> (index, todo) <span class="k">in</span> items.<span class="f">into_iter</span>().<span class="f">enumerate</span>() {
+        li {
+            <span class="at">key</span>: <span class="s">"{todo.id}"</span>,
+            <span class="at">id</span>: <span class="s">"todo-{todo.id}"</span>,
+            <span class="at">class</span>: <span class="k">if</span> todo.done { <span class="s">"todo done"</span> } <span class="k">else</span> { <span class="s">"todo"</span> },
+            input {
+                <span class="at">id</span>: <span class="s">"toggle-{todo.id}"</span>,
+                r#<span class="k">type</span>: <span class="s">"checkbox"</span>,
+                <span class="at">checked</span>: todo.done,
+                <span class="at">onclick</span>: <span class="k">move</span> |_| todos.<span class="f">toggle</span>(todo.id),
+            }
+            span { <span class="at">class</span>: <span class="s">"title"</span>, <span class="s">"{todo.title}"</span> }
+            button {
+                <span class="at">id</span>: <span class="s">"up-{todo.id}"</span>,
+                <span class="at">disabled</span>: index == <span class="n">0</span>,
+                <span class="at">onclick</span>: <span class="k">move</span> |_| todos.<span class="f">shift</span>(todo.id, <span class="ty">Direction</span>::<span class="ty">Up</span>),
+                <span class="s">"Up"</span>
+            }
+        }
+    }
+}</code></pre>
+</figure>
+
+    <h2 id="state">함께 쓰는 상태</h2>
+    <p>
+      <code>samples/todo</code> 의 목록과 <code>samples/chat</code> 의 대화는 앱이 컨텍스트로 제공하는
+      시그널 구조체에 있습니다. 그래서 항목을 추가하는 행 같은 자식 컴포넌트가
+      <code>use_context</code> 로 읽습니다. 보통의 Dioxus 이고, 이 렌더러에만 있는 것은 없습니다.
+    </p>
+
+    <h2 id="planned">아직 없는 것</h2>
+    <ul>
+      <li><strong>화면 위의 입력란.</strong> <span class="pill partial">부분</span> 계획에서
+        <code>input</code> 과 <code>textarea</code> 는 Compose 자체의 텍스트 입력란이 되고
+        <code>select</code> 는 드롭다운이 되므로, 조합은 Compose 가 맡습니다. 렌더러 다리가 생기기 전까지는
+        그리는 것이 없고(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), 다리가
+        생기면 한글 입력 체크리스트를 네이티브 빌드에서 손으로 확인합니다.</li>
+      <li><strong>HTML 화면의 키보드 이벤트와 포커스.</strong> <span class="pill planned">계획</span> 키
+        입력과 포커스 이동은 렌더러에서 오므로 같은 다리와 함께 들어옵니다
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="prev" href="text.html"><span>이전</span>&larr; 텍스트</a>
+      <a class="next" href="images.html"><span>다음</span>이미지와 배경 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rsx! 의 위젯 · dioxus-compose 가이드</title>
+<meta name="description" content="dioxus-compose 화면을 쓰는 두 번째 방법. rsx! 안에 Compose 위젯 이름(Column, Text, Button)을 쓰고, 지금 렌더러가 그립니다. 실행, 위젯 목록, 모디파이어, 이벤트와 키 소비, 비제어 TextField, 목록과 스트리밍, 디자인 시스템을 설명합니다.">
+<link rel="alternate" hreflang="en" href="../en/widgets.html">
+<link rel="alternate" hreflang="ko" href="widgets.html">
+<link rel="alternate" hreflang="x-default" href="../en/widgets.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/widgets.html" hreflang="en">EN</a>
+    <a href="widgets.html" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>HTML과 CSS</h2>
+      <ul>
+        <li><a href="overview.html">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="layout.html">레이아웃과 CSS</a></li>
+        <li><a href="text.html">텍스트</a></li>
+        <li><a href="forms-and-events.html">폼과 이벤트</a></li>
+        <li><a href="images.html">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html" aria-current="page">rsx! 의 위젯</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html">현황</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>이 페이지</h2>
+      <ul>
+        <li><a href="#shape">앱의 모양</a></li>
+        <li><a href="#widgets">위젯 목록</a></li>
+        <li><a href="#modifiers">모디파이어</a></li>
+        <li><a href="#events">이벤트와 키 소비</a></li>
+        <li><a href="#textfield">비제어 TextField</a></li>
+        <li><a href="#lists">목록과 스트리밍</a></li>
+        <li><a href="#design-systems">디자인 시스템</a></li>
+        <li><a href="#state">상태가 사는 곳</a></li>
+        <li><a href="#samples">예제</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">Compose 위젯</p>
+    <h1>rsx! 의 위젯</h1>
+    <p class="lede">
+      같은 크레이트는 <code>rsx!</code> 안에서 Compose 의 위젯 이름도 받습니다. <code>Column</code>,
+      <code>Text</code>, <code>Button</code> 과 서른 개 남짓입니다. 이 경로는
+      <span class="pill works">구현</span> 되어 있고 지금 렌더러가 그립니다. CSS 대신 Compose 자체의
+      위젯과 디자인 시스템을 쓰고 싶을 때 씁니다.
+    </p>
+
+    <h2 id="shape">앱의 모양</h2>
+    <p>
+      앱은 <code>Element</code> 를 돌려주는 함수 하나와 <code>launch</code> 호출 하나입니다. 크레이트
+      루트의 prelude 가 위젯, 훅, 매크로를 들여옵니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code><span class="k">use</span> dioxus_compose::prelude::*;
+
+<span class="k">fn</span> <span class="f">app</span>() -&gt; <span class="ty">Element</span> {
+    <span class="k">let</span> <span class="k">mut</span> count = <span class="f">use_signal</span>(|| <span class="n">0i32</span>);
+
+    <span class="f">rsx!</span> {
+        <span class="ty">Column</span> {
+            <span class="at">fill_max_width</span>: <span class="k">true</span>,
+            <span class="ty">Text</span> { <span class="at">text</span>: <span class="f">format!</span>(<span class="s">"count: {}"</span>, <span class="f">count</span>()) }
+            <span class="ty">Button</span> {
+                <span class="at">text</span>: <span class="s">"increment"</span>,
+                <span class="at">on_click</span>: <span class="k">move</span> |_| count += <span class="n">1</span>,
+            }
+        }
+    }
+}
+
+<span class="k">fn</span> <span class="f">main</span>() {
+    dioxus_compose::<span class="f">launch</span>(app);
+}</code></pre>
+</figure>
+    <p>
+      <code>launch</code> 는 <code>LaunchBuilder::new().launch(app)</code> 의 줄임입니다. 빌더는 테마와 창
+      설명도 받습니다. 데스크톱과 iOS 에서는 Rust 의 <code>main</code> 이 렌더러를 돌립니다. Android 와
+      브라우저에서는 플랫폼이 루프를 가지므로 <code>android_main!</code> 과 <code>web_main!</code> 으로
+      진입점을 선언합니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code><span class="ty">LaunchBuilder</span>::<span class="f">new</span>()
+    .<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::<span class="ty">Material3</span>))
+    .<span class="f">launch</span>(app);</code></pre>
+</figure>
+
+    <h2 id="widgets">위젯 목록</h2>
+    <p>
+      목록은 일부러 닫혀 있습니다. 렌더러는 정확히 이것들만 해석하고, 모르는 종류는 충돌 대신
+      <code>ProtocolError</code> 이벤트가 됩니다. 컴포저블마다의 속성과 기본값은
+      <a href="composables.html">컴포저블 레퍼런스</a>에 있습니다.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">묶음</th><th scope="col">컴포저블</th></tr></thead>
+        <tbody>
+          <tr><td>레이아웃</td><td><code>Column</code>, <code>Row</code>, <code>Box</code>, <code>ScrollColumn</code>, <code>ScrollRow</code>, <code>Spacer</code></td></tr>
+          <tr><td>텍스트와 입력</td><td><code>Text</code>, <code>TextField</code>, <code>SelectionContainer</code></td></tr>
+          <tr><td>컨트롤</td><td><code>Button</code>, <code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code>, <code>ProgressIndicator</code>, <code>Chip</code>, <code>FloatingAction</code></td></tr>
+          <tr><td>컨테이너</td><td><code>Card</code>, <code>Surface</code>, <code>Scaffold</code>, <code>TopAppBar</code>, <code>Divider</code>, <code>Separator</code>, <code>Tooltip</code>, <code>Badge</code></td></tr>
+          <tr><td>목록</td><td><code>LazyColumn</code>, <code>LazyRow</code>, <code>LazyGrid</code></td></tr>
+          <tr><td>내비게이션</td><td><code>Navigation</code>, <code>NavigationItem</code>, <code>Tabs</code></td></tr>
+          <tr><td>오버레이</td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code>, 그리고 트리에 속하지 않는 <code>show_message</code></td></tr>
+          <tr><td>그림</td><td><code>Image</code>, <code>Icon</code>, <code>Canvas</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="warn">
+      <span class="label"><code>Box</code> 가 아니라 <code>dioxus_compose::Box</code></span>
+      <p>
+        dioxus-core 0.7 의 <code>rsx!</code> 전개는 한정하지 않은 <code>Box&lt;T&gt;</code> 를 씁니다.
+        glob prelude 에 Compose 의 <code>Box</code> 가 있으면 <code>std::boxed::Box</code> 를 가려 그
+        전개가 깨지므로, prelude 는 그것을 빼 두었습니다. 한정된 경로로 씁니다.
+      </p>
+    </div>
+
+    <h2 id="modifiers">모디파이어</h2>
+    <p>
+      Compose 에서 <code>Modifier</code> 가 어느 컴포저블에나 붙듯 여기서도 그렇습니다. 모든 위젯이 같은
+      열세 속성을 받습니다. <code>weight</code>, <code>fill_max_width</code>,
+      <code>fill_max_height</code>, <code>width</code>, <code>height</code>, <code>padding</code>,
+      <code>padding_role</code>, <code>background</code>, <code>shape_role</code>,
+      <code>corner_radius</code>, <code>border_width</code>, <code>border_color</code>,
+      <code>elevation</code> 입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">Card</span> {
+        <span class="at">fill_max_width</span>: <span class="k">true</span>,
+        <span class="at">padding_role</span>: <span class="ty">SpaceRole</span>::<span class="ty">Md</span>,
+        <span class="at">shape_role</span>: <span class="ty">ShapeRole</span>::<span class="ty">Large</span>,
+        <span class="at">background</span>: <span class="ty">Paint</span>::<span class="ty">Role</span>(<span class="ty">ColorRole</span>::<span class="ty">SurfaceContainer</span>),
+        <span class="ty">Text</span> { <span class="at">text</span>: <span class="s">"in a panel"</span> }
+    }
+}</code></pre>
+</figure>
+    <p>
+      <code>padding_role</code> 과 <code>shape_role</code> 은 디자인 시스템의 답을, <code>padding</code> 과
+      <code>corner_radius</code> 는 직접 정한 값을 받습니다. 밀도와 모서리 반지름은 디자인 시스템마다
+      다르고 숫자는 레이아웃을 그중 하나에 묶으므로, 역할을 쓰는 편이 낫습니다. 쓰지 않은 속성은 아무것도
+      보내지 않습니다.
+    </p>
+
+    <h2 id="events">이벤트와 키 소비</h2>
+    <p>
+      핸들러는 보통의 클로저이고, 렌더러의 UI 스레드에서 동기로 불립니다. 핸들러가 만든 diff 는 같은
+      호출 안에서 돌아가므로 아무것도 큐에 쌓이지 않습니다.
+    </p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">핸들러</th><th scope="col">값</th><th scope="col">위젯</th></tr></thead>
+        <tbody>
+          <tr><td><code>on_click</code></td><td><code>()</code></td><td><code>Button</code>, <code>NavigationItem</code> 등 누를 수 있는 위젯</td></tr>
+          <tr><td><code>on_value_change</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_submit</code></td><td><code>String</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_focus_lost</code></td><td><code>()</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_key_down</code></td><td><code>KeyEvent</code></td><td><code>TextField</code></td></tr>
+          <tr><td><code>on_change</code></td><td>컨트롤의 값</td><td><code>Checkbox</code>, <code>RadioButton</code>, <code>Switch</code>, <code>Slider</code>, <code>Dropdown</code>, <code>DatePicker</code>, <code>TimePicker</code></td></tr>
+          <tr><td><code>on_dismiss</code></td><td><code>()</code></td><td><code>Dialog</code>, <code>Menu</code>, <code>Sheet</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      채팅 입력란은 <kbd>Enter</kbd> 로 보내고 <kbd>Shift</kbd>+<kbd>Enter</kbd> 로 줄을 바꿔야 합니다.
+      Dioxus 0.7 의 핸들러는 값을 돌려주지 않으므로, 대신 핸들러가 이벤트를 소비했다고 표시합니다. 웹의
+      <code>preventDefault()</code> 와 같은 생각입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>dioxus-compose/examples/desktop_demo.rs</figcaption>
+<pre><code><span class="ty">TextField</span> {
+    <span class="at">placeholder</span>: <span class="s">"Write a message"</span>,
+    <span class="at">multiline</span>: <span class="k">true</span>,
+    <span class="at">on_value_change</span>: <span class="k">move</span> |value| draft.<span class="f">set</span>(value),
+    <span class="at">on_key_down</span>: <span class="k">move</span> |event: <span class="ty">KeyEvent</span>| {
+        <span class="k">if</span> event.<span class="f">key</span>() == <span class="ty">Key</span>::<span class="ty">Enter</span> &amp;&amp; !event.<span class="f">shift_key</span>() {
+            <span class="k">let</span> message = <span class="f">draft</span>().<span class="f">trim</span>().<span class="f">to_owned</span>();
+            <span class="k">if</span> !message.<span class="f">is_empty</span>() {
+                messages.<span class="f">write</span>().<span class="f">push</span>(message);
+                draft.<span class="f">set</span>(<span class="ty">String</span>::<span class="f">new</span>());
+            }
+            event.<span class="f">consume</span>();   <span class="c">// the renderer's onKeyEvent returns true</span>
+        }
+    }
+}</code></pre>
+</figure>
+    <div class="note">
+      <span class="label">IME 조합 중의 Enter</span>
+      <p>
+        입력기가 조합하는 동안 렌더러는 Rust 에 키 이벤트를 보내지 않습니다. 조합 중에 누른
+        <kbd>Enter</kbd> 는 음절을 확정할 뿐 제출하지 않습니다. 그래서 위의 단순한 조건이 편해서가 아니라
+        맞아서 쓰는 것입니다.
+      </p>
+    </div>
+
+    <h2 id="textfield">비제어 TextField</h2>
+    <p>
+      <code>TextField</code> 에는 <code>value</code> 속성이 없습니다. 편집 버퍼, 선택, 조합은 렌더러의
+      것이고, Rust 는 <code>on_value_change</code>, <code>on_submit</code>, <code>on_focus_lost</code> 로
+      소식을 듣습니다. 한글은 칠 때 자모를 모아 만들어지므로, 음절 중간에 Rust 가 값을 되돌려 쓰면 그
+      음절이 사라집니다. 버퍼를 렌더러에 두면 그 실패가 드문 것이 아니라 불가능한 것이 됩니다. 컴포넌트에서
+      입력란을 비우는 보통의 방법은 다른 Dioxus 앱에서처럼 새 정체성을 주는 것입니다.
+    </p>
+
+    <h2 id="lists">목록과 스트리밍</h2>
+    <p>
+      보통 화면에 들어가는 몇백 행이라면 <code>for</code> 를 쓴 <code>Column</code> 으로 충분합니다. 한
+      행을 바꾸면 변경 하나만 가고 형제 행은 그대로입니다. 긴 목록에서는 <code>LazyColumn</code> 이 흐름을
+      뒤집습니다. 렌더러가 보이는 범위를 알려 주고, Host 는 정확히 그 범위와 여유분만 만듭니다. 항목이
+      10,000 개이고 보이는 행이 20 개이면 Host 는 28 개를 만듭니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code><span class="f">rsx!</span> {
+    <span class="ty">LazyColumn</span> {
+        <span class="at">item_count</span>: messages.<span class="f">len</span>(),
+        <span class="at">buffer</span>: <span class="n">4</span>,
+        <span class="at">key_of</span>: <span class="k">move</span> |index| <span class="f">messages</span>()[index].id.<span class="f">clone</span>(),
+        <span class="at">item</span>: <span class="k">move</span> |index| <span class="f">rsx!</span> {
+            <span class="ty">Text</span> { <span class="at">text</span>: <span class="f">messages</span>()[index].body.<span class="f">clone</span>() }
+        },
+    }
+}</code></pre>
+</figure>
+    <p>
+      막히는 일(네트워크 스트림, 파일, PTY)은 워커 스레드에서 합니다. 워커는 시그널에 쓰고, 프레임은
+      Host 가 직접 렌더러에 요청하며, 요청은 프레임 하나로 합쳐집니다. 토큰 단위로 길어지는 글은 덧붙일
+      꼬리만 프레임마다 모아서 보내므로, 긴 답이 토큰마다 통째로 다시 가지 않습니다. 이것을 위한
+      <code>rsx!</code> 수준 API 는 아직 없습니다. <code>Host::append_text</code> 는 프로토콜 노드 id 를
+      받으므로, 컴포넌트 코드는 시그널에 써서 스트리밍합니다.
+    </p>
+
+    <h2 id="design-systems">디자인 시스템</h2>
+    <p>
+      위젯은 색이 아니라 역할을 말합니다. 색 역할, 타입 역할, 모양 역할, 간격 역할입니다. 렌더러가 디자인
+      시스템으로 역할을 풀기 때문에, 다크 모드 전환은 노드마다의 변경이 아니라 테마 변경 하나입니다. 일곱
+      시스템이 들어 있습니다. <code>Material3</code>, <code>Cupertino</code>, <code>Fluent</code>,
+      <code>Gnome</code>, <code>Breeze</code>, <code>Deepin</code>, <code>LiquidGlass</code> 입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code><span class="c">// The same design system everywhere</span>
+<span class="ty">LaunchBuilder</span>::<span class="f">new</span>().<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">unified</span>(<span class="ty">DesignSystem</span>::<span class="ty">Material3</span>)).<span class="f">launch</span>(app);
+
+<span class="c">// Follow the host platform; the fallback covers platforms with no look of their own</span>
+<span class="ty">LaunchBuilder</span>::<span class="f">new</span>().<span class="f">with_theme</span>(<span class="ty">Theme</span>::<span class="f">adaptive</span>(<span class="ty">DesignSystem</span>::<span class="ty">Material3</span>)).<span class="f">launch</span>(app);</code></pre>
+</figure>
+    <p>
+      아무것도 정하지 않으면 호스트 플랫폼을 따르고, 대체는 Material 3 입니다. 데스크톱 앱은 설정 없이도
+      그 데스크톱처럼 보여야 하기 때문입니다. <code>use_design_system()</code> 은 렌더러가 고른 시스템을
+      알려 줍니다. 디자인 시스템 자체는 Compose 코드이고
+      <a href="https://github.com/DarkPyonix/compose-rust">compose-rust</a> 에 있습니다.
+    </p>
+
+    <h2 id="state">상태가 사는 곳</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">상태</th><th scope="col">주인</th><th scope="col">이유</th></tr></thead>
+        <tbody>
+          <tr><td>앱과 도메인 상태</td><td>Rust(시그널)</td><td>프로그램 자체이고, Dioxus 가 변경으로 바꿉니다.</td></tr>
+          <tr><td>편집 중인 글자, IME 조합</td><td>렌더러</td><td>조합은 절대 왕복하면 안 됩니다.</td></tr>
+          <tr><td>스크롤 위치, 포커스</td><td>렌더러</td><td>UI 의 지역 상태이고, Rust 가 가지면 한 프레임 늦습니다.</td></tr>
+          <tr><td>애니메이션 진행</td><td>렌더러</td><td>Compose 프레임 시계로 돕니다.</td></tr>
+          <tr><td>대화 상자, 메뉴, 시트가 열렸는지</td><td>렌더러</td><td>넘긴 불리언이 시작값이고, 열고 닫는 과정은 렌더러가 갖습니다.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 id="samples">예제</h2>
+    <p>
+      위젯 경로의 예제는 <code>samples/native-widgets/</code> 에 있습니다. 계산기, 메모장, 채팅, 할 일 목록,
+      상점 등입니다. 메모장을 macOS 에서 릴리스로 빌드하면 옆에 런타임이 없는 파일 하나, 28.76&nbsp;MB
+      입니다.
+    </p>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="prev" href="theming.html"><span>이전</span>&larr; 테마</a>
+      <a class="next" href="composables.html"><span>다음</span>컴포저블 레퍼런스 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

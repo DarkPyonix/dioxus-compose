@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>레이아웃과 CSS · dioxus-compose 가이드</title>
+<meta name="description" content="dioxus-compose 가 지금 계산하는 CSS 레이아웃(블록, 인라인, flexbox, grid, 표, 위치 지정, 상자 장식)을 samples/ 의 예제로 보여 주고, 아직 계획인 것을 정리합니다.">
+<link rel="alternate" hreflang="en" href="../en/layout.html">
+<link rel="alternate" hreflang="ko" href="layout.html">
+<link rel="alternate" hreflang="x-default" href="../en/layout.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/layout.html" hreflang="en">EN</a>
+    <a href="layout.html" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>HTML과 CSS</h2>
+      <ul>
+        <li><a href="overview.html">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="layout.html" aria-current="page">레이아웃과 CSS</a></li>
+        <li><a href="text.html">텍스트</a></li>
+        <li><a href="forms-and-events.html">폼과 이벤트</a></li>
+        <li><a href="images.html">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html">rsx! 의 위젯</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html">현황</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>이 페이지</h2>
+      <ul>
+        <li><a href="#stylesheets">스타일시트</a></li>
+        <li><a href="#flow">블록과 인라인 흐름</a></li>
+        <li><a href="#flex">Flexbox</a></li>
+        <li><a href="#grid">Grid</a></li>
+        <li><a href="#tables">표</a></li>
+        <li><a href="#positioning">위치 지정과 쌓임</a></li>
+        <li><a href="#decorations">배경, 테두리, 효과</a></li>
+        <li><a href="#plan">렌더러가 받게 될 것</a></li>
+        <li><a href="#planned">아직 없는 것</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">레이아웃과 CSS</p>
+    <h1>이미 쓰고 있는 CSS 그대로</h1>
+    <p class="lede">
+      레이아웃은 blitz-dom 이 합니다. Stylo 가 CSS 를 풀고 Taffy 가 상자를 놓으며, Dioxus 자체의
+      네이티브 렌더러가 쓰는 엔진과 같습니다. 그래서 지원 범위가 넓고, 이 페이지는 속성 목록 대신
+      예제로 그 범위를 보여 줍니다.
+    </p>
+
+    <h2 id="stylesheets">스타일시트</h2>
+    <p>
+      스타일시트는 <code>HtmlConfig::stylesheets</code> 에 넣습니다. 각각이
+      <code>&lt;head&gt;</code> 안의 <code>&lt;style&gt;</code> 인 것처럼 사용자 에이전트 스타일시트
+      다음에 순서대로 적용됩니다. <code>style</code> 속성도 동작합니다. 사용자 에이전트 스타일시트는
+      브라우저와 비슷한 blitz-dom 의 것이고(<code>body { margin: 8px }</code>), 빈 상태에서 시작하고
+      싶으면 <code>HtmlConfig::user_agent_stylesheet</code> 로 바꿉니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+<pre><code><span class="k">let</span> dom = <span class="ty">HtmlDom</span>::<span class="f">with_config</span>(app, <span class="ty">HtmlConfig</span> {
+    <span class="at">stylesheets</span>: <span class="f">vec!</span>[<span class="ty">STYLE</span>.<span class="f">to_string</span>()],
+    ..<span class="ty">HtmlConfig</span>::<span class="f">default</span>()
+});</code></pre>
+</figure>
+
+    <h2 id="flow">블록과 인라인 흐름</h2>
+    <p>
+      블록은 위에서 아래로 쌓이고 세로 여백은 겹칩니다. <code>samples/hello</code> 에서 제목의 아래
+      여백 16px 와 문단의 위 여백 12px 가 16px 로 겹치므로, 문단은 y = 108 이 아니라 y = 96 에
+      놓입니다. 보통 글자, <code>strong</code>, <code>em</code> 이 섞인 문단은 스타일마다 조각 하나씩인
+      인라인 서식 문맥 하나이고, 모두 한 줄에 놓입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/hello/src/lib.rs</figcaption>
+<pre><code>p { <span class="at">id</span>: <span class="s">"intro"</span>,
+    <span class="s">"This page is "</span>
+    strong { <span class="at">id</span>: <span class="s">"bold"</span>, <span class="s">"HTML"</span> }
+    <span class="s">" and "</span>
+    em { <span class="at">id</span>: <span class="s">"italic"</span>, <span class="s">"CSS"</span> }
+    <span class="s">", laid out by the Host."</span>
+}</code></pre>
+</figure>
+
+    <h2 id="flex">Flexbox</h2>
+    <p>
+      <code>samples/dashboard</code> 는 처음부터 끝까지 flexbox 입니다. 페이지는 세로, 상단 바는 가로,
+      사이드바는 세로, 카드는 줄바꿈되는 가로입니다. 1000px 뷰포트에서는 200px 카드 세 개가 한 줄에
+      들어가고, 700px 에서는 두 개만 들어가 나머지가 다음 줄로 갑니다. 테스트가 두 경우를 모두
+      확인합니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/dashboard/src/lib.rs</figcaption>
+<pre><code>.app { <span class="at">display</span>: flex; <span class="at">flex-direction</span>: column; <span class="at">height</span>: <span class="n">100vh</span>; }
+
+.topbar {
+    <span class="at">display</span>: flex;
+    <span class="at">justify-content</span>: space-between;
+    <span class="at">align-items</span>: center;
+    <span class="at">flex-shrink</span>: <span class="n">0</span>;
+    <span class="at">height</span>: <span class="n">56px</span>;
+}
+
+.body { <span class="at">display</span>: flex; <span class="at">flex</span>: <span class="n">1</span>; <span class="at">align-items</span>: stretch; <span class="at">min-height</span>: <span class="n">0</span>; }
+
+.cards {
+    <span class="at">display</span>: flex;
+    <span class="at">flex-wrap</span>: wrap;
+    <span class="at">gap</span>: <span class="n">16px</span>;
+    <span class="at">justify-content</span>: flex-start;
+    <span class="at">align-items</span>: flex-start;
+}</code></pre>
+</figure>
+    <p>
+      <code>min-width: fit-content</code> 도 동작합니다. <code>samples/workbench</code> 의 탭은 이름이
+      더 필요하지 않으면 120px 이므로, <code>layout_engine.rs</code> 탭은 185px 가 되고
+      <code>main.rs</code> 탭은 120px 그대로입니다.
+    </p>
+
+    <h2 id="grid">Grid</h2>
+    <p>
+      <code>samples/gallery</code> 는 <code>repeat(auto-fill, minmax(160px, 1fr))</code> 를 씁니다.
+      800px 뷰포트에서는 183px 열 네 개가 되고, <code>grid-column: span 2</code> 인 타일은 그중 두 개를
+      차지합니다(378px).
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.grid {
+    <span class="at">display</span>: grid;
+    <span class="at">grid-template-columns</span>: repeat(auto-fill, minmax(<span class="n">160px</span>, <span class="n">1fr</span>));
+    <span class="at">grid-auto-rows</span>: <span class="n">140px</span>;
+    <span class="at">gap</span>: <span class="n">12px</span>;
+    <span class="at">padding</span>: <span class="n">16px</span>;
+}
+
+.tile.wide { <span class="at">grid-column</span>: span <span class="n">2</span>; }</code></pre>
+</figure>
+
+    <h2 id="tables">표</h2>
+    <p>
+      <code>table</code>, <code>thead</code>, <code>tbody</code>, <code>tr</code>, <code>th</code>,
+      <code>td</code> 는 표로 배치됩니다. <code>samples/table</code> 에서 열 폭은 머리글 칸에서 오고,
+      <code>border-collapse: collapse</code> 가 테두리를 나눠 쓰며, <code>text-align: right</code> 가
+      금액을 오른쪽 끝에 붙입니다. 표의 최소 폭이 640px 이므로 480px 페이지에서는 감싼 상자 안에서
+      옆으로 스크롤됩니다(<a href="scrolling-and-overlays.html">스크롤과 오버레이</a> 참고).
+    </p>
+
+    <h2 id="positioning">위치 지정과 쌓임</h2>
+    <p>
+      <code>position: relative</code>, <code>absolute</code>, <code>fixed</code> 가 동작하고,
+      <code>z-index</code> 가 그리는 순서와 클릭이 닿는 상자를 함께 정합니다.
+      <code>samples/overlay</code> 에서 메뉴는 버튼을 감싼 상자의 <code>top: 100%</code> 에 놓여 그
+      아래 내용 위에 그려지고, 대화 상자는 고정된 배경 위에서 뷰포트 가운데에 고정됩니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/overlay/src/lib.rs</figcaption>
+<pre><code>.menu-anchor { <span class="at">position</span>: relative; <span class="at">display</span>: flex; }
+.menu { <span class="at">position</span>: absolute; <span class="at">top</span>: <span class="n">100</span>%; <span class="at">left</span>: <span class="n">0</span>; <span class="at">z-index</span>: <span class="n">10</span>; <span class="at">width</span>: <span class="n">180px</span>; }
+
+.dialog {
+    <span class="at">position</span>: fixed;
+    <span class="at">top</span>: <span class="n">50</span>%;
+    <span class="at">left</span>: <span class="n">50</span>%;
+    <span class="at">z-index</span>: <span class="n">101</span>;
+    <span class="at">width</span>: <span class="n">320px</span>;
+    <span class="at">transform</span>: translate(-<span class="n">50</span>%, -<span class="n">50</span>%);
+}</code></pre>
+</figure>
+    <p>
+      대화 상자의 <code>translate(-50%, -50%)</code> 는 이동을 상자 위치에 더하므로 동작합니다. 다른
+      변환은 아직 그리지 않습니다. <a href="#planned">아래</a>를 보십시오.
+    </p>
+
+    <h2 id="decorations">배경, 테두리, 효과</h2>
+    <p>
+      모든 상자는 계산된 장식을 그리기 목록에 담습니다. 배경색과 배경 이미지
+      (<a href="images.html">이미지와 배경</a>), 변마다 폭과 색이 따로인 테두리, CSS 가 겹치는
+      반지름을 줄이는 방식대로 줄인 모서리 반지름, <code>box-shadow</code>, 조상까지 곱한
+      <code>opacity</code> 입니다. <code>visibility: hidden</code> 은 자리를 지키되 아무것도 그리지
+      않고, <code>display: none</code> 은 상자를 없앱니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/dashboard/src/lib.rs</figcaption>
+<pre><code>.card {
+    <span class="at">width</span>: <span class="n">200px</span>;
+    <span class="at">height</span>: <span class="n">120px</span>;
+    <span class="at">padding</span>: <span class="n">16px</span>;
+    <span class="at">background</span>: <span class="n">#ffffff</span>;
+    <span class="at">border</span>: <span class="n">1px</span> solid <span class="n">#d0d7de</span>;
+    <span class="at">border-radius</span>: <span class="n">12px</span>;
+    <span class="at">box-shadow</span>: <span class="n">0</span> <span class="n">1px</span> <span class="n">3px</span> rgba(<span class="n">31</span>, <span class="n">35</span>, <span class="n">40</span>, <span class="n">0.2</span>);
+}
+
+.card.alert { <span class="at">border-left</span>: <span class="n">4px</span> solid <span class="n">#cf222e</span>; }
+.card.stale { <span class="at">opacity</span>: <span class="n">0.6</span>; }</code></pre>
+</figure>
+
+    <h2 id="plan">렌더러가 받게 될 것</h2>
+    <p>
+      렌더러는 CSS 를 받지 않습니다. <code>plan_from</code> 이 그리기 목록을 그리기 원소로 바꾸고,
+      그 과정의 선택들이 트리를 작게 유지합니다.
+    </p>
+    <ul>
+      <li>네 변이 같은 테두리는 테두리 하나, 다르면 변마다 하나가 됩니다. 반지름이 모두 같으면 모양
+        하나, 다르면 모서리마다 반지름 하나가 됩니다.</li>
+      <li>절대 위치는 부모 상자 안의 오프셋이 됩니다. 그래서 상자 하나가 움직이면 자손 전부가 아니라
+        오프셋 하나만 바뀝니다.</li>
+      <li><code>overflow: auto</code> 나 <code>scroll</code> 은 내용을 담은 스크롤 컨테이너가 됩니다.</li>
+      <li><code>opacity</code> 는 그룹 전체의 알파 하나가 되고, <code>z-index</code> 는 자식 순서가
+        됩니다.</li>
+      <li>갱신 뒤에 <code>diff</code> 는 바뀐 것만 알려 줍니다. 상자 하나의 배경을 바꾸면 계획에서
+        바뀌는 것은 하나이고, 테스트가 바로 그것을 확인합니다.</li>
+    </ul>
+
+    <h2 id="planned">아직 없는 것</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th scope="col">CSS</th><th scope="col">지금</th><th scope="col">상태</th></tr></thead>
+        <tbody>
+          <tr><td><code>transform</code>: <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code></td><td>Stylo 가 계산하지만 상자에는 이동만 반영됩니다. 다른 변환이 있는 상자는 레이아웃 자리에 그대로 있습니다.</td><td><span class="pill planned">계획</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a></td></tr>
+          <tr><td><code>transition</code>, <code>animation</code>, <code>@keyframes</code></td><td>애니메이션 값이 모두 첫 값에 멈춰 있습니다.</td><td><span class="pill planned">계획</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>(불투명도, 변환, 색), <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>(폭, 높이, 여백)</td></tr>
+          <tr><td>VS Code 같은 페이지 확대(<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>+</kbd>)</td><td>페이지는 <code>layout</code> 에 넘긴 배율로 배치됩니다.</td><td><span class="pill planned">계획</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      애니메이션은 무엇을 움직이느냐로 나뉠 예정입니다. 레이아웃을 바꾸지 않는 속성(불투명도, 변환,
+      색)은 렌더러가 Compose 의 애니메이션 시계로 재생하므로 Host 는 프레임마다 할 일이 없습니다.
+      레이아웃을 바꾸는 속성은 Host 가 프레임마다 다시 계산합니다. 다른 것이 모두 어디로 움직이는지는
+      레이아웃 엔진만 알기 때문입니다.
+    </p>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="prev" href="getting-started.html"><span>이전</span>&larr; 시작하기</a>
+      <a class="next" href="text.html"><span>다음</span>텍스트 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>
