@@ -418,8 +418,8 @@ fn unpack(
     let lib_file = renderer_lib_file(target_os);
     let unpacked = scratch.join(subdir).join(lib_file);
     // A missing library is reported properly by the layout check downstream.
-    if unpacked.is_file() {
-        if let Err(message) = name_after_its_location(
+    if unpacked.is_file()
+        && let Err(message) = name_after_its_location(
             &unpacked,
             &destination.join(subdir).join(lib_file),
             target_os,
@@ -429,7 +429,6 @@ fn unpack(
             let _ = std::fs::remove_dir_all(&scratch);
             return Err(message);
         }
-    }
 
     let _ = std::fs::remove_dir_all(destination);
     std::fs::rename(&scratch, destination).map_err(|error| {
@@ -571,8 +570,8 @@ fn finish(lib_dir: PathBuf, request: &Request, source: RendererSource) -> Result
     // the build, which is how this would otherwise happen.
     let lib_dir = absolute(&lib_dir);
     let artifact_version = read_artifact_version(&lib_dir);
-    if let Some(found) = artifact_version.as_deref() {
-        if found != request.crate_version {
+    if let Some(found) = artifact_version.as_deref()
+        && found != request.crate_version {
             return Err(version_mismatch_message(
                 &lib_dir,
                 found,
@@ -580,7 +579,6 @@ fn finish(lib_dir: PathBuf, request: &Request, source: RendererSource) -> Result
                 request.target,
             ));
         }
-    }
 
     let library = lib_dir.join(renderer_lib_file(request.target_os));
     name_after_its_location(

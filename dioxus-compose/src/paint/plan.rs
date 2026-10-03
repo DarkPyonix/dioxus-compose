@@ -644,10 +644,10 @@ impl<'a> Builder<'a> {
             if !seen.insert(id) {
                 break;
             }
-            if let Some(&container) = self.content.get(&id) {
-                if !self.drawn_after(container, bounds) {
-                    return container;
-                }
+            if let Some(&container) = self.content.get(&id)
+                && !self.drawn_after(container, bounds)
+            {
+                return container;
             }
             parent = self
                 .by_node

@@ -318,11 +318,12 @@ impl Painter<'_, '_> {
             let rect = child_placed.rect;
             if rect.width > 0.0 && rect.height > 0.0 {
                 let (mut right, mut bottom) = (rect.right(), rect.bottom());
-                if direct && !child_placed.positioned {
-                    if let Some(node) = self.doc.get_node(child) {
-                        right += node.unrounded_layout.margin.right.max(0.0);
-                        bottom += node.unrounded_layout.margin.bottom.max(0.0);
-                    }
+                if direct
+                    && !child_placed.positioned
+                    && let Some(node) = self.doc.get_node(child)
+                {
+                    right += node.unrounded_layout.margin.right.max(0.0);
+                    bottom += node.unrounded_layout.margin.bottom.max(0.0);
                 }
                 reach.0 = reach.0.max(right);
                 reach.1 = reach.1.max(bottom);

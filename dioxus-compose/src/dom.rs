@@ -230,10 +230,10 @@ impl HtmlDom {
     pub fn listener_target(&self, node: NodeId, event: &str) -> Option<(NodeId, ElementId)> {
         let mut current = Some(node);
         while let Some(id) = current {
-            if self.state.listeners(id).contains(&event) {
-                if let Some(element) = self.state.element_of(id) {
-                    return Some((id, element));
-                }
+            if self.state.listeners(id).contains(&event)
+                && let Some(element) = self.state.element_of(id)
+            {
+                return Some((id, element));
             }
             current = self
                 .doc

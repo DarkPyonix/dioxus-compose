@@ -814,10 +814,9 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     if let (TextLineHeight::Px(text_line), TextLineHeight::Px(root_line)) = (
         style.line_height,
         convert::text_style(&root_style).line_height,
-    ) {
-        if root_line > text_line {
-            style.line_height = TextLineHeight::Px(root_line);
-        }
+    ) && root_line > text_line
+    {
+        style.line_height = TextLineHeight::Px(root_line);
     }
 
     let text = if convert::collapses_white_space(&root_style) {
