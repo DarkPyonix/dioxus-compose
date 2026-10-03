@@ -2,6 +2,8 @@
 //! often it was clicked.
 //!
 //! [`launch`] opens it in a window: the Host lays the page out and compose-rust draws it.
+//! The same page runs in an Android Activity, a browser page and an iOS bundle, through
+//! the entry points declared at the end of this file.
 
 use dioxus_compose::html::prelude::*;
 use dioxus_hooks::use_signal;
@@ -87,6 +89,13 @@ pub fn config() -> HtmlConfig {
 
 /// Opens the page in a window. Does not return while it is open.
 pub fn launch() {
+    launch_builder().launch(app);
+}
+
+/// How the page starts, in one place because four entry points need it: the desktop
+/// binary, an Android Activity, a browser page and an iOS bundle. Each of them gets the
+/// same window and the same stylesheet, so the page is the same page wherever it runs.
+fn launch_builder() -> dioxus_compose::LaunchBuilder {
     dioxus_compose::LaunchBuilder::new()
         .with_window(
             dioxus_compose::schema::Window::new()
@@ -94,5 +103,13 @@ pub fn launch() {
                 .with_size(800, 600),
         )
         .with_html(config)
-        .launch(app);
 }
+
+// The platforms where the page is not a program. Android's Activity and the browser's page
+// own the loop and call an entry point that registers the root component; iOS starts at a
+// C `main` (ios/main.c) that hands over to `launch`. Each macro compiles into nothing off
+// its own platform, and they are declared unconditionally so a desktop build still checks
+// that the page can be built for the other three.
+dioxus_compose::android_main!({ launch_builder() }, app);
+dioxus_compose::web_main!({ launch_builder() }, app);
+dioxus_compose::ios_main!(launch);
