@@ -23,6 +23,13 @@
 //! JavaScript is never run. A `<script>` element is an ordinary element that the
 //! user-agent stylesheet hides.
 //!
+//! Events go back to the Dioxus handlers of the DOM nodes they land on: clicks through
+//! [`HtmlDom::click`], with what a browser does after a click (a checkbox ticks, a submit
+//! button submits its form), and the `input`, `change` and `submit` events of form controls
+//! through [`HtmlDom::input`], [`HtmlDom::change`], [`HtmlDom::select`],
+//! [`HtmlDom::check`] and [`HtmlDom::submit`], which a renderer calls with what the user
+//! committed in its own fields.
+//!
 //! ```ignore
 //! use dioxus_compose_html::prelude::*;
 //!
@@ -39,6 +46,7 @@ mod build;
 mod convert;
 mod display_list;
 mod dom;
+mod form;
 mod image;
 mod layout;
 mod measure;
@@ -64,9 +72,17 @@ pub use measure::{
 };
 pub use plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,
-    PlanChange, PlanImage, PlanKey, PlanKind, PlanModifier, PlanNode, PlanText, PlanTextField,
-    diff, plan_from, plan_from_images, plan_from_with,
+    PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier, PlanNode, PlanText,
+    PlanTextField, diff, plan_from, plan_from_images, plan_from_with,
 };
+
+/// Adds the user-agent rules this crate relies on for form controls to a document that
+/// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
+/// listed by the renderer's dropdown rather than drawn in the page. Call it once, before
+/// the first layout. An [`HtmlDom`] does this for its own document.
+pub fn add_form_control_styles(doc: &mut BaseDocument) {
+    doc.add_user_agent_stylesheet(dom::FORM_CONTROLS_CSS);
+}
 
 /// Lays out a document that did not come from Dioxus (one parsed by `blitz-html`, say) at
 /// the viewport it was configured with, and returns what to draw.

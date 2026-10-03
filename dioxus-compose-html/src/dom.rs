@@ -20,11 +20,18 @@ use dioxus_html::{HasMouseData, HtmlEventConverter, Modifiers, MouseData, Platfo
 use crate::NodeId;
 use crate::build::build_display_list;
 use crate::display_list::{DisplayList, DisplayListDiff};
+use crate::form;
 use crate::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::measure::{ParleyMeasurer, TextMeasurer};
 use crate::plan::{ColourResolver, Plan, plan_from_images};
 use crate::writer::{DomWriter, WriterState, element_name};
+
+/// What a browser's own stylesheet says about `<select>` and blitz-dom's does not: the
+/// control is a box of its own, and its options are not drawn in the page, since the
+/// renderer's dropdown lists them.
+pub(crate) const FORM_CONTROLS_CSS: &str =
+    "select { display: inline-block; } select option, select optgroup { display: none; }";
 
 /// How an [`HtmlDom`] is set up.
 pub struct HtmlConfig {
@@ -106,6 +113,7 @@ impl HtmlDom {
             net_provider: Some(Arc::new(DummyNetProvider)),
             ..DocumentConfig::default()
         });
+        doc.add_user_agent_stylesheet(FORM_CONTROLS_CSS);
 
         let body = {
             let mut mutator = doc.mutate();
@@ -235,12 +243,150 @@ impl HtmlDom {
     }
 
     /// Delivers a primary-button click at a point of the last layout to the Dioxus
-    /// handler of the element under it, bubbling the way Dioxus bubbles. Returns the node
-    /// whose handler received it, or `None` when nothing under the point listens.
+    /// handler of the element under it, bubbling the way Dioxus bubbles, and then does what
+    /// a browser does after a click: a checkbox or radio button under the point changes
+    /// state and sends `input` and `change`, a submit button submits its form, and a
+    /// `<label>` clicks the control it is for. Returns the node whose click handler
+    /// received it, or `None` when nothing under the point listens for clicks (the checkbox
+    /// still changes, the form is still submitted).
+    ///
+    /// The checkbox or radio button changes before the click handlers run, so they see the
+    /// new state, and changes back if one of them prevents the default.
     ///
     /// Handlers run immediately; call [`HtmlDom::render`] to apply what they changed.
     pub fn click(&mut self, x: f32, y: f32) -> Option<NodeId> {
         let hit = self.hit_test(x, y)?;
+        self.activate(hit, Some((x, y)))
+    }
+
+    /// What a renderer calls when the user commits text to the field `node` (an
+    /// `<input>` or `<textarea>`): delivers an `input` event carrying `value` to the
+    /// nearest handler at or around the field. Returns the node whose handler received it.
+    ///
+    /// The renderer owns the field's text while the user edits it. Only committed text
+    /// comes here, never text an input method is still composing. The field holds `value`
+    /// from now on, for the form it belongs to and for later events, until the app sets
+    /// its value again. Nothing is written into the document: the app decides whether its
+    /// `value` follows.
+    pub fn input(&mut self, node: NodeId, value: &str) -> Option<NodeId> {
+        self.state.commit(node, value);
+        self.send_form_event(node, "input")
+    }
+
+    /// What a renderer calls when the user is done changing a field: delivers `change`
+    /// to the nearest handler at or around `node`. Returns the node whose handler
+    /// received it.
+    ///
+    /// For an `<input>` or `<textarea>`, `value` is the committed text (see
+    /// [`HtmlDom::input`]). For a `<select>`, it is the value of the option the user chose;
+    /// as in a browser, `input` is delivered first, then `change`. For a checkbox or radio
+    /// button use [`HtmlDom::check`] instead, which also delivers the click a browser
+    /// sends.
+    pub fn change(&mut self, node: NodeId, value: &str) -> Option<NodeId> {
+        self.state.commit(node, value);
+        let is_select = self.doc.get_node(node).and_then(form::tag) == Some("select");
+        if is_select {
+            let input = self.send_form_event(node, "input");
+            return self.send_form_event(node, "change").or(input);
+        }
+        self.send_form_event(node, "change")
+    }
+
+    /// What a renderer calls when the user picks the option at `index` of the `<select>`
+    /// `node`, counting every `<option>` in document order: [`HtmlDom::change`] with that
+    /// option's value. `None`, and nothing delivered, when there is no such option.
+    pub fn select(&mut self, node: NodeId, index: usize) -> Option<NodeId> {
+        let value = form::select_options(&self.doc, node)
+            .get(index)?
+            .value
+            .clone();
+        self.change(node, &value)
+    }
+
+    /// What a renderer calls when the user ticks or clears the checkbox `node`, or picks
+    /// the radio button `node` (`checked` true): the click a browser delivers for it, at
+    /// its centre, then `input` and `change`. Nothing happens when the control already is
+    /// in that state. Returns the node whose click handler received the click.
+    pub fn check(&mut self, node: NodeId, checked: bool) -> Option<NodeId> {
+        if form::checkedness(&self.doc, node) == checked {
+            return None;
+        }
+        self.activate(node, None)
+    }
+
+    /// What a renderer calls when the user presses Enter in a single-line field: submits
+    /// the form the field belongs to, as a browser does. When the form has a submit
+    /// button, that button is clicked, so its click handler runs first; otherwise the form
+    /// is submitted directly. Returns the node whose handler received the click or the
+    /// `submit`, or `None` when `node` is in no form.
+    ///
+    /// `node` may also be the form itself.
+    pub fn submit(&mut self, node: NodeId) -> Option<NodeId> {
+        let is_form = self.doc.get_node(node).and_then(form::tag) == Some("form");
+        let form = if is_form {
+            node
+        } else {
+            form::form_owner(&self.doc, node)?
+        };
+        match form::default_button(&self.doc, form) {
+            Some(button) => self.activate(button, None),
+            None => self.submit_form(form, None),
+        }
+    }
+
+    /// Clicks `hit`, at `point` or else at the centre of its box, and does what the click
+    /// activates. See [`HtmlDom::click`].
+    fn activate(&mut self, hit: NodeId, point: Option<(f32, f32)>) -> Option<NodeId> {
+        let activation = form::activation_target(&self.doc, hit);
+        let toggled = activation.and_then(|activation| form::toggle(&mut self.doc, activation));
+
+        let (x, y) = point.unwrap_or_else(|| {
+            self.current
+                .as_ref()
+                .and_then(|list| list.get(hit))
+                .map_or((0.0, 0.0), |entry| {
+                    (
+                        entry.rect.x + entry.rect.width / 2.0,
+                        entry.rect.y + entry.rect.height / 2.0,
+                    )
+                })
+        });
+        let clicked = self.send_click(hit, x, y);
+        let prevented = clicked.is_some_and(|(_, prevented)| prevented);
+
+        if let Some(toggled) = toggled {
+            if prevented {
+                toggled.undo(&mut self.doc);
+            } else if toggled.target_changed(&self.doc) {
+                let target = toggled.target;
+                self.send_form_event(target, "input");
+                self.send_form_event(target, "change");
+            }
+        } else if !prevented {
+            match activation {
+                Some(form::Activation::Submit { button, form }) => {
+                    let submitted = self.submit_form(form, Some(button));
+                    if clicked.is_none() {
+                        return submitted;
+                    }
+                }
+                Some(form::Activation::Label(control)) => {
+                    // The control a label is for is clicked in turn, so a checkbox ticks
+                    // when its label's text is clicked.
+                    let activated = self.activate(control, None);
+                    if clicked.is_none() {
+                        return activated;
+                    }
+                }
+                _ => {}
+            }
+        }
+        clicked.map(|(target, _)| target)
+    }
+
+    /// Delivers a click at a point to the nearest click handler at or around `hit`.
+    /// Returns that handler's node and whether a handler prevented the default.
+    fn send_click(&mut self, hit: NodeId, x: f32, y: f32) -> Option<(NodeId, bool)> {
         let (target, element) = self.listener_target(hit, "click")?;
         let origin = self
             .current
@@ -251,10 +397,46 @@ impl HtmlDom {
             client: (x as f64, y as f64),
             element: ((x - origin.0) as f64, (y - origin.1) as f64),
         };
-        let event: Event<dyn Any> =
-            Event::new(Rc::new(PlatformEventData::new(Box::new(data))), true).into_any();
-        self.vdom.runtime().handle_event("click", event, element);
+        Some((target, self.send(element, "click", Box::new(data))))
+    }
+
+    /// Delivers `name` (`input` or `change`) to the nearest handler at or around the
+    /// field `node`, with the field's value and its form's values.
+    fn send_form_event(&mut self, node: NodeId, name: &'static str) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, name)?;
+        let committed = self.state.committed_values();
+        let value = form::event_value(&self.doc, committed, node);
+        let values = form::form_owner(&self.doc, node)
+            .map(|owner| form::form_values(&self.doc, committed, owner, None))
+            .unwrap_or_default();
+        let data = form::FormEventData { value, values };
+        self.send(element, name, Box::new(data));
         Some(target)
+    }
+
+    /// Delivers `submit` to the handler of `form` or the nearest one around it, with what
+    /// the form submits. A form has nowhere to go from here, so the app's handler is the
+    /// whole of the submission.
+    fn submit_form(&mut self, form: NodeId, submitter: Option<NodeId>) -> Option<NodeId> {
+        let (target, element) = self.listener_target(form, "submit")?;
+        let values = form::form_values(&self.doc, self.state.committed_values(), form, submitter);
+        let data = form::FormEventData {
+            value: String::new(),
+            values,
+        };
+        self.send(element, "submit", Box::new(data));
+        Some(target)
+    }
+
+    /// Runs the handlers for `name` from `element` up, the way Dioxus bubbles. Returns
+    /// whether one of them prevented the default.
+    fn send(&mut self, element: ElementId, name: &str, data: Box<dyn Any>) -> bool {
+        let event = Event::new(Rc::new(PlatformEventData::new(data)), true);
+        let probe = event.clone();
+        self.vdom
+            .runtime()
+            .handle_event(name, event.into_any(), element);
+        !probe.default_action_enabled()
     }
 
     /// The first element whose `id` attribute is `id`.
@@ -398,8 +580,9 @@ fn register_event_converter() {
     REGISTER.call_once(|| dioxus_html::set_event_converter(Box::new(Converter)));
 }
 
-/// Turns the events this document sends into Dioxus event data. Clicks are the only kind
-/// sent so far, so every other conversion is unreachable from here.
+/// Turns the events this document sends into Dioxus event data: clicks, and the `input`,
+/// `change` and `submit` events of form controls. Every other conversion is unreachable
+/// from here.
 struct Converter;
 
 fn not_sent(kind: &str) -> ! {
@@ -435,8 +618,12 @@ impl HtmlEventConverter for Converter {
     fn convert_focus_data(&self, _: &PlatformEventData) -> dioxus_html::FocusData {
         not_sent("focus")
     }
-    fn convert_form_data(&self, _: &PlatformEventData) -> dioxus_html::FormData {
-        not_sent("form")
+    fn convert_form_data(&self, event: &PlatformEventData) -> dioxus_html::FormData {
+        let data = event
+            .downcast::<form::FormEventData>()
+            .expect("every form event this document sends carries FormEventData")
+            .clone();
+        dioxus_html::FormData::new(data)
     }
     fn convert_image_data(&self, _: &PlatformEventData) -> dioxus_html::ImageData {
         not_sent("image")
