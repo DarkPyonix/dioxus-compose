@@ -17,6 +17,7 @@ use dioxus_compose::html::{
 };
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{Color, EventPayload, Modifier, Paint, PropertyKind, WidgetKind};
+use dioxus_compose::spans::{TextSpan, TextSpans};
 use dioxus_hooks::use_signal;
 
 struct FixedAdvance;
@@ -74,7 +75,7 @@ enum Value {
     Bool(bool),
     Int(i64),
     Float(f32),
-    Bytes,
+    Bytes(Vec<u8>),
 }
 
 /// One record of a batch, owned.
@@ -118,7 +119,7 @@ fn records(bytes: &[u8]) -> Vec<Record> {
                     PropertyValue::Bool(flag) => Value::Bool(flag),
                     PropertyValue::Integer(number) => Value::Int(number),
                     PropertyValue::Float(number) => Value::Float(number),
-                    PropertyValue::Bytes(_) => Value::Bytes,
+                    PropertyValue::Bytes(bytes) => Value::Bytes(bytes.to_vec()),
                 },
             ),
             Mutation::SetModifier {
@@ -988,4 +989,146 @@ fn fr34_prefers_color_scheme_follows_the_theme() {
 
     let next = tree(records(host.render_frame(0).unwrap()));
     assert_eq!(next, Vec::new(), "the scheme is applied once");
+}
+
+/// The `Text` node drawing `text`. There is exactly one.
+#[track_caller]
+fn text_node(records: &[Record], text: &str) -> u32 {
+    let found: Vec<u32> = records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(node, PropertyKind::Text, Value::Str(given)) if given == text => {
+                Some(*node)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "one node draws {text:?}: {records:#?}");
+    found[0]
+}
+
+/// The spans each `Spans` record in `records` gives `node`, in order.
+fn spans_sent(records: &[Record], node: u32) -> Vec<Vec<TextSpan>> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(id, PropertyKind::Spans, Value::Bytes(bytes)) if *id == node => {
+                Some(TextSpans::from_bytes(bytes.clone()).spans().collect())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn slanted() -> Element {
+    rsx! {
+        p { style: "font-style: italic", "Leaning" }
+        p { style: "font-style: oblique", "Tilted" }
+        p { em { "stressed" } }
+        p { "Upright" }
+    }
+}
+
+/// Text set in `font-style: italic` or `oblique` is sent with one italic span over all of
+/// it, which is how compose-rust's text takes a slant. `<em>` is italic by the browser's
+/// own stylesheet, and its run gets the same span. Upright text gets none.
+#[test]
+fn fr34_italic_text_is_sent_as_a_whole_text_span() {
+    let mut host = Host::html(slanted, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    for text in ["Leaning", "Tilted", "stressed"] {
+        let node = text_node(&first, text);
+        assert_eq!(
+            spans_sent(&first, node),
+            vec![vec![TextSpan::new(0, text.len() as u32).italic()]],
+            "{text:?} is one italic span: {first:#?}"
+        );
+    }
+    let upright = text_node(&first, "Upright");
+    assert_eq!(spans_sent(&first, upright), Vec::<Vec<TextSpan>>::new());
+}
+
+fn ruled() -> Element {
+    rsx! {
+        p { style: "text-decoration-line: underline", "Under" }
+        p { style: "text-decoration-line: line-through", "Struck" }
+        p { style: "text-decoration-line: underline line-through", "Both" }
+        p { style: "font-style: italic; text-decoration-line: underline", "Everything" }
+        div { style: "text-decoration-line: line-through",
+            p { "Inherited" }
+        }
+    }
+}
+
+/// `text-decoration-line: underline`, `line-through`, and both together are sent as one
+/// span over the whole run with those lines, combined with a slant when there is one. A
+/// box's lines are drawn across the text of the boxes inside it, though the property is
+/// not inherited, so a paragraph inside a struck-through box is struck through too.
+#[test]
+fn fr34_underline_and_line_through_are_sent_as_a_whole_text_span() {
+    let mut host = Host::html(ruled, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let expected = [
+        ("Under", TextSpan::new(0, 5).underline()),
+        ("Struck", TextSpan::new(0, 6).strikethrough()),
+        ("Both", TextSpan::new(0, 4).underline().strikethrough()),
+        ("Everything", TextSpan::new(0, 10).italic().underline()),
+        ("Inherited", TextSpan::new(0, 9).strikethrough()),
+    ];
+    for (text, span) in expected {
+        let node = text_node(&first, text);
+        assert_eq!(
+            spans_sent(&first, node),
+            vec![vec![span]],
+            "{text:?} is one span: {first:#?}"
+        );
+    }
+}
+
+fn leaning_on_click() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let slant = if presses() % 2 == 1 {
+        "font-style: italic"
+    } else {
+        "font-style: normal"
+    };
+    rsx! {
+        div {
+            style: "width: 100px; height: 20px; {slant}",
+            onclick: move |_| presses += 1,
+            "Plain"
+        }
+    }
+}
+
+/// Text with no slant and no lines sends no `Spans` record at all, so a plain page's
+/// records are what they were before spans were sent. A run that turns italic gets its
+/// span, and when it turns upright again the span is taken back and nothing else changes.
+#[test]
+fn fr34_plain_text_sends_no_span() {
+    let mut host = Host::html(leaning_on_click, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    assert!(
+        !first
+            .iter()
+            .any(|record| matches!(record, Record::Prop(_, PropertyKind::Spans, _))),
+        "no span is sent for plain text: {first:#?}"
+    );
+    let text = text_node(&first, "Plain");
+    let target = clickable(&first);
+
+    let italic = click(&mut host, target);
+    assert_eq!(
+        spans_sent(&italic, text),
+        vec![vec![TextSpan::new(0, 5).italic()]]
+    );
+    assert_eq!(italic.len(), 1, "only the span is sent: {italic:#?}");
+
+    let upright = click(&mut host, target);
+    assert_eq!(
+        upright,
+        vec![Record::Prop(text, PropertyKind::Spans, Value::None)]
+    );
 }

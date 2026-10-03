@@ -57,7 +57,7 @@ use taffy::{
 };
 
 use crate::dom::form;
-use crate::paint::display_list::{MeasuredText, Rgba, TextAlign};
+use crate::paint::display_list::{MeasuredText, Rgba, TextAlign, TextDecoration};
 use measure::{
     TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint,
 };
@@ -139,6 +139,7 @@ struct PreparedText {
     text: String,
     style: TextStyle,
     color: Rgba,
+    decoration: TextDecoration,
     align: TextAlign,
     white_space: TextWhiteSpace,
 }
@@ -512,6 +513,7 @@ impl MeasuredTree<'_> {
                         text: prepared.text,
                         style: prepared.style,
                         color: prepared.color,
+                        decoration: prepared.decoration,
                         align: prepared.align,
                         metrics,
                         wrap_width,
@@ -758,10 +760,11 @@ fn intrinsic_widths(
 ///   item with a marker;
 /// - an inline element inside it has padding, a border or a margin on its left or right,
 ///   which moves the text after it along the line;
-/// - its text is not all in one style: the pieces differ in font, colour,
-///   `text-transform` or whether they may wrap. The measurer is asked about one run of
-///   text in one font and the display list draws it as one run in one colour, so a context
-///   that mixes them stays with Parley, which shapes each piece in its own style.
+/// - its text is not all in one style: the pieces differ in font, colour, the lines drawn
+///   across them, `text-transform` or whether they may wrap. The measurer is asked about
+///   one run of text in one font and the display list draws it as one run in one colour,
+///   so a context that mixes them stays with Parley, which shapes each piece in its own
+///   style.
 ///
 /// Inline elements that only wrap text (a `<span>` or an `<a>` around a label, in the same
 /// font) do not stop the measurer: the text is measured as one run, and the run's owner is
@@ -797,12 +800,14 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
             })
     };
     let (mut style, color, transform, white_space) = styled(first)?;
+    let decoration = convert::text_decoration(doc, first);
     for &holder in &holders[1..] {
         let (other_style, other_color, other_transform, other_white_space) = styled(holder)?;
         if other_style != style
             || other_color != color
             || other_transform != transform
             || other_white_space.wrap != white_space.wrap
+            || convert::text_decoration(doc, holder) != decoration
         {
             return None;
         }
@@ -838,6 +843,7 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         text: convert::transform_text(&text, transform),
         style,
         color,
+        decoration,
         align: convert::text_align(&root_style),
         white_space,
     }))

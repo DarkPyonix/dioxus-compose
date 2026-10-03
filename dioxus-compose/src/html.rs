@@ -75,8 +75,8 @@ pub use crate::paint::bridge::{BridgeEvent, BridgeHandler, ClickTargets, PlanBri
 pub use crate::paint::display_list::{
     BackgroundImage, BackgroundLayer, Border, BorderLine, BoxShadow, Corners, DisplayList,
     DisplayListDiff, GradientStop, InputField, InputKind, LinearGradient, NodeEntry, ObjectFit,
-    RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides, TextAlign, TextRun,
-    TileRepeat,
+    RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides, TextAlign,
+    TextDecoration, TextRun, TileRepeat,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,

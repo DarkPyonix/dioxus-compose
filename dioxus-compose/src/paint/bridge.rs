@@ -31,13 +31,14 @@ use compose_rust::schema::{
     Color, Modifier, Paint, PropertyKind, TextAlign as WireAlign, TextOverflow, TileMode,
     WidgetKind,
 };
+use compose_rust::spans::{TextSpan, TextSpans};
 
 use crate::html::NodeId;
 use crate::layout::measure::{TextLineHeight, TextStyle};
 use crate::paint::display_list::{GradientStop, Rect, Rgba, TextAlign, TileRepeat};
 use crate::paint::plan::{
     Brush, BrushId, Plan, PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier,
-    PlanNode, PlanTextField, diff,
+    PlanNode, PlanText, PlanTextField, diff,
 };
 
 /// The most tiles one background layer is drawn with. A tiny `background-size` repeated
@@ -117,6 +118,7 @@ enum Prop {
     Bool(bool),
     Int(i64),
     Float(f32),
+    Spans(TextSpans),
 }
 
 impl Prop {
@@ -127,6 +129,7 @@ impl Prop {
             Prop::Bool(value) => PropertyValue::Bool(*value),
             Prop::Int(value) => PropertyValue::Integer(*value),
             Prop::Float(value) => PropertyValue::Float(*value),
+            Prop::Spans(value) => PropertyValue::Bytes(value.as_bytes()),
         }
     }
 }
@@ -569,6 +572,7 @@ impl PlanBridge {
             PlanKind::Text(text) => {
                 self.set_prop(batch, key, PropertyKind::Text, Prop::Str(text.text.clone()));
                 self.set_text_style(batch, key, &text.style, text.color);
+                self.set_prop(batch, key, PropertyKind::Spans, slant_and_lines(text));
                 self.set_prop(
                     batch,
                     key,
@@ -1224,7 +1228,8 @@ fn page_extent(page: &PlanNode) -> f32 {
 /// Every one is sent, because the renderer fills an unsent one from its design system,
 /// and text drawn in the design system's size, height or spacing would not fit the box
 /// the page laid out for it. The family and the slant are not among them: compose-rust's
-/// text takes neither, so the renderer draws the design system's face.
+/// text style takes neither, so the renderer draws the design system's face. A run of
+/// text sends its slant as a span instead ([`slant_and_lines`]).
 fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
     let line_height = match style.line_height {
         TextLineHeight::Px(px) => px,
@@ -1248,6 +1253,22 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
             Prop::Int(literal(color).to_bits() as i64),
         ),
     ]
+}
+
+/// The slant and the lines of a run of text, as one span over all of it.
+///
+/// compose-rust's text style has no italic, underline or line-through, but a span does, so
+/// a run whose whole text is slanted or decorated says so with a span covering every byte.
+/// A run with none of them sends no span.
+fn slant_and_lines(text: &PlanText) -> Prop {
+    let mut span = TextSpan::new(0, text.text.len() as u32);
+    span.italic = text.style.italic;
+    span.underline = text.decoration.underline;
+    span.strikethrough = text.decoration.line_through;
+    if !(span.italic || span.underline || span.strikethrough) || text.text.is_empty() {
+        return Prop::None;
+    }
+    Prop::Spans(TextSpans::new([span]))
 }
 
 /// compose-rust aligns by reading direction only. `left` and `right` are sent as start and
