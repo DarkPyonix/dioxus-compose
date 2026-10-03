@@ -322,6 +322,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "compose-rust"
+version = "0.0.1"
+source = "git+https://github.com/DarkPyonix/compose-rust?rev=22822c130a8211de7f65e0320db5e6a4db1a8bb1#22822c130a8211de7f65e0320db5e6a4db1a8bb1"
+dependencies = [
+ "jni",
+]
+
+[[package]]
 name = "const_format"
 version = "0.2.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -571,19 +579,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "dioxus-baseline"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "sample-academic",
+ "sample-calculator",
+ "sample-chat",
+ "sample-minimal",
+ "sample-notepad",
+ "sample-podcast",
+ "sample-selfcare",
+ "sample-social",
+ "sample-statistics",
+ "sample-store",
+ "sample-todo",
+]
+
+[[package]]
 name = "dioxus-compose"
 version = "0.0.0"
 dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "compose-rust",
  "criterion",
  "dioxus-core",
  "dioxus-core-macro",
  "dioxus-hooks",
  "dioxus-html",
  "dioxus-signals",
- "jni",
  "parley",
  "stylo",
  "taffy",
@@ -1988,6 +2014,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "sample-academic"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-calculator"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-chat"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-frames"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+]
+
+[[package]]
 name = "sample-html-article"
 version = "0.0.0"
 dependencies = [
@@ -2096,6 +2156,79 @@ dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
  "dioxus-signals",
+]
+
+[[package]]
+name = "sample-minimal"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-notepad"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "futures-channel",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-podcast"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-selfcare"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-social"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-statistics"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-store"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
+]
+
+[[package]]
+name = "sample-todo"
+version = "0.1.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "sample-frames",
 ]
 
 [[package]]
