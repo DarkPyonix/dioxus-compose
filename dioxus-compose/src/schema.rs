@@ -69,7 +69,7 @@ pub struct EventSchema {
 /// Canonical schema text. Variant order is wire-significant and must only be appended to.
 pub const SCHEMA_DESCRIPTOR: &str = concat!(
     "dioxus-compose/v1;",
-    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget;",
+    "widgets=Column,Row,Box,Text,TextField,Button,Spacer,LazyColumn,ScrollColumn,Image,Icon,Checkbox,RadioButton,Switch,Slider,ProgressIndicator,Divider,Card,Surface,Dialog,Menu,Tabs,TopAppBar,LazyRow,Tooltip,Canvas,DatePicker,TimePicker,Dropdown,Navigation,NavigationItem,Sheet,Scaffold,ScaffoldSlot,LazyGrid,FileDropTarget,ScrollRow;",
     "properties=text,placeholder,enabled,multiline,on_click,on_value_change,on_submit,on_focus_lost,on_key_down,item_count,item_key,on_range_requested,type_role,font_size,font_weight,line_height,letter_spacing,color,text_align,max_lines,overflow,arrangement,spacing,space_role,alignment,variant,asset,checked,steps,determinate,circular,vertical,open,on_dismiss,selected_index,commands,value,min,max,icon,slot,columns,min_column_width,spans,on_files_entered,on_files_dropped;",
     "modifiers=Empty,Padding,FillMaxWidth,FillMaxHeight,Width,Height,Size,Background,Clickable,PaddingRole,PaddingEach,Weight,Shape,ShapeRole,Border,Elevation,ObserveSize,Motion,Material;",
     "keys=Enter;",
@@ -315,6 +315,10 @@ crate::extensions::define_widget_schema_with_extensions!(define_wire_enum; WIDGE
     // not one is never offered as a target, so the platform shows no drop cursor over it
     // and nothing is reported.
     FileDropTarget = 36,
+    // The whole content with a horizontal scroll, which is a ScrollColumn turned on its
+    // side. Every child is materialised and the scroll position is the Renderer's, so
+    // nothing about scrolling crosses the boundary; a long horizontal list is a LazyRow.
+    ScrollRow = 37,
 });
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]

@@ -311,6 +311,46 @@ pub fn ScrollColumn(
     }
 }
 
+/// The whole content with a horizontal scroll attached: a [`ScrollColumn`] on its side.
+/// Every child is materialised, so a long horizontal list belongs in a [`LazyRow`]. The
+/// scroll position is the Renderer's, so scrolling never reaches the Host.
+#[component]
+pub fn ScrollRow(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    children: Element,
+) -> Element {
+    rsx! {
+        scrollrow {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            {children}
+        }
+    }
+}
+
 /// `type_role` alone takes the design system's size, weight, line height and letter
 /// spacing. Each override replaces one axis and costs one `SetProp`, so changing the font
 /// size does not resend the rest of the text's styling.
