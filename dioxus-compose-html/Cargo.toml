@@ -9,6 +9,12 @@ description = "Lays out Dioxus screens written with HTML elements and CSS inside
 repository = "https://github.com/DarkPyonix/dioxus-compose"
 publish = false
 
+[lib]
+# The lib has no #[bench] items, but `cargo bench` would still run its default test
+# harness, which rejects Criterion's flags (--quick, --noplot), and scripts/check.sh runs
+# every bench target in the workspace with them.
+bench = false
+
 [dependencies]
 dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
