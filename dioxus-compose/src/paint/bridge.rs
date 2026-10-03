@@ -34,7 +34,7 @@ use compose_rust::schema::{
 
 use crate::html::NodeId;
 use crate::layout::measure::{TextLineHeight, TextStyle};
-use crate::paint::display_list::{Rect, Rgba, TextAlign, TileRepeat};
+use crate::paint::display_list::{GradientStop, Rect, Rgba, TextAlign, TileRepeat};
 use crate::paint::plan::{
     Brush, BrushId, Plan, PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier,
     PlanNode, PlanTextField, diff,
@@ -1193,7 +1193,7 @@ fn wire_align(align: TextAlign) -> WireAlign {
 /// drawn as the circle of its horizontal radius, which is the radius its stop offsets are
 /// fractions of.
 fn wire_brush(brush: &Brush, width: f32, height: f32) -> WireBrush {
-    let stops = |stops: &[crate::paint::display_list::GradientStop]| {
+    let stops = |stops: &[GradientStop]| -> Vec<Stop> {
         stops
             .iter()
             .map(|stop| Stop::new(stop.offset, argb(stop.color)))
