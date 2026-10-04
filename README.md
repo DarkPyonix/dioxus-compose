@@ -116,8 +116,9 @@ measurements of this project.
 
 ## Status
 
-An **early project under active development**. Version 0.0.0 on crates.io is an early snapshot
-with the widget path only; the HTML path is on the `develop` branch. The API will change.
+**0.0.x is an early release stage.** dioxus-compose 0.0.1 on crates.io has both paths and depends
+on compose-rust 0.0.1. HTML screens are laid out and planned but not yet drawn (the renderer bridge
+is in review). The API will change.
 
 | State | Item |
 |---|---|
@@ -198,10 +199,10 @@ handled, the way `preventDefault()` does on the web.
 
 ## Getting started
 
-The HTML path is not in a crates.io release yet, so depend on the repository:
+Add the crate from crates.io:
 
 ```bash
-cargo add dioxus-compose --git https://github.com/DarkPyonix/dioxus-compose --branch develop
+cargo add dioxus-compose@0.0.1
 cargo add dioxus-hooks@0.7 dioxus-signals@0.7
 ```
 

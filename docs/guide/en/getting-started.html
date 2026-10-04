@@ -75,13 +75,12 @@
 
     <h2 id="add">Add the crate</h2>
     <p>
-      The HTML path is on the <code>develop</code> branch and is not in a crates.io release yet. The
-      0.0.0 release on crates.io is an early snapshot with the widget path only. Depend on the
-      repository for now:
+      Add the crate from crates.io. 0.0.1 has both paths and depends on compose-rust 0.0.1; the
+      0.0.x releases are early and the API will change:
     </p>
 <figure class="codeblock" data-copy="Copy" data-copied="Copied">
   <figcaption>shell</figcaption>
-<pre><code>cargo add dioxus-compose --git https://github.com/DarkPyonix/dioxus-compose --branch develop
+<pre><code>cargo add dioxus-compose@0.0.1
 cargo add dioxus-hooks@0.7 dioxus-signals@0.7</code></pre>
 </figure>
     <p>
