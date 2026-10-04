@@ -1,6 +1,6 @@
 # dioxus-compose
 
-[![CI](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/ci.yml)
+[![Test](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/test.yml/badge.svg)](https://github.com/DarkPyonix/dioxus-compose/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/DarkPyonix/dioxus-compose/blob/main/LICENSE)
 [![Rust 1.88+](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org)
 
