@@ -1,11 +1,12 @@
 //! The VS Code workbench fixtures and the measurer that answers with VS Code's own text
 //! sizes, shared by the box tolerance test and the frame benchmarks.
 //!
-//! The blitz-layout probe (experiments/blitz-layout-probe) captured three regions of a
+//! The blitz-layout probe (experiments/blitz-layout-probe, on the develop branch) captured three regions of a
 //! running VS Code workbench (the activity bar, the explorer sidebar and the editor tab
 //! strip): every element's rect, and every text node's rect. Inputs, all committed:
-//! - `experiments/blitz-layout-probe/fixtures/<region>.html`: the regions as static HTML,
-//!   each element tagged with `data-probe-id`;
+//! - `tests/fixtures/fr34/<region>.html`: the regions as static HTML, each element tagged
+//!   with `data-probe-id`. They are copies of the probe's `fixtures/<region>.html`, kept here
+//!   because experiments/ is not on the published branch and these tests are;
 //! - `tests/fixtures/fr34/workbench.css`: the rules of the Code-OSS workbench stylesheet
 //!   that can match those elements;
 //! - `tests/fixtures/fr34/runtime-rebuilt.css`: what VS Code writes into the page at run
@@ -36,11 +37,9 @@ const GEOMETRY: &str = include_str!("../fixtures/fr34/geometry.txt");
 const WORKBENCH_CSS: &str = include_str!("../fixtures/fr34/workbench.css");
 const RUNTIME_CSS: &str = include_str!("../fixtures/fr34/runtime-rebuilt.css");
 
-const ACTIVITYBAR_HTML: &str =
-    include_str!("../../../experiments/blitz-layout-probe/fixtures/activitybar.html");
-const SIDEBAR_HTML: &str =
-    include_str!("../../../experiments/blitz-layout-probe/fixtures/sidebar.html");
-const TABS_HTML: &str = include_str!("../../../experiments/blitz-layout-probe/fixtures/tabs.html");
+const ACTIVITYBAR_HTML: &str = include_str!("../fixtures/fr34/activitybar.html");
+const SIDEBAR_HTML: &str = include_str!("../fixtures/fr34/sidebar.html");
+const TABS_HTML: &str = include_str!("../fixtures/fr34/tabs.html");
 
 /// The three captured regions, by the name geometry.txt and the fixture files use.
 pub const REGIONS: [&str; 3] = ["activitybar", "sidebar", "tabs"];
