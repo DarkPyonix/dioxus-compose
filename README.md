@@ -302,7 +302,7 @@ dioxus-compose/
 │  ├─ examples/           #   desktop_demo, the widget-path demo
 │  └─ tests/              #   the crate's tests
 ├─ samples/               # eleven apps written with HTML and CSS, one crate each
-├─ experiments/           # probes worth keeping
+├─ experiments/           # probes worth keeping (on develop only, not on main)
 ├─ scripts/               # the quality gate and repository tooling
 └─ docs/
    ├─ guide/              # the user guide site (English and Korean)

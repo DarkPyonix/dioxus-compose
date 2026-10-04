@@ -37,6 +37,8 @@ make_repo() {
     echo spec > "$dir/docs/SPEC.md"
     echo guide > "$dir/docs/guide/index.md"
     echo code > "$dir/dioxus-compose/src/lib.rs"
+    mkdir -p "$dir/experiments/probe"
+    echo probe > "$dir/experiments/probe/README.md"
     git -C "$dir" add -A
     git -C "$dir" commit -q -m "Initial commit"
 }
@@ -250,6 +252,15 @@ git -C "$repo" checkout -q develop
 (cd "$repo" && "$split" --write >/dev/null 2>&1)
 check "absorbs main even when the tree is already current" \
     "$(git -C "$repo" merge-base --is-ancestor "$main_tip" release; echo $?)" "0"
+
+# --- experiments/ stays on develop -----------------------------------------
+#
+# Probes are kept for the people working here; main is what users read and build.
+repo="$tmp/experiments"
+make_repo "$repo"
+(cd "$repo" && "$split" --write >/dev/null 2>&1)
+check_absent "experiments/ is not on release" "$(files_on "$repo" release)" "experiments/"
+check_contains "the source is still on release" "$(files_on "$repo" release)" "dioxus-compose/src/lib.rs"
 
 rm -rf "$tmp"
 

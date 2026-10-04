@@ -295,7 +295,7 @@ dioxus-compose/
 │  ├─ examples/           #   desktop_demo, 위젯 경로 데모
 │  └─ tests/              #   크레이트 테스트
 ├─ samples/               # HTML 과 CSS 로 쓴 앱 열한 개, 하나에 크레이트 하나
-├─ experiments/           # 남겨 둘 만한 실험
+├─ experiments/           # 남겨 둘 만한 실험 (develop 에만 있고 main 에는 없음)
 ├─ scripts/               # 품질 검사와 저장소 도구
 └─ docs/
    ├─ guide/              # 사용자 가이드 사이트(영어와 한국어)
