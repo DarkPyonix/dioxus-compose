@@ -1,0 +1,134 @@
+# Publish to crates.io: a v* tag on main publishes dioxus-compose to crates.io.
+#
+# The order follows compose-rust's release jobs. Everything that can fail is checked first
+# (the tag, where it points, the build, the tests, the packaged crate), then the GitHub
+# Release is created, and the crate is uploaded last, because an upload cannot be undone: a
+# version can be yanked but never replaced, and its number is taken forever.
+#
+# dioxus-compose ships no binaries of its own (the renderer is compose-rust's, on
+# compose-rust's releases), so its release carries notes and no files.
+#
+# Nothing else in this repository's workflows can write. The release job has contents:
+# write to create the release, and the publish job holds the registry token through the
+# crates-io environment.
+
+name: Publish to crates.io
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-crates-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Verify the tag and package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          # The tagged commit is checked against main's history, so a shallow clone will
+          # not do.
+          fetch-depth: 0
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+          cargo --version
+
+      - name: The tag and Cargo.toml must agree
+        # A tag that does not match the manifest would publish a version nobody asked for,
+        # under a number that then can never be reused.
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          manifest="$(cargo metadata --no-deps --format-version 1 |
+            python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"]=="dioxus-compose"))')"
+          if [[ "$tag" != "v$manifest" ]]; then
+            echo "tag $tag does not match dioxus-compose $manifest in Cargo.toml" >&2
+            echo "Publishing would release a version that no commit claims. Fix one or the other." >&2
+            exit 1
+          fi
+          echo "tag $tag matches Cargo.toml $manifest"
+
+      - name: The tagged commit must be on main
+        # main is the published branch, without the planning documents. A tag on develop
+        # or on a feature branch would publish a tree that never went through the
+        # release -> main pull request.
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "${{ github.ref_name }} points at $GITHUB_SHA, which is not on main." >&2
+            echo "Tag a commit on main after the release pull request has been merged." >&2
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main"
+
+      - name: Build
+        # The mock renderer, as test.yml and scripts/check.sh use: the boundary is exercised
+        # without downloading a renderer.
+        run: cargo build --workspace --features dioxus-compose/mock-renderer
+
+      - name: Test
+        run: cargo test --workspace --features dioxus-compose/mock-renderer
+
+      - name: Package and build the crate as crates.io would
+        # Builds the packaged crate on its own with default features, so a file missing
+        # from the package or a dependency only the workspace provides fails here, before
+        # anything is published.
+        run: cargo publish -p dioxus-compose --dry-run
+
+  release:
+    name: Create the GitHub release
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      # Scoped to this job: it creates the release for the tag.
+      contents: write
+    steps:
+      - name: Create or update the release
+        # Published, not drafted, as compose-rust's are: the crate uploaded by the next job
+        # links here, and a draft is invisible to everyone outside this repository.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          notes="dioxus-compose \`$version\` on crates.io: https://crates.io/crates/dioxus-compose/$version"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A release created by an earlier run of this tag may still be a draft.
+            gh release edit "$TAG" --draft=false
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes "$notes"
+          fi
+
+  publish-crate:
+    name: Publish
+    needs: release
+    runs-on: ubuntu-latest
+    # Add a required reviewer to this environment in the repository settings if a human
+    # should approve each upload; with none configured, a tag on main runs straight through.
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Publish
+        # Default features only, so this is exactly what a consumer gets.
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p dioxus-compose

@@ -1,4 +1,4 @@
-# CI -- the quality gate. Rust only.
+# Test -- the quality gate. Rust only.
 #
 # `scripts/check.sh` (fmt, clippy, tests, --quick benchmarks) finishes in minutes, so it
 # can gate every pull request. The renderer and the design systems are compose-rust's, and
@@ -10,7 +10,7 @@
 # matrix too: it costs nothing extra in wall time and it catches accidental macOS-only
 # assumptions in the Rust code early.
 
-name: CI
+name: Test
 
 on:
   # Only what is about to become public, or what already is. Work lands on develop many
@@ -41,7 +41,7 @@ env:
 
 jobs:
   rust:
-    name: Rust quality gate (${{ matrix.os }})
+    name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -80,7 +80,7 @@ jobs:
         run: ./scripts/check.sh
 
   shell:
-    name: Shell script tests (${{ matrix.os }})
+    name: Shell tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -96,9 +96,10 @@ jobs:
         # spec-cites-real-tests.test.sh asks it where the compose-rust checkout is.
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
-      - name: Run scripts/tests
-        # scripts/publish-main.sh carries its own test; it runs against throwaway
-        # temporary directories only.
+      - name: Run the shell tests
+        # scripts/tests/ and the release script's own test beside it in
+        # .github/scripts/release/; the latter runs against throwaway temporary
+        # directories only.
         #
         # Every test runs whatever came before it. Stopping at the first red meant one
         # failing test hid every test after it, and those went unrun without anyone
@@ -106,7 +107,7 @@ jobs:
         run: |
           set -uo pipefail
           failed=()
-          for test in scripts/tests/*.test.sh; do
+          for test in scripts/tests/*.test.sh .github/scripts/release/test-*.sh; do
             echo "== $test"
             if ! bash "$test"; then
               failed+=("$test")
