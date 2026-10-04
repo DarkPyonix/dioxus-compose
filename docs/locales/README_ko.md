@@ -113,8 +113,9 @@ compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/t
 
 ## 현재 상태
 
-**활발히 개발 중인 초기 프로젝트**입니다. crates.io 의 0.0.0 은 위젯 경로만 있는 초기 스냅숏이고, HTML
-경로는 `develop` 브랜치에 있습니다. API 는 바뀝니다.
+**0.0.x 는 초기 릴리스 단계입니다.** crates.io 의 dioxus-compose 0.0.1 에는 두 경로가 다 있고
+compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계획까지 되고 아직 그려지지 않습니다(렌더러
+다리는 검토 중). API 는 바뀝니다.
 
 | 상태 | 항목 |
 |---|---|
@@ -194,10 +195,10 @@ IME 가 조합하는 동안에는 키 이벤트가 Rust 에 오지 않습니다.
 
 ## 시작하기
 
-HTML 경로는 아직 crates.io 릴리스에 없으므로 저장소에 의존합니다.
+crates.io 에서 크레이트를 추가합니다.
 
 ```bash
-cargo add dioxus-compose --git https://github.com/DarkPyonix/dioxus-compose --branch develop
+cargo add dioxus-compose@0.0.1
 cargo add dioxus-hooks@0.7 dioxus-signals@0.7
 ```
 
