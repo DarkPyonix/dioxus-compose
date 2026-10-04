@@ -87,7 +87,7 @@ Compose 에서 빌려 옵니다. Compose 쪽은 미리 네이티브 라이브러
 ### 무게
 
 notepad 예제(위젯 경로 앱,
-[`samples/native-widgets/notepad`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/native-widgets/notepad))를
+compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/tree/develop/samples/notepad))를
 릴리스로 빌드해 스트립한 것입니다. 실행 파일 하나이고, 옆에 놓이는 런타임도 안에 든 가상 머신도
 없습니다.
 
@@ -113,8 +113,9 @@ notepad 예제(위젯 경로 앱,
 
 ## 현재 상태
 
-**활발히 개발 중인 초기 프로젝트**입니다. crates.io 의 0.0.0 은 위젯 경로만 있는 초기 스냅숏이고, HTML
-경로는 `develop` 브랜치에 있습니다. API 는 바뀝니다.
+**0.0.x 는 초기 릴리스 단계입니다.** crates.io 의 dioxus-compose 0.0.1 에는 두 경로가 다 있고
+compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계획까지 되고 아직 그려지지 않습니다(렌더러
+다리는 검토 중). API 는 바뀝니다.
 
 | 상태 | 항목 |
 |---|---|
@@ -123,12 +124,12 @@ notepad 예제(위젯 경로 앱,
 | 구현 | VS Code 가 잰 텍스트 크기로, 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(2026-10-03 macOS 에서 측정) |
 | 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열한 개, 각각 Host 에서 테스트 |
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
-| 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43). [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)에 작성되어 검토 대기) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 계획 | `translate` 밖의 CSS 변환, CSS transition 과 animation([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |
-| 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24)) |
+| 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24). 초안 [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
 
 전체 목록은 가이드의 [현황 페이지](http://darkpyonix.dev/dioxus-compose/ko/status.html)에 있습니다.
 
@@ -194,10 +195,10 @@ IME 가 조합하는 동안에는 키 이벤트가 Rust 에 오지 않습니다.
 
 ## 시작하기
 
-HTML 경로는 아직 crates.io 릴리스에 없으므로 저장소에 의존합니다.
+crates.io 에서 크레이트를 추가합니다.
 
 ```bash
-cargo add dioxus-compose --git https://github.com/DarkPyonix/dioxus-compose --branch develop
+cargo add dioxus-compose@0.0.1
 cargo add dioxus-hooks@0.7 dioxus-signals@0.7
 ```
 
@@ -294,7 +295,6 @@ dioxus-compose/
 │  ├─ examples/           #   desktop_demo, 위젯 경로 데모
 │  └─ tests/              #   크레이트 테스트
 ├─ samples/               # HTML 과 CSS 로 쓴 앱 열한 개, 하나에 크레이트 하나
-│  └─ native-widgets/     # Compose 위젯 이름으로 쓴 앱
 ├─ experiments/           # 남겨 둘 만한 실험
 ├─ scripts/               # 품질 검사와 저장소 도구
 └─ docs/

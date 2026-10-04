@@ -88,7 +88,7 @@ library, so there is no JVM in what you ship.
 ### What it weighs
 
 The notepad sample (a widget-path app,
-[`samples/native-widgets/notepad`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/native-widgets/notepad)),
+compose-rust's [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/tree/develop/samples/notepad)),
 built for release and stripped. One executable: no runtime beside it and no virtual machine inside
 it.
 
@@ -116,8 +116,9 @@ measurements of this project.
 
 ## Status
 
-An **early project under active development**. Version 0.0.0 on crates.io is an early snapshot
-with the widget path only; the HTML path is on the `develop` branch. The API will change.
+**0.0.x is an early release stage.** dioxus-compose 0.0.1 on crates.io has both paths and depends
+on compose-rust 0.0.1. HTML screens are laid out and planned but not yet drawn (the renderer bridge
+is in review). The API will change.
 
 | State | Item |
 |---|---|
@@ -126,12 +127,12 @@ with the widget path only; the HTML path is on the `develop` branch. The API wil
 | implemented | Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (measured 2026-10-03, macOS) |
 | implemented | Eleven HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
 | implemented | Compose widgets in `rsx!`, drawn by the renderer: macOS, Android and the web end to end; Windows, Linux and iOS build and start |
-| partial | Drawing HTML screens on screen: the plan exists, the bridge to compose-rust's renderer (`AbsoluteBox`) is not built ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| partial | Drawing HTML screens on screen: the plan exists, the bridge to compose-rust's renderer (`AbsoluteBox`) is not built ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43); written in [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67), awaiting review) |
 | partial | Text measured by Compose: the measure call is being implemented in compose-rust; Parley measures text until then ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | planned | CSS transforms beyond `translate`, CSS transitions and animations ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | planned | Zooming HTML screens the way VS Code does |
 | planned | HTML and widgets on one screen |
-| planned | The Markdown crate `dioxus-compose-markdown` ([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24)) |
+| planned | The Markdown crate `dioxus-compose-markdown` ([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24); draft [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
 
 The [status page](http://darkpyonix.dev/dioxus-compose/en/status.html) of the guide has the full
 list.
@@ -198,10 +199,10 @@ handled, the way `preventDefault()` does on the web.
 
 ## Getting started
 
-The HTML path is not in a crates.io release yet, so depend on the repository:
+Add the crate from crates.io:
 
 ```bash
-cargo add dioxus-compose --git https://github.com/DarkPyonix/dioxus-compose --branch develop
+cargo add dioxus-compose@0.0.1
 cargo add dioxus-hooks@0.7 dioxus-signals@0.7
 ```
 
@@ -301,7 +302,6 @@ dioxus-compose/
 │  ├─ examples/           #   desktop_demo, the widget-path demo
 │  └─ tests/              #   the crate's tests
 ├─ samples/               # eleven apps written with HTML and CSS, one crate each
-│  └─ native-widgets/     # apps written with Compose widget names
 ├─ experiments/           # probes worth keeping
 ├─ scripts/               # the quality gate and repository tooling
 └─ docs/

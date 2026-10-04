@@ -86,11 +86,11 @@
           <tr><td><span class="pill works">구현</span></td><td><code>&lt;script&gt;</code> 를 실행하지 않음</td></tr>
           <tr><td><span class="pill works">구현</span></td><td>VS Code 가 잰 텍스트 크기로 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(<code>dioxus-compose/tests/fr34_box_tolerance.rs</code>, 2026-10-03 macOS 에서 측정)</td></tr>
           <tr><td><span class="pill works">구현</span></td><td><code>samples/</code> 의 예제 열한 개. 각각 손으로 계산한 배치와, 렌더러가 부를 것과 같은 호출로 Host 에서 테스트됨</td></tr>
-          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 그리기 원소의 계획은 있지만, 그것을 compose-rust 렌더러(그 <code>AbsoluteBox</code>)에 넘기는 다리가 없어 아직 그려지지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 그리기 원소의 계획은 있지만, 그것을 compose-rust 렌더러(그 <code>AbsoluteBox</code>)에 넘기는 다리가 없어 아직 그려지지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>. 다리는 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a>에 작성되어 검토와 빌드를 기다림)</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>Compose 로 텍스트 재기. 측정기는 글꼴이 하나인 텍스트를 재고, 글꼴이 섞인 문단, 표 칸, 입력 컨트롤은 Parley 가 잼. 동기 측정 호출은 compose-rust 에서 만드는 중(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>CSS 변환: <code>translate</code> 는 동작, <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code> 은 그리지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>CSS transition 과 animation: 불투명도, 변환, 색은 렌더러에서(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>), 폭, 높이, 여백은 Host 를 거쳐(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
-          <tr><td><span class="pill planned">계획</span></td><td>HTML 화면의 키보드 이벤트와 포커스, 실행 중 시스템 색 구성표 변화 따라가기. 둘 다 렌더러 다리와 함께 옴(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>HTML 화면의 키보드 이벤트와 포커스, 실행 중 시스템 색 구성표 변화 따라가기. 둘 다 렌더러 다리와 함께 옴(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>. <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a>에 작성됨. Enter 밖의 키, 키 뗌, 포커스 얻음, 시스템 색 구성표 이벤트는 compose-rust 가 먼저 필요함)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>시스템 글자 크기에서 시작해 VS Code 처럼 HTML 화면 확대하기(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/58">#58</a>)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>한 화면에 HTML 과 위젯 함께 두기(<a href="mixing.html">두 방식 섞기</a>)(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/59">#59</a>)</td></tr>
         </tbody>
@@ -106,7 +106,7 @@
           <tr><td><span class="pill works">구현</span></td><td><code>LazyColumn</code> 과 <code>LazyRow</code> 창 단위 처리: 렌더러가 범위를 묻고 Host 는 그 범위만 만듦</td></tr>
           <tr><td><span class="pill works">구현</span></td><td>역할 기반 계약 하나 뒤의 디자인 시스템 일곱 개, 통일 또는 호스트 플랫폼 따르기</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>스트리밍 텍스트: 덧붙인 꼬리를 프레임마다 모으지만 <code>rsx!</code> 수준 API 는 없음</td></tr>
-          <tr><td><span class="pill planned">계획</span></td><td>마크다운 크레이트 <code>dioxus-compose-markdown</code>, 스트리밍을 포함해 마크다운을 위젯으로(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>)</td></tr>
+          <tr><td><span class="pill planned">계획</span></td><td>마크다운 크레이트 <code>dioxus-compose-markdown</code>, 스트리밍을 포함해 마크다운을 위젯으로(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>. 초안은 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/68">#68</a>)</td></tr>
         </tbody>
       </table>
     </div>
@@ -138,8 +138,8 @@
       <dt>어딘가에 웹뷰가 있나요?</dt>
       <dd>아니요. CSS 는 Rust 에서 blitz-dom 이 계산하고, 그 결과를 Compose 가 그립니다.</dd>
       <dt>crates.io 에 있나요?</dt>
-      <dd>0.0.0 이 위젯 경로만 있는 초기 스냅숏으로 있습니다. HTML 경로는 <code>develop</code> 브랜치에
-        있습니다. <a href="getting-started.html">시작하기</a>를 보십시오.</dd>
+      <dd>네, 0.0.1 이 두 경로를 모두 담고 compose-rust 0.0.1 위에 있습니다. 0.0.x 는 초기 릴리스이고
+        API 는 바뀝니다. <a href="getting-started.html">시작하기</a>를 보십시오.</dd>
       <dt>Kotlin 을 알아야 하나요?</dt>
       <dd>아니요. 렌더러는 compose-rust 를 거쳐 미리 빌드된 채로 오고, 코드는 Rust 만 씁니다.</dd>
     </dl>
