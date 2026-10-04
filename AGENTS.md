@@ -44,7 +44,7 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 ## Branches
 
 `develop` is where work happens. `release` and `main` are produced from it by
-`scripts/publish-main.sh`, which strips `PROJECT.md`, `AGENTS.md`, `CLAUDE.md` and everything directly
+`.github/scripts/release/sync-release.sh`, which strips `PROJECT.md`, `AGENTS.md`, `CLAUDE.md` and everything directly
 under `docs/`.
 
 1. **Publishing is one way: develop to release to main.** Never merge `release` or `main`
@@ -191,6 +191,23 @@ the launchers inject them ahead of whatever the prompt says.
    though the question were settled makes the reader the second person to decide it,
    which is exactly what rule 2 forbids the first from doing. The same incident above
    travelled a whole message further because it was repeated rather than caught.
+
+## CI names
+
+Workflow files and names are the same in every thisisthepy and darkpyonix repository, so a
+status check means the same thing wherever it appears (owner-approved, 2026-10-04):
+
+- `test.yml`, "Test": the quality gate on every pull request.
+- `release-sync.yml`, "Release sync": develop to release, through
+  `.github/scripts/release/sync-release.sh`; a pull request then takes release to main.
+- `publish-crates.yml`, "Publish to crates.io": a `v*` tag on main publishes.
+- `pages.yml`, "Pages": the guide site.
+- `test-<target>.yml`, "<Target> ...": a special check for one target.
+
+Job names are short sentence-case statements of what the job does ("Test", "Clippy",
+"Build the docs"); a matrix job is "<what> (<os>)" or "<what> (<os>, <version>)", such as
+"Test (macos-latest)". A job with the same role carries the same name in every repository.
+Renaming a job renames its status check, so the owner re-selects main's required checks.
 
 ## Writing
 

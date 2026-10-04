@@ -22,7 +22,7 @@ pattern='SPEC|FR-[0-9]|NFR-[0-9]|PR-[0-9]|INTENT'
 # tell a run those three files are not its to edit, which cannot be said without saying
 # which files. A citation is a claim about where a reason came from, and none of these is
 # that.
-exempt='^(scripts/publish-main\.sh|scripts/launch-agent\.sh|scripts/launch-agy\.sh|scripts/launch-codex\.sh|scripts/tests/publish-main\.test\.sh|scripts/tests/no-spec-citations\.test\.sh|scripts/tests/planning-docs\.test\.sh|scripts/tests/spec-cites-real-tests\.test\.sh|scripts/tests/agent-launchers\.test\.sh)$'
+exempt='^(\.github/scripts/release/sync-release\.sh|\.github/scripts/release/test-sync-release\.sh|scripts/launch-agent\.sh|scripts/launch-agy\.sh|scripts/launch-codex\.sh|scripts/tests/no-spec-citations\.test\.sh|scripts/tests/planning-docs\.test\.sh|scripts/tests/spec-cites-real-tests\.test\.sh|scripts/tests/agent-launchers\.test\.sh)$'
 
 files=()
 while IFS= read -r file; do
