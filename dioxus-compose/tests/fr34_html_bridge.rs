@@ -370,6 +370,23 @@ fn fr34_unchanged_frame_sends_nothing() {
     assert_eq!(next, Vec::new());
 }
 
+fn boxed_inlines() -> Element {
+    rsx! {
+        img { src: "cat.png" }
+        input { r#type: "checkbox" }
+    }
+}
+
+/// An anonymous block that wraps only nodes with boxes of their own (an image and a form
+/// control) is listed under the same key in every layout, so a second frame resends nothing.
+#[test]
+fn fr34_anonymous_block_of_boxed_inlines_keeps_its_key() {
+    let mut host = Host::html(boxed_inlines, config_with_cat);
+    host.rebuild().unwrap();
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new());
+}
+
 fn bars() -> Element {
     let mut presses = use_signal(|| 0u32);
     let colour = if presses() > 0 {

@@ -661,12 +661,28 @@ fn display_key(doc: &BaseDocument, node: &Node) -> NodeId {
         return node.id;
     }
     let boxes = layout_children(node);
-    node.children
+    let wrapped: Vec<NodeId> = node
+        .children
         .iter()
         .copied()
-        .find(|child| !boxes.contains(child) && doc.get_node(*child).is_some())
-        .unwrap_or(node.id)
+        .filter(|child| doc.get_node(*child).is_some())
+        .collect();
+    if let Some(child) = wrapped.iter().copied().find(|child| !boxes.contains(child)) {
+        return child;
+    }
+    // Everything the block wraps has a box of its own (an image, a form control), so each
+    // is listed under its own id and none is free to stand for the block. The block takes
+    // the first one's id with a tag bit set: still a function of DOM nodes only, and never
+    // the id of a box that is listed itself.
+    match wrapped.first() {
+        Some(&child) => child | ANONYMOUS_BLOCK_TAG,
+        None => node.id,
+    }
 }
+
+/// Set on the id an anonymous block is listed under when it wraps only nodes that have
+/// boxes of their own, so that it cannot be mistaken for the first of them.
+const ANONYMOUS_BLOCK_TAG: NodeId = 1 << (usize::BITS - 1);
 
 /// The element text belongs to: for text shaped in an anonymous block's own style, the
 /// element the block was made inside.
