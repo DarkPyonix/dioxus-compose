@@ -44,8 +44,8 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 ## Branches
 
 `develop` is where work happens. `release` and `main` are produced from it by
-`.github/scripts/release/sync-release.sh`, which strips `PROJECT.md`, `AGENTS.md`, `CLAUDE.md` and everything directly
-under `docs/`.
+`.github/scripts/release/sync-release.sh`, which strips `PROJECT.md`, `AGENTS.md`, `CLAUDE.md`, `experiments/` and everything
+directly under `docs/`.
 
 1. **Publishing is one way: develop to release to main.** Never merge `release` or `main`
    back into `develop`. Their history contains the deletion of the planning documents, and
@@ -87,7 +87,8 @@ under `docs/`.
 2. Where inside:
    - worktrees: `.claude/worktrees/<name>/` (ignored by git);
    - throwaway work, probes and downloads: `.scratch/<name>/` (ignored by git);
-   - experiments worth keeping: `experiments/<name>/`, committed;
+   - experiments worth keeping: `experiments/<name>/`, committed on develop and left off
+     main, so nothing on main (tests, workspace members, `include_str!`) may read from it;
    - build outputs: `target/` and `build/`, where the tools already put them.
 3. A change to another project this one builds on is kept as a patch, applied to a
    checkout inside `.scratch/`. A checkout of that project elsewhere is not where the
@@ -105,9 +106,9 @@ download went to `/tmp`, and worktrees went to `../agent-runs`, and the owner ha
 none of it.
 
 6. **The repository root holds only these entries**, approved by the owner (issue #52,
-   2026-10-03): `.github/`, `dioxus-compose/`, `docs/`, `experiments/`, `samples/`,
-   `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md` (the last three
-   stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
+   2026-10-03): `.github/`, `dioxus-compose/`, `docs/`, `experiments/` (stripped on
+   main), `samples/`, `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md`
+   (also stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
    `.gitignore`. Git-ignored working directories (`.claude/`, `.scratch/`, `target/`)
    are not part of the list. The renderer, the design systems and the renderer's Linux
    build container are compose-rust's (compose-rust#37 step 4), and live in that

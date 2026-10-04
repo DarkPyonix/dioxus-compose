@@ -6,7 +6,8 @@
 # `develop` has everything. The public tree is the source code, the root
 # README.md, and docs/guide/ (the guide site). The internal planning documents
 # -- PROJECT.md, AGENTS.md, CLAUDE.md, and everything directly under docs/, which is where
-# INTENT.md and SPEC.md live -- exist only on develop.
+# INTENT.md and SPEC.md live -- exist only on develop, and so does experiments/,
+# the probes kept for the people working here.
 #
 # The default target is `release`, not `main`: `main` is protected and only
 # moves through a pull request, which .github/workflows/release-sync.yml opens
@@ -120,12 +121,12 @@ fi
 
 # --- work out what to remove ------------------------------------------------
 #
-# Named documents, plus every file *directly* under docs/. The depth rule is
+# Named documents, experiments/, plus every file *directly* under docs/. The depth rule is
 # what keeps this correct as develop advances: a new planning document added
 # to docs/ is excluded without editing this script, while docs/guide/ and any
 # other subdirectory is published untouched.
 private_paths=()
-for path in PROJECT.md AGENTS.md CLAUDE.md; do
+for path in PROJECT.md AGENTS.md CLAUDE.md experiments; do
     git cat-file -e "$source_commit:$path" 2>/dev/null && private_paths+=("$path")
 done
 while IFS= read -r name; do
@@ -154,7 +155,7 @@ filtered_tree="$(
         # protect unsaved work. Here HEAD is whatever branch happens to be
         # checked out, which has nothing to do with the temporary index being
         # filtered, and there is no file on disk to lose.
-        git rm --cached --force --quiet --ignore-unmatch -- "${private_paths[@]}"
+        git rm -r --cached --force --quiet --ignore-unmatch -- "${private_paths[@]}"
     fi
     git write-tree
 )"
