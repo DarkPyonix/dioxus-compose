@@ -99,6 +99,25 @@ if git rev-parse --verify -q "refs/heads/$target_branch" >/dev/null; then
     target_commit="$(git rev-parse "refs/heads/$target_branch")"
 fi
 
+# main moves only through pull requests from the target, and every merge adds a commit the
+# target does not have. Unless the next target commit has main as an ancestor, the next pull
+# request conflicts, and the only way out would be a force push. So when main is not already
+# in the target's history it becomes one more parent, the way `git merge -s ours main` would
+# record it: its history is kept and its tree is not used.
+main_commit=""
+if [[ "$target_branch" != "main" ]]; then
+    for ref in refs/heads/main refs/remotes/origin/main; do
+        if git rev-parse --verify -q "$ref" >/dev/null; then
+            main_commit="$(git rev-parse "$ref")"
+            break
+        fi
+    done
+    if [[ -n "$main_commit" && -n "$target_commit" ]] \
+        && git merge-base --is-ancestor "$main_commit" "$target_commit"; then
+        main_commit=""
+    fi
+fi
+
 # --- work out what to remove ------------------------------------------------
 #
 # Named documents, plus every file *directly* under docs/. The depth rule is
@@ -151,7 +170,12 @@ for path in "${private_paths[@]}"; do
     echo "  - $path"
 done
 
-if [[ -n "$target_commit" && "$(git rev-parse "$target_commit^{tree}")" == "$filtered_tree" ]]; then
+if [[ -n "$main_commit" ]]; then
+    echo "main ($(git rev-parse --short "$main_commit")) is not in $target_branch yet; it will be absorbed."
+fi
+
+if [[ -z "$main_commit" && -n "$target_commit" \
+    && "$(git rev-parse "$target_commit^{tree}")" == "$filtered_tree" ]]; then
     echo "$target_branch is already up to date with $source_branch; nothing to do."
     exit 0
 fi
@@ -166,10 +190,11 @@ fi
 # --- commit and move the ref ------------------------------------------------
 #
 # Parent order matters: the previous target first, so it keeps a linear
-# first-parent history, and develop second, so it records exactly which
-# develop commit it was published from.
+# first-parent history; main next, when it has commits the target lacks; and
+# develop last, so it records exactly which develop commit it was published from.
 parents=()
 [[ -n "$target_commit" ]] && parents+=(-p "$target_commit")
+[[ -n "$main_commit" ]] && parents+=(-p "$main_commit")
 parents+=(-p "$source_commit")
 
 short_source="$(git rev-parse --short "$source_commit")"
@@ -193,6 +218,7 @@ fi
 
 echo
 echo "Updated $target_branch -> $(git rev-parse --short "$new_commit")"
+[[ -n "$main_commit" ]] && echo "It absorbed main $(git rev-parse --short "$main_commit"), so $target_branch -> main merges without conflict."
 echo "No working tree or checkout was modified."
 echo
 echo "This script does not push. To publish it, run:"
