@@ -29,7 +29,10 @@ use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_na
 use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::paint::build::build_display_list;
-use crate::paint::display_list::{DisplayList, DisplayListDiff};
+use crate::paint::display_list::{DisplayList, DisplayListDiff, SkippedTransform};
+use crate::paint::motion::{
+    MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
+};
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
 use writer::{DomWriter, WriterState, element_name};
 
@@ -59,6 +62,12 @@ pub struct HtmlConfig {
     /// sizes during layout, and the assets that draw them when [`HtmlDom::plan`] builds a
     /// plan. Without one, an `<img>` has no natural size and no image draws anything.
     pub images: Option<Box<dyn ImageResolver>>,
+    /// The user's `prefers-reduced-motion` setting: `true` for `reduce`. The author
+    /// stylesheets are rewritten so that `@media (prefers-reduced-motion: reduce)` matches
+    /// exactly when this is set and `(prefers-reduced-motion: no-preference)` when it is
+    /// not, since the style engine has no such media feature of its own. Only
+    /// [`HtmlConfig::stylesheets`] are rewritten.
+    pub reduced_motion: bool,
 }
 
 impl Default for HtmlConfig {
@@ -70,6 +79,7 @@ impl Default for HtmlConfig {
             color_scheme: ColorScheme::Light,
             base_url: None,
             images: None,
+            reduced_motion: false,
         }
     }
 }
@@ -91,6 +101,9 @@ pub struct HtmlDom {
     color_scheme: ColorScheme,
     current: Option<DisplayList>,
     previous: Option<DisplayList>,
+    /// The time CSS transitions and animations are resolved at, in seconds.
+    now: f64,
+    motion: MotionState,
 }
 
 impl HtmlDom {
@@ -129,7 +142,8 @@ impl HtmlDom {
             mutator.append_children(html, &[head, body]);
             for css in &config.stylesheets {
                 let style = mutator.create_element(element_name("style", None), Vec::new());
-                let text = mutator.create_text_node(css);
+                let css = rewrite_reduced_motion(css, config.reduced_motion);
+                let text = mutator.create_text_node(&css);
                 mutator.append_children(style, &[text]);
                 mutator.append_children(head, &[style]);
             }
@@ -150,6 +164,8 @@ impl HtmlDom {
             color_scheme: config.color_scheme,
             current: None,
             previous: None,
+            now: 0.0,
+            motion: MotionState::default(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
         dom.vdom.rebuild(&mut writer);
@@ -166,27 +182,154 @@ impl HtmlDom {
 
     /// Lays the document out in a viewport of `width` by `height` CSS pixels at `scale`
     /// device pixels per CSS pixel, and returns what to draw.
+    ///
+    /// CSS transitions and animations are resolved at the document's clock
+    /// ([`HtmlDom::set_time`]). A transition or animation starts at the clock of the layout
+    /// that first sees it.
+    ///
+    /// How a motion reaches the renderer depends on what it changes. `opacity`,
+    /// `transform` and `background-color` change nothing about layout, so a transition of
+    /// them is a [`TransitionStart`](crate::html::TransitionStart) in the returned list
+    /// and an `@keyframes` animation of them is on its entry's
+    /// [`animations`](crate::html::NodeEntry::animations), both described for a renderer
+    /// to play by itself, with the entry holding the value the motion settles at or
+    /// starts from. Anything else that moves (`width`, `margin`, `color`, `all`) is ticked
+    /// by the Host: see [`HtmlDom::tick`].
     pub fn layout(&mut self, width: f32, height: f32, scale: f32) -> &DisplayList {
+        self.layout_at(width, height, scale, false)
+    }
+
+    fn layout_at(&mut self, width: f32, height: f32, scale: f32, ticked: bool) -> &DisplayList {
         self.set_viewport(width, height, scale);
+        let now = self.now;
         let resolver = self
             .images
             .as_deref_mut()
             .map(|images| images as &mut dyn ImageResolver);
         let mut lookup = ImageLookup::new(resolver, Some(&self.base_url));
-        resolve_styles(&mut self.doc);
+        resolve_styles(&mut self.doc, now);
+        let scan = self.motion.scan(&self.doc, now);
+        for _ in 0..scan.catch_up {
+            resolve_styles(&mut self.doc, now);
+        }
+        let animating = self.doc.is_animating();
+        // A page can declare a transition of `width` and leave it idle for as long as it
+        // runs, and loops that a renderer plays beside it. The declaration alone does not
+        // make the Host tick: a motion that changes layout has to be running, which is
+        // true while the Host is already ticking, while a declared delay may be hiding it,
+        // and while the boxes that declare one are seen to move.
+        let layout_running = scan.layout_motion
+            && animating
+            && ((ticked && self.motion.ticking)
+                || scan.layout_delayed
+                || layout_moves(&mut self.doc, &scan, now));
+        let ticking = self
+            .motion
+            .decide_ticking(&scan, layout_running, now, ticked);
+        // A motion a renderer plays is described, not ticked. A transition is described
+        // from the values before and after it, so when one is running the document is
+        // resolved a second time, past the end of every transition, and the styles read
+        // for the display list hold the values the transitions settle at.
+        let described = !ticking && !scan.nodes.is_empty();
+        if described && animating && scan.needs_settling() {
+            resolve_styles(&mut self.doc, now + f64::from(scan.horizon + SETTLE_MARGIN));
+        }
         apply_natural_sizes(&mut self.doc, &mut lookup);
         let texts = run_layout(&mut self.doc, &mut *self.measurer);
-        let list = build_display_list(&self.doc, &texts, &mut lookup);
+        let list = if described {
+            self.motion.begin_frame();
+            let mut playing = Playing {
+                scan: &scan,
+                state: &mut self.motion,
+                prior: self.current.as_ref(),
+                now,
+                skipped: Vec::new(),
+            };
+            let mut list = build_display_list(&self.doc, &texts, &mut lookup, Some(&mut playing));
+            list.skipped_transforms.append(&mut playing.skipped);
+            if animating {
+                list.transitions = transitions(&scan, self.current.as_ref(), &list);
+            }
+            self.motion.end_frame();
+            list
+        } else {
+            build_display_list(&self.doc, &texts, &mut lookup, None)
+        };
+        self.report_skipped(&list);
         self.previous = self.current.replace(list);
         self.current
             .as_ref()
             .expect("the display list was stored on the line above")
     }
 
+    /// Says on stderr, once for each, which element's which 3D transform the layout left
+    /// out. The display list carries them all in
+    /// [`skipped_transforms`](DisplayList::skipped_transforms).
+    fn report_skipped(&mut self, list: &DisplayList) {
+        for SkippedTransform {
+            node,
+            tag,
+            transform,
+        } in &list.skipped_transforms
+        {
+            if self.motion.warned.insert((*node, transform.clone())) {
+                eprintln!(
+                    "dioxus-compose: <{tag}> (node {node}) has the 3D transform `{transform}`. \
+                     3D transforms are not drawn yet, so the element is drawn without it."
+                );
+            }
+        }
+    }
+
+    /// Sets the clock CSS transitions and animations are resolved at, in seconds from any
+    /// fixed moment. It only moves forward in a running app: a transition that has
+    /// started is measured from the clock of the layout that saw it.
+    pub fn set_time(&mut self, seconds: f64) {
+        self.now = seconds;
+    }
+
+    /// The clock set by [`HtmlDom::set_time`].
+    pub fn time(&self) -> f64 {
+        self.now
+    }
+
+    /// Whether the document has a CSS transition or animation running.
+    pub fn is_animating(&self) -> bool {
+        self.doc.is_animating()
+    }
+
+    /// Whether the Host has to call [`HtmlDom::tick`] each frame: a motion that changes
+    /// layout (or something a renderer does not play by itself) is running. When this is
+    /// `false` the Host has nothing to do per frame, even while a renderer plays an
+    /// `opacity`, `transform` or `background-color` motion.
+    pub fn needs_frames(&self) -> bool {
+        self.motion.ticking
+    }
+
+    /// One frame of a motion that changes layout: moves the clock to `seconds`, resolves
+    /// the document there, lays it out again, and returns only what changed since the
+    /// last layout. Does nothing, and returns an empty diff, when
+    /// [`HtmlDom::needs_frames`] is `false`.
+    ///
+    /// The Host's own frame is the clock, so frame times are whatever the caller's
+    /// frame loop reports; this crate never reads a clock of its own.
+    pub fn tick(&mut self, seconds: f64, width: f32, height: f32, scale: f32) -> DisplayListDiff {
+        if !self.motion.ticking {
+            return DisplayListDiff::default();
+        }
+        self.now = seconds;
+        self.layout_at(width, height, scale, true);
+        self.diff_from_previous()
+    }
+
     /// Lays the document out and returns only what changed since the previous layout.
     /// The first call reports every entry as changed.
     pub fn layout_diff(&mut self, width: f32, height: f32, scale: f32) -> DisplayListDiff {
         self.layout(width, height, scale);
+        self.diff_from_previous()
+    }
+
+    fn diff_from_previous(&self) -> DisplayListDiff {
         let current = self
             .current
             .as_ref()
@@ -347,15 +490,18 @@ impl HtmlDom {
         let toggled = activation.and_then(|activation| form::toggle(&mut self.doc, activation));
 
         let (x, y) = point.unwrap_or_else(|| {
+            // The centre of the box, where the box is drawn.
             self.current
                 .as_ref()
-                .and_then(|list| list.get(hit))
-                .map_or((0.0, 0.0), |entry| {
-                    (
+                .and_then(|list| {
+                    let entry = list.get(hit)?;
+                    list.project(
+                        hit,
                         entry.rect.x + entry.rect.width / 2.0,
                         entry.rect.y + entry.rect.height / 2.0,
                     )
                 })
+                .unwrap_or((0.0, 0.0))
         });
         let clicked = self.send_click(hit, x, y);
         let prevented = clicked.is_some_and(|(_, prevented)| prevented);
@@ -394,6 +540,13 @@ impl HtmlDom {
     /// Returns that handler's node and whether a handler prevented the default.
     fn send_click(&mut self, hit: NodeId, x: f32, y: f32) -> Option<(NodeId, bool)> {
         let (target, element) = self.listener_target(hit, "click")?;
+        // The point in the coordinates the target was laid out in: a transformed target
+        // sees the pointer where it would be if the box were not transformed.
+        let (local_x, local_y) = self
+            .current
+            .as_ref()
+            .and_then(|list| list.local_point(target, x, y))
+            .unwrap_or((x, y));
         let origin = self
             .current
             .as_ref()
@@ -401,7 +554,7 @@ impl HtmlDom {
             .map_or((0.0, 0.0), |entry| (entry.rect.x, entry.rect.y));
         let data = PointerData {
             client: (x as f64, y as f64),
-            element: ((x - origin.0) as f64, (y - origin.1) as f64),
+            element: ((local_x - origin.0) as f64, (local_y - origin.1) as f64),
         };
         Some((target, self.send(element, "click", Box::new(data))))
     }
@@ -485,6 +638,26 @@ impl HtmlDom {
             ));
         }
     }
+}
+
+/// Whether any box that declares a motion of layout changes its style in the next moment.
+/// Resolves the document a thousandth of a second on, which a motion that is running shows
+/// and one that is not does not.
+fn layout_moves(doc: &mut BaseDocument, scan: &Scan, now: f64) -> bool {
+    let before: Vec<_> = scan
+        .layout_nodes
+        .iter()
+        .map(|&id| doc.get_node(id).map(|node| node.style.clone()))
+        .collect();
+    resolve_styles(doc, now + 0.001);
+    let after: Vec<_> = scan
+        .layout_nodes
+        .iter()
+        .map(|&id| doc.get_node(id).map(|node| node.style.clone()))
+        .collect();
+    // The probe is not the frame: put the document back at the frame's own time.
+    resolve_styles(doc, now);
+    before != after
 }
 
 /// `ColorScheme` does not implement `PartialEq`.

@@ -50,8 +50,8 @@ use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::TextStyle;
 use crate::paint::display_list::{
-    BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
-    Sides, TextAlign, TileRepeat,
+    Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
+    Radius, Rect, Rgba, Sides, TextAlign, TileRepeat, Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -65,6 +65,11 @@ pub struct Plan {
     pub root: PlanNode,
     /// Every brush a [`PlanModifier::BackgroundBrush`] in the tree names, once.
     pub brushes: BTreeMap<BrushId, Brush>,
+    /// The transitions the display list says began, by the node they play on. These are
+    /// events: they are in the plan built for the layout that started them and in none
+    /// after, and [`diff`] reports each as a [`PlanChange::AnimationStarted`] when the
+    /// plan it compares to lacks it.
+    pub transitions: Vec<(PlanKey, Animation)>,
 }
 
 /// Names a [`Brush`] by its content: two equal brushes have the same id, in this plan and
@@ -197,9 +202,13 @@ impl PlanKey {
 pub struct PlanNode {
     pub key: PlanKey,
     pub kind: PlanKind,
-    /// In a fixed order: offset, size, alpha, shape, shadows, background, background
-    /// brushes, border, clip.
+    /// In a fixed order: offset, size, transform, alpha, shape, shadows, background,
+    /// background brushes, border, clip.
     pub modifiers: Vec<PlanModifier>,
+    /// The `@keyframes` animations a renderer plays on the node for as long as they are
+    /// listed. Each plays on the node's own value of the property it names, over the
+    /// node's modifiers.
+    pub animations: Vec<Animation>,
     /// Back to front.
     pub children: Vec<PlanNode>,
 }
@@ -308,6 +317,10 @@ pub enum PlanModifier {
         width: f32,
         height: f32,
     },
+    /// Draws the node, and everything inside it, through a 2D matrix about a point of the
+    /// node. The node keeps the place and size layout gave it: this moves how it is drawn,
+    /// and where a pointer lands on it, and nothing else.
+    Transform(Transform2D),
     /// The width a text run is laid out in. Its height is the renderer's.
     Width(f32),
     /// Applies to the node and everything inside it as one group: the group is composed
@@ -357,6 +370,7 @@ pub enum PlanModifier {
 pub enum ModifierSlot {
     Offset,
     RequiredSize,
+    Transform,
     Width,
     Alpha,
     Shape,
@@ -401,6 +415,14 @@ pub enum PlanChange {
     },
     /// The node no longer has a modifier in `slot`.
     ModifierRemoved { key: PlanKey, slot: ModifierSlot },
+    /// The `@keyframes` animations on the node are now these: a renderer starts the ones it
+    /// is not playing and stops the ones that are no longer listed.
+    AnimationsChanged {
+        key: PlanKey,
+        animations: Vec<Animation>,
+    },
+    /// A transition began on the node.
+    AnimationStarted { key: PlanKey, animation: Animation },
 }
 
 /// Which colour of a node is being resolved.
@@ -557,6 +579,12 @@ struct Builder<'a> {
     slots: Vec<Slot>,
     /// Per placed entry: the slot its descendants go into.
     content: HashMap<NodeId, usize>,
+    /// What each entry draws, in document coordinates, with every transform around it
+    /// applied.
+    drawn: Vec<Option<Rect>>,
+    /// The animations of the nodes that have any, by plan key.
+    animated: HashMap<PlanKey, Vec<Animation>>,
+    transitions: &'a [crate::paint::display_list::TransitionStart],
 }
 
 impl<'a> Builder<'a> {
@@ -571,7 +599,24 @@ impl<'a> Builder<'a> {
             .enumerate()
             .map(|(index, entry)| (entry.node, index))
             .collect();
-        let mut subtree: Vec<Option<Rect>> = entries.iter().map(drawn_bounds).collect();
+        let worlds = world_matrices(entries, &by_node);
+        let drawn: Vec<Option<Rect>> = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let bounds = drawn_bounds(entry)?;
+                Some(match worlds[index] {
+                    Some(world) => bounds_of(&[
+                        world.apply(bounds.x, bounds.y),
+                        world.apply(bounds.right(), bounds.y),
+                        world.apply(bounds.right(), bounds.bottom()),
+                        world.apply(bounds.x, bounds.bottom()),
+                    ]),
+                    None => bounds,
+                })
+            })
+            .collect();
+        let mut subtree: Vec<Option<Rect>> = drawn.clone();
         for (index, entry) in entries.iter().enumerate() {
             let Some(own) = subtree[index] else {
                 continue;
@@ -609,6 +654,9 @@ impl<'a> Builder<'a> {
             subtree,
             slots: vec![page],
             content: HashMap::new(),
+            drawn,
+            animated: HashMap::new(),
+            transitions: &list.transitions,
         }
     }
 
@@ -617,9 +665,15 @@ impl<'a> Builder<'a> {
             self.place(index);
         }
         let root = self.finish(0);
+        let transitions = self
+            .transitions
+            .iter()
+            .map(|start| (PlanKey::Node(start.node), start.animation.clone()))
+            .collect();
         Plan {
             root,
             brushes: std::mem::take(&mut self.brushes),
+            transitions,
         }
     }
 
@@ -644,8 +698,10 @@ impl<'a> Builder<'a> {
             if !seen.insert(id) {
                 break;
             }
+            // Everything inside a transformed box is drawn through its transform, so it stays
+            // inside the box whatever it overlaps.
             if let Some(&container) = self.content.get(&id)
-                && !self.drawn_after(container, bounds)
+                && (self.is_transformed(id) || !self.drawn_after(container, bounds))
             {
                 return container;
             }
@@ -655,6 +711,12 @@ impl<'a> Builder<'a> {
                 .and_then(|&at| self.entries[at].parent);
         }
         0
+    }
+
+    fn is_transformed(&self, node: NodeId) -> bool {
+        self.by_node
+            .get(&node)
+            .is_some_and(|&at| self.entries[at].transform.is_some())
     }
 
     /// Whether anything placed after the end of `container`'s subtree, in tree order,
@@ -749,6 +811,9 @@ impl<'a> Builder<'a> {
                 height: rect.height,
             },
         ];
+        if let Some(transform) = &entry.transform {
+            modifiers.push(PlanModifier::Transform(transform.clone()));
+        }
         // The entry's opacity includes every ancestor's; the container already applies
         // the part that belongs to them.
         if provided_opacity > 0.0 {
@@ -785,9 +850,13 @@ impl<'a> Builder<'a> {
                     provided_clip
                 },
                 opacity: entry.opacity,
-                drawn: drawn_bounds(entry),
+                drawn: self.drawn[index],
             },
         );
+        if !entry.animations.is_empty() {
+            self.animated
+                .insert(PlanKey::Node(entry.node), entry.animations.clone());
+        }
 
         let content = if let Some(scroll) = entry.scroll {
             let viewport = scroll.viewport;
@@ -1189,6 +1258,7 @@ impl<'a> Builder<'a> {
             key: source.key,
             kind,
             modifiers: source.modifiers.clone(),
+            animations: self.animated.get(&source.key).cloned().unwrap_or_default(),
             children,
         }
     }
@@ -1287,6 +1357,47 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     }
 }
 
+/// For each entry, the matrix that carries a point of the untransformed layout to where it
+/// is drawn: the transforms of the entry and of every box around it, outermost applied
+/// last. `None` for an entry nothing transforms.
+fn world_matrices(
+    entries: &[NodeEntry],
+    by_node: &HashMap<NodeId, usize>,
+) -> Vec<Option<Matrix2D>> {
+    if entries.iter().all(|entry| entry.transform.is_none()) {
+        return vec![None; entries.len()];
+    }
+    entries
+        .iter()
+        .map(|entry| {
+            let mut chain = vec![entry];
+            let mut seen = HashSet::from([entry.node]);
+            let mut parent = entry.parent;
+            while let Some(id) = parent {
+                if !seen.insert(id) {
+                    break;
+                }
+                let Some(&at) = by_node.get(&id) else {
+                    break;
+                };
+                chain.push(&entries[at]);
+                parent = entries[at].parent;
+            }
+            let mut world = Matrix2D::IDENTITY;
+            let mut any = false;
+            // From the outermost box in: each box's own transform applies first to what is
+            // inside it, so the outer ones multiply on the left.
+            for above in chain.iter().rev() {
+                if let Some(transform) = &above.transform {
+                    world = world.times(&transform.in_document(&above.rect));
+                    any = true;
+                }
+            }
+            any.then_some(world)
+        })
+        .collect()
+}
+
 fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
     match (a, b) {
         (Some(a), Some(b)) => {
@@ -1335,6 +1446,7 @@ fn slots(modifiers: &[PlanModifier]) -> Vec<(ModifierSlot, &PlanModifier)> {
             let slot = match modifier {
                 PlanModifier::Offset { .. } => ModifierSlot::Offset,
                 PlanModifier::RequiredSize { .. } => ModifierSlot::RequiredSize,
+                PlanModifier::Transform(_) => ModifierSlot::Transform,
                 PlanModifier::Width(_) => ModifierSlot::Width,
                 PlanModifier::Alpha(_) => ModifierSlot::Alpha,
                 PlanModifier::Shape { .. } => ModifierSlot::Shape,
@@ -1417,6 +1529,18 @@ pub fn diff(previous: &Plan, next: &Plan) -> Vec<PlanChange> {
             node: next.root.clone(),
         });
     }
+    for (key, animation) in &next.transitions {
+        let already = previous
+            .transitions
+            .iter()
+            .any(|(other_key, other)| other_key == key && other == animation);
+        if !already && new.contains_key(key) {
+            changes.push(PlanChange::AnimationStarted {
+                key: *key,
+                animation: animation.clone(),
+            });
+        }
+    }
     changes
 }
 
@@ -1453,6 +1577,13 @@ fn diff_node(
         changes.push(PlanChange::KindChanged {
             key: node.key,
             kind: node.kind.clone(),
+        });
+    }
+
+    if before.animations != node.animations {
+        changes.push(PlanChange::AnimationsChanged {
+            key: node.key,
+            animations: node.animations.clone(),
         });
     }
 
