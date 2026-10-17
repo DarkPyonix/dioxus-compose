@@ -25,6 +25,7 @@ so a window can show it and a test can lay it out without one.
 | `overlay` | A dropdown menu positioned against its button, a confirmation dialog over a dimmed `position: fixed` backdrop, and a preview that clips its banner to rounded corners |
 | `theme` | Every colour a CSS custom property: a light set, a dark set under `prefers-color-scheme: dark`, and a button that overrides the system's choice |
 | `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
+| `landing` | A responsive product page: a hero painted with a gradient, a card grid of features, three pricing plans (the middle one highlighted) and a footer of link columns, centred with `margin: 0 auto`. `@media` queries on the width change it at phone, tablet and desktop widths, and a toggle switches the prices between monthly and yearly |
 
 ## Where they are drawn
 
