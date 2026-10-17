@@ -9,11 +9,12 @@
 //! 800 - 64 = 736px wide. Vertical positions depend on every section above, so the tests
 //! compare heights and the distances between neighbours, which the CSS fixes on its own.
 //!
-//! Some of the features on the page are not laid out by the layout pass at all (the end of
-//! this file says which and the tests that would defend them are not here, since a test of
-//! "nothing happens" would pin the gap in place).
+//! A few features on the page are not drawn by the Host at all (the end of this file says
+//! which; a test of "nothing happens" would pin the gap in place).
 
-use dioxus_compose::html::{HtmlDom, TextAlign, TextLineHeight, TextRun};
+use dioxus_compose::html::{
+    HtmlDom, OverflowWrap, RunMarker, TextAlign, TextLineHeight, TextRun, WordBreak,
+};
 use sample_html_support::{
     Measurer, assert_close, assert_rect, centre, config, entry, node, text_of,
 };
@@ -135,9 +136,10 @@ fn fr34_typography_letter_spacing_widens_the_advance() {
 /// line at 32. Centre moves it by half the 176px that is left over, to 32 + 88 = 120.
 /// Right moves it by all of it, to 32 + 176 = 208. The justified paragraph breaks at 30
 /// characters into "Justify spreads the words of", "every line across the full" and
-/// "width": three 20px lines, the widest 28 characters (224px). The layout pass leaves the
-/// stretching of the first two lines to the renderer, so the run stays at x = 32 and says
-/// `Justify`.
+/// "width": three 20px lines, the widest 28 characters (224px). Justifying stretches the
+/// first two lines to the box's 240px, so the run is 240px wide, starts at x = 32 and says
+/// `Justify`; the renderer spreads the words of the lines that end in a soft wrap across
+/// that width, and the last line, "width", stays as it is.
 #[test]
 fn fr34_typography_align_places_the_line() {
     let dom = laid_out();
@@ -158,7 +160,7 @@ fn fr34_typography_align_places_the_line() {
     assert_eq!(justified.line_count, 3);
     assert_eq!(justified.wrap_width, Some(240.0));
     assert_close(justified.rect.x, 32.0, "justified x");
-    assert_close(justified.rect.width, 224.0, "justified widest line");
+    assert_close(justified.rect.width, 240.0, "justified lines fill the box");
     assert_close(justified.rect.height, 60.0, "justified height");
 }
 
@@ -222,7 +224,8 @@ fn fr34_typography_pre_keeps_breaks_and_spaces() {
 
 /// The ellipsis box is 160px wide with `overflow: hidden`, and its 40 characters
 /// (320px) stay on one line: the box keeps its width and its one line's height, and the
-/// run is the full 320px, which the box clips.
+/// run is the full 320px, which the box clips. The run asks for an ellipsis at the box's
+/// 160px, which the renderer draws in place of what it cuts.
 #[test]
 fn fr34_typography_ellipsis_box_keeps_its_width() {
     let dom = laid_out();
@@ -236,6 +239,39 @@ fn fr34_typography_ellipsis_box_keeps_its_width() {
     assert_eq!(text.wrap_width, None);
     assert_close(text.rect.x, 32.0, "text x");
     assert_close(text.rect.width, 320.0, "text width");
+    assert_eq!(text.ellipsis, Some(160.0));
+}
+
+/// "Supercalifragilisticexpialidocious" is 34 characters, 272px at 8px each, in boxes 120px
+/// wide, so 15 characters fit a line. By default the word is not broken: one 20px line
+/// 272px wide, overflowing its box. `word-break: break-all`, `overflow-wrap: anywhere` and
+/// `overflow-wrap: break-word` all break it, because it is alone on its line and does not
+/// fit: "Supercalifragil" (15), "isticexpialidoc" (15) and "ious" (4), three lines of 20px
+/// (60px) with the widest 120px.
+#[test]
+fn fr34_typography_long_word_breaks_where_the_css_allows() {
+    let dom = laid_out();
+
+    let plain = run(&dom, "wb-default");
+    assert_eq!(plain.style.word_break, WordBreak::Normal);
+    assert_eq!(plain.style.overflow_wrap, OverflowWrap::Normal);
+    assert_eq!(plain.line_count, 1);
+    assert_close(plain.rect.width, 272.0, "default width");
+    assert_close(plain.rect.height, 20.0, "default height");
+
+    for (id, word_break, overflow_wrap) in [
+        ("wb-break-all", WordBreak::BreakAll, OverflowWrap::Normal),
+        ("wb-anywhere", WordBreak::Normal, OverflowWrap::Anywhere),
+        ("wb-break-word", WordBreak::Normal, OverflowWrap::BreakWord),
+    ] {
+        let text = run(&dom, id);
+        assert_eq!(text.style.word_break, word_break, "#{id}");
+        assert_eq!(text.style.overflow_wrap, overflow_wrap, "#{id}");
+        assert_eq!(text.line_count, 3, "#{id}");
+        assert_close(text.rect.width, 120.0, &format!("#{id} widest line"));
+        assert_close(text.rect.height, 60.0, &format!("#{id} height"));
+        assert_close(entry(&dom, id).rect.height, 60.0, &format!("#{id} box"));
+    }
 }
 
 /// `::before` and `::after` put "[" and "]" around "note": the run is "[note]", 6
@@ -254,7 +290,8 @@ fn fr34_typography_generated_content_joins_the_text() {
 /// The lists are 240px wide with 40px of padding on the left, so their items start at
 /// x = 32 + 40 = 72 and are 200px wide. An item is one 20px line with no margin, so the
 /// items follow one another every 20px, and a list is as tall as its items: 60px for
-/// three, 40px for two. The markers themselves are not part of the layout.
+/// three, 40px for two. The markers are not part of the layout; they are runs of their own
+/// (see `fr34_typography_list_markers_sit_before_the_items`).
 #[test]
 fn fr34_typography_list_items_stack() {
     let dom = laid_out();
@@ -282,6 +319,44 @@ fn fr34_typography_list_items_stack() {
                 20.0,
                 &format!("#{prefix}-{index}"),
             );
+        }
+    }
+}
+
+/// Each item draws its marker before its text, as a run that ends one space (8px) before
+/// the item's box, which starts at x = 72, on the item's first baseline (the same y, 20px
+/// tall):
+///
+/// - the square list has "\u{25aa}", one character (8px), so it starts at 72 - 8 - 8 = 56;
+/// - the decimal list has "1.", "2." and "3.", two characters (16px), so 72 - 8 - 16 = 48;
+/// - the lower-alpha list has "a." and "b.", also 16px wide, so 48.
+///
+/// An item's text follows as the second run.
+#[test]
+fn fr34_typography_list_markers_sit_before_the_items() {
+    let dom = laid_out();
+    for (prefix, markers, x, width) in [
+        ("square", vec!["\u{25aa}"; 3], 56.0, 8.0),
+        ("decimal", vec!["1.", "2.", "3."], 48.0, 16.0),
+        ("alpha", vec!["a.", "b."], 48.0, 16.0),
+    ] {
+        for (index, marker) in markers.iter().enumerate() {
+            let id = format!("{prefix}-{}", index + 1);
+            let item = entry(&dom, &id);
+            assert_eq!(item.texts.len(), 2, "#{id}: the marker and the text");
+            let run = &item.texts[0];
+            assert_eq!(run.marker, RunMarker::Marker, "#{id}");
+            assert_eq!(run.text, *marker, "#{id}");
+            assert_rect(
+                run.rect,
+                x,
+                item.rect.y,
+                width,
+                20.0,
+                &format!("#{id} marker"),
+            );
+            assert_eq!(item.texts[1].marker, RunMarker::None, "#{id}");
+            assert_close(item.texts[1].rect.x, 72.0, &format!("#{id} text x"));
         }
     }
 }
@@ -350,11 +425,9 @@ fn fr34_typography_size_button_cycles_the_specimen() {
     }
 }
 
-// Not defended by a test, because the layout pass does not act on them:
+// Not defended by a test, because the Host does not carry them:
 //
-// - `word-break` and `overflow-wrap`: neither reaches the measurer's request, so a long
-//   word in a narrow box is measured as if it could not break.
-// - `text-overflow: ellipsis`: the run is the full text, and the display list carries
-//   nothing that says to cut it short.
 // - `text-decoration`: the display list carries no decoration for a run.
-// - list markers: the display list carries no marker for a list item.
+// - `list-style-type: upper-roman` (and `lower-roman`): stylo's servo build does not know
+//   the keyword, so the declaration is dropped when the stylesheet is parsed and the list
+//   keeps its decimal markers.
