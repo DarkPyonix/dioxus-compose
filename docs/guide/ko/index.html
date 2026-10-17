@@ -116,14 +116,14 @@
       <p>blitz-dom 이 Rust 프로세스 안에서 스타일시트를 풀고 페이지를 배치합니다. Dioxus 자체의 네이티브
         렌더러가 쓰는 엔진과 같습니다. Compose 가 받는 것은 CSS 가 아니라 사각형, 색, 텍스트 조각이고,
         Compose 는 자기 텍스트 스택과 입력기로 그것을 그립니다.</p>
-      <p>지금 HTML 경로는 화면을 배치하고 그리기를 계획하며, 그것을 그리는 다리는 만들고 있습니다
-        (<a href="status.html">현황</a>). 위젯 경로는 지금 그려집니다.</p>
+      <p>지금 HTML 경로는 화면을 배치하고 그리기를 계획하며, 그것을 그리는 다리는 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 에 작성되어 있고 compose-rust 의 그리기 원소를 기다립니다
+        (<a href="status.html#drawing">현황</a>). 위젯 경로는 지금 그려집니다.</p>
     </div>
   </div>
 
   <div class="metrics">
     <div class="metric"><b>324 / 326</b><span>VS Code 가 잰 텍스트 크기로, VS Code 와 1px 이내인 상자</span></div>
-    <div class="metric"><b>11</b><span>Host 에서 배치하고 테스트하는 HTML 과 CSS 예제</span></div>
+    <div class="metric"><b>15</b><span>Host 에서 배치하고 테스트하는 HTML 과 CSS 예제</span></div>
     <div class="metric"><b>28.76 MB</b><span>macOS 에서 위젯 경로 앱 전체, 파일 하나</span></div>
     <div class="metric"><b>JVM 없음</b><span>Java 가 없는 컴퓨터에서도 실행</span></div>
   </div>
@@ -136,7 +136,7 @@
       <thead><tr><th>부분</th><th>상태</th></tr></thead>
       <tbody>
         <tr><td>HTML 과 CSS: 레이아웃, 이벤트, 폼, 이미지, 스크롤</td><td><span class="pill works">구현</span> Host 에서, 예제로 테스트</td></tr>
-        <tr><td>HTML 과 CSS: 화면에 그리기</td><td><span class="pill partial">부분</span> 렌더러 다리를 만드는 중(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>, <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a>)</td></tr>
+        <tr><td>HTML 과 CSS: 화면에 그리기</td><td><span class="pill partial">부분</span> 렌더러 다리는 작성되었고 compose-rust 의 그리기 원소를 기다림(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>, <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a>)</td></tr>
         <tr><td>Compose 로 텍스트 재기</td><td><span class="pill partial">부분</span>(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
         <tr><td>CSS 변환, transition 과 animation</td><td><span class="pill partial">부분</span> Host 가 싣고, 그리기는 compose-rust 를 기다림(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>, <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
         <tr><td>한 화면에 HTML 과 위젯</td><td><span class="pill planned">계획</span></td></tr>
@@ -153,6 +153,7 @@
       <a class="card" href="getting-started.html"><h3>시작하기</h3><p>크레이트를 추가하고, HTML 과 CSS 로 페이지를 쓰고, 배치합니다.</p></a>
       <a class="card" href="layout.html"><h3>레이아웃과 CSS</h3><p>블록, 인라인, flexbox, grid, 표, 위치 지정을 예제로.</p></a>
       <a class="card" href="forms-and-events.html"><h3>폼과 이벤트</h3><p>클릭, 입력란, select, 키가 있는 목록, 그리고 입력란이 비제어인 이유.</p></a>
+      <a class="card" href="getting-started.html#samples"><h3>예제</h3><p>HTML 과 CSS 로 쓴 앱 열다섯 개, 하나에 크레이트 하나.</p></a>
       <a class="card" href="widgets.html"><h3>Compose 위젯</h3><p>화면을 쓰는 두 번째 방법: <code>Column</code>, <code>Text</code>, <code>Button</code>.</p></a>
       <a class="card" href="status.html"><h3>현황</h3><p>구현, 부분, 계획과 그 이슈.</p></a>
     </div>

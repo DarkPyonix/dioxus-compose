@@ -77,8 +77,9 @@
       <span class="label">Where it stands</span>
       <p>
         The HTML path lays a screen out and produces a drawing plan today, and it does not draw on
-        screen yet. The bridge that hands that plan to the renderer is not built
-        (<span class="pill partial">partial</span>,
+        screen yet. The bridge that hands that plan to the renderer is written in <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> and waits
+        for compose-rust's drawing elements, which are not merged (<a href="status.html#drawing">why, and what it waits for</a>;
+        <span class="pill partial">partial</span>,
         <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). Every claim on
         these pages is checked by tests on the Host, and the <a href="status.html">status page</a>
         lists what is implemented, partial and planned.
@@ -168,7 +169,7 @@ h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
         drawing elements (boxes placed inside their containers, scroll containers, text, fields,
         images), and <code>diff</code> says what changed between two plans, node by node.</li>
       <li><strong>Draw.</strong> The renderer draws the plan with Compose.
-        <span class="pill planned">planned</span> This step is the missing bridge
+        <span class="pill partial">partial</span> This step is the bridge, written in <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> and waiting for compose-rust's drawing elements
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ol>
     <p>
@@ -238,6 +239,12 @@ h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
       <a class="card" href="forms-and-events.html"><h3>Forms and events</h3><p>Clicks, fields, selects, checkboxes and keyed lists.</p></a>
       <a class="card" href="status.html"><h3>Status</h3><p>What is implemented, partial and planned, with issues.</p></a>
     </div>
+
+    <p>
+      <strong>Examples.</strong> Fifteen apps in <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a> are written this way, one
+      crate each: <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello"><code>hello</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/article"><code>article</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/dashboard"><code>dashboard</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/gallery"><code>gallery</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/settings"><code>settings</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/table"><code>table</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/chat"><code>chat</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/todo"><code>todo</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/overlay"><code>overlay</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/theme"><code>theme</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/workbench"><code>workbench</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>layout</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>landing</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography"><code>typography</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>motion</code></a>. <a href="getting-started.html#samples">Getting started</a> says what each
+      shows and which page quotes it.
+    </p>
 
     <nav class="pagenav" aria-label="Pagination">
       <a class="next" href="getting-started.html"><span>Next</span>Getting started &rarr;</a>
