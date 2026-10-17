@@ -12,7 +12,8 @@
 use std::borrow::Cow;
 
 use parley::{
-    FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight, StyleProperty,
+    FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight,
+    OverflowWrap as ParleyOverflowWrap, StyleProperty, WordBreakStrength,
 };
 
 /// The font properties that decide how large a run of text is.
@@ -31,6 +32,39 @@ pub struct TextStyle {
     pub letter_spacing: f32,
     /// Height of one line.
     pub line_height: TextLineHeight,
+    /// `word-break`: where inside words a line may break.
+    pub word_break: WordBreak,
+    /// `overflow-wrap` (and its alias `word-wrap`): whether a word that does not fit a line
+    /// on its own may be broken.
+    pub overflow_wrap: OverflowWrap,
+}
+
+/// CSS `word-break`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WordBreak {
+    /// Lines break at the places the script allows: spaces, hyphens, and between CJK
+    /// characters.
+    #[default]
+    Normal,
+    /// Lines may break between any two characters.
+    BreakAll,
+    /// Lines do not break between CJK characters; spaces break as they do in `Normal`.
+    KeepAll,
+}
+
+/// CSS `overflow-wrap`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OverflowWrap {
+    /// A word that is too long for its line overflows it.
+    #[default]
+    Normal,
+    /// A word that is too long for a line of its own is broken between characters, and
+    /// those break points count when the min-content width is worked out, so the box may
+    /// shrink to one character.
+    Anywhere,
+    /// Like `Anywhere`, but the break points are left out of the min-content width, so the
+    /// box does not shrink below its longest word.
+    BreakWord,
 }
 
 impl TextStyle {
@@ -235,6 +269,16 @@ impl TextMeasurer for ParleyMeasurer {
             FontStyle::Normal
         }));
         builder.push_default(StyleProperty::LetterSpacing(style.letter_spacing));
+        builder.push_default(StyleProperty::WordBreak(match style.word_break {
+            WordBreak::Normal => WordBreakStrength::Normal,
+            WordBreak::BreakAll => WordBreakStrength::BreakAll,
+            WordBreak::KeepAll => WordBreakStrength::KeepAll,
+        }));
+        builder.push_default(StyleProperty::OverflowWrap(match style.overflow_wrap {
+            OverflowWrap::Normal => ParleyOverflowWrap::Normal,
+            OverflowWrap::Anywhere => ParleyOverflowWrap::Anywhere,
+            OverflowWrap::BreakWord => ParleyOverflowWrap::BreakWord,
+        }));
         builder.push_default(StyleProperty::LineHeight(match style.line_height {
             // The same reading of `normal` blitz-dom applies, so the default measurer and
             // blitz-dom's own text agree.
