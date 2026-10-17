@@ -6,6 +6,8 @@ members = [
     "samples/dashboard",
     "samples/gallery",
     "samples/hello",
+    "samples/landing",
+    "samples/layout",
     "samples/motion",
     "samples/overlay",
     "samples/settings",
@@ -13,6 +15,7 @@ members = [
     "samples/table",
     "samples/theme",
     "samples/todo",
+    "samples/typography",
     "samples/workbench",
 ]
 resolver = "2"

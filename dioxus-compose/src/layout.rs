@@ -48,12 +48,12 @@ use style::values::computed::{
     Length, LengthPercentage, MaxSize as StyloMaxSize, Size as StyloSize,
 };
 use taffy::{
-    AvailableSpace, BoxSizing, CacheTree, Dimension, Display, Layout, LayoutBlockContainer,
-    LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput, LayoutPartialTree,
-    Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero, RoundTree, RunMode,
-    Size, SizingMode, Style, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_root_layout, round_layout,
+    AvailableSpace, BoxSizing, CacheTree, Dimension, Display, FlexDirection, Layout,
+    LayoutBlockContainer, LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput,
+    LayoutPartialTree, Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero,
+    RoundTree, RunMode, Size, SizingMode, Style, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_root_layout, round_layout,
 };
 
 use crate::dom::form;
@@ -1145,6 +1145,19 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                 }
                 Route::Flex => {
                     tree.resolve_intrinsic_widths(node_id, inputs);
+                    // Taffy's block layout offers every child `MinContent` as its available
+                    // height. For a column flex container that is its main axis, and a
+                    // wrapping one would break after every item. A box's block-axis
+                    // min-content and max-content sizes are the same, and the main size of
+                    // a column container is indefinite there, so it must not wrap.
+                    let mut inputs = inputs;
+                    let column = matches!(
+                        tree.node(node_id).style.flex_direction,
+                        FlexDirection::Column | FlexDirection::ColumnReverse
+                    );
+                    if column && inputs.available_space.height == AvailableSpace::MinContent {
+                        inputs.available_space.height = AvailableSpace::MaxContent;
+                    }
                     compute_flexbox_layout(tree, node_id, inputs)
                 }
                 Route::Grid => {
