@@ -176,9 +176,16 @@
         <code>ColourResolver</code> may replace a computed colour with the role it stands for, so a
         theme change will not need a new layout. See <a href="mixing.html">Mixing the two</a>.</li>
       <li><strong>Animated theme changes.</strong> <span class="pill planned">planned</span>
-        A <code>transition: background-color</code> does not play today
+        A <code>transition: background-color</code> is described for the renderer to play, and does
+        not play on screen until compose-rust has the animation records
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
     </ul>
+
+    <p>
+      <strong>More examples.</strong> <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>samples/landing</code></a> sets a background gradient or image, shadows
+      and radii, and changes its layout with <code>@media</code>. <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>samples/motion</code></a> shows transitions
+      and keyframes, which a theme change would use (see below for why they do not play yet).
+    </p>
 
     <nav class="pagenav" aria-label="Pagination">
       <a class="prev" href="scrolling-and-overlays.html"><span>Previous</span>&larr; Scrolling and overlays</a>

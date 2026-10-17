@@ -194,8 +194,12 @@
 }</code></pre>
 </figure>
     <p>
-      The dialog's <code>translate(-50%, -50%)</code> works because translations are added to the
-      box's position. Other transforms are not drawn yet; see <a href="#planned">below</a>.
+      The dialog's <code>translate(-50%, -50%)</code> works because a translation is added to the
+      box's position. <code>rotate</code>, <code>scale</code>, <code>skew</code> and
+      <code>matrix()</code> are carried as a matrix about <code>transform-origin</code>: the box
+      keeps its place in layout, and what is inside it turns with it. See the
+      <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/motion"><code>motion</code></a>
+      example, and <a href="#planned">below</a> for what is left.
     </p>
 
     <h2 id="decorations">Backgrounds, borders and effects</h2>
@@ -246,17 +250,31 @@
       <table>
         <thead><tr><th scope="col">CSS</th><th scope="col">Today</th><th scope="col">Status</th></tr></thead>
         <tbody>
-          <tr><td><code>transform</code>: <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code></td><td>Stylo computes them; only translations reach the box. A box with any other transform stays where layout put it.</td><td><span class="pill planned">planned</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a></td></tr>
-          <tr><td><code>transition</code>, <code>animation</code>, <code>@keyframes</code></td><td>Every animated value stays at its first value.</td><td><span class="pill planned">planned</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a> (opacity, transform, colours), <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a> (width, height, margins)</td></tr>
+          <tr><td><code>transform</code>: <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code></td><td>The Host carries them as a matrix on the box. Drawing the matrix waits for compose-rust's transform modifier (<a href="https://github.com/DarkPyonix/compose-rust/pull/83">compose-rust#83</a>). A 3D transform is left out with a warning.</td><td><span class="pill partial">partial</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a></td></tr>
+          <tr><td><code>transition</code>, <code>animation</code>, <code>@keyframes</code></td><td>The Host describes the motion of opacity, transform and background colour for the renderer, and ticks the motion of width, height and margins itself. Playing them on screen waits for compose-rust's animation records (<a href="https://github.com/DarkPyonix/compose-rust/pull/83">compose-rust#83</a>).</td><td><span class="pill partial">partial</span> <a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a> (opacity, transform, colours), <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a> (width, height, margins)</td></tr>
           <tr><td>Page zoom like VS Code's (<kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>+</kbd>)</td><td>The page is laid out at the scale you pass to <code>layout</code>.</td><td><span class="pill planned">planned</span></td></tr>
         </tbody>
       </table>
     </div>
     <p>
-      Animations will be split by what they move. Properties that do not change layout (opacity,
-      transforms, colours) will play in the renderer on Compose's own animation clock, so the Host
-      does no work per frame. Properties that do change layout will be recomputed by the Host each
-      frame, because only the layout engine can say where everything else moves.
+      Animations are split by what they move. Properties that do not change layout (opacity,
+      transform, background colour) are described once, with their keyframes, duration, delay,
+      easing, repeat, direction and fill, for the renderer to play on Compose's own animation
+      clock, so the Host does no work per frame. Properties that do change layout are recomputed
+      by the Host each frame (<code>HtmlDom::needs_frames</code> says when, <code>HtmlDom::tick</code>
+      does it), because only the layout engine can say where everything else moves. The layout
+      engine has one clock for the page, so while a width animates, the other motions on the same
+      page are ticked with it.
+    </p>
+
+    <p>
+      <strong>More examples.</strong> <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>samples/layout</code></a> covers flexbox (wrap, gap, grow, shrink and
+      basis, alignment, order), grid (template areas, <code>auto-fill</code> with
+      <code>minmax</code>, spans, line placement) and positioning (<code>sticky</code>,
+      <code>z-index</code>, absolute inside relative). <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>samples/landing</code></a> is a responsive page:
+      <code>@media</code> at phone, tablet and desktop widths, a centred <code>max-width</code>
+      container, a card grid, pricing and a footer. <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>samples/motion</code></a> holds the transforms and
+      animations that the table below marks as not yet drawn.
     </p>
 
     <nav class="pagenav" aria-label="Pagination">

@@ -77,7 +77,8 @@
       <span class="label">지금 상태</span>
       <p>
         HTML 경로는 지금 화면을 배치하고 그리기 계획을 만들지만, 아직 화면에 그리지는 않습니다.
-        그 계획을 렌더러에 넘기는 다리가 아직 없습니다(<span class="pill partial">부분</span>,
+        그 계획을 렌더러에 넘기는 다리는 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 에 작성되어 있고, 아직 병합되지 않은 compose-rust 의
+        그리기 원소를 기다립니다(<a href="status.html#drawing">이유와 기다리는 것</a>. <span class="pill partial">부분</span>,
         <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>). 이 가이드의 모든
         설명은 Host 에서 테스트로 확인한 것이고, 구현 / 부분 / 계획의 구분은
         <a href="status.html">현황 페이지</a>에 있습니다.
@@ -167,7 +168,7 @@ h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
         안에 놓인 상자, 스크롤 컨테이너, 텍스트, 입력란, 이미지)로 바꾸고, <code>diff</code> 가 두
         계획 사이에서 바뀐 것을 노드 단위로 알려 줍니다.</li>
       <li><strong>그리기.</strong> 렌더러가 Compose 로 계획을 그립니다.
-        <span class="pill planned">계획</span> 이 단계가 아직 없는 다리입니다
+        <span class="pill partial">부분</span> 이 단계가 다리이고, <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 에 작성되어 compose-rust 의 그리기 원소를 기다립니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ol>
     <p>
@@ -235,6 +236,12 @@ h1 { margin: 0 0 16px; font-size: 32px; line-height: 40px; }
       <a class="card" href="forms-and-events.html"><h3>폼과 이벤트</h3><p>클릭, 입력란, select, 체크박스, 키가 있는 목록.</p></a>
       <a class="card" href="status.html"><h3>현황</h3><p>구현, 부분, 계획과 그 이슈.</p></a>
     </div>
+
+    <p>
+      <strong>예제.</strong> <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a> 의 앱 열다섯 개가 이렇게 쓰여 있고, 하나가
+      크레이트 하나입니다. <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello"><code>hello</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/article"><code>article</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/dashboard"><code>dashboard</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/gallery"><code>gallery</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/settings"><code>settings</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/table"><code>table</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/chat"><code>chat</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/todo"><code>todo</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/overlay"><code>overlay</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/theme"><code>theme</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/workbench"><code>workbench</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>layout</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>landing</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography"><code>typography</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>motion</code></a>. 각각이 무엇을 보여 주고 어느 페이지가 인용하는지는
+      <a href="getting-started.html#samples">시작하기</a>에 있습니다.
+    </p>
 
     <nav class="pagenav" aria-label="페이지 이동">
       <a class="next" href="getting-started.html"><span>다음</span>시작하기 &rarr;</a>
