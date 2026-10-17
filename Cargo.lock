@@ -2044,6 +2044,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "sample-html-landing"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-layout"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
 name = "sample-html-overlay"
 version = "0.0.0"
 dependencies = [
@@ -2096,6 +2116,16 @@ dependencies = [
  "dioxus-core",
  "dioxus-hooks",
  "dioxus-signals",
+]
+
+[[package]]
+name = "sample-html-typography"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
 ]
 
 [[package]]
