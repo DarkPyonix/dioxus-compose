@@ -6,6 +6,7 @@ members = [
     "samples/dashboard",
     "samples/gallery",
     "samples/hello",
+    "samples/layout",
     "samples/overlay",
     "samples/settings",
     "samples/support",

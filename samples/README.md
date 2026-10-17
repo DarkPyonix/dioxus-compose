@@ -21,6 +21,7 @@ so a window can show it and a test can lay it out without one.
 | `table` | Invoices in an HTML table, wider than the page on a narrow screen so it scrolls sideways inside its wrapper. The amount header sorts |
 | `chat` | A conversation that scrolls above a composer pinned to the bottom, and an assistant reply that grows as its text arrives, appended through a context any worker can reach |
 | `todo` | Add, tick off, delete and reorder items. Rows are keyed by id, so moving an item moves its row rather than rewriting every row's text |
+| `layout` | Flexbox (wrap, grow and shrink, alignment, `order`), CSS grid (named areas, `auto-fill`, spans, explicit lines) and positioning (a sticky header, `z-index`, absolute boxes in a relative parent), with a button that flips a flex direction |
 | `overlay` | A dropdown menu positioned against its button, a confirmation dialog over a dimmed `position: fixed` backdrop, and a preview that clips its banner to rounded corners |
 | `theme` | Every colour a CSS custom property: a light set, a dark set under `prefers-color-scheme: dark`, and a button that overrides the system's choice |
 | `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
