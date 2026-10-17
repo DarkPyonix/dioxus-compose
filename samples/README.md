@@ -24,6 +24,7 @@ so a window can show it and a test can lay it out without one.
 | `overlay` | A dropdown menu positioned against its button, a confirmation dialog over a dimmed `position: fixed` backdrop, and a preview that clips its banner to rounded corners |
 | `theme` | Every colour a CSS custom property: a light set, a dark set under `prefers-color-scheme: dark`, and a button that overrides the system's choice |
 | `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
+| `motion` | Boxes rotated, scaled and skewed with `transform-origin` (a click lands on the drawn shape), a transition a button starts, `@keyframes` loops, and a width transition the Host ticks |
 
 ## Where they are drawn
 
