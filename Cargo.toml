@@ -8,6 +8,7 @@ members = [
     "samples/hello",
     "samples/landing",
     "samples/layout",
+    "samples/motion",
     "samples/overlay",
     "samples/settings",
     "samples/support",

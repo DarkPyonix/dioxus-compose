@@ -211,9 +211,10 @@
         컨테이너는 내용을 담은 Compose 스크롤 컨테이너가 되고, 스크롤 위치는 렌더러가 갖습니다.
         렌더러 다리가 생기기 전까지는 스크롤되는 것이 없습니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
-      <li><strong>움직이는 오버레이.</strong> <span class="pill planned">계획</span> CSS transition 으로
-        나타나거나 미끄러져 들어오는 메뉴와 대화 상자는 지금 움직이지 않습니다. 애니메이션 속성이 첫
-        값에 머뭅니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+      <li><strong>움직이는 오버레이.</strong> <span class="pill partial">부분</span> CSS transition 으로
+        나타나거나 미끄러져 들어오는 메뉴와 대화 상자는 렌더러가 재생하도록 설명으로 넘기고, 끝 값은 표시
+        목록에 들어 있습니다. compose-rust 에 애니메이션 레코드가 생기기 전까지는 화면에서 움직이지
+        않습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
     </ul>
 
     <nav class="pagenav" aria-label="페이지 이동">

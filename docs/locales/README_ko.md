@@ -126,7 +126,8 @@ compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계�
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
 | 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43). [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)에 작성되어 검토 대기) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
-| 계획 | `translate` 밖의 CSS 변환, CSS transition 과 animation([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
+| 구현 | Host 에서 CSS 2D 변환(`translate`, `rotate`, `scale`, `skew`, `matrix()`, `transform-origin`)과 CSS transition, animation: 변환된 상자는 레이아웃 자리를 지킨 채 행렬을 싣고, 포인터는 그려진 모양에 닿고, `opacity`, `transform`, `background-color` 의 움직임은 렌더러가 재생하도록 설명으로 넘기며, 레이아웃을 바꾸는 움직임은 Host 가 프레임마다 돌립니다([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
+| 계획 | 변환, transition, animation 을 화면에 그리기: compose-rust 의 변환 수정자와 애니메이션 레코드를 기다림([compose-rust#83](https://github.com/DarkPyonix/compose-rust/pull/83)). 3D 변환은 compose-rust 가 그릴 때까지 경고와 함께 건너뜀 |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |
 | 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24). 초안 [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
