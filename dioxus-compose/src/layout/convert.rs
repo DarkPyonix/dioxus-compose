@@ -11,10 +11,14 @@ use style::properties::ComputedValues;
 use style::values::computed::font::{
     FontStyle as StyloFontStyle, GenericFontFamily, LineHeight, SingleFontFamily,
 };
-use style::values::computed::{Length, Margin, TextTransform};
+use style::values::computed::{
+    Length, Margin, OverflowWrap as StyloOverflowWrap, TextTransform, WordBreak as StyloWordBreak,
+};
 use style::values::specified::TextAlignKeyword;
 
-use crate::layout::measure::{TextLineHeight, TextStyle, TextWhiteSpace, WhiteSpaceCollapse};
+use crate::layout::measure::{
+    OverflowWrap, TextLineHeight, TextStyle, TextWhiteSpace, WhiteSpaceCollapse, WordBreak,
+};
 use crate::paint::display_list::{Rgba, TextAlign};
 
 /// An absolute stylo colour as 8-bit sRGB.
@@ -90,6 +94,16 @@ pub(crate) fn text_style(style: &ComputedValues) -> TextStyle {
             .resolve(Length::new(font_size))
             .px(),
         line_height,
+        word_break: match style.clone_word_break() {
+            StyloWordBreak::BreakAll => WordBreak::BreakAll,
+            StyloWordBreak::KeepAll => WordBreak::KeepAll,
+            _ => WordBreak::Normal,
+        },
+        overflow_wrap: match style.clone_overflow_wrap() {
+            StyloOverflowWrap::Anywhere => OverflowWrap::Anywhere,
+            StyloOverflowWrap::BreakWord => OverflowWrap::BreakWord,
+            _ => OverflowWrap::Normal,
+        },
     }
 }
 

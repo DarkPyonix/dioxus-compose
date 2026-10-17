@@ -51,7 +51,7 @@ use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::TextStyle;
 use crate::paint::display_list::{
     Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
-    Radius, Rect, Rgba, Sides, TextAlign, TileRepeat, Transform2D, bounds_of,
+    Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TileRepeat, Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -252,10 +252,18 @@ pub struct PlanText {
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
+    /// How lines sit in the node's width. With [`TextAlign::Justify`] and `soft_wrap`, the
+    /// node's width is the width the lines are stretched to, every line but the last.
     pub align: TextAlign,
     /// Whether lines wrap at the node's width. A run laid out as one unconstrained line
     /// does not.
     pub soft_wrap: bool,
+    /// `Some(width)` when `text-overflow: ellipsis` cuts the text: lines that reach past
+    /// `width` end in an ellipsis in the place of what is cut. The renderer draws it; the
+    /// Host does not shape the ellipsis.
+    pub ellipsis: Option<f32>,
+    /// Whether the text is a list marker, or starts with one.
+    pub marker: RunMarker,
 }
 
 /// The image of a [`PlanKind::Image`]. The node is the `<img>` element's content box.
@@ -1168,6 +1176,8 @@ impl<'a> Builder<'a> {
                         color,
                         align: run.align,
                         soft_wrap: run.wrap_width.is_some(),
+                        ellipsis: run.ellipsis,
+                        marker: run.marker,
                     }),
                     modifiers: vec![
                         PlanModifier::Offset {
