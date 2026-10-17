@@ -6,14 +6,19 @@
 //! `letter-spacing`, and every line the CSS line height (1.25 times the font size for
 //! `line-height: normal`). Lines break greedily at spaces and at every `\n`. So at 16px a
 //! character is 8px wide, at 14px 7px, at 32px 16px.
+//!
+//! `word-break: break-all` also breaks between any two characters. `overflow-wrap: anywhere`
+//! and `break-word` break a word that is longer than a whole line between characters, after
+//! the line has been broken at the spaces before it. Under `anywhere` the min-content width
+//! is one character; under `break-word` it is still the longest word.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use dioxus_compose::html::{
-    AssetId, DisplayList, HtmlConfig, HtmlDom, ImageResolver, ImageSize, NodeEntry, NodeId, Plan,
-    PlanKey, PlanNode, Rect, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics,
-    TextStyle, TextWhiteSpace, WidthConstraint,
+    AssetId, DisplayList, HtmlConfig, HtmlDom, ImageResolver, ImageSize, NodeEntry, NodeId,
+    OverflowWrap, Plan, PlanKey, PlanNode, Rect, TextLineHeight, TextMeasureRequest, TextMeasurer,
+    TextMetrics, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak,
 };
 
 /// One question the measurer was asked.
@@ -23,6 +28,8 @@ pub struct Request {
     pub font_size: f32,
     pub width: WidthConstraint,
     pub white_space: TextWhiteSpace,
+    pub word_break: WordBreak,
+    pub overflow_wrap: OverflowWrap,
 }
 
 /// Measures text with a fixed advance per character and remembers every request.
@@ -57,25 +64,71 @@ pub fn line_height(style: &TextStyle) -> f32 {
 }
 
 /// Greedy line breaking at spaces, within `max_chars` characters per line.
-fn break_lines(text: &str, max_chars: usize) -> Vec<String> {
+///
+/// `break_all` allows a break between any two characters, and `break_long_words` breaks a
+/// word that is longer than a line, once it has been moved to a line of its own.
+fn break_lines(
+    text: &str,
+    max_chars: usize,
+    break_all: bool,
+    break_long_words: bool,
+) -> Vec<String> {
     let mut lines = Vec::new();
     for paragraph in text.split('\n') {
+        if break_all {
+            lines.extend(break_everywhere(paragraph, max_chars.max(1)));
+            continue;
+        }
         let mut current = String::new();
         let mut started = false;
         for word in paragraph.split(' ') {
-            if !started {
-                current.push_str(word);
-                started = true;
-            } else if current.chars().count() + 1 + word.chars().count() <= max_chars {
+            let length = word.chars().count();
+            if started && current.chars().count() + 1 + length <= max_chars {
                 current.push(' ');
                 current.push_str(word);
-            } else {
+                continue;
+            }
+            if started {
                 lines.push(std::mem::take(&mut current));
+            }
+            started = true;
+            if break_long_words && length > max_chars {
+                let letters: Vec<char> = word.chars().collect();
+                let mut pieces = letters.chunks(max_chars.max(1)).peekable();
+                while let Some(piece) = pieces.next() {
+                    if pieces.peek().is_some() {
+                        lines.push(piece.iter().collect());
+                    } else {
+                        current = piece.iter().collect();
+                    }
+                }
+            } else {
                 current.push_str(word);
             }
         }
         lines.push(current);
     }
+    lines
+}
+
+/// One paragraph filled to `max_chars` characters a line, breaking wherever the line is
+/// full. A space that would start a line is dropped, as a browser lets it hang.
+fn break_everywhere(paragraph: &str, max_chars: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut length = 0;
+    for letter in paragraph.chars() {
+        if length == max_chars {
+            lines.push(std::mem::take(&mut current));
+            length = 0;
+            if letter == ' ' {
+                continue;
+            }
+        }
+        current.push(letter);
+        length += 1;
+    }
+    lines.push(current);
     lines
 }
 
@@ -86,6 +139,8 @@ impl TextMeasurer for Measurer {
             font_size: request.style.font_size,
             width: request.width,
             white_space: request.white_space,
+            word_break: request.style.word_break,
+            overflow_wrap: request.style.overflow_wrap,
         });
         let advance = advance(request.style);
         let line = line_height(request.style);
@@ -95,7 +150,18 @@ impl TextMeasurer for Measurer {
             // The small allowance keeps 432 / 8 from coming out as 53.999.
             WidthConstraint::AtMost(width) => (width / advance + 1e-3).floor() as usize,
         };
-        let lines = break_lines(request.text, max_chars);
+        let break_long_words = match request.style.overflow_wrap {
+            OverflowWrap::Anywhere => true,
+            // The break points of `break-word` do not count towards the min-content width.
+            OverflowWrap::BreakWord => request.width != WidthConstraint::MinContent,
+            OverflowWrap::Normal => false,
+        };
+        let lines = break_lines(
+            request.text,
+            max_chars,
+            request.style.word_break == WordBreak::BreakAll,
+            break_long_words,
+        );
         let width = lines
             .iter()
             .map(|line| line.chars().count() as f32 * advance)

@@ -36,6 +36,7 @@
 pub(crate) mod background;
 pub(crate) mod convert;
 pub(crate) mod image;
+pub(crate) mod list;
 pub(crate) mod measure;
 
 use std::cell::Ref;
@@ -57,7 +58,7 @@ use taffy::{
 };
 
 use crate::dom::form;
-use crate::paint::display_list::{MeasuredText, Rgba, TextAlign};
+use crate::paint::display_list::{MeasuredMarker, MeasuredText, MeasuredTexts, Rgba, TextAlign};
 use measure::{
     TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint,
 };
@@ -96,11 +97,9 @@ pub(crate) fn resolve_styles(doc: &mut BaseDocument, now: f64) {
 }
 
 /// Lays the document out at its current viewport. Returns the text measured on the way,
-/// keyed by the inline formatting context that holds it.
-pub(crate) fn run_layout(
-    doc: &mut BaseDocument,
-    measurer: &mut dyn TextMeasurer,
-) -> HashMap<usize, MeasuredText> {
+/// keyed by the inline formatting context that holds it, and the list markers that are
+/// drawn on their own.
+pub(crate) fn run_layout(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) -> MeasuredTexts {
     // No size blitz-dom measured with Parley may answer for a node this pass measures.
     let ids: Vec<usize> = doc.tree().iter().map(|(id, _)| id).collect();
     for id in ids {
@@ -118,8 +117,8 @@ pub(crate) fn run_layout(
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
-        doc,
-        measurer,
+        doc: &mut *doc,
+        measurer: &mut *measurer,
         texts: &mut texts,
     };
     compute_root_layout(
@@ -132,7 +131,69 @@ pub(crate) fn run_layout(
     );
     tree.place_fixed_boxes(root, Size { width, height });
     round_layout(&mut tree, root);
-    texts
+    let markers = measure_markers(doc, measurer, &texts);
+    MeasuredTexts { texts, markers }
+}
+
+/// Measures the list markers that are drawn as runs of their own: the marker of every item
+/// whose `list-style-position` is `outside`, and an inside marker of an item that has no
+/// inline text to put it in front of. An inside marker of an item with text is the start
+/// of that text (see [`prepare_inline`]).
+fn measure_markers(
+    doc: &BaseDocument,
+    measurer: &mut dyn TextMeasurer,
+    texts: &HashMap<usize, MeasuredText>,
+) -> HashMap<usize, MeasuredMarker> {
+    let mut markers = HashMap::new();
+    for (id, _) in doc.tree().iter() {
+        let Some(node) = doc.get_node(id) else {
+            continue;
+        };
+        if node.element_data().is_none() || node.style.display == Display::None {
+            continue;
+        }
+        let Some(marker) = list::marker(doc, id) else {
+            continue;
+        };
+        if marker.inside && (texts.contains_key(&id) || node.flags.is_inline_root()) {
+            continue;
+        }
+        let Some((style, color)) = node
+            .primary_styles()
+            .map(|style| (convert::text_style(&style), convert::text_color(&style)))
+        else {
+            continue;
+        };
+        let mut measure = |text: &str| {
+            measurer.measure(&TextMeasureRequest {
+                text,
+                style: &style,
+                width: WidthConstraint::MaxContent,
+                white_space: TextWhiteSpace::NOWRAP,
+            })
+        };
+        let metrics = measure(&marker.text);
+        // The width of a space, as the difference one makes between two words.
+        let gap = (measure("a b").width - measure("ab").width).max(0.0);
+        markers.insert(
+            id,
+            MeasuredMarker {
+                text: MeasuredText {
+                    owner: id,
+                    text: marker.text,
+                    style: style.clone(),
+                    color,
+                    align: TextAlign::Start,
+                    metrics,
+                    wrap_width: None,
+                    marker_prefix: 0,
+                },
+                gap,
+                inside: marker.inside,
+            },
+        );
+    }
+    markers
 }
 
 /// Text in an inline formatting context that the measurer can size on its own.
@@ -145,6 +206,8 @@ struct PreparedText {
     color: Rgba,
     align: TextAlign,
     white_space: TextWhiteSpace,
+    /// Bytes at the start of `text` that are an inside list marker.
+    marker_prefix: usize,
 }
 
 enum Route {
@@ -486,12 +549,24 @@ impl MeasuredTree<'_> {
                         AvailableSpace::MaxContent => WidthConstraint::MaxContent,
                     },
                 };
-                let metrics = measurer.measure(&TextMeasureRequest {
+                let mut metrics = measurer.measure(&TextMeasureRequest {
                     text: &prepared.text,
                     style: &prepared.style,
                     width: constraint,
                     white_space: prepared.white_space,
                 });
+                // `text-align: justify` stretches every line that ends in a soft wrap to the
+                // full width, so when the text takes more than one line the widest line is
+                // the width it wrapped at. A forced break (`\n`) ends a line that is not
+                // stretched, and the lines before it are not known here, so text with one
+                // keeps the measurer's width.
+                if let (TextAlign::Justify, WidthConstraint::AtMost(width)) =
+                    (prepared.align, constraint)
+                    && metrics.line_count > 1
+                    && !prepared.text.contains('\n')
+                {
+                    metrics.width = metrics.width.max(width);
+                }
                 measured = Some((metrics, constraint));
                 Size {
                     width: known_width.unwrap_or(metrics.width),
@@ -519,6 +594,7 @@ impl MeasuredTree<'_> {
                         align: prepared.align,
                         metrics,
                         wrap_width,
+                        marker_prefix: prepared.marker_prefix,
                     },
                 );
             }
@@ -758,14 +834,13 @@ fn intrinsic_widths(
 /// measurer alone, and gathers what the measurer needs.
 ///
 /// `None` means it cannot, and the context is laid out by blitz-dom with Parley instead:
-/// - it embeds inline boxes (an `inline-block`, an `<img>`, an `<input>`), or it is a list
-///   item with a marker;
+/// - it embeds inline boxes (an `inline-block`, an `<img>`, an `<input>`);
 /// - an inline element inside it has padding, a border or a margin on its left or right,
 ///   which moves the text after it along the line;
 /// - its text is not all in one style: the pieces differ in font, colour,
-///   `text-transform` or whether they may wrap. The measurer is asked about one run of
-///   text in one font and the display list draws it as one run in one colour, so a context
-///   that mixes them stays with Parley, which shapes each piece in its own style.
+///   `text-transform`, whether they may wrap, or how words break. The measurer is asked about
+///   one run of text in one font and the display list draws it as one run in one colour, so a
+///   context that mixes them stays with Parley, which shapes each piece in its own style.
 ///
 /// Inline elements that only wrap text (a `<span>` or an `<a>` around a label, in the same
 /// font) do not stop the measurer: the text is measured as one run, and the run's owner is
@@ -774,7 +849,7 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     let node = doc.get_node(root)?;
     let element = node.element_data()?;
     let layout = element.inline_layout_data.as_ref()?;
-    if !layout.layout.inline_boxes().is_empty() || element.list_item_data.is_some() {
+    if !layout.layout.inline_boxes().is_empty() {
         return None;
     }
 
@@ -823,27 +898,43 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         style.line_height = TextLineHeight::Px(root_line);
     }
 
+    // blitz-dom puts a marker that sits inside the item at the start of the item's text.
+    // It is replaced by the marker worked out in `list`, which numbers `reversed`, `start`
+    // and `value` as HTML does.
+    let blitz_prefix = list::blitz_inside_prefix(element);
+    let own_text = layout
+        .text
+        .strip_prefix(blitz_prefix.as_str())
+        .unwrap_or(&layout.text);
     let text = if convert::collapses_white_space(&root_style) {
         // Collapsible white space at the start and end of a line is removed (CSS Text 3,
         // 4.1.2). Only ASCII white space collapses; a no-break space stays.
-        layout
-            .text
+        own_text
             .trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}'))
             .to_string()
     } else {
-        layout.text.clone()
+        own_text.to_string()
     };
     if text.is_empty() {
         return Some(None);
     }
+    // The marker is not transformed with the text, so it is put in front afterwards.
+    let marker_prefix = match list::marker(doc, root) {
+        Some(marker) if marker.inside => format!("{} ", marker.text),
+        _ => String::new(),
+    };
 
     Some(Some(PreparedText {
         owner: common_ancestor(doc, root, &holders),
-        text: convert::transform_text(&text, transform),
+        text: format!(
+            "{marker_prefix}{}",
+            convert::transform_text(&text, transform)
+        ),
         style,
         color,
         align: convert::text_align(&root_style),
         white_space,
+        marker_prefix: marker_prefix.len(),
     }))
 }
 

@@ -76,6 +76,18 @@ directly under `docs/`.
    branches changes every file under that checkout, so a `git checkout` while an agent is
    working pulls the files out from under it. Work has been lost that way. Give a
    background agent its own worktree and leave that checkout alone until it finishes.
+8. **A merge into `main` is a release, and a release follows one order.** The owner's
+   words, 2026-10-17: "메인에 머지할 때는 새 버전 올릴 때 잖아". The steps:
+   1. raise the version on `develop`, in its own commit;
+   2. Release sync updates the `release` -> `main` pull request;
+   3. the checks on that pull request go green;
+   4. the owner merges it into `main`;
+   5. the tag `v<version>` goes on that merge commit on `main`, and nowhere else;
+   6. the tag publishes ("Publish to crates.io" refuses a tag that is not on `main` or
+      does not match `Cargo.toml`).
+
+   Never tag `develop` or `release`. Tell the leader before the merge into `main`, since
+   the merge is what starts a release.
 
 ## Where files go
 
