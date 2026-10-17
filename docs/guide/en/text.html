@@ -55,6 +55,7 @@
       <ul>
         <li><a href="#runs">Runs of text</a></li>
         <li><a href="#css">White space and transforms</a></li>
+        <li><a href="#breaks">Breaking, cutting and markers</a></li>
         <li><a href="#measurer">The measurer</a></li>
         <li><a href="#coverage">Which text goes through it</a></li>
         <li><a href="#compose">Measuring with Compose</a></li>
@@ -114,6 +115,48 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
       <code>font-size</code>, <code>font-weight</code> and <code>font-style</code> all reach the
       measurer in a <code>TextStyle</code>. Generated content (<code>::before</code> and
       <code>::after</code>) is measured like any other text.
+    </p>
+
+    <h2 id="breaks">Breaking, cutting and markers</h2>
+    <p>
+      Four more properties change what the Host measures or what a run says.
+    </p>
+    <ul>
+      <li><strong><code>word-break</code> and <code>overflow-wrap</code>.</strong> Both reach the
+        measurer in the <code>TextStyle</code> (<code>word_break</code> is <code>Normal</code>,
+        <code>BreakAll</code> or <code>KeepAll</code>; <code>overflow_wrap</code> is
+        <code>Normal</code>, <code>Anywhere</code> or <code>BreakWord</code>, and
+        <code>word-wrap</code> is the same property). <code>ParleyMeasurer</code> passes them to
+        Parley. A measurer of your own decides how to honour them: with <code>break-all</code> a
+        line may end between any two characters, and with <code>anywhere</code> or
+        <code>break-word</code> a word that does not fit a line of its own is broken. The two
+        differ in the min-content width: under <code>anywhere</code> it is one character, so a
+        flex item can shrink to it, and under <code>break-word</code> it stays the longest
+        word.</li>
+      <li><strong><code>text-overflow: ellipsis</code>.</strong> On a box whose
+        <code>overflow</code> is not <code>visible</code>, a run wider than the box carries
+        <code>ellipsis: Some(width)</code>, the box's content width. The plan's text node carries
+        it too, so a diff reports it. The Host does not shape the ellipsis: the renderer cuts the
+        lines that reach past <code>width</code> and draws it.</li>
+      <li><strong>List markers.</strong> Every <code>display: list-item</code> element draws its
+        marker as a run of its own, before the item's text, with <code>marker</code> set to
+        <code>RunMarker::Marker</code>. An outside marker ends one space before the item's box
+        and sits on the first line's baseline. An inside marker is the start of the first line,
+        so the run's text begins with it and <code>RunMarker::Prefix { len }</code> says how many
+        bytes. Markers are <code>disc</code>, <code>circle</code>, <code>square</code>,
+        <code>decimal</code>, <code>lower-alpha</code>, <code>upper-alpha</code> and
+        <code>lower-greek</code>; <code>none</code> draws nothing and any other numbering system
+        falls back to <code>decimal</code>. The numbers follow HTML: <code>start</code> and
+        <code>reversed</code> on <code>ol</code>, and <code>value</code> on <code>li</code>.
+        Markers are measured by the same measurer as the text, and they take no room in the
+        layout.</li>
+      <li><strong><code>text-align: justify</code>.</strong> A run that wraps to more than one
+        line is as wide as the box, because every line but the last is stretched to it. The run
+        says <code>Justify</code> and the plan's text node is the width to stretch to; the
+        renderer spreads the words. A single line is not stretched.</li>
+    </ul>
+    <p>
+      <code>samples/typography</code> has a section for each of these, and its tests assert them.
     </p>
 
     <h2 id="measurer">The measurer</h2>
@@ -204,6 +247,10 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
 
     <h2 id="planned">Not yet</h2>
     <ul>
+      <li><strong>Roman numeral markers.</strong> <code>list-style-type: lower-roman</code> and
+        <code>upper-roman</code> are not drawn. Stylo's servo build does not know the keywords, so
+        it drops the declaration when the stylesheet is parsed and the list keeps the markers it
+        had before.</li>
       <li><strong>System text size and zoom.</strong> <span class="pill planned">planned</span>
         HTML screens will zoom as a whole, the way VS Code's <code>window.zoomLevel</code> does, so
         rows, icons and text grow together and nothing is clipped. The starting zoom will follow the
