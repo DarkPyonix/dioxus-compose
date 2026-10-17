@@ -328,7 +328,7 @@ impl MotionState {
         let style = local("style");
         let mut source = String::new();
         for (_, node) in doc.tree().iter() {
-            if node.is_element_with_tag_name(&style) {
+            if node.data.is_element_with_tag_name(&style) {
                 source.push_str(&node.text_content());
                 source.push('\n');
             }
