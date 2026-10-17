@@ -58,6 +58,9 @@ blitz-traits = "=0.2.0"
 # lines and stylo's computed values directly.
 parley = "=0.6.0"
 style = { package = "stylo", version = "=0.8.0" }
+# `ToCss`, which writes a computed transform back as CSS for the warning that names a 3D
+# transform the display list leaves out.
+style_traits = { package = "stylo_traits", version = "=0.8.0" }
 # The same Taffy blitz-dom drives, with the same algorithms switched on: the layout pass
 # implements Taffy's tree traits over blitz-dom's nodes.
 taffy = { version = "0.9", default-features = false, features = [

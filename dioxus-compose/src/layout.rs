@@ -48,12 +48,12 @@ use style::values::computed::{
     Length, LengthPercentage, MaxSize as StyloMaxSize, Size as StyloSize,
 };
 use taffy::{
-    AvailableSpace, BoxSizing, CacheTree, Dimension, Display, Layout, LayoutBlockContainer,
-    LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput, LayoutPartialTree,
-    Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero, RoundTree, RunMode,
-    Size, SizingMode, Style, TraversePartialTree, TraverseTree, compute_block_layout,
-    compute_cached_layout, compute_flexbox_layout, compute_grid_layout, compute_leaf_layout,
-    compute_root_layout, round_layout,
+    AvailableSpace, BoxSizing, CacheTree, Dimension, Display, FlexDirection, Layout,
+    LayoutBlockContainer, LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput,
+    LayoutPartialTree, Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero,
+    RoundTree, RunMode, Size, SizingMode, Style, TraversePartialTree, TraverseTree,
+    compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
+    compute_leaf_layout, compute_root_layout, round_layout,
 };
 
 use crate::dom::form;
@@ -83,8 +83,12 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), basis: f32) -> f32 {
 
 /// Runs stylo's cascade and blitz-dom's box construction: everything `BaseDocument::resolve`
 /// does except its own layout, which [`run_layout`] replaces.
-pub(crate) fn resolve_styles(doc: &mut BaseDocument) {
-    doc.resolve_stylist(0.0);
+///
+/// `now` is the time in seconds that CSS transitions and animations are resolved at. A
+/// transition or animation starts at the time of the resolve that first sees it, and a
+/// document resolved at 0 every time never moves past its first values.
+pub(crate) fn resolve_styles(doc: &mut BaseDocument, now: f64) {
+    doc.resolve_stylist(now);
     doc.resolve_layout_children();
     doc.resolve_deferred_tasks();
     let root = doc.root_element().id;
@@ -1141,6 +1145,19 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                 }
                 Route::Flex => {
                     tree.resolve_intrinsic_widths(node_id, inputs);
+                    // Taffy's block layout offers every child `MinContent` as its available
+                    // height. For a column flex container that is its main axis, and a
+                    // wrapping one would break after every item. A box's block-axis
+                    // min-content and max-content sizes are the same, and the main size of
+                    // a column container is indefinite there, so it must not wrap.
+                    let mut inputs = inputs;
+                    let column = matches!(
+                        tree.node(node_id).style.flex_direction,
+                        FlexDirection::Column | FlexDirection::ColumnReverse
+                    );
+                    if column && inputs.available_space.height == AvailableSpace::MinContent {
+                        inputs.available_space.height = AvailableSpace::MaxContent;
+                    }
                     compute_flexbox_layout(tree, node_id, inputs)
                 }
                 Route::Grid => {
