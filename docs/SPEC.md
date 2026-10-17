@@ -1679,7 +1679,7 @@ if design.is_apple() {
 
 ### FR-34 HTML과 CSS로 쓴 Dioxus 화면 (`Draft`)
 
-추적: 이슈 #43. 렌더러 다리(계획을 compose-rust 레코드로 보내는 것)는 PR #67에 작성되어 검토와 빌드를 기다린다. compose-rust 쪽에 필요한 것은 compose-rust #90~#98, #100, #101(라벨 html-path)과 PR-2.1 측정 호출이다.
+추적: 이슈 #43. 렌더러 다리(계획을 compose-rust 레코드로 보내는 것)는 PR #67에 작성되어 있고 그 테스트는 통과한다. 다리는 compose-rust FR-42 그리기 원소(`AbsoluteBox`와 변별 테두리, 모서리별 반지름, 그림자, 클립, 알파, 오프셋, 크기 수정자)를 쓰며, 그것은 compose-rust PR #74에 있고 병합되지 않았다. compose-rust 쪽에 필요한 것은 compose-rust #90~#98, #100, #101(라벨 html-path)과 PR-2.1 측정 호출이다. 계획(소유자 결정): compose-rust 0.0.2를 crates.io에 #74와 #83을 담아 내고, #67을 compose-rust =0.0.2에 의존하도록 옮겨 CI가 통과하면 병합한다. 그 릴리스부터 HTML 예제가 창에 그려진다. 날짜는 정하지 않았고 이 병합과 릴리스를 기다린다. `samples/`의 예제는 열다섯 개이고(새로 `layout`, `landing`, `typography`, `motion`) Host 배치 테스트로 확인하며, 창에 그린 확인은 #67 병합 뒤에 한다.
 
 `div`, `span` 같은 HTML 요소와 CSS로 쓴 Dioxus 화면을 그립니다. 결정과 근거는 INTENT D20입니다.
 
@@ -1715,7 +1715,7 @@ if design.is_apple() {
 
 #### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
 
-추적: 이슈 #46. 지금은 translate만 그려진다.
+추적: 이슈 #46. 지금은 translate만 그려진다. 렌더러 쪽은 compose-rust FR-41이 필요하고 그것은 compose-rust PR #83에 있으며 병합되지 않았다. 일정은 FR-34의 compose-rust 0.0.2 계획과 같다. `samples/motion`이 `transform-origin`을 쓴 변환을 담는다.
 
 M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "M12 이후 과제로 SPEC에 남기도록 해", 날짜는 "일부 10-18 안"에서 transform을 10-18 안에 포함).
 
@@ -1733,7 +1733,7 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 
 #### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
 
-추적: 이슈 #46(렌더러 쪽), #47(레이아웃 속성, 경로 (가)). 구현 전이다.
+추적: 이슈 #46(렌더러 쪽), #47(레이아웃 속성, 경로 (가)). 구현 전이다. 렌더러가 재생하는 쪽은 compose-rust FR-41(compose-rust PR #83, 병합 전)이 필요하다. 레이아웃 속성 애니메이션(#47)은 Host가 매 프레임 진행시키므로 다리(PR #67) 말고는 compose-rust 변경이 필요 없다. `samples/motion`에 transition, `@keyframes`, 폭 transition이 있다.
 
 M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme에 transition 확인을 넣습니다.
 
@@ -1757,7 +1757,7 @@ M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme
 
 #### FR-34.3 HTML/CSS와 Compose 위젯을 한 앱에서 섞기 (`Agreed`, 목표 M12 이후)
 
-추적: 이슈 #59. 구현 전이다.
+추적: 이슈 #59. 구현 전이다. 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고)가 먼저 들어와야 한다. 지금의 예제 열다섯 개는 모두 HTML 경로만 쓰고 섞은 예제는 없다.
 
 dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하나는 `div`, `h1`과 CSS이고(FR-34), 다른 하나는 `Column`, `Text` 같은 Compose 위젯 이름입니다(소유자 결정 2026-10-03: "그냥 dioxus-compose에서 둘다 구현하면 되잖아"). 기능 플래그로 어느 쪽도 끄지 않습니다. 이 항목은 둘을 한 화면에서 섞는 규칙입니다.
 
@@ -1777,7 +1777,7 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 
 #### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
 
-추적: 이슈 #58. 구현 전이다.
+추적: 이슈 #58. 구현 전이다. HTML 섬을 확대해 그리는 일은 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고) 위에 올라간다.
 
 HTML 화면은 VS Code처럼 페이지 전체를 확대한다. OS 글자 크기만 따로 키우지 않는다(소유자 결정 2026-10-03: "근데 그럼 vscode는 어떻게 그 부분이 문제가 없는건데? 개 기준으로 생각하면 되잖아"). VS Code는 `window.zoomLevel`(⌘+, ⌘-, ⌘0, 설정에 저장)로 UI 전체를 확대하고, 그래서 22px 행, 35px 탭, 아이콘이 글자와 같은 비율로 커져 잘리거나 겹치지 않는다. 검토는 compose-rust의 `.scratch/reviews/html-text-scaling.md`((e)안)에 있다.
 

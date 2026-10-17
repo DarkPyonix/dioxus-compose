@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Getting started · dioxus-compose guide</title>
-<meta name="description" content="Add dioxus-compose to a project, write a Dioxus page with HTML tags and CSS, lay it out and click it from Rust, and run the eleven examples&#x27; tests.">
+<meta name="description" content="Add dioxus-compose to a project, write a Dioxus page with HTML tags and CSS, lay it out and click it from Rust, and run the fifteen examples&#x27; tests.">
 <link rel="alternate" hreflang="en" href="getting-started.html">
 <link rel="alternate" hreflang="ko" href="../ko/getting-started.html">
 <link rel="alternate" hreflang="x-default" href="getting-started.html">
@@ -163,7 +163,7 @@ p { margin: 12px 0; }
 </figure>
     <p>
       <code>cargo run</code> prints the boxes and exits. No window opens: drawing them is the
-      bridge that is not built yet. <code>HtmlConfig</code> also takes a text measurer, a colour
+      bridge, which is written in <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> and waits for compose-rust's drawing elements (<a href="status.html#drawing">why</a>). <code>HtmlConfig</code> also takes a text measurer, a colour
       scheme, a base URL and an image resolver, which the following pages cover.
     </p>
 
@@ -195,7 +195,7 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
 
     <h2 id="samples">Run the examples</h2>
     <p>
-      Eleven examples in <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a>
+      Fifteen examples in <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a>
       are written this way, one crate each, and the rest of this guide quotes them. Their tests check
       every layout against numbers worked out by hand, and click, type and submit through the same
       calls a renderer makes. In a checkout of the repository:
@@ -209,17 +209,21 @@ cargo test -p sample-html-hello -p sample-html-chat -p sample-html-todo</code></
       <table>
         <thead><tr><th scope="col">Example</th><th scope="col">What it shows</th><th scope="col">Page</th></tr></thead>
         <tbody>
-          <tr><td><code>hello</code></td><td>A heading, inline bold and italic, a link that counts its clicks</td><td><a href="text.html">Text</a></td></tr>
-          <tr><td><code>article</code></td><td>Headings, wrapping paragraphs, lists, a quotation, a code block</td><td><a href="text.html">Text</a></td></tr>
-          <tr><td><code>dashboard</code></td><td>A top bar, a sidebar and wrapping metric cards, all flexbox</td><td><a href="layout.html">Layout</a></td></tr>
-          <tr><td><code>gallery</code></td><td>A CSS grid of photos under a gradient header</td><td><a href="images.html">Images</a></td></tr>
-          <tr><td><code>settings</code></td><td>A form: text field, text area, select, checkbox, radio group</td><td><a href="forms-and-events.html">Forms</a></td></tr>
-          <tr><td><code>table</code></td><td>An HTML table that scrolls sideways; the amount header sorts</td><td><a href="layout.html">Layout</a></td></tr>
-          <tr><td><code>chat</code></td><td>A scrolling conversation above a composer pinned to the bottom</td><td><a href="scrolling-and-overlays.html">Scrolling</a></td></tr>
-          <tr><td><code>todo</code></td><td>Add, tick, delete and reorder keyed rows</td><td><a href="forms-and-events.html">Forms</a></td></tr>
-          <tr><td><code>overlay</code></td><td>A dropdown menu, a dialog over a fixed backdrop, a clipped preview</td><td><a href="scrolling-and-overlays.html">Overlays</a></td></tr>
-          <tr><td><code>theme</code></td><td>Colours as CSS custom properties, a dark set, an override button</td><td><a href="theming.html">Theming</a></td></tr>
-          <tr><td><code>workbench</code></td><td>A small code editor: activity bar, file tree, tabs, status bar</td><td><a href="layout.html">Layout</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello"><code>hello</code></a></td><td>A heading, inline bold and italic, a link that counts its clicks</td><td><a href="text.html">Text</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/article"><code>article</code></a></td><td>Headings, wrapping paragraphs, lists, a quotation, a code block</td><td><a href="text.html">Text</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/dashboard"><code>dashboard</code></a></td><td>A top bar, a sidebar and wrapping metric cards, all flexbox</td><td><a href="layout.html">Layout</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/gallery"><code>gallery</code></a></td><td>A CSS grid of photos under a gradient header</td><td><a href="images.html">Images</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/settings"><code>settings</code></a></td><td>A form: text field, text area, select, checkbox, radio group</td><td><a href="forms-and-events.html">Forms</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/table"><code>table</code></a></td><td>An HTML table that scrolls sideways; the amount header sorts</td><td><a href="layout.html">Layout</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/chat"><code>chat</code></a></td><td>A scrolling conversation above a composer pinned to the bottom</td><td><a href="scrolling-and-overlays.html">Scrolling</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/todo"><code>todo</code></a></td><td>Add, tick, delete and reorder keyed rows</td><td><a href="forms-and-events.html">Forms</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/overlay"><code>overlay</code></a></td><td>A dropdown menu, a dialog over a fixed backdrop, a clipped preview</td><td><a href="scrolling-and-overlays.html">Overlays</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/theme"><code>theme</code></a></td><td>Colours as CSS custom properties, a dark set, an override button</td><td><a href="theming.html">Theming</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/workbench"><code>workbench</code></a></td><td>A small code editor: activity bar, file tree, tabs, status bar</td><td><a href="layout.html">Layout</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>layout</code></a></td><td>Flexbox (wrap, gap, grow, shrink, basis, alignment, order), grid (areas, <code>auto-fill</code>, spans, line placement), <code>sticky</code>, <code>z-index</code>, absolute in relative</td><td><a href="layout.html">Layout</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>landing</code></a></td><td>A responsive page: <code>@media</code> at three widths, a centred container, a card grid, pricing, a footer, a gradient background, shadows and radii</td><td><a href="layout.html">Layout</a>, <a href="theming.html">Theming</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography"><code>typography</code></a></td><td>Font size, weight and style, line height, letter spacing, alignment, case, white space, word breaking, ellipsis, generated content, list markers, decoration</td><td><a href="text.html">Text</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>motion</code></a></td><td>Transforms with <code>transform-origin</code>, transitions, <code>@keyframes</code>, a width transition</td><td><a href="layout.html">Layout</a>, <a href="status.html">Status</a></td></tr>
         </tbody>
       </table>
     </div>
