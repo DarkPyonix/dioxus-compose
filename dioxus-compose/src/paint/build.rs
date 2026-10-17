@@ -15,6 +15,7 @@ use parley::PositionedLayoutItem;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::{BorderStyle, Length, Overflow};
+use style::values::specified::text::TextOverflowSide;
 
 use crate::dom::form;
 use crate::html::NodeId;
@@ -24,8 +25,9 @@ use crate::layout::image::ImageLookup;
 use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
-    DisplayList, InputField, InputKind, MeasuredText, NodeEntry, PlayDirection, Radius, Rect, Rgba,
-    ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun, Transform2D,
+    DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, PlayDirection,
+    Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun,
+    Transform2D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved};
@@ -72,7 +74,7 @@ struct Ambient {
 /// transform is kept as one; without it the document is drawn as it is resolved.
 pub(crate) fn build_display_list<'a>(
     doc: &'a BaseDocument,
-    texts: &'a HashMap<usize, MeasuredText>,
+    texts: &'a MeasuredTexts,
     images: &'a mut ImageLookup<'_>,
     playback: Option<&'a mut dyn Playback>,
 ) -> DisplayList {
@@ -129,7 +131,7 @@ pub(crate) fn build_display_list<'a>(
 
 struct Painter<'a, 'i> {
     doc: &'a BaseDocument,
-    texts: &'a HashMap<usize, MeasuredText>,
+    texts: &'a MeasuredTexts,
     /// Natural sizes for background images, and the base `<img>` sources resolve against.
     images: RefCell<&'a mut ImageLookup<'i>>,
     /// Which motions a renderer plays, if the caller wants them described.
@@ -623,7 +625,8 @@ impl Painter<'_, '_> {
         layout: &taffy::Layout,
     ) -> Vec<TextRun> {
         let content = content_box(rect, layout);
-        if let Some(measured) = self.texts.get(&id) {
+        let mut runs = Vec::new();
+        if let Some(measured) = self.texts.texts.get(&id) {
             let width = measured.metrics.width;
             let free = (content.width - width).max(0.0);
             let offset = match measured.align {
@@ -631,7 +634,7 @@ impl Painter<'_, '_> {
                 TextAlign::Right | TextAlign::End => free,
                 TextAlign::Start | TextAlign::Left | TextAlign::Justify => 0.0,
             };
-            return vec![TextRun {
+            runs.push(TextRun {
                 owner: measured.owner,
                 rect: Rect::new(
                     content.x + offset,
@@ -646,12 +649,41 @@ impl Painter<'_, '_> {
                 wrap_width: measured.wrap_width,
                 line_count: measured.metrics.line_count,
                 baseline: measured.metrics.first_baseline,
-            }];
+                ellipsis: self.ellipsis(node, &content, width),
+                marker: if measured.marker_prefix > 0 {
+                    RunMarker::Prefix {
+                        len: measured.marker_prefix,
+                    }
+                } else {
+                    RunMarker::None
+                },
+            });
+        } else if node.flags.is_inline_root() {
+            runs = self.parley_runs(node, &content);
         }
-        if node.flags.is_inline_root() {
-            return self.parley_runs(node, &content);
+        if let Some(marker) = self.texts.markers.get(&id) {
+            let run = marker_run(marker, rect, &content, runs.first());
+            runs.insert(0, run);
         }
-        Vec::new()
+        runs
+    }
+
+    /// The width lines are cut at when `text-overflow: ellipsis` applies to the text of
+    /// `node` and the text is wider than the box.
+    ///
+    /// The property applies to a block container whose `overflow` is not `visible`, at the
+    /// end side of its lines. The end is the right side here: the document is laid out left
+    /// to right.
+    fn ellipsis(&self, node: &Node, content: &Rect, text_width: f32) -> Option<f32> {
+        let style = node.primary_styles()?;
+        let overflow = style.clone_text_overflow();
+        if !matches!(overflow.second, TextOverflowSide::Ellipsis) {
+            return None;
+        }
+        if style.clone_overflow_x() == Overflow::Visible {
+            return None;
+        }
+        (text_width > content.width + 0.01).then_some(content.width)
     }
 
     /// The glyph runs of an inline formatting context blitz-dom laid out with Parley, one
@@ -728,10 +760,54 @@ impl Painter<'_, '_> {
                     wrap_width: None,
                     line_count: 1,
                     baseline: metrics.ascent / scale,
+                    ellipsis: None,
+                    marker: RunMarker::None,
                 });
             }
         }
         runs
+    }
+}
+
+/// The run a list marker is drawn with.
+///
+/// An outside marker ends one space before the item's border box, and an inside marker
+/// that has no text beside it starts at the item's content box. Either sits on the first
+/// line's baseline when the item has text of its own, and at the top of its content
+/// otherwise.
+fn marker_run(
+    marker: &MeasuredMarker,
+    rect: &Rect,
+    content: &Rect,
+    first: Option<&TextRun>,
+) -> TextRun {
+    let metrics = marker.text.metrics;
+    let x = if marker.inside {
+        content.x
+    } else {
+        rect.x - marker.gap - metrics.width
+    };
+    let baseline = match first {
+        Some(run) => run.rect.y + run.baseline,
+        None => content.y + metrics.first_baseline,
+    };
+    TextRun {
+        owner: marker.text.owner,
+        rect: Rect::new(
+            x,
+            baseline - metrics.first_baseline,
+            metrics.width,
+            metrics.height,
+        ),
+        text: marker.text.text.clone(),
+        style: marker.text.style.clone(),
+        color: marker.text.color,
+        align: TextAlign::Start,
+        wrap_width: None,
+        line_count: metrics.line_count,
+        baseline: metrics.first_baseline,
+        ellipsis: None,
+        marker: RunMarker::Marker,
     }
 }
 

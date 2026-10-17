@@ -207,6 +207,29 @@ pub struct TextRun {
     pub line_count: u32,
     /// Distance from `rect.y` to the first baseline.
     pub baseline: f32,
+    /// `Some(width)` when `text-overflow: ellipsis` applies and the text is wider than the
+    /// box it sits in: the renderer cuts each line that reaches past `width` (the content
+    /// width of the box, from the left edge of the text's box) and draws an ellipsis in the
+    /// place of what it cut. `None` when the text fits, or the box does not clip.
+    pub ellipsis: Option<f32>,
+    /// Whether this run is a list marker, or starts with one.
+    pub marker: RunMarker,
+}
+
+/// How a [`TextRun`] relates to the list marker of a `display: list-item` element.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RunMarker {
+    /// Ordinary text.
+    #[default]
+    None,
+    /// The run is the marker itself, drawn outside the item's box (`list-style-position:
+    /// outside`) or alone at its start (an item with no text of its own). Its `rect` is
+    /// where the marker goes, and `owner` is the list item.
+    Marker,
+    /// The text starts with an inside marker (`list-style-position: inside`): the first
+    /// `len` bytes of `text` are the marker and the space after it, which are part of the
+    /// first line like any other text.
+    Prefix { len: usize },
 }
 
 /// What kind of form field an `<input>`, `<textarea>` or `<select>` is.
@@ -1072,4 +1095,26 @@ pub(crate) struct MeasuredText {
     pub align: TextAlign,
     pub metrics: TextMetrics,
     pub wrap_width: Option<f32>,
+    /// Bytes at the start of `text` that are an inside list marker.
+    pub marker_prefix: usize,
+}
+
+/// The marker of a list item that is drawn on its own, measured during layout.
+#[derive(Clone, Debug)]
+pub(crate) struct MeasuredMarker {
+    /// The marker's text without the space that follows it, measured in the item's font.
+    pub text: MeasuredText,
+    /// The width of a space in that font: the room between an outside marker and the item.
+    pub gap: f32,
+    /// Whether the marker is inside the item's box rather than before it.
+    pub inside: bool,
+}
+
+/// Everything the layout pass measured, for the display list to place.
+#[derive(Debug, Default)]
+pub(crate) struct MeasuredTexts {
+    /// The text of each inline formatting context the measurer sized, keyed by its node.
+    pub texts: HashMap<usize, MeasuredText>,
+    /// The list markers drawn as runs of their own, keyed by the list item's node.
+    pub markers: HashMap<usize, MeasuredMarker>,
 }
