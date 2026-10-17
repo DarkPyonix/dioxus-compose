@@ -23,6 +23,7 @@ so a window can show it and a test can lay it out without one.
 | `todo` | Add, tick off, delete and reorder items. Rows are keyed by id, so moving an item moves its row rather than rewriting every row's text |
 | `overlay` | A dropdown menu positioned against its button, a confirmation dialog over a dimmed `position: fixed` backdrop, and a preview that clips its banner to rounded corners |
 | `theme` | Every colour a CSS custom property: a light set, a dark set under `prefers-color-scheme: dark`, and a button that overrides the system's choice |
+| `typography` | A type specimen page, one section per text feature: sizes, weights, line height, letter spacing, alignment, white space, long words, an ellipsis box, generated content, list markers and decorations. A button cycles the specimen's font size |
 | `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
 
 ## Where they are drawn

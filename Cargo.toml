@@ -12,6 +12,7 @@ members = [
     "samples/table",
     "samples/theme",
     "samples/todo",
+    "samples/typography",
     "samples/workbench",
 ]
 resolver = "2"
