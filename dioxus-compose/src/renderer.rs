@@ -123,6 +123,10 @@ pub struct ComposeRenderer {
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
     /// Which application token each observed node was given, for reading a report back.
     size_tokens: HashMap<u32, u32>,
+    /// The animated attributes each node has already been given a value for. The first
+    /// value is where the node starts; every later one is a change to animate.
+    animated: std::collections::HashSet<(u32, &'static str)>,
+    next_animation_id: u32,
     stack: Vec<StackNode>,
 }
 
@@ -155,6 +159,8 @@ impl ComposeRenderer {
             // Empty until a screen asks, which is the point: a tree that observes nothing
             // allocates nothing here.
             size_tokens: HashMap::new(),
+            animated: std::collections::HashSet::new(),
+            next_animation_id: 1,
             stack: Vec::with_capacity(64),
         }
     }
@@ -236,8 +242,9 @@ impl ComposeRenderer {
         const FILL_MAX_HEIGHT: u16 = 4;
         const WIDTH: u16 = 5;
         const HEIGHT: u16 = 6;
-        // Kept for the transform, which sits outside the opacity and the decoration.
-        const _TRANSFORM: u16 = 7;
+        // The transform sits outside the opacity and the decoration, so all of them turn
+        // with the box, and inside the offset, so it turns about the box where it is.
+        const TRANSFORM: u16 = 7;
         const ALPHA: u16 = 8;
         const SHADOW: u16 = 9;
         const CORNER_EACH: u16 = 10;
@@ -280,12 +287,16 @@ impl ComposeRenderer {
             "motion" => Some(MOTION),
             "material" => Some(MATERIAL),
             "offset" => Some(OFFSET),
+            "animated_alpha" => Some(ALPHA),
+            "animated_background" => Some(BACKGROUND),
+            "animated_offset" => Some(TRANSFORM),
             "required_size" => Some(REQUIRED_SIZE),
             "alpha" => Some(ALPHA),
             "shadow" => Some(SHADOW),
             "corner_each" => Some(CORNER_EACH),
             "border_each" => Some(BORDER_EACH),
             "clip" => Some(CLIP),
+            "transform" => Some(TRANSFORM),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -407,7 +418,7 @@ impl ComposeRenderer {
             // A whole modifier, carried as itself so its numbers arrive as one record. Only
             // the kind the attribute names is accepted, so a value meant for one slot can
             // never land in another.
-            "offset" | "required_size" | "corner_each" | "border_each" | "shadow" => {
+            "offset" | "required_size" | "corner_each" | "border_each" | "shadow" | "transform" => {
                 let AttributeValue::Any(any) = value else {
                     return None;
                 };
@@ -415,7 +426,8 @@ impl ComposeRenderer {
                 let fits = match (&modifier, name) {
                     (Modifier::Offset { .. }, "offset")
                     | (Modifier::RequiredSize { .. }, "required_size")
-                    | (Modifier::Shadow { .. }, "shadow") => true,
+                    | (Modifier::Shadow { .. }, "shadow")
+                    | (Modifier::Transform { .. }, "transform") => true,
                     // One radius or one border for every side is the record an ordinary
                     // node already sends, which is what `Modifier::corner_radii` and
                     // `Modifier::border_sides` give for equal values.
@@ -424,6 +436,66 @@ impl ComposeRenderer {
                     _ => false,
                 };
                 fits.then_some(Some((slot, modifier)))
+            }
+            // A value that is animated to. The node's underlying value becomes the target at
+            // once, and from the second value on a transition from whatever is on screen to
+            // it goes out in the same batch, for the Renderer to play on its own clock.
+            "animated_alpha" | "animated_background" | "animated_offset" => {
+                use compose_rust::{AnimatedProperty, KeyframeValue, TransformFunction};
+                let AttributeValue::Any(any) = value else {
+                    return None;
+                };
+                let any = any.as_any();
+                let (base, property, to, spec) =
+                    if let Some(alpha) = any.downcast_ref::<crate::hooks::Animated<f32>>() {
+                        (
+                            Modifier::Alpha(alpha.target),
+                            AnimatedProperty::Alpha,
+                            KeyframeValue::Alpha(alpha.target),
+                            alpha.spec,
+                        )
+                    } else if let Some(paint) =
+                        any.downcast_ref::<crate::hooks::Animated<compose_rust::Paint>>()
+                    {
+                        (
+                            Modifier::Background(paint.target),
+                            AnimatedProperty::Background,
+                            KeyframeValue::Paint(paint.target),
+                            paint.spec,
+                        )
+                    } else {
+                        let offset = any.downcast_ref::<crate::hooks::Animated<(f32, f32)>>()?;
+                        let (x, y) = offset.target;
+                        (
+                            Modifier::Transform {
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                e: x,
+                                f: y,
+                                origin_x: 0.5,
+                                origin_y: 0.5,
+                            },
+                            AnimatedProperty::Transform,
+                            KeyframeValue::Transform(std::borrow::Cow::Owned(vec![
+                                TransformFunction::translate(x, y),
+                            ])),
+                            offset.spec,
+                        )
+                    };
+                if !self.animated.insert((node_id, name)) {
+                    let animation_id = self.next_animation_id;
+                    self.next_animation_id = self.next_animation_id.wrapping_add(1).max(1);
+                    self.write(Mutation::StartAnimation(compose_rust::transition(
+                        node_id,
+                        animation_id,
+                        property,
+                        to,
+                        spec,
+                    )));
+                }
+                Some(Some((slot, base)))
             }
             "clip" => {
                 let AttributeValue::Bool(enabled) = value else {
