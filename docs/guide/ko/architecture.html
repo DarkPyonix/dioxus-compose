@@ -105,7 +105,7 @@
        text sizes from a TextMeasurer
   -&gt; DisplayList                       boxes in paint order, absolute rectangles
   -&gt; Plan, and diff against the last   drawing elements nested in their containers
-  -&gt; renderer (Compose)                planned: the bridge is not built yet</code></pre>
+  -&gt; renderer (Compose)                partial: the bridge is written (PR #67), not merged</code></pre>
 </figure>
     <p>
       단계마다 들여다볼 수 있는 값이고, 예제는 그렇게 테스트됩니다. <code>DisplayList</code> 는 레이아웃이
@@ -120,8 +120,8 @@
       Rust 의 한 곳에서 더해집니다.
     </p>
     <p>
-      아직 없는 것이 둘입니다. 계획을 compose-rust 의 <code>AbsoluteBox</code> 와 그리기 모디파이어로 넘기는
-      다리가 <span class="pill partial">부분</span> 이고, Host 가 레이아웃 도중 텍스트 조각의 크기를
+      마무리되지 않은 것이 둘입니다. 계획을 compose-rust 의 <code>AbsoluteBox</code> 와 그리기 모디파이어로 넘기는
+      다리가 <span class="pill partial">부분</span> 입니다. <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 에 작성되어 있고 compose-rust 의 그리기 원소를 기다립니다(<a href="status.html#drawing">자세히</a>). Host 가 레이아웃 도중 텍스트 조각의 크기를
       Compose 에 묻는 동기 호출도 그렇습니다
       (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>

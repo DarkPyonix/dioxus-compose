@@ -54,6 +54,7 @@
       <h2>이 페이지</h2>
       <ul>
         <li><a href="#html">HTML 과 CSS 경로</a></li>
+        <li><a href="#drawing">HTML 화면이 아직 그려지지 않는 이유</a></li>
         <li><a href="#widgets">Compose 위젯 경로</a></li>
         <li><a href="#platforms">위젯 경로의 플랫폼</a></li>
         <li><a href="#faq">FAQ</a></li>
@@ -85,8 +86,8 @@
           <tr><td><span class="pill works">구현</span></td><td>사용자 정의 속성과 <code>prefers-color-scheme</code> 으로 테마 주기</td></tr>
           <tr><td><span class="pill works">구현</span></td><td><code>&lt;script&gt;</code> 를 실행하지 않음</td></tr>
           <tr><td><span class="pill works">구현</span></td><td>VS Code 가 잰 텍스트 크기로 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(<code>dioxus-compose/tests/fr34_box_tolerance.rs</code>, 2026-10-03 macOS 에서 측정)</td></tr>
-          <tr><td><span class="pill works">구현</span></td><td><code>samples/</code> 의 예제 열한 개. 각각 손으로 계산한 배치와, 렌더러가 부를 것과 같은 호출로 Host 에서 테스트됨</td></tr>
-          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 그리기 원소의 계획은 있지만, 그것을 compose-rust 렌더러(그 <code>AbsoluteBox</code>)에 넘기는 다리가 없어 아직 그려지지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>. 다리는 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a>에 작성되어 검토와 빌드를 기다림)</td></tr>
+          <tr><td><span class="pill works">구현</span></td><td><code>samples/</code> 의 예제 열다섯 개. 각각 손으로 계산한 배치와, 렌더러가 부를 것과 같은 호출로 Host 에서 테스트됨</td></tr>
+          <tr><td><span class="pill partial">부분</span></td><td>HTML 화면을 화면에 그리기. 그리기 원소의 계획은 있습니다. 그것을 compose-rust 렌더러에 넘기는 다리는 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 에 작성되어 있고 그 테스트는 통과합니다. 다리는 아직 병합되지 않은 <a href="https://github.com/DarkPyonix/compose-rust/pull/74">compose-rust #74</a> 의 compose-rust 그리기 원소를 기다리고, 그다음 compose-rust 0.0.2 를 기다립니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>. <a href="#drawing">이유와 기다리는 것</a>)</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>Compose 로 텍스트 재기. 측정기는 글꼴이 하나인 텍스트를 재고, 글꼴이 섞인 문단, 표 칸, 입력 컨트롤은 Parley 가 잼. 동기 측정 호출은 compose-rust 에서 만드는 중(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">부분</span></td><td>CSS 변환: <code>translate</code> 는 동작, <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>, <code>transform-origin</code> 은 그리지 않음(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
           <tr><td><span class="pill planned">계획</span></td><td>CSS transition 과 animation: 불투명도, 변환, 색은 렌더러에서(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>), 폭, 높이, 여백은 Host 를 거쳐(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
@@ -96,6 +97,29 @@
         </tbody>
       </table>
     </div>
+
+    <h2 id="drawing">HTML 화면이 아직 그려지지 않는 이유</h2>
+    <p>
+      Host 는 HTML 화면을 배치하고 그리기를 계획하며, 둘 다 테스트가 있습니다. 없는 것은 마지막 단계,
+      곧 계획을 compose-rust 렌더러에 보내는 일입니다. 각 부분의 상태는 다음과 같습니다.
+    </p>
+    <ul>
+      <li>다리는 <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 에 작성되어 있고, 그 테스트는 통과합니다.</li>
+      <li>compose-rust 의 FR-42 그리기 원소가 필요합니다. <code>AbsoluteBox</code> 와, 변마다 정하는
+        테두리, 모서리마다 정하는 반지름, 그림자, 클립, 알파, 오프셋, 크기 모디파이어입니다. 이것은
+        <a href="https://github.com/DarkPyonix/compose-rust/pull/74">compose-rust #74</a> 에 있고 아직 병합되지 않았습니다.</li>
+      <li><code>samples/motion</code> 의 렌더러 쪽(회전, 확대, 기울임, 렌더러가 재생하는 transition 과
+        animation)은 compose-rust 의 FR-41 이 필요합니다. 이것은 <a href="https://github.com/DarkPyonix/compose-rust/pull/83">compose-rust #83</a> 에 있고 아직 병합되지
+        않았습니다.</li>
+      <li>폭 같은 레이아웃 속성의 애니메이션(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)은 Host 가 프레임마다 진행시키므로, 다리 말고는
+        compose-rust 에 필요한 것이 없습니다.</li>
+    </ul>
+    <p>
+      소유자가 정한 계획은 이렇습니다. compose-rust 0.0.2 를 #74 와 #83 을 담아 crates.io 에 내고,
+      <a href="https://github.com/DarkPyonix/dioxus-compose/pull/67">#67</a> 이 compose-rust =0.0.2 에 의존하도록 옮긴 뒤 CI 가 통과하면 병합합니다. 그 릴리스부터 HTML
+      예제가 창에 그려집니다. 날짜는 없습니다. 이 계획은 위의 두 병합과 그 릴리스를 기다리기
+      때문입니다.
+    </p>
 
     <h2 id="widgets">Compose 위젯 경로</h2>
     <div class="tablewrap">
