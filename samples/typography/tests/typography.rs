@@ -430,4 +430,5 @@ fn fr34_typography_size_button_cycles_the_specimen() {
 // - `text-decoration`: the display list carries no decoration for a run.
 // - `list-style-type: upper-roman` (and `lower-roman`): stylo's servo build does not know
 //   the keyword, so the declaration is dropped when the stylesheet is parsed and the list
-//   keeps its decimal markers.
+//   keeps its decimal markers. Newer stylo knows it; it arrives with the blitz-dom 0.3
+//   upgrade (issue #92).

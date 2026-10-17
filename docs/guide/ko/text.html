@@ -240,8 +240,10 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
     <h2 id="planned">아직 없는 것</h2>
     <ul>
       <li><strong>로마 숫자 표지.</strong> <code>list-style-type: lower-roman</code> 과
-        <code>upper-roman</code> 은 그려지지 않습니다. Stylo 의 servo 빌드가 이 키워드를 몰라서
-        스타일시트를 해석할 때 선언을 버리고, 목록은 원래 있던 표지를 그대로 씁니다.</li>
+        <code>upper-roman</code> 은 아직 그려지지 않습니다. 레이아웃이 쓰는 Stylo(0.8)의 servo 빌드가
+        이 키워드를 몰라서 스타일시트를 해석할 때 선언을 버리고, 목록은 원래 있던 표지를 그대로 씁니다.
+        더 새 Stylo 는 이 키워드를 압니다. blitz-dom 0.3 이 정식으로 나오면 그 업그레이드(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/92">#92</a>)와 함께
+        들어옵니다.</li>
       <li><strong>시스템 글자 크기와 확대.</strong> <span class="pill planned">계획</span> HTML 화면은
         VS Code 의 <code>window.zoomLevel</code> 처럼 화면 전체가 확대되어, 행과 아이콘과 글자가 같이
         커지고 잘리는 것이 없게 됩니다. 확대의 시작값은 시스템 글자 크기를 따릅니다.</li>

@@ -248,9 +248,10 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
     <h2 id="planned">Not yet</h2>
     <ul>
       <li><strong>Roman numeral markers.</strong> <code>list-style-type: lower-roman</code> and
-        <code>upper-roman</code> are not drawn. Stylo's servo build does not know the keywords, so
-        it drops the declaration when the stylesheet is parsed and the list keeps the markers it
-        had before.</li>
+        <code>upper-roman</code> are not drawn yet. The Stylo version the layout pass uses (0.8)
+        does not know the keywords in its servo build, so it drops the declaration when the
+        stylesheet is parsed and the list keeps the markers it had before. Newer Stylo knows them;
+        they arrive with the upgrade to blitz-dom 0.3 (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/92">#92</a>), once 0.3 is released.</li>
       <li><strong>System text size and zoom.</strong> <span class="pill planned">planned</span>
         HTML screens will zoom as a whole, the way VS Code's <code>window.zoomLevel</code> does, so
         rows, icons and text grow together and nothing is clipped. The starting zoom will follow the
