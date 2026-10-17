@@ -1,6 +1,6 @@
 # Samples
 
-Eleven Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
+Fourteen Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
 signals, with `use dioxus_compose::html::prelude::*` and nothing else from this crate. Each is
 a crate of its own, and each exposes the same two things:
 
