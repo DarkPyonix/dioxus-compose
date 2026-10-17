@@ -91,7 +91,9 @@ impl Runtime for DioxusRuntime {
             | EventPayload::LifecycleStart
             | EventPayload::LifecycleStop
             | EventPayload::NotificationActivated { .. }
-            | EventPayload::NotificationPermissionChanged(_) => {
+            | EventPayload::NotificationPermissionChanged(_)
+            | EventPayload::AnimationEvent { .. }
+            | EventPayload::ReducedMotionChanged(_) => {
                 return Err(ProtocolError::InvalidValueKind(0));
             }
         };

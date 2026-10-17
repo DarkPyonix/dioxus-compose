@@ -37,7 +37,7 @@ native-renderer = ["compose-rust/native-renderer"]
 # The boundary, the protocol, the schema and the renderer it links. Pinned to one commit,
 # because the records the Host writes and the renderer reads are versioned together: a
 # different compose-rust is a different wire format.
-compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", rev = "f7e7ce7bd1f40fefa59b931bd6ebf5423862acc8", default-features = false }
+compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", rev = "3f2e60c1d8d179eaff2c29b44aa223e123c5468f", default-features = false }
 dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
