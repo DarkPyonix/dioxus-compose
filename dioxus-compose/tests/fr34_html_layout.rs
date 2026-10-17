@@ -441,6 +441,38 @@ html, body {{ margin: 0; }}
     }
 }
 
+/// A column flex container that wraps and has `height: auto` has an indefinite main size,
+/// so its five items stay in one column. The body is a block, and a block offers its
+/// children `min-content` as their available height, which must not make the wrapping
+/// container break after every item. The column is 5 x 40px of items plus 4 x 8px of gap
+/// = 232px tall and 800px wide (stretched in the stack), and the item `i` sits at
+/// y = 48 * i. #stack, a column flex container with a 12px gap, holds only #wrap, so it is
+/// 232px tall too.
+#[test]
+fn fr34_column_wrap_with_auto_height_does_not_wrap() {
+    let html = r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#stack { display: flex; flex-direction: column; gap: 12px; }
+#wrap { display: flex; flex-direction: column; flex-wrap: wrap; gap: 8px; }
+.item { width: 160px; height: 40px; }
+</style></head><body><div id="stack"><div id="wrap"><div class="item" id="i0"></div><div class="item" id="i1"></div><div class="item" id="i2"></div><div class="item" id="i3"></div><div class="item" id="i4"></div></div></div></body></html>"#;
+    let mut doc = parse(html, 800, 600);
+    let mut measurer = FakeMeasurer::new(10.0, 20.0);
+    let list = layout_document(&mut doc, &mut measurer);
+
+    assert_rect(entry(&list, &doc, "stack").rect, 0.0, 0.0, 800.0, 232.0);
+    assert_rect(entry(&list, &doc, "wrap").rect, 0.0, 0.0, 800.0, 232.0);
+    for (index, id) in ["i0", "i1", "i2", "i3", "i4"].into_iter().enumerate() {
+        assert_rect(
+            entry(&list, &doc, id).rect,
+            0.0,
+            48.0 * index as f32,
+            160.0,
+            40.0,
+        );
+    }
+}
+
 #[test]
 fn fr34_paint_order_and_hit_test_follow_z_index() {
     let html = r#"<!DOCTYPE html><html><head><style>
