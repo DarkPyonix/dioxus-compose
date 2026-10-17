@@ -655,6 +655,8 @@ fn layout_moves(doc: &mut BaseDocument, scan: &Scan, now: f64) -> bool {
         .iter()
         .map(|&id| doc.get_node(id).map(|node| node.style.clone()))
         .collect();
+    // The probe is not the frame: put the document back at the frame's own time.
+    resolve_styles(doc, now);
     before != after
 }
 
