@@ -49,7 +49,7 @@ use crate::paint::transform::functions_of;
 
 /// How far past a transition's end the document is resolved to read where it lands, in
 /// seconds. Added to the longest delay plus duration of the transitions found.
-const SETTLE_MARGIN: f32 = 0.01;
+pub(crate) const SETTLE_MARGIN: f32 = 0.01;
 
 /// The properties a renderer plays by itself, in the order their animations are listed.
 const RENDERER_PROPERTIES: [AnimatedProperty; 3] = [

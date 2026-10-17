@@ -30,7 +30,9 @@ use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{DisplayList, DisplayListDiff, SkippedTransform};
-use crate::paint::motion::{MotionState, Playing, Scan, rewrite_reduced_motion, transitions};
+use crate::paint::motion::{
+    MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
+};
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
 use writer::{DomWriter, WriterState, element_name};
 
@@ -230,7 +232,7 @@ impl HtmlDom {
         // for the display list hold the values the transitions settle at.
         let described = !ticking && !scan.nodes.is_empty();
         if described && animating && scan.needs_settling() {
-            resolve_styles(&mut self.doc, now + f64::from(scan.horizon + 0.01));
+            resolve_styles(&mut self.doc, now + f64::from(scan.horizon + SETTLE_MARGIN));
         }
         apply_natural_sizes(&mut self.doc, &mut lookup);
         let texts = run_layout(&mut self.doc, &mut *self.measurer);

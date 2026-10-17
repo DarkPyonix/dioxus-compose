@@ -164,7 +164,7 @@ fn push_list(
                 f: m.f,
             })),
             Operation::Matrix3D(m) => {
-                let flat = m.clone().into_2d().ok()?;
+                let flat = (*m).into_2d().ok()?;
                 Some(TransformFunction::Matrix(Matrix2D {
                     a: flat.a,
                     b: flat.b,
