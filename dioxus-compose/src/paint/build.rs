@@ -23,10 +23,11 @@ use crate::layout::convert;
 use crate::layout::image::ImageLookup;
 use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
-    Border, BorderLine, BoxShadow, Corners, DisplayList, InputField, InputKind, MeasuredText,
-    NodeEntry, Radius, Rect, ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun,
-    Transform2D,
+    AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
+    DisplayList, InputField, InputKind, MeasuredText, NodeEntry, PlayDirection, Radius, Rect, Rgba,
+    ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun, Transform2D,
 };
+use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved};
 
 /// What the first walk settles for one box.
@@ -50,6 +51,10 @@ struct Placed {
     clips: bool,
     /// The 2D transform that is drawn on top of this box's place, unless it only translates.
     transform: Option<Transform2D>,
+    /// The animations a renderer plays on this box.
+    animations: Vec<Animation>,
+    /// The background colour a running animation starts from, in place of the cascade's.
+    background: Option<Rgba>,
 }
 
 /// Inherited down the first walk.
@@ -62,15 +67,20 @@ struct Ambient {
     scroll_parent: Option<NodeId>,
 }
 
-pub(crate) fn build_display_list(
-    doc: &BaseDocument,
-    texts: &HashMap<usize, MeasuredText>,
-    images: &mut ImageLookup<'_>,
+/// Reads a laid-out document into a display list. `playback` says which motions a renderer
+/// plays: with it, a box's `@keyframes` animations are listed on its entry and its
+/// transform is kept as one; without it the document is drawn as it is resolved.
+pub(crate) fn build_display_list<'a>(
+    doc: &'a BaseDocument,
+    texts: &'a HashMap<usize, MeasuredText>,
+    images: &'a mut ImageLookup<'_>,
+    playback: Option<&'a mut dyn Playback>,
 ) -> DisplayList {
     let mut painter = Painter {
         doc,
         texts,
         images: RefCell::new(images),
+        playback,
         skipped: Vec::new(),
         placed: HashMap::new(),
         order: Vec::new(),
@@ -122,6 +132,8 @@ struct Painter<'a, 'i> {
     texts: &'a HashMap<usize, MeasuredText>,
     /// Natural sizes for background images, and the base `<img>` sources resolve against.
     images: RefCell<&'a mut ImageLookup<'i>>,
+    /// Which motions a renderer plays, if the caller wants them described.
+    playback: Option<&'a mut dyn Playback>,
     /// The 3D transforms left out.
     skipped: Vec<SkippedTransform>,
     placed: HashMap<NodeId, Placed>,
@@ -179,9 +191,51 @@ impl Painter<'_, '_> {
         }
         let layout = &node.unrounded_layout;
         let style = node.primary_styles();
-        let moved = style.as_ref().map_or(Moved::Nothing, |style| {
-            transform::moved(style, layout.size.width, layout.size.height, false)
-        });
+        let (width, height) = (layout.size.width, layout.size.height);
+        let tag_of = || {
+            node.element_data()
+                .map(|element| element.name.local.to_string())
+                .unwrap_or_default()
+        };
+
+        // The animations a renderer plays on this box, and the value each one starts from,
+        // which takes the cascade's place: the cascade was resolved at some point in the
+        // middle of them.
+        let keep = self
+            .playback
+            .as_deref()
+            .is_some_and(|playback| playback.keeps_transform(id));
+        let animations = match (self.playback.as_deref_mut(), style.as_ref()) {
+            (Some(playback), Some(style)) => playback.animations(&AnimationRequest {
+                node: id,
+                tag: &tag_of(),
+                width,
+                height,
+                font_px: convert::font_size(style),
+                origin: transform::origin_of(style, width, height),
+            }),
+            _ => Vec::new(),
+        };
+        let rest = |property: AnimatedProperty| {
+            animations
+                .iter()
+                .find(|animation| animation.property == property)
+                .map(rest_value)
+        };
+        let moved = match rest(AnimatedProperty::Transform) {
+            Some(AnimatedValue::Transform(transform)) => Moved::Matrix(transform),
+            _ => style.as_ref().map_or(Moved::Nothing, |style| {
+                transform::moved(style, width, height, keep)
+            }),
+        };
+        let animated_opacity = match rest(AnimatedProperty::Opacity) {
+            Some(AnimatedValue::Opacity(value)) => Some(value),
+            _ => None,
+        };
+        let animated_background = match rest(AnimatedProperty::BackgroundColor) {
+            Some(AnimatedValue::Colour(colour)) => Some(colour),
+            _ => None,
+        };
         let (shift_x, shift_y, transform) = match moved {
             Moved::Nothing => (0.0, 0.0, None),
             Moved::Translated(x, y) => (x, y, None),
@@ -189,10 +243,7 @@ impl Painter<'_, '_> {
             Moved::ThreeD(text) => {
                 self.skipped.push(SkippedTransform {
                     node: id,
-                    tag: node
-                        .element_data()
-                        .map(|element| element.name.local.to_string())
-                        .unwrap_or_default(),
+                    tag: tag_of(),
                     transform: text,
                 });
                 (0.0, 0.0, None)
@@ -219,7 +270,8 @@ impl Painter<'_, '_> {
             layout.size.height,
         );
 
-        let own_opacity = style.as_ref().map_or(1.0, |style| style.clone_opacity());
+        let own_opacity = animated_opacity
+            .unwrap_or_else(|| style.as_ref().map_or(1.0, |style| style.clone_opacity()));
         let positioned = style
             .as_ref()
             .is_some_and(|style| style.clone_position() != Position::Static);
@@ -286,6 +338,8 @@ impl Painter<'_, '_> {
                 fixed,
                 clips: own_clip,
                 transform,
+                animations,
+                background: animated_background,
             },
         );
     }
@@ -442,7 +496,7 @@ impl Painter<'_, '_> {
             clips_children: false,
             opacity: placed.opacity,
             transform: placed.transform.clone(),
-            animations: Vec::new(),
+            animations: placed.animations.clone(),
             scroll: None,
             scroll_parent: placed.scroll_parent,
             // A fixed box is placed against the viewport, so it goes in the root box, not
@@ -485,6 +539,9 @@ impl Painter<'_, '_> {
             // its parent, which draws its own background.
             if entry.visible && !matches!(node.data, NodeData::AnonymousBlock(_)) {
                 self.decorate(&mut entry, style, layout);
+                if let Some(background) = placed.background {
+                    entry.background = (!background.is_transparent()).then_some(background);
+                }
                 let images = self.images.borrow();
                 entry.image =
                     background::replaced_image(node, style, content_box(&rect, layout), &images);
@@ -713,6 +770,15 @@ struct Layers {
     normal: Vec<NodeId>,
     positioned: Vec<NodeId>,
     positive: Vec<(i32, NodeId)>,
+}
+
+/// The value of its property that a running animation starts from: the first keyframe, or
+/// the last when the animation plays backwards.
+fn rest_value(animation: &Animation) -> AnimatedValue {
+    match animation.direction {
+        PlayDirection::Normal | PlayDirection::Alternate => animation.start(),
+        PlayDirection::Reverse | PlayDirection::AlternateReverse => animation.end(),
+    }
 }
 
 fn border_line(style: BorderStyle) -> BorderLine {

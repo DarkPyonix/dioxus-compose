@@ -83,8 +83,12 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), basis: f32) -> f32 {
 
 /// Runs stylo's cascade and blitz-dom's box construction: everything `BaseDocument::resolve`
 /// does except its own layout, which [`run_layout`] replaces.
-pub(crate) fn resolve_styles(doc: &mut BaseDocument) {
-    doc.resolve_stylist(0.0);
+///
+/// `now` is the time in seconds that CSS transitions and animations are resolved at. A
+/// transition or animation starts at the time of the resolve that first sees it, and a
+/// document resolved at 0 every time never moves past its first values.
+pub(crate) fn resolve_styles(doc: &mut BaseDocument, now: f64) {
+    doc.resolve_stylist(now);
     doc.resolve_layout_children();
     doc.resolve_deferred_tasks();
     let root = doc.root_element().id;
