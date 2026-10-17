@@ -9,6 +9,7 @@ pub(crate) mod form;
 mod writer;
 
 use std::any::Any;
+use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::{Arc, Once};
 
@@ -29,7 +30,7 @@ use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_na
 use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::paint::build::build_display_list;
-use crate::paint::display_list::{DisplayList, DisplayListDiff};
+use crate::paint::display_list::{DisplayList, DisplayListDiff, SkippedTransform};
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
 use writer::{DomWriter, WriterState, element_name};
 
@@ -91,6 +92,8 @@ pub struct HtmlDom {
     color_scheme: ColorScheme,
     current: Option<DisplayList>,
     previous: Option<DisplayList>,
+    /// Transforms already reported as skipped, so each is reported once.
+    warned: HashSet<(NodeId, String)>,
 }
 
 impl HtmlDom {
@@ -150,6 +153,7 @@ impl HtmlDom {
             color_scheme: config.color_scheme,
             current: None,
             previous: None,
+            warned: HashSet::new(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
         dom.vdom.rebuild(&mut writer);
@@ -177,10 +181,30 @@ impl HtmlDom {
         apply_natural_sizes(&mut self.doc, &mut lookup);
         let texts = run_layout(&mut self.doc, &mut *self.measurer);
         let list = build_display_list(&self.doc, &texts, &mut lookup);
+        self.report_skipped(&list);
         self.previous = self.current.replace(list);
         self.current
             .as_ref()
             .expect("the display list was stored on the line above")
+    }
+
+    /// Says on stderr, once for each, which element's which 3D transform the layout left
+    /// out. The display list carries them all in
+    /// [`skipped_transforms`](DisplayList::skipped_transforms).
+    fn report_skipped(&mut self, list: &DisplayList) {
+        for SkippedTransform {
+            node,
+            tag,
+            transform,
+        } in &list.skipped_transforms
+        {
+            if self.warned.insert((*node, transform.clone())) {
+                eprintln!(
+                    "dioxus-compose: <{tag}> (node {node}) has the 3D transform `{transform}`. \
+                     3D transforms are not drawn yet, so the element is drawn without it."
+                );
+            }
+        }
     }
 
     /// Lays the document out and returns only what changed since the previous layout.
@@ -347,15 +371,18 @@ impl HtmlDom {
         let toggled = activation.and_then(|activation| form::toggle(&mut self.doc, activation));
 
         let (x, y) = point.unwrap_or_else(|| {
+            // The centre of the box, where the box is drawn.
             self.current
                 .as_ref()
-                .and_then(|list| list.get(hit))
-                .map_or((0.0, 0.0), |entry| {
-                    (
+                .and_then(|list| {
+                    let entry = list.get(hit)?;
+                    list.project(
+                        hit,
                         entry.rect.x + entry.rect.width / 2.0,
                         entry.rect.y + entry.rect.height / 2.0,
                     )
                 })
+                .unwrap_or((0.0, 0.0))
         });
         let clicked = self.send_click(hit, x, y);
         let prevented = clicked.is_some_and(|(_, prevented)| prevented);
@@ -394,6 +421,13 @@ impl HtmlDom {
     /// Returns that handler's node and whether a handler prevented the default.
     fn send_click(&mut self, hit: NodeId, x: f32, y: f32) -> Option<(NodeId, bool)> {
         let (target, element) = self.listener_target(hit, "click")?;
+        // The point in the coordinates the target was laid out in: a transformed target
+        // sees the pointer where it would be if the box were not transformed.
+        let (local_x, local_y) = self
+            .current
+            .as_ref()
+            .and_then(|list| list.local_point(target, x, y))
+            .unwrap_or((x, y));
         let origin = self
             .current
             .as_ref()
@@ -401,7 +435,7 @@ impl HtmlDom {
             .map_or((0.0, 0.0), |entry| (entry.rect.x, entry.rect.y));
         let data = PointerData {
             client: (x as f64, y as f64),
-            element: ((x - origin.0) as f64, (y - origin.1) as f64),
+            element: ((local_x - origin.0) as f64, (local_y - origin.1) as f64),
         };
         Some((target, self.send(element, "click", Box::new(data))))
     }

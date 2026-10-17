@@ -23,6 +23,11 @@
 //! JavaScript is never run. A `<script>` element is an ordinary element that the
 //! user-agent stylesheet hides.
 //!
+//! CSS `transform` is carried as a 2D matrix about `transform-origin` on the entry
+//! ([`NodeEntry::transform`]) and as a modifier of the plan node ([`PlanModifier::Transform`]);
+//! a pointer is hit-tested against the transformed shape. 3D transforms are left out, and
+//! named in [`DisplayList::skipped_transforms`].
+//!
 //! Events go back to the Dioxus handlers of the DOM nodes they land on: clicks through
 //! [`HtmlDom::click`], with what a browser does after a click (a checkbox ticks, a submit
 //! button submits its form), and the `input`, `change` and `submit` events of form controls
@@ -60,10 +65,12 @@ pub use crate::layout::measure::{
     TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
 };
 pub use crate::paint::display_list::{
-    BackgroundImage, BackgroundLayer, Border, BorderLine, BoxShadow, Corners, DisplayList,
-    DisplayListDiff, GradientStop, InputField, InputKind, LinearGradient, NodeEntry, ObjectFit,
-    RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides, TextAlign, TextRun,
-    TileRepeat,
+    AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
+    BorderLine, BoxShadow, Corners, DisplayList, DisplayListDiff, Easing, FillMode, GradientStop,
+    InputField, InputKind, Iterations, Keyframe, LinearGradient, Matrix2D, NodeEntry, ObjectFit,
+    PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides,
+    SkippedTransform, StepPosition, TextAlign, TextRun, TileRepeat, Transform2D, TransformFunction,
+    TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,

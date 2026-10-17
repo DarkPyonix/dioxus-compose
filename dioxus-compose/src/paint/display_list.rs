@@ -365,6 +365,386 @@ pub struct ReplacedImage {
     pub natural_size: Option<(f32, f32)>,
 }
 
+/// A 2D affine matrix in CSS's order: a point `(x, y)` goes to
+/// `(a * x + c * y + e, b * x + d * y + f)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Matrix2D {
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub e: f32,
+    pub f: f32,
+}
+
+impl Matrix2D {
+    pub const IDENTITY: Matrix2D = Matrix2D {
+        a: 1.0,
+        b: 0.0,
+        c: 0.0,
+        d: 1.0,
+        e: 0.0,
+        f: 0.0,
+    };
+
+    pub const fn translation(x: f32, y: f32) -> Self {
+        Matrix2D {
+            e: x,
+            f: y,
+            ..Matrix2D::IDENTITY
+        }
+    }
+
+    pub const fn scaling(x: f32, y: f32) -> Self {
+        Matrix2D {
+            a: x,
+            d: y,
+            ..Matrix2D::IDENTITY
+        }
+    }
+
+    /// A clockwise rotation (the y axis points down), as CSS `rotate()` turns.
+    pub fn rotation(radians: f32) -> Self {
+        let (sin, cos) = radians.sin_cos();
+        Matrix2D {
+            a: cos,
+            b: sin,
+            c: -sin,
+            d: cos,
+            e: 0.0,
+            f: 0.0,
+        }
+    }
+
+    /// `skew(ax, ay)`: each angle in radians.
+    pub fn skew(x_radians: f32, y_radians: f32) -> Self {
+        Matrix2D {
+            a: 1.0,
+            b: y_radians.tan(),
+            c: x_radians.tan(),
+            d: 1.0,
+            e: 0.0,
+            f: 0.0,
+        }
+    }
+
+    /// `self` times `rhs`: `rhs` is applied to a point first, then `self`. This is how a
+    /// CSS transform list composes, `transform: A B` being `A * B`.
+    pub fn times(&self, rhs: &Matrix2D) -> Matrix2D {
+        Matrix2D {
+            a: self.a * rhs.a + self.c * rhs.b,
+            b: self.b * rhs.a + self.d * rhs.b,
+            c: self.a * rhs.c + self.c * rhs.d,
+            d: self.b * rhs.c + self.d * rhs.d,
+            e: self.a * rhs.e + self.c * rhs.f + self.e,
+            f: self.b * rhs.e + self.d * rhs.f + self.f,
+        }
+    }
+
+    pub fn apply(&self, x: f32, y: f32) -> (f32, f32) {
+        (
+            self.a * x + self.c * y + self.e,
+            self.b * x + self.d * y + self.f,
+        )
+    }
+
+    pub fn determinant(&self) -> f32 {
+        self.a * self.d - self.b * self.c
+    }
+
+    /// The matrix that undoes this one; `None` when it flattens the plane (a scale by
+    /// zero), which has no inverse.
+    pub fn inverse(&self) -> Option<Matrix2D> {
+        let det = self.determinant();
+        if det.abs() < 1e-12 || !det.is_finite() {
+            return None;
+        }
+        let a = self.d / det;
+        let b = -self.b / det;
+        let c = -self.c / det;
+        let d = self.a / det;
+        Some(Matrix2D {
+            a,
+            b,
+            c,
+            d,
+            e: -(a * self.e + c * self.f),
+            f: -(b * self.e + d * self.f),
+        })
+    }
+
+    /// Whether the matrix leaves every point where it is.
+    pub fn is_identity(&self) -> bool {
+        self.is_translation() && self.e.abs() < 1e-6 && self.f.abs() < 1e-6
+    }
+
+    /// Whether the matrix only moves points, without turning, scaling or skewing them.
+    pub fn is_translation(&self) -> bool {
+        (self.a - 1.0).abs() < 1e-6
+            && self.b.abs() < 1e-6
+            && self.c.abs() < 1e-6
+            && (self.d - 1.0).abs() < 1e-6
+    }
+
+    /// Each component moved `progress` of the way to `other`'s.
+    pub fn lerp(&self, other: &Matrix2D, progress: f32) -> Matrix2D {
+        let mix = |from: f32, to: f32| from + (to - from) * progress;
+        Matrix2D {
+            a: mix(self.a, other.a),
+            b: mix(self.b, other.b),
+            c: mix(self.c, other.c),
+            d: mix(self.d, other.d),
+            e: mix(self.e, other.e),
+            f: mix(self.f, other.f),
+        }
+    }
+}
+
+/// One function of a CSS transform list, resolved to numbers: lengths in CSS pixels and
+/// angles in radians.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TransformFunction {
+    Translate(f32, f32),
+    /// Clockwise, as CSS turns. Not reduced to a turn: `rotate(450deg)` is a quarter turn
+    /// more than one full one, which an animation from `rotate(0deg)` plays.
+    Rotate(f32),
+    Scale(f32, f32),
+    /// `skew(x, y)`.
+    Skew(f32, f32),
+    Matrix(Matrix2D),
+}
+
+impl TransformFunction {
+    /// The matrix of the function.
+    pub fn matrix(&self) -> Matrix2D {
+        match *self {
+            TransformFunction::Translate(x, y) => Matrix2D::translation(x, y),
+            TransformFunction::Rotate(radians) => Matrix2D::rotation(radians),
+            TransformFunction::Scale(x, y) => Matrix2D::scaling(x, y),
+            TransformFunction::Skew(x, y) => Matrix2D::skew(x, y),
+            TransformFunction::Matrix(matrix) => matrix,
+        }
+    }
+}
+
+/// A box's 2D `transform`: the matrix the CSS transform list multiplies out to, the list
+/// itself, and the point the matrix is applied about (`transform-origin`).
+///
+/// The origin is measured from the box's own top-left corner, in CSS pixels. A transform
+/// moves how a box is drawn and nothing else: its [`NodeEntry::rect`] stays where layout
+/// put it, and so does every box inside it, which the transform carries along.
+///
+/// The list is kept because a matrix cannot say how far something turned, and an animation
+/// needs that: `rotate(0deg)` and `rotate(360deg)` are the same matrix, and an animation
+/// from one to the other is a full turn. A renderer interpolates two transforms
+/// function by function when their lists have the same kinds of function in the same order,
+/// as CSS does, and between their matrices otherwise.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Transform2D {
+    /// The product of the functions, in list order.
+    pub matrix: Matrix2D,
+    pub origin: (f32, f32),
+    pub functions: Vec<TransformFunction>,
+}
+
+impl Transform2D {
+    /// The transform of `functions` about `origin`.
+    pub fn new(functions: Vec<TransformFunction>, origin: (f32, f32)) -> Self {
+        let matrix = functions
+            .iter()
+            .fold(Matrix2D::IDENTITY, |total, function| {
+                total.times(&function.matrix())
+            });
+        Transform2D {
+            matrix,
+            origin,
+            functions,
+        }
+    }
+
+    /// The transform that moves nothing.
+    pub fn identity(origin: (f32, f32)) -> Self {
+        Transform2D::new(Vec::new(), origin)
+    }
+
+    /// The matrix about the origin, in the coordinates of the box's own top-left corner:
+    /// move the origin to `(0, 0)`, apply the matrix, move it back.
+    pub fn about_origin(&self) -> Matrix2D {
+        Matrix2D::translation(self.origin.0, self.origin.1)
+            .times(&self.matrix)
+            .times(&Matrix2D::translation(-self.origin.0, -self.origin.1))
+    }
+
+    /// The transform as a map of document coordinates, for the box whose untransformed
+    /// border box is `rect`.
+    pub fn in_document(&self, rect: &Rect) -> Matrix2D {
+        Matrix2D::translation(rect.x, rect.y)
+            .times(&self.about_origin())
+            .times(&Matrix2D::translation(-rect.x, -rect.y))
+    }
+
+    /// Where the four corners of `rect` (top-left, top-right, bottom-right, bottom-left)
+    /// are drawn.
+    pub fn corners(&self, rect: &Rect) -> [(f32, f32); 4] {
+        let map = self.in_document(rect);
+        [
+            map.apply(rect.x, rect.y),
+            map.apply(rect.right(), rect.y),
+            map.apply(rect.right(), rect.bottom()),
+            map.apply(rect.x, rect.bottom()),
+        ]
+    }
+
+    /// The smallest axis-aligned rectangle that holds the drawn `rect`.
+    pub fn bounds(&self, rect: &Rect) -> Rect {
+        bounds_of(&self.corners(rect))
+    }
+}
+
+/// The smallest axis-aligned rectangle that holds all of `points`.
+pub(crate) fn bounds_of(points: &[(f32, f32); 4]) -> Rect {
+    let mut min = points[0];
+    let mut max = points[0];
+    for &(x, y) in &points[1..] {
+        min = (min.0.min(x), min.1.min(y));
+        max = (max.0.max(x), max.1.max(y));
+    }
+    Rect::new(min.0, min.1, max.0 - min.0, max.1 - min.1)
+}
+
+/// A property a renderer can play an animation of by itself, because its value changes
+/// nothing about layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AnimatedProperty {
+    /// A box's own `opacity` (not multiplied by its ancestors').
+    Opacity,
+    Transform,
+    BackgroundColor,
+}
+
+/// A value of an [`AnimatedProperty`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum AnimatedValue {
+    Opacity(f32),
+    Transform(Transform2D),
+    Colour(Rgba),
+}
+
+/// A value at a point of the animation, `offset` being 0 at its start and 1 at its end.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Keyframe {
+    pub offset: f32,
+    pub value: AnimatedValue,
+}
+
+/// Where a `steps()` easing jumps.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StepPosition {
+    JumpStart,
+    JumpEnd,
+    JumpNone,
+    JumpBoth,
+}
+
+/// A CSS timing function.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Easing {
+    Linear,
+    Ease,
+    EaseIn,
+    EaseOut,
+    EaseInOut,
+    CubicBezier(f32, f32, f32, f32),
+    Steps { count: u32, position: StepPosition },
+}
+
+/// `animation-iteration-count`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Iterations {
+    Count(f32),
+    Infinite,
+}
+
+/// `animation-direction`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayDirection {
+    Normal,
+    Reverse,
+    Alternate,
+    AlternateReverse,
+}
+
+/// `animation-fill-mode`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FillMode {
+    None,
+    Forwards,
+    Backwards,
+    Both,
+}
+
+/// One property's animation, described for a renderer to play by itself: where it goes,
+/// how long it takes, and how it repeats. Times are in seconds.
+///
+/// A CSS `transition` is one of these with two keyframes, one iteration and a backwards
+/// fill. An `@keyframes` animation is one per property it changes, with the keyframes
+/// that name that property.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Animation {
+    pub property: AnimatedProperty,
+    /// At least two, by ascending offset, the first at 0 and the last at 1.
+    pub keyframes: Vec<Keyframe>,
+    pub duration: f32,
+    pub delay: f32,
+    pub easing: Easing,
+    pub iterations: Iterations,
+    pub direction: PlayDirection,
+    pub fill: FillMode,
+    /// `animation-play-state: paused`.
+    pub paused: bool,
+    /// The `@keyframes` name; `None` for a transition.
+    pub name: Option<String>,
+}
+
+impl Animation {
+    /// The value the animation starts from.
+    pub fn start(&self) -> AnimatedValue {
+        self.keyframes[0].value.clone()
+    }
+
+    /// The value the animation ends at.
+    pub fn end(&self) -> AnimatedValue {
+        self.keyframes[self.keyframes.len() - 1].value.clone()
+    }
+
+    /// How long the animation runs from its start, delay included; `None` when it never
+    /// ends.
+    pub fn total_duration(&self) -> Option<f32> {
+        match self.iterations {
+            Iterations::Infinite => None,
+            Iterations::Count(count) => Some(self.delay + self.duration * count),
+        }
+    }
+}
+
+/// A `transition` that began with this layout. Unlike [`NodeEntry::animations`], which
+/// stay for as long as the style that makes them does, a transition is an event: it is in
+/// the list for the layout that started it and in none after.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TransitionStart {
+    pub node: NodeId,
+    pub animation: Animation,
+}
+
+/// A `transform` the display list could not carry, so the box is drawn without it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkippedTransform {
+    pub node: NodeId,
+    pub tag: String,
+    /// The transform as CSS writes it.
+    pub transform: String,
+}
+
 /// Everything one node contributes to the picture.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NodeEntry {
@@ -393,6 +773,15 @@ pub struct NodeEntry {
     pub clips_children: bool,
     /// The product of this box's `opacity` and every ancestor's.
     pub opacity: f32,
+    /// The box's 2D `transform`, which also carries every box inside it. `None` for no
+    /// transform, and for one that only moves the box: a translation is folded into
+    /// [`NodeEntry::rect`] (unless an animation or transition of `transform` is declared,
+    /// which keeps it here so a renderer can play it).
+    pub transform: Option<Transform2D>,
+    /// The animations of `@keyframes` this box is running that a renderer plays by itself.
+    /// While one is listed, the entry's own value for the property it animates is the value
+    /// the animation starts from, and the renderer replaces it as the animation plays.
+    pub animations: Vec<Animation>,
     /// Present when this box scrolls its content.
     pub scroll: Option<ScrollContainer>,
     /// The nearest scrolling ancestor, whose scroll position moves this box.
@@ -411,6 +800,10 @@ pub struct NodeEntry {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
     pub entries: Vec<NodeEntry>,
+    /// The transitions this layout started, for a renderer to play.
+    pub transitions: Vec<TransitionStart>,
+    /// The transforms this layout left out because they are 3D.
+    pub skipped_transforms: Vec<SkippedTransform>,
 }
 
 /// What changed between two display lists.
@@ -423,17 +816,37 @@ pub struct DisplayListDiff {
     /// The full paint order, present only when it changed (a node was added or removed, or
     /// two nodes swapped).
     pub order: Option<Vec<NodeId>>,
+    /// The transitions the new layout started. These are events, so they are listed
+    /// whether or not an entry changed with them.
+    pub transitions: Vec<TransitionStart>,
 }
 
 impl DisplayListDiff {
     pub fn is_empty(&self) -> bool {
-        self.changed.is_empty() && self.removed.is_empty() && self.order.is_none()
+        self.changed.is_empty()
+            && self.removed.is_empty()
+            && self.order.is_none()
+            && self.transitions.is_empty()
     }
 }
 
 impl DisplayList {
     pub fn get(&self, node: NodeId) -> Option<&NodeEntry> {
         self.entries.iter().find(|entry| entry.node == node)
+    }
+
+    /// The `opacity` of the box itself: [`NodeEntry::opacity`] with its ancestors' taken
+    /// out.
+    pub fn own_opacity(&self, entry: &NodeEntry) -> f32 {
+        let above = entry
+            .parent
+            .and_then(|parent| self.get(parent))
+            .map_or(1.0, |parent| parent.opacity);
+        if above > 0.0 {
+            entry.opacity / above
+        } else {
+            entry.opacity
+        }
     }
 
     /// The paint order as node ids.
@@ -468,6 +881,7 @@ impl DisplayList {
             changed,
             removed,
             order,
+            transitions: self.transitions.clone(),
         }
     }
 
@@ -475,8 +889,9 @@ impl DisplayList {
     /// canvas.
     ///
     /// Over text this is the element that owns the text (a `<span>` inside a paragraph),
-    /// otherwise the topmost visible box. Scroll positions are taken as zero; see
-    /// [`DisplayList::hit_test_scrolled`].
+    /// otherwise the topmost visible box. A transformed box is hit where it is drawn, not
+    /// where layout put it, and so is everything inside it. Scroll positions are taken as
+    /// zero; see [`DisplayList::hit_test_scrolled`].
     pub fn hit_test(&self, x: f32, y: f32) -> Option<NodeId> {
         self.hit_test_scrolled(x, y, |_| (0.0, 0.0))
     }
@@ -495,6 +910,7 @@ impl DisplayList {
             .iter()
             .map(|entry| (entry.node, entry))
             .collect();
+        let transformed = self.entries.iter().any(|entry| entry.transform.is_some());
         // Total scroll applied to content inside `container`, through every scrolling
         // ancestor up the chain.
         let accumulated = |mut container: Option<NodeId>| {
@@ -512,8 +928,16 @@ impl DisplayList {
                 continue;
             }
             let (dx, dy) = accumulated(entry.scroll_parent);
-            // The point in the coordinates this entry was laid out in.
-            let (px, py) = (x + dx, y + dy);
+            // The point in the coordinates this entry was laid out in, and in the ones its
+            // parent's content was.
+            let ((px, py), (cx_parent, cy_parent)) = if transformed {
+                match unproject(&by_node, entry, (x, y), &scroll_offset) {
+                    Some(points) => points,
+                    None => continue,
+                }
+            } else {
+                ((x + dx, y + dy), (x, y))
+            };
             if let Some(clip) = entry.clip {
                 // The innermost clip usually comes from the scroll container itself, whose
                 // padding box does not move with its own scroll position: test it in the
@@ -523,7 +947,14 @@ impl DisplayList {
                     .and_then(|container| by_node.get(&container))
                     .and_then(|container| container.scroll_parent);
                 let (cx, cy) = accumulated(clip_space);
-                if !clip.contains(x + cx, y + cy) {
+                let inside = if transformed {
+                    // The parent's content frame, less the scroll of the containers above
+                    // the clip's own.
+                    clip.contains(cx_parent - dx + cx, cy_parent - dy + cy)
+                } else {
+                    clip.contains(x + cx, y + cy)
+                };
+                if !inside {
                     continue;
                 }
             }
@@ -537,6 +968,98 @@ impl DisplayList {
         }
         None
     }
+
+    /// Where a point of the screen falls in the coordinates `node` was laid out in: the
+    /// point with the `transform` of the box and of every box around it taken off. For a
+    /// box nothing transforms this is the point itself. Scroll positions are taken as
+    /// zero. `None` for a node not in the list, and for a point inside a box that a
+    /// transform has flattened (`scale(0)`), which has no layout position.
+    pub fn local_point(&self, node: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
+        let by_node: HashMap<NodeId, &NodeEntry> = self
+            .entries
+            .iter()
+            .map(|entry| (entry.node, entry))
+            .collect();
+        let entry: &NodeEntry = by_node.get(&node)?;
+        unproject(&by_node, entry, (x, y), &|_: NodeId| (0.0, 0.0)).map(|(own, _)| own)
+    }
+
+    /// Where the point `(x, y)`, given in the coordinates `node` was laid out in, is
+    /// drawn: the opposite of [`DisplayList::local_point`].
+    pub fn project(&self, node: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
+        let by_node: HashMap<NodeId, &NodeEntry> = self
+            .entries
+            .iter()
+            .map(|entry| (entry.node, entry))
+            .collect();
+        let mut current = Some(*by_node.get(&node)?);
+        let mut point = (x, y);
+        let mut seen = HashSet::new();
+        while let Some(entry) = current {
+            if !seen.insert(entry.node) {
+                break;
+            }
+            if let Some(transform) = &entry.transform {
+                point = transform.in_document(&entry.rect).apply(point.0, point.1);
+            }
+            current = entry
+                .parent
+                .and_then(|parent| by_node.get(&parent).copied());
+        }
+        Some(point)
+    }
+}
+
+/// The boxes from the outermost down to `entry`, following `parent`.
+fn ancestry<'a>(
+    by_node: &HashMap<NodeId, &'a NodeEntry>,
+    entry: &'a NodeEntry,
+) -> Vec<&'a NodeEntry> {
+    let mut chain = vec![entry];
+    let mut seen = HashSet::from([entry.node]);
+    let mut parent = entry.parent;
+    while let Some(id) = parent {
+        if !seen.insert(id) {
+            break;
+        }
+        let Some(&above) = by_node.get(&id) else {
+            break;
+        };
+        chain.push(above);
+        parent = above.parent;
+    }
+    chain.reverse();
+    chain
+}
+
+/// Takes the transforms and scroll offsets of the boxes around `entry`, and its own
+/// transform, off a point of the screen. Returns the point in the coordinates `entry` was
+/// laid out in, and the point in the coordinates of its parent's content, which is where
+/// the clips it inherits are measured. `None` when a transform on the way cannot be undone.
+fn unproject<'a>(
+    by_node: &HashMap<NodeId, &'a NodeEntry>,
+    entry: &'a NodeEntry,
+    point: (f32, f32),
+    scroll_offset: &impl Fn(NodeId) -> (f32, f32),
+) -> Option<((f32, f32), (f32, f32))> {
+    let chain = ancestry(by_node, entry);
+    let mut current = point;
+    let mut parent_content = point;
+    for (index, above) in chain.iter().enumerate() {
+        let is_entry = index + 1 == chain.len();
+        if is_entry {
+            parent_content = current;
+        }
+        if let Some(transform) = &above.transform {
+            let inverse = transform.in_document(&above.rect).inverse()?;
+            current = inverse.apply(current.0, current.1);
+        }
+        if !is_entry && above.scroll.is_some() {
+            let (sx, sy) = scroll_offset(above.node);
+            current = (current.0 + sx, current.1 + sy);
+        }
+    }
+    Some((current, parent_content))
 }
 
 /// A text run measured during layout, before it is placed in the display list.

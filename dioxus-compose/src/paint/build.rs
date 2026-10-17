@@ -24,8 +24,10 @@ use crate::layout::image::ImageLookup;
 use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     Border, BorderLine, BoxShadow, Corners, DisplayList, InputField, InputKind, MeasuredText,
-    NodeEntry, Radius, Rect, ScrollContainer, Sides, TextAlign, TextRun,
+    NodeEntry, Radius, Rect, ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun,
+    Transform2D,
 };
+use crate::paint::transform::{self, Moved};
 
 /// What the first walk settles for one box.
 struct Placed {
@@ -46,6 +48,8 @@ struct Placed {
     fixed: bool,
     /// `overflow` other than `visible`: nothing inside reaches past the padding box.
     clips: bool,
+    /// The 2D transform that is drawn on top of this box's place, unless it only translates.
+    transform: Option<Transform2D>,
 }
 
 /// Inherited down the first walk.
@@ -67,6 +71,7 @@ pub(crate) fn build_display_list(
         doc,
         texts,
         images: RefCell::new(images),
+        skipped: Vec::new(),
         placed: HashMap::new(),
         order: Vec::new(),
     };
@@ -105,7 +110,11 @@ pub(crate) fn build_display_list(
             scroll.content_height = height;
         }
     }
-    DisplayList { entries }
+    DisplayList {
+        entries,
+        transitions: Vec::new(),
+        skipped_transforms: painter.skipped,
+    }
 }
 
 struct Painter<'a, 'i> {
@@ -113,6 +122,8 @@ struct Painter<'a, 'i> {
     texts: &'a HashMap<usize, MeasuredText>,
     /// Natural sizes for background images, and the base `<img>` sources resolve against.
     images: RefCell<&'a mut ImageLookup<'i>>,
+    /// The 3D transforms left out.
+    skipped: Vec<SkippedTransform>,
     placed: HashMap<NodeId, Placed>,
     order: Vec<NodeId>,
 }
@@ -168,9 +179,25 @@ impl Painter<'_, '_> {
         }
         let layout = &node.unrounded_layout;
         let style = node.primary_styles();
-        let (shift_x, shift_y) = style.as_ref().map_or((0.0, 0.0), |style| {
-            translation(style, layout.size.width, layout.size.height)
+        let moved = style.as_ref().map_or(Moved::Nothing, |style| {
+            transform::moved(style, layout.size.width, layout.size.height, false)
         });
+        let (shift_x, shift_y, transform) = match moved {
+            Moved::Nothing => (0.0, 0.0, None),
+            Moved::Translated(x, y) => (x, y, None),
+            Moved::Matrix(transform) => (0.0, 0.0, Some(transform)),
+            Moved::ThreeD(text) => {
+                self.skipped.push(SkippedTransform {
+                    node: id,
+                    tag: node
+                        .element_data()
+                        .map(|element| element.name.local.to_string())
+                        .unwrap_or_default(),
+                    transform: text,
+                });
+                (0.0, 0.0, None)
+            }
+        };
         let fixed = is_fixed(node);
         // A fixed box's location is in viewport coordinates already, and no ancestor's
         // clip or scroll position applies to it.
@@ -200,12 +227,12 @@ impl Painter<'_, '_> {
             let z = style.clone_z_index();
             (!z.is_auto()).then(|| z.integer_or(0))
         });
-        // A positioned box with an integer z-index, or any box with opacity below one,
-        // starts a stacking context. (Transforms, filters and the rest also do in CSS; this
-        // display list does not carry them.)
+        // A positioned box with an integer z-index, or any box with opacity below one or a
+        // transform that does more than move it, starts a stacking context. (Filters and
+        // the rest also do in CSS; this display list does not carry them.)
         let context = match (positioned, z_index) {
             (true, Some(z)) => Some(z),
-            _ if own_opacity < 1.0 => Some(0),
+            _ if own_opacity < 1.0 || transform.is_some() => Some(0),
             _ => None,
         };
         let opacity = ambient.opacity * own_opacity;
@@ -258,6 +285,7 @@ impl Painter<'_, '_> {
                 positioned,
                 fixed,
                 clips: own_clip,
+                transform,
             },
         );
     }
@@ -413,6 +441,8 @@ impl Painter<'_, '_> {
             clip: placed.clip,
             clips_children: false,
             opacity: placed.opacity,
+            transform: placed.transform.clone(),
+            animations: Vec::new(),
             scroll: None,
             scroll_parent: placed.scroll_parent,
             // A fixed box is placed against the viewport, so it goes in the root box, not
@@ -683,29 +713,6 @@ struct Layers {
     normal: Vec<NodeId>,
     positioned: Vec<NodeId>,
     positive: Vec<(i32, NodeId)>,
-}
-
-/// How far a box's `transform` moves it and everything inside it, when the transform only
-/// translates. A translation changes where a box is drawn and nothing else, so it is folded
-/// into the box's position. Anything else in the list (a rotation, a scale) is not carried
-/// by this display list, and the box is left where layout put it rather than half-moved.
-fn translation(style: &ComputedValues, width: f32, height: f32) -> (f32, f32) {
-    use style::values::generics::transform::GenericTransformOperation as Operation;
-
-    let mut x = 0.0;
-    let mut y = 0.0;
-    for operation in style.get_box().transform.0.iter() {
-        match operation {
-            Operation::Translate(tx, ty) => {
-                x += tx.resolve(Length::new(width)).px();
-                y += ty.resolve(Length::new(height)).px();
-            }
-            Operation::TranslateX(t) => x += t.resolve(Length::new(width)).px(),
-            Operation::TranslateY(t) => y += t.resolve(Length::new(height)).px(),
-            _ => return (0.0, 0.0),
-        }
-    }
-    (x, y)
 }
 
 fn border_line(style: BorderStyle) -> BorderLine {
