@@ -14,7 +14,10 @@
 //! So `h1` is at y = 40, `#intro` at 40 + 40 + 16 = 96, `#action` at 96 + 24 + 12 = 132
 //! and `#status` at 132 + 24 + 12 = 168.
 
-use dioxus_compose::html::HtmlDom;
+use dioxus_compose::Host;
+use dioxus_compose::html::{HtmlConfig, HtmlDom};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::schema::{EventPayload, Modifier, PropertyKind, WidgetKind};
 use sample_html_hello as hello;
 use sample_html_support::{Measurer, assert_rect, centre, config, entry, node, text_of};
 
@@ -136,4 +139,85 @@ fn fr34_hello_clicking_the_link_reaches_its_handler() {
     dom.render();
     dom.layout(800.0, 600.0, 1.0);
     assert_eq!(text_of(entry(&dom, "status")), "You said hello 2 times");
+}
+
+fn bridged() -> HtmlConfig {
+    config(hello::STYLE, Measurer::new())
+}
+
+/// The texts a batch sets.
+fn texts(records: &[Mutation<'_>]) -> Vec<String> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Mutation::SetProp {
+                property: PropertyKind::Text,
+                value: PropertyValue::String(text),
+                ..
+            } => Some(text.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The page runs the way the window runs it: through a Host, whose first batch draws every
+/// run of text, and whose link is a clickable text the renderer can press. Pressing it goes
+/// back through the Host to the link's handler, and the next batch carries the new status
+/// line and nothing that did not change.
+#[test]
+fn fr34_hello_runs_through_the_bridge() {
+    let mut host = Host::html(hello::app, bridged);
+    let (shown, link) = {
+        let first = decode_batch(host.rebuild().unwrap()).unwrap();
+        let shown = texts(&first);
+        let text_nodes: Vec<u32> = first
+            .iter()
+            .filter_map(|record| match record {
+                Mutation::Create {
+                    node_id,
+                    widget: WidgetKind::Text,
+                } => Some(*node_id),
+                _ => None,
+            })
+            .collect();
+        let link = first
+            .iter()
+            .find_map(|record| match record {
+                Mutation::SetModifier {
+                    node_id,
+                    modifier: Modifier::Clickable { handler_id },
+                    ..
+                } if text_nodes.contains(node_id) => Some((*node_id, *handler_id)),
+                _ => None,
+            })
+            .expect("the link's text is clickable");
+        (shown, link)
+    };
+    for text in [
+        "Hello, Dioxus",
+        "HTML",
+        "CSS",
+        "Say hello",
+        "Nobody has said hello yet",
+    ] {
+        assert!(
+            shown.iter().any(|shown| shown.trim() == text),
+            "{text:?} is drawn: {shown:?}"
+        );
+    }
+
+    let (node_id, handler_id) = link;
+    let (batch, _) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        })
+        .unwrap();
+    let after = decode_batch(batch).unwrap();
+    assert_eq!(
+        texts(&after),
+        vec!["You said hello once".to_string()],
+        "only the status line changes: {after:#?}"
+    );
 }

@@ -194,8 +194,14 @@
     <h2 id="planned">Not yet</h2>
     <ul>
       <li><strong>Images on screen.</strong> <span class="pill partial">partial</span> The plan names
-        the asset for every image and background, and nothing draws it until the renderer bridge
-        lands (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+        the asset for every image and background, and the bridge sends each to the renderer as an
+        <code>Image</code>; a background gradient or image becomes a box the size of its painting
+        area, one box per tile. This is tested on the Host and not yet confirmed on screen
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong><code>object-fit: fill</code> with a different aspect ratio.</strong>
+        <span class="pill partial">partial</span> It is drawn letterboxed rather than stretched,
+        because compose-rust's <code>Image</code> draws a picture whole and centred
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ul>
 
     <nav class="pagenav" aria-label="Pagination">

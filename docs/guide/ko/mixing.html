@@ -76,10 +76,10 @@
     <p>
       앱은 prelude 하나를 고릅니다. <code>dioxus_compose::html::prelude::*</code> 는 HTML 요소를,
       <code>dioxus_compose::prelude::*</code> 는 위젯을 각각 <code>dioxus_elements</code> 라는 이름으로
-      들여오므로, <code>rsx!</code> 블록 하나는 한쪽만 봅니다. 위젯 경로는 지금 그려지고, HTML 경로는
-      배치와 계획까지 하고 아직 그려지지 않으며
-      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), 섞기는 그 다리 위에
-      올라갑니다.
+      들여오므로, <code>rsx!</code> 블록 하나는 한쪽만 봅니다. 위젯 경로는 지금 그려집니다. HTML 경로는
+      배치하고 계획해 다리를 거쳐 렌더러로 보내며, 다리는 Host 에서 테스트했지만 화면에서는 아직
+      확인하지 않았습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+      섞기는 그 다리 위에 올라갑니다.
     </p>
 
     <h2 id="worlds">노드 하나, 세계 하나</h2>

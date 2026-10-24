@@ -107,7 +107,10 @@
     <h2 id="scheme">밝은 테마와 어두운 테마</h2>
     <p>
       <code>HtmlConfig::color_scheme</code> 이 <code>prefers-color-scheme</code> 에 답합니다. 따로 정하지
-      않으면 <code>ColorScheme::Light</code> 입니다.
+      않으면 <code>ColorScheme::Light</code> 입니다. 앱이 실행되는 동안에는 테마가 정합니다. 핸들러가
+      <code>use_theme().set_color_scheme(ColorScheme::Dark)</code>(또는 <code>Light</code>)를 부르면
+      페이지는 같은 프레임에 스타일이 다시 정해지고, 스타일이 바뀐 상자만 보내집니다. 시스템을 따르는
+      테마에서는 설정한 색 구성표가 그대로입니다.
     </p>
 <figure class="codeblock" data-copy="복사" data-copied="복사됨">
   <figcaption>samples/theme/tests/theme.rs, 줄임</figcaption>
@@ -164,9 +167,10 @@
 
     <h2 id="planned">아직 없는 것</h2>
     <ul>
-      <li><strong>실행 중에 시스템 설정 따라가기.</strong> <span class="pill planned">계획</span> 색
-        구성표는 <code>HtmlDom</code> 을 만들 때 정해집니다. 시스템의 변화를 먼저 아는 것은 렌더러이므로,
-        렌더러가 HTML 화면을 그리게 되면 그 변화를 넘겨줍니다
+      <li><strong>실행 중에 시스템 설정 따라가기.</strong> <span class="pill planned">계획</span>
+        시스템의 변화를 먼저 아는 것은 렌더러이고, 렌더러는 그것을 자기 쪽에서 적용합니다. compose-rust 에는
+        그것을 Host 에 알리는 이벤트가 없으므로, 테마가 시스템을 따르는 HTML 화면은 설정한 색 구성표를
+        유지합니다. 앱이 밝게나 어둡게 바꾼 테마는 따라갑니다(위 참고)
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>CSS 변수를 색 역할로.</strong> <span class="pill planned">계획</span> HTML 과 위젯이
         섞인 화면에서 두 쪽이 한 테마를 따르도록 CSS 변수를 위젯의 색 역할에 잇습니다. 계획에는 그 자리가
