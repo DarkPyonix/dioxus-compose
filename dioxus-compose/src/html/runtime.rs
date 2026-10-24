@@ -33,14 +33,21 @@ use std::future::Future;
 use std::pin::pin;
 use std::task::{Context, Poll};
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use compose_rust::animation::{AnimationEventSubscription, on_animation_event};
 use compose_rust::protocol::{HostEvent, ProtocolError};
-use compose_rust::schema::{ColorScheme as ThemeScheme, EventPayload, Key as WireKey};
-use compose_rust::{Batch, Runtime};
+use compose_rust::schema::{
+    AnimationEventKind, ColorScheme as ThemeScheme, EventPayload, Key as WireKey,
+};
+use compose_rust::{AnimationMoment, Batch, Runtime};
 use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Modifiers};
 
 use crate::dom::{HtmlConfig, HtmlDom};
 use crate::html::{ColorScheme, NodeId};
+use crate::paint::animate;
 use crate::paint::bridge::{BridgeEvent, PlanBridge};
 use crate::paint::plan::LiteralColours;
 
@@ -63,6 +70,11 @@ pub struct HtmlRuntime {
     /// The scheme the configuration names, for an application whose theme follows the
     /// system.
     configured_scheme: ColorScheme,
+    /// The animation moments the renderer reported since the last frame, which the next
+    /// frame delivers to the page before it renders.
+    moments: Rc<RefCell<Vec<AnimationMoment>>>,
+    /// Keeps the registration for animation events for as long as the runtime lives.
+    _moments: AnimationEventSubscription,
 }
 
 impl HtmlRuntime {
@@ -72,7 +84,14 @@ impl HtmlRuntime {
 
     pub fn with_config(app: fn() -> Element, config: HtmlConfig) -> Self {
         let configured_scheme = config.color_scheme;
+        let moments: Rc<RefCell<Vec<AnimationMoment>>> = Rc::default();
+        let sink = moments.clone();
+        let subscription = on_animation_event(Rc::new(move |moment: AnimationMoment| {
+            sink.borrow_mut().push(moment)
+        }));
         Self {
+            moments,
+            _moments: subscription,
             focused: None,
             configured_scheme,
             dom: HtmlDom::with_config(app, config),
@@ -112,6 +131,43 @@ impl HtmlRuntime {
         };
         self.bridge
             .apply(plan, viewport, &self.dom, &mut self.batch);
+    }
+
+    /// Delivers the animation moments the renderer reported to the page, as the DOM events a
+    /// browser sends for them: `animationstart`, `animationiteration` and `animationend`
+    /// for a `@keyframes` animation, `transitionend` for a transition. The renderer reports
+    /// only the moments the bridge asked for, which are the ones the page listens to.
+    fn deliver_moments(&mut self) {
+        let moments = std::mem::take(&mut *self.moments.borrow_mut());
+        for moment in moments {
+            let ended = moment.kind == AnimationEventKind::End;
+            let Some(target) =
+                self.bridge
+                    .animation_target(moment.node_id, moment.animation_id, ended)
+            else {
+                continue;
+            };
+            let elapsed = moment.elapsed_ms / 1000.0;
+            match (&target.name, moment.kind) {
+                (Some(name), AnimationEventKind::Active) => {
+                    self.dom
+                        .animation_event(target.node, "animationstart", name, elapsed);
+                }
+                (Some(name), AnimationEventKind::Iteration) => {
+                    self.dom
+                        .animation_event(target.node, "animationiteration", name, elapsed);
+                }
+                (Some(name), AnimationEventKind::End) => {
+                    self.dom
+                        .animation_event(target.node, "animationend", name, elapsed);
+                }
+                (None, AnimationEventKind::End) => {
+                    let property = animate::css_name(target.property);
+                    self.dom.transition_event(target.node, property, elapsed);
+                }
+                _ => {}
+            }
+        }
     }
 
     /// The user did something in the field `node`, so it has the focus: `focus`, if the
@@ -173,6 +229,7 @@ impl Runtime for HtmlRuntime {
     }
 
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
+        self.deliver_moments();
         self.dom.render();
         self.draw();
     }

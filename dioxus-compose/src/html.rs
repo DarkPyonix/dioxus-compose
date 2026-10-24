@@ -79,7 +79,9 @@ pub use crate::layout::measure::{
     OverflowWrap, ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics,
     TextStyle, TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint, WordBreak,
 };
-pub use crate::paint::bridge::{BridgeEvent, BridgeHandler, ClickTargets, PlanBridge, widget_for};
+pub use crate::paint::bridge::{
+    AnimationTarget, BridgeEvent, BridgeHandler, ClickTargets, PlanBridge, widget_for,
+};
 pub use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
     BorderLine, BoxShadow, Corners, DisplayList, DisplayListDiff, Easing, FillMode, GradientStop,
