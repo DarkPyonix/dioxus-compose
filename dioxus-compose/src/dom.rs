@@ -780,6 +780,12 @@ impl HtmlDom {
         self.color_scheme = scheme;
     }
 
+    /// Tells the text measurer that what its answers depend on changed, so it drops the
+    /// answers it kept and the next layout measures again.
+    pub fn invalidate_text_measurements(&mut self) {
+        self.measurer.invalidate();
+    }
+
     /// Replaces the text measurer; the next layout uses it.
     pub fn set_measurer(&mut self, measurer: Box<dyn TextMeasurer>) {
         self.measurer = measurer;

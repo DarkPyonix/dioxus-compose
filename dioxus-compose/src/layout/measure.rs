@@ -215,6 +215,10 @@ pub trait TextMeasurer {
     fn settle(&mut self) -> bool {
         false
     }
+
+    /// Called when what the measurer's answers depend on changed (the theme, the design
+    /// system), so answers it kept are stale. The default keeps nothing.
+    fn invalidate(&mut self) {}
 }
 
 impl<F> TextMeasurer for F

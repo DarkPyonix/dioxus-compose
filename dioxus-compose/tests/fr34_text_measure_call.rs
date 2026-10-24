@@ -221,3 +221,36 @@ fn fr34_a_settled_text_is_not_asked_again() {
         "{asked} text questions for six labels: the answers were not kept between passes"
     );
 }
+
+#[test]
+fn fr34_a_theme_change_measures_the_text_again() {
+    use dioxus_compose::schema::ColorScheme;
+    use dioxus_compose::theme::{current_theme, set_theme};
+
+    install();
+    reset_window_size();
+    let mut host = Host::html(page::labels, config);
+    host.rebuild().unwrap();
+    let settled = CALLS.with(Cell::get);
+    host.render_frame(0).unwrap();
+    assert_eq!(
+        CALLS.with(Cell::get),
+        settled,
+        "a frame under the same theme asked the renderer again"
+    );
+
+    let theme = current_theme();
+    set_theme(dioxus_compose::schema::Theme {
+        color_scheme: if theme.color_scheme == ColorScheme::Dark {
+            ColorScheme::Light
+        } else {
+            ColorScheme::Dark
+        },
+        ..theme
+    });
+    host.render_frame(0).unwrap();
+    assert!(
+        CALLS.with(Cell::get) > settled,
+        "the theme changed and the text was not measured again"
+    );
+}

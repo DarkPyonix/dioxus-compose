@@ -74,6 +74,9 @@ pub struct HtmlRuntime {
     /// The scheme the configuration names, for an application whose theme follows the
     /// system.
     configured_scheme: ColorScheme,
+    /// The theme and design system the text sizes were measured under. A change of either
+    /// makes the renderer's earlier answers wrong.
+    measured_under: Option<(compose_rust::schema::Theme, compose_rust::schema::DesignSystem)>,
     /// The animation moments the renderer reported since the last frame, which the next
     /// frame delivers to the page before it renders.
     moments: Rc<RefCell<Vec<AnimationMoment>>>,
@@ -120,6 +123,7 @@ impl HtmlRuntime {
         Self {
             owner,
             moments,
+            measured_under: None,
             _moments: subscription,
             focused: None,
             configured_scheme,
@@ -169,6 +173,13 @@ impl HtmlRuntime {
             ThemeScheme::FollowSystem => self.configured_scheme,
         };
         self.dom.set_color_scheme(scheme);
+        let under = (
+            compose_rust::theme::current_theme(),
+            compose_rust::design_system(),
+        );
+        if self.measured_under.replace(under) != Some(under) {
+            self.dom.invalidate_text_measurements();
+        }
         // One CSS pixel is one dp, so the page is laid out at a scale of one. The renderer
         // turns dp into device pixels.
         self.dom.layout(viewport.0, viewport.1, 1.0);

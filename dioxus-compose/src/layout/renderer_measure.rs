@@ -162,6 +162,9 @@ fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
             OverflowWrap::BreakWord => WireOverflowWrap::BreakWord,
         }),
         // The page's sizes are CSS pixels, which the system's font scale does not enlarge.
+        // A page zoom plugs in where the requests are built in `settle`: the zoom is set on
+        // `self.requests` before the questions are added, the cache key gains the zoom, and
+        // a change of zoom calls `clear`.
         absolute_size: true,
         ..WireStyle::default()
     }
@@ -183,6 +186,10 @@ impl TextMeasurer for RendererMeasurer {
             });
         }
         provisional
+    }
+
+    fn invalidate(&mut self) {
+        self.clear();
     }
 
     fn settle(&mut self) -> bool {
