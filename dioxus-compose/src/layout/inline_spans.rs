@@ -211,7 +211,7 @@ pub(crate) fn build(
     let transform_of = |segment: &Segment| helds.get(&segment.holder).map(|held| held.transform);
     let first = segments
         .first()
-        .and_then(|segment| transform_of(segment))
+        .and_then(&transform_of)
         .unwrap_or(base.transform);
     let uniform = segments
         .iter()
