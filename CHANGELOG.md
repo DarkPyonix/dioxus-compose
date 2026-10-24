@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Transforms and renderer-played animations from rsx
+
+`AbsoluteBox` takes a CSS `transform` matrix with its `transform_origin`, or a Compose style
+`graphics_layer` (rotation, scale, translation and opacity). `animate_float_as_state`,
+`animate_color_as_state` and `animate_offset_as_state` give an `AbsoluteBox` an opacity, a
+background or a translation that the renderer animates to whenever the target changes: a
+change is one `StartAnimation` record, and the component is not rendered again while it
+plays. `use_reduced_motion` reads the platform's reduced motion setting and re-renders when
+it changes, and `use_animation_event` hears the animation events a screen asked for. These
+need compose-rust's transform and animation records, so compose-rust is pinned at the
+commit that has them (compose-rust #83).
+
 ### HTML and CSS screens reach the renderer
 
 An HTML app is launched the way a widget app is: `dioxus_compose::html::launch(app)`, or

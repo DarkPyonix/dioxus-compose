@@ -26,6 +26,7 @@ mod extensions;
 mod hooks;
 pub mod host;
 pub mod html;
+mod html_view;
 mod layout;
 mod paint;
 pub mod renderer;
@@ -40,9 +41,12 @@ pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use hooks::{
-    CodeEditorHandle, use_code_editor, use_design_system, use_node_size,
-    use_notification_activated, use_notification_permission, use_theme, use_window_size,
+    Animated, CodeEditorHandle, animate_color_as_state, animate_float_as_state,
+    animate_offset_as_state, use_animation_event, use_code_editor, use_design_system,
+    use_node_size, use_notification_activated, use_notification_permission,
+    use_reduced_motion, use_theme, use_window_size,
 };
+pub use html_view::HtmlView;
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
@@ -135,7 +139,7 @@ pub mod prelude {
         AbsoluteBox, Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant,
         Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, DatePicker,
         DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop,
-        FileDropTarget, FloatingAction, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
         LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, MaterialRole, Menu,
         Message, MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
         ProgressIndicator, Props, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn,
@@ -232,6 +236,12 @@ pub mod elements {
             pub const shadow: AttributeDescription = ("shadow", None, false);
             pub const clip: AttributeDescription = ("clip", None, false);
             pub const alpha: AttributeDescription = ("alpha", None, false);
+            pub const transform: AttributeDescription = ("transform", None, false);
+            // Values the Renderer animates to on its own clock whenever they change.
+            pub const animated_alpha: AttributeDescription = ("animated_alpha", None, false);
+            pub const animated_background: AttributeDescription =
+                ("animated_background", None, false);
+            pub const animated_offset: AttributeDescription = ("animated_offset", None, false);
         };
     }
 

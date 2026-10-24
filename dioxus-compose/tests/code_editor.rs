@@ -398,6 +398,39 @@ fn fr38_writing_a_change_back_sends_the_text_the_editor_already_holds() {
     );
 }
 
+fn overlays_app() -> Element {
+    rsx! {
+        CodeEditor {
+            text: "let x = 1;\n",
+            decorations: Decorations::new([
+                Decoration::code_lens(0, 0, "Run | Debug", 7),
+                Decoration::ghost_text(0, Position::new(0, 10), " // one", 8),
+                Decoration::hover_anchor(0, CodeRange::of(0, 4, 0, 5), 9),
+            ]),
+        }
+    }
+}
+
+/// CodeLens zones and ghost text are decorations, so they reach the Renderer through the
+/// `decorations` list with their kind, anchor, text and id intact.
+#[test]
+fn fr38_code_lens_and_ghost_text_travel_in_the_decoration_list() {
+    let mut host = Host::new(overlays_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    let Some(Value::Bytes(bytes)) = prop_of(&batch, editor, PropertyKind::Decorations) else {
+        panic!("the decorations did not travel as bytes");
+    };
+    let list = Decorations::from_bytes(bytes).decorations();
+    assert_eq!(list.len(), 3);
+    assert_eq!(list[0], Decoration::code_lens(0, 0, "Run | Debug", 7));
+    assert_eq!(
+        list[1],
+        Decoration::ghost_text(0, Position::new(0, 10), " // one", 8)
+    );
+    assert_eq!(list[2].id, 9);
+}
+
 fn detached_app() -> Element {
     let handle = use_code_editor();
     rsx! {

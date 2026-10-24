@@ -325,6 +325,63 @@ fn fr34_1_translation_folds_into_the_place_and_3d_is_skipped_with_a_warning() {
     );
 }
 
+const BESIDE_2D: &str = r#"
+.box { position: absolute; width: 100px; height: 50px; background-color: rgb(51, 102, 153); }
+#tilt { left: 100px; top: 100px; transform: rotateX(45deg); }
+#turn { left: 300px; top: 100px; transform: rotate(90deg); }
+#move { left: 500px; top: 100px; transform: translate(20px, 0px); }
+"#;
+
+fn beside_2d() -> Element {
+    rsx! {
+        div { id: "tilt", class: "box" }
+        div { id: "turn", class: "box" }
+        div { id: "move", class: "box" }
+    }
+}
+
+/// A 3D transform on one element is skipped with a warning (the layout writes it to stderr
+/// and lists it in `skipped_transforms`), and the 2D transforms beside it still apply. The
+/// stderr line itself is not asserted here, since the list is what a test can read.
+///
+/// - `#tilt` is drawn flat at (100, 100) with no transform and is the only skipped entry.
+/// - `#turn` is 100 by 50 at (300, 100), centre (350, 125), turned a quarter turn, so its
+///   corners are (375, 75), (375, 175), (325, 175) and (325, 75).
+/// - `#move` is translated 20px, which only moves it to x = 520 and adds no transform.
+#[test]
+fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() {
+    let mut dom = HtmlDom::with_config(beside_2d, config(BESIDE_2D));
+    let list = dom.layout(800.0, 600.0, 1.0).clone();
+
+    let tilt = entry(&dom, &list, "tilt");
+    assert!(tilt.transform.is_none(), "rotateX is not drawn in 2D");
+    assert_eq!(
+        (tilt.rect.x, tilt.rect.y, tilt.rect.width, tilt.rect.height),
+        (100.0, 100.0, 100.0, 50.0)
+    );
+
+    let skipped = &list.skipped_transforms;
+    assert_eq!(skipped.len(), 1, "{skipped:#?}");
+    assert_eq!(skipped[0].node, tilt.node);
+    assert_eq!(skipped[0].tag, "div");
+    assert!(skipped[0].transform.contains("rotateX(45deg)"), "{skipped:#?}");
+
+    let turn = entry(&dom, &list, "turn");
+    assert_points(
+        &turn
+            .transform
+            .as_ref()
+            .expect("#turn is rotated in 2D")
+            .corners(&turn.rect),
+        &[(375.0, 75.0), (375.0, 175.0), (325.0, 175.0), (325.0, 75.0)],
+        "#turn",
+    );
+
+    let moved = entry(&dom, &list, "move");
+    assert!(moved.transform.is_none(), "a translation folds into the place");
+    assert_eq!((moved.rect.x, moved.rect.y), (520.0, 100.0));
+}
+
 fn flow() -> Element {
     rsx! {
         div { id: "a", style: "width: 100px; height: 50px; transform: scale(2) rotate(10deg)" }

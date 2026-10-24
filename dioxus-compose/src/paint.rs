@@ -7,6 +7,7 @@
 //! changed after that. [`transform`] turns a computed CSS transform into a matrix, and
 //! [`motion`] reads the transitions and animations a document declares.
 
+pub(crate) mod animate;
 pub(crate) mod bridge;
 pub(crate) mod build;
 pub(crate) mod display_list;

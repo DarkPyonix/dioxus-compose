@@ -324,7 +324,7 @@ dependencies = [
 [[package]]
 name = "compose-rust"
 version = "0.0.1"
-source = "git+https://github.com/DarkPyonix/compose-rust?rev=444382259ce8943a7249d0ff16d42c9e4e6ff299#444382259ce8943a7249d0ff16d42c9e4e6ff299"
+source = "git+https://github.com/DarkPyonix/compose-rust?rev=d8205850bc032b40c418b7283787afd99ab84e4c#d8205850bc032b40c418b7283787afd99ab84e4c"
 dependencies = [
  "jni",
 ]
@@ -2041,6 +2041,16 @@ dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
  "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-kanban"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-core",
+ "dioxus-hooks",
+ "dioxus-signals",
 ]
 
 [[package]]

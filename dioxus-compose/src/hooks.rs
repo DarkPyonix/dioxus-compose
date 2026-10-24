@@ -263,3 +263,70 @@ pub(crate) fn drain_edits(mut emit: impl FnMut(&PendingEdit)) {
 pub(crate) fn reset_edits() {
     EDITS.with_borrow_mut(Vec::clear);
 }
+
+/// Whether the platform asks for reduced motion, and a re-render when that changes.
+///
+/// The Renderer reports it once after start and again only when the setting changes.
+/// Nothing is reduced on the application's behalf: an animation is played as it was
+/// described, so a screen that should hold still when asked reads this and asks for less.
+pub fn use_reduced_motion() -> compose_rust::ReducedMotion {
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::animation::subscribe_reduced_motion(
+            dioxus_core::schedule_update(),
+        ))
+    });
+    compose_rust::reduced_motion()
+}
+
+/// Runs `handler` for every event the Renderer reports about an animation it is playing.
+///
+/// Only the kinds an animation asked for are ever reported, so an application that asks
+/// for none hears nothing and pays nothing while its animations play.
+pub fn use_animation_event(handler: impl FnMut(compose_rust::AnimationMoment) + 'static) {
+    let callback = dioxus_hooks::use_callback(handler);
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::animation::on_animation_event(Rc::new(
+            move |moment: compose_rust::AnimationMoment| callback.call(moment),
+        )))
+    });
+}
+
+/// A value the Renderer animates to whenever it changes: what
+/// [`animate_float_as_state`] returns. [`value`](Self::value) is the target, because the
+/// value in between is the Renderer's and is never sent back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Animated<T> {
+    pub target: T,
+    pub spec: compose_rust::AnimationSpec,
+}
+
+impl<T: Copy> Animated<T> {
+    pub fn value(&self) -> T {
+        self.target
+    }
+}
+
+/// An opacity the Renderer animates to whenever `target` changes, given to an
+/// `AbsoluteBox` as `animated_alpha`. A change is one `StartAnimation` and the Renderer
+/// plays it on its own clock: this component is not rendered again while it plays.
+pub fn animate_float_as_state(target: f32, spec: compose_rust::AnimationSpec) -> Animated<f32> {
+    Animated { target, spec }
+}
+
+/// A background the Renderer animates to whenever `target` changes, given to an
+/// `AbsoluteBox` as `animated_background`.
+pub fn animate_color_as_state(
+    target: compose_rust::Paint,
+    spec: compose_rust::AnimationSpec,
+) -> Animated<compose_rust::Paint> {
+    Animated { target, spec }
+}
+
+/// A translation in dp the Renderer animates to whenever `target` changes, given to an
+/// `AbsoluteBox` as `animated_offset`. Drawn as a transform, so the layout does not move.
+pub fn animate_offset_as_state(
+    target: (f32, f32),
+    spec: compose_rust::AnimationSpec,
+) -> Animated<(f32, f32)> {
+    Animated { target, spec }
+}
