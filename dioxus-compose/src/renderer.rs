@@ -1000,10 +1000,10 @@ impl WriteMutations for ComposeRenderer {
             // of the handle is addressed to whichever node carries it now.
             if name == "editor" {
                 self.editors.retain(|_, node| *node != node_id);
-                if let AttributeValue::Int(token) = value {
-                    if let Ok(token) = u32::try_from(*token) {
-                        self.editors.insert(token, node_id);
-                    }
+                if let AttributeValue::Int(token) = value
+                    && let Ok(token) = u32::try_from(*token)
+                {
+                    self.editors.insert(token, node_id);
                 }
                 return;
             }

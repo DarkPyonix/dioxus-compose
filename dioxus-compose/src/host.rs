@@ -168,60 +168,6 @@ impl Runtime for DioxusRuntime {
             EventPayload::DecorationActivated { decoration } => {
                 Event::new(Rc::new(decoration), true).into_any()
             }
-            EventPayload::CodeChanged {
-                version,
-                start_line,
-                start_column,
-                end_line,
-                end_column,
-                text,
-            } => Event::new(
-                Rc::new(CodeChange {
-                    version,
-                    range: CodeRange::of(start_line, start_column, end_line, end_column),
-                    text: text.to_owned(),
-                }),
-                true,
-            )
-            .into_any(),
-            EventPayload::CodeEditRejected {
-                request_id,
-                base_version,
-                current_version,
-                start_line,
-                start_column,
-                end_line,
-                end_column,
-            } => Event::new(
-                Rc::new(EditRejected {
-                    request_id,
-                    base_version,
-                    current_version,
-                    range: CodeRange::of(start_line, start_column, end_line, end_column),
-                }),
-                true,
-            )
-            .into_any(),
-            EventPayload::CodeHovered {
-                decoration,
-                line,
-                column,
-                phase,
-            } => Event::new(
-                Rc::new(CodeHover {
-                    decoration: (decoration != 0).then_some(decoration),
-                    position: Position::new(line, column),
-                    phase,
-                }),
-                true,
-            )
-            .into_any(),
-            EventPayload::CodeSaveRequested { version } => {
-                Event::new(Rc::new(SaveRequest { version }), true).into_any()
-            }
-            EventPayload::DecorationActivated { decoration } => {
-                Event::new(Rc::new(decoration), true).into_any()
-            }
             // The Host answers these itself and never hands them to a runtime. One that
             // arrives here was addressed to a handler, which none of them can be.
             EventPayload::ProtocolError { .. }
