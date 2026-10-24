@@ -140,6 +140,19 @@ pub struct Border {
     pub lines: Sides<BorderLine>,
 }
 
+/// An `outline`: a line drawn around the border box, outside it, that takes no room in
+/// layout.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Outline {
+    /// Width in CSS pixels.
+    pub width: f32,
+    /// `outline-offset`: the gap between the border box and the inner edge of the line.
+    /// Negative moves the line inside the border box.
+    pub offset: f32,
+    pub color: Rgba,
+    pub line: BorderLine,
+}
+
 /// One `box-shadow` layer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BoxShadow {
@@ -806,6 +819,12 @@ pub struct NodeEntry {
     /// over the background colour.
     pub backgrounds: Vec<BackgroundLayer>,
     pub border: Option<Border>,
+    /// `None` when the box has no visible `outline`.
+    pub outline: Option<Outline>,
+    /// Whether the box can be the target of a pointer: `pointer-events` is anything but
+    /// `none`. A box that is not skips the hit test, and boxes inside it that set
+    /// `pointer-events: auto` are still hit.
+    pub pointer_events: bool,
     /// `None` when every corner is square. Radii are already reduced the way CSS reduces
     /// radii that would overlap.
     pub radii: Option<Corners<Radius>>,
@@ -969,7 +988,7 @@ impl DisplayList {
             (dx, dy)
         };
         for entry in self.entries.iter().rev() {
-            if !entry.visible {
+            if !entry.visible || !entry.pointer_events {
                 continue;
             }
             let (dx, dy) = accumulated(entry.scroll_parent);

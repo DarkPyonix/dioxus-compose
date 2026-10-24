@@ -35,7 +35,7 @@ use crate::layout::renderer_measure::RendererMeasurer;
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
-use crate::paint::display_list::{DisplayList, DisplayListDiff, SkippedTransform};
+use crate::paint::display_list::{DisplayList, DisplayListDiff, Rect, Sides, SkippedTransform};
 use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
 };
@@ -47,6 +47,67 @@ use writer::{DomWriter, WriterState, element_name};
 /// renderer's dropdown lists them.
 pub(crate) const FORM_CONTROLS_CSS: &str =
     "select { display: inline-block; } select option, select optgroup { display: none; }";
+
+/// Replaces each `env()` that names a window variable the Host knows with its value in
+/// pixels: `safe-area-inset-*` when `insets` is set and `titlebar-area-*` when `titlebar` is
+/// set. Any other `env()` is left as written, with the ones inside its fallback rewritten.
+pub(crate) fn rewrite_env(css: &str, insets: Option<Sides<f32>>, titlebar: Option<Rect>) -> String {
+    if insets.is_none() && titlebar.is_none() {
+        return css.to_string();
+    }
+    let lower = css.to_ascii_lowercase();
+    let mut out = String::with_capacity(css.len());
+    let mut at = 0;
+    while let Some(found) = lower[at..].find("env(") {
+        let start = at + found;
+        let args = start + 4;
+        // The matching close parenthesis, and the first comma outside nested ones.
+        let mut depth = 1;
+        let mut comma = None;
+        let mut close = None;
+        for (index, byte) in lower.as_bytes()[args..].iter().enumerate() {
+            match byte {
+                b'(' => depth += 1,
+                b')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(args + index);
+                        break;
+                    }
+                }
+                b',' if depth == 1 && comma.is_none() => comma = Some(args + index),
+                _ => {}
+            }
+        }
+        let value = close.and_then(|close| {
+            let name = lower[args..comma.unwrap_or(close)].trim();
+            match name {
+                "safe-area-inset-top" => insets.map(|sides| sides.top),
+                "safe-area-inset-right" => insets.map(|sides| sides.right),
+                "safe-area-inset-bottom" => insets.map(|sides| sides.bottom),
+                "safe-area-inset-left" => insets.map(|sides| sides.left),
+                "titlebar-area-x" => titlebar.map(|area| area.x),
+                "titlebar-area-y" => titlebar.map(|area| area.y),
+                "titlebar-area-width" => titlebar.map(|area| area.width),
+                "titlebar-area-height" => titlebar.map(|area| area.height),
+                _ => None,
+            }
+        });
+        match (value, close) {
+            (Some(value), Some(close)) => {
+                out.push_str(&css[at..start]);
+                out.push_str(&format!("{value}px"));
+                at = close + 1;
+            }
+            _ => {
+                out.push_str(&css[at..args]);
+                at = args;
+            }
+        }
+    }
+    out.push_str(&css[at..]);
+    out
+}
 
 /// How an [`HtmlDom`] is set up.
 pub struct HtmlConfig {
@@ -74,6 +135,16 @@ pub struct HtmlConfig {
     /// not, since the style engine has no such media feature of its own. Only
     /// [`HtmlConfig::stylesheets`] are rewritten.
     pub reduced_motion: bool,
+    /// The window's safe-area insets in CSS pixels, which `env(safe-area-inset-top)`,
+    /// `-right`, `-bottom` and `-left` read. Author stylesheets are rewritten so that each
+    /// such `env()` becomes the value. When `None` the style engine's own value applies,
+    /// which is zero.
+    pub safe_area_insets: Option<Sides<f32>>,
+    /// The part of the window's title bar the page may use, in CSS pixels, which
+    /// `env(titlebar-area-x)`, `-y`, `-width` and `-height` read. The style engine does not
+    /// know these names, so author stylesheets are rewritten. When `None` the fallback of
+    /// each `env()` is used, as a browser without a title bar area does.
+    pub titlebar_area: Option<Rect>,
 }
 
 impl Default for HtmlConfig {
@@ -86,6 +157,8 @@ impl Default for HtmlConfig {
             base_url: None,
             images: None,
             reduced_motion: false,
+            safe_area_insets: None,
+            titlebar_area: None,
         }
     }
 }
@@ -149,6 +222,7 @@ impl HtmlDom {
             for css in &config.stylesheets {
                 let style = mutator.create_element(element_name("style", None), Vec::new());
                 let css = rewrite_reduced_motion(css, config.reduced_motion);
+                let css = rewrite_env(&css, config.safe_area_insets, config.titlebar_area);
                 let text = mutator.create_text_node(&css);
                 mutator.append_children(style, &[text]);
                 mutator.append_children(head, &[style]);
