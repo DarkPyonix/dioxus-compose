@@ -168,7 +168,7 @@ fn fr37_random_documents_never_panic_and_stream_like_they_parse() {
         // The code paths that run on the drawing side, fed the same text.
         let _ = ansi::clean(&text, 20);
         let _ = code::diff_spans(&text);
-        if cases % 25 == 0 {
+        if cases.is_multiple_of(25) {
             apps::reset(&text, quiet());
             let _ = Screen::new(apps::one_shot);
         }
