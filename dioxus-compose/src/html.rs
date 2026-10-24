@@ -16,9 +16,10 @@
 //! application's [`ImageResolver`]: it names the asset for a URL when the plan is built,
 //! and may tell layout an image's natural size. Without one, an image draws nothing.
 //!
-//! Text is sized by a [`TextMeasurer`] the caller supplies, so the engine that draws the
-//! text can also be the one that decides how much room it takes. [`ParleyMeasurer`] is the
-//! default.
+//! Text is sized by a [`TextMeasurer`], so the engine that draws the text can also be the
+//! one that decides how much room it takes. The default is [`RendererMeasurer`], which asks
+//! the renderer with the measure call, once per layout pass for every run the pass needs,
+//! and answers with [`ParleyMeasurer`] where no renderer is there to ask.
 //!
 //! JavaScript is never run. A `<script>` element is an ordinary element that the
 //! user-agent stylesheet hides.
@@ -79,6 +80,7 @@ pub use crate::layout::measure::{
     OverflowWrap, ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics,
     TextStyle, TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint, WordBreak,
 };
+pub use crate::layout::renderer_measure::RendererMeasurer;
 pub use crate::paint::bridge::{
     AnimationTarget, BridgeEvent, BridgeHandler, ClickTargets, PlanBridge, widget_for,
 };

@@ -207,6 +207,18 @@ pub struct TextMetrics {
 /// is given its final one). The answer must depend only on the request.
 pub trait TextMeasurer {
     fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics;
+
+    /// Called when a layout pass is over. A measurer that cannot answer a question while
+    /// the pass runs (it answers with an estimate and keeps the question) resolves what it
+    /// kept here, all at once, and returns `true` when its answers changed, so the layout
+    /// runs again with them. The default has nothing to resolve.
+    fn settle(&mut self) -> bool {
+        false
+    }
+
+    /// Called when what the measurer's answers depend on changed (the theme, the design
+    /// system), so answers it kept are stale. The default keeps nothing.
+    fn invalidate(&mut self) {}
 }
 
 impl<F> TextMeasurer for F
