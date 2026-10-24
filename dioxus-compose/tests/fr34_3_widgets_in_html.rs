@@ -7,8 +7,8 @@ use dioxus_compose::Host;
 use dioxus_compose::boundary::{RendererApi, install_renderer_api};
 use dioxus_compose::html::HtmlConfig;
 use dioxus_compose::measure::{MEASURE_RECORD_LEN, MeasureResult, RESULT_OK};
-use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch};
-use dioxus_compose::schema::{EventPayload, Modifier};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::schema::{EventPayload, Modifier, PropertyKind};
 use dioxus_compose::window::reset_window_size;
 
 /// The size the test renderer reports for every node it is asked about.
@@ -163,24 +163,62 @@ fn fr34_3_widget_is_placed_at_the_offset_the_page_computed() {
     let mut host = host();
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
     let parent = widget_parent(&first);
-    let first_modifiers = modifiers_of(&first, parent);
     let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
-    let placed = first_modifiers
-        .into_iter()
-        .chain(modifiers_of(&second, parent))
-        .any(|modifier| matches!(modifier, Modifier::Offset { y, .. } if y == 30.0));
-    assert!(placed, "the box is not below the 30px block before it");
+    // A box is placed inside its container, so the widget's box sits at the top of the
+    // wrapping div, and the wrapping div is the one 30px below the block before it.
+    let container = first
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Insert {
+                parent_id, node_id, ..
+            } if *node_id == parent => Some(*parent_id),
+            _ => None,
+        })
+        .expect("the widget's box is not inside a container");
+    let offsets = |node| {
+        modifiers_of(&first, node)
+            .into_iter()
+            .chain(modifiers_of(&second, node))
+            .filter_map(|modifier| match modifier {
+                Modifier::Offset { y, .. } => Some(y),
+                _ => None,
+            })
+            .collect::<Vec<f32>>()
+    };
+    assert!(
+        offsets(container).contains(&30.0),
+        "the wrapping div is not below the 30px block before it: {:?}",
+        offsets(container),
+    );
+    assert!(
+        offsets(parent).iter().all(|y| *y == 0.0),
+        "the widget's box is not at the top of the wrapping div: {:?}",
+        offsets(parent),
+    );
 }
 
-/// The handler ids the page's own boxes are given are small; a widget tree's start at
-/// `1 << 48`.
-fn clickable(mutations: &[Mutation<'_>], widget: bool) -> Option<(u32, u64)> {
+/// The click handler of the widget's button, which a widget tree sends as the `OnClick`
+/// property with a handler id from its own range (they start at `1 << 48`).
+fn widget_click(mutations: &[Mutation<'_>]) -> Option<(u32, u64)> {
+    mutations.iter().find_map(|mutation| match mutation {
+        Mutation::SetProp {
+            node_id,
+            property: PropertyKind::OnClick,
+            value: PropertyValue::Integer(handler_id),
+        } if *handler_id >= 1 << 48 => Some((*node_id, *handler_id as u64)),
+        _ => None,
+    })
+}
+
+/// The click handler of a box the page drew, which the HTML path sends as a `Clickable`
+/// modifier with a small handler id.
+fn page_click(mutations: &[Mutation<'_>]) -> Option<(u32, u64)> {
     mutations.iter().find_map(|mutation| match mutation {
         Mutation::SetModifier {
             node_id,
             modifier: Modifier::Clickable { handler_id },
             ..
-        } if (*handler_id >= 1 << 48) == widget => Some((*node_id, *handler_id)),
+        } if *handler_id < 1 << 40 => Some((*node_id, *handler_id)),
         _ => None,
     })
 }
@@ -190,9 +228,8 @@ fn fr34_3_click_on_a_widget_runs_its_handler_then_the_wrapper_once() {
     let mut host = host();
     LOG.with(|log| log.borrow_mut().clear());
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
-    let (button, handler) = clickable(&first, true).expect("the widget's button is not clickable");
-    let (wrapper, wrapper_handler) =
-        clickable(&first, false).expect("the wrapping div is not clickable");
+    let (button, handler) = widget_click(&first).expect("the widget's button has no click handler");
+    let (wrapper, wrapper_handler) = page_click(&first).expect("the wrapping div is not clickable");
 
     // The renderer gives a press to the widget first. The widget does not consume it, so
     // the renderer offers it to the clickable box around it.

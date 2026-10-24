@@ -26,6 +26,16 @@ extern "C" fn never_run() -> c_int {
 }
 
 /// Installs the counting renderer and takes the frame state, counting from zero.
+/// The renderer never measures in these tests, so the callback is never called.
+unsafe extern "C" fn no_measure(
+    _text: *const u8,
+    _len: u32,
+    _style: u32,
+    _out: *mut compose_rust::measure::MeasureResult,
+) -> i32 {
+    STATUS_OK
+}
+
 fn frame_state() -> MutexGuard<'static, ()> {
     let guard = FRAME_STATE
         .lock()
@@ -33,7 +43,7 @@ fn frame_state() -> MutexGuard<'static, ()> {
     let _ = install_renderer_api(RendererApi {
         run: never_run,
         request_frame: count_request,
-        measure: dioxus_compose::measure::fake_measure,
+        measure: no_measure,
     });
     FRAME_REQUESTS.store(0, Ordering::Release);
     guard

@@ -7,6 +7,7 @@
 
 use crate::html::HtmlConfig;
 use crate::renderer::ComposeRenderer;
+use compose_rust::code::{CodeChange, CodeHover, CodeRange, EditRejected, Position, SaveRequest};
 use compose_rust::protocol::{HostEvent, ProtocolError};
 use compose_rust::schema::{EventPayload, LoopMode, Theme, Window};
 use compose_rust::{Batch, FileDrop, KeyEvent, RangeRequest, Runtime};
@@ -24,10 +25,34 @@ pub struct DioxusRuntime {
 
 impl DioxusRuntime {
     pub fn new(app: fn() -> Element) -> Self {
+        // Edits queued against an editor of a runtime that is going away name nothing in
+        // this one.
+        crate::hooks::reset_edits();
         Self {
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
         }
+    }
+}
+
+impl DioxusRuntime {
+    /// Writes the edits asked of code editor handles, after the tree, so an editor created
+    /// in this same call already exists when its first edit arrives. A handle no editor
+    /// carries names nothing, and its edit is dropped here rather than sent to a node the
+    /// Renderer would have to report as unknown.
+    fn flush_code_edits(&mut self) {
+        let renderer = &mut self.renderer;
+        crate::hooks::drain_edits(|edit| {
+            if let Some(node_id) = renderer.editor_node(edit.token) {
+                renderer.edit_code(
+                    node_id,
+                    edit.request_id,
+                    edit.base_version,
+                    edit.range,
+                    &edit.text,
+                );
+            }
+        });
     }
 }
 
@@ -42,11 +67,13 @@ impl Runtime for DioxusRuntime {
 
     fn rebuild(&mut self) {
         self.dom.rebuild(&mut self.renderer);
+        self.flush_code_edits();
         crate::html_view::draw_islands(&mut self.renderer);
     }
 
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render_immediate(&mut self.renderer);
+        self.flush_code_edits();
         crate::html_view::draw_islands(&mut self.renderer);
     }
 
@@ -128,6 +155,60 @@ pub(crate) fn deliver_event(
             Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
         }
         EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
+        EventPayload::CodeChanged {
+            version,
+            start_line,
+            start_column,
+            end_line,
+            end_column,
+            text,
+        } => Event::new(
+            Rc::new(CodeChange {
+                version,
+                range: CodeRange::of(start_line, start_column, end_line, end_column),
+                text: text.to_owned(),
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeEditRejected {
+            request_id,
+            base_version,
+            current_version,
+            start_line,
+            start_column,
+            end_line,
+            end_column,
+        } => Event::new(
+            Rc::new(EditRejected {
+                request_id,
+                base_version,
+                current_version,
+                range: CodeRange::of(start_line, start_column, end_line, end_column),
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeHovered {
+            decoration,
+            line,
+            column,
+            phase,
+        } => Event::new(
+            Rc::new(CodeHover {
+                decoration: (decoration != 0).then_some(decoration),
+                position: Position::new(line, column),
+                phase,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeSaveRequested { version } => {
+            Event::new(Rc::new(SaveRequest { version }), true).into_any()
+        }
+        EventPayload::DecorationActivated { decoration } => {
+            Event::new(Rc::new(decoration), true).into_any()
+        }
         // The Host answers these itself and never hands them to a runtime. One that
         // arrives here was addressed to a handler, which none of them can be.
         EventPayload::ProtocolError { .. }
@@ -139,12 +220,7 @@ pub(crate) fn deliver_event(
         | EventPayload::NotificationActivated { .. }
         | EventPayload::NotificationPermissionChanged(_)
         | EventPayload::AnimationEvent { .. }
-        | EventPayload::ReducedMotionChanged(_)
-        | EventPayload::CodeChanged { .. }
-        | EventPayload::CodeEditRejected { .. }
-        | EventPayload::CodeHovered { .. }
-        | EventPayload::CodeSaveRequested { .. }
-        | EventPayload::DecorationActivated { .. } => {
+        | EventPayload::ReducedMotionChanged(_) => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };
