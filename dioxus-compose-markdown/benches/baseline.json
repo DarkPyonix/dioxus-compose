@@ -1,26 +1,30 @@
 {
   "schema_version": 1,
-  "measured_at": null,
-  "note": "Not yet measured. Run `cargo bench -p dioxus-compose-markdown --bench streaming` on the reference machine and copy the lines it prints into the fields below.",
-  "environment": null,
+  "measured_at": "2026-10-25",
+  "note": "Measured by the builder agent with `cargo bench -p dioxus-compose-markdown --bench streaming` and CARGO_BUILD_JOBS=2. Values are the lines the bench prints.",
+  "environment": {
+    "machine": "Apple M1 (arm64), macOS 26.5.1",
+    "build": "cargo bench (release profile), CARGO_BUILD_JOBS=2",
+    "date": "2026-10-25"
+  },
   "measurements": {
     "markdown_delta_without_prefix": {
-      "p99_ns": null,
+      "p99_ns": 13667,
       "spec_p99_ceiling_ns": 1000000
     },
     "markdown_delta_after_100kb": {
-      "p99_ns": null,
+      "p99_ns": 14459,
       "spec_p99_ceiling_ns": 1000000,
-      "ratio_to_without_prefix": null,
+      "ratio_to_without_prefix": 1.058,
       "spec_ratio_ceiling": 1.2
     },
     "markdown_delta_allocations": {
-      "after_50kb": null,
-      "after_100kb": null,
+      "after_50kb": 262,
+      "after_100kb": 225,
       "spec": "after_100kb must not exceed after_50kb"
     },
     "markdown_close_5000_line_code_block_frame": {
-      "frame_ns": null,
+      "frame_ns": 5583,
       "spec_ceiling_ns": 1000000
     },
     "binary_size_increase": {

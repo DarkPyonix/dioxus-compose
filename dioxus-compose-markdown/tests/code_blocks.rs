@@ -536,3 +536,36 @@ fn fr37_no_literal_colour_is_ever_drawn() {
         }
     }
 }
+
+/// Colours that have already landed are roles the Renderer resolves, so a theme switch
+/// reaches the Host as an event and sends nothing back, with code and a diff on screen.
+#[test]
+fn fr37_a_theme_change_costs_coloured_code_and_diff_nothing() {
+    use dioxus_compose::protocol::{HostEvent, decode_batch};
+    use dioxus_compose::schema::{DesignSystem, EventPayload};
+
+    let document = format!("```rust\nfn main() {{ let x = 1; }}\n```\n\n```diff\n{DIFF}```\n");
+    apps::reset(&document, MarkdownOptions::default());
+    let mut screen = Screen::new(apps::one_shot);
+    let coloured = screen.frame_until(WAIT, |tree| {
+        let blocks = code_texts(tree);
+        blocks.len() == 2 && blocks.iter().all(|id| !tree.nodes[id].spans.is_empty())
+    });
+    assert!(coloured, "colours never arrived");
+    for system in [
+        DesignSystem::Fluent,
+        DesignSystem::Cupertino,
+        DesignSystem::Material3,
+    ] {
+        let (batch, _) = screen
+            .host
+            .dispatch(HostEvent {
+                node_id: 0,
+                handler_id: 0,
+                payload: EventPayload::DesignSystemResolved(system),
+            })
+            .expect("the design system change failed");
+        let mutations = decode_batch(batch).expect("decode");
+        assert!(mutations.is_empty(), "switching to {system:?} sent {mutations:?}");
+    }
+}
