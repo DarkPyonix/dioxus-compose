@@ -128,7 +128,7 @@ is not in that release, see below). The API will change.
 | implemented | HTML and CSS layout in the Host with blitz-dom: block, inline, flexbox, grid, tables, positioning including `fixed`, overflow and scroll containers, borders, radii, shadows, opacity, backgrounds including gradients, images through an app-supplied resolver |
 | implemented | HTML events and forms: clicks, `input`, `change` and `submit`, `select`, checkboxes and radio groups, uncontrolled fields, keyed lists, `text-transform` and `white-space` |
 | implemented | Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (measured 2026-10-03, macOS) |
-| implemented | Fifteen HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
+| implemented | Sixteen HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
 | implemented | Compose widgets in `rsx!`, drawn by the renderer: macOS, Android and the web end to end; Windows, Linux and iOS build and start |
 | partial | Drawing HTML screens on screen: the bridge writes the plan into compose-rust's batch (`AbsoluteBox`, `Box`, `Text`, `Image`, fields), first the whole tree and then only what changed, and renderer events reach the Dioxus handlers. Tested on the Host against the records the renderer receives; not yet confirmed on screen ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | partial | Text measured by Compose: the measure call is being implemented in compose-rust; Parley measures text until then ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
@@ -274,10 +274,10 @@ through the same steps with clicks and forms.
 
 ## Samples
 
-Fifteen Dioxus apps in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), written the way one is written for the
+Sixteen Dioxus apps in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), written the way one is written for the
 web: HTML elements, CSS, hooks and signals. Each is one crate, and each is tested on the Host against
-hand-worked layout. The guide quotes them chapter by chapter. The last four (`layout`, `landing`,
-`typography` and `motion`) are on `develop`, so their links point there.
+hand-worked layout. The guide quotes them chapter by chapter. The last five (`layout`, `landing`,
+`typography`, `motion` and `kanban`) are on `develop`, so their links point there.
 
 | Sample | What it shows |
 |---|---|
@@ -296,6 +296,7 @@ hand-worked layout. The guide quotes them chapter by chapter. The last four (`la
 | [`landing`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing) | A responsive page: `@media` at phone, tablet and desktop widths, a centred container, a card grid, pricing, a footer, a gradient background, shadows and radii |
 | [`typography`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography) | Font size, weight and style, line height, letter spacing, alignment, case, white space, word breaking, ellipsis, generated content, list markers, decoration |
 | [`motion`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion) | Transforms with `transform-origin`, transitions, `@keyframes`, a width transition |
+| [`kanban`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/kanban) | A board of three flex columns with cards that move between them, a count per column, an empty-column placeholder and a form that adds a card |
 
 Samples are laid out and sent to the renderer; drawing them in a window is not confirmed yet. See [what is missing](#what-html-screens-do-not-draw-on-screen-yet).
 
@@ -361,7 +362,7 @@ dioxus-compose/
 │  ├─ src/dom, layout, paint  # blitz-dom document and events, layout pass, display list and plan
 │  ├─ examples/           #   desktop_demo, the widget-path demo
 │  └─ tests/              #   the crate's tests
-├─ samples/               # fifteen apps written with HTML and CSS, one crate each
+├─ samples/               # sixteen apps written with HTML and CSS, one crate each
 ├─ experiments/           # probes worth keeping (on develop only, not on main)
 ├─ scripts/               # the quality gate and repository tooling
 └─ docs/
