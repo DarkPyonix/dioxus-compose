@@ -554,31 +554,43 @@ enum Expect {
 /// - A mixed list is one transform: `translate(10px) rotateY(30deg)` has a 3D part, so the
 ///   whole list is skipped, and the `translate(10px)` is not applied either. The box stays
 ///   at x = 20.
+/// - The `rotate`, `translate` and `scale` properties go through the same checks, one value
+///   per property. The 3D forms are listed under the property (`rotate: ...`), and a flat
+///   value such as `translate: 10px 20px 0` folds into the place like its function does.
 #[test]
 fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
     let cases: &[(&str, Expect)] = &[
-        ("rotateX(45deg)", Expect::Skipped("rotateX(")),
-        ("rotateY(30deg)", Expect::Skipped("rotateY(")),
-        ("rotate3d(1, 1, 0, 45deg)", Expect::Skipped("rotate3d(")),
-        ("rotate3d(0, 0, 1, 30deg)", Expect::Matrix),
-        ("translateZ(10px)", Expect::Skipped("translateZ(")),
-        ("translateZ(0px)", Expect::Untransformed),
-        ("translate3d(10px, 0px, 10px)", Expect::Skipped("translate3d(")),
-        ("translate3d(10px, 20px, 0px)", Expect::Folded(10.0, 20.0)),
-        ("scaleZ(2)", Expect::Skipped("scaleZ(")),
-        ("scaleZ(1)", Expect::Untransformed),
-        ("scale3d(2, 2, 2)", Expect::Skipped("scale3d(")),
-        ("scale3d(2, 3, 1)", Expect::Matrix),
-        ("perspective(100px)", Expect::Skipped("perspective(")),
+        ("transform: rotateX(45deg)", Expect::Skipped("rotateX(")),
+        ("transform: rotateY(30deg)", Expect::Skipped("rotateY(")),
+        ("transform: rotate3d(1, 1, 0, 45deg)", Expect::Skipped("rotate3d(")),
+        ("transform: rotate3d(0, 0, 1, 30deg)", Expect::Matrix),
+        ("transform: translateZ(10px)", Expect::Skipped("translateZ(")),
+        ("transform: translateZ(0px)", Expect::Untransformed),
+        ("transform: translate3d(10px, 0px, 10px)", Expect::Skipped("translate3d(")),
+        ("transform: translate3d(10px, 20px, 0px)", Expect::Folded(10.0, 20.0)),
+        ("transform: scaleZ(2)", Expect::Skipped("scaleZ(")),
+        ("transform: scaleZ(1)", Expect::Untransformed),
+        ("transform: scale3d(2, 2, 2)", Expect::Skipped("scale3d(")),
+        ("transform: scale3d(2, 3, 1)", Expect::Matrix),
+        ("transform: perspective(100px)", Expect::Skipped("perspective(")),
         (
-            "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.001, 0, 0, 0, 1)",
+            "transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.001, 0, 0, 0, 1)",
             Expect::Skipped("matrix3d("),
         ),
-        ("translate(10px) rotateY(30deg)", Expect::Skipped("rotateY(")),
+        ("transform: translate(10px) rotateY(30deg)", Expect::Skipped("rotateY(")),
+        // The individual properties are read by the same code (`functions_of`), and their
+        // 3D forms are listed under the property name, as `describe` writes it.
+        ("rotate: x 45deg", Expect::Skipped("rotate:")),
+        ("rotate: 1 1 0 30deg", Expect::Skipped("rotate:")),
+        ("rotate: 0 0 1 30deg", Expect::Matrix),
+        ("translate: 10px 0 5px", Expect::Skipped("translate:")),
+        ("translate: 10px 20px 0", Expect::Folded(10.0, 20.0)),
+        ("scale: 1 1 2", Expect::Skipped("scale:")),
+        ("scale: 2 3 1", Expect::Matrix),
     ];
 
     for (css, expect) in cases {
-        let style = format!("{ONE_BOX}#subject {{ transform: {css}; }}");
+        let style = format!("{ONE_BOX}#subject {{ {css}; }}");
         let mut dom = HtmlDom::with_config(one_box, config(&style));
         let list = dom.layout(800.0, 600.0, 1.0).clone();
         let subject = entry(&dom, &list, "subject");
