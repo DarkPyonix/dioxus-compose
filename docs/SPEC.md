@@ -1679,7 +1679,7 @@ if design.is_apple() {
 
 ### FR-34 HTML과 CSS로 쓴 Dioxus 화면 (`Draft`)
 
-추적: 이슈 #43. 렌더러 다리(계획을 compose-rust 레코드로 보내는 것)는 PR #67에 작성되어 있고 그 테스트는 통과한다. 다리는 compose-rust FR-42 그리기 원소(`AbsoluteBox`와 변별 테두리, 모서리별 반지름, 그림자, 클립, 알파, 오프셋, 크기 수정자)를 쓰며, 그것은 compose-rust PR #74에 있고 병합되지 않았다. compose-rust 쪽에 필요한 것은 compose-rust #90~#98, #100, #101(라벨 html-path)과 PR-2.1 측정 호출이다. 계획(소유자 결정): compose-rust 0.0.2를 crates.io에 #74와 #83을 담아 내고, #67을 compose-rust =0.0.2에 의존하도록 옮겨 CI가 통과하면 병합한다. 그 릴리스부터 HTML 예제가 창에 그려진다. 날짜는 정하지 않았고 이 병합과 릴리스를 기다린다. `samples/`의 예제는 열다섯 개이고(새로 `layout`, `landing`, `typography`, `motion`) Host 배치 테스트로 확인하며, 창에 그린 확인은 #67 병합 뒤에 한다.
+추적: 이슈 #43. 렌더러 다리(계획을 compose-rust 레코드로 보내는 것)는 PR #67에 작성되어 있고 그 테스트는 통과한다. 다리는 compose-rust FR-42 그리기 원소(`AbsoluteBox`와 변별 테두리, 모서리별 반지름, 그림자, 클립, 알파, 오프셋, 크기 수정자)를 쓰며, 그것은 compose-rust PR #74에 있고 병합되지 않았다. compose-rust 쪽에 필요한 것은 compose-rust #90~#98, #100, #101(라벨 html-path)과 PR-2.1 측정 호출이다. 계획(소유자 결정): compose-rust 0.0.2를 crates.io에 #74와 #83을 담아 내고, #67을 compose-rust =0.0.2에 의존하도록 옮겨 CI가 통과하면 병합한다. 그 릴리스부터 HTML 예제가 창에 그려진다. 날짜는 정하지 않았고 이 병합과 릴리스를 기다린다. `samples/`의 예제는 열여섯 개이고(새로 `layout`, `landing`, `typography`, `motion`, `kanban`) Host 배치 테스트로 확인하며, 창에 그린 확인은 #67 병합 뒤에 한다.
 
 `div`, `span` 같은 HTML 요소와 CSS로 쓴 Dioxus 화면을 그립니다. 결정과 근거는 INTENT D20입니다.
 
@@ -1757,7 +1757,7 @@ M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme
 
 #### FR-34.3 HTML/CSS와 Compose 위젯을 한 앱에서 섞기 (`Agreed`, 목표 M12 이후)
 
-추적: 이슈 #59. 구현 전이다. 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고)가 먼저 들어와야 한다. 지금의 예제 열다섯 개는 모두 HTML 경로만 쓰고 섞은 예제는 없다.
+추적: 이슈 #59. 구현 전이다. 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고)가 먼저 들어와야 한다. 지금의 예제 열여섯 개는 모두 HTML 경로만 쓰고 섞은 예제는 없다.
 
 dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하나는 `div`, `h1`과 CSS이고(FR-34), 다른 하나는 `Column`, `Text` 같은 Compose 위젯 이름입니다(소유자 결정 2026-10-03: "그냥 dioxus-compose에서 둘다 구현하면 되잖아"). 기능 플래그로 어느 쪽도 끄지 않습니다. 이 항목은 둘을 한 화면에서 섞는 규칙입니다.
 
