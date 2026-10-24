@@ -83,6 +83,27 @@ impl HtmlRuntime {
     }
 
     pub fn with_config(app: fn() -> Element, config: HtmlConfig) -> Self {
+        Self::with_bridge(app, config, PlanBridge::new())
+    }
+
+    /// A runtime whose page is one island inside a tree some other writer owns: its
+    /// renderer node ids and handler ids start at the given bases, so they never collide
+    /// with that writer's. It is driven with `render_into`, and the events the island's
+    /// handlers name go to `Runtime::handle_event`.
+    pub(crate) fn embedded(
+        app: fn() -> Element,
+        config: HtmlConfig,
+        first_node: u32,
+        first_handler: u64,
+    ) -> Self {
+        Self::with_bridge(
+            app,
+            config,
+            PlanBridge::with_id_bases(first_node, first_handler),
+        )
+    }
+
+    fn with_bridge(app: fn() -> Element, config: HtmlConfig, bridge: PlanBridge) -> Self {
         let configured_scheme = config.color_scheme;
         let moments: Rc<RefCell<Vec<AnimationMoment>>> = Rc::default();
         let sink = moments.clone();
@@ -95,7 +116,7 @@ impl HtmlRuntime {
             focused: None,
             configured_scheme,
             dom: HtmlDom::with_config(app, config),
-            bridge: PlanBridge::new(),
+            bridge,
             batch: Batch::new(),
             typed: HashMap::new(),
             edited: HashSet::new(),
@@ -115,6 +136,14 @@ impl HtmlRuntime {
         } else {
             FALLBACK_VIEWPORT
         };
+        if let Some(plan) = self.plan_at(viewport) {
+            self.bridge
+                .apply(plan, viewport, &self.dom, &mut self.batch);
+        }
+    }
+
+    /// Lays the document out in `viewport`, in dp, and returns what to draw.
+    fn plan_at(&mut self, viewport: (f32, f32)) -> Option<crate::html::Plan> {
         // A media query that asks for the scheme is answered with the theme's, so a page
         // switched to dark with the rest of the application is restyled with it.
         let scheme = match compose_rust::theme::current_theme().color_scheme {
@@ -126,11 +155,32 @@ impl HtmlRuntime {
         // One CSS pixel is one dp, so the page is laid out at a scale of one. The renderer
         // turns dp into device pixels.
         self.dom.layout(viewport.0, viewport.1, 1.0);
-        let Some(plan) = self.dom.plan(&mut LiteralColours) else {
-            return;
-        };
-        self.bridge
-            .apply(plan, viewport, &self.dom, &mut self.batch);
+        self.dom.plan(&mut LiteralColours)
+    }
+
+    /// Runs the page's pending work when `run_dom` says so, lays it out in `viewport` and
+    /// writes what changed into `batch`, which belongs to the tree the page is an island
+    /// of. Returns the node the page hangs from the first time it is written, for the
+    /// caller to insert, and `None` on every later call.
+    pub(crate) fn render_into(
+        &mut self,
+        viewport: (f32, f32),
+        run_dom: bool,
+        batch: &mut Batch,
+    ) -> Option<u32> {
+        if run_dom {
+            self.deliver_moments();
+            self.dom.render();
+        }
+        let first = self.bridge.root_node().is_none();
+        let plan = self.plan_at(viewport)?;
+        self.bridge.apply(plan, viewport, &self.dom, batch);
+        if first { self.bridge.root_node() } else { None }
+    }
+
+    /// Whether `handler_id` was given out by this page.
+    pub(crate) fn owns_handler(&self, handler_id: u64) -> bool {
+        self.bridge.handler(handler_id).is_some()
     }
 
     /// Delivers the animation moments the renderer reported to the page, as the DOM events a

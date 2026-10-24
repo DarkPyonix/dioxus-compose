@@ -252,9 +252,16 @@ impl Default for PlanBridge {
 
 impl PlanBridge {
     pub fn new() -> Self {
+        Self::with_id_bases(1, 1)
+    }
+
+    /// A bridge whose renderer node ids start at `first_node` and whose handler ids start
+    /// at `first_handler`. A bridge that writes into a batch another writer also writes
+    /// into takes ids from a range of its own, so the two never name the same node.
+    pub fn with_id_bases(first_node: u32, first_handler: u64) -> Self {
         Self {
-            next_node_id: 1,
-            next_handler_id: 1,
+            next_node_id: first_node,
+            next_handler_id: first_handler,
             viewport_node: None,
             nodes: HashMap::new(),
             handlers: HashMap::new(),
@@ -292,6 +299,12 @@ impl PlanBridge {
     /// The handler a renderer event names, if the bridge gave it out.
     pub fn handler(&self, handler_id: u64) -> Option<BridgeHandler> {
         self.handlers.get(&handler_id).copied()
+    }
+
+    /// The scroll node every page is placed in, once a plan has been applied. A caller that
+    /// embeds the page in a tree of its own inserts this node where the page goes.
+    pub fn root_node(&self) -> Option<u32> {
+        self.viewport_node
     }
 
     /// The renderer node drawn for a plan node.
