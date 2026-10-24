@@ -11,6 +11,10 @@
 //! so they never collide with the ones the widget tree hands out, and an event whose
 //! handler id falls in that range goes to the page.
 
+// The component macro compares its `fn` props for equality. Two copies of the same page
+// function compare unequal only when the compiler duplicated it, which costs a re-render.
+#![allow(unpredictable_function_pointer_comparisons)]
+
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -116,10 +120,10 @@ impl Drop for IslandHandle {
     fn drop(&mut self) {
         // The thread may be shutting down, in which case the registry is already gone.
         let _ = REGISTRY.try_with(|registry| {
-            if let Ok(mut registry) = registry.try_borrow_mut() {
-                if let Some(island) = registry.islands.remove(&self.token) {
-                    registry.free_slots.push(island.slot);
-                }
+            if let Ok(mut registry) = registry.try_borrow_mut()
+                && let Some(island) = registry.islands.remove(&self.token)
+            {
+                registry.free_slots.push(island.slot);
             }
         });
     }
