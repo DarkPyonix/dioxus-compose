@@ -164,3 +164,125 @@ fn fr34_3_theme_switch_same_frame() {
         "the same batch that carries the theme change restyles the div"
     );
 }
+
+mod with_widget {
+    use super::*;
+    use dioxus_compose::boundary::{RendererApi, install_renderer_api};
+    use dioxus_compose::measure::{MEASURE_RECORD_LEN, MeasureResult, RESULT_OK};
+    use dioxus_compose::window::reset_window_size;
+    use std::ffi::c_int;
+
+    extern "C" fn never_run() -> c_int {
+        0
+    }
+
+    extern "C" fn no_frames() {}
+
+    unsafe extern "C" fn measure_every_node(
+        _requests: *const u8,
+        length: u32,
+        count: u32,
+        results: *mut MeasureResult,
+    ) -> i32 {
+        assert!(length as usize >= count as usize * MEASURE_RECORD_LEN);
+        for index in 0..count as usize {
+            // SAFETY: the caller hands room for `count` results.
+            unsafe {
+                results.add(index).write(MeasureResult {
+                    width: 120.0,
+                    height: 40.0,
+                    status: RESULT_OK,
+                    ..MeasureResult::default()
+                });
+            }
+        }
+        0
+    }
+
+    /// A filled button draws in the Primary role.
+    fn widget() -> Element {
+        use dioxus_compose::prelude::*;
+        rsx! { Button { text: "press" } }
+    }
+
+    fn page() -> Element {
+        use dioxus_compose::html::WidgetView;
+        let theme = dioxus_compose::use_theme();
+        rsx! {
+            div { id: "swatch" }
+            div {
+                id: "switch",
+                onclick: move |_| theme.set_palette(
+                    Palette::new().with(ColorRole::Primary, BRAND, BRAND),
+                ),
+            }
+            WidgetView { app: widget, style: "display: block" }
+        }
+    }
+
+    /// The widget draws in the Primary role, which the renderer resolves from the theme,
+    /// and the div reads the same role through `var(--dxc-primary)`. Both follow one
+    /// theme: the batch that carries the new theme also carries the div's new colour,
+    /// and that colour is the value the renderer resolves the widget's role to.
+    #[test]
+    fn fr34_3_theme_switch_same_frame_widget_and_div_agree() {
+        let _ = install_renderer_api(RendererApi {
+            run: never_run,
+            request_frame: no_frames,
+            measure: measure_every_node,
+        });
+        reset_window_size();
+        let mut host = Host::html(page, super::config);
+        let first = host.rebuild().unwrap().to_vec();
+        let (node_id, handler_id) = clickable(&first);
+        let (batch, _) = host
+            .dispatch(HostEvent {
+                node_id,
+                handler_id,
+                payload: EventPayload::Clicked,
+            })
+            .expect("the click is dispatched");
+        let after = decode_batch(batch).unwrap();
+        let theme = dioxus_compose::theme::current_theme();
+        let palette = theme.palette.expect("the palette is the theme's now");
+        let resolved = palette.resolve(
+            dioxus_compose::design_system(),
+            ColorScheme::Light,
+        )[ColorRole::Primary as usize - 1];
+        assert_eq!(resolved, BRAND, "the widget's Primary role now resolves to the brand colour");
+        assert_eq!(
+            backgrounds(batch),
+            vec![resolved],
+            "the div takes that same colour in the batch that changed the theme"
+        );
+        assert!(
+            after.iter().any(|record| matches!(record, Mutation::SetTheme(_))),
+            "the same batch carries the theme change the widget's role follows"
+        );
+    }
+}
+
+/// The style an application gave the root survives a theme change, and the other way round.
+#[test]
+fn fr34_3_theme_variables_keep_the_roots_own_style() {
+    use dioxus_compose::html::HtmlDom;
+    let style_of = |dom: &HtmlDom| {
+        dom.document()
+            .root_element()
+            .attr(blitz_dom::LocalName::from("style"))
+            .unwrap_or("")
+            .to_string()
+    };
+    let mut dom = HtmlDom::new(|| rsx! { div {} });
+    dom.set_root_style("color: red");
+    dom.set_root_variables("--dxc-primary: #112233;");
+    let first = style_of(&dom);
+    assert!(first.contains("color: red") && first.contains("--dxc-primary: #112233;"));
+    dom.set_root_variables("--dxc-primary: #445566;");
+    let second = style_of(&dom);
+    assert!(second.contains("color: red") && second.contains("#445566"));
+    assert!(!second.contains("#112233"));
+    dom.set_root_style("color: blue");
+    let third = style_of(&dom);
+    assert!(third.contains("color: blue") && !third.contains("red") && third.contains("#445566"));
+}

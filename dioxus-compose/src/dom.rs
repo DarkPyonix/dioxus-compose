@@ -114,6 +114,8 @@ pub struct HtmlDom {
     root: NodeId,
     /// The declarations last written to `root`, so an unchanged theme touches nothing.
     theme_variables: String,
+    /// The application's own declarations for `root`.
+    root_style: String,
 }
 
 impl HtmlDom {
@@ -178,6 +180,7 @@ impl HtmlDom {
             motion: MotionState::default(),
             root,
             theme_variables: String::new(),
+            root_style: String::new(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
         dom.vdom.rebuild(&mut writer);
@@ -828,9 +831,25 @@ impl HtmlDom {
             return;
         }
         self.theme_variables = declarations.to_string();
+        self.write_root_style();
+    }
+
+    /// The application's own declarations for the document root, such as `color: red`.
+    /// They are kept when the theme's custom properties are rewritten, and come after
+    /// them, so the application's declaration wins where both name a property.
+    pub fn set_root_style(&mut self, style: &str) {
+        if self.root_style == style {
+            return;
+        }
+        self.root_style = style.to_string();
+        self.write_root_style();
+    }
+
+    fn write_root_style(&mut self) {
+        let merged = format!("{} {}", self.theme_variables, self.root_style);
         self.doc
             .mutate()
-            .set_attribute(self.root, attribute_name("style", None), declarations);
+            .set_attribute(self.root, attribute_name("style", None), merged.trim());
     }
 
     /// Tells the text measurer that what its answers depend on changed, so it drops the
