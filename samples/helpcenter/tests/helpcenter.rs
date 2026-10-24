@@ -300,9 +300,9 @@ fn fr34_helpcenter_the_shortcuts_are_a_numbered_list() {
 
 /// Typing "pass" keeps the topics whose name holds it, ignoring case: only "Reset your
 /// password". The summary says "1 of 4 topics" and the topic moves up to y = 124. A search
-/// that matches nothing shows the message in the summary's place below it, at y = 92 + 20
-/// + 12 = 124, and an empty list. Clearing the field brings every topic back, and a topic
-/// that was open stays open.
+/// that matches nothing shows the message in the summary's place below it, at
+/// y = 92 + 20 + 12 = 124, and an empty list. Clearing the field brings every topic back,
+/// and a topic that was open stays open.
 #[test]
 fn fr34_helpcenter_search_filters_topics_by_name() {
     let mut dom = open();
