@@ -4,9 +4,11 @@
 //! its chevron are blocks with entries of their own: a long name is cut with an ellipsis
 //! and the chevron turns a quarter turn, by a transition, when the topic opens. An answer
 //! is a paragraph that mixes plain words with `strong`, `em`, `code`, a coloured `span` and
-//! a link. Those are inline, so the paragraph is one measured text and the styles are spans
-//! over it. A link inside text is drawn as a coloured, underlined span; it is not a
-//! separate target. The last answer is a numbered list, whose markers are runs of their own.
+//! a link-styled word. Those are inline, so the paragraph is one measured text and the styles
+//! are spans over it. The link is a `span` painted blue and underlined, not an `a` with an
+//! `href`: a real link among text in other styles cannot be a span, because a press on a
+//! piece of a text drawn as one is not routed to the element, so the whole paragraph then
+//! falls back to the page's own shaper and is measured with the system font. The last answer is a numbered list, whose markers are runs of their own.
 //!
 //! The search field is uncontrolled, as in every form here: the renderer owns what is
 //! typed and `oninput` copies it into a signal that filters the topics by name.
@@ -132,7 +134,7 @@ fn answer(id: &str) -> Element {
                 "Invoices go out on the first of each month. "
                 span { class: "warn", "Cards that fail twice are paused" }
                 " until you update them on the "
-                a { class: "link", href: "#billing", "billing page" }
+                span { class: "link", "billing page" }
                 ". Questions? We reply within one business day."
             }
         },

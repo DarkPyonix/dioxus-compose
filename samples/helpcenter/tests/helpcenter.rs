@@ -201,10 +201,15 @@ fn fr34_helpcenter_the_chevron_turns_by_a_transition_when_a_topic_opens() {
 /// 1 + 40 + 60 + 12 + 1 = 114px tall.
 ///
 /// It is one text. The red `span` is a span over "Cards that fail twice are paused" with
-/// its own colour, and the link is a span over "billing page" that is blue and underlined.
-/// Neither is a box: no `a` and no inline `span` has an entry in the display list, so the
-/// link is not a separate target. (The spans that do have entries are the names and the
-/// chevrons, which are flex items.)
+/// its own colour, and the link-styled `span` is a span over "billing page" that is blue
+/// and underlined. Neither is a box: no inline `span` has an entry in the display list.
+/// (The spans that do have entries are the names and the chevrons, which are flex items.)
+///
+/// The link is a `span`, not an `a` with an `href`. An `a` with an `href` among text in
+/// other styles keeps the whole paragraph out of the one-text path, so it is laid out by
+/// the page's own shaper with the system font, which no hand-worked number can predict.
+/// An earlier version of this sample used one, and its paragraph came out two lines, not
+/// three, for that reason.
 #[test]
 fn fr34_helpcenter_colour_and_a_link_are_spans_over_one_text() {
     let mut dom = open();
@@ -233,7 +238,6 @@ fn fr34_helpcenter_colour_and_a_link_are_spans_over_one_text() {
     assert_eq!(link.color, Some(Rgba::new(9, 105, 218, 255)));
 
     let list = dom.display_list().unwrap();
-    assert!(list.entries.iter().all(|entry| entry.tag != "a"));
     for entry in list.entries.iter().filter(|entry| entry.tag == "span") {
         let text = entry.texts.first().map(|run| run.text.as_str()).unwrap_or("");
         assert!(
