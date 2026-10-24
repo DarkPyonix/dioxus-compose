@@ -142,7 +142,6 @@ pub struct ComposeRenderer {
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
     /// Which application token each observed node was given, for reading a report back.
     size_tokens: HashMap<u32, u32>,
-<<<<<<< HEAD
     /// For each `Text` whose string is marked as growing, how many bytes the Renderer holds
     /// and a keyed hash of them.
     ///
@@ -158,12 +157,11 @@ pub struct ComposeRenderer {
     /// Where a list of runs is rewritten with the Host's handler ids before it is sent.
     /// Reused, so resending runs does not allocate once it has grown.
     span_scratch: Vec<u8>,
-=======
+
     /// The animated attributes each node has already been given a value for. The first
     /// value is where the node starts; every later one is a change to animate.
     animated: std::collections::HashSet<(u32, &'static str)>,
     next_animation_id: u32,
->>>>>>> origin/develop
     stack: Vec<StackNode>,
 }
 
@@ -204,16 +202,14 @@ impl ComposeRenderer {
             // Empty until a screen asks, which is the point: a tree that observes nothing
             // allocates nothing here.
             size_tokens: HashMap::new(),
-<<<<<<< HEAD
             // Empty until a growing string or a link run arrives, for the same reason.
             sent_text: HashMap::new(),
             text_hasher: RandomState::new(),
             link_handlers: HashMap::new(),
             span_scratch: Vec::new(),
-=======
+
             animated: std::collections::HashSet::new(),
             next_animation_id: 1,
->>>>>>> origin/develop
             stack: Vec::with_capacity(64),
         }
     }
