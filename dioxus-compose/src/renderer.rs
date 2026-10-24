@@ -142,6 +142,14 @@ impl ComposeRenderer {
         self.size_tokens.get(&node_id).copied()
     }
 
+    /// Every observed node and the application's name for it, as `(node_id, token)`.
+    pub(crate) fn observed_nodes(&self) -> Vec<(u32, u32)> {
+        self.size_tokens
+            .iter()
+            .map(|(&node_id, &token)| (node_id, token))
+            .collect()
+    }
+
     pub fn new() -> Self {
         Self {
             batch: Batch::new(),
