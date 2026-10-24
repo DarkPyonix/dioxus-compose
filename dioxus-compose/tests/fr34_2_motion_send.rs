@@ -1,4 +1,4 @@
-//! FR-34.2: CSS transitions and `@keyframes` animations reach the renderer as
+//! CSS transitions and `@keyframes` animations reach the renderer as
 //! `StartAnimation` records, and the renderer's reports come back as DOM events.
 //!
 //! Each test runs an app through a Host the way a window runs it and reads the records the
@@ -121,11 +121,13 @@ fn fader() -> Element {
         div {
             id: "fader",
             style: "opacity: {opacity}",
-            onclick: move |_| faded.toggle(),
+            onclick: move |_| {
+                let value = faded();
+                faded.set(!value);
+            },
             ontransitionend: move |event| {
                 SEEN.with(|seen| {
-                    seen.borrow_mut()
-                        .push((event.property_name(), event.elapsed_time()));
+                    seen.borrow_mut().push(format!("{:?}", event.data()));
                 });
             },
         }
@@ -133,7 +135,7 @@ fn fader() -> Element {
 }
 
 thread_local! {
-    static SEEN: RefCell<Vec<(String, f32)>> = const { RefCell::new(Vec::new()) };
+    static SEEN: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 /// A change of `opacity` under a `transition` is one `StartAnimation` in the batch of the
@@ -221,7 +223,10 @@ fn fr34_2_the_end_of_a_transition_reaches_the_page_as_transitionend() {
     })
     .expect("the event is dispatched");
     SEEN.with(|seen| {
-        assert_eq!(*seen.borrow(), vec![("opacity".to_string(), 0.5)]);
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert!(seen[0].contains("property_name: \"opacity\""), "{seen:?}");
+        assert!(seen[0].contains("elapsed_time: 0.5"), "{seen:?}");
     });
 }
 
@@ -363,7 +368,10 @@ fn fr34_2_a_transform_animation_is_sent_in_degrees_and_its_moments_come_back() {
 fn toggled() -> Element {
     let mut on = use_signal(|| false);
     let class = if on() { "on" } else { "" };
-    rsx! { div { id: "toggled", class: "{class}", onclick: move |_| on.toggle() } }
+    rsx! { div { id: "toggled", class: "{class}", onclick: move |_| {
+        let value = on();
+        on.set(!value);
+    } } }
 }
 
 /// An animation that starts when a class is added is sent in that frame, and cancelled
