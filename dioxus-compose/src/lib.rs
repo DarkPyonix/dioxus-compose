@@ -41,18 +41,20 @@ pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use hooks::{
-    Animated, animate_color_as_state, animate_float_as_state, animate_offset_as_state,
-    use_animation_event, use_design_system, use_node_size, use_notification_activated,
-    use_notification_permission, use_reduced_motion, use_theme, use_window_size,
+    Animated, CodeEditorHandle, animate_color_as_state, animate_float_as_state,
+    animate_offset_as_state, use_animation_event, use_code_editor, use_design_system,
+    use_node_size, use_notification_activated, use_notification_permission,
+    use_reduced_motion, use_theme, use_window_size,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use html_view::HtmlView;
 pub use widgets::{
-    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box,
-    DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon, Image, LazyColumn,
-    LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton, Row,
-    Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet, Slider, Spacer,
-    SplitPane, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
+    ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon,
+    Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator,
+    RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet,
+    Slider, Spacer, SplitPane, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip,
+    TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -152,6 +154,12 @@ pub mod prelude {
     // this one instead. It is here because the alternative is a fully qualified path in
     // every `main`, and because `Chrome` beside it is meaningless on its own.
     pub use crate::schema::{Chrome, Window};
+    // A code editor, its handle, and the ranges and events it speaks in.
+    pub use crate::{
+        CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
+        EditRejected, HoverPhase, Position, SaveRequest, Severity, SyntaxSpan, SyntaxSpans,
+        use_code_editor,
+    };
     // Notifications, from a component or from a worker thread.
     pub use crate::{
         Notification, NotificationActivation, NotificationImportance, NotificationPermission,
@@ -409,6 +417,13 @@ pub mod elements {
     // Children laid where the Host put them, each at its own `offset`. Nothing of its own:
     // where a child goes is the child's modifier, not the box's property.
     element!(absolutebox, "AbsoluteBox", []);
+    // The editor's own attributes. Its text and its colouring cross the boundary as the
+    // Host writes them, and its events are declared on the element in widgets.rs.
+    element!(
+        codeeditor,
+        "CodeEditor",
+        [editor, text, syntax_spans, decorations, tab_width]
+    );
 
     #[doc(hidden)]
     pub mod completions {
@@ -512,4 +527,13 @@ pub mod events {
     // the wire property with the text field's value change, because both are "this
     // control's value is now this".
     event!(onchange, f64);
+    // A code editor's committed edits. They travel under the same property a text field's
+    // value change does, because both are "what this control holds is now different", and
+    // under their own name here because what they carry is an edit and not a value.
+    event!(oncodechange, compose_rust::code::CodeChange);
+    event!(oneditrejected, compose_rust::code::EditRejected);
+    event!(onhover, compose_rust::code::CodeHover);
+    event!(onsave, compose_rust::code::SaveRequest);
+    // The id the application gave the decoration that was pressed or accepted.
+    event!(ondecorationclick, u64);
 }

@@ -166,6 +166,104 @@ pub fn use_notification_activated(handler: impl FnMut(NotificationActivation) + 
     });
 }
 
+/// One edit asked of a code editor, waiting for the batch it goes out in.
+pub(crate) struct PendingEdit {
+    pub(crate) token: u32,
+    pub(crate) request_id: u32,
+    pub(crate) base_version: u32,
+    pub(crate) range: compose_rust::code::CodeRange,
+    pub(crate) text: String,
+}
+
+thread_local! {
+    static EDITS: std::cell::RefCell<Vec<PendingEdit>> = const { std::cell::RefCell::new(Vec::new()) };
+    static NEXT_EDITOR_TOKEN: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
+}
+
+/// A way to change the document a code editor holds, for formatting, accepting a
+/// completion or reloading a file that changed underneath it.
+///
+/// Created with [`use_code_editor`] and handed to the editor as its `handle`. An edit is
+/// written against a version, the one the application last heard of. Where the reader has
+/// typed since, the Renderer moves the range along with what they typed; where they typed
+/// in the same place, it refuses the edit and says so through `on_edit_rejected`, because
+/// an application must never type over its reader. An edit that is applied comes back as
+/// an ordinary change, so the version stays one sequence whoever made the edit.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CodeEditorHandle {
+    token: u32,
+}
+
+impl CodeEditorHandle {
+    /// A handle attached to no editor yet. [`use_code_editor`] is the usual way to get one,
+    /// because it keeps the same handle across renders.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let token = NEXT_EDITOR_TOKEN.with(|next| {
+            let token = next.get();
+            next.set(token.checked_add(1).unwrap_or(1));
+            token
+        });
+        Self { token }
+    }
+
+    pub(crate) fn token(self) -> u32 {
+        self.token
+    }
+
+    /// Replaces `range` of the document as it stood at `base_version` with `text`.
+    ///
+    /// It goes out with the batch the current call produces, so call it from a component,
+    /// an event handler or a task on the thread the application runs on. A worker updates
+    /// a signal instead, and the component that reads the signal calls this.
+    ///
+    /// `request_id` is the application's own name for the edit, returned if it is refused.
+    pub fn edit(
+        &self,
+        request_id: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        text: impl Into<String>,
+    ) {
+        let edit = PendingEdit {
+            token: self.token,
+            request_id,
+            base_version,
+            range,
+            text: text.into(),
+        };
+        EDITS.with_borrow_mut(|edits| edits.push(edit));
+    }
+}
+
+/// A handle to the editor this component draws, the same one on every render.
+pub fn use_code_editor() -> CodeEditorHandle {
+    dioxus_core::use_hook(CodeEditorHandle::new)
+}
+
+/// Hands every queued edit to `emit` and empties the queue.
+pub(crate) fn drain_edits(mut emit: impl FnMut(&PendingEdit)) {
+    let mut taken = EDITS.with_borrow_mut(std::mem::take);
+    if taken.is_empty() {
+        return;
+    }
+    for edit in &taken {
+        emit(edit);
+    }
+    taken.clear();
+    EDITS.with_borrow_mut(|edits| {
+        if edits.is_empty() {
+            *edits = taken;
+        }
+    });
+}
+
+/// Forgets every queued edit, for a new runtime taking over the thread: an edit addressed
+/// to the old one's editor names nothing in the new one.
+pub(crate) fn reset_edits() {
+    EDITS.with_borrow_mut(Vec::clear);
+}
+
 /// Whether the platform asks for reduced motion, and a re-render when that changes.
 ///
 /// The Renderer reports it once after start and again only when the setting changes.
