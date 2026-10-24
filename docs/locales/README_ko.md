@@ -125,7 +125,7 @@ compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계�
 | 구현 | blitz-dom 으로 Host 에서 하는 HTML 과 CSS 레이아웃: 블록, 인라인, flexbox, grid, 표, `fixed` 를 포함한 위치 지정, overflow 와 스크롤 컨테이너, 테두리, 모서리, 그림자, 불투명도, 그라디언트를 포함한 배경, 앱이 넘기는 리졸버를 거치는 이미지 |
 | 구현 | HTML 이벤트와 폼: 클릭, `input` / `change` / `submit`, `select`, 체크박스와 라디오 그룹, 비제어 입력란, 키가 있는 목록, `text-transform` 과 `white-space` |
 | 구현 | VS Code 가 잰 텍스트 크기로, 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(2026-10-03 macOS 에서 측정) |
-| 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열여섯 개, 각각 Host 에서 테스트 |
+| 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열일곱 개, 각각 Host 에서 테스트 |
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
 | 부분 | HTML 화면을 화면에 그리기: 다리가 계획을 compose-rust 의 배치(batch)에 씀(`AbsoluteBox`, `Box`, `Text`, `Image`, 입력 컨트롤). 처음에는 트리 전체, 그 뒤로는 바뀐 것만 보내고, 렌더러의 이벤트는 Dioxus 핸들러에 닿음. 렌더러가 받는 레코드로 Host 에서 테스트했고, 화면에서는 아직 확인하지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
@@ -268,10 +268,10 @@ cargo test --workspace
 
 ## 예제
 
-[`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 에 Dioxus 앱 열여섯 개가 있습니다. 웹에서 쓰듯 HTML 요소, CSS,
+[`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 에 Dioxus 앱 열일곱 개가 있습니다. 웹에서 쓰듯 HTML 요소, CSS,
 훅, 시그널로 쓴 것입니다. 하나가 크레이트 하나이고, 각각 손으로 계산한 배치와 비교하는 테스트를 Host
-에서 돌립니다. 가이드가 장마다 이 예제들을 인용합니다. 마지막 다섯(`layout`, `landing`,
-`typography`, `motion`, `kanban`)은 `develop` 에 있으므로 링크도 그쪽을 가리킵니다.
+에서 돌립니다. 가이드가 장마다 이 예제들을 인용합니다. 마지막 여섯(`layout`, `landing`,
+`typography`, `motion`, `kanban`, `helpcenter`)은 `develop` 에 있으므로 링크도 그쪽을 가리킵니다.
 
 | 예제 | 보여 주는 것 |
 |---|---|
@@ -291,6 +291,7 @@ cargo test --workspace
 | [`typography`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography) | 글자 크기, 굵기, 스타일, 줄 높이, 자간, 정렬, 대소문자, 공백 처리, 단어 끊기, 말줄임, 생성된 내용, 목록 기호, 꾸밈선 |
 | [`motion`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion) | `transform-origin` 이 있는 변환, transition, `@keyframes`, 폭 transition |
 | [`kanban`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/kanban) | flex 열 세 개로 된 보드: 열 사이로 옮기는 카드, 열마다 세는 개수, 빈 열 안내 문구, 카드를 추가하는 폼 |
+| [`helpcenter`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/helpcenter) | 열고 닫는 항목, 항목을 거르는 검색 필드, 말줄임표로 잘리는 긴 이름, 전환으로 도는 화살표, 굵게, 기울임, 코드, 색, 링크가 섞인 답변, 번호 목록 |
 
 예제는 배치까지 되고 아직 화면에 그려지지 않습니다. [이유](#html-화면이-아직-그려지지-않는-이유).
 
@@ -354,7 +355,7 @@ dioxus-compose/
 │  ├─ src/dom, layout, paint  # blitz-dom 문서와 이벤트, 레이아웃 단계, 그리기 목록과 계획
 │  ├─ examples/           #   desktop_demo, 위젯 경로 데모
 │  └─ tests/              #   크레이트 테스트
-├─ samples/               # HTML 과 CSS 로 쓴 앱 열여섯 개, 하나에 크레이트 하나
+├─ samples/               # HTML 과 CSS 로 쓴 앱 열일곱 개, 하나에 크레이트 하나
 ├─ experiments/           # 남겨 둘 만한 실험 (develop 에만 있고 main 에는 없음)
 ├─ scripts/               # 품질 검사와 저장소 도구
 └─ docs/
