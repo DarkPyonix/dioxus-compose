@@ -244,3 +244,29 @@ fn fr37_pathological_nesting_costs_linear_time() {
         );
     }
 }
+
+/// A paragraph with an inline code span that is closed by a line which, until more text
+/// arrives, looks like a code fence. The paragraph must not be frozen at the fence, or the
+/// streamed document keeps the backticks and loses the span the one-shot parse finds.
+///
+/// Found by the random test above with seed 0x41166f93275e9641.
+#[test]
+fn fr37_a_span_closed_on_the_next_line_streams_like_it_parses() {
+    let documents = [
+        "words here```rust\n```\r<script><!--x-->",
+        "a ```rust\n```\n<script>x",
+        // The input the seed produced, with the part that mattered around it.
+        "\u{7f}|---|:-:|\n|https://example.com/xa\0+ + *한글\u{1b}[31mwords here```rust\n```\r<script><!--# _[한글\t```diff\n~~<https://a.b><div>😀|```diff\n`\u{1b}[31m<!--- #   </div>[words here\\|#     + ```<https://a.b> <script>&#x41;(- [ ] \\[x]#| a | b |\n|    code\n>&__- [ ] <https://a.b>word- [x] * \u{7f}|---|:-:|\n    |---|:-:|\nword~~_## \t:]\r\n    https://example.com/x## [[(```\r_]:\n+ words here\01. \\\0\0## | a | b |\n</div>&amp;<div>![```diff\n      code\n| a | b |\n>)한글word",
+    ];
+    for text in documents {
+        let whole = parse(text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        let mut buffer = [0_u8; 4];
+        for character in text.chars() {
+            stream.push_delta(character.encode_utf8(&mut buffer));
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(streamed, whole, "{text:?}");
+    }
+}

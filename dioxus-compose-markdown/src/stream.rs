@@ -412,11 +412,29 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
         return 0;
     }
     let last_start = floor_boundary(text, units[count - 1].range.start.min(text.len()));
-    if text[last_start..].contains(['\n', '\r']) {
+    let mut settled = if text[last_start..].contains(['\n', '\r']) {
         count - 1
     } else {
         count - 2
+    };
+    // A paragraph holding a backtick followed by a unit that opens with a code fence is
+    // not settled: while the fence is the last thing received it reads as a fence, but
+    // text that arrives later can show the line to be the end of an inline code span
+    // that began in the paragraph. The paragraph waits, and is parsed again with what
+    // follows it.
+    if settled > 0 && settled < count {
+        let next = floor_boundary(text, units[settled].range.start.min(text.len()));
+        let opens_fence = {
+            let line = text[next..].trim_start_matches(' ');
+            line.starts_with("```") || line.starts_with("~~~")
+        };
+        let before = &text[floor_boundary(text, units[settled - 1].range.start.min(text.len()))
+            ..floor_boundary(text, units[settled - 1].range.end.min(text.len()))];
+        if opens_fence && before.contains('`') {
+            settled -= 1;
+        }
     }
+    settled
 }
 
 /// The start of the line holding `position`. Lines end the three ways CommonMark says:
