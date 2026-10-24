@@ -40,16 +40,17 @@ pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
 pub use hooks::{
-    use_design_system, use_node_size, use_notification_activated, use_notification_permission,
-    use_theme, use_window_size,
+    CodeEditorHandle, use_code_editor, use_design_system, use_node_size,
+    use_notification_activated, use_notification_permission, use_theme, use_window_size,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use widgets::{
-    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box,
-    DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon, Image, LazyColumn,
-    LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton, Row,
-    Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet, Slider, Spacer,
-    SplitPane, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
+    ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon,
+    Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator,
+    RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet,
+    Slider, Spacer, SplitPane, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip,
+    TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -149,6 +150,12 @@ pub mod prelude {
     // this one instead. It is here because the alternative is a fully qualified path in
     // every `main`, and because `Chrome` beside it is meaningless on its own.
     pub use crate::schema::{Chrome, Window};
+    // A code editor, its handle, and the ranges and events it speaks in.
+    pub use crate::{
+        CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
+        EditRejected, HoverPhase, Position, SaveRequest, Severity, SyntaxSpan, SyntaxSpans,
+        use_code_editor,
+    };
     // Notifications, from a component or from a worker thread.
     pub use crate::{
         Notification, NotificationActivation, NotificationImportance, NotificationPermission,
@@ -500,4 +507,13 @@ pub mod events {
     // the wire property with the text field's value change, because both are "this
     // control's value is now this".
     event!(onchange, f64);
+    // A code editor's committed edits. They travel under the same property a text field's
+    // value change does, because both are "what this control holds is now different", and
+    // under their own name here because what they carry is an edit and not a value.
+    event!(oncodechange, compose_rust::code::CodeChange);
+    event!(oneditrejected, compose_rust::code::EditRejected);
+    event!(onhover, compose_rust::code::CodeHover);
+    event!(onsave, compose_rust::code::SaveRequest);
+    // The id the application gave the decoration that was pressed or accepted.
+    event!(ondecorationclick, u64);
 }
