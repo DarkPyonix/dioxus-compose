@@ -564,10 +564,27 @@ impl HtmlDom {
     /// handler, which does not bubble, then `focusin` to the nearest handler at or around
     /// it, which does, in the order a browser sends them.
     ///
-    /// The node also takes the document's focus state, so `:focus` rules apply to it on
-    /// the next layout. The pinned blitz-dom never matches `:focus-within` or
-    /// `:focus-visible`, whatever the focus state is.
+    /// The node also takes the document's focus state, so `:focus`, and with the patched
+    /// blitz-dom `:focus-within` on its ancestors, apply on the next layout. A focus that
+    /// arrives here does not show `:focus-visible`: that is for focus that came from the
+    /// keyboard, which is [`HtmlDom::focus_by_keyboard`].
     pub fn focus(&mut self, node: NodeId) {
+        #[cfg(feature = "patched-blitz")]
+        self.doc.set_focus_from_keyboard(false);
+        self.focus_node(node);
+    }
+
+    /// [`HtmlDom::focus`] for focus that came from the keyboard, such as Tab: the node
+    /// also matches `:focus-visible`, which a browser shows for keyboard focus and not for
+    /// a pointer press. Without the `patched-blitz` feature the pinned blitz-dom marks
+    /// every focus as keyboard focus, so this and `focus` do the same.
+    pub fn focus_by_keyboard(&mut self, node: NodeId) {
+        #[cfg(feature = "patched-blitz")]
+        self.doc.set_focus_from_keyboard(true);
+        self.focus_node(node);
+    }
+
+    fn focus_node(&mut self, node: NodeId) {
         self.doc.set_focus_to(node);
         self.send_focus(node, "focus", "focusin");
     }
