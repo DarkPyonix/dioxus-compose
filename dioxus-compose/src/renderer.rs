@@ -21,6 +21,24 @@ const LAST_OPTIONAL_PROPERTY: u16 = PropertyKind::Variant as u16;
 /// absent are the same state, so the first empty one is worth no record.
 const SPANS_BIT: u32 = 63;
 
+/// The bits for the properties text laid out by CSS carries, in the same order as their
+/// tags. Kept apart for the same reason as the runs: their tags are far past the range
+/// above, and none of them has a zero that means anything but "not sent".
+const TEXT_LAYOUT_BITS: [(PropertyKind, u32); 7] = [
+    (PropertyKind::Font, 56),
+    (PropertyKind::WordBreak, 57),
+    (PropertyKind::OverflowWrap, 58),
+    (PropertyKind::TabSize, 59),
+    (PropertyKind::AbsoluteSize, 60),
+    (PropertyKind::SoftWrap, 61),
+    (PropertyKind::SpanFonts, 62),
+];
+
+/// The font table of a `Text`'s runs, as an attribute of its own. The same runs travel as
+/// `spans` and their fonts as this, so a run record keeps its own layout.
+#[derive(Clone, PartialEq)]
+pub struct SpanFontTable(pub compose_rust::spans::TextSpans);
+
 #[derive(Clone, Copy, Debug)]
 struct Handler {
     id: u64,
@@ -158,6 +176,8 @@ pub struct ComposeRenderer {
     /// Reused, so resending runs does not allocate once it has grown.
     span_scratch: Vec<u8>,
 
+    /// Which editor node each code editor handle is attached to, by the handle's token.
+    editors: HashMap<u32, u32>,
     /// The animated attributes each node has already been given a value for. The first
     /// value is where the node starts; every later one is a change to animate.
     animated: std::collections::HashSet<(u32, &'static str)>,
@@ -185,11 +205,29 @@ impl ComposeRenderer {
             .collect()
     }
 
+    /// The drawn node nothing was inserted under: the root of the tree this wrote. When
+    /// the tree has several, the one created first.
+    pub(crate) fn root_node(&self) -> Option<u32> {
+        self.nodes
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|&node| node != PLACEHOLDER_NODE && !self.parents.contains_key(&node))
+            .min()
+    }
+
     pub fn new() -> Self {
+        Self::with_id_bases(1, 1)
+    }
+
+    /// A renderer whose node ids start at `first_node` and whose handler ids start at
+    /// `first_handler`. A tree that shares a batch with another writer takes ids from a
+    /// range of its own, so the two never name the same node.
+    pub fn with_id_bases(first_node: u32, first_handler: u64) -> Self {
         Self {
             batch: Batch::new(),
-            next_node_id: 1,
-            next_handler_id: 1,
+            next_node_id: first_node,
+            next_handler_id: first_handler,
             nodes: Vec::with_capacity(256),
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
@@ -208,6 +246,8 @@ impl ComposeRenderer {
             link_handlers: HashMap::new(),
             span_scratch: Vec::new(),
 
+            // Empty for a screen without an editor handle, which allocates nothing.
+            editors: HashMap::new(),
             animated: std::collections::HashSet::new(),
             next_animation_id: 1,
             stack: Vec::with_capacity(64),
@@ -261,6 +301,24 @@ impl ComposeRenderer {
             text,
             selection,
         });
+    }
+
+    /// The editor node a code editor handle is attached to, if it is attached to one.
+    pub(crate) fn editor_node(&self, token: u32) -> Option<u32> {
+        self.editors.get(&token).copied()
+    }
+
+    /// Writes one edit the application asked of a code editor.
+    pub(crate) fn edit_code(
+        &mut self,
+        node_id: u32,
+        request_id: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        text: &str,
+    ) {
+        self.batch
+            .edit_code(node_id, request_id, base_version, range, text);
     }
 
     /// Turns a Modifier attribute written in `rsx!` into one slot of the node's chain.
@@ -690,6 +748,8 @@ impl ComposeRenderer {
             u32::from(tag - FIRST_OPTIONAL_PROPERTY)
         } else if property == PropertyKind::Spans {
             SPANS_BIT
+        } else if let Some((_, bit)) = TEXT_LAYOUT_BITS.iter().find(|(kind, _)| *kind == property) {
+            *bit
         } else {
             return true;
         };
@@ -754,16 +814,27 @@ impl ComposeRenderer {
                     // same reason: a list that has not changed compares equal before it
                     // reaches here and costs no record at all.
                     PropertyValue::Bytes(spans.as_bytes())
+                } else if let Some(table) = any.downcast_ref::<SpanFontTable>() {
+                    PropertyValue::Bytes(table.0.font_table())
+                } else if let Some(fonts) = any.downcast_ref::<compose_rust::fonts::FontRefs>() {
+                    PropertyValue::Bytes(fonts.as_bytes())
+                } else if let Some(decorations) =
+                    any.downcast_ref::<compose_rust::code::Decorations>()
+                {
+                    PropertyValue::Bytes(decorations.as_bytes())
+                } else if let Some(spans) = any.downcast_ref::<compose_rust::code::SyntaxSpans>() {
+                    PropertyValue::Bytes(spans.as_bytes())
                 } else {
                     return;
                 }
             }
             AttributeValue::Listener(_) => return,
         };
-        let neutral = matches!(
-            value,
-            PropertyValue::None | PropertyValue::Integer(0) | PropertyValue::Float(0.0)
-        );
+        // A type role of zero is `TypeRole::None`, which is a value: text with no rung of
+        // the ladder. A Text with no role at all sends nothing, and one whose role was
+        // taken away sends `None`, which is what drops it on the other side.
+        let neutral = matches!(value, PropertyValue::None | PropertyValue::Float(0.0))
+            || (matches!(value, PropertyValue::Integer(0)) && property != PropertyKind::TypeRole);
         if !self.should_write_optional_property(node_id, property, neutral) {
             return;
         }
@@ -947,6 +1018,9 @@ impl ComposeRenderer {
         self.sent_text.remove(&node_id);
         if self.link_handlers.remove(&node_id).is_some() {
             self.handlers.retain(|handler| handler.node_id != node_id);
+        }
+        if !self.editors.is_empty() {
+            self.editors.retain(|_, node| *node != node_id);
         }
         for slot in self.children.remove(&node_id).unwrap_or_default() {
             match slot {
@@ -1137,6 +1211,17 @@ impl WriteMutations for ComposeRenderer {
         id: ElementId,
     ) {
         if let Some(node_id) = self.node(id) {
+            // The Host's own name for an editor, kept here and never sent: an edit asked
+            // of the handle is addressed to whichever node carries it now.
+            if name == "editor" {
+                self.editors.retain(|_, node| *node != node_id);
+                if let AttributeValue::Int(token) = value
+                    && let Ok(token) = u32::try_from(*token)
+                {
+                    self.editors.insert(token, node_id);
+                }
+                return;
+            }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
                 if let Some((index, modifier)) = slot {
                     self.write(Mutation::SetModifier {
@@ -1248,6 +1333,12 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),
         "filesdropped" | "onfilesdropped" => Some(PropertyKind::OnFilesDropped),
         "change" | "onchange" => Some(PropertyKind::OnValueChange),
+        // A code editor's committed edits go out under the value change property too.
+        "codechange" | "oncodechange" => Some(PropertyKind::OnValueChange),
+        "editrejected" | "oneditrejected" => Some(PropertyKind::OnEditRejected),
+        "hover" | "onhover" => Some(PropertyKind::OnHover),
+        "save" | "onsave" => Some(PropertyKind::OnSave),
+        "decorationclick" | "ondecorationclick" => Some(PropertyKind::OnDecorationClick),
         _ => None,
     }
 }

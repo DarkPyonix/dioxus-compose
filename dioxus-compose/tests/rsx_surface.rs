@@ -20,7 +20,24 @@ use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch}
 use dioxus_compose::schema::{
     EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PropertyKind, WIDGET_SCHEMA, WidgetKind,
 };
-use dioxus_compose::spans::TextSpans;
+use dioxus_compose::spans::{TextSpan, TextSpans};
+use dioxus_compose::{FontRef, FontRefs, GenericFamily, OverflowWrap, WordBreak};
+
+/// The font list of the CSS text in `surface()`.
+fn css_font() -> FontRefs {
+    FontRefs::new([
+        FontRef::System("Menlo".to_owned()),
+        FontRef::Generic(GenericFamily::Monospace),
+    ])
+}
+
+/// Its runs: one names a font of its own.
+fn css_spans() -> TextSpans {
+    TextSpans::new_with_fonts([(
+        TextSpan::new(0, 3),
+        FontRefs::new([FontRef::Generic(GenericFamily::Serif)]),
+    )])
+}
 
 thread_local! {
     /// What the handlers written in `surface()` were called with, in order.
@@ -36,6 +53,22 @@ fn take_fired() -> Vec<String> {
 }
 
 const SPANS_SOURCE: &str = "every **widget** in `rsx`";
+
+/// The two lists a code editor carries, built the same way in surface() and expectations().
+fn code_lists() -> (SyntaxSpans, Decorations) {
+    (
+        SyntaxSpans::new([SyntaxSpan::role(
+            0,
+            CodeRange::of(0, 0, 0, 1),
+            ColorRole::Primary,
+        )]),
+        Decorations::new([Decoration::underline(
+            0,
+            CodeRange::of(0, 4, 0, 5),
+            Severity::Warning,
+        )]),
+    )
+}
 
 fn spans() -> (String, TextSpans) {
     TextSpans::from_markdown(SPANS_SOURCE)
@@ -140,6 +173,19 @@ fn surface() -> Element {
                         max_lines: 2,
                         overflow: TextOverflow::Ellipsis,
                     }
+                    // Text laid out by CSS: no rung of the ladder, and everything it says
+                    // about itself instead.
+                    Text {
+                        text: "css\ttext",
+                        spans: css_spans(),
+                        type_role: TypeRole::None,
+                        font: css_font(),
+                        word_break: WordBreak::KeepAll,
+                        overflow_wrap: OverflowWrap::BreakWord,
+                        tab_size: 2,
+                        absolute_size: true,
+                        soft_wrap: false,
+                    }
                 }
                 TextField {
                     placeholder: "Search",
@@ -182,6 +228,17 @@ fn surface() -> Element {
                         required_size: (100.0, 40.0),
                         Text { text: "placed" }
                     }
+                }
+                CodeEditor {
+                    text: "x = 1",
+                    syntax_spans: code_lists().0,
+                    decorations: code_lists().1,
+                    tab_width: 4_u32,
+                    on_change: move |_| fired("CodeEditor.on_change"),
+                    on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
+                    on_hover: move |_| fired("CodeEditor.on_hover"),
+                    on_save: move |_| fired("CodeEditor.on_save"),
+                    on_decoration_click: move |id: u64| fired(format!("CodeEditor.on_decoration_click({id})")),
                 }
                 SelectionContainer {
                     Badge {
@@ -522,6 +579,24 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Overflow, role(TextOverflow::Ellipsis)),
             ],
         ),
+        (
+            W::Text,
+            vec![
+                (P::Text, text("css\ttext")),
+                (P::TypeRole, int(0)),
+                (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
+                (P::Spans, is(Value::Bytes(css_spans().as_bytes().to_vec()))),
+                (
+                    P::SpanFonts,
+                    is(Value::Bytes(css_spans().font_table().to_vec())),
+                ),
+                (P::WordBreak, role(WordBreak::KeepAll)),
+                (P::OverflowWrap, role(OverflowWrap::BreakWord)),
+                (P::TabSize, int(2)),
+                (P::AbsoluteSize, int(1)),
+                (P::SoftWrap, flag(false)),
+            ],
+        ),
         (W::Text, vec![(P::Text, text("message 1"))]),
         (W::Text, vec![(P::Text, text("chip 0"))]),
         (W::Text, vec![(P::Text, text("tile 1"))]),
@@ -557,6 +632,26 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
         (W::ScrollColumn, vec![]),
         (W::AbsoluteBox, vec![]),
         (W::ScrollRow, vec![]),
+        (
+            W::CodeEditor,
+            vec![
+                (P::Text, text("x = 1")),
+                (
+                    P::SyntaxSpans,
+                    is(Value::Bytes(code_lists().0.as_bytes().to_vec())),
+                ),
+                (
+                    P::Decorations,
+                    is(Value::Bytes(code_lists().1.as_bytes().to_vec())),
+                ),
+                (P::TabWidth, int(4)),
+                (P::OnValueChange, Handler),
+                (P::OnEditRejected, Handler),
+                (P::OnHover, Handler),
+                (P::OnSave, Handler),
+                (P::OnDecorationClick, Handler),
+            ],
+        ),
         (
             W::SplitPane,
             vec![

@@ -1971,6 +1971,27 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 6. **제목의 접근성.** 제목을 접근성 트리에 "제목 수준 n"으로 알리는 수단이 지금 스키마에 없습니다. 그냥 큰 글로 읽혀도 되는지, NFR-8 쪽에 의미(semantics) 속성이 필요한지 정해 주세요.
 7. **GFM 맨 URL 자동 링크.** `https://example.com`을 꺾쇠 없이 쓴 것을 링크로 만드는 것은 GFM 확장이고, 후보 파서가 지원하는지에 따라 달라집니다. 에이전트 출력에는 흔하므로 범위에 넣고 싶지만, 확인 전이라 37.3 표에는 넣지 않았습니다.
 
+### FR-38 코드 편집기 `CodeEditor`의 rsx 표면 (`Draft`)
+
+추적: DarkPyonix/darkpyonix-ember #32(FR-E1~E5). 렌더러와 와이어는 compose-rust FR-38의 것이고(위젯 태그 43, 속성 100-106, 명령 17, 이벤트 26-30), 그것은 compose-rust PR #111에 있으며 0.0.2에 들어 있지 않다. 이 항목은 그 위에 얹는 rsx 표면만 다룬다. 편집기를 dioxus-compose가 따로 만들지 않는다(소유자 결정): compose-rust의 SPEC과 PR #111의 API를 따라 쓰고, PR이 배포되기 전까지 그 커밋을 git 의존성으로 가리킨다.
+
+#### 38.1 요소와 컴포넌트
+
+- `CodeEditor` 컴포넌트와 `codeeditor` 요소가 있다. 속성은 `text`(처음 내용, 버전 0), `syntax_spans`, `decorations`, `tab_width`, `handle`, 그리고 다른 위젯과 같은 크기, 패딩, 배경, 테두리 속성이다.
+- 이벤트 핸들러는 `on_change`(확정된 변경, `OnValueChange`), `on_edit_rejected`, `on_hover`, `on_save`, `on_decoration_click`이다.
+- `text`가 편집기가 든 글과 같으면 아무 레코드도 나가지 않는다. 비어 있는 `syntax_spans`와 `decorations`는 속성을 보내지 않는다.
+- `use_code_editor()`가 `CodeEditorHandle`을 준다. 핸들로 `EditCode` 명령을 보낸다(서식 맞춤, 완성 수락, 파일 다시 읽기). 핸들이 어느 편집기에도 붙어 있지 않으면 그 편집은 버려진다.
+- 변경 범위의 열은 UTF-16 코드 단위이고 줄과 열은 0부터 센다. 이 크레이트는 단위를 바꾸지 않는다.
+
+#### 38.2 수용 기준
+
+1. 스키마의 모든 위젯이 rsx 요소를 가진다는 기존 검사(FR-15)가 `CodeEditor`를 포함해 통과한다.
+2. `CodeEditor`의 모든 속성이 rsx에서 와이어로 나가고, 모든 핸들러가 호출된다(`rsx_surface`의 기대 표).
+3. 같은 글을 다시 주면 `SetProp` 레코드가 나가지 않는다.
+4. `CodeChanged`, `CodeEditRejected`, `CodeHovered`, `CodeSaveRequested`, `DecorationActivated` 이벤트가 각각 해당 핸들러의 값으로 도착한다.
+5. 핸들의 편집이 `EditCode` 명령 하나로 나가고, 붙어 있지 않은 핸들의 편집은 나가지 않는다.
+6. 창에 그려 한글 조합, 큰 파일, 장식을 확인하는 것은 compose-rust 38.7의 몫이고 PR #111이 병합되고 배포된 뒤에 확인한다. 그 전에는 확인하지 않았다.
+
 ## 4. 경계 프로토콜
 
 ### PR-1 호출 모델: 동기·동일 스레드 직접 호출 (`Done`)
