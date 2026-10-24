@@ -118,7 +118,7 @@ download went to `/tmp`, and worktrees went to `../agent-runs`, and the owner ha
 none of it.
 
 6. **The repository root holds only these entries**, approved by the owner (issue #52,
-   2026-10-03): `.github/`, `dioxus-compose/`, `docs/`, `experiments/` (stripped on
+   2026-10-03): `.github/`, `dioxus-compose/`, `dioxus-compose-markdown/` (added 2026-10-25, owner's choice "루트에 새 폴더" for the Markdown crate, PR #68), `docs/`, `experiments/` (stripped on
    main), `samples/`, `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md`
    (also stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
    `.gitignore`. Git-ignored working directories (`.claude/`, `.scratch/`, `target/`)
