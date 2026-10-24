@@ -44,7 +44,7 @@ impl Runtime for DioxusRuntime {
         self.dom.rebuild(&mut self.renderer);
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render_immediate(&mut self.renderer);
     }
 
