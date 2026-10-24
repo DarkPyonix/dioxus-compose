@@ -192,10 +192,11 @@ fn fr34_spans_keep_their_place_through_text_transform() {
 fn fr34_spans_carry_italic_lines_colour_and_family() {
     let (doc, list, _) = laid_out(
         r#"<p id="p">a <i>it</i> <u>un</u> <s>st</s> <em class="c">co</em> <code>mono</code></p>"#,
-        // A monospace family alone makes the browser's default size smaller; the explicit
-        // size keeps `code` the size of the text around it, as a span needs.
+        // A monospace family makes the browser's default size smaller, and a size in em
+        // keeps that adjustment; a size in px does not, so `code` stays the size of the
+        // text around it, as a span needs.
         ".c { color: #ff0000; font-style: normal; } \
-         code { font-family: monospace; font-size: 1em; } p { font-family: sans-serif; }",
+         code { font-family: monospace; font-size: 16px; } p { font-family: sans-serif; }",
     );
     let run = &entry(&list, &doc, "p").texts[0];
     let text = &run.text;
@@ -315,7 +316,7 @@ fn config() -> HtmlConfig {
     HtmlConfig {
         stylesheets: vec![
             "html, body { margin: 0; padding: 0; } p { font-family: sans-serif; } \
-             b { font-weight: 700; } code { font-family: monospace; font-size: 1em; }"
+             b { font-weight: 700; } code { font-family: monospace; font-size: 16px; }"
                 .to_string(),
         ],
         ..HtmlConfig::default()
