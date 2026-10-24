@@ -26,6 +26,29 @@ const PERMISSIVE: &[&str] = &[
 /// Cargo.lock does not say which dependencies are dev-only, so they are named here.
 const DEV_ONLY: &[&str] = &["criterion"];
 
+/// Crates under MPL-2.0 that reach an application through dioxus-compose's HTML and CSS
+/// path (blitz-dom and stylo). MPL-2.0 is file-level copyleft, so it is not on the
+/// permissive list; these crates are accepted by name and nothing else is. Owner
+/// decision, 2026-10-25: "b로 해" (keep the permissive rule, exempt only these by name).
+const MPL_EXEMPT: &[&str] = &[
+    "app_units",
+    "cssparser",
+    "cssparser-macros",
+    "dtoa-short",
+    "selectors",
+    "stylo",
+    "stylo_atoms",
+    "stylo_config",
+    "stylo_derive",
+    "stylo_dom",
+    "stylo_static_prefs",
+    "stylo_taffy",
+    "stylo_traits",
+    "to_shmem",
+    "to_shmem_derive",
+    "uluru",
+];
+
 /// Whether an SPDX expression can be satisfied with permissive licences only.
 fn permissive(expression: &str) -> bool {
     let normalized = expression
@@ -173,6 +196,7 @@ fn fr37_every_linked_crate_is_listed_with_a_permissive_licence() {
         }
         match listed.get(name) {
             None => missing.push(name.clone()),
+            Some(licence) if licence == "MPL-2.0" && MPL_EXEMPT.contains(&name.as_str()) => {}
             Some(licence) if !permissive(licence) => refused.push(format!("{name}: {licence}")),
             Some(_) => {}
         }

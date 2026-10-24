@@ -124,3 +124,227 @@ windows_i686_msvc MIT OR Apache-2.0
 windows_x86_64_gnu MIT OR Apache-2.0
 windows_x86_64_gnullvm MIT OR Apache-2.0
 windows_x86_64_msvc MIT OR Apache-2.0
+
+# What dioxus-compose links for HTML and CSS screens (compose-rust, blitz, parley and
+# their dependencies).
+accesskit MIT OR Apache-2.0
+alloc-no-stdlib BSD-3-Clause
+allocator-api2 MIT OR Apache-2.0
+anes MIT OR Apache-2.0
+anstyle MIT OR Apache-2.0
+arrayref BSD-2-Clause
+arrayvec MIT OR Apache-2.0
+async-trait MIT OR Apache-2.0
+atomic_refcell Apache-2.0 OR MIT
+autocfg Apache-2.0 OR MIT
+base64 MIT OR Apache-2.0
+blitz-dom MIT OR Apache-2.0
+blitz-html MIT OR Apache-2.0
+blitz-traits MIT OR Apache-2.0
+brotli-decompressor BSD-3-Clause/MIT
+bytemuck Zlib OR Apache-2.0 OR MIT
+bytemuck_derive Zlib OR Apache-2.0 OR MIT
+byteorder Unlicense OR MIT
+byteorder-lite Unlicense OR MIT
+cast MIT OR Apache-2.0
+ciborium Apache-2.0
+ciborium-io Apache-2.0
+ciborium-ll Apache-2.0
+clap MIT OR Apache-2.0
+clap_builder MIT OR Apache-2.0
+clap_lex MIT OR Apache-2.0
+color Apache-2.0 OR MIT
+compose-rust Apache-2.0
+compose-rust-macros Apache-2.0
+core_detect MIT/Apache-2.0
+core_maths MIT
+criterion Apache-2.0 OR MIT
+criterion-plot MIT OR Apache-2.0
+crossbeam-deque MIT OR Apache-2.0
+crossbeam-epoch MIT OR Apache-2.0
+crossbeam-utils MIT OR Apache-2.0
+crunchy MIT
+cursor-icon MIT OR Apache-2.0 OR Zlib
+darling MIT
+darling_core MIT
+darling_macro MIT
+data-url MIT OR Apache-2.0
+debug_timer MIT OR Apache-2.0
+derive_more MIT
+derive_more-impl MIT
+dioxus-html MIT OR Apache-2.0
+dioxus-html-internal-macro MIT OR Apache-2.0
+displaydoc MIT OR Apache-2.0
+dlib MIT
+dtoa MIT OR Apache-2.0
+either MIT OR Apache-2.0
+encoding_rs (Apache-2.0 OR MIT) AND BSD-3-Clause
+enumset MIT/Apache-2.0
+enumset_derive MIT/Apache-2.0
+equivalent Apache-2.0 OR MIT
+euclid MIT OR Apache-2.0
+fastrand Apache-2.0 OR MIT
+float-cmp MIT
+foldhash Zlib
+font-types MIT OR Apache-2.0
+fontconfig-parser MIT
+fontdb MIT
+fontique Apache-2.0 OR MIT
+form_urlencoded MIT OR Apache-2.0
+futf MIT / Apache-2.0
+grid MIT
+half MIT OR Apache-2.0
+harfrust MIT
+hashbrown MIT OR Apache-2.0
+hermit-abi MIT OR Apache-2.0
+html-escape MIT
+html5ever MIT OR Apache-2.0
+http MIT OR Apache-2.0
+icu_collections Unicode-3.0
+icu_locale_core Unicode-3.0
+icu_locale_fallback Unicode-3.0
+icu_locale_fallback_data Unicode-3.0
+icu_normalizer Unicode-3.0
+icu_normalizer_data Unicode-3.0
+icu_properties Unicode-3.0
+icu_properties_data Unicode-3.0
+icu_provider Unicode-3.0
+icu_segmenter Unicode-3.0
+icu_segmenter_data Unicode-3.0
+ident_case MIT/Apache-2.0
+idna MIT OR Apache-2.0
+idna_adapter Apache-2.0 OR MIT
+image MIT OR Apache-2.0
+imagesize MIT
+indexmap Apache-2.0 OR MIT
+itertools MIT OR Apache-2.0
+itoa MIT OR Apache-2.0
+keyboard-types MIT OR Apache-2.0
+kurbo Apache-2.0 OR MIT
+lazy-js-bundle MIT OR Apache-2.0
+lazy_static MIT OR Apache-2.0
+libm MIT
+linebender_resource_handle Apache-2.0 OR MIT
+litemap Unicode-3.0
+mac MIT/Apache-2.0
+malloc_size_of_derive MIT OR Apache-2.0
+markup5ever MIT OR Apache-2.0
+match_token MIT OR Apache-2.0
+matches MIT
+mime MIT OR Apache-2.0
+multiversion_no_op Apache-2.0 OR MIT
+new_debug_unreachable MIT
+num-derive MIT OR Apache-2.0
+num-integer MIT OR Apache-2.0
+num-traits MIT OR Apache-2.0
+num_cpus MIT OR Apache-2.0
+objc2 MIT
+objc2-core-foundation Zlib OR Apache-2.0 OR MIT
+objc2-core-text Zlib OR Apache-2.0 OR MIT
+objc2-encode MIT
+objc2-foundation MIT
+oorandom MIT
+parley Apache-2.0 OR MIT
+percent-encoding MIT OR Apache-2.0
+phf MIT
+phf_codegen MIT
+phf_generator MIT
+phf_macros MIT
+phf_shared MIT
+pico-args MIT
+pkg-config MIT OR Apache-2.0
+plotters MIT
+plotters-backend MIT
+plotters-svg MIT
+potential_utf Unicode-3.0
+precomputed-hash MIT
+rand MIT OR Apache-2.0
+rand_core MIT OR Apache-2.0
+rayon MIT OR Apache-2.0
+rayon-core MIT OR Apache-2.0
+read-fonts MIT OR Apache-2.0
+regex MIT OR Apache-2.0
+roxmltree MIT OR Apache-2.0
+rustc_version MIT OR Apache-2.0
+rustybuzz MIT
+semver MIT OR Apache-2.0
+serde_json MIT OR Apache-2.0
+servo_arc MIT OR Apache-2.0
+simdutf8 MIT OR Apache-2.0
+simplecss Apache-2.0 OR MIT
+siphasher MIT OR Apache-2.0
+skrifa MIT OR Apache-2.0
+smallbitvec MIT OR Apache-2.0
+smol_str MIT OR Apache-2.0
+stable_deref_trait MIT OR Apache-2.0
+static_assertions MIT OR Apache-2.0
+strict-num MIT
+string_cache MIT OR Apache-2.0
+string_cache_codegen MIT OR Apache-2.0
+stylo_malloc_size_of MIT OR Apache-2.0
+svgtypes Apache-2.0 OR MIT
+swash Apache-2.0 OR MIT
+synstructure MIT
+taffy MIT
+tendril MIT/Apache-2.0
+thin-vec MIT OR Apache-2.0
+tiny-skia-path BSD-3-Clause
+tinystr Unicode-3.0
+tinytemplate Apache-2.0 OR MIT
+tinyvec Zlib OR Apache-2.0 OR MIT
+ttf-parser MIT OR Apache-2.0
+unicode-bidi MIT OR Apache-2.0
+unicode-bidi-mirroring MIT/Apache-2.0
+unicode-ccc MIT/Apache-2.0
+unicode-properties MIT/Apache-2.0
+unicode-script MIT OR Apache-2.0
+unicode-vo MIT/Apache-2.0
+url MIT OR Apache-2.0
+usvg Apache-2.0 OR MIT
+utf-8 MIT OR Apache-2.0
+utf8_iter Apache-2.0 OR MIT
+void MIT
+web_atoms MIT OR Apache-2.0
+windows MIT OR Apache-2.0
+windows-core MIT OR Apache-2.0
+windows-implement MIT OR Apache-2.0
+windows-interface MIT OR Apache-2.0
+windows-result MIT OR Apache-2.0
+windows-strings MIT OR Apache-2.0
+writeable Unicode-3.0
+wuff MIT
+xml5ever MIT OR Apache-2.0
+xmlwriter MIT
+yazi Apache-2.0 OR MIT
+yeslogic-fontconfig-sys MIT
+yoke Unicode-3.0
+yoke-derive Unicode-3.0
+zeno Apache-2.0 OR MIT
+zerocopy BSD-2-Clause OR Apache-2.0 OR MIT
+zerocopy-derive BSD-2-Clause OR Apache-2.0 OR MIT
+zerofrom Unicode-3.0
+zerofrom-derive Unicode-3.0
+zerotrie Unicode-3.0
+zerovec Unicode-3.0
+zerovec-derive Unicode-3.0
+zlib-rs Zlib
+zmij MIT
+
+# Mozilla Public License 2.0, through blitz-dom and stylo. Not permissive by the test's
+# rule; exempted by name there. Owner decision, 2026-10-25: "b로 해".
+app_units MPL-2.0
+cssparser MPL-2.0
+cssparser-macros MPL-2.0
+dtoa-short MPL-2.0
+selectors MPL-2.0
+stylo MPL-2.0
+stylo_atoms MPL-2.0
+stylo_config MPL-2.0
+stylo_derive MPL-2.0
+stylo_dom MPL-2.0
+stylo_static_prefs MPL-2.0
+stylo_taffy MIT OR Apache-2.0 OR MPL-2.0
+stylo_traits MPL-2.0
+to_shmem MPL-2.0
+to_shmem_derive MPL-2.0
+uluru MPL-2.0
