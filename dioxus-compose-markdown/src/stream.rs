@@ -419,13 +419,18 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
     if has_bare_carriage_return(text) {
         return 0;
     }
-    // The last unit is the one being written and is never settled. The one before it is
-    // settled when a blank line separates the two, whether or not the last line is complete:
-    // the blank line is complete, and the indentation that decides whether the last line
-    // can belong to anything above is already in hand once its first character is.
-    // Requiring a complete last line as well kept the previous paragraph parsed again on
-    // every delta for as long as the next line was being written.
-    let mut settled = count - 1;
+    let last_start = floor_boundary(text, units[count - 1].range.start.min(text.len()));
+    let mut settled = if text[last_start..].contains(['\n', '\r']) {
+        count - 1
+    } else if plain_before_line_start(text, units, count) {
+        // The last line is still being written, but the block before it is a paragraph,
+        // heading or rule and the line begins in column zero, so no later character can
+        // make the line continue a list, quote or code block above it. Without this the
+        // previous paragraph is parsed again on every delta while the next one grows.
+        count - 1
+    } else {
+        count - 2
+    };
     // A block is settled only once a blank line separates it from the next one. Without
     // the blank line, text that arrives later can still turn the next block's first line
     // into a continuation of this one: the closing end of an inline code span, a
@@ -504,6 +509,22 @@ fn floor_boundary(text: &str, mut position: usize) -> usize {
         position -= 1;
     }
     position
+}
+
+/// Whether the unit before the last holds only paragraphs, headings and rules, and the last
+/// unit starts at the beginning of its line. Lists, quotes, HTML and code can continue
+/// across a blank line, so they are not in the set.
+fn plain_before_line_start(text: &str, units: &[crate::parse::Unit], count: usize) -> bool {
+    use crate::model::Block;
+    let last = units[count - 1].range.start.min(text.len());
+    let last = floor_boundary(text, last);
+    last == line_start(text, last)
+        && units[count - 2].blocks.iter().all(|block| {
+            matches!(
+                block,
+                Block::Paragraph(_) | Block::Heading { .. } | Block::Rule
+            )
+        })
 }
 
 #[cfg(test)]
