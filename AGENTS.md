@@ -334,6 +334,7 @@ Never introduce anything that violates these. If a task seems to require it, sto
 
 ## Verification
 
+- After a fresh clone or a new worktree, run `scripts/apply-patches.sh` before any cargo command. The workspace patches blitz-dom with a copy it builds under `.scratch/patched/`, and until that exists cargo stops with `failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4`. `scripts/check.sh` and `scripts/setup-worktrees.sh` run it for you.
 - A milestone is complete only when its SPEC acceptance criteria pass. Report failures with actual output; do not mark items `Done` on assumption.
 - IME (SPEC §6) and accessibility (SPEC §7) checks run on the **native-image build**, not only on the JVM dev shell.
 - Performance claims (call cost, frame time, RSS, binary size) require measured numbers, recorded alongside the relevant SPEC item.

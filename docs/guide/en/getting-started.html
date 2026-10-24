@@ -232,11 +232,14 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
       Seventeen examples in <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a>
       are written this way, one crate each, and the rest of this guide quotes them. Their tests check
       every layout against numbers worked out by hand, and click, type and submit through the same
-      calls a renderer makes. In a checkout of the repository:
+      calls a renderer makes. In a checkout of the repository, run <code>./scripts/apply-patches.sh</code>
+      once first: the workspace builds a patched copy of blitz-dom, and until it exists cargo stops with
+      <code>failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4</code>.
     </p>
 <figure class="codeblock" data-copy="Copy" data-copied="Copied">
   <figcaption>shell</figcaption>
-<pre><code>cargo test -p sample-html-hello
+<pre><code>./scripts/apply-patches.sh
+cargo test -p sample-html-hello
 cargo test -p sample-html-hello -p sample-html-chat -p sample-html-todo</code></pre>
 </figure>
     <div class="tablewrap">
