@@ -34,9 +34,12 @@ const LINE: f32 = 20.0;
 
 /// Every character is 10px wide and every line 20px tall, and the runs it was asked about
 /// are written down.
+/// One measure request: the text and the runs it carried.
+type Asked = (String, Vec<SpanRun>);
+
 #[derive(Clone, Default)]
 struct Recorder {
-    asked: Rc<RefCell<Vec<(String, Vec<SpanRun>)>>>,
+    asked: Rc<RefCell<Vec<Asked>>>,
 }
 
 impl Recorder {
