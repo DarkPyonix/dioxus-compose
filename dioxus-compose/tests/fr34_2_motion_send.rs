@@ -115,16 +115,13 @@ fn click(host: &mut Host, (node_id, handler_id): (u32, u64)) -> Vec<Mutation<'st
 }
 
 fn fader() -> Element {
-    let mut faded = use_signal(|| false);
-    let opacity = if faded() { "0.25" } else { "1" };
+    let mut presses = use_signal(|| 0u32);
+    let opacity = if presses() % 2 == 1 { "0.25" } else { "1" };
     rsx! {
         div {
             id: "fader",
             style: "opacity: {opacity}",
-            onclick: move |_| {
-                let value = faded();
-                faded.set(!value);
-            },
+            onclick: move |_| presses += 1,
             ontransitionend: move |event| {
                 SEEN.with(|seen| {
                     seen.borrow_mut().push(format!("{:?}", event.data()));
@@ -366,12 +363,9 @@ fn fr34_2_a_transform_animation_is_sent_in_degrees_and_its_moments_come_back() {
 }
 
 fn toggled() -> Element {
-    let mut on = use_signal(|| false);
-    let class = if on() { "on" } else { "" };
-    rsx! { div { id: "toggled", class: "{class}", onclick: move |_| {
-        let value = on();
-        on.set(!value);
-    } } }
+    let mut presses = use_signal(|| 0u32);
+    let class = if presses() % 2 == 1 { "on" } else { "" };
+    rsx! { div { id: "toggled", class: "{class}", onclick: move |_| presses += 1 } }
 }
 
 /// An animation that starts when a class is added is sent in that frame, and cancelled
