@@ -31,5 +31,30 @@
       "note": "Measure a sample built with and without a Markdown in it, per platform.",
       "bytes": null
     }
+  },
+  "binary_size_increase": {
+    "note": "Measured on macOS aarch64 (Apple M1, macOS 26.5.1) as release builds with `--features dioxus-compose/mock-renderer`, so no native renderer is linked into either binary. Each value is the byte size of the example binary. Other platforms are not measured yet.",
+    "platform": "macOS aarch64",
+    "profile": "release",
+    "features": [
+      "dioxus-compose/mock-renderer"
+    ],
+    "examples": {
+      "without_markdown": {
+        "binary": "examples/size_plain",
+        "bytes": 15882016
+      },
+      "with_markdown": {
+        "binary": "examples/size_markdown",
+        "bytes": 19842064
+      }
+    },
+    "bytes": 3960048,
+    "unchanged_sample": {
+      "binary": "samples/hello (sample-html-hello)",
+      "bytes": 15857856,
+      "same_bytes_with_and_without_markdown_workspace_member": true,
+      "note": "Built with dioxus-compose-markdown as a workspace member and again with it removed from the members; both builds produce the same SHA-256 (03e2c0098e0e7c05570121b5bfba21dd740745c05c9c9752c61232ce5ab53f38). The markdown crate is not in its dependency tree."
+    }
   }
 }
