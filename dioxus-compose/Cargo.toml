@@ -90,6 +90,12 @@ harness = false
 name = "html_frame"
 harness = false
 
+# The Host's half of the measure call: two hundred labels, six hundred measurements in one
+# call, against the mock renderer.
+[[bench]]
+name = "measure_sidebar"
+harness = false
+
 [[example]]
 name = "desktop_demo"
 required-features = ["native-renderer"]
