@@ -1,0 +1,21 @@
+[package]
+name = "sample-html-gallery"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "A photo grid in CSS grid under a gradient header, with images named by URL"
+publish = false
+
+[lib]
+# The sample is an application and its tests, not a benchmark. Without this `cargo bench`
+# runs the lib's test harness with Criterion's flags, which it rejects.
+bench = false
+
+[dependencies]
+dioxus-compose = { path = "../../dioxus-compose" }
+dioxus-hooks.workspace = true
+dioxus-signals.workspace = true
+
+[dev-dependencies]
+sample-html-support = { path = "../support" }

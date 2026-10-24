@@ -1,66 +1,60 @@
+//! Dioxus on compose-rust: screens written with HTML and CSS, or with Compose widgets.
+//!
+//! An application written with `rsx!`, components and hooks depends on this crate alone.
+//! compose-rust is underneath and re-exported whole: the boundary, the protocol, the
+//! records, the schema and the theme are its, unchanged. What this crate adds is the part
+//! that is Dioxus: the elements `rsx!` resolves, the typed widget components, the hooks,
+//! and a `VirtualDom` that runs as the Host's runtime. Screens written with HTML elements
+//! and CSS are laid out here as well, and their names are gathered in [`html`].
+
 #![deny(unsafe_op_in_unsafe_fn)]
 
-pub mod asset;
-pub mod boundary;
-/// Generated JNI shims. Compiled only for Android, where the Host is a cdylib that the
-/// Kotlin Activity loads.
-#[cfg(target_os = "android")]
-#[path = "boundary_jni.gen.rs"]
-mod boundary_jni;
-/// Generated wasm shims. Compiled only for the browser, where the page owns the loop and
-/// the Renderer's module owns the one linear memory both halves read.
-#[cfg(target_family = "wasm")]
-#[path = "boundary_wasm.gen.rs"]
-mod boundary_wasm;
-pub mod brush;
-#[cfg(target_family = "wasm")]
-#[doc(hidden)]
-pub use boundary_wasm::web_start as __web_start;
-#[doc(hidden)]
-pub mod codegen;
-pub mod design;
-pub mod drawing;
-mod extensions;
-pub mod message;
-pub mod protocol;
-pub mod renderer;
-pub mod schema;
-pub mod spans;
-pub mod tokens;
-mod widgets;
-pub mod window;
+// Everything compose-rust exports, under the paths an application has always written. An
+// item defined below with the same name (`Host`, `LaunchBuilder`, `launch`) replaces the
+// one from here: that is the Dioxus-shaped version of it.
+pub use compose_rust::*;
+// Named as well, so the one entry macro that is not this crate's own is plainly here: an
+// iOS application starts at the C `main` it exports, whatever builds its tree.
+pub use compose_rust::ios_main;
 
-pub use asset::asset;
-pub use boundary::{
-    Host, LaunchBuilder, MutationBatch, RendererApi, demo_theme, demo_theme_for,
-    install_renderer_api, launch, request_frame_from_worker,
-};
+// Screens written with HTML elements and CSS: the blitz-dom document and its events
+// (`dom`), styles and the layout pass (`layout`), and the display list and plan the
+// renderer draws (`paint`). Their public names are gathered in `html`, apart from the
+// crate root, because some of them (`Brush`, `TextAlign`) already mean a widget's here.
+mod dom;
+mod extensions;
+mod hooks;
+pub mod host;
+pub mod html;
+mod layout;
+mod paint;
+pub mod renderer;
+mod widgets;
+
 pub use dioxus_core::{Element, VirtualDom};
 // `Props` goes out with `component` because `#[component]` expands into a
 // `#[derive(Props)]`. Without it an application that writes a component of its own fails
 // to compile on a macro it never typed, and the fix is to add `dioxus-core-macro` as a
 // second dependency, which defeats the promise that one dependency is enough.
-pub use brush::{Brush, Stop, brush};
-pub use design::{design_system, use_design_system};
 pub use dioxus_core_macro::{Props, component, rsx};
-pub use drawing::{DrawCommand, DrawList, DrawListBuilder};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
-pub use message::{Message, show_message};
-pub use schema::{
-    Alignment, Arrangement, AssetKind, ButtonVariant, Chrome, Color, ColorRole, ColorScheme,
-    DesignSystem, EventPayload, IconRole, Key, LoopMode, MaterialRole, MessageDuration, Modifier,
-    MotionRole, Paint, PropertyKind, SCHEMA_HASH, Selection, ShapeRole, SpaceRole, TextAlign,
-    TextOverflow, Theme, TileMode, TypeRole, WidgetKind, WindowHeightClass, WindowSizeClass,
+pub use hooks::{
+    use_design_system, use_node_size, use_notification_activated, use_notification_permission,
+    use_theme, use_window_size,
 };
+pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use widgets::{
     Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box, DatePicker, Dialog,
-    Divider, Dropdown, FileDrop, FileDropTarget, FloatingAction, Icon, Image, KeyEvent, LazyColumn,
-    LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton,
-    RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet,
-    Slider, Spacer, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    Divider, Dropdown, FileDropTarget, FloatingAction, Icon, Image, LazyColumn, LazyGrid, LazyRow,
+    Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton, Row, Scaffold, ScrollColumn,
+    ScrollRow, SelectionContainer, Separator, Sheet, Slider, Spacer, SplitPane, Surface, Switch,
+    Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
-pub use window::{NodeSize, WindowSize, node_size, use_node_size, use_window_size, window_size};
+
+#[cfg(target_family = "wasm")]
+#[doc(hidden)]
+pub use host::web_start as __web_start;
 
 /// Declares the Android entry point for an application's cdylib.
 ///
@@ -71,37 +65,20 @@ pub use window::{NodeSize, WindowSize, node_size, use_node_size, use_window_size
 /// ```ignore
 /// dioxus_compose::android_main!(app);
 /// ```
+///
+/// The export exists only in a build for Android. Anywhere else nothing calls it, and an
+/// unconditional export would collide with the same name in every other application
+/// linked into one binary, which is what a benchmark that drives several of them does.
 #[macro_export]
 macro_rules! android_main {
     ($app:path) => {
         $crate::android_main!($crate::LaunchBuilder::new(), $app);
     };
     ($builder:expr, $app:path) => {
+        #[cfg(target_os = "android")]
         #[unsafe(no_mangle)]
-        pub extern "C" fn dioxus_compose_android_main() {
+        pub extern "C" fn compose_rust_android_main() {
             $builder.with_mode($crate::LoopMode::Platform).launch($app);
-        }
-    };
-}
-
-/// Declares the entry point an iOS application starts at.
-///
-/// iOS is the one platform where the application is the library: the renderer is a
-/// Kotlin/Native archive and the two are linked into a single executable, so there is no
-/// Activity to load anything and no page to fetch anything. What there is instead is a
-/// `main`, and a `main` in an application bundle has to be C, so this exports the launch
-/// under a name that C can call.
-///
-/// ```ignore
-/// dioxus_compose::ios_main!(launch);
-/// ```
-#[macro_export]
-macro_rules! ios_main {
-    ($launch:path) => {
-        #[unsafe(no_mangle)]
-        pub extern "C" fn dioxus_compose_ios_main() -> i32 {
-            $launch();
-            0
         }
     };
 }
@@ -114,7 +91,7 @@ macro_rules! ios_main {
 ///
 /// The export is here rather than in this crate because a wasm module cannot be linked
 /// with an undefined symbol the way an ELF shared library can. Android's cdylib imports
-/// `dioxus_compose_android_main` from the application and the dynamic linker resolves it
+/// `compose_rust_android_main` from the application and the dynamic linker resolves it
 /// at load time; a browser refuses to instantiate a module whose imports are not all
 /// supplied, so the entry point is defined where the root component is.
 ///
@@ -129,16 +106,18 @@ macro_rules! web_main {
     ($builder:expr, $app:path) => {
         #[cfg(target_family = "wasm")]
         #[unsafe(no_mangle)]
-        pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+        pub extern "C" fn compose_rust_host_web_start() -> u32 {
             $crate::__web_start($builder, $app)
         }
 
         /// Off the web there is no page to call this and no shared memory to report an
-        /// address in, but it stays defined so that a build for the machine you are
-        /// working on still compiles the component rather than leaving it unreferenced.
+        /// address in, but the builder and the component are still type checked, so a
+        /// build for the machine you are working on catches what a wasm build would. Not
+        /// exported: an export here would collide with the same name in every other
+        /// application linked into one binary.
         #[cfg(not(target_family = "wasm"))]
-        #[unsafe(no_mangle)]
-        pub extern "C" fn dioxus_compose_host_web_start() -> u32 {
+        #[allow(dead_code)]
+        fn __compose_rust_web_start_unused() -> u32 {
             let _: fn() -> $crate::Element = $app;
             let _ = $builder;
             0
@@ -157,20 +136,28 @@ pub mod prelude {
         Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop, FileDropTarget,
         FloatingAction, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid,
         LazyRow, LinearProgressIndicator, LoopMode, MaterialRole, Menu, Message, MessageDuration,
-        Modifier, MotionRole, Navigation, NavigationItem, Paint, ProgressIndicator, Props,
+        Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette, ProgressIndicator, Props,
         RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
-        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, Stop, Surface, Switch, Tabs, Text,
-        TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip, TopAppBar,
-        TypeRole, WindowHeightClass, WindowSize, WindowSizeClass, asset, brush, component, launch,
-        rsx, show_message, use_design_system, use_node_size, use_window_size,
+        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
+        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
+        TopAppBar, TypeRole, WindowHeightClass, WindowSize, WindowSizeClass, asset, brush,
+        component, launch, rsx, show_message, use_design_system, use_node_size, use_theme,
+        use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
     // this one instead. It is here because the alternative is a fully qualified path in
     // every `main`, and because `Chrome` beside it is meaningless on its own.
     pub use crate::schema::{Chrome, Window};
+    // Notifications, from a component or from a worker thread.
+    pub use crate::{
+        Notification, NotificationActivation, NotificationImportance, NotificationPermission,
+        NotificationPresentation, NotificationSender, notification_permission,
+        request_notification_permission, use_notification_activated, use_notification_permission,
+        withdraw_notification,
+    };
     // The crates `rsx!` expands into references to, under the names it expands into. A
-    // consumer who added only `dioxus-compose` does not have `dioxus_core` or
+    // consumer who added only this crate does not have `dioxus_core` or
     // `dioxus_signals` in their dependency graph by name, so without these the macro
     // fails to resolve them and the crate cannot be used at all with one dependency,
     // which is the whole promise.
@@ -390,6 +377,16 @@ pub mod elements {
     // Nothing of its own. Being this widget is the whole of what it says: the text inside
     // may be selected and copied, and the selection never crosses the boundary.
     element!(selectioncontainer, "SelectionContainer", []);
+    // A side pane and a body. `value` seeds the side pane's width and carries a change from
+    // outside; the drag itself is the Renderer's, and only the width it ends on comes
+    // back. `selected_index` says which pane shows when the two are shown one at a time.
+    // `text` names the divider for a screen reader. How the divider looks and when the
+    // panes stack are the design system's, so nothing here can ask for either.
+    element!(
+        splitpane,
+        "SplitPane",
+        [value, min, max, collapsible, selected_index, text]
+    );
 
     #[doc(hidden)]
     pub mod completions {
@@ -435,6 +432,7 @@ pub mod elements {
             floatingaction {},
             badge {},
             selectioncontainer {},
+            splitpane {},
         }
     }
 }

@@ -6,125 +6,209 @@
     <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/"/>
     <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/"/>
-    <lastmod>2026-09-28</lastmod>
+    <lastmod>2026-10-04</lastmod>
   </url>
   <url>
     <loc>http://darkpyonix.dev/dioxus-compose/ko/</loc>
     <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/"/>
     <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/"/>
-    <lastmod>2026-09-28</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/getting-started.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/getting-started.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
-    <lastmod>2026-09-28</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/getting-started.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/getting-started.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
-    <lastmod>2026-09-28</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/writing-ui.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/writing-ui.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/writing-ui.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/writing-ui.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/writing-ui.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/writing-ui.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/writing-ui.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/writing-ui.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/composables.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/composables.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
-    <lastmod>2026-09-22</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/composables.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/composables.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
-    <lastmod>2026-09-22</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/lists-and-streaming.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/lists-and-streaming.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/lists-and-streaming.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/lists-and-streaming.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/design-systems.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/design-systems.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/design-systems.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/design-systems.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/design-systems.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/design-systems.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/design-systems.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/design-systems.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/architecture.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/architecture.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
-    <lastmod>2026-09-28</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/architecture.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/architecture.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
-    <lastmod>2026-09-28</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html</loc>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/troubleshooting.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
-    <lastmod>2026-09-20</lastmod>
-  </url>
-  <url>
-    <loc>http://darkpyonix.dev/dioxus-compose/ko/troubleshooting.html</loc>
-    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/troubleshooting.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
-    <lastmod>2026-09-20</lastmod>
+    <lastmod>2026-10-04</lastmod>
   </url>
   <url>
     <loc>http://darkpyonix.dev/dioxus-compose/en/overview.html</loc>
     <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/overview.html"/>
     <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/overview.html"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/overview.html"/>
-    <lastmod>2026-09-20</lastmod>
+    <lastmod>2026-10-04</lastmod>
   </url>
   <url>
     <loc>http://darkpyonix.dev/dioxus-compose/ko/overview.html</loc>
     <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/overview.html"/>
     <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/overview.html"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/overview.html"/>
-    <lastmod>2026-09-20</lastmod>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/getting-started.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/getting-started.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/getting-started.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/getting-started.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/getting-started.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/layout.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/layout.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/layout.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/layout.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/layout.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/layout.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/layout.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/layout.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/text.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/text.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/text.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/text.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/text.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/text.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/text.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/text.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/forms-and-events.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/forms-and-events.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/forms-and-events.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/forms-and-events.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/forms-and-events.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/forms-and-events.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/forms-and-events.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/forms-and-events.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/images.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/images.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/images.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/images.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/images.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/images.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/images.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/images.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/scrolling-and-overlays.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/scrolling-and-overlays.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/scrolling-and-overlays.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/scrolling-and-overlays.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/scrolling-and-overlays.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/scrolling-and-overlays.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/scrolling-and-overlays.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/scrolling-and-overlays.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/theming.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/theming.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/theming.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/theming.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/theming.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/theming.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/theming.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/theming.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/widgets.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/widgets.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/widgets.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/widgets.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/widgets.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/widgets.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/widgets.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/widgets.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/composables.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/composables.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/composables.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/mixing.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/mixing.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/mixing.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/mixing.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/mixing.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/mixing.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/mixing.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/mixing.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/status.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/status.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/status.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/status.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/status.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/status.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/status.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/status.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/architecture.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/architecture.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/architecture.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/architecture.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/architecture.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/troubleshooting.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
+    <lastmod>2026-10-04</lastmod>
+  </url>
+  <url>
+    <loc>http://darkpyonix.dev/dioxus-compose/ko/troubleshooting.html</loc>
+    <xhtml:link rel="alternate" hreflang="ko" href="http://darkpyonix.dev/dioxus-compose/ko/troubleshooting.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="http://darkpyonix.dev/dioxus-compose/en/troubleshooting.html"/>
+    <lastmod>2026-10-04</lastmod>
   </url>
 </urlset>

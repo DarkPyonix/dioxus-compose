@@ -15,14 +15,26 @@ docs/guide/
 │  ├─ style.css          # 사이트 전체의 유일한 스타일시트
 │  └─ guide.js           # 유일한 자바스크립트 (테마, 사이드바, 코드 복사)
 ├─ en/                   # 영어 페이지
-│  ├─ index.html             Overview
-│  ├─ getting-started.html   Getting started
-│  ├─ writing-ui.html        Writing UI
-│  ├─ lists-and-streaming.html
+│  ├─ index.html             랜딩
+│  ├─ overview.html          개요 (HTML과 CSS 경로)
+│  ├─ getting-started.html
+│  ├─ layout.html            레이아웃과 CSS
+│  ├─ text.html
+│  ├─ forms-and-events.html
+│  ├─ images.html            이미지와 배경
+│  ├─ scrolling-and-overlays.html
+│  ├─ theming.html
+│  ├─ widgets.html           Compose 위젯 경로
+│  ├─ composables.html       컴포저블 레퍼런스
+│  ├─ mixing.html            두 방식 섞기 (계획)
+│  ├─ status.html            구현 / 부분 / 계획과 이슈
 │  ├─ architecture.html
 │  └─ troubleshooting.html
 └─ ko/                   # 한국어 페이지. 파일 이름은 en/과 1:1로 같습니다
 ```
+
+사이드바는 세 묶음(HTML과 CSS, Compose 위젯, 프로젝트)이고, 모든 내용 페이지에 같은 목록이
+있습니다. 페이지의 순서도 이 목록 순서이며 `.pagenav`의 앞뒤 링크가 그것을 따릅니다.
 
 **파일 이름은 두 언어에서 반드시 같아야 합니다.** 언어 전환 링크가 같은 이름의 파일을
 가리키는 방식으로 동작하기 때문입니다.
@@ -51,15 +63,15 @@ docs/guide/
 3. 상단 언어 전환 링크를 새 파일 이름으로 맞춥니다. 현재 언어 쪽에 `aria-current="true"`를 둡니다.
 4. 같은 이름으로 `ko/` 페이지를 만듭니다. `<html lang="ko">`로 바꾸고, `hreflang` 두 줄을
    서로 반대로(`en` → `../en/새이름.html`, `ko` → `새이름.html`) 씁니다.
-5. **여섯 개 파일 모두**(en 5 + ko 5, 그리고 새 페이지 2개)의 사이드바 목록에 새 항목을
-   추가합니다. 현재 페이지에는 `aria-current="page"`를 붙입니다.
+5. **모든 내용 페이지**(en과 ko)의 사이드바 목록에 새 항목을 추가합니다. 현재 페이지에는
+   `aria-current="page"`를 붙입니다. `sitemap.xml`에도 두 언어의 항목을 더합니다.
 6. 앞뒤 페이지의 `.pagenav` 링크를 갱신합니다.
 
 ## 로컬에서 확인하기
 
 ```bash
 cd docs/guide
-python3 -m http.server 8000
+uv run python -m http.server 8000
 # http://localhost:8000/  → en/ 으로 이동합니다
 ```
 

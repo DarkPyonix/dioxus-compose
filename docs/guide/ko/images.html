@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>이미지와 배경 · dioxus-compose 가이드</title>
+<meta name="description" content="HTML 화면의 이미지. img, object-fit, CSS 배경 이미지, 선형과 원형 그라디언트, 그리고 이미지 URL 이 무엇을 그릴지 정하는 ImageResolver 를 samples/gallery 의 코드로 설명합니다. 아무것도 내려받지 않습니다.">
+<link rel="alternate" hreflang="en" href="../en/images.html">
+<link rel="alternate" hreflang="ko" href="images.html">
+<link rel="alternate" hreflang="x-default" href="../en/images.html">
+<link rel="stylesheet" href="../assets/style.css?v=20">
+<script>(function(){try{var t=localStorage.getItem("dxc-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
+</head>
+<body>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+
+<header class="topbar">
+  <a class="brand" href="./"><span class="dot" aria-hidden="true"></span>dioxus-compose <small>가이드</small></a>
+  <span class="spacer"></span>
+  <button id="navtoggle" class="ghost" type="button" aria-expanded="false" aria-controls="sidebar">메뉴</button>
+  <nav class="langswitch" aria-label="언어">
+    <a href="../en/images.html" hreflang="en">EN</a>
+    <a href="images.html" aria-current="true" hreflang="ko">KO</a>
+  </nav>
+  <button id="themetoggle" class="ghost" type="button" data-dark="다크" data-light="라이트" aria-pressed="false">다크</button>
+</header>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <nav aria-label="가이드">
+      <h2>HTML과 CSS</h2>
+      <ul>
+        <li><a href="overview.html">개요</a></li>
+        <li><a href="getting-started.html">시작하기</a></li>
+        <li><a href="layout.html">레이아웃과 CSS</a></li>
+        <li><a href="text.html">텍스트</a></li>
+        <li><a href="forms-and-events.html">폼과 이벤트</a></li>
+        <li><a href="images.html" aria-current="page">이미지와 배경</a></li>
+        <li><a href="scrolling-and-overlays.html">스크롤과 오버레이</a></li>
+        <li><a href="theming.html">테마</a></li>
+      </ul>
+      <h2>Compose 위젯</h2>
+      <ul>
+        <li><a href="widgets.html">rsx! 의 위젯</a></li>
+        <li><a href="composables.html">컴포저블 레퍼런스</a></li>
+      </ul>
+      <h2>프로젝트</h2>
+      <ul>
+        <li><a href="mixing.html">두 방식 섞기</a></li>
+        <li><a href="status.html">현황</a></li>
+        <li><a href="architecture.html">아키텍처</a></li>
+        <li><a href="troubleshooting.html">문제 해결</a></li>
+      </ul>
+      <h2>이 페이지</h2>
+      <ul>
+        <li><a href="#resolver">이미지 리졸버</a></li>
+        <li><a href="#urls">URL</a></li>
+        <li><a href="#img">img 요소</a></li>
+        <li><a href="#backgrounds">배경 이미지</a></li>
+        <li><a href="#gradients">그라디언트</a></li>
+        <li><a href="#planned">아직 없는 것</a></li>
+      </ul>
+    </nav>
+  </aside>
+
+  <main id="main">
+    <p class="eyebrow">이미지와 배경</p>
+    <h1>이미지가 무엇인지는 앱이 정합니다</h1>
+    <p class="lede">
+      dioxus-compose 는 아무것도 내려받지 않습니다. <code>&lt;img src&gt;</code> 와 CSS
+      <code>url()</code> 은 쓴 그대로 기록되고, 앱이 넘기는 이미지 리졸버가 크기와 그릴 에셋을
+      알려 줍니다. 그라디언트는 CSS 만으로 계산되므로 리졸버가 필요 없습니다.
+    </p>
+
+    <h2 id="resolver">이미지 리졸버</h2>
+    <p>
+      앱은 이미지를 이미 메모리에 갖고 있을 수도, 직접 내려받고 싶을 수도, 일부는 거부하고 싶을 수도
+      있습니다. 그래서 읽어 오는 것은 앱이 정하고, 그 통로는 트레이트 하나입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>dioxus_compose::html</figcaption>
+<pre><code><span class="k">pub</span> <span class="k">trait</span> <span class="ty">ImageResolver</span> {
+    <span class="c">/// The asset that draws the image at `url`, or None to draw nothing.</span>
+    <span class="c">/// Asked while a plan is built, never during layout.</span>
+    <span class="k">fn</span> <span class="f">resolve</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">AssetId</span>&gt;;
+
+    <span class="c">/// The natural size, when the app knows it without fetching anything.</span>
+    <span class="c">/// Asked during layout. None, the default, leaves the image without one.</span>
+    <span class="k">fn</span> <span class="f">size</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">_url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">ImageSize</span>&gt; {
+        <span class="k">None</span>
+    }
+}</code></pre>
+</figure>
+    <p>
+      <code>AssetId</code> 는 렌더러에 등록한 이미지에 앱이 붙인 번호입니다. 계획에 그대로 돌려줄 뿐
+      안을 들여다보지 않습니다. <code>ImageSize</code> 는 CSS 픽셀 단위이므로, CSS 픽셀당 장치 픽셀이
+      2 인 화면용 이미지는 여기서 픽셀 크기의 절반입니다.
+    </p>
+    <p>
+      리졸버는 <code>HtmlConfig::images</code> 에 넣거나, 나중에 <code>HtmlDom::set_image_resolver</code>
+      로 넣습니다. 리졸버가 없으면 <code>&lt;img&gt;</code> 는 속성과 CSS 가 준 크기만 갖고, 어떤
+      이미지도 그려지지 않습니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/support/src/lib.rs, 줄임: 정해진 목록을 아는 리졸버</figcaption>
+<pre><code><span class="k">impl</span> <span class="ty">ImageResolver</span> <span class="k">for</span> <span class="ty">Images</span> {
+    <span class="k">fn</span> <span class="f">resolve</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">AssetId</span>&gt; {
+        <span class="k">self</span>.<span class="f">find</span>(url).<span class="f">map</span>(|(_, _, asset)| *asset)
+    }
+
+    <span class="k">fn</span> <span class="f">size</span>(&amp;<span class="k">mut</span> <span class="k">self</span>, <span class="at">url</span>: &amp;str) -&gt; <span class="ty">Option</span>&lt;<span class="ty">ImageSize</span>&gt; {
+        <span class="k">self</span>.<span class="f">find</span>(url).<span class="f">map</span>(|(_, size, _)| *size)
+    }
+}</code></pre>
+</figure>
+
+    <h2 id="urls">URL</h2>
+    <p>
+      <code>HtmlConfig::base_url</code> 은 상대 <code>src</code> 와 CSS <code>url()</code> 의 기준입니다.
+      없거나, <code>data:</code> URL 처럼 아무것도 그 기준으로 풀 수 없는 값이면, 상대 URL 은 쓴 그대로
+      리졸버에 갑니다. <code>photos/tram.jpg</code> 는 <code>photos/tram.jpg</code> 그대로입니다.
+    </p>
+
+    <h2 id="img">img 요소</h2>
+    <p>
+      자체 크기가 없는 <code>&lt;img&gt;</code> 는 리졸버가 준 크기로 배치됩니다. 상자 안 어디에 그림을
+      그릴지는 <code>object-fit</code> 이 정합니다. <code>samples/gallery</code> 에서 48 x 48 아바타는
+      본래 크기를 지키고, 사진은 타일을 <code>cover</code> 로 채우고, 경로 지도는 <code>contain</code>
+      으로 전체가 보입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.avatar { <span class="at">border-radius</span>: <span class="n">50</span>%; }
+
+.tile {
+    <span class="at">margin</span>: <span class="n">0</span>;
+    <span class="at">border-radius</span>: <span class="n">8px</span>;
+    <span class="at">overflow</span>: hidden;
+}
+
+.tile img {
+    <span class="at">display</span>: block;
+    <span class="at">width</span>: <span class="n">100</span>%;
+    <span class="at">height</span>: <span class="n">100</span>%;
+    <span class="at">object-fit</span>: cover;
+}
+
+.tile img.whole { <span class="at">object-fit</span>: contain; }</code></pre>
+</figure>
+
+    <h2 id="backgrounds">배경 이미지</h2>
+    <p>
+      <code>background-image</code> 층은 CSS 순서를 지킵니다. 첫 층이 맨 위에 그려지고, 모든 층이
+      배경색 위에 그려집니다. <code>background-size</code>(<code>cover</code>, <code>contain</code>,
+      길이), <code>background-position</code>, <code>background-repeat</code> 는 사각형으로 풀려 있으므로,
+      렌더러는 CSS 를 해석하지 않고 상자 안에 이미지를 그리기만 합니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.postcard {
+    <span class="at">background-image</span>: url(textures/postcard.png);
+    <span class="at">background-size</span>: cover;
+    <span class="at">background-position</span>: center;
+}</code></pre>
+</figure>
+
+    <h2 id="gradients">그라디언트</h2>
+    <p>
+      <code>linear-gradient()</code>, <code>radial-gradient()</code> 와 그 반복형은 채울 타일을 기준으로
+      풀립니다. <code>to right</code> 같은 키워드는 그 타일 크기에서 뜻하는 각도가 되고, 색 정지점마다
+      위치와 색이 정해집니다. gallery 의 헤더는 그라디언트 하나입니다.
+    </p>
+<figure class="codeblock" data-copy="복사" data-copied="복사됨">
+  <figcaption>samples/gallery/src/lib.rs</figcaption>
+<pre><code>.hero {
+    <span class="at">display</span>: flex;
+    <span class="at">align-items</span>: center;
+    <span class="at">gap</span>: <span class="n">16px</span>;
+    <span class="at">height</span>: <span class="n">160px</span>;
+    <span class="at">padding</span>: <span class="n">0</span> <span class="n">32px</span>;
+    <span class="at">background-image</span>: linear-gradient(to right, <span class="n">#4f46e5</span>, <span class="n">#06b6d4</span>);
+    <span class="at">color</span>: <span class="n">#ffffff</span>;
+}</code></pre>
+</figure>
+    <p>
+      정지점 하나의 색을 바꾸면 배경색을 바꿀 때처럼 계획에서 바뀌는 것은 하나입니다.
+    </p>
+
+    <h2 id="planned">아직 없는 것</h2>
+    <ul>
+      <li><strong>화면 위의 이미지.</strong> <span class="pill partial">부분</span> 계획은 모든 이미지와
+        배경에 에셋을 지정하지만, 렌더러 다리가 생기기 전까지는 그리는 것이 없습니다
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+    </ul>
+
+    <nav class="pagenav" aria-label="페이지 이동">
+      <a class="prev" href="forms-and-events.html"><span>이전</span>&larr; 폼과 이벤트</a>
+      <a class="next" href="scrolling-and-overlays.html"><span>다음</span>스크롤과 오버레이 &rarr;</a>
+    </nav>
+  </main>
+</div>
+
+<footer class="site">
+  <div class="inner">
+    <span>dioxus-compose &middot; Apache License 2.0</span>
+    <span><a class="footer-repo" href="https://github.com/DarkPyonix/dioxus-compose">GitHub</a> &middot; <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">예제</a> &middot; <a href="https://crates.io/crates/dioxus-compose">crates.io</a></span>
+    <span>이 가이드는 2026-10-04 기준 저장소 내용과 대조했습니다</span>
+  </div>
+</footer>
+
+<script src="../assets/guide.js" defer></script>
+</body>
+</html>

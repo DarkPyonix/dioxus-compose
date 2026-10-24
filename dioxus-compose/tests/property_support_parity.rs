@@ -1,7 +1,7 @@
 //! What each widget may carry, as the Host declares it and as the Renderer enforces it.
 //!
-//! Two copies of the same fact. The Host's `element!` calls say which attributes a widget
-//! accepts, and `NodeTable.supportsProperty` in the Renderer decides which ones it will
+//! Two copies of the same fact. The Dioxus adapter's `element!` calls say which attributes
+//! a widget accepts, and `NodeTable.supportsProperty` in the Renderer decides which ones it will
 //! keep. Nothing compared them, so adding an attribute on one side and forgetting the
 //! other produced a property that encoded, crossed the boundary, and was thrown away on
 //! arrival with a protocol error nobody was reading.
@@ -13,13 +13,18 @@
 //!
 //! This reads both files as text, which is blunt, and it is the only thing that can see
 //! both sides at once.
+//!
+//! The Renderer lives in the compose-rust repository, so its table is read from
+//! `tests/fixtures/renderer/NodeTable.kt`: a copy of compose-rust's
+//! `renderer/desktop/src/renderer/NodeTable.kt` at the rev `Cargo.toml` pins. Copy it again
+//! whenever that rev moves, or this compares against a renderer the crate no longer links.
 
 use std::collections::BTreeSet;
 
 const HOST: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
 const RENDERER: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../dioxus-compose-renderer/desktop/src/renderer/NodeTable.kt"
+    "/tests/fixtures/renderer/NodeTable.kt"
 ));
 
 /// The widget name and attribute list of every `element!` call.
@@ -97,6 +102,11 @@ fn property_of(attribute: &str) -> Option<&'static str> {
         "circular" => "Circular",
         "icon" => "Icon",
         "count" => "Count",
+        "collapsible" => "Collapsible",
+        "selected_index" => "SelectedIndex",
+        "value" => "Value",
+        "min" => "Min",
+        "max" => "Max",
         // Everything else is either a Modifier rather than a property, or a property this
         // comparison has not been taught. Returning None skips it rather than failing,
         // because a Modifier is not subject to the rule being checked here.

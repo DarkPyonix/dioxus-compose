@@ -27,5 +27,91 @@
       "appends_per_second_shape": 100,
       "spec_p99_ceiling_ns": 1000000
     }
+  },
+  "html_frame": {
+    "comment": "p99 per stage of one HTML and CSS frame in the Host, from the html_frame_p99 lines `cargo bench -p dioxus-compose --bench html_frame` prints after Criterion (1000 frames per scenario; 100 with DXC_BENCH_QUICK set). Stages: apply (the change reaching the document), layout (style resolve, blitz-dom box construction, layout pass, display list), display_list_diff, plan (plan_from), plan_diff (diff of the plans, what crosses to the renderer), total (the whole frame, including dropping the previous frame's list and plan). Numbers are null until measured.",
+    "measured_at": "2026-10-03",
+    "environment": {
+      "machine": "Mac mini",
+      "cpu": "Apple M1",
+      "memory_gib": 16,
+      "os": "macOS 26.5.1",
+      "architecture": "aarch64",
+      "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+      "profile": "release",
+      "note": "DXC_BENCH_QUICK (100 frames per scenario) with --quick; load average about 8 to 11 from other work on the machine, so these are upper bounds"
+    },
+    "spec_p99_ceiling_ns": 500000,
+    "measurements": {
+      "steady_activitybar": {
+        "comment": "The VS Code activity bar fixture laid out again with nothing changed; the floor under every frame of a screen this size. Nothing should be sent.",
+        "layout_p99_ns": 109792,
+        "display_list_diff_p99_ns": 7834,
+        "plan_p99_ns": 39208,
+        "plan_diff_p99_ns": 43750,
+        "total_p99_ns": 204667,
+        "display_list_entries": 52,
+        "plan_changes_per_frame": 0
+      },
+      "steady_sidebar": {
+        "comment": "The VS Code explorer sidebar fixture (the largest of the three) laid out again with nothing changed. Nothing should be sent.",
+        "layout_p99_ns": 1889792,
+        "display_list_diff_p99_ns": 70125,
+        "plan_p99_ns": 623208,
+        "plan_diff_p99_ns": 470833,
+        "total_p99_ns": 3095250,
+        "display_list_entries": 194,
+        "plan_changes_per_frame": 0
+      },
+      "steady_tabs": {
+        "comment": "The VS Code editor tab strip fixture laid out again with nothing changed. Nothing should be sent.",
+        "layout_p99_ns": 409042,
+        "display_list_diff_p99_ns": 22167,
+        "plan_p99_ns": 223292,
+        "plan_diff_p99_ns": 135333,
+        "total_p99_ns": 761334,
+        "display_list_entries": 127,
+        "plan_changes_per_frame": 0
+      },
+      "background_change_300_rows": {
+        "comment": "A Dioxus app of 300 rows in one component; one row's background colour flips every frame. apply is the Dioxus render. One display list entry and one plan change should be sent; the cost is everything else the frame redoes to find that out.",
+        "apply_p99_ns": 329292,
+        "layout_p99_ns": 3306333,
+        "display_list_diff_p99_ns": 80792,
+        "plan_p99_ns": 339250,
+        "plan_diff_p99_ns": 582125,
+        "total_p99_ns": 4440292,
+        "display_list_entries_sent": null,
+        "plan_changes_per_frame": 1
+      },
+      "viewport_resize_sidebar": {
+        "comment": "The sidebar fixture with the window 1px wider or narrower every frame. apply is BaseDocument::set_viewport, which replaces stylo's device and marks every stylesheet dirty. The fixture pins the workbench to width: 1440px inline, so few boxes are expected to move (the bench prints how many entries a frame sends): this measures what a resize costs more than what it sends.",
+        "apply_p99_ns": 20750,
+        "layout_p99_ns": 2272208,
+        "display_list_diff_p99_ns": 38041,
+        "plan_p99_ns": 265166,
+        "plan_diff_p99_ns": 254042,
+        "total_p99_ns": 2797125,
+        "display_list_entries_sent": null,
+        "plan_changes_per_frame": 2
+      },
+      "sash_drag_sidebar": {
+        "comment": "The sidebar fixture with the sidebar 1px wider or narrower every frame, written into the inline styles of its split view and its content as VS Code's sash drag writes them. apply is the two style attribute writes. The rows and headers inside take their width from these, so this is the resize that moves many boxes; the bench prints how many entries a frame sends.",
+        "apply_p99_ns": 19833,
+        "layout_p99_ns": 2233250,
+        "display_list_diff_p99_ns": 53750,
+        "plan_p99_ns": 295708,
+        "plan_diff_p99_ns": 231791,
+        "total_p99_ns": 2763750,
+        "display_list_entries_sent": null,
+        "plan_changes_per_frame": 104
+      },
+      "blitz_resolve_phases": {
+        "comment": "Diagnostic, Criterion mean rather than p99: blitz-dom's resolve phases alone (resolve_stylist, resolve_layout_children, resolve_deferred_tasks, flush_styles_to_layout) on each fixture with nothing changed. The part of steady-state layout that is style and box construction, which blitz-dom redoes in full every frame when built without its incremental feature.",
+        "activitybar_mean_ns": null,
+        "sidebar_mean_ns": null,
+        "tabs_mean_ns": null
+      }
+    }
   }
 }

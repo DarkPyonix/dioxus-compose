@@ -1,1 +1,0 @@
-../../staticlib/src/IosEntryPoints.kt

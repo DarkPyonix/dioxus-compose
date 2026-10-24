@@ -1679,11 +1679,13 @@ if design.is_apple() {
 
 ### FR-34 HTML과 CSS로 쓴 Dioxus 화면 (`Draft`)
 
+추적: 이슈 #43. 렌더러 다리(계획을 compose-rust 레코드로 보내는 것)는 PR #67에 작성되어 있고 그 테스트는 통과한다. 다리는 compose-rust FR-42 그리기 원소(`AbsoluteBox`와 변별 테두리, 모서리별 반지름, 그림자, 클립, 알파, 오프셋, 크기 수정자)를 쓰며, 그것은 compose-rust PR #74에 있고 병합되지 않았다. compose-rust 쪽에 필요한 것은 compose-rust #90~#98, #100, #101(라벨 html-path)과 PR-2.1 측정 호출이다. 계획(소유자 결정): compose-rust 0.0.2를 crates.io에 #74와 #83을 담아 내고, #67을 compose-rust =0.0.2에 의존하도록 옮겨 CI가 통과하면 병합한다. 그 릴리스부터 HTML 예제가 창에 그려진다. 날짜는 정하지 않았고 이 병합과 릴리스를 기다린다. `samples/`의 예제는 열다섯 개이고(새로 `layout`, `landing`, `typography`, `motion`) Host 배치 테스트로 확인하며, 창에 그린 확인은 #67 병합 뒤에 한다.
+
 `div`, `span` 같은 HTML 요소와 CSS로 쓴 Dioxus 화면을 그립니다. 결정과 근거는 INTENT D20입니다.
 
 - **스타일과 레이아웃은 Host가 계산합니다.** `blitz-dom`을 창 없이 Host 안에서 돌려 CSS를 해석하고 상자와 텍스트 조각의 위치를 정합니다. 렌더러는 CSS를 모릅니다.
 - **경계에는 계산된 결과만 넘깁니다.** 그리기 원소는 compose-rust의 위젯 스키마에 있는 것을 쓰고(D20), CSS 속성 이름이나 선택자는 경계를 넘지 않습니다. 원소가 바뀐 노드만 갱신하고, 바뀌지 않은 상자는 다시 보내지 않습니다(FR-4와 같은 규칙).
-- **텍스트는 Parley가 배치하고 Compose가 그립니다.** 양쪽은 같은 글꼴 파일을 씁니다. 아래 허용치를 넘으면 D20의 조건대로 Compose가 텍스트를 재는 방식으로 바꿉니다.
+- **텍스트의 크기는 Compose가 재고, 그리는 것도 Compose입니다.** 처음에는 Parley가 배치하고 Compose가 그리는 것으로 시작했고, 아래 허용치를 넘으면 D20의 조건대로 바꾸기로 했습니다. 첫 측정에서 넘었으므로(아래 "첫 측정") 바뀌었습니다. Host는 레이아웃 도중 렌더러에 텍스트와 위젯의 크기를 묻는 동기 경계 호출을 씁니다(PR-2 변경, 소유자 승인 2026-10-03, 경계는 compose-rust SPEC이 정함). Host의 레이아웃은 그 답으로 줄을 세우고, 렌더러는 계산된 폭 안에서 같은 글꼴로 그립니다.
 - **입력란은 Compose의 `TextField`입니다.** `<input>`과 `<textarea>`는 계산된 자리에 비제어 `TextField`로 놓입니다(FR-5). 조합 중인 글자는 Host로 왕복하지 않습니다.
 - **이벤트는 DOM 노드로 돌아갑니다.** 렌더러가 받은 포인터와 키 입력은 그 자리에 있는 DOM 노드의 Dioxus 핸들러로 전달됩니다.
 - **JavaScript는 실행하지 않습니다.** `<script>`는 무시합니다.
@@ -1700,6 +1702,10 @@ if design.is_apple() {
 
 허용치는 FR-34의 첫 측정(VS Code 워크벤치의 액티비티 바, 사이드바 트리, 에디터 탭)으로 처음 확인하고, 그 수치를 이 항목에 기록합니다. 허용치를 바꾸는 것은 이 SPEC의 변경입니다.
 
+**첫 측정(2026-10-03, macOS, 배율 1, VS Code 1.138과 Code-OSS CSS).** `experiments/blitz-layout-probe/`와 `dioxus-compose/tests/fr34_box_tolerance.rs`.
+- Parley가 잰 텍스트: 줄바꿈 불일치 22건 중 6건, 한 줄 폭 차이 최대 14.3%, 글자 위치 차이 최대 39.89px. 허용치를 크게 넘습니다. Parley가 SF 글꼴의 광학 크기를 고르지 않기 때문입니다. 그래서 위의 텍스트 방식이 바뀌었습니다.
+- 상자(VS Code가 잰 텍스트 크기를 넣었을 때): 액티비티 바 29개 중 29개가 1px 이내(최대 0px), 사이드바 203개 중 201개(99.0%, 최대 4.00px), 탭 94개 중 94개(최대 0px). 상자 허용치를 지킵니다. 이 수치는 텍스트 크기가 맞을 때의 상자 경로이고, Compose 측정으로 다시 잰 수치가 수용 기준 1의 증거가 됩니다.
+
 수용 기준:
 1. VS Code 워크벤치의 세 구역을 Code-OSS CSS로 그려, 위 표의 네 허용치를 모두 지킵니다. 측정 방법과 수치를 기록합니다.
 2. `div`, `span`, CSS로 쓴 Dioxus 화면에서 클릭이 그 자리에 있는 DOM 노드의 핸들러로 갑니다.
@@ -1707,7 +1713,92 @@ if design.is_apple() {
 4. 상자 하나의 배경색만 바꾸는 갱신에서, 그 상자 말고 다른 노드의 레코드가 나가지 않습니다.
 5. `<script>`가 있는 화면을 그려도 스크립트가 실행되지 않고, 프로세스가 중단되지 않습니다.
 
+#### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
+
+추적: 이슈 #46. 지금은 translate만 그려진다. 렌더러 쪽은 compose-rust FR-41이 필요하고 그것은 compose-rust PR #83에 있으며 병합되지 않았다. 일정은 FR-34의 compose-rust 0.0.2 계획과 같다. `samples/motion`이 `transform-origin`을 쓴 변환을 담는다.
+
+M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "M12 이후 과제로 SPEC에 남기도록 해", 날짜는 "일부 10-18 안"에서 transform을 10-18 안에 포함).
+
+- `translate`, `rotate`, `scale`, `skew`와 그 조합, `matrix()`, `transform-origin`을 상자와 그 안의 내용에 적용합니다.
+- **2D가 먼저, 3D는 다음 단계입니다**(소유자 결정, compose-rust FR-41). M14(10-18)는 위의 2D 변환입니다. `rotateX`, `rotateY`, `rotate3d`, `perspective`, `matrix3d` 같은 3D 변환은 compose-rust FR-41.3(Draft)이 들어오면 이어서 지원하고, "지원하지 않음"이 아닙니다. 그 전까지 3D 변환이 들어간 상자는 2D로 근사하지 않습니다. 그 `transform`을 건너뛰어 변환 없이 그리고, 개발자에게 어느 요소의 어떤 변환을 건너뛰었는지 경고합니다.
+- **지금 상태.** stylo는 `transform`을 계산합니다. dioxus-compose의 HTML 경로는 이동(`translate`, `translateX`, `translateY`)만 상자 위치에 더하고, 그 밖의 변환이 섞이면 상자를 레이아웃 자리에 둡니다. blitz-dom에는 그리는 단계가 없으므로 회전과 확대는 이 프로젝트가 그려야 합니다.
+- **구현 경로(정해짐).** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
+- 변환은 레이아웃에 영향을 주지 않습니다(CSS와 같음). 적중 판정(FR-34의 이벤트 전달)은 변환된 모양 기준입니다.
+
+수용 기준:
+1. `rotate(15deg)`, `scale(1.5)`, `skewX(10deg)`, `transform-origin: top left`를 쓴 상자 각각이 Chromium과 같은 자리와 모양으로 그려집니다. 상자 꼭짓점 기준으로 FR-34의 상자 허용치를 지킵니다.
+2. 회전된 상자 안의 글자와 자식도 함께 회전합니다.
+3. 회전된 상자의 모서리 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불립니다.
+4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
+
+#### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
+
+추적: 이슈 #46(렌더러 쪽), #47(레이아웃 속성, 경로 (가)). 구현 전이다. 렌더러가 재생하는 쪽은 compose-rust FR-41(compose-rust PR #83, 병합 전)이 필요하다. 레이아웃 속성 애니메이션(#47)은 Host가 매 프레임 진행시키므로 다리(PR #67) 말고는 compose-rust 변경이 필요 없다. `samples/motion`에 transition, `@keyframes`, 폭 transition이 있다.
+
+M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme에 transition 확인을 넣습니다.
+
+**경로와 날짜(소유자 결정 2026-10-03).** 경로는 "혼합안"입니다. `opacity`, `color`, `background-color`, `transform`처럼 레이아웃에 영향이 없는 속성은 렌더러가 Compose 애니메이션으로 재생하고(아래 (나)), 폭, 높이, 여백 같은 레이아웃 속성만 Host가 매 프레임 blitz에 시각을 넘겨 다시 계산합니다(아래 (가)). 날짜는 "일부 10-18 안"입니다. (나)에 해당하는 `opacity`와 `transform`(FR-34.1 포함)은 10-18(M14) 안에 넣고, 레이아웃 속성 애니메이션은 그 뒤(M15)로 둡니다.
+
+- `transition`과 `@keyframes`/`animation`을 CSS가 정한 시간 함수와 반복대로 재생합니다.
+- **지금 상태.** blitz-dom 0.2.4는 stylo의 애니메이션과 transition 상태를 스타일 단계에서 진행시킵니다. 현재 시각을 받아 값을 계산하고(`BaseDocument::resolve_stylist(now)`), 진행 중인지 알려 줍니다(`BaseDocument::is_animating()`). dioxus-compose의 HTML 경로는 시각을 늘 0으로 넘기므로 지금은 모든 애니메이션이 첫 값에 멈춰 있습니다. 즉 막혀 있는 것은 blitz가 아니라 이 크레이트입니다.
+- **구현 경로 후보 둘.**
+  - **(가) Host가 매 프레임 시각을 넘긴다.** blitz가 계산한 값이 바뀐 노드만 갱신으로 나갑니다. 구현이 가장 짧습니다. 대가: 애니메이션이 도는 동안 매 프레임 Host가 스타일과 레이아웃을 다시 계산합니다. 지금 측정으로 한 프레임이 사이드바 화면에서 약 2~3ms(dioxus-compose/benches/baseline.json의 `html_frame`)이므로 프레임 예산(NFR-9)을 넘깁니다. 또 애니메이션 상태가 Host에 있게 되어 D5와 어긋납니다.
+  - **(나) 렌더러가 Compose 애니메이션으로 재생한다.** Host는 시작 값, 끝 값, 시간, 시간 함수를 한 번 보내고, 렌더러가 `animate*AsState`/`Animatable`과 `graphicsLayer`로 재생합니다. D5(애니메이션 상태는 렌더러)와 맞고 매 프레임 Host 비용이 없습니다. 대가: 레이아웃에 영향을 주는 속성(`width`, `height`, `margin` 등)의 애니메이션은 렌더러가 혼자 재생할 수 없어 (가)로 돌아가야 하고, 애니메이션을 기술하는 레코드가 compose-rust 스키마에 필요합니다.
+  - 위의 결정대로 레이아웃에 영향이 없는 속성은 (나), 나머지는 (가)입니다.
+
+수용 기준:
+1. `opacity`, `transform`, `background-color`의 transition이 CSS가 정한 시간과 시간 함수대로 진행되고, 끝 값이 Chromium과 같습니다.
+2. `@keyframes`의 반복(`infinite` 포함)과 `animation-direction`, `animation-delay`가 지켜집니다.
+3. 레이아웃에 영향이 없는 속성의 애니메이션이 도는 동안 Host의 프레임당 작업이 0입니다.
+4. 애니메이션이 도는 동안 프레임 시간이 NFR-9 예산 안이고, 수치를 이 항목에 기록합니다.
+5. `prefers-reduced-motion: reduce`이면 CSS가 그 조건으로 정한 대로 동작합니다.
+
+기준 1, 3과 `opacity`/`transform`에 대한 기준 2, 5는 M14(10-18)에서, 레이아웃 속성에 대한 기준 2, 4, 5는 M15에서 확인합니다.
+
+#### FR-34.3 HTML/CSS와 Compose 위젯을 한 앱에서 섞기 (`Agreed`, 목표 M12 이후)
+
+추적: 이슈 #59. 구현 전이다. 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고)가 먼저 들어와야 한다. 지금의 예제 열다섯 개는 모두 HTML 경로만 쓰고 섞은 예제는 없다.
+
+dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하나는 `div`, `h1`과 CSS이고(FR-34), 다른 하나는 `Column`, `Text` 같은 Compose 위젯 이름입니다(소유자 결정 2026-10-03: "그냥 dioxus-compose에서 둘다 구현하면 되잖아"). 기능 플래그로 어느 쪽도 끄지 않습니다. 이 항목은 둘을 한 화면에서 섞는 규칙입니다.
+
+- **한 노드는 한 세계에만 속합니다.** writer가 요소 이름으로 나눕니다. dioxus-compose가 정의한 위젯 이름은 위젯 세계이고, 그 밖은 HTML 세계입니다. 섞는 지점은 자리 표시 노드뿐입니다.
+- **위젯 안에 HTML 섬(`HtmlView`).** `HtmlView` 안쪽은 HTML 세계입니다. 렌더러에서는 `AbsoluteBox`이고 크기는 부모 Compose 배치가 정합니다. Host는 그 크기를 노드 크기 관측(FR-28)으로 받아 그 폭에서 배치합니다. 새 경계 함수가 필요 없습니다.
+- **HTML 안에 위젯.** 위젯 노드는 blitz 문서에서 대체 요소(내용을 blitz가 모르는 상자)가 됩니다. 그 고유 크기는 레이아웃 도중 렌더러에 묻습니다. 텍스트와 같은 동기 측정 호출입니다(PR-2 변경). 렌더러에서는 `AbsoluteBox`의 자식으로 계산된 자리에 놓이고, 그 안은 보통의 위젯 레코드입니다.
+- CSS는 HTML 세계에만 적용됩니다. 위젯 노드에는 그 상자를 정하는 속성(위치, 크기, 여백)만 들어가고, 안쪽은 디자인 시스템이 그립니다.
+- 이벤트는 그 노드의 세계 규칙을 따릅니다. HTML 쪽 적중 판정은 위젯 상자를 만나면 그 아래로 내려가지 않고, 위젯은 Compose가 판정합니다.
+- 스크롤, 포커스, 선택은 두 세계 모두 렌더러가 소유합니다(D5). 입력란의 IME 규칙도 두 세계가 같습니다(FR-5).
+- 테마 색은 두 세계가 같은 색 역할을 씁니다. CSS 변수를 색 역할로 잇는 일은 dioxus-compose의 몫입니다.
+
+수용 기준:
+1. `Column` 안의 `HtmlView`에 쓴 `article`이 그 `HtmlView`의 폭에서 배치되고, 창 폭이 바뀌면 그 섬만 다시 배치됩니다.
+2. `div` 안의 `TextField`와 `DatePicker`가 렌더러가 잰 고유 크기로 줄에 놓이고, 같은 줄의 텍스트가 그 크기를 비켜 흐릅니다.
+3. HTML 안의 위젯을 누르면 그 위젯의 핸들러가 불리고, 감싼 `div`의 `onclick`은 CSS 이벤트 흐름대로 그 뒤에 불립니다.
+4. 두 세계가 같은 색 역할을 쓰는 화면에서 테마를 바꾸면 두 세계가 같은 프레임에 바뀝니다.
+
+#### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
+
+추적: 이슈 #58. 구현 전이다. HTML 섬을 확대해 그리는 일은 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고) 위에 올라간다.
+
+HTML 화면은 VS Code처럼 페이지 전체를 확대한다. OS 글자 크기만 따로 키우지 않는다(소유자 결정 2026-10-03: "근데 그럼 vscode는 어떻게 그 부분이 문제가 없는건데? 개 기준으로 생각하면 되잖아"). VS Code는 `window.zoomLevel`(⌘+, ⌘-, ⌘0, 설정에 저장)로 UI 전체를 확대하고, 그래서 22px 행, 35px 탭, 아이콘이 글자와 같은 비율로 커져 잘리거나 겹치지 않는다. 검토는 compose-rust의 `.scratch/reviews/html-text-scaling.md`((e)안)에 있다.
+
+- **확대 배율 k.** HTML 세계 전체가 k배로 그려진다. Host는 CSS 뷰포트를 `창 크기 / k`로 잡고 CSS px로 배치한다. Renderer는 HTML 섬(`AbsoluteBox` 아래)을 `Density(density × k, fontScale = 1)`로 그린다. 그래서 글자, 상자, 테두리, 아이콘, 적중 영역, HTML 안의 위젯이 모두 같이 커지고, 위젯 안의 역할 텍스트가 두 번 커지지 않는다.
+- **k의 값.** `k = OS 글자 배율 × 1.2^수준`이고, 수준은 -8에서 8 사이의 정수다(VS Code와 같은 단계). 데스크톱은 OS 글자 배율을 따른다(소유자 결정). ⌘+, ⌘-, ⌘0(다른 플랫폼은 Ctrl)로 수준을 바꾸고, 앱이 그 키를 먼저 쓰지 않았을 때만 Renderer가 받는다. 수준은 UI 쪽 상태이므로 Renderer가 앱 ID마다 플랫폼 설정 저장소에 저장한다(D5, compose-rust FR-43). Host는 바뀐 k를 이벤트로 받고, 메뉴의 확대 명령처럼 앱이 직접 정할 때는 창 노드의 수준 속성으로 바꾼다. dioxus-compose는 그 둘을 확대 수준을 읽고 바꾸는 API와 훅으로 준다.
+- **측정.** 텍스트와 위젯의 측정(PR-2.1)은 그리는 것과 같은 Density로 잰다. 측정 요청이 k를 담는다(compose-rust).
+- **k가 바뀔 때.** 전체 재배치다. 드문 일이라 프레임 예산(NFR-9) 문제가 아니다. Host의 측정 캐시를 비운다.
+- **미디어 쿼리.** 폭 쿼리는 `창 크기 / k`로, `resolution`은 `density × k`로 판정한다. 브라우저 확대와 같다.
+- **rem/em만 키우기**(`<meta name="text-scale" content="scale">`와 같은 방식)는 앱이 옵트인할 때만 쓴다. M14 뒤의 일이다.
+- Web(Kotlin/Wasm) 대상에서는 브라우저 확대가 이미 장치 픽셀 비율로 들어오므로 k의 시작값은 1이다.
+
+수용 기준:
+1. VS Code 워크벤치의 세 구역을 k = 1.25, 1.5, 2로 배치해, 같은 배율의 VS Code `window.zoomLevel` 화면과 FR-34의 상자 허용치를 지킨다.
+2. k = 2에서 22px 목록 행 안의 글자와 코디콘이 잘리거나 겹치지 않는다.
+3. HTML 안의 `TextField`가 k배로 그려지고, 그 안의 글자가 k배를 넘지 않는다(이중 확대 없음).
+4. 확대 수준을 바꾸면 한 번 재배치되고, 다시 시작하면 Renderer가 저장한 수준으로 같은 k로 열린다.
+5. OS 글자 배율을 바꾸면 그 값이 k의 시작값으로 Host에 도착한다. 데스크톱 세 플랫폼은 수동으로 확인하고 그렇게 적는다.
+
 ### FR-37 마크다운 크레이트 (`Agreed`)
+
+추적: 이슈 #24. 초안은 PR #68이고, compose-rust의 코드 색 역할을 기다린다.
 
 **FR-26을 넓힙니다.** FR-26은 "마크다운은 Host 쪽 편의 함수"라고 정했고, 지금의 `TextSpans::from_markdown`은 굵게, 기울임, 인라인 코드 셋만 압니다. 이 항목은 그 편의를 문단 하나가 아니라 문서 하나로 넓히되, FR-26의 원칙을 그대로 지킵니다. 마크다운을 아는 것은 Host뿐이고, 경계에는 지금 있는 위젯과 스팬만 건넙니다.
 
@@ -2137,7 +2228,7 @@ pr6 forwarder cost: 12.15 ns/call across the boundary, 0.44 ns/call in this modu
   1. C 호스트가 라이브러리를 링크해 `run`을 호출하면 창이 뜨고, 창을 닫으면 `run`이 0을 반환하며 프로세스가 정상 종료됩니다. **(2026-09-20 통과)**
      근거: `desktop/c/smoke_host.c`가 `run`의 반환값을 프로세스 종료 코드로 옮기고, `desktop/scripts/smoke-test.sh`가 그 호스트를 링크해 실행합니다. `native-renderer.yml`의 macOS 잡이 native-image 빌드 뒤에 이 스크립트를 돌리므로, 창이 뜨지 않거나 `run`이 0이 아닌 값을 돌려주면 잡이 실패합니다.
   2. 잘못된 툴체인(`GRAALVM_HOME` 미설정/없는 경로/`native-image` 없음/정적 AWT 아카이브 없음)에서 빌드가 즉시 실패하고 조치 방법을 출력합니다. **(2026-09-20 통과)**
-     근거: `scripts/tests/renderer-toolchain.test.sh`가 네 경우를 전부 임시 디렉터리로 재현해 `env.sh`가 1로 끝나고 설치 방법을 출력하는지 확인하고, 올바른 모양의 설치에서는 통과하는지도 함께 확인합니다. `build-native.sh`와 `smoke-test.sh`의 첫 실행문이 `env.sh`를 source하는지도 같은 파일이 봅니다. native-image 툴체인 없이 밀리초 단위로 돌기 때문에 PR마다 도는 `ci.yml`의 `scripts/tests` 루프에 들어 있습니다.
+     근거: `scripts/tests/renderer-toolchain.test.sh`가 네 경우를 전부 임시 디렉터리로 재현해 `env.sh`가 1로 끝나고 설치 방법을 출력하는지 확인하고, 올바른 모양의 설치에서는 통과하는지도 함께 확인합니다. `build-native.sh`와 `smoke-test.sh`의 첫 실행문이 `env.sh`를 source하는지도 같은 파일이 봅니다. native-image 툴체인 없이 밀리초 단위로 돌기 때문에 PR마다 도는 `test.yml`의 `scripts/tests` 루프에 들어 있습니다.
 
 ## 5. 비기능 요구사항
 
