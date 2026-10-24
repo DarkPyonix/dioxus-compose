@@ -787,6 +787,9 @@ pub struct NodeEntry {
     pub node: NodeId,
     /// The element's tag name, empty for an anonymous box blitz-dom made to hold text.
     pub tag: String,
+    /// The box is the place of a Compose widget, which the renderer fills in with a tree of
+    /// its own. The plan keeps it a container even though the page puts nothing in it.
+    pub widget: bool,
     /// The border box.
     pub rect: Rect,
     /// `visibility: hidden` boxes keep their place in the list but draw nothing and are not

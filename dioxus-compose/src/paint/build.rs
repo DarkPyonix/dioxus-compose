@@ -487,6 +487,9 @@ impl Painter<'_, '_> {
         let mut entry = NodeEntry {
             node: display_key(self.doc, node),
             tag,
+            widget: node
+                .attr(crate::layout::local(crate::layout::WIDGET_ATTRIBUTE))
+                .is_some(),
             rect,
             visible: true,
             background: None,

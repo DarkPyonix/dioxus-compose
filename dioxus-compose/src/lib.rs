@@ -27,6 +27,7 @@ mod hooks;
 pub mod host;
 pub mod html;
 mod html_view;
+mod html_widget;
 mod layout;
 mod paint;
 pub mod renderer;
@@ -293,7 +294,14 @@ pub mod elements {
             color,
             text_align,
             max_lines,
-            overflow
+            overflow,
+            font,
+            span_fonts,
+            word_break,
+            overflow_wrap,
+            tab_size,
+            absolute_size,
+            soft_wrap
         ]
     );
     element!(

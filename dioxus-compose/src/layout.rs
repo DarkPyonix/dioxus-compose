@@ -116,6 +116,7 @@ pub(crate) fn run_layout(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer
     let height = viewport.window_size.1 as f32 / scale;
     let root = NodeId::from(doc.root_element().id);
     size_selects_in_lines(doc, measurer);
+    size_widgets(doc);
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
@@ -135,6 +136,54 @@ pub(crate) fn run_layout(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer
     round_layout(&mut tree, root);
     let markers = measure_markers(doc, measurer, &texts);
     MeasuredTexts { texts, markers }
+}
+
+/// The attribute that marks an element as the place of a Compose widget.
+pub(crate) const WIDGET_ATTRIBUTE: &str = "data-compose-widget";
+
+/// The token of the widget an element stands for, if it is the place of one.
+fn widget_token(node: &Node) -> Option<u32> {
+    node.attr(local(WIDGET_ATTRIBUTE))?.parse().ok()
+}
+
+/// Gives each widget's place the size the renderer measured for it.
+///
+/// A widget is a box whose content blitz-dom knows nothing about, so its intrinsic size
+/// is the renderer's. It goes into the Taffy style as a length, on each axis the page left
+/// `auto`, before the tree is laid out. Written there rather than answered from a leaf
+/// callback, because an inline formatting context that holds the box is laid out by
+/// blitz-dom, which reads the box's size from its style. A widget the renderer has not
+/// measured yet keeps its `auto` size, and the page is laid out again once it has.
+fn size_widgets(doc: &mut BaseDocument) {
+    let ids: Vec<usize> = doc.tree().iter().map(|(id, _)| id).collect();
+    for id in ids {
+        let Some(token) = doc.get_node(id).and_then(widget_token) else {
+            continue;
+        };
+        let Some((width, height)) = crate::html_widget::size_of(token, id) else {
+            continue;
+        };
+        let Some(node) = doc.get_node_mut(id) else {
+            continue;
+        };
+        let style = &mut node.style;
+        let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+        let border = style.border.resolve_or_zero(None, resolve_calc_value);
+        let (extra_x, extra_y) = match style.box_sizing {
+            BoxSizing::BorderBox => (
+                padding.left + padding.right + border.left + border.right,
+                padding.top + padding.bottom + border.top + border.bottom,
+            ),
+            BoxSizing::ContentBox => (0.0, 0.0),
+        };
+        if style.size.width == Dimension::auto() {
+            style.size.width = Dimension::length(width + extra_x);
+        }
+        if style.size.height == Dimension::auto() {
+            style.size.height = Dimension::length(height + extra_y);
+        }
+        node.cache.clear();
+    }
 }
 
 /// Measures the list markers that are drawn as runs of their own: the marker of every item
