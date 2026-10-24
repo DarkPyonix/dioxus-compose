@@ -3,12 +3,12 @@
 
 use std::cell::RefCell;
 
-use dioxus_compose_adapter::code::SYNTAX_SPAN_LEN;
-use dioxus_compose_adapter::prelude::*;
-use dioxus_compose_adapter::protocol::{
+use dioxus_compose::code::SYNTAX_SPAN_LEN;
+use dioxus_compose::prelude::*;
+use dioxus_compose::protocol::{
     HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
 };
-use dioxus_compose_adapter::{EventPayload, Host, PropertyKind, WidgetKind};
+use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
 
 /// One decoded record with its borrowed parts made owned, so the batch can be dropped.
 #[derive(Clone, Debug, PartialEq)]
