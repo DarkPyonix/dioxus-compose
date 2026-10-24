@@ -377,9 +377,9 @@ fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() 
         "#turn",
     );
 
-    let movede = entry(&dom, &list, "move");
-    assert!(movede.transform.is_none(), "a translation folds into the place");
-    assert_eq!((movede.rect.x, movede.rect.y), (520.0, 100.0));
+    let moved = entry(&dom, &list, "move");
+    assert!(moved.transform.is_none(), "a translation folds into the place");
+    assert_eq!((moved.rect.x, moved.rect.y), (520.0, 100.0));
 }
 
 fn flow() -> Element {
