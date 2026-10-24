@@ -30,6 +30,7 @@ mod html_view;
 mod html_widget;
 mod layout;
 mod paint;
+pub mod theme_variables;
 pub mod renderer;
 mod widgets;
 

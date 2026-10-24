@@ -40,7 +40,7 @@ use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
 };
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
-use writer::{DomWriter, WriterState, element_name};
+use writer::{DomWriter, WriterState, attribute_name, element_name};
 
 /// What a browser's own stylesheet says about `<select>` and blitz-dom's does not: the
 /// control is a box of its own, and its options are not drawn in the page, since the
@@ -110,6 +110,10 @@ pub struct HtmlDom {
     /// The time CSS transitions and animations are resolved at, in seconds.
     now: f64,
     motion: MotionState,
+    /// The `<html>` element, which carries the theme's custom properties.
+    root: NodeId,
+    /// The declarations last written to `root`, so an unchanged theme touches nothing.
+    theme_variables: String,
 }
 
 impl HtmlDom {
@@ -140,7 +144,7 @@ impl HtmlDom {
         });
         doc.add_user_agent_stylesheet(FORM_CONTROLS_CSS);
 
-        let body = {
+        let (body, root) = {
             let mut mutator = doc.mutate();
             let html = mutator.create_element(element_name("html", None), Vec::new());
             let head = mutator.create_element(element_name("head", None), Vec::new());
@@ -155,7 +159,7 @@ impl HtmlDom {
             }
             let document = doc_root_id();
             mutator.append_children(document, &[html]);
-            body
+            (body, html)
         };
 
         let mut dom = Self {
@@ -172,6 +176,8 @@ impl HtmlDom {
             previous: None,
             now: 0.0,
             motion: MotionState::default(),
+            root,
+            theme_variables: String::new(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
         dom.vdom.rebuild(&mut writer);
@@ -812,6 +818,19 @@ impl HtmlDom {
     /// The styles that depend on it are resolved again then; nothing else is.
     pub fn set_color_scheme(&mut self, scheme: ColorScheme) {
         self.color_scheme = scheme;
+    }
+
+    /// Sets the custom properties `declarations` names on the document root, as its inline
+    /// style, so `var(--dxc-primary)` in a rule resolves to them. The styles that read them
+    /// are resolved again at the next layout; an unchanged set touches nothing.
+    pub fn set_root_variables(&mut self, declarations: &str) {
+        if self.theme_variables == declarations {
+            return;
+        }
+        self.theme_variables = declarations.to_string();
+        self.doc
+            .mutate()
+            .set_attribute(self.root, attribute_name("style", None), declarations);
     }
 
     /// Tells the text measurer that what its answers depend on changed, so it drops the
