@@ -419,12 +419,13 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
     if has_bare_carriage_return(text) {
         return 0;
     }
-    let last_start = floor_boundary(text, units[count - 1].range.start.min(text.len()));
-    let mut settled = if text[last_start..].contains(['\n', '\r']) {
-        count - 1
-    } else {
-        count - 2
-    };
+    // The last unit is the one being written and is never settled. The one before it is
+    // settled when a blank line separates the two, whether or not the last line is complete:
+    // the blank line is complete, and the indentation that decides whether the last line
+    // can belong to anything above is already in hand once its first character is.
+    // Requiring a complete last line as well kept the previous paragraph parsed again on
+    // every delta for as long as the next line was being written.
+    let mut settled = count - 1;
     // A block is settled only once a blank line separates it from the next one. Without
     // the blank line, text that arrives later can still turn the next block's first line
     // into a continuation of this one: the closing end of an inline code span, a
