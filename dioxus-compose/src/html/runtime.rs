@@ -23,11 +23,12 @@
 //! light or dark. When it follows the system, the renderer applies the system's choice
 //! without telling the Host, so the page keeps the scheme its configuration names.
 //!
-//! Text is measured by the configured [`TextMeasurer`](crate::html::TextMeasurer), Parley by
-//! default, and the renderer draws each run at the width that came out of it. compose-rust
-//! does have a measure call that asks the renderer how big a string or a node is. The page
-//! uses it for the Compose widgets it holds ([`WidgetView`](crate::html::WidgetView)), whose
-//! content only the renderer knows. Text is not measured with it yet.
+//! Text is measured by the configured [`TextMeasurer`](crate::html::TextMeasurer), the
+//! renderer's measure call by default ([`RendererMeasurer`](crate::html::RendererMeasurer)),
+//! and the renderer draws each run at the width that came out of it. The page asks for all
+//! the runs a layout pass needs in one call. Parley answers while there is no renderer to
+//! ask. The measure call also sizes the Compose widgets the page holds
+//! ([`WidgetView`](crate::html::WidgetView)), whose content only the renderer knows.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;

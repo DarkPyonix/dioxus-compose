@@ -30,7 +30,8 @@ use dioxus_html::{
 
 use crate::html::NodeId;
 use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
-use crate::layout::measure::{ParleyMeasurer, TextMeasurer};
+use crate::layout::measure::TextMeasurer;
+use crate::layout::renderer_measure::RendererMeasurer;
 use crate::layout::{local, resolve_styles, run_layout};
 use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
@@ -55,7 +56,7 @@ pub struct HtmlConfig {
     /// Replaces blitz-dom's default user-agent stylesheet (an HTML default sheet much like
     /// a browser's, with `body { margin: 8px }`) when set.
     pub user_agent_stylesheet: Option<String>,
-    /// Sizes text during layout. [`ParleyMeasurer`] when `None`.
+    /// Sizes text during layout. [`RendererMeasurer`] when `None`: the renderer's measure call, and Parley where there is no renderer to ask.
     pub measurer: Option<Box<dyn TextMeasurer>>,
     /// Answers `prefers-color-scheme` media queries.
     pub color_scheme: ColorScheme,
@@ -163,7 +164,7 @@ impl HtmlDom {
             state: WriterState::new(body),
             measurer: config
                 .measurer
-                .unwrap_or_else(|| Box::new(ParleyMeasurer::new())),
+                .unwrap_or_else(|| Box::new(RendererMeasurer::new())),
             images: config.images,
             base_url,
             color_scheme: config.color_scheme,

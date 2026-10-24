@@ -38,6 +38,7 @@ pub(crate) mod convert;
 pub(crate) mod image;
 pub(crate) mod list;
 pub(crate) mod measure;
+pub(crate) mod renderer_measure;
 
 use std::cell::Ref;
 use std::collections::{HashMap, HashSet};
@@ -102,6 +103,24 @@ pub(crate) fn resolve_styles(doc: &mut BaseDocument, now: f64) {
 /// keyed by the inline formatting context that holds it, and the list markers that are
 /// drawn on their own.
 pub(crate) fn run_layout(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) -> MeasuredTexts {
+    let mut laid_out = run_layout_pass(doc, measurer);
+    // A measurer that answers from outside the pass (the renderer) is given the questions
+    // the pass asked, all at once, and the page is laid out again with its answers. The
+    // answers are kept, so the second pass asks nothing new unless a width moved.
+    for _ in 0..MAX_SETTLE_PASSES {
+        if !measurer.settle() {
+            break;
+        }
+        laid_out = run_layout_pass(doc, measurer);
+    }
+    laid_out
+}
+
+/// How many times a layout is repeated with the answers the measurer learned from the last
+/// pass. Answers are cached, so a page settles after one or two.
+const MAX_SETTLE_PASSES: usize = 3;
+
+fn run_layout_pass(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) -> MeasuredTexts {
     // No size blitz-dom measured with Parley may answer for a node this pass measures.
     let ids: Vec<usize> = doc.tree().iter().map(|(id, _)| id).collect();
     for id in ids {
