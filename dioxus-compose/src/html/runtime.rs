@@ -46,7 +46,7 @@ use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Modifiers};
 
 use crate::dom::{HtmlConfig, HtmlDom};
-use crate::html::{ColorScheme, NodeId};
+use crate::html::{ColorScheme, NodeId, PlanKey};
 use crate::paint::animate;
 use crate::paint::bridge::{BridgeEvent, PlanBridge};
 use crate::paint::plan::LiteralColours;
@@ -136,10 +136,14 @@ impl HtmlRuntime {
         } else {
             FALLBACK_VIEWPORT
         };
+        crate::html_widget::render_islands(&mut self.batch);
+        crate::html_widget::refresh(viewport.0);
         if let Some(plan) = self.plan_at(viewport) {
             self.bridge
                 .apply(plan, viewport, &self.dom, &mut self.batch);
         }
+        let bridge = &self.bridge;
+        crate::html_widget::attach(&|node| bridge.node_id(PlanKey::Node(node)), &mut self.batch);
     }
 
     /// Lays the document out in `viewport`, in dp, and returns what to draw.
@@ -173,8 +177,12 @@ impl HtmlRuntime {
             self.dom.render();
         }
         let first = self.bridge.root_node().is_none();
+        crate::html_widget::render_islands(batch);
+        crate::html_widget::refresh(viewport.0);
         let plan = self.plan_at(viewport)?;
         self.bridge.apply(plan, viewport, &self.dom, batch);
+        let bridge = &self.bridge;
+        crate::html_widget::attach(&|node| bridge.node_id(PlanKey::Node(node)), batch);
         if first { self.bridge.root_node() } else { None }
     }
 
@@ -285,6 +293,14 @@ impl Runtime for HtmlRuntime {
     }
 
     fn handle_event(&mut self, event: &HostEvent<'_>) -> Result<i64, ProtocolError> {
+        // A widget answers for itself. A click on one then reaches the box it sits in, so
+        // the handlers of the elements around it run after the widget's own.
+        if let Some((result, bubble)) = crate::html_widget::route_event(event) {
+            if let Some(place) = bubble {
+                self.dom.click_node(place);
+            }
+            return result;
+        }
         let Some(handler) = self.bridge.handler(event.handler_id) else {
             return Err(ProtocolError::InvalidValueKind(0));
         };
@@ -357,7 +373,13 @@ impl Runtime for HtmlRuntime {
     fn poll_work(&mut self, context: &mut Context<'_>) -> Poll<()> {
         let future = self.dom.virtual_dom_mut().wait_for_work();
         let mut future = pin!(future);
-        future.as_mut().poll(context)
+        let outer = future.as_mut().poll(context);
+        // Every widget tree is polled whether or not the page has work, so each one has
+        // registered the waker.
+        if crate::html_widget::poll_islands(context) {
+            return Poll::Ready(());
+        }
+        outer
     }
 
     /// A message's action runs in the root scope, so it can write signals and spawn tasks

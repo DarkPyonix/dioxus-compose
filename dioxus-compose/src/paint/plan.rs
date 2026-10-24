@@ -600,6 +600,9 @@ struct Builder<'a> {
     /// The animations of the nodes that have any, by plan key.
     animated: HashMap<PlanKey, Vec<Animation>>,
     transitions: &'a [crate::paint::display_list::TransitionStart],
+    /// The boxes that are the place of a Compose widget. They stay containers while empty,
+    /// because the renderer hangs the widget tree under them.
+    widget_places: HashSet<PlanKey>,
 }
 
 impl<'a> Builder<'a> {
@@ -672,6 +675,7 @@ impl<'a> Builder<'a> {
             drawn,
             animated: HashMap::new(),
             transitions: &list.transitions,
+            widget_places: HashSet::new(),
         }
     }
 
@@ -868,6 +872,9 @@ impl<'a> Builder<'a> {
                 drawn: self.drawn[index],
             },
         );
+        if entry.widget {
+            self.widget_places.insert(PlanKey::Node(entry.node));
+        }
         if !entry.animations.is_empty() {
             self.animated
                 .insert(PlanKey::Node(entry.node), entry.animations.clone());
@@ -1270,7 +1277,11 @@ impl<'a> Builder<'a> {
             .collect();
         let kind = match (&source.key, &source.kind) {
             // A box with nothing inside it has no children to place.
-            (PlanKey::Node(_), PlanKind::AbsoluteBox) if children.is_empty() => PlanKind::Box,
+            (key @ PlanKey::Node(_), PlanKind::AbsoluteBox)
+                if children.is_empty() && !self.widget_places.contains(key) =>
+            {
+                PlanKind::Box
+            }
             (_, kind) => kind.clone(),
         };
         PlanNode {
