@@ -2,9 +2,7 @@
 //! The Renderer plays them; the Host sends one record and is not involved again.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::{
     AnimatedProperty, AnimationSpec, EventPayload, GraphicsLayer, Host, KeyframeValue,
     PropertyKind, WidgetKind, animate_float_as_state,
