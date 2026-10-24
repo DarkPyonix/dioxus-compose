@@ -74,9 +74,8 @@ pub(crate) fn parse_region(
             .get(&normalize_label(link.reference.as_ref()))
             .map(|destination| (destination.clone().into(), "".into()))
     };
-    let mut events =
-        Parser::new_with_broken_link_callback(text, parser_options(), Some(callback))
-            .into_offset_iter();
+    let mut events = Parser::new_with_broken_link_callback(text, parser_options(), Some(callback))
+        .into_offset_iter();
     let mut converter = Converter::new(max_depth);
     for (event, range) in events.by_ref() {
         converter.event(event, range);

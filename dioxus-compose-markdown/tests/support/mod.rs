@@ -589,7 +589,10 @@ pub mod apps {
 
     /// The stream the streamed screen is drawing.
     pub fn stream() -> SyncSignal<MarkdownStream> {
-        STREAM.with(|slot| slot.borrow().expect("the streamed screen has not been built"))
+        STREAM.with(|slot| {
+            slot.borrow()
+                .expect("the streamed screen has not been built")
+        })
     }
 
     pub fn push(delta: &str) {

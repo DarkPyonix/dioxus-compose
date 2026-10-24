@@ -75,11 +75,7 @@ impl Doc {
     fn watch(&self, key: WatchKey) -> Option<WatchGuard> {
         match self {
             Doc::Static(_) => None,
-            Doc::Stream(stream) => Some(
-                stream
-                    .peek()
-                    .watch(key, dioxus_core::schedule_update()),
-            ),
+            Doc::Stream(stream) => Some(stream.peek().watch(key, dioxus_core::schedule_update())),
         }
     }
 }
@@ -341,7 +337,12 @@ fn render_block(block: &Block, context: &Context<'_>) -> Element {
     }
 }
 
-fn list_item(start: Option<u64>, position: usize, item: &ListItem, context: &Context<'_>) -> Element {
+fn list_item(
+    start: Option<u64>,
+    position: usize,
+    item: &ListItem,
+    context: &Context<'_>,
+) -> Element {
     let ink = context.ink();
     let marker = match (item.task, start) {
         (Some(checked), _) => rsx! {
@@ -357,10 +358,7 @@ fn list_item(start: Option<u64>, position: usize, item: &ListItem, context: &Con
             Text { text: "\u{2022}", color: ink }
         },
     };
-    let children = item
-        .blocks
-        .iter()
-        .map(|block| render_block(block, context));
+    let children = item.blocks.iter().map(|block| render_block(block, context));
     rsx! {
         Row {
             fill_max_width: true,
@@ -437,9 +435,7 @@ pub(crate) fn spans_of(inline: &Inline, linked: bool) -> TextSpans {
                 .with_color(Paint::Role(ColorRole::OnSurfaceVariant));
         }
         if let Some(link) = run.link {
-            span = span
-                .underline()
-                .with_color(Paint::Role(ColorRole::Primary));
+            span = span.underline().with_color(Paint::Role(ColorRole::Primary));
             if linked {
                 span.on_click = Some(u64::from(link) + 1);
             }

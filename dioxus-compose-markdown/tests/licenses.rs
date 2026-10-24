@@ -192,7 +192,9 @@ fn fr37_the_licence_checker_reads_spdx_the_way_it_is_written() {
     assert!(permissive("MIT OR Apache-2.0"));
     assert!(permissive("Unlicense/MIT"));
     assert!(permissive("(MIT OR Apache-2.0) AND Unicode-3.0"));
-    assert!(permissive("Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"));
+    assert!(permissive(
+        "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+    ));
     assert!(!permissive("GPL-3.0"));
     assert!(!permissive("MIT AND GPL-3.0"));
     assert!(permissive("MIT OR GPL-3.0"));

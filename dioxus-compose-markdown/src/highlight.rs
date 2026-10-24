@@ -308,9 +308,7 @@ mod worker {
                                 }
                             };
                             let deliver = job.deliver;
-                            let _ = catch_unwind(AssertUnwindSafe(move || {
-                                deliver(job.key, spans)
-                            }));
+                            let _ = catch_unwind(AssertUnwindSafe(move || deliver(job.key, spans)));
                         }
                     })
                     .ok()

@@ -145,7 +145,10 @@ fn fr37_an_open_fence_is_a_code_block_at_once() {
     apps::push("```rust");
     screen.frame();
     let language = text_node(&screen, "rust");
-    let block = screen.tree.parent_of(screen.tree.parent_of(language).unwrap()).unwrap();
+    let block = screen
+        .tree
+        .parent_of(screen.tree.parent_of(language).unwrap())
+        .unwrap();
     apps::push("\nfn main() {");
     screen.frame();
     let code = text_node(&screen, "fn main() {");
@@ -156,7 +159,10 @@ fn fr37_an_open_fence_is_a_code_block_at_once() {
     apps::push("}\n```\n");
     screen.frame();
     assert!(screen.tree.subtree(block).contains(&code));
-    assert_eq!(screen.tree.nodes[&code].text.as_deref(), Some("fn main() {}"));
+    assert_eq!(
+        screen.tree.nodes[&code].text.as_deref(),
+        Some("fn main() {}")
+    );
 }
 
 /// `**bold` is shown as written, with no bold run, and when the closing `**` arrives that
@@ -197,10 +203,21 @@ fn fr37_unclosed_emphasis_is_plain_until_it_closes() {
             .collect::<Vec<_>>();
         (touched, others)
     });
-    assert!(structural.0.is_empty(), "closing the emphasis moved nodes: {:?}", structural.0);
-    assert!(structural.1.is_empty(), "closing the emphasis touched other nodes: {:?}", structural.1);
+    assert!(
+        structural.0.is_empty(),
+        "closing the emphasis moved nodes: {:?}",
+        structural.0
+    );
+    assert!(
+        structural.1.is_empty(),
+        "closing the emphasis touched other nodes: {:?}",
+        structural.1
+    );
     assert_eq!(screen.tree.nodes[&open].text.as_deref(), Some("bold"));
-    assert!(!screen.tree.nodes[&open].spans.is_empty(), "no bold run after it closed");
+    assert!(
+        !screen.tree.nodes[&open].spans.is_empty(),
+        "no bold run after it closed"
+    );
 }
 
 /// A delta after a block closed sends nothing for that block, and a delta to a paragraph
@@ -274,9 +291,7 @@ fn fr37_new_blocks_never_disturb_the_ones_above() {
         apps::push(&format!("Paragraph {index} more.\n\n"));
         let moved = screen.frame_with(|_, mutations| {
             mutations.iter().any(|mutation| match mutation {
-                Mutation::Remove { node_id } | Mutation::Move { node_id, .. } => {
-                    *node_id == first
-                }
+                Mutation::Remove { node_id } | Mutation::Move { node_id, .. } => *node_id == first,
                 Mutation::SetProp { node_id, .. } | Mutation::AppendText { node_id, .. } => {
                     *node_id == first
                 }

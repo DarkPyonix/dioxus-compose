@@ -35,9 +35,7 @@ mod view;
 
 pub use code::CodeSpan;
 pub use model::BlockRef;
-pub use options::{
-    CopyRequest, DEFAULT_FOLD_LINES, ImageResolver, Labels, MarkdownOptions,
-};
+pub use options::{CopyRequest, DEFAULT_FOLD_LINES, ImageResolver, Labels, MarkdownOptions};
 pub use parse::DEFAULT_MAX_DEPTH;
 pub use stream::MarkdownStream;
 pub use view::CodeBlock;

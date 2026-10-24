@@ -12,8 +12,8 @@ use dioxus_compose_markdown::{
     DEFAULT_MAX_DEPTH, MarkdownOptions, MarkdownStream, ansi, code, parse,
 };
 use std::time::{Duration, Instant};
-use support::apps::{self, quiet};
 use support::Screen;
+use support::apps::{self, quiet};
 
 /// A small, fixed, seedable generator. Reproducibility matters more here than quality.
 struct Random(u64);
@@ -33,13 +33,76 @@ impl Random {
 }
 
 const PIECES: &[&str] = &[
-    "#", "## ", "# ", " ", "  ", "\n", "\n\n", "*", "**", "_", "__", "~~", "`", "``", "```",
-    "```rust\n", "```diff\n", "~~~\n", "> ", ">", "- ", "* ", "+ ", "1. ", "2) ", "[", "]",
-    "(", ")", "![", "<", ">", "|", "| a | b |\n", "|---|:-:|\n", ":", "-", "---\n", "===\n",
-    "+", "\t", "    ", "&amp;", "&#x41;", "&", "\\", "https://example.com/x", "<https://a.b>",
-    "[x]: /url\n", "[x]", "[y][x]", "a", "word", "words here", "é", "한글", "😀",
-    "\u{1b}[31m", "\r\n", "\r", "<div>", "</div>", "<!--", "-->", "<script>", "- [ ] ",
-    "- [x] ", "\0", "\u{7f}", "    code\n",
+    "#",
+    "## ",
+    "# ",
+    " ",
+    "  ",
+    "\n",
+    "\n\n",
+    "*",
+    "**",
+    "_",
+    "__",
+    "~~",
+    "`",
+    "``",
+    "```",
+    "```rust\n",
+    "```diff\n",
+    "~~~\n",
+    "> ",
+    ">",
+    "- ",
+    "* ",
+    "+ ",
+    "1. ",
+    "2) ",
+    "[",
+    "]",
+    "(",
+    ")",
+    "![",
+    "<",
+    ">",
+    "|",
+    "| a | b |\n",
+    "|---|:-:|\n",
+    ":",
+    "-",
+    "---\n",
+    "===\n",
+    "+",
+    "\t",
+    "    ",
+    "&amp;",
+    "&#x41;",
+    "&",
+    "\\",
+    "https://example.com/x",
+    "<https://a.b>",
+    "[x]: /url\n",
+    "[x]",
+    "[y][x]",
+    "a",
+    "word",
+    "words here",
+    "é",
+    "한글",
+    "😀",
+    "\u{1b}[31m",
+    "\r\n",
+    "\r",
+    "<div>",
+    "</div>",
+    "<!--",
+    "-->",
+    "<script>",
+    "- [ ] ",
+    "- [x] ",
+    "\0",
+    "\u{7f}",
+    "    code\n",
 ];
 
 fn document(random: &mut Random) -> String {
@@ -85,11 +148,7 @@ fn fr37_random_documents_never_panic_and_stream_like_they_parse() {
         let mut stream = MarkdownStream::new(MarkdownOptions::default());
         for piece in split(&mut random, &text) {
             stream.push_delta(&piece);
-            let frozen: Vec<_> = stream
-                .blocks()
-                .take(stream.frozen_len())
-                .cloned()
-                .collect();
+            let frozen: Vec<_> = stream.blocks().take(stream.frozen_len()).cloned().collect();
             // A frozen block can only differ from the finished parse by a link whose
             // definition comes later; such a document is checked after `finish` only.
             if !text.contains("]:") {

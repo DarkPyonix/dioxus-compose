@@ -323,7 +323,11 @@ impl MarkdownStream {
                 }
             }
         }
-        self.frozen_code = self.frozen.iter().map(|block| block.block().code_blocks()).sum();
+        self.frozen_code = self
+            .frozen
+            .iter()
+            .map(|block| block.block().code_blocks())
+            .sum();
         first
     }
 
@@ -419,9 +423,7 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
 /// a line feed, a carriage return, or both.
 fn line_start(text: &str, position: usize) -> usize {
     let position = floor_boundary(text, position.min(text.len()));
-    text[..position]
-        .rfind(['\n', '\r'])
-        .map_or(0, |at| at + 1)
+    text[..position].rfind(['\n', '\r']).map_or(0, |at| at + 1)
 }
 
 /// The start of the first line that begins at or after `position`.

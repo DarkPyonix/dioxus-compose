@@ -131,7 +131,10 @@ fn fr37_an_unknown_language_is_plain_and_not_an_error() {
             std::thread::sleep(Duration::from_millis(5));
         }
         assert_eq!(screen.tree.nodes[&code].text.as_deref(), Some("x = 1"));
-        assert!(screen.tree.nodes[&code].spans.is_empty(), "{source:?} got runs");
+        assert!(
+            screen.tree.nodes[&code].spans.is_empty(),
+            "{source:?} got runs"
+        );
     }
 }
 
@@ -249,7 +252,10 @@ fn fr37_code_scrolls_sideways_and_nothing_else_does() {
         false
     };
     let code = only_code_text(&screen.tree);
-    assert_eq!(screen.tree.nodes[&code].text.as_deref(), Some(wide.as_str()));
+    assert_eq!(
+        screen.tree.nodes[&code].text.as_deref(),
+        Some(wide.as_str())
+    );
     assert!(in_scroll_row(code), "the code is not in a ScrollRow");
     for paragraph in ["Before.", "After."] {
         let node = screen.tree.text_node(paragraph).unwrap();
@@ -303,7 +309,10 @@ fn fr37_long_blocks_fold_and_unfold() {
         screen
             .tree
             .find(|node| node.widget == WidgetKind::Button
-                && node.text.as_deref().is_some_and(|text| text.starts_with("Show")))
+                && node
+                    .text
+                    .as_deref()
+                    .is_some_and(|text| text.starts_with("Show")))
             .is_empty()
     );
 }
@@ -373,7 +382,10 @@ fn fr37_an_unfolded_block_stays_unfolded_after_leaving_and_returning() {
     let mut shown = SHOWN.with(|slot| slot.borrow().unwrap());
     shown.set(false);
     screen.frame();
-    assert!(code_texts(&screen.tree).is_empty(), "the message did not leave");
+    assert!(
+        code_texts(&screen.tree).is_empty(),
+        "the message did not leave"
+    );
     shown.set(true);
     screen.frame();
     let code = only_code_text(&screen.tree);
@@ -422,9 +434,9 @@ fn fr37_raw_tool_output_keeps_its_colours_as_roles_and_streams_as_appends() {
     let second = "\u{1b}[32mtest ok\u{1b}[39m\n";
     output.write().push_str(second);
     let appended = screen.frame_with(|_, mutations| {
-        mutations.iter().any(|mutation| {
-            matches!(mutation, Mutation::AppendText { node_id, .. } if *node_id == code)
-        }) && !mutations.iter().any(|mutation| {
+        mutations.iter().any(
+            |mutation| matches!(mutation, Mutation::AppendText { node_id, .. } if *node_id == code),
+        ) && !mutations.iter().any(|mutation| {
             matches!(
                 mutation,
                 Mutation::SetProp {
@@ -475,8 +487,14 @@ fn fr37_a_diff_is_coloured_by_line_and_keeps_its_signs() {
     assert_eq!(
         span_roles(&screen.tree, code),
         vec![
-            ("--- a/src/lib.rs".to_owned(), Some(ColorRole::SyntaxComment)),
-            ("+++ b/src/lib.rs".to_owned(), Some(ColorRole::SyntaxComment)),
+            (
+                "--- a/src/lib.rs".to_owned(),
+                Some(ColorRole::SyntaxComment)
+            ),
+            (
+                "+++ b/src/lib.rs".to_owned(),
+                Some(ColorRole::SyntaxComment)
+            ),
             ("@@ -1,3 +1,3 @@".to_owned(), Some(ColorRole::SyntaxComment)),
             ("-    old();".to_owned(), Some(ColorRole::DiffRemoved)),
             ("+    new();".to_owned(), Some(ColorRole::DiffAdded)),

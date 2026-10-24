@@ -45,7 +45,8 @@ fn reference_screen() -> Screen {
 fn fr37_the_reference_document_draws_the_reference_tree() {
     let screen = reference_screen();
     let drawn = screen.tree.dump();
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.tree");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/reference.tree");
     if std::env::var_os("DXC_BLESS").is_some() {
         std::fs::write(&path, &drawn).expect("could not write the reference tree");
         return;

@@ -3,16 +3,15 @@
 
 mod support;
 
+use dioxus_compose::WidgetKind;
 use dioxus_compose::protocol::{HostEvent, decode_batch};
 use dioxus_compose::schema::{DesignSystem, EventPayload};
 use dioxus_compose::spans::TextSpans;
-use dioxus_compose::WidgetKind;
 use dioxus_compose_markdown::{ImageResolver, MarkdownOptions};
 use support::Screen;
 use support::apps::{self, quiet};
 
-const LINKED: &str =
-    "Read [the docs](https://example.com/docs) or the [reference][r], plainly.\n\n[r]: https://example.com/ref\n";
+const LINKED: &str = "Read [the docs](https://example.com/docs) or the [reference][r], plainly.\n\n[r]: https://example.com/ref\n";
 
 fn paragraph(screen: &Screen) -> u32 {
     screen
@@ -39,7 +38,10 @@ fn fr37_a_link_reports_its_address_once() {
         .filter(|run| run.on_click.is_none())
         .map(|run| &text[run.start as usize..(run.start + run.length) as usize])
         .collect();
-    assert!(plain.is_empty(), "words outside a link report a press: {plain:?}");
+    assert!(
+        plain.is_empty(),
+        "words outside a link report a press: {plain:?}"
+    );
 
     screen.click(node, linked[0]);
     assert_eq!(apps::links(), vec!["https://example.com/docs".to_owned()]);
@@ -65,7 +67,10 @@ fn fr37_without_on_link_a_link_is_inert() {
         .spans()
         .collect();
     assert_eq!(runs.len(), 2);
-    assert!(runs.iter().all(|run| run.underline && run.on_click.is_none()));
+    assert!(
+        runs.iter()
+            .all(|run| run.underline && run.on_click.is_none())
+    );
 }
 
 /// Raw HTML, block and inline, is shown as the characters that were written.
@@ -96,9 +101,7 @@ fn fr37_images_are_words_unless_the_application_resolves_them() {
     let screen = Screen::new(apps::one_shot);
     let node = screen
         .tree
-        .text_node(
-            "A cat (https://example.com/cat.png) and dot (data:image/png;base64,AAAA).",
-        )
+        .text_node("A cat (https://example.com/cat.png) and dot (data:image/png;base64,AAAA).")
         .unwrap_or_else(|| panic!("the images are not words:\n{}", screen.tree.dump()));
     let text = screen.tree.nodes[&node].text.clone().unwrap();
     let links: Vec<_> = TextSpans::from_bytes(screen.tree.nodes[&node].spans.clone())
@@ -113,7 +116,12 @@ fn fr37_images_are_words_unless_the_application_resolves_them() {
             "data:image/png;base64,AAAA".to_owned()
         ]
     );
-    assert!(screen.tree.find(|node| node.widget == WidgetKind::Image).is_empty());
+    assert!(
+        screen
+            .tree
+            .find(|node| node.widget == WidgetKind::Image)
+            .is_empty()
+    );
 
     let options = MarkdownOptions {
         image_resolver: Some(ImageResolver::new(|url| {
@@ -151,7 +159,11 @@ fn fr37_a_theme_change_costs_the_document_nothing() {
     // mistaken for a reaction to it.
     apps::reset(&support::fixture("streaming.md"), quiet());
     let mut screen = Screen::new(apps::one_shot);
-    for system in [DesignSystem::Fluent, DesignSystem::Cupertino, DesignSystem::Material3] {
+    for system in [
+        DesignSystem::Fluent,
+        DesignSystem::Cupertino,
+        DesignSystem::Material3,
+    ] {
         let (batch, _) = screen
             .host
             .dispatch(HostEvent {

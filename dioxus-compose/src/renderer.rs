@@ -597,9 +597,10 @@ impl ComposeRenderer {
                     return;
                 }
             }
-            if let (Some(spans), Some(element)) =
-                (any.downcast_ref::<compose_rust::spans::TextSpans>(), element)
-            {
+            if let (Some(spans), Some(element)) = (
+                any.downcast_ref::<compose_rust::spans::TextSpans>(),
+                element,
+            ) {
                 if spans.spans().any(|span| span.on_click.is_some()) {
                     self.set_linked_spans(node_id, element, property, spans);
                     return;
