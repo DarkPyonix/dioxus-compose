@@ -1,6 +1,6 @@
 # Samples
 
-Fifteen Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
+Sixteen Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
 signals, with `use dioxus_compose::html::prelude::*` and nothing else from this crate. Each is
 a crate of its own, and each exposes the same two things:
 
@@ -28,6 +28,7 @@ so a window can show it and a test can lay it out without one.
 | `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
 | `landing` | A responsive product page: a hero painted with a gradient, a card grid of features, three pricing plans (the middle one highlighted) and a footer of link columns, centred with `margin: 0 auto`. `@media` queries on the width change it at phone, tablet and desktop widths, and a toggle switches the prices between monthly and yearly |
 | `motion` | Boxes rotated, scaled and skewed with `transform-origin` (a click lands on the drawn shape), a transition a button starts, `@keyframes` loops, and a width transition the Host ticks |
+| `kanban` | A board of three flex columns. Cards move one column left or right and land after the cards already there, each column counts its cards and shows a placeholder when empty, and a form adds a card to the first column |
 
 ## Where they are drawn
 
