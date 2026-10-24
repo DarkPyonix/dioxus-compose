@@ -417,7 +417,7 @@ pub fn Text(
     /// Runs of different treatment inside [text]: a bold phrase, a link, a piece of
     /// code. Left out, the widget travels exactly as it did before runs existed.
     #[props(default)]
-    spans: crate::spans::TextSpans,
+    spans: compose_rust::spans::TextSpans,
     #[props(into)] text: String,
     #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] font_size: Option<f32>,
@@ -428,37 +428,63 @@ pub fn Text(
     #[props(default)] text_align: Option<TextAlign>,
     #[props(default)] max_lines: Option<u32>,
     #[props(default)] overflow: Option<TextOverflow>,
+    /// Says this string usually grows at the end, the way a reply arriving token by token
+    /// does. While it only grows, the Renderer is sent the new tail rather than the whole
+    /// string again. Any other change is sent whole, so this never changes what is shown.
+    #[props(default)]
+    streaming: bool,
+    /// Called with a link run's value when that run is pressed. The value is whatever the
+    /// run's `on_click` named it, so one handler can tell several links apart. Without a
+    /// handler a press on a link run does nothing.
+    #[props(default)]
+    on_link: Option<EventHandler<u64>>,
 ) -> Element {
-    rsx! {
-        text {
-            weight: opt_dp(weight),
-            width: opt_dp(width),
-            height: opt_dp(height),
-            padding: opt_dp(padding),
-            padding_role: opt_role(padding_role),
-            background: opt_paint(background),
-            shape_role: opt_role(shape_role),
-            corner_radius: opt_dp(corner_radius),
-            border_width: opt_dp(border_width),
-            border_color: opt_paint(border_color),
-            elevation: opt_dp(elevation),
-            fill_max_width,
-            fill_max_height,
-            // Left out entirely when there are none, so a Text that says nothing about
-            // runs travels exactly as it did before runs existed.
-            spans: (!spans.is_empty()).then(|| AttributeValue::any_value(spans)),
-            text,
-            type_role: role(type_role),
-            font_size: dp(font_size),
-            font_weight: i64::from(font_weight.unwrap_or(0)),
-            line_height: dp(line_height),
-            letter_spacing: dp(letter_spacing),
-            color: color.map_or(0, |paint| paint.to_bits() as i64),
-            text_align: role(text_align),
-            max_lines: i64::from(max_lines.unwrap_or(0)),
-            overflow: role(overflow),
-        }
+    let text: dioxus_core::AttributeValue = if streaming {
+        dioxus_core::AttributeValue::any_value(crate::renderer::GrowingText(text))
+    } else {
+        dioxus_core::AttributeValue::Text(text)
+    };
+    // The element is written out twice so that a `Text` without a link handler carries no
+    // listener at all, and travels exactly as it did before links reported anything.
+    macro_rules! text_element {
+        ($($listener:tt)*) => {
+            rsx! {
+                text {
+                    weight: opt_dp(weight),
+                    width: opt_dp(width),
+                    height: opt_dp(height),
+                    padding: opt_dp(padding),
+                    padding_role: opt_role(padding_role),
+                    background: opt_paint(background),
+                    shape_role: opt_role(shape_role),
+                    corner_radius: opt_dp(corner_radius),
+                    border_width: opt_dp(border_width),
+                    border_color: opt_paint(border_color),
+                    elevation: opt_dp(elevation),
+                    fill_max_width,
+                    fill_max_height,
+                    // Left out entirely when there are none, so a Text that says nothing
+                    // about runs travels exactly as it did before runs existed.
+                    spans: (!spans.is_empty()).then(|| AttributeValue::any_value(spans)),
+                    text,
+                    type_role: role(type_role),
+                    font_size: dp(font_size),
+                    font_weight: i64::from(font_weight.unwrap_or(0)),
+                    line_height: dp(line_height),
+                    letter_spacing: dp(letter_spacing),
+                    color: color.map_or(0, |paint| paint.to_bits() as i64),
+                    text_align: role(text_align),
+                    max_lines: i64::from(max_lines.unwrap_or(0)),
+                    overflow: role(overflow),
+                    $($listener)*
+                }
+            }
+        };
     }
+    if let Some(on_link) = on_link {
+        return text_element!(onlink: move |event: dioxus_core::Event<u64>| on_link.call(*event.data()),);
+    }
+    text_element!()
 }
 
 #[component]

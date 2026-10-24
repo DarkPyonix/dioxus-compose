@@ -1925,6 +1925,7 @@ CommonMark에 GFM의 표, 작업 목록, 취소선을 더한 것입니다.
 | 강조기(대안) | `tree-sitter-highlight`와 언어별 문법 | 코어 MIT, 문법은 대부분 MIT | 강조 품질이 높고 증분 파싱이 됩니다. 언어마다 C 코드를 컴파일해야 해서 Wasm(PR-6) 빌드가 어렵고, 20개 언어의 바이너리 크기가 큽니다 |
 
 - 선택의 조건: 의존성 전체가 Apache-2.0과 함께 배포할 수 있는 허용 라이선스일 것(묶인 문법 파일 하나하나까지 확인), 다섯 플랫폼(macOS, Windows, Linux, iOS, Android)과 Web에서 빌드될 것, 바이너리 크기 증가를 실측해 기록할 것.
+- **소유자 결정 (2026-10-25, "b로 해")**: `dioxus-compose`의 HTML과 CSS 경로(blitz-dom, stylo)가 끌어오는 MPL-2.0 크레이트 15개(`stylo` 계열, `cssparser`, `selectors`, `to_shmem`, `app_units`, `dtoa-short`, `uluru` 등)는 이름으로 지정해 허용합니다. 허용 라이선스 규칙은 그대로 두고, 다른 크레이트에는 MPL-2.0을 허용하지 않습니다. 근거는 `dioxus-compose-markdown/tests/licenses.rs`의 `MPL_EXEMPT`입니다. **[user]**
 
 #### 37.11 성능
 

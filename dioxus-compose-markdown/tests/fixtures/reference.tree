@@ -1,0 +1,80 @@
+Column
+  SelectionContainer
+    Column
+      Text role=Headline "Heading one"
+      Text role=Title "Heading two"
+      Text role=Subtitle "Heading three"
+      Text role=BodyStrong "Heading four"
+      Text role=BodyStrong "Heading five"
+      Text role=BodyStrong "Heading six"
+      Text "A paragraph with emphasis, strong, struck and inline code, then a link."
+        ~ 17..25 italic
+        ~ 27..33 bold
+        ~ 35..41 strikethrough
+        ~ 46..57 role=Mono color=OnSurfaceVariant
+        ~ 66..70 color=Primary underline link
+      Column
+        Row
+          Text "•"
+          Column
+            Text "unordered one"
+        Row
+          Text "•"
+          Column
+            Text "unordered two"
+            Column
+              Row
+                Text "1."
+                Column
+                  Text "nested ordered"
+              Row
+                Text "2."
+                Column
+                  Text "nested second"
+      Column
+        Row
+          Text "3."
+          Column
+            Text "third"
+        Row
+          Text "4."
+          Column
+            Text "fourth"
+      Column
+        Row
+          Checkbox
+          Column
+            Text "open task"
+        Row
+          Checkbox checked
+          Column
+            Text "done task"
+      ScrollRow
+        Column
+          Row
+            Text role=BodyStrong align=Start "Left"
+            Text role=BodyStrong align=Center "Center"
+            Text role=BodyStrong align=End "Right"
+          Divider
+          Row
+            Text align=Start "a"
+            Text align=Center "b"
+            Text align=End "c"
+      Row
+        Divider vertical
+        Column
+          Text color=OnSurfaceVariant "A quote with bold inside."
+            ~ 13..17 bold
+      Divider
+      Column
+        Row
+          Text role=Caption color=OnSurfaceVariant "rust"
+          Button "Copy"
+        ScrollRow
+          Text role=Mono color=OnSurface "fn main() {}"
+      Column
+        Row
+          Text role=Caption color=OnSurfaceVariant ""
+          Button "Copy"
+        ScrollRow
+          Text role=Mono color=OnSurface "indented code"

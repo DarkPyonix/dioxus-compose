@@ -1,0 +1,332 @@
+//! Untrusted input: random documents, split at random, must never panic and must always
+//! agree with the one-shot parse; pathological nesting is capped and costs linear time.
+//!
+//! The random documents are drawn from markdown's own punctuation, so most of them land on
+//! the edges where block structure is decided. The generator is seeded, so a failure names
+//! the seed that reproduces it, and `DXC_FUZZ_SECONDS` runs it for longer than the default.
+
+mod support;
+
+use dioxus_compose_markdown::model::Block;
+use dioxus_compose_markdown::{
+    DEFAULT_MAX_DEPTH, MarkdownOptions, MarkdownStream, ansi, code, parse,
+};
+use std::time::{Duration, Instant};
+use support::Screen;
+use support::apps::{self, quiet};
+
+/// A small, fixed, seedable generator. Reproducibility matters more here than quality.
+struct Random(u64);
+
+impl Random {
+    fn next(&mut self) -> u64 {
+        // xorshift64*
+        self.0 ^= self.0 >> 12;
+        self.0 ^= self.0 << 25;
+        self.0 ^= self.0 >> 27;
+        self.0.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+
+    fn below(&mut self, bound: usize) -> usize {
+        (self.next() % bound.max(1) as u64) as usize
+    }
+}
+
+const PIECES: &[&str] = &[
+    "#",
+    "## ",
+    "# ",
+    " ",
+    "  ",
+    "\n",
+    "\n\n",
+    "*",
+    "**",
+    "_",
+    "__",
+    "~~",
+    "`",
+    "``",
+    "```",
+    "```rust\n",
+    "```diff\n",
+    "~~~\n",
+    "> ",
+    ">",
+    "- ",
+    "* ",
+    "+ ",
+    "1. ",
+    "2) ",
+    "[",
+    "]",
+    "(",
+    ")",
+    "![",
+    "<",
+    ">",
+    "|",
+    "| a | b |\n",
+    "|---|:-:|\n",
+    ":",
+    "-",
+    "---\n",
+    "===\n",
+    "+",
+    "\t",
+    "    ",
+    "&amp;",
+    "&#x41;",
+    "&",
+    "\\",
+    "https://example.com/x",
+    "<https://a.b>",
+    "[x]: /url\n",
+    "[x]",
+    "[y][x]",
+    "a",
+    "word",
+    "words here",
+    "é",
+    "한글",
+    "😀",
+    "\u{1b}[31m",
+    "\r\n",
+    "\r",
+    "<div>",
+    "</div>",
+    "<!--",
+    "-->",
+    "<script>",
+    "- [ ] ",
+    "- [x] ",
+    "\0",
+    "\u{7f}",
+    "    code\n",
+];
+
+fn document(random: &mut Random) -> String {
+    let length = random.below(120);
+    (0..length)
+        .map(|_| PIECES[random.below(PIECES.len())])
+        .collect()
+}
+
+fn split(random: &mut Random, text: &str) -> Vec<String> {
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let mut at = 1 + random.below(rest.len().min(24));
+        while !rest.is_char_boundary(at) {
+            at += 1;
+        }
+        let (piece, tail) = rest.split_at(at.min(rest.len()));
+        pieces.push(piece.to_owned());
+        rest = tail;
+    }
+    pieces
+}
+
+fn fuzz_seconds() -> u64 {
+    std::env::var("DXC_FUZZ_SECONDS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(5)
+}
+
+#[test]
+fn fr37_random_documents_never_panic_and_stream_like_they_parse() {
+    let budget = Duration::from_secs(fuzz_seconds());
+    let started = Instant::now();
+    let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+    let mut cases = 0_u64;
+    while started.elapsed() < budget || cases < 200 {
+        seed = seed.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut random = Random(seed | 1);
+        let text = document(&mut random);
+        let whole = parse(&text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        for piece in split(&mut random, &text) {
+            stream.push_delta(&piece);
+            let frozen: Vec<_> = stream.blocks().take(stream.frozen_len()).cloned().collect();
+            // A frozen block can only differ from the finished parse by a link whose
+            // definition comes later; such a document is checked after `finish` only.
+            if !text.contains("]:") {
+                assert_eq!(
+                    frozen,
+                    whole[..frozen.len().min(whole.len())],
+                    "seed {seed:#x}: a frozen block differs from the finished parse\n{text:?}"
+                );
+            }
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(
+            streamed, whole,
+            "seed {seed:#x}: the streamed document differs from the one-shot parse\n{text:?}"
+        );
+        // The code paths that run on the drawing side, fed the same text.
+        let _ = ansi::clean(&text, 20);
+        let _ = code::diff_spans(&text);
+        if cases.is_multiple_of(25) {
+            apps::reset(&text, quiet());
+            let _ = Screen::new(apps::one_shot);
+        }
+        cases += 1;
+    }
+}
+
+fn depth(blocks: &[Block]) -> usize {
+    blocks
+        .iter()
+        .map(|block| match block {
+            Block::Quote(inner) => 1 + depth(inner),
+            Block::List { items, .. } => {
+                1 + items
+                    .iter()
+                    .map(|item| depth(&item.blocks))
+                    .max()
+                    .unwrap_or(0)
+            }
+            _ => 0,
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Ten thousand quotes and ten thousand brackets are drawn within the nesting cap.
+#[test]
+fn fr37_ten_thousand_levels_stay_within_the_cap() {
+    for text in [
+        format!("{}deep\n", ">".repeat(10_000)),
+        format!("{}deep\n", "[".repeat(10_000)),
+        format!("{}deep\n", "- ".repeat(10_000)),
+    ] {
+        let blocks: Vec<Block> = parse(&text, DEFAULT_MAX_DEPTH)
+            .iter()
+            .map(|block| block.block().clone())
+            .collect();
+        assert!(
+            depth(&blocks) <= DEFAULT_MAX_DEPTH,
+            "nested {} deep",
+            depth(&blocks)
+        );
+        apps::reset(&text, quiet());
+        let screen = Screen::new(apps::one_shot);
+        assert!(screen.tree.text_node("deep").is_some() || screen.tree.dump().contains("deep"));
+    }
+}
+
+fn best_of_three(text: &str) -> Duration {
+    (0..3)
+        .map(|_| {
+            let started = Instant::now();
+            let blocks = parse(text, DEFAULT_MAX_DEPTH);
+            std::hint::black_box(blocks);
+            started.elapsed()
+        })
+        .min()
+        .unwrap()
+}
+
+/// Doubling a pathological input at most doubles the time, give or take noise: the
+/// criterion allows two and a half.
+#[test]
+fn fr37_pathological_nesting_costs_linear_time() {
+    for unit in [">", "[", "- ", "*", "`", "<"] {
+        let small = format!("{}x\n", unit.repeat(20_000));
+        let large = format!("{}x\n", unit.repeat(40_000));
+        let (small, large) = (best_of_three(&small), best_of_three(&large));
+        let ratio = large.as_secs_f64() / small.as_secs_f64().max(1e-9);
+        assert!(
+            ratio <= 2.5,
+            "{unit:?}: doubling the input took {ratio:.2} times as long ({small:?} to {large:?})"
+        );
+    }
+}
+
+/// A paragraph with an inline code span that is closed by a line which, until more text
+/// arrives, looks like a code fence. The paragraph must not be frozen at the fence, or the
+/// streamed document keeps the backticks and loses the span the one-shot parse finds.
+///
+/// Found by the random test above with seed 0x41166f93275e9641.
+#[test]
+fn fr37_a_span_closed_on_the_next_line_streams_like_it_parses() {
+    let documents = [
+        "words here```rust\n```\r<script><!--x-->",
+        "a ```rust\n```\n<script>x",
+        // The input the seed produced, with the part that mattered around it.
+        "\u{7f}|---|:-:|\n|https://example.com/xa\u{0}+ + *한글\u{1b}[31mwords here```rust\n```\r<script><!--# _[한글\t```diff\n~~<https://a.b><div>😀|```diff\n`\u{1b}[31m<!--- #   </div>[words here\\|#     + ```<https://a.b> <script>&#x41;(- [ ] \\[x]#| a | b |\n|    code\n>&__- [ ] <https://a.b>word- [x] * \u{7f}|---|:-:|\n    |---|:-:|\nword~~_## \t:]\r\n    https://example.com/x## [[(```\r_]:\n+ words here\u{0}1. \\\u{0}\u{0}## | a | b |\n</div>&amp;<div>![```diff\n      code\n| a | b |\n>)한글word",
+    ];
+    for text in documents {
+        let whole = parse(text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        let mut buffer = [0_u8; 4];
+        for character in text.chars() {
+            stream.push_delta(character.encode_utf8(&mut buffer));
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(streamed, whole, "{text:?}");
+    }
+}
+
+/// A paragraph followed by a line that a later line reinterprets must not be frozen: here
+/// `~~(    code` and `)-` end up in different blocks than the prefix suggested. Every block
+/// frozen along the way has to equal the same block of the finished parse.
+///
+/// Found by the random test above with seed 0xae55216eb44ebcd8.
+#[test]
+fn fr37_a_block_is_not_frozen_until_a_blank_line_follows_it() {
+    let documents = [
+        "a ~~(\n)-\n\n**b**",
+        "&amp;# 2) ~~(    code\n)-\n\nnext",
+        "></div>é  \u{0}<div><script></div>|---|:-:|\n\n# &<!--\\*````rust\n    code\n\r&amp;# 2) ~~(    code\n)-\n\n**| a | b |\n```diff\n&\u{7f}<!--(|[>1. __- [ ] -->\n\n~~| a | b |\n~~~\n[y][x]---\n    code\n- [ ] `\\~~~\n2) ~~~\n* &한글---\n>2) 1. _    code\n</div>]<words hereéé\n`````diff\n    code\n<#-->[y][x]\n\n\n-->## ",
+    ];
+    for text in documents {
+        let whole = parse(text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        let mut buffer = [0_u8; 4];
+        for character in text.chars() {
+            stream.push_delta(character.encode_utf8(&mut buffer));
+            let frozen: Vec<_> = stream.blocks().take(stream.frozen_len()).cloned().collect();
+            assert_eq!(
+                frozen,
+                whole[..frozen.len().min(whole.len())],
+                "a frozen block differs from the finished parse\n{text:?}"
+            );
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(streamed, whole, "{text:?}");
+    }
+}
+
+/// A block is not frozen while the text holds a bare carriage return: a block parsed from
+/// a prefix there can come out differently from the same block in the whole text.
+///
+/// Found by the random test above with seed 0x2dafa4decceb639f.
+#[test]
+fn fr37_nothing_freezes_around_a_bare_carriage_return() {
+    let documents = [
+        "# t\n\n    code\n\r\u{0}word\r-x\n\n| a | b |\n```  >-`|```diff\nlast",
+        "(- [x] ``https://example.com/x<script>-)\t~~&amp;-  ****(\\[<!--__2) &#``| a | b |\n---\n    code\n\r\u{0}word\r-😀## \n\n| a | b |\n```  >-`|```diff\n\\## - https://example.com/x",
+    ];
+    for text in documents {
+        let whole = parse(text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        let mut buffer = [0_u8; 4];
+        for character in text.chars() {
+            stream.push_delta(character.encode_utf8(&mut buffer));
+            let frozen: Vec<_> = stream.blocks().take(stream.frozen_len()).cloned().collect();
+            assert_eq!(
+                frozen,
+                whole[..frozen.len().min(whole.len())],
+                "a frozen block differs from the finished parse\n{text:?}"
+            );
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(streamed, whole, "{text:?}");
+    }
+}

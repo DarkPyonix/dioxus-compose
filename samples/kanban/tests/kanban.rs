@@ -189,16 +189,58 @@ fn fr34_kanban_columns_share_the_width_and_cards_stack() {
         assert_rect(rect, x, 92.0, COLUMN_WIDTH, rect.height);
     }
 
-    assert_rect(entry(&dom, &list, "card-1").rect, TODO_X + 8.0, 128.0, CARD_WIDTH, 76.0);
-    assert_rect(entry(&dom, &list, "card-2").rect, TODO_X + 8.0, 212.0, CARD_WIDTH, 76.0);
-    assert_rect(entry(&dom, &list, "card-3").rect, DOING_X + 8.0, 128.0, CARD_WIDTH, 76.0);
-    assert_rect(entry(&dom, &list, "card-4").rect, DONE_X + 8.0, 128.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-1").rect,
+        TODO_X + 8.0,
+        128.0,
+        CARD_WIDTH,
+        76.0,
+    );
+    assert_rect(
+        entry(&dom, &list, "card-2").rect,
+        TODO_X + 8.0,
+        212.0,
+        CARD_WIDTH,
+        76.0,
+    );
+    assert_rect(
+        entry(&dom, &list, "card-3").rect,
+        DOING_X + 8.0,
+        128.0,
+        CARD_WIDTH,
+        76.0,
+    );
+    assert_rect(
+        entry(&dom, &list, "card-4").rect,
+        DONE_X + 8.0,
+        128.0,
+        CARD_WIDTH,
+        76.0,
+    );
 
     // The buttons of card 1: 28px squares 32px apart, 37px below the card's top.
     let card = TODO_X + 8.0;
-    assert_rect(entry(&dom, &list, "left-1").rect, card + 9.0, 165.0, 28.0, 28.0);
-    assert_rect(entry(&dom, &list, "right-1").rect, card + 41.0, 165.0, 28.0, 28.0);
-    assert_rect(entry(&dom, &list, "delete-1").rect, card + 73.0, 165.0, 28.0, 28.0);
+    assert_rect(
+        entry(&dom, &list, "left-1").rect,
+        card + 9.0,
+        165.0,
+        28.0,
+        28.0,
+    );
+    assert_rect(
+        entry(&dom, &list, "right-1").rect,
+        card + 41.0,
+        165.0,
+        28.0,
+        28.0,
+    );
+    assert_rect(
+        entry(&dom, &list, "delete-1").rect,
+        card + 73.0,
+        165.0,
+        28.0,
+        28.0,
+    );
 
     assert_eq!(title(&dom, &list, "card-2"), "Fix layout");
     assert_eq!(text_of(&dom, &list, "count-todo"), "2");
@@ -215,10 +257,28 @@ fn fr34_kanban_move_right_appends_to_the_next_column() {
     let list = layout(&mut dom);
 
     // Card 3 was alone in the middle column, so card 1 lands under it.
-    assert_rect(entry(&dom, &list, "card-1").rect, DOING_X + 8.0, 212.0, CARD_WIDTH, 76.0);
-    assert_rect(entry(&dom, &list, "card-3").rect, DOING_X + 8.0, 128.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-1").rect,
+        DOING_X + 8.0,
+        212.0,
+        CARD_WIDTH,
+        76.0,
+    );
+    assert_rect(
+        entry(&dom, &list, "card-3").rect,
+        DOING_X + 8.0,
+        128.0,
+        CARD_WIDTH,
+        76.0,
+    );
     // Card 2 moves up to the top of the first column.
-    assert_rect(entry(&dom, &list, "card-2").rect, TODO_X + 8.0, 128.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-2").rect,
+        TODO_X + 8.0,
+        128.0,
+        CARD_WIDTH,
+        76.0,
+    );
     assert_eq!(title(&dom, &list, "card-1"), "Write docs");
     assert_eq!(text_of(&dom, &list, "count-todo"), "1");
     assert_eq!(text_of(&dom, &list, "count-doing"), "2");
@@ -226,7 +286,13 @@ fn fr34_kanban_move_right_appends_to_the_next_column() {
     // And back: the card returns to the end of the first column.
     assert!(click(&mut dom, "left-1"));
     let list = layout(&mut dom);
-    assert_rect(entry(&dom, &list, "card-1").rect, TODO_X + 8.0, 212.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-1").rect,
+        TODO_X + 8.0,
+        212.0,
+        CARD_WIDTH,
+        76.0,
+    );
     assert_eq!(text_of(&dom, &list, "count-doing"), "1");
 }
 
@@ -239,7 +305,13 @@ fn fr34_kanban_a_card_walks_across_all_three_columns() {
     click(&mut dom, "right-2");
     let list = layout(&mut dom);
 
-    assert_rect(entry(&dom, &list, "card-2").rect, DONE_X + 8.0, 212.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-2").rect,
+        DONE_X + 8.0,
+        212.0,
+        CARD_WIDTH,
+        76.0,
+    );
     assert_eq!(text_of(&dom, &list, "count-todo"), "1");
     assert_eq!(text_of(&dom, &list, "count-done"), "2");
 }
@@ -257,7 +329,13 @@ fn fr34_kanban_edge_buttons_do_not_move_cards() {
 
     for id in ["card-1", "card-2", "card-3", "card-4"] {
         let was = entry(&dom, &before, id).rect;
-        assert_rect(entry(&dom, &after, id).rect, was.x, was.y, was.width, was.height);
+        assert_rect(
+            entry(&dom, &after, id).rect,
+            was.x,
+            was.y,
+            was.width,
+            was.height,
+        );
     }
     assert_eq!(text_of(&dom, &after, "count-todo"), "2");
     assert_eq!(text_of(&dom, &after, "count-done"), "1");
@@ -272,7 +350,13 @@ fn fr34_kanban_delete_removes_the_card_and_closes_the_gap() {
     let list = layout(&mut dom);
 
     assert!(dom.element_by_id("card-1").is_none());
-    assert_rect(entry(&dom, &list, "card-2").rect, TODO_X + 8.0, 128.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-2").rect,
+        TODO_X + 8.0,
+        128.0,
+        CARD_WIDTH,
+        76.0,
+    );
     assert_eq!(text_of(&dom, &list, "count-todo"), "1");
 }
 
@@ -309,7 +393,13 @@ fn fr34_kanban_typing_and_enter_add_a_card_to_the_first_column() {
     let list = layout(&mut dom);
 
     assert_eq!(title(&dom, &list, "card-5"), "Ship it");
-    assert_rect(entry(&dom, &list, "card-5").rect, TODO_X + 8.0, 296.0, CARD_WIDTH, 76.0);
+    assert_rect(
+        entry(&dom, &list, "card-5").rect,
+        TODO_X + 8.0,
+        296.0,
+        CARD_WIDTH,
+        76.0,
+    );
     assert_eq!(text_of(&dom, &list, "count-todo"), "3");
     assert_eq!(draft_text(&dom), "");
     assert_eq!(

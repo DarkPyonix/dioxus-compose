@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "dioxus-compose",
+    "dioxus-compose-markdown",
     "samples/article",
     "samples/chat",
     "samples/dashboard",
