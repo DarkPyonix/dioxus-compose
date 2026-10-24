@@ -106,9 +106,6 @@ pub struct HostMoment {
     pub kind: HostMomentKind,
     /// The DOM node the animation played on.
     pub node: NodeId,
-    /// The nearest element that is still in the document, for a node that was removed:
-    /// the node's own handlers went with it, so the event is offered there instead.
-    pub fallback: Option<NodeId>,
     /// The `@keyframes` name; `None` for a transition.
     pub name: Option<String>,
     pub property: AnimatedProperty,
@@ -345,7 +342,7 @@ impl PlanBridge {
     /// The animation `running` on `key` is gone before its end: replaced, cancelled or
     /// removed. Records the cancel for a page that asked to hear about the animation, and
     /// forgets the animation either way. One that already ended is not cancelled.
-    fn cancelled(&mut self, key: PlanKey, running: &Running, fallback: Option<NodeId>) {
+    fn cancelled(&mut self, key: PlanKey, running: &Running) {
         let listened = self.targets.remove(&running.id).is_some();
         let ended = self.finished.remove(&running.id);
         if let PlanKey::Node(node) = key
@@ -355,7 +352,6 @@ impl PlanBridge {
             self.host_moments.push(HostMoment {
                 kind: HostMomentKind::Cancel,
                 node,
-                fallback,
                 name: running.animation.name.clone(),
                 property: running.property,
                 elapsed: 0.0,
@@ -682,7 +678,7 @@ impl PlanBridge {
         list.push(running);
         // The one replaced is cancelled before the new one runs, as a browser orders them.
         for old in replaced {
-            self.cancelled(key, &old, None);
+            self.cancelled(key, &old);
         }
         if let PlanKey::Node(node) = key
             && clicks.listens(node, "transitionrun")
@@ -690,7 +686,6 @@ impl PlanBridge {
             self.host_moments.push(HostMoment {
                 kind: HostMomentKind::Run,
                 node,
-                fallback: None,
                 name: None,
                 property,
                 elapsed: (-animation.delay).clamp(0.0, seconds),
@@ -740,7 +735,7 @@ impl PlanBridge {
                     continue;
                 }
                 // The new one has the same key on the wire and replaces it.
-                self.cancelled(key, &running, None);
+                self.cancelled(key, &running);
             }
             if let Some(running) = self.start(batch, key, slot, animation, size, clicks) {
                 next.push(running);
@@ -748,7 +743,7 @@ impl PlanBridge {
         }
         for gone in unmatched {
             self.control(batch, key, &gone, AnimationControl::Cancel);
-            self.cancelled(key, &gone, None);
+            self.cancelled(key, &gone);
         }
         if !next.is_empty() {
             self.playing.insert(key, next);
@@ -867,34 +862,25 @@ impl PlanBridge {
         if let Some(parent) = parent.and_then(|parent| self.nodes.get_mut(&parent)) {
             parent.children.retain(|child| *child != key);
         }
-        // The nearest element above that stays, which hears the cancels of what goes.
-        let mut survivor = parent;
-        while let Some(above) = survivor {
-            if matches!(above, PlanKey::Node(_)) {
-                break;
-            }
-            survivor = self.nodes.get(&above).and_then(|placed| placed.parent);
-        }
-        let survivor = match survivor {
-            Some(PlanKey::Node(node)) => Some(node),
-            _ => None,
-        };
-        self.forget(key, survivor);
+        self.forget(key);
     }
 
-    fn forget(&mut self, key: PlanKey, survivor: Option<NodeId>) {
+    fn forget(&mut self, key: PlanKey) {
         let Some(placed) = self.nodes.remove(&key) else {
             return;
         };
         self.pins.remove(&key);
         for running in self.playing.remove(&key).unwrap_or_default() {
-            self.cancelled(key, &running, survivor);
+            // The cancel is addressed to the removed node itself and to nothing above it: a
+            // browser does not bubble an event from a detached element. The page has
+            // usually dropped the node's handlers by now, and then the event goes nowhere.
+            self.cancelled(key, &running);
         }
         for handler in placed.handlers {
             self.handlers.remove(&handler);
         }
         for child in placed.children {
-            self.forget(child, survivor);
+            self.forget(child);
         }
     }
 

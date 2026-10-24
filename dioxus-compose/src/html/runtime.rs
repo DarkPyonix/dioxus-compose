@@ -275,9 +275,9 @@ impl HtmlRuntime {
     fn deliver_host_moments(&mut self) {
         for moment in self.bridge.take_host_moments() {
             let property = animate::css_name(moment.property);
-            let nodes = std::iter::once(moment.node).chain(moment.fallback);
-            for node in nodes {
-                let delivered = match (&moment.name, moment.kind) {
+            let node = moment.node;
+            let _ = {
+                match (&moment.name, moment.kind) {
                     (None, HostMomentKind::Run) => {
                         self.dom
                             .transition_moment(node, "transitionrun", property, moment.elapsed)
@@ -293,11 +293,8 @@ impl HtmlRuntime {
                             .animation_event(node, "animationcancel", name, moment.elapsed)
                     }
                     (Some(_), HostMomentKind::Run) => None,
-                };
-                if delivered.is_some() {
-                    break;
                 }
-            }
+            };
         }
     }
 

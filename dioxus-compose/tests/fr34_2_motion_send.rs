@@ -616,8 +616,9 @@ fn removing() -> Element {
     }
 }
 
-/// Taking the element away while its transition runs cancels the transition. The element's
-/// own handlers go with it, so the cancel is offered to the element around it.
+/// Taking the element away while its transition runs cancels the transition, but only on
+/// the element's own handlers, which go with it. A browser does not bubble an event from a
+/// detached element, so the element around it never hears the cancel.
 #[test]
 fn fr34_2_removing_the_node_cancels_the_transition_that_was_running() {
     MOMENTS.with(|moments| moments.borrow_mut().clear());
@@ -627,7 +628,7 @@ fn fr34_2_removing_the_node_cancels_the_transition_that_was_running() {
     click(&mut host, target);
     assert_eq!(moments(), vec!["run opacity 0 []"]);
     click(&mut host, target);
-    assert_eq!(moments(), vec!["run opacity 0 []", "cancel opacity 0 []"]);
+    assert_eq!(moments(), vec!["run opacity 0 []"]);
 }
 
 /// Once a transition ended, removing its node cancels nothing.
