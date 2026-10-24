@@ -6,7 +6,7 @@ use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch};
 use dioxus_compose::schema::{EventPayload, Modifier, WidgetKind};
 use dioxus_compose::window::reset_window_size;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 
 mod page {
     use dioxus_compose::html::prelude::*;
@@ -22,11 +22,15 @@ mod page {
     }
 }
 
-static SIBLING_RENDERS: AtomicUsize = AtomicUsize::new(0);
+// Per thread: the tests in this file run in parallel, and each builds its own Host on its
+// own thread, so a shared counter would add up renders from the other tests.
+thread_local! {
+    static SIBLING_RENDERS: Cell<usize> = const { Cell::new(0) };
+}
 
 #[component]
 fn Sibling() -> Element {
-    SIBLING_RENDERS.fetch_add(1, Ordering::SeqCst);
+    SIBLING_RENDERS.with(|count| count.set(count.get() + 1));
     rsx! { Text { text: "fixed" } }
 }
 
@@ -100,11 +104,11 @@ fn fr34_3_htmlview_lays_out_at_parent_width() {
 #[test]
 fn fr34_3_width_change_relays_out_only_the_island() {
     reset_window_size();
-    SIBLING_RENDERS.store(0, Ordering::SeqCst);
+    SIBLING_RENDERS.with(|count| count.set(0));
     let mut host = Host::new(screen);
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
     let node = observed_node(&first);
-    assert_eq!(SIBLING_RENDERS.load(Ordering::SeqCst), 1);
+    assert_eq!(SIBLING_RENDERS.with(Cell::get), 1);
 
     measure(&mut host, node, 420.0);
     let widths = measure(&mut host, node, 520.0);
@@ -113,7 +117,7 @@ fn fr34_3_width_change_relays_out_only_the_island() {
         "the page was not laid out again at the new width: {widths:?}",
     );
     assert_eq!(
-        SIBLING_RENDERS.load(Ordering::SeqCst),
+        SIBLING_RENDERS.with(Cell::get),
         1,
         "a width change in the island re-rendered a widget beside it",
     );
