@@ -736,8 +736,8 @@ impl HtmlDom {
     }
 
     /// What a renderer calls when it reports a moment of a `@keyframes` animation playing
-    /// on `node`: delivers `name` (`animationstart`, `animationiteration` or
-    /// `animationend`) to the nearest handler at or around it, bubbling as a browser's
+    /// on `node`: delivers `name` (`animationstart`, `animationiteration`,
+    /// `animationend` or `animationcancel`) to the nearest handler at or around it, bubbling as a browser's
     /// does. `elapsed` is the active time in seconds, without the delay. Returns the node
     /// whose handler received it.
     pub fn animation_event(
@@ -766,12 +766,26 @@ impl HtmlDom {
         property: &str,
         elapsed: f32,
     ) -> Option<NodeId> {
-        let (target, element) = self.listener_target(node, "transitionend")?;
+        self.transition_moment(node, "transitionend", property, elapsed)
+    }
+
+    /// Delivers the transition event `name` (`transitionrun`, `transitionstart`,
+    /// `transitionend` or `transitioncancel`) for `property` on `node`, to the nearest
+    /// handler at or around it. `elapsed` is the transition's time in seconds, without the
+    /// delay. Returns the node whose handler received it.
+    pub fn transition_moment(
+        &mut self,
+        node: NodeId,
+        name: &'static str,
+        property: &str,
+        elapsed: f32,
+    ) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, name)?;
         let data = TransitionEventData {
             property: property.to_owned(),
             elapsed,
         };
-        self.send(element, "transitionend", Box::new(data), true);
+        self.send(element, name, Box::new(data), true);
         Some(target)
     }
 

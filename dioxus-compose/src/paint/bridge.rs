@@ -99,6 +99,33 @@ pub struct AnimationTarget {
     pub property: AnimatedProperty,
 }
 
+/// A moment of an animation that only the Host knows: it sent the animation, replaced it,
+/// cancelled it, or removed the node it played on. The renderer does not report these.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HostMoment {
+    pub kind: HostMomentKind,
+    /// The DOM node the animation played on.
+    pub node: NodeId,
+    /// The nearest element that is still in the document, for a node that was removed:
+    /// the node's own handlers went with it, so the event is offered there instead.
+    pub fallback: Option<NodeId>,
+    /// The `@keyframes` name; `None` for a transition.
+    pub name: Option<String>,
+    pub property: AnimatedProperty,
+    /// The animation's time in seconds when it happened, without the delay.
+    pub elapsed: f32,
+}
+
+/// Which moment a [`HostMoment`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostMomentKind {
+    /// A transition was sent to the renderer: `transitionrun`.
+    Run,
+    /// An animation or transition that had not ended was replaced, cancelled or removed:
+    /// `animationcancel` or `transitioncancel`.
+    Cancel,
+}
+
 /// An animation the renderer was told to play.
 #[derive(Clone, Debug)]
 struct Running {
@@ -240,6 +267,10 @@ pub struct PlanBridge {
     playing: HashMap<PlanKey, Vec<Running>>,
     /// The animations the page listens to, by the id the renderer reports them under.
     targets: HashMap<u32, AnimationTarget>,
+    /// The animations the renderer reported as over, which no longer get a cancel event.
+    finished: HashSet<u32>,
+    /// What happened to animations since the runtime last took it.
+    host_moments: Vec<HostMoment>,
     /// The properties a node animates, which must have a modifier to play on. The renderer
     /// refuses an animation of a property the node has no modifier for, and a plan leaves
     /// out the modifier of a property at its initial value (an `opacity` of 1). A pinned
@@ -276,6 +307,8 @@ impl PlanBridge {
             next_animation_id: 1,
             playing: HashMap::new(),
             targets: HashMap::new(),
+            finished: HashSet::new(),
+            host_moments: Vec::new(),
             pins: HashMap::new(),
         }
     }
@@ -294,10 +327,40 @@ impl PlanBridge {
         if self.nodes.get(&key).map(|placed| placed.id) != Some(node_id) {
             return None;
         }
+        if ended {
+            self.finished.insert(animation_id);
+        }
         if ended && target.name.is_none() {
             self.targets.remove(&animation_id);
         }
         Some(target)
+    }
+
+    /// The animation moments only the Host knows, since the last call, in the order they
+    /// happened.
+    pub fn take_host_moments(&mut self) -> Vec<HostMoment> {
+        std::mem::take(&mut self.host_moments)
+    }
+
+    /// The animation `running` on `key` is gone before its end: replaced, cancelled or
+    /// removed. Records the cancel for a page that asked to hear about the animation, and
+    /// forgets the animation either way. One that already ended is not cancelled.
+    fn cancelled(&mut self, key: PlanKey, running: &Running, fallback: Option<NodeId>) {
+        let listened = self.targets.remove(&running.id).is_some();
+        let ended = self.finished.remove(&running.id);
+        if let PlanKey::Node(node) = key
+            && listened
+            && !ended
+        {
+            self.host_moments.push(HostMoment {
+                kind: HostMomentKind::Cancel,
+                node,
+                fallback,
+                name: running.animation.name.clone(),
+                property: running.property,
+                elapsed: 0.0,
+            });
+        }
     }
 
     /// The handler a renderer event names, if the bridge gave it out.
@@ -520,12 +583,17 @@ impl PlanBridge {
                 events = events.union(kind);
             }
         };
+        // A page that listens for the cancel also gets the end reported, because an
+        // animation that ended is not cancelled afterwards and only the end says so.
         if transition {
+            ask("transitionstart", AnimationEvents::ACTIVE);
             ask("transitionend", AnimationEvents::END);
+            ask("transitioncancel", AnimationEvents::END);
         } else {
             ask("animationstart", AnimationEvents::ACTIVE);
             ask("animationiteration", AnimationEvents::ITERATION);
             ask("animationend", AnimationEvents::END);
+            ask("animationcancel", AnimationEvents::END);
         }
         events
     }
@@ -606,13 +674,27 @@ impl PlanBridge {
         list.retain(|other| {
             let same = other.transition && other.property == running.property;
             if same {
-                replaced.push(other.id);
+                replaced.push(other.clone());
             }
             !same
         });
+        let (property, seconds) = (running.property, animation.duration);
         list.push(running);
-        for id in replaced {
-            self.targets.remove(&id);
+        // The one replaced is cancelled before the new one runs, as a browser orders them.
+        for old in replaced {
+            self.cancelled(key, &old, None);
+        }
+        if let PlanKey::Node(node) = key
+            && clicks.listens(node, "transitionrun")
+        {
+            self.host_moments.push(HostMoment {
+                kind: HostMomentKind::Run,
+                node,
+                fallback: None,
+                name: None,
+                property,
+                elapsed: (-animation.delay).clamp(0.0, seconds),
+            });
         }
     }
 
@@ -658,7 +740,7 @@ impl PlanBridge {
                     continue;
                 }
                 // The new one has the same key on the wire and replaces it.
-                self.targets.remove(&running.id);
+                self.cancelled(key, &running, None);
             }
             if let Some(running) = self.start(batch, key, slot, animation, size, clicks) {
                 next.push(running);
@@ -666,7 +748,7 @@ impl PlanBridge {
         }
         for gone in unmatched {
             self.control(batch, key, &gone, AnimationControl::Cancel);
-            self.targets.remove(&gone.id);
+            self.cancelled(key, &gone, None);
         }
         if !next.is_empty() {
             self.playing.insert(key, next);
@@ -785,22 +867,34 @@ impl PlanBridge {
         if let Some(parent) = parent.and_then(|parent| self.nodes.get_mut(&parent)) {
             parent.children.retain(|child| *child != key);
         }
-        self.forget(key);
+        // The nearest element above that stays, which hears the cancels of what goes.
+        let mut survivor = parent;
+        while let Some(above) = survivor {
+            if matches!(above, PlanKey::Node(_)) {
+                break;
+            }
+            survivor = self.nodes.get(&above).and_then(|placed| placed.parent);
+        }
+        let survivor = match survivor {
+            Some(PlanKey::Node(node)) => Some(node),
+            _ => None,
+        };
+        self.forget(key, survivor);
     }
 
-    fn forget(&mut self, key: PlanKey) {
+    fn forget(&mut self, key: PlanKey, survivor: Option<NodeId>) {
         let Some(placed) = self.nodes.remove(&key) else {
             return;
         };
         self.pins.remove(&key);
         for running in self.playing.remove(&key).unwrap_or_default() {
-            self.targets.remove(&running.id);
+            self.cancelled(key, &running, survivor);
         }
         for handler in placed.handlers {
             self.handlers.remove(&handler);
         }
         for child in placed.children {
-            self.forget(child);
+            self.forget(child, survivor);
         }
     }
 

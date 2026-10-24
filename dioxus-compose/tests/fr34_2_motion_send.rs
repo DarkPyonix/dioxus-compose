@@ -19,6 +19,8 @@ use dioxus_compose::schema::{
     AnimatedProperty, AnimationControl, AnimationEventKind, AnimationEvents, EventPayload,
     FillMode, KeyframeValue, Modifier, PlayState, PlaybackDirection, Timing, TransformFunctionKind,
 };
+use dioxus_core::Attribute;
+use dioxus_elements::{AnimationEvent, TransitionEvent};
 use dioxus_hooks::use_signal;
 
 struct FixedAdvance;
@@ -49,6 +51,9 @@ html, body { margin: 0; padding: 0; }
 #spinner { width: 100px; height: 50px; animation: spin 1s linear; }
 #toggled { width: 40px; height: 40px; }
 #toggled.on { animation: pulse 1s linear infinite; }
+#late { width: 100px; height: 50px; transition: opacity 1s linear -0.25s; }
+#wrap { width: 100px; height: 100px; }
+#child { width: 40px; height: 40px; transition: opacity 0.5s linear; }
 "#;
 
 fn config() -> HtmlConfig {
@@ -409,4 +414,301 @@ fn fr34_2_an_animation_that_goes_away_is_cancelled() {
         )],
         "{off:#?}"
     );
+}
+
+// The events the Host fires itself: `transitionrun`, `transitioncancel` and
+// `animationcancel`. The renderer reports the rest, and `transitionstart` is the renderer's
+// Active moment on a transition.
+
+thread_local! {
+    static MOMENTS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+fn note(line: String) {
+    MOMENTS.with(|moments| moments.borrow_mut().push(line));
+}
+
+fn moments() -> Vec<String> {
+    MOMENTS.with(|moments| moments.borrow().clone())
+}
+
+fn transition_line(kind: &str, event: &TransitionEvent) -> String {
+    format!(
+        "{kind} {} {} [{}]",
+        event.property_name(),
+        event.elapsed_time(),
+        event.pseudo_element()
+    )
+}
+
+fn animation_line(kind: &str, event: &AnimationEvent) -> String {
+    format!(
+        "{kind} {} {} [{}]",
+        event.animation_name(),
+        event.elapsed_time(),
+        event.pseudo_element()
+    )
+}
+
+/// The three transition events `rsx!` has no attribute for, as listeners to spread into an
+/// element.
+fn transition_listeners() -> Vec<Attribute> {
+    vec![
+        ontransitionrun(|event| note(transition_line("run", &event))),
+        ontransitionstart(|event| note(transition_line("start", &event))),
+        ontransitioncancel(|event| note(transition_line("cancel", &event))),
+    ]
+}
+
+fn watched() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let opacity = if presses() % 2 == 1 { "0.25" } else { "1" };
+    rsx! {
+        div {
+            id: "fader",
+            style: "opacity: {opacity}",
+            onclick: move |_| presses += 1,
+            ontransitionend: move |event| note(transition_line("end", &event)),
+            ..transition_listeners(),
+        }
+    }
+}
+
+fn renderer_says(host: &mut Host, node_id: u32, animation_id: u32, kind: AnimationEventKind) {
+    host.dispatch(HostEvent {
+        node_id,
+        handler_id: 0,
+        payload: EventPayload::AnimationEvent {
+            animation_id,
+            kind,
+            property: AnimatedProperty::Alpha,
+            slot: 0,
+            iteration: 0,
+            elapsed_ms: 0.0,
+            time_nanos: 1,
+        },
+    })
+    .expect("the event is dispatched");
+}
+
+/// `transitionrun` is the Host's own event: it fires in the frame that sends the
+/// transition, before the renderer reports `transitionstart`, and `transitionend` follows.
+/// Each carries the CSS property name, the elapsed time and an empty pseudo element.
+#[test]
+fn fr34_2_transitionrun_comes_before_transitionstart_and_transitionend() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(watched, config);
+    let first = owned(host.rebuild().unwrap());
+    assert!(moments().is_empty(), "nothing runs in the first frame");
+    let target = clickable(&first);
+
+    let changed = click(&mut host, target);
+    let animation = started(&changed).remove(0);
+    assert_eq!(
+        animation.events,
+        AnimationEvents::ACTIVE.union(AnimationEvents::END),
+        "the page listens to transitionstart, transitionend and transitioncancel"
+    );
+    assert_eq!(
+        moments(),
+        vec!["run opacity 0 []"],
+        "the run fires when the transition is sent, with no help from the renderer"
+    );
+
+    renderer_says(
+        &mut host,
+        target.0,
+        animation.animation_id,
+        AnimationEventKind::Active,
+    );
+    renderer_says(
+        &mut host,
+        target.0,
+        animation.animation_id,
+        AnimationEventKind::End,
+    );
+    assert_eq!(
+        moments(),
+        vec!["run opacity 0 []", "start opacity 0 []", "end opacity 0 []"]
+    );
+}
+
+fn late() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let opacity = if presses() % 2 == 1 { "0.25" } else { "1" };
+    rsx! {
+        div {
+            id: "late",
+            style: "opacity: {opacity}",
+            onclick: move |_| presses += 1,
+            ..transition_listeners(),
+        }
+    }
+}
+
+/// A transition with a negative delay has already run for that long when it is sent, so
+/// `transitionrun` carries it as `elapsedTime`.
+#[test]
+fn fr34_2_transitionrun_carries_the_time_a_negative_delay_has_already_run() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(late, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    click(&mut host, target);
+    assert_eq!(moments(), vec!["run opacity 0.25 []"]);
+}
+
+/// A transition that is replaced by another of the same property before it ends is
+/// cancelled, and the cancel comes before the replacement's run.
+#[test]
+fn fr34_2_a_replaced_transition_is_cancelled_before_the_new_one_runs() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(watched, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    click(&mut host, target);
+    click(&mut host, target);
+    assert_eq!(
+        moments(),
+        vec![
+            "run opacity 0 []",
+            "cancel opacity 0 []",
+            "run opacity 0 []"
+        ]
+    );
+}
+
+/// A transition that has ended is not cancelled when the next one replaces it.
+#[test]
+fn fr34_2_no_transitioncancel_after_the_transition_ended() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(watched, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    let changed = click(&mut host, target);
+    let animation = started(&changed).remove(0);
+    renderer_says(
+        &mut host,
+        target.0,
+        animation.animation_id,
+        AnimationEventKind::End,
+    );
+    click(&mut host, target);
+    assert_eq!(
+        moments(),
+        vec!["run opacity 0 []", "end opacity 0 []", "run opacity 0 []"]
+    );
+}
+
+fn removing() -> Element {
+    let mut step = use_signal(|| 0u32);
+    let opacity = if step() == 0 { "1" } else { "0.25" };
+    rsx! {
+        div {
+            id: "wrap",
+            onclick: move |_| step += 1,
+            ontransitionend: move |event| note(transition_line("end", &event)),
+            ..transition_listeners(),
+            if step() < 2 {
+                div { id: "child", style: "opacity: {opacity}" }
+            }
+        }
+    }
+}
+
+/// Taking the element away while its transition runs cancels the transition. The element's
+/// own handlers go with it, so the cancel is offered to the element around it.
+#[test]
+fn fr34_2_removing_the_node_cancels_the_transition_that_was_running() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(removing, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    click(&mut host, target);
+    assert_eq!(moments(), vec!["run opacity 0 []"]);
+    click(&mut host, target);
+    assert_eq!(moments(), vec!["run opacity 0 []", "cancel opacity 0 []"]);
+}
+
+/// Once a transition ended, removing its node cancels nothing.
+#[test]
+fn fr34_2_no_cancel_when_a_node_is_removed_after_its_transition_ended() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(removing, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    let changed = click(&mut host, target);
+    let animation = started(&changed).remove(0);
+    renderer_says(
+        &mut host,
+        animation.node_id,
+        animation.animation_id,
+        AnimationEventKind::End,
+    );
+    click(&mut host, target);
+    assert_eq!(
+        moments(),
+        vec!["run opacity 0 []", "end opacity 0 []"],
+        "the end is the last word on the transition"
+    );
+}
+
+fn pulsing() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let class = if presses() % 2 == 1 { "on" } else { "" };
+    rsx! {
+        div {
+            id: "toggled",
+            class: "{class}",
+            onclick: move |_| presses += 1,
+            onanimationstart: move |event| note(animation_line("start", &event)),
+            onanimationend: move |event| note(animation_line("end", &event)),
+            ..vec![onanimationcancel(|event| note(animation_line("cancel", &event)))],
+        }
+    }
+}
+
+/// A `@keyframes` animation taken off the element before it ends is cancelled, with the
+/// `@keyframes` name. Animations have no run event.
+#[test]
+fn fr34_2_taking_a_keyframes_animation_off_fires_animationcancel() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(pulsing, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    let on = click(&mut host, target);
+    let animation = started(&on).remove(0);
+    assert_eq!(
+        animation.events,
+        AnimationEvents::ACTIVE.union(AnimationEvents::END),
+        "a page that listens to animationcancel has the end reported"
+    );
+    assert!(moments().is_empty(), "an animation has no run event");
+    renderer_says(
+        &mut host,
+        target.0,
+        animation.animation_id,
+        AnimationEventKind::Active,
+    );
+    click(&mut host, target);
+    assert_eq!(moments(), vec!["start pulse 0 []", "cancel pulse 0 []"]);
+}
+
+/// An animation the renderer reported as over is not cancelled when it is taken off.
+#[test]
+fn fr34_2_no_animationcancel_after_the_animation_ended() {
+    MOMENTS.with(|moments| moments.borrow_mut().clear());
+    let mut host = Host::html(pulsing, config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    let on = click(&mut host, target);
+    let animation = started(&on).remove(0);
+    renderer_says(
+        &mut host,
+        target.0,
+        animation.animation_id,
+        AnimationEventKind::End,
+    );
+    click(&mut host, target);
+    assert_eq!(moments(), vec!["end pulse 0 []"]);
 }
