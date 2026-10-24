@@ -591,20 +591,19 @@ impl ComposeRenderer {
         };
         if let AttributeValue::Any(value) = value {
             let any = value.as_any();
-            if let Some(growing) = any.downcast_ref::<GrowingText>() {
-                if property == PropertyKind::Text {
-                    self.set_growing_text(node_id, &growing.0);
-                    return;
-                }
+            if let Some(growing) = any.downcast_ref::<GrowingText>()
+                && property == PropertyKind::Text
+            {
+                self.set_growing_text(node_id, &growing.0);
+                return;
             }
             if let (Some(spans), Some(element)) = (
                 any.downcast_ref::<compose_rust::spans::TextSpans>(),
                 element,
-            ) {
-                if spans.spans().any(|span| span.on_click.is_some()) {
-                    self.set_linked_spans(node_id, element, property, spans);
-                    return;
-                }
+            ) && spans.spans().any(|span| span.on_click.is_some())
+            {
+                self.set_linked_spans(node_id, element, property, spans);
+                return;
             }
         }
         let value = match value {
@@ -651,17 +650,16 @@ impl ComposeRenderer {
         let full = self.text_hasher.hash_one(text.as_bytes());
         let held = self.sent_text.get(&node_id).copied();
         self.sent_text.insert(node_id, (text.len(), full));
-        if let Some((length, hash)) = held {
-            if text.len() > length
-                && text.is_char_boundary(length)
-                && self.text_hasher.hash_one(&text.as_bytes()[..length]) == hash
-            {
-                self.write(Mutation::AppendText {
-                    node_id,
-                    text: &text[length..],
-                });
-                return;
-            }
+        if let Some((length, hash)) = held
+            && text.len() > length
+            && text.is_char_boundary(length)
+            && self.text_hasher.hash_one(&text.as_bytes()[..length]) == hash
+        {
+            self.write(Mutation::AppendText {
+                node_id,
+                text: &text[length..],
+            });
+            return;
         }
         self.write(Mutation::SetProp {
             node_id,
@@ -687,7 +685,10 @@ impl ComposeRenderer {
         let mut scratch = std::mem::take(&mut self.span_scratch);
         scratch.clear();
         scratch.extend_from_slice(spans.as_bytes());
-        for record in scratch.chunks_exact_mut(compose_rust::spans::SPAN_LEN) {
+        for record in scratch
+            .as_chunks_mut::<{ compose_rust::spans::SPAN_LEN }>()
+            .0
+        {
             let mut word = [0_u8; 8];
             word.copy_from_slice(&record[HANDLER_AT..HANDLER_AT + 8]);
             let value = u64::from_le_bytes(word);
