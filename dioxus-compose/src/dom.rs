@@ -241,6 +241,14 @@ impl HtmlDom {
             resolve_styles(&mut self.doc, now + f64::from(scan.horizon + SETTLE_MARGIN));
         }
         apply_natural_sizes(&mut self.doc, &mut lookup);
+        let listening = self
+            .doc
+            .tree()
+            .iter()
+            .map(|(id, _)| id)
+            .filter(|&id| !self.state.listeners(id).is_empty())
+            .collect();
+        crate::layout::set_listening(listening);
         let texts = run_layout(&mut self.doc, &mut *self.measurer);
         let list = if described {
             self.motion.begin_frame();

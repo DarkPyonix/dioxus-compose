@@ -1040,19 +1040,22 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         // span it lands on, and the page does not register spans for the renderer to
         // report yet. Until it does, a link inside the text stays with the fallback
         // shaper, which draws it as a run of its own that a click reaches.
-        let has_link = holders.iter().any(|&holder| {
-            holder != root
-                && doc.get_node(holder).is_some_and(|node| {
+        let handled = |holder: usize| {
+            LISTENING.with(|listening| listening.borrow().contains(&holder))
+                || doc.get_node(holder).is_some_and(|node| {
                     node.element_data()
                         .is_some_and(|element| &*element.name.local == "a")
                         && node.attr(local("href")).is_some()
                 })
-        });
-        if has_link {
+        };
+        if holders
+            .iter()
+            .any(|&holder| holder != root && handled(holder))
+        {
             warn_unspanned(
                 doc,
                 root,
-                "holds a link among text in other styles, and a press on a piece of a text drawn as one is not routed to the link",
+                "holds an element with an event handler or a link among text in other styles, and an event on a piece of a text drawn as one is not routed to that element",
             );
             return None;
         }
@@ -1087,6 +1090,18 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         marker_prefix: marker_prefix.len(),
         spans,
     }))
+}
+
+thread_local! {
+    /// The nodes the page has event listeners on, set by the document before it lays out.
+    /// An element that listens inside a text drawn as one would lose its events, since the
+    /// renderer reports a press on the text and not on a piece of it.
+    static LISTENING: std::cell::RefCell<HashSet<usize>> = std::cell::RefCell::new(HashSet::new());
+}
+
+/// Tells the layout which nodes have event listeners.
+pub(crate) fn set_listening(nodes: HashSet<usize>) {
+    LISTENING.with(|listening| *listening.borrow_mut() = nodes);
 }
 
 /// Says on stderr, once for each element and reason, that an inline formatting context

@@ -135,6 +135,8 @@ pub fn layout_document_with(
     let mut lookup = image::ImageLookup::new(images, base_url);
     layout::resolve_styles(doc, 0.0);
     image::apply_natural_sizes(doc, &mut lookup);
+    // A bare document has no page behind it to listen.
+    layout::set_listening(Default::default());
     let texts = layout::run_layout(doc, measurer);
     build::build_display_list(doc, &texts, &mut lookup, None)
 }

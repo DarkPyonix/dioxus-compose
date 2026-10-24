@@ -381,3 +381,60 @@ fn fr34_the_measure_request_and_the_batch_carry_the_spans() {
         vec![(1, vec![FontRef::Generic(GenericFamily::Monospace)])]
     );
 }
+
+// ------------------------------------------------------------------------------------------
+// An element with a handler keeps it.
+
+thread_local! {
+    static PRESSED: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+}
+
+mod handled {
+    use dioxus_compose::html::prelude::*;
+
+    pub fn paragraph() -> Element {
+        rsx! {
+            p { id: "p",
+                "a "
+                b {
+                    id: "word",
+                    onclick: move |_| super::PRESSED.with(|pressed| pressed.borrow_mut().push("word")),
+                    "bold"
+                }
+                " c"
+            }
+        }
+    }
+}
+
+#[test]
+fn fr34_an_onclick_on_an_inline_element_in_a_mixed_paragraph_still_fires() {
+    use dioxus_compose::html::HtmlDom;
+
+    PRESSED.with(|pressed| pressed.borrow_mut().clear());
+    let mut dom = HtmlDom::with_config(
+        handled::paragraph,
+        HtmlConfig {
+            stylesheets: vec!["html, body { margin: 0; } b { font-weight: 700; }".to_string()],
+            measurer: Some(Box::new(Recorder::default())),
+            ..HtmlConfig::default()
+        },
+    );
+    dom.layout(400.0, 400.0, 1.0);
+    let word = dom.element_by_id("word").unwrap();
+    let paragraph = dom.element_by_id("p").unwrap();
+    let list = dom.display_list().unwrap();
+    let texts = &list.get(paragraph).unwrap().texts;
+    // The element that listens keeps a run of its own, which a click reaches.
+    let run = texts
+        .iter()
+        .find(|run| run.owner == word)
+        .unwrap_or_else(|| panic!("no run owned by the listening element: {texts:?}"));
+    assert!(texts.iter().all(|run| run.spans.is_empty()), "{texts:?}");
+    let (x, y) = (
+        run.rect.x + run.rect.width / 2.0,
+        run.rect.y + run.rect.height / 2.0,
+    );
+    assert_eq!(dom.click(x, y), Some(word));
+    assert_eq!(PRESSED.with(|pressed| pressed.borrow().clone()), vec!["word"]);
+}
