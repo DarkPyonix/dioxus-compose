@@ -231,11 +231,14 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
       <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a> 의 예제
       열한 개가 이렇게 쓰여 있고, 하나가 크레이트 하나입니다. 이 가이드의 나머지 페이지는 이 예제들을
       인용합니다. 각 예제의 테스트는 모든 배치를 손으로 계산한 수치와 비교하고, 렌더러가 부르는 것과
-      같은 호출로 클릭하고 입력하고 제출합니다. 저장소 체크아웃에서 다음과 같이 돌립니다.
+      같은 호출로 클릭하고 입력하고 제출합니다. 저장소 체크아웃에서 먼저 <code>./scripts/apply-patches.sh</code> 를
+      한 번 실행합니다. 워크스페이스가 패치된 blitz-dom 사본을 빌드에 쓰기 때문에, 그 사본이 생기기 전에는 cargo 가
+      <code>failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4</code> 로 멈춥니다. 그다음 다음과 같이 돌립니다.
     </p>
 <figure class="codeblock" data-copy="복사" data-copied="복사됨">
   <figcaption>shell</figcaption>
-<pre><code>cargo test -p sample-html-hello
+<pre><code>./scripts/apply-patches.sh
+cargo test -p sample-html-hello
 cargo test -p sample-html-hello -p sample-html-chat -p sample-html-todo</code></pre>
 </figure>
     <div class="tablewrap">

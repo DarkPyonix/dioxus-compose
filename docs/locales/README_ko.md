@@ -254,9 +254,12 @@ fn main() {
 [compose-rust](https://github.com/DarkPyonix/compose-rust) 의 빌드 스크립트가 대상 플랫폼용으로 내려받는
 미리 빌드된 네이티브 라이브러리이고, 직접 빌드하는 방법은 그쪽에 있습니다.
 
-예제의 테스트는 체크아웃에서 cargo 로 돌립니다.
+예제의 테스트는 체크아웃에서 cargo 로 돌립니다. 먼저 `./scripts/apply-patches.sh` 를 한 번 실행합니다. 워크스페이스가
+패치된 blitz-dom 사본을 빌드에 쓰기 때문에, 그 사본이 생기기 전에는 cargo 가
+`failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4` 로 멈춥니다.
 
 ```bash
+./scripts/apply-patches.sh
 cargo test -p sample-html-hello
 cargo test --workspace
 ```

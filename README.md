@@ -260,9 +260,12 @@ the Host, and the window itself has not been checked by running the renderer yet
 [compose-rust](https://github.com/DarkPyonix/compose-rust)'s build script downloads for your target;
 building it yourself is covered there.
 
-The examples' tests run with cargo in a checkout:
+The examples' tests run with cargo in a checkout. Run `./scripts/apply-patches.sh` once first: the
+workspace builds a patched copy of blitz-dom, and until it exists cargo stops with
+`failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4`.
 
 ```bash
+./scripts/apply-patches.sh
 cargo test -p sample-html-hello
 cargo test --workspace
 ```

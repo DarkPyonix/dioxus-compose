@@ -2,8 +2,9 @@
 //!
 //! The pinned blitz-dom (0.2.4) and stylo (0.8.0) decide what can hold here:
 //! - `:focus` follows the focus state `HtmlDom::focus` and `blur` set on the node.
-//! - blitz-dom answers `false` for `:focus-within` and `:focus-visible` whatever the focus
-//!   state is, so those two are pinned as not matching rather than emulated.
+//! - blitz-dom 0.2.4 answers `false` for `:focus-within` and `:focus-visible` whatever the
+//!   focus state is. The patch under scripts/patches/blitz-dom-0.2.4/ makes them follow the
+//!   focus, and the tests for them need the `patched-blitz` feature.
 //! - stylo's servo selector parser has `:has()` switched off, so a rule using it is dropped.
 //! - `color-mix()` is parsed by stylo and resolved when the colour is converted.
 
@@ -67,27 +68,30 @@ fn fr34_focus_matches_the_focused_node_and_blur_reverts() {
     assert_eq!(background(&mut dom, "row"), BLUE);
 }
 
+#[cfg(feature = "patched-blitz")]
 #[test]
 fn fr34_focus_within_matches_tab_group() {
-    // Pinned: blitz-dom 0.2.4 hardcodes `:focus-within` to false, so focusing a
-    // descendant does not restyle the ancestor. When blitz-dom implements it, this
-    // test must flip to RED while focused and BLUE after the blur.
     let mut dom = dom();
     let tab = dom.element_by_id("tab").unwrap();
     dom.focus(tab);
-    assert_eq!(background(&mut dom, "group"), BLUE);
+    assert_eq!(background(&mut dom, "group"), RED);
     dom.blur(tab);
     assert_eq!(background(&mut dom, "group"), BLUE);
 }
 
+#[cfg(feature = "patched-blitz")]
 #[test]
 fn fr34_focus_visible_matches_keyboard_focus() {
-    // Pinned: blitz-dom 0.2.4 hardcodes `:focus-visible` to false, and `HtmlDom::focus`
-    // does not say whether the focus came from the keyboard or the pointer, so the
-    // two cannot be told apart here either way.
     let mut dom = dom();
     let node = dom.element_by_id("visible").unwrap();
+    // Focus from a pointer press does not show the ring.
     dom.focus(node);
+    assert_eq!(background(&mut dom, "visible"), BLUE);
+    dom.blur(node);
+    // Focus from the keyboard does.
+    dom.focus_by_keyboard(node);
+    assert_eq!(background(&mut dom, "visible"), RED);
+    dom.blur(node);
     assert_eq!(background(&mut dom, "visible"), BLUE);
 }
 
