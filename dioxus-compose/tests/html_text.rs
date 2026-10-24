@@ -7,8 +7,11 @@ use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
 use dioxus_compose::spans::{TextSpan, TextSpans};
 use dioxus_compose::{GenericFamily, Host, OverflowWrap, PropertyKind, WordBreak};
 
+/// One property record: its kind, its value bytes, and the integer and boolean forms.
+type PropRecord = (PropertyKind, Vec<u8>, Option<i64>, Option<bool>);
+
 /// Every property record the first frame carries, by kind, with its value owned.
-fn props_of(app: fn() -> Element) -> Vec<(PropertyKind, Vec<u8>, Option<i64>, Option<bool>)> {
+fn props_of(app: fn() -> Element) -> Vec<PropRecord> {
     dioxus_compose::window::reset_window_size();
     let mut host = Host::new(app);
     let batch = host.rebuild().unwrap().to_vec();
