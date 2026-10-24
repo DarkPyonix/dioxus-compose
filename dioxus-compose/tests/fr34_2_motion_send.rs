@@ -620,7 +620,7 @@ fn removing() -> Element {
 /// the element's own handlers, which go with it. A browser does not bubble an event from a
 /// detached element, so the element around it never hears the cancel.
 #[test]
-fn fr34_2_removing_the_node_cancels_the_transition_that_was_running() {
+fn fr34_2_removing_the_node_sends_no_cancel_to_its_ancestors() {
     MOMENTS.with(|moments| moments.borrow_mut().clear());
     let mut host = Host::html(removing, config);
     let first = owned(host.rebuild().unwrap());
