@@ -26,6 +26,7 @@ mod extensions;
 mod hooks;
 pub mod host;
 pub mod html;
+mod html_view;
 mod layout;
 mod paint;
 pub mod renderer;
@@ -44,6 +45,7 @@ pub use hooks::{
     use_animation_event, use_design_system, use_node_size, use_notification_activated,
     use_notification_permission, use_reduced_motion, use_theme, use_window_size,
 };
+pub use html_view::HtmlView;
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box,
@@ -135,7 +137,7 @@ pub mod prelude {
         AbsoluteBox, Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant,
         Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, DatePicker,
         DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop,
-        FileDropTarget, FloatingAction, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
         LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, MaterialRole, Menu,
         Message, MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
         ProgressIndicator, Props, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn,

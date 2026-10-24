@@ -42,13 +42,18 @@ impl Runtime for DioxusRuntime {
 
     fn rebuild(&mut self) {
         self.dom.rebuild(&mut self.renderer);
+        crate::html_view::draw_islands(&mut self.renderer);
     }
 
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render_immediate(&mut self.renderer);
+        crate::html_view::draw_islands(&mut self.renderer);
     }
 
     fn handle_event(&mut self, event: &HostEvent<'_>) -> Result<i64, ProtocolError> {
+        if let Some(result) = crate::html_view::route_event(event) {
+            return result;
+        }
         let Some((element, node_id, name)) = self.renderer.handler(event.handler_id) else {
             return Err(ProtocolError::InvalidValueKind(0));
         };
@@ -108,7 +113,13 @@ impl Runtime for DioxusRuntime {
     fn poll_work(&mut self, context: &mut Context<'_>) -> Poll<()> {
         let future = self.dom.wait_for_work();
         let mut future = pin!(future);
-        future.as_mut().poll(context)
+        let outer = future.as_mut().poll(context);
+        // Every island is polled whether or not the widget tree has work, so each one has
+        // registered the waker.
+        if crate::html_view::poll_islands(context) {
+            return Poll::Ready(());
+        }
+        outer
     }
 
     /// A message's action runs in the root scope, so it can write signals and spawn tasks
