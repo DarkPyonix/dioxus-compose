@@ -45,8 +45,8 @@ pub use hooks::{
     use_animation_event, use_design_system, use_node_size, use_notification_activated,
     use_notification_permission, use_reduced_motion, use_theme, use_window_size,
 };
-pub use html_view::HtmlView;
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
+pub use html_view::HtmlView;
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box,
     DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon, Image, LazyColumn,
@@ -137,15 +137,15 @@ pub mod prelude {
         AbsoluteBox, Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant,
         Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, DatePicker,
         DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop,
-        FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
-        LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode, MaterialRole, Menu,
-        Message, MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
-        ProgressIndicator, Props, RadioButton, RangeRequest, Row, Scaffold, ScrollColumn,
-        ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer,
-        SplitPane, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme,
-        TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, WindowHeightClass, WindowSize,
-        WindowSizeClass, asset, brush, component, launch, rsx, show_message, use_design_system,
-        use_node_size, use_theme, use_window_size,
+        FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent,
+        LaunchBuilder, LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode,
+        MaterialRole, Menu, Message, MessageDuration, Modifier, MotionRole, Navigation,
+        NavigationItem, Paint, Palette, ProgressIndicator, Props, RadioButton, RangeRequest, Row,
+        Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider,
+        SpaceRole, Spacer, SplitPane, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField,
+        TextOverflow, Theme, TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, WindowHeightClass,
+        WindowSize, WindowSizeClass, asset, brush, component, launch, rsx, show_message,
+        use_design_system, use_node_size, use_theme, use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find

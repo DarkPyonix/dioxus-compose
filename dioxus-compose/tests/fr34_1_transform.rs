@@ -364,7 +364,10 @@ fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() 
     assert_eq!(skipped.len(), 1, "{skipped:#?}");
     assert_eq!(skipped[0].node, tilt.node);
     assert_eq!(skipped[0].tag, "div");
-    assert!(skipped[0].transform.contains("rotateX(45deg)"), "{skipped:#?}");
+    assert!(
+        skipped[0].transform.contains("rotateX(45deg)"),
+        "{skipped:#?}"
+    );
 
     let turn = entry(&dom, &list, "turn");
     assert_points(
@@ -378,7 +381,10 @@ fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() 
     );
 
     let moved = entry(&dom, &list, "move");
-    assert!(moved.transform.is_none(), "a translation folds into the place");
+    assert!(
+        moved.transform.is_none(),
+        "a translation folds into the place"
+    );
     assert_eq!((moved.rect.x, moved.rect.y), (520.0, 100.0));
 }
 
