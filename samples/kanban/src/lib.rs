@@ -45,8 +45,10 @@ body { font-family: system-ui, sans-serif; font-size: 14px; color: #1f2937; back
     border-radius: 8px;
     background-color: #f3f4f6;
 }
-.column h2 { margin: 0 0 8px; font-size: 14px; color: #374151; }
-.column .count { margin-left: 6px; color: #6b7280; }
+/* The heading's label and count are flex items, so each is a block with its own entry
+   and the heading is measured as two lines of text, not as inline content. */
+.column h2 { display: flex; gap: 6px; margin: 0 0 8px; font-size: 14px; color: #374151; }
+.column .count { color: #6b7280; }
 .column.doing { background-color: #fef3c7; }
 .column.done { background-color: #dcfce7; }
 
@@ -238,7 +240,7 @@ fn column(board: Board, stage: Stage, cards: &[Card]) -> Element {
     rsx! {
         div { id: "column-{slug}", class: "column {slug}",
             h2 {
-                "{label}"
+                span { class: "label", "{label}" }
                 span { id: "count-{slug}", class: "count", "{count}" }
             }
             if count == 0 {
