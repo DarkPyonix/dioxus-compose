@@ -1767,13 +1767,13 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 - CSS는 HTML 세계에만 적용됩니다. 위젯 노드에는 그 상자를 정하는 속성(위치, 크기, 여백)만 들어가고, 안쪽은 디자인 시스템이 그립니다.
 - 이벤트는 그 노드의 세계 규칙을 따릅니다. HTML 쪽 적중 판정은 위젯 상자를 만나면 그 아래로 내려가지 않고, 위젯은 Compose가 판정합니다.
 - 스크롤, 포커스, 선택은 두 세계 모두 렌더러가 소유합니다(D5). 입력란의 IME 규칙도 두 세계가 같습니다(FR-5).
-- 테마 색은 두 세계가 같은 색 역할을 씁니다. CSS 변수를 색 역할로 잇는 일은 dioxus-compose의 몫입니다.
+- 테마 색은 두 세계가 같은 색 역할을 씁니다. CSS 변수를 색 역할로 잇는 일은 dioxus-compose의 몫입니다(소유자 승인 2026-10-25). Host는 현재 테마의 색 역할마다 문서 루트에 CSS 사용자 지정 속성 `--dxc-<역할>`을 채웁니다. `<역할>`은 schema의 `ColorRole` 변형 이름을 kebab-case로 바꾼 것입니다(`Primary`는 `--dxc-primary`, `OnSurface`는 `--dxc-on-surface`). 이름은 schema에서 생성하므로 손으로 관리하는 목록이 없고, 역할이 늘면 변수도 따라 늘어납니다. 테마가 바뀌면 값이 갱신되고 같은 프레임에 다시 스타일을 계산합니다. 앱 CSS는 `var(--dxc-primary)`로 씁니다. 반대 방향(앱이 정한 CSS 변수를 Compose 테마로 올리는 일)은 이 항목에 없습니다.
 
 수용 기준:
 1. `Column` 안의 `HtmlView`에 쓴 `article`이 그 `HtmlView`의 폭에서 배치되고, 창 폭이 바뀌면 그 섬만 다시 배치됩니다.
 2. `div` 안의 `TextField`와 `DatePicker`가 렌더러가 잰 고유 크기로 줄에 놓이고, 같은 줄의 텍스트가 그 크기를 비켜 흐릅니다.
 3. HTML 안의 위젯을 누르면 그 위젯의 핸들러가 불리고, 감싼 `div`의 `onclick`은 CSS 이벤트 흐름대로 그 뒤에 불립니다.
-4. 두 세계가 같은 색 역할을 쓰는 화면에서 테마를 바꾸면 두 세계가 같은 프레임에 바뀝니다.
+4. 테마를 바꾸면 `var(--dxc-primary)`를 쓴 `div`의 배경과 Primary 색 위젯이 같은 프레임에 같은 색으로 바뀝니다. `--dxc-*` 변수의 이름 집합이 schema의 `ColorRole` 변형 전부와 일대일로 맞는지도 시험합니다(생성 목록이므로 역할이 늘면 시험도 따라갑니다). 테스트 `fr34_3_theme_variables_follow_colour_roles`, `fr34_3_theme_switch_same_frame`.
 
 #### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
 
@@ -1795,6 +1795,29 @@ HTML 화면은 VS Code처럼 페이지 전체를 확대한다. OS 글자 크기�
 3. HTML 안의 `TextField`가 k배로 그려지고, 그 안의 글자가 k배를 넘지 않는다(이중 확대 없음).
 4. 확대 수준을 바꾸면 한 번 재배치되고, 다시 시작하면 Renderer가 저장한 수준으로 같은 k로 열린다.
 5. OS 글자 배율을 바꾸면 그 값이 k의 시작값으로 Host에 도착한다. 데스크톱 세 플랫폼은 수동으로 확인하고 그렇게 적는다.
+
+#### FR-34.5 워크벤치 CSS와 입력 (`Agreed`, 목표 M8 Ember 워크벤치)
+
+추적: 이슈 번호는 아직 없다. 구현 전이다. 소유자 승인 2026-10-25(리더 경유, "전부 추천대로").
+
+Code-OSS 워크벤치가 쓰는 CSS와 입력 중 dioxus-compose에 없는 것을 모은 항목이다. 근거는 Code-OSS CSS 21개 파일과 `src/`를 대조한 조사(`.scratch/leader/workbench-gaps.md`)다. FR-34는 클릭과 키 이벤트, 그리고 허용치를 세 구역(액티비티 바, 사이드바 트리, 에디터 탭)에만 말하므로 그 밖은 SPEC 근거가 없었다.
+
+**범위의 경계.** 워크벤치 크롬의 `rsx!`와 Code-OSS CSS 사본은 Ember의 앱 코드다. dioxus-compose는 일반 기능을 제공하고, 워크벤치는 그 기능이 맞는지 보는 수용 대상이다. 아래 기준은 워크벤치를 위한 특례가 아니라 CSS와 DOM 입력 일반의 기능으로 쓰고 시험한다.
+
+**누가 충족하는가.** 기준 1, 2, 3, 5의 pointer-events, 9는 Host만으로 충족할 수 있다. 다만 1과 2는 렌더러가 포인터 입력을 Host로 넘기는 경계 호출이 이미 있는지 compose-rust에서 확인해야 하고, 없으면 그것도 의존이다. 기준 4, 5의 cursor와 user-select, 6, 8의 `::-webkit-scrollbar`와 `-webkit-app-region`은 compose-rust가 먼저 해야 한다. 기준 7은 설계가 정해지지 않았다. 의존하는 기준의 compose-rust 쪽 FR 번호는 compose-rust SPEC에 항목이 생길 때 적는다. 지금 이름이 있는 것은 기준 6의 Svg(FR-16)뿐이다. 새 경계 함수가 필요한 기준은 PR-2의 변경이므로 compose-rust 쪽 합의를 따로 거친다.
+
+수용 기준:
+1. 포인터 이동, hover 상태, `:hover`와 `:active`. 포인터가 노드 위에 있는 동안 `:hover` 규칙이 맞고, 포인터가 움직이면 hover가 따라 움직이며, `mouseenter`, `mouseleave`가 핸들러에 도착합니다. 리스트 행, 탭, 액션바, 스크롤바 슬라이더가 쓰는 규칙으로 확인합니다. 테스트 `fr34_5_hover_matches_hover_rule`, `fr34_5_hover_moves_with_pointer`, `fr34_5_mouseenter_leave_reach_handlers`. Host만(경계 호출 확인 전제).
+2. `mousedown`, `mouseup`, `dblclick`, `contextmenu`, `wheel`, drag와 포인터 캡처. 적중 판정은 FR-34의 변환된 모양 기준을 재사용하고, 포인터 캡처가 걸린 동안은 포인터가 창 밖으로 나가도 이동과 `mouseup`이 캡처한 노드에 갑니다(분할선 끌기). 테스트 `fr34_5_dblclick_reaches_handler`, `fr34_5_contextmenu_targets_node`, `fr34_5_wheel_reaches_handler`, `fr34_5_pointer_capture_sash_drag`. Host만(경계 호출 확인 전제).
+3. `outline`과 `outline-offset`. 아웃라인은 테두리 상자 바깥에 그려지고 레이아웃에 영향을 주지 않으며, 음수 오프셋은 안쪽으로 들어옵니다. 포커스 링(리스트, 퀵 입력)으로 확인합니다. 테스트 `fr34_5_outline_drawn_outside_border_box`, `fr34_5_outline_negative_offset`. 기존 테두리 원소로 그릴 수 있으면 Host만이고, 새 원소가 필요하면 compose-rust 의존입니다.
+4. `@font-face`와 codicon 아이콘 글꼴. `@font-face`로 선언한 글꼴이 등록되고 `::before`의 사설 영역 글리프가 그 글꼴로 그려집니다. 이것이 없으면 액티비티 바가 빈 상자입니다. 테스트 `fr34_5_font_face_registers_family`, `fr34_5_codicon_glyph_draws_from_before`. **compose-rust 의존**: 글꼴 등록 호출이 경계에 필요합니다(PR-2 변경). compose-rust가 먼저입니다.
+5. `pointer-events`, `cursor`, `user-select`. `pointer-events: none`인 노드는 적중 판정에서 건너뜁니다. `cursor`는 적중한 노드의 값이 렌더러에 보고되어 포인터 모양이 바뀝니다. `user-select: none`인 노드는 선택되지 않습니다(선택은 렌더러 소유, D5). 테스트 `fr34_5_pointer_events_none_skips_hit`, `fr34_5_cursor_reported_for_hit_node`, `fr34_5_user_select_none_blocks_selection`. `pointer-events`는 Host만이고 먼저 낼 수 있습니다. `cursor`와 `user-select`는 **compose-rust 의존**입니다.
+6. `mask-image`와 인라인 SVG 아이콘. `mask-image`(`-webkit-mask` 포함)는 마스크 모양을 `color`로 칠하고, 인라인 `svg`가 그려집니다. 테스트 `fr34_5_mask_image_tints_by_color`, `fr34_5_inline_svg_draws`. **compose-rust 의존**: 마스크 원소와 FR-16의 Svg 에셋 등록.
+7. `position: sticky`. 고정 탭 같은 요소가 스크롤 가장자리에 붙고 포함 블록 안에 머뭅니다. 테스트 `fr34_5_sticky_pins_at_scroll_edge`, `fr34_5_sticky_stays_in_containing_block`. **설계 제약**: 스크롤 위치는 렌더러가 소유하므로(D5) 붙는 위치를 Host가 계산할 수 없고, Taffy에도 sticky가 없습니다. 어느 쪽이 무엇을 맡을지는 구현할 때 정하며, 지금 이 항목에서 설계를 정하지 않습니다. 정해지면 이 기준에 기록하되 그것이 SPEC 변경이면 소유자의 승인을 받습니다.
+8. `::-webkit-scrollbar`, `-webkit-app-region`, `env()`. `::-webkit-scrollbar`(와 `scrollbar-width`)는 렌더러의 스크롤바 그리기에 반영되고, `-webkit-app-region: drag`인 영역은 창 이동 영역이 되며, `env(titlebar-area-*)`는 값을 가집니다. 테스트 `fr34_5_webkit_scrollbar_hides_bar`, `fr34_5_app_region_drag_moves_window`, `fr34_5_env_titlebar_area_resolves`. `::-webkit-scrollbar`와 `-webkit-app-region`은 **compose-rust 의존**(렌더러와 창 계층)이고, `env()`는 Host만입니다.
+9. 허용치 구역의 확장. FR-34의 허용치 표 방식(줄바꿈, 글자 위치, 한 줄의 폭, 상자)을 패널, 상태 바, 퀵 입력, 컨텍스트 메뉴, hover 위젯에도 같은 수치로 적용하고, 구역마다 측정 방법과 수치를 기록합니다. 테스트 `fr34_5_box_tolerance_panel`, `fr34_5_box_tolerance_status_bar`, `fr34_5_box_tolerance_quick_input`, `fr34_5_box_tolerance_context_menu`, `fr34_5_box_tolerance_hover_widget`. Host만이지만 텍스트 크기가 맞는 상자 경로에서 재는 FR-34의 측정 조건을 따릅니다.
+
+기준 1에서 3, 5의 `pointer-events`, 9는 compose-rust 병합을 기다리지 않고 시작할 수 있습니다. 기준 1과 2는 같은 입력 경로라 이어서 구현합니다.
 
 ### FR-37 마크다운 크레이트 (`Agreed`)
 
