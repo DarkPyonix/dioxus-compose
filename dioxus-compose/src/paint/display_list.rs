@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::html::NodeId;
-use crate::layout::measure::{TextMetrics, TextStyle};
+use crate::layout::measure::{SpanRun, TextMetrics, TextStyle};
 
 /// An 8-bit sRGB colour with straight (not premultiplied) alpha.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -227,6 +227,12 @@ pub struct TextRun {
     pub ellipsis: Option<f32>,
     /// Whether this run is a list marker, or starts with one.
     pub marker: RunMarker,
+    /// The stretches of `text` that differ from the rest of it in weight, slant, lines,
+    /// colour or font family, in byte ranges of `text`. Empty for text in one style. When
+    /// it is not empty, `text` is a whole inline formatting context (a paragraph with a
+    /// bold phrase in it), and `style`, `color` and `decoration` are those of the element
+    /// that holds it; the renderer measures and draws the context as one text.
+    pub spans: Vec<SpanRun>,
 }
 
 /// How a [`TextRun`] relates to the list marker of a `display: list-item` element.
@@ -1114,6 +1120,8 @@ pub(crate) struct MeasuredText {
     pub wrap_width: Option<f32>,
     /// Bytes at the start of `text` that are an inside list marker.
     pub marker_prefix: usize,
+    /// Runs of `text` that differ from the rest of it; empty for text in one style.
+    pub spans: Vec<SpanRun>,
 }
 
 /// The marker of a list item that is drawn on its own, measured during layout.

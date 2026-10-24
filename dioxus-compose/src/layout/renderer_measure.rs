@@ -19,17 +19,90 @@
 
 use std::collections::HashMap;
 
+use compose_rust::fonts::{FontRef, FontRefs};
 use compose_rust::measure::{
-    MeasureRequests, MeasureResult, MeasureStatus, TextConstraint, TextStyle as WireStyle,
-    measurer,
+    MeasureRequests, MeasureResult, MeasureStatus, TextConstraint, TextStyle as WireStyle, measurer,
 };
+use compose_rust::schema::GenericFamily;
 use compose_rust::schema::{OverflowWrap as WireOverflowWrap, WordBreak as WireWordBreak};
-use compose_rust::spans::TextSpans;
+use compose_rust::spans::{TextSpan, TextSpans};
 
 use super::measure::{
-    OverflowWrap, ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics,
-    TextStyle, TextWhiteSpace, WidthConstraint, WordBreak,
+    OverflowWrap, ParleyMeasurer, SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer,
+    TextMetrics, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak,
 };
+use crate::paint::display_list::Rgba;
+
+/// What the whole text says about its letters, which a run inherits and a gap between runs
+/// is drawn with.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct SpanBase {
+    pub italic: bool,
+    pub underline: bool,
+    pub line_through: bool,
+}
+
+/// The CSS font family list as compose-rust's font candidates, in the order CSS tries them.
+/// `cursive` and `fantasy` have no counterpart there and are left out, so the next
+/// candidate in the list is the one tried.
+fn font_refs(family: &[String]) -> FontRefs {
+    FontRefs::new(family.iter().filter_map(|name| {
+        Some(match name.as_str() {
+            "system-ui" => FontRef::Generic(GenericFamily::SystemUi),
+            "sans-serif" => FontRef::Generic(GenericFamily::SansSerif),
+            "serif" => FontRef::Generic(GenericFamily::Serif),
+            "monospace" => FontRef::Generic(GenericFamily::Monospace),
+            "cursive" | "fantasy" => return None,
+            other => FontRef::System(other.to_string()),
+        })
+    }))
+}
+
+/// The spans compose-rust takes for `runs` laid over a text of `len` bytes.
+///
+/// The text is drawn and measured with the very same list, so what the renderer measures is
+/// what it draws. A run says only what differs from the text, and a stretch between runs is
+/// left out unless the whole text is slanted or has a line through it, which a text style
+/// cannot say and a span can; then the stretch carries that. `colour` turns a run's colour
+/// into the paint it travels as; the measure request passes one that leaves colours out,
+/// because a colour does not change a size.
+pub(crate) fn wire_spans(
+    len: usize,
+    base: SpanBase,
+    runs: &[SpanRun],
+    colour: &mut dyn FnMut(Rgba) -> Option<compose_rust::schema::Paint>,
+) -> TextSpans {
+    let lined = base.italic || base.underline || base.line_through;
+    let mut spans: Vec<(TextSpan, FontRefs)> = Vec::new();
+    let gap = |from: usize, to: usize, spans: &mut Vec<(TextSpan, FontRefs)>| {
+        if lined && to > from {
+            let mut span = TextSpan::new(from as u32, (to - from) as u32);
+            span.italic = base.italic;
+            span.underline = base.underline;
+            span.strikethrough = base.line_through;
+            spans.push((span, FontRefs::default()));
+        }
+    };
+    let mut at = 0;
+    for run in runs {
+        gap(at, run.start, &mut spans);
+        let mut span = TextSpan::new(run.start as u32, (run.end - run.start) as u32);
+        span.bold = run.bold;
+        span.italic = base.italic || run.italic;
+        span.underline = base.underline || run.underline;
+        span.strikethrough = base.line_through || run.line_through;
+        span.color = run.color.and_then(&mut *colour);
+        let fonts = run
+            .font_family
+            .as_deref()
+            .map(font_refs)
+            .unwrap_or_default();
+        spans.push((span, fonts));
+        at = run.end;
+    }
+    gap(at, len, &mut spans);
+    TextSpans::new_with_fonts(spans)
+}
 
 /// How many answers are kept before the cache starts over. A page asks for a few hundred.
 const CACHE_LIMIT: usize = 20_000;
@@ -52,10 +125,13 @@ struct Key {
     width: u32,
     wrap: bool,
     collapse: u8,
+    /// The encoded runs and their font table; both empty for text in one style.
+    spans: Vec<u8>,
+    span_fonts: Vec<u8>,
 }
 
 impl Key {
-    fn of(request: &TextMeasureRequest<'_>) -> Self {
+    fn of(request: &TextMeasureRequest<'_>, spans: &TextSpans) -> Self {
         let style = request.style;
         let (constraint, width) = match request.width {
             WidthConstraint::MinContent => (0, 0.0),
@@ -78,6 +154,8 @@ impl Key {
             width: width.to_bits(),
             wrap: request.white_space.wrap,
             collapse: request.white_space.collapse as u8,
+            spans: spans.as_bytes().to_vec(),
+            span_fonts: spans.font_table().to_vec(),
         }
     }
 }
@@ -85,6 +163,7 @@ impl Key {
 /// A question written down during a pass, owned so it outlives the pass.
 struct Question {
     key: Key,
+    spans: TextSpans,
     style: TextStyle,
     width: WidthConstraint,
     white_space: TextWhiteSpace,
@@ -172,7 +251,21 @@ fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
 
 impl TextMeasurer for RendererMeasurer {
     fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics {
-        let key = Key::of(request);
+        self.measure_spans(request, &[])
+    }
+
+    fn measure_spans(&mut self, request: &TextMeasureRequest<'_>, runs: &[SpanRun]) -> TextMetrics {
+        // Only what changes a size goes in the question: a colour does not.
+        let spans = if runs.is_empty() {
+            TextSpans::default()
+        } else {
+            let base = SpanBase {
+                italic: request.style.italic,
+                ..SpanBase::default()
+            };
+            wire_spans(request.text.len(), base, runs, &mut |_| None)
+        };
+        let key = Key::of(request, &spans);
         if let Some(metrics) = self.answers.get(&key) {
             return *metrics;
         }
@@ -180,6 +273,7 @@ impl TextMeasurer for RendererMeasurer {
         if !self.asked.iter().any(|question| question.key == key) {
             self.asked.push(Question {
                 key,
+                spans,
                 style: request.style.clone(),
                 width: request.width,
                 white_space: request.white_space,
@@ -202,7 +296,6 @@ impl TextMeasurer for RendererMeasurer {
             return false;
         };
         self.requests.clear();
-        let spans = TextSpans::default();
         for question in &questions {
             let constraint = match question.width {
                 WidthConstraint::MinContent => TextConstraint::MinContent,
@@ -211,12 +304,15 @@ impl TextMeasurer for RendererMeasurer {
             };
             self.requests.text(
                 &question.key.text,
-                &spans,
+                &question.spans,
                 &wire_style(&question.style, question.white_space),
                 constraint,
             );
         }
-        if asker.measure(&mut self.requests, &mut self.results).is_err() {
+        if asker
+            .measure(&mut self.requests, &mut self.results)
+            .is_err()
+        {
             return false;
         }
         self.calls += 1;
