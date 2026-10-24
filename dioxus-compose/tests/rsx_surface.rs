@@ -826,7 +826,11 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 /// - `Clickable`: the attribute is declared as `onclickable`, and rsx reads any attribute
 ///   starting with `on` as an event, which has to be a function in `events`. There is
 ///   none by that name, so the attribute cannot be written.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach", "Clickable"];
+/// - `Transform`: new in compose-rust 0.0.2. The HTML bridge writes it from the plan; an rsx
+///   attribute for the widget path comes with PR #84 (animation hooks, a graphics layer and
+///   transforms on `AbsoluteBox`), which takes it off this list.
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] =
+    &["Size", "PaddingEach", "Clickable", "Transform"];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {
