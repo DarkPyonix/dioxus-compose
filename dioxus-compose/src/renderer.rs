@@ -1022,7 +1022,6 @@ impl ComposeRenderer {
         if !self.editors.is_empty() {
             self.editors.retain(|_, node| *node != node_id);
         }
-        }
         for slot in self.children.remove(&node_id).unwrap_or_default() {
             match slot {
                 Slot::Node(child) => self.forget(child),
