@@ -23,8 +23,9 @@ use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
 use dioxus_html::{
-    Code, FocusData, HasFocusData, HasKeyboardData, HasMouseData, HtmlEventConverter, Key,
-    KeyboardData, Location, Modifiers, MouseData, PlatformEventData,
+    AnimationData, Code, FocusData, HasAnimationData, HasFocusData, HasKeyboardData, HasMouseData,
+    HasTransitionData, HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MouseData,
+    PlatformEventData, TransitionData,
 };
 
 use crate::html::NodeId;
@@ -699,6 +700,46 @@ impl HtmlDom {
         }
     }
 
+    /// What a renderer calls when it reports a moment of a `@keyframes` animation playing
+    /// on `node`: delivers `name` (`animationstart`, `animationiteration` or
+    /// `animationend`) to the nearest handler at or around it, bubbling as a browser's
+    /// does. `elapsed` is the active time in seconds, without the delay. Returns the node
+    /// whose handler received it.
+    pub fn animation_event(
+        &mut self,
+        node: NodeId,
+        name: &'static str,
+        animation_name: &str,
+        elapsed: f32,
+    ) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, name)?;
+        let data = AnimationEventData {
+            name: animation_name.to_owned(),
+            elapsed,
+        };
+        self.send(element, name, Box::new(data), true);
+        Some(target)
+    }
+
+    /// What a renderer calls when it reports that a transition of `property` (a CSS name
+    /// such as `opacity`) on `node` ended: delivers `transitionend` to the nearest handler
+    /// at or around it. `elapsed` is the transition's duration in seconds. Returns the
+    /// node whose handler received it.
+    pub fn transition_event(
+        &mut self,
+        node: NodeId,
+        property: &str,
+        elapsed: f32,
+    ) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, "transitionend")?;
+        let data = TransitionEventData {
+            property: property.to_owned(),
+            elapsed,
+        };
+        self.send(element, "transitionend", Box::new(data), true);
+        Some(target)
+    }
+
     /// Runs the handlers for `name` at `element`, and from there up when `bubbles`, the way
     /// Dioxus bubbles. Returns whether one of them prevented the default.
     fn send(&mut self, element: ElementId, name: &str, data: Box<dyn Any>, bubbles: bool) -> bool {
@@ -770,6 +811,10 @@ impl ClickTargets for HtmlDom {
 
     fn takes_keys(&self, node: NodeId) -> bool {
         HtmlDom::takes_keys(self, node)
+    }
+
+    fn listens(&self, node: NodeId, event: &str) -> bool {
+        self.listener_target(node, event).is_some()
     }
 
     fn run_target(&self, owner: NodeId, container: NodeId) -> Option<NodeId> {
@@ -949,6 +994,51 @@ impl HasFocusData for FocusEventData {
     }
 }
 
+/// What an animation event carries: the `@keyframes` name and the active time. Pseudo
+/// elements are not animated, so that name is empty.
+#[derive(Clone)]
+struct AnimationEventData {
+    name: String,
+    elapsed: f32,
+}
+
+impl HasAnimationData for AnimationEventData {
+    fn animation_name(&self) -> String {
+        self.name.clone()
+    }
+    fn pseudo_element(&self) -> String {
+        String::new()
+    }
+    fn elapsed_time(&self) -> f32 {
+        self.elapsed
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// What a transition event carries: the CSS property and the time it ran.
+#[derive(Clone)]
+struct TransitionEventData {
+    property: String,
+    elapsed: f32,
+}
+
+impl HasTransitionData for TransitionEventData {
+    fn property_name(&self) -> String {
+        self.property.clone()
+    }
+    fn pseudo_element(&self) -> String {
+        String::new()
+    }
+    fn elapsed_time(&self) -> f32 {
+        self.elapsed
+    }
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Dioxus listeners receive a [`PlatformEventData`] and turn it into the event type the
 /// handler takes through one process-wide converter. Registered on the first [`HtmlDom`];
 /// registering it again would replace it with an identical one, so it is done once.
@@ -957,8 +1047,9 @@ fn register_event_converter() {
     REGISTER.call_once(|| dioxus_html::set_event_converter(Box::new(Converter)));
 }
 
-/// Turns the events this document sends into Dioxus event data: clicks, keys, focus, and
-/// the `input`, `change` and `submit` events of form controls. Every other conversion is
+/// Turns the events this document sends into Dioxus event data: clicks, keys, focus, the
+/// `input`, `change` and `submit` events of form controls, and animation and transition
+/// events. Every other conversion is
 /// unreachable from here.
 struct Converter;
 
@@ -977,8 +1068,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         MouseData::new(pointer)
     }
-    fn convert_animation_data(&self, _: &PlatformEventData) -> dioxus_html::AnimationData {
-        not_sent("animation")
+    fn convert_animation_data(&self, event: &PlatformEventData) -> AnimationData {
+        let data = event
+            .downcast::<AnimationEventData>()
+            .expect("every animation event this document sends carries AnimationEventData")
+            .clone();
+        AnimationData::new(data)
     }
     fn convert_cancel_data(&self, _: &PlatformEventData) -> dioxus_html::CancelData {
         not_sent("cancel")
@@ -1040,8 +1135,12 @@ impl HtmlEventConverter for Converter {
     fn convert_touch_data(&self, _: &PlatformEventData) -> dioxus_html::TouchData {
         not_sent("touch")
     }
-    fn convert_transition_data(&self, _: &PlatformEventData) -> dioxus_html::TransitionData {
-        not_sent("transition")
+    fn convert_transition_data(&self, event: &PlatformEventData) -> TransitionData {
+        let data = event
+            .downcast::<TransitionEventData>()
+            .expect("every transition event this document sends carries TransitionEventData")
+            .clone();
+        TransitionData::new(data)
     }
     fn convert_visible_data(&self, _: &PlatformEventData) -> dioxus_html::VisibleData {
         not_sent("visible")

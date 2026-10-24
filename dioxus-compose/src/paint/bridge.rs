@@ -28,14 +28,17 @@ use compose_rust::Batch;
 use compose_rust::brush::{Brush as WireBrush, Stop, brush as register_brush};
 use compose_rust::protocol::{Mutation, PropertyValue};
 use compose_rust::schema::{
-    Color, Modifier, Paint, PropertyKind, TextAlign as WireAlign, TextOverflow, TileMode,
-    WidgetKind,
+    AnimationControl, AnimationEvents, Color, Modifier, Paint, PropertyKind,
+    TextAlign as WireAlign, TextOverflow, TileMode, WidgetKind,
 };
 use compose_rust::spans::{TextSpan, TextSpans};
 
 use crate::html::NodeId;
 use crate::layout::measure::{TextLineHeight, TextStyle};
-use crate::paint::display_list::{GradientStop, Rect, Rgba, TextAlign, TileRepeat};
+use crate::paint::animate;
+use crate::paint::display_list::{
+    AnimatedProperty, Animation as CssAnimation, GradientStop, Rect, Rgba, TextAlign, TileRepeat,
+};
 use crate::paint::plan::{
     Brush, BrushId, Plan, PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier,
     PlanNode, PlanText, PlanTextField, diff,
@@ -74,6 +77,35 @@ pub trait ClickTargets {
         let _ = node;
         false
     }
+
+    /// Whether the page listens for the DOM event `event` (`transitionend`, `animationend`
+    /// and the like) at `node` or at an element around it, where the event bubbles to. A
+    /// page that says nothing hears nothing, and then no animation of the node asks the
+    /// renderer to report anything.
+    fn listens(&self, node: NodeId, event: &str) -> bool {
+        let _ = (node, event);
+        false
+    }
+}
+
+/// What an animation event from the renderer is for in the page.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnimationTarget {
+    /// The DOM node the animation plays on.
+    pub node: NodeId,
+    /// The `@keyframes` name; `None` for a transition.
+    pub name: Option<String>,
+    pub property: AnimatedProperty,
+}
+
+/// An animation the renderer was told to play.
+#[derive(Clone, Debug)]
+struct Running {
+    id: u32,
+    property: AnimatedProperty,
+    slot: u8,
+    animation: CssAnimation,
+    transition: bool,
 }
 
 /// What a renderer event on a node the bridge made means for the page.
@@ -197,6 +229,19 @@ pub struct PlanBridge {
     paints: HashMap<(BrushId, u32, u32), Paint>,
     /// The brushes of the plan being applied.
     brushes: BTreeMap<BrushId, Brush>,
+    next_animation_id: u32,
+    /// The animations the renderer plays, by the node they play on. A transition is in
+    /// slot 0 and the `@keyframes` animations in the slots after it, in the order the node
+    /// lists them, so an animation wins over a transition of the same property as in CSS.
+    playing: HashMap<PlanKey, Vec<Running>>,
+    /// The animations the page listens to, by the id the renderer reports them under.
+    targets: HashMap<u32, AnimationTarget>,
+    /// The properties a node animates, which must have a modifier to play on. The renderer
+    /// refuses an animation of a property the node has no modifier for, and a plan leaves
+    /// out the modifier of a property at its initial value (an `opacity` of 1). A pinned
+    /// property gets the modifier that changes nothing instead, for as long as the node
+    /// lives.
+    pins: HashMap<PlanKey, Vec<AnimatedProperty>>,
 }
 
 impl Default for PlanBridge {
@@ -217,7 +262,31 @@ impl PlanBridge {
             page_size: (0.0, 0.0),
             paints: HashMap::new(),
             brushes: BTreeMap::new(),
+            next_animation_id: 1,
+            playing: HashMap::new(),
+            targets: HashMap::new(),
+            pins: HashMap::new(),
         }
+    }
+
+    /// What the renderer's report `animation_id`, about the renderer node `node_id`, is for
+    /// in the page. `ended` says the animation is over, which for a transition is the end
+    /// of what the bridge keeps about it.
+    pub fn animation_target(
+        &mut self,
+        node_id: u32,
+        animation_id: u32,
+        ended: bool,
+    ) -> Option<AnimationTarget> {
+        let target = self.targets.get(&animation_id)?.clone();
+        let key = PlanKey::Node(target.node);
+        if self.nodes.get(&key).map(|placed| placed.id) != Some(node_id) {
+            return None;
+        }
+        if ended && target.name.is_none() {
+            self.targets.remove(&animation_id);
+        }
+        Some(target)
     }
 
     /// The handler a renderer event names, if the bridge gave it out.
@@ -255,6 +324,7 @@ impl PlanBridge {
     ) {
         self.page_size = (viewport.0, viewport.1.max(page_extent(&plan.root)));
         self.brushes.clone_from(&plan.brushes);
+        let pinned = self.pin(&plan);
         match self.previous.take() {
             None => {
                 let viewport_node = self.create(batch, WidgetKind::ScrollColumn);
@@ -275,9 +345,10 @@ impl PlanBridge {
                     node_id: page,
                     index: 0,
                 });
+                self.play(batch, &plan, Vec::new(), Vec::new(), clicks);
             }
             Some(previous) => {
-                self.apply_changes(batch, &previous, &plan, clicks);
+                self.apply_changes(batch, &previous, &plan, &pinned, clicks);
                 // Brushes the plan no longer uses. compose-rust keeps a registration for
                 // the life of the process and sends it once, so only the bridge's own
                 // record of them goes.
@@ -299,9 +370,12 @@ impl PlanBridge {
         batch: &mut Batch,
         previous: &Plan,
         plan: &Plan,
+        pinned: &[PlanKey],
         clicks: &dyn ClickTargets,
     ) {
-        let mut dirty: HashSet<PlanKey> = HashSet::new();
+        let mut dirty: HashSet<PlanKey> = pinned.iter().copied().collect();
+        let mut changed: Vec<(PlanKey, Vec<CssAnimation>)> = Vec::new();
+        let mut started: Vec<(PlanKey, CssAnimation)> = Vec::new();
         for change in diff(previous, plan) {
             match change {
                 PlanChange::Removed { key } => self.remove(batch, key),
@@ -322,9 +396,12 @@ impl PlanBridge {
                 PlanChange::ModifierSet { key, .. } | PlanChange::ModifierRemoved { key, .. } => {
                     dirty.insert(key);
                 }
-                // The renderer is not told to play animations yet: the bridge writes no
-                // `StartAnimation`, so a node's animations change nothing it sends.
-                PlanChange::AnimationsChanged { .. } | PlanChange::AnimationStarted { .. } => {}
+                // Played after the modifiers are written, because the renderer needs the
+                // modifier of a property to animate it.
+                PlanChange::AnimationsChanged { key, animations } => {
+                    changed.push((key, animations));
+                }
+                PlanChange::AnimationStarted { key, animation } => started.push((key, animation)),
             }
         }
 
@@ -345,6 +422,237 @@ impl PlanBridge {
             if dirty.contains(&node.key) {
                 self.decorate(batch, node, clicks);
             }
+        }
+        self.play(batch, plan, changed, started, clicks);
+    }
+
+    /// Records the properties the plan animates, and returns the nodes that gained one.
+    fn pin(&mut self, plan: &Plan) -> Vec<PlanKey> {
+        let mut gained = Vec::new();
+        let mut add = |pins: &mut HashMap<PlanKey, Vec<AnimatedProperty>>,
+                       key: PlanKey,
+                       property: AnimatedProperty| {
+            let list = pins.entry(key).or_default();
+            if !list.contains(&property) {
+                list.push(property);
+                if !gained.contains(&key) {
+                    gained.push(key);
+                }
+            }
+        };
+        for node in plan.nodes() {
+            for animation in &node.animations {
+                add(&mut self.pins, node.key, animation.property);
+            }
+        }
+        for (key, animation) in &plan.transitions {
+            add(&mut self.pins, *key, animation.property);
+        }
+        gained
+    }
+
+    /// Tells the renderer to play what the plan says is playing: the animations that
+    /// changed, the nodes new to the renderer that already have some, and the transitions
+    /// that began.
+    fn play(
+        &mut self,
+        batch: &mut Batch,
+        plan: &Plan,
+        changed: Vec<(PlanKey, Vec<CssAnimation>)>,
+        started: Vec<(PlanKey, CssAnimation)>,
+        clicks: &dyn ClickTargets,
+    ) {
+        let nodes = plan.nodes();
+        let sizes: HashMap<PlanKey, (f32, f32)> = nodes
+            .iter()
+            .map(|node| (node.key, node_size(node).unwrap_or((0.0, 0.0))))
+            .collect();
+        let size_of = |key: &PlanKey| sizes.get(key).copied().unwrap_or((0.0, 0.0));
+        let mut done: HashSet<PlanKey> = HashSet::new();
+        for (key, animations) in changed {
+            self.sync_animations(batch, key, &animations, size_of(&key), clicks);
+            done.insert(key);
+        }
+        for node in &nodes {
+            if !node.animations.is_empty()
+                && !done.contains(&node.key)
+                && !self.playing.contains_key(&node.key)
+            {
+                self.sync_animations(
+                    batch,
+                    node.key,
+                    &node.animations,
+                    size_of(&node.key),
+                    clicks,
+                );
+            }
+        }
+        for (key, animation) in started {
+            self.start_transition(batch, key, &animation, size_of(&key), clicks);
+        }
+    }
+
+    /// The moments of an animation the page listens to.
+    fn events_for(clicks: &dyn ClickTargets, key: PlanKey, transition: bool) -> AnimationEvents {
+        let PlanKey::Node(node) = key else {
+            return AnimationEvents::NONE;
+        };
+        let mut events = AnimationEvents::NONE;
+        let mut ask = |name: &str, kind: AnimationEvents| {
+            if clicks.listens(node, name) {
+                events = events.union(kind);
+            }
+        };
+        if transition {
+            ask("transitionend", AnimationEvents::END);
+        } else {
+            ask("animationstart", AnimationEvents::ACTIVE);
+            ask("animationiteration", AnimationEvents::ITERATION);
+            ask("animationend", AnimationEvents::END);
+        }
+        events
+    }
+
+    /// Writes the `StartAnimation` for `animation`, in `slot` of the node `key`.
+    fn start(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        slot: u8,
+        animation: &CssAnimation,
+        size: (f32, f32),
+        clicks: &dyn ClickTargets,
+    ) -> Option<Running> {
+        let node_id = self.nodes.get(&key)?.id;
+        let transition = animation.name.is_none();
+        let id = self.next_animation_id;
+        self.next_animation_id = self.next_animation_id.checked_add(1).unwrap_or(1);
+        let events = Self::events_for(clicks, key, transition);
+        let wire = animate::to_wire(node_id, id, slot, animation, size, events)?;
+        batch.write(Mutation::StartAnimation(wire));
+        if events != AnimationEvents::NONE
+            && let PlanKey::Node(node) = key
+        {
+            self.targets.insert(
+                id,
+                AnimationTarget {
+                    node,
+                    name: animation.name.clone(),
+                    property: animation.property,
+                },
+            );
+        }
+        Some(Running {
+            id,
+            property: animation.property,
+            slot,
+            animation: animation.clone(),
+            transition,
+        })
+    }
+
+    fn control(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        running: &Running,
+        op: AnimationControl,
+    ) {
+        let Some(node_id) = self.nodes.get(&key).map(|placed| placed.id) else {
+            return;
+        };
+        batch.write(Mutation::ControlAnimation {
+            node_id,
+            animation_id: running.id,
+            property: animate::wire_property(running.property),
+            slot: running.slot,
+            op,
+            at_time_nanos: 0,
+        });
+    }
+
+    /// A transition began on `key`: it plays in slot 0 and replaces the one before it on the
+    /// same property.
+    fn start_transition(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        animation: &CssAnimation,
+        size: (f32, f32),
+        clicks: &dyn ClickTargets,
+    ) {
+        let Some(running) = self.start(batch, key, 0, animation, size, clicks) else {
+            return;
+        };
+        let list = self.playing.entry(key).or_default();
+        let mut replaced = Vec::new();
+        list.retain(|other| {
+            let same = other.transition && other.property == running.property;
+            if same {
+                replaced.push(other.id);
+            }
+            !same
+        });
+        list.push(running);
+        for id in replaced {
+            self.targets.remove(&id);
+        }
+    }
+
+    /// Makes the `@keyframes` animations playing on `key` the ones in `list`: those already
+    /// playing as they are listed go on, one that only paused or resumed is told so, a new
+    /// or changed one starts, and one no longer listed is cancelled.
+    fn sync_animations(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        list: &[CssAnimation],
+        size: (f32, f32),
+        clicks: &dyn ClickTargets,
+    ) {
+        if !self.nodes.contains_key(&key) {
+            return;
+        }
+        let old = self.playing.remove(&key).unwrap_or_default();
+        let (mut next, mut unmatched): (Vec<Running>, Vec<Running>) =
+            old.into_iter().partition(|running| running.transition);
+        for (index, animation) in list.iter().enumerate() {
+            let slot = u8::try_from(index + 1).unwrap_or(u8::MAX);
+            if let Some(at) = unmatched
+                .iter()
+                .position(|running| running.slot == slot && running.property == animation.property)
+            {
+                let mut running = unmatched.remove(at);
+                if running.animation == *animation {
+                    next.push(running);
+                    continue;
+                }
+                let mut flipped = running.animation.clone();
+                flipped.paused = animation.paused;
+                if flipped == *animation {
+                    let op = if animation.paused {
+                        AnimationControl::Pause
+                    } else {
+                        AnimationControl::Resume
+                    };
+                    self.control(batch, key, &running, op);
+                    running.animation = animation.clone();
+                    next.push(running);
+                    continue;
+                }
+                // The new one has the same key on the wire and replaces it.
+                self.targets.remove(&running.id);
+            }
+            if let Some(running) = self.start(batch, key, slot, animation, size, clicks) {
+                next.push(running);
+            }
+        }
+        for gone in unmatched {
+            self.control(batch, key, &gone, AnimationControl::Cancel);
+            self.targets.remove(&gone.id);
+        }
+        if !next.is_empty() {
+            self.playing.insert(key, next);
         }
     }
 
@@ -467,6 +775,10 @@ impl PlanBridge {
         let Some(placed) = self.nodes.remove(&key) else {
             return;
         };
+        self.pins.remove(&key);
+        for running in self.playing.remove(&key).unwrap_or_default() {
+            self.targets.remove(&running.id);
+        }
         for handler in placed.handlers {
             self.handlers.remove(&handler);
         }
@@ -817,6 +1129,7 @@ impl PlanBridge {
     fn decorate(&mut self, batch: &mut Batch, node: &PlanNode, clicks: &dyn ClickTargets) {
         let key = node.key;
         let target = click_target(node, clicks);
+        let pins = self.pins.get(&key).cloned().unwrap_or_default();
         let Some(placed) = self.nodes.get_mut(&key) else {
             return;
         };
@@ -877,7 +1190,7 @@ impl PlanBridge {
             });
         }
 
-        let mut modifiers = wire_modifiers(node);
+        let mut modifiers = wire_modifiers(node, &pins);
         if key == PlanKey::Page {
             modifiers.insert(
                 0,
@@ -1114,7 +1427,7 @@ fn literal(color: Rgba) -> Paint {
 /// shadows, its background, its border, and its clip.
 ///
 /// Background images and gradients are not here: they are boxes inside the node.
-fn wire_modifiers(node: &PlanNode) -> Vec<Modifier> {
+fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
     let mut out = Vec::with_capacity(node.modifiers.len() + 1);
     for modifier in &node.modifiers {
         let wire = match modifier {
@@ -1193,6 +1506,7 @@ fn wire_modifiers(node: &PlanNode) -> Vec<Modifier> {
         };
         out.push(wire);
     }
+    pin_modifiers(&mut out, pins);
     // The plan lists a box's shadows in CSS order, where the first is drawn on top. A
     // modifier list draws in its own order, so they go last to first.
     let shadows: Vec<usize> = out
@@ -1210,6 +1524,80 @@ fn wire_modifiers(node: &PlanNode) -> Vec<Modifier> {
         out[index] = modifier;
     }
     out
+}
+
+/// Gives the node the modifier of each property in `pins` it lacks, with the value that
+/// changes nothing, in the place the plan would have put it.
+fn pin_modifiers(out: &mut Vec<Modifier>, pins: &[AnimatedProperty]) {
+    let ends_placement = |modifier: &Modifier| {
+        !matches!(
+            modifier,
+            Modifier::Offset { .. } | Modifier::RequiredSize { .. } | Modifier::Width(_)
+        )
+    };
+    let paints = |modifier: &Modifier| {
+        matches!(
+            modifier,
+            Modifier::CornerEach { .. }
+                | Modifier::Shadow { .. }
+                | Modifier::Background(_)
+                | Modifier::Border { .. }
+                | Modifier::BorderEach { .. }
+                | Modifier::Clip(_)
+        )
+    };
+    if pins.contains(&AnimatedProperty::Transform)
+        && !out
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::Transform { .. }))
+    {
+        let at = out.iter().position(ends_placement).unwrap_or(out.len());
+        out.insert(
+            at,
+            Modifier::Transform {
+                a: 1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                e: 0.0,
+                f: 0.0,
+                origin_x: 0.0,
+                origin_y: 0.0,
+            },
+        );
+    }
+    if pins.contains(&AnimatedProperty::Opacity)
+        && !out
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::Alpha(_)))
+    {
+        let at = out.iter().position(paints).unwrap_or(out.len());
+        out.insert(at, Modifier::Alpha(1.0));
+    }
+    if pins.contains(&AnimatedProperty::BackgroundColor)
+        && !out
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::Background(_)))
+    {
+        let at = out
+            .iter()
+            .position(|modifier| {
+                matches!(
+                    modifier,
+                    Modifier::Border { .. } | Modifier::BorderEach { .. } | Modifier::Clip(_)
+                )
+            })
+            .unwrap_or(out.len());
+        out.insert(
+            at,
+            Modifier::Background(literal(Rgba {
+                r: 0,
+                g: 0,
+                b: 0,
+                a: 0,
+            })),
+        );
+    }
 }
 
 /// A node's `RequiredSize`, if it has one.
