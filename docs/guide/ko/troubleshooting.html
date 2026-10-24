@@ -130,17 +130,24 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
 
     <h2 id="css">CSS 기능이 효과가 없습니다</h2>
     <ul>
-      <li><code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code>,
-        <code>transform-origin</code> 은 그리지 않고, <code>translate</code> 는 그립니다
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
       <li><code>font-family</code>, <code>font-style</code>, <code>text-decoration</code> 은 화면에 닿지
         않습니다. compose-rust 의 <code>Text</code> 가 글꼴 패밀리와 기울임을 받지 않으므로 텍스트는
         디자인 시스템의 글꼴로 그려집니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li>비율이 다른 이미지의 <code>object-fit: fill</code> 은 여백을 두고 그려집니다. compose-rust 의
         <code>Image</code> 가 그림을 통째로 가운데에 그리기 때문입니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
-      <li>transition 과 animation 은 재생되지 않습니다
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
-        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>).</li>
+      <li>3D 변환(<code>rotateX</code>, <code>perspective</code>, 평평하지 않은
+        <code>matrix3d()</code>)은 뺍니다. 요소는 그 변환 없이 그려지고, stderr 경고가 어느 요소의 어떤
+        변환인지 알립니다. 2D 변환은 Host 가 싣습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>). 화면에 그리는 것은
+        compose-rust 를 기다립니다.</li>
+      <li>화면에서 움직이지 않는 transition 이나 animation 은 compose-rust 의 애니메이션 레코드를
+        기다리는 것입니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
+        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>). Host 에서는 <code>opacity</code>, <code>transform</code>,
+        <code>background-color</code> 의 움직임이 표시 목록에 들어 있고, 레이아웃을 바꾸는 것은
+        <code>HtmlDom::needs_frames</code> 가 참인 동안 프레임마다 부르는 <code>HtmlDom::tick</code> 이
+        내놓습니다.</li>
+      <li><code>@media (prefers-reduced-motion: reduce)</code> 는 <code>HtmlConfig::reduced_motion</code>
+        을 켰을 때 맞습니다. 바꿔 쓰는 범위는 <code>HtmlConfig::stylesheets</code> 이고, 직접 렌더링한
+        <code>&lt;style&gt;</code> 요소는 아닙니다.</li>
       <li><code>&lt;script&gt;</code> 는 설계상 아무 일도 하지 않습니다. 동작은 Rust 로 씁니다.</li>
       <li>사용자 에이전트 스타일시트는 브라우저처럼 <code>body</code> 에 8px 여백을 줍니다. 예제들은
         스타일시트를 <code>body { margin: 0; }</code> 로 시작합니다.</li>

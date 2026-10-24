@@ -322,6 +322,9 @@ impl PlanBridge {
                 PlanChange::ModifierSet { key, .. } | PlanChange::ModifierRemoved { key, .. } => {
                     dirty.insert(key);
                 }
+                // The renderer is not told to play animations yet: the bridge writes no
+                // `StartAnimation`, so a node's animations change nothing it sends.
+                PlanChange::AnimationsChanged { .. } | PlanChange::AnimationStarted { .. } => {}
             }
         }
 
@@ -1120,6 +1123,25 @@ fn wire_modifiers(node: &PlanNode) -> Vec<Modifier> {
                 width: *width,
                 height: *height,
             },
+            // compose-rust takes the matrix about the node's own top-left corner, so a
+            // `transform-origin` in pixels is folded into it and the origin sent is (0, 0).
+            // A value that is not finite is a protocol error on the wire, so it is left out.
+            PlanModifier::Transform(transform) => {
+                let m = transform.about_origin();
+                if ![m.a, m.b, m.c, m.d, m.e, m.f].iter().all(|v| v.is_finite()) {
+                    continue;
+                }
+                Modifier::Transform {
+                    a: m.a,
+                    b: m.b,
+                    c: m.c,
+                    d: m.d,
+                    e: m.e,
+                    f: m.f,
+                    origin_x: 0.0,
+                    origin_y: 0.0,
+                }
+            }
             PlanModifier::Width(width) => Modifier::Width(*width),
             PlanModifier::Alpha(alpha) => Modifier::Alpha(*alpha),
             // Corners always go per corner, even when all four are the same. compose-rust's

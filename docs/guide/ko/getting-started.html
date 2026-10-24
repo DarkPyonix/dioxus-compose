@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>시작하기 · dioxus-compose 가이드</title>
-<meta name="description" content="dioxus-compose 를 프로젝트에 추가하고, HTML 태그와 CSS 로 Dioxus 페이지를 쓰고, Rust 에서 배치하고 클릭하고, 예제 열한 개의 테스트를 돌립니다.">
+<meta name="description" content="dioxus-compose 를 프로젝트에 추가하고, HTML 태그와 CSS 로 Dioxus 페이지를 쓰고, Rust 에서 배치하고 클릭하고, 예제 열다섯 개의 테스트를 돌립니다.">
 <link rel="alternate" hreflang="en" href="../en/getting-started.html">
 <link rel="alternate" hreflang="ko" href="getting-started.html">
 <link rel="alternate" hreflang="x-default" href="../en/getting-started.html">
@@ -76,12 +76,12 @@
 
     <h2 id="add">크레이트 추가</h2>
     <p>
-      HTML 경로는 <code>develop</code> 브랜치에 있고 아직 crates.io 릴리스에 들어가지 않았습니다.
-      crates.io 의 0.0.0 은 위젯 경로만 있는 초기 스냅숏입니다. 지금은 저장소에 의존합니다.
+      crates.io 에서 크레이트를 추가합니다. 0.0.1 에는 두 경로가 다 있고 compose-rust 0.0.1 에
+      의존합니다. 0.0.x 는 초기 릴리스이고 API 는 바뀝니다.
     </p>
 <figure class="codeblock" data-copy="복사" data-copied="복사됨">
   <figcaption>shell</figcaption>
-<pre><code>cargo add dioxus-compose --git https://github.com/DarkPyonix/dioxus-compose --branch develop
+<pre><code>cargo add dioxus-compose@0.0.1
 cargo add dioxus-hooks@0.7 dioxus-signals@0.7</code></pre>
 </figure>
     <p>
@@ -242,17 +242,21 @@ cargo test -p sample-html-hello -p sample-html-chat -p sample-html-todo</code></
       <table>
         <thead><tr><th scope="col">예제</th><th scope="col">보여 주는 것</th><th scope="col">페이지</th></tr></thead>
         <tbody>
-          <tr><td><code>hello</code></td><td>제목, 인라인 굵게와 기울임, 클릭 수를 세는 링크</td><td><a href="text.html">텍스트</a></td></tr>
-          <tr><td><code>article</code></td><td>제목, 줄바꿈되는 문단, 목록, 인용, 코드 블록</td><td><a href="text.html">텍스트</a></td></tr>
-          <tr><td><code>dashboard</code></td><td>상단 바, 사이드바, 줄바꿈되는 지표 카드. 모두 flexbox</td><td><a href="layout.html">레이아웃</a></td></tr>
-          <tr><td><code>gallery</code></td><td>그라디언트 헤더 아래 CSS grid 사진 목록</td><td><a href="images.html">이미지</a></td></tr>
-          <tr><td><code>settings</code></td><td>폼: 텍스트 입력란, 텍스트 영역, select, 체크박스, 라디오 그룹</td><td><a href="forms-and-events.html">폼</a></td></tr>
-          <tr><td><code>table</code></td><td>옆으로 스크롤되는 HTML 표, 금액 머리글로 정렬</td><td><a href="layout.html">레이아웃</a></td></tr>
-          <tr><td><code>chat</code></td><td>아래에 고정된 입력 줄 위로 스크롤되는 대화</td><td><a href="scrolling-and-overlays.html">스크롤</a></td></tr>
-          <tr><td><code>todo</code></td><td>키가 있는 행의 추가, 체크, 삭제, 순서 바꾸기</td><td><a href="forms-and-events.html">폼</a></td></tr>
-          <tr><td><code>overlay</code></td><td>드롭다운 메뉴, 고정 배경 위 대화 상자, 잘린 미리보기</td><td><a href="scrolling-and-overlays.html">오버레이</a></td></tr>
-          <tr><td><code>theme</code></td><td>CSS 사용자 정의 속성으로 쓴 색, 어두운 세트, 덮어쓰기 버튼</td><td><a href="theming.html">테마</a></td></tr>
-          <tr><td><code>workbench</code></td><td>작은 코드 편집기: 액티비티 바, 파일 트리, 탭, 상태 표시줄</td><td><a href="layout.html">레이아웃</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello"><code>hello</code></a></td><td>제목, 인라인 굵게와 기울임, 클릭 수를 세는 링크</td><td><a href="text.html">텍스트</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/article"><code>article</code></a></td><td>제목, 줄바꿈되는 문단, 목록, 인용, 코드 블록</td><td><a href="text.html">텍스트</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/dashboard"><code>dashboard</code></a></td><td>상단 바, 사이드바, 줄바꿈되는 지표 카드. 모두 flexbox</td><td><a href="layout.html">레이아웃</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/gallery"><code>gallery</code></a></td><td>그라디언트 헤더 아래 CSS grid 사진 목록</td><td><a href="images.html">이미지</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/settings"><code>settings</code></a></td><td>폼: 텍스트 입력란, 텍스트 영역, select, 체크박스, 라디오 그룹</td><td><a href="forms-and-events.html">폼</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/table"><code>table</code></a></td><td>옆으로 스크롤되는 HTML 표, 금액 머리글로 정렬</td><td><a href="layout.html">레이아웃</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/chat"><code>chat</code></a></td><td>아래에 고정된 입력 줄 위로 스크롤되는 대화</td><td><a href="scrolling-and-overlays.html">스크롤</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/todo"><code>todo</code></a></td><td>키가 있는 행의 추가, 체크, 삭제, 순서 바꾸기</td><td><a href="forms-and-events.html">폼</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/overlay"><code>overlay</code></a></td><td>드롭다운 메뉴, 고정 배경 위 대화 상자, 잘린 미리보기</td><td><a href="scrolling-and-overlays.html">오버레이</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/theme"><code>theme</code></a></td><td>CSS 사용자 정의 속성으로 쓴 색, 어두운 세트, 덮어쓰기 버튼</td><td><a href="theming.html">테마</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/workbench"><code>workbench</code></a></td><td>작은 코드 편집기: 액티비티 바, 파일 트리, 탭, 상태 표시줄</td><td><a href="layout.html">레이아웃</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>layout</code></a></td><td>flexbox(줄바꿈, 간격, grow, shrink, basis, 정렬, 순서), grid(영역, <code>auto-fill</code>, 칸 걸치기, 선 지정 배치), <code>sticky</code>, <code>z-index</code>, relative 안의 absolute</td><td><a href="layout.html">레이아웃</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>landing</code></a></td><td>반응형 페이지: 세 폭의 <code>@media</code>, 가운데 정렬한 컨테이너, 카드 격자, 요금표, 푸터, 그라디언트 배경, 그림자와 모서리 반지름</td><td><a href="layout.html">레이아웃</a>, <a href="theming.html">테마</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography"><code>typography</code></a></td><td>글자 크기, 굵기, 스타일, 줄 높이, 자간, 정렬, 대소문자, 공백 처리, 단어 끊기, 말줄임, 생성된 내용, 목록 기호, 꾸밈선</td><td><a href="text.html">텍스트</a></td></tr>
+          <tr><td><a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>motion</code></a></td><td><code>transform-origin</code> 이 있는 변환, transition, <code>@keyframes</code>, 폭 transition</td><td><a href="layout.html">레이아웃</a>, <a href="status.html">현황</a></td></tr>
         </tbody>
       </table>
     </div>
@@ -263,7 +267,7 @@ cargo test -p sample-html-hello -p sample-html-chat -p sample-html-todo</code></
       <code>dioxus_compose::launch(app)</code> 가 창을 열고, <code>cargo run</code> 이 빌드하고 실행합니다.
       렌더러는 compose-rust 에서 오며, 그 빌드 스크립트가 대상 플랫폼의 렌더러를 내려받습니다. 이런 앱을
       쓰는 방법은 <a href="widgets.html">rsx! 의 위젯</a>에 있고, 예제는
-      <code>samples/native-widgets/</code> 에 있습니다.
+      <a href="https://github.com/DarkPyonix/compose-rust/tree/develop/samples"><code>compose-rust/samples/</code></a> 에 있습니다.
     </p>
 
     <h2 id="repository">이 저장소에서 작업하기</h2>

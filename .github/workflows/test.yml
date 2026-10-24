@@ -1,0 +1,120 @@
+# Test -- the quality gate. Rust only.
+#
+# `scripts/check.sh` (fmt, clippy, tests, --quick benchmarks) finishes in minutes, so it
+# can gate every pull request. The renderer and the design systems are compose-rust's, and
+# are built and tested in that repository; nothing here compiles Kotlin. This crate depends
+# on compose-rust at a pinned rev, and the gate runs with compose-rust's mock renderer,
+# because no test here draws.
+#
+# macOS is the primary platform, but the Host crate itself is portable, so Linux is in the
+# matrix too: it costs nothing extra in wall time and it catches accidental macOS-only
+# assumptions in the Rust code early.
+
+name: Test
+
+on:
+  # Only what is about to become public, or what already is. Work lands on develop many
+  # times an hour and running the matrix on each push is noise rather than signal. Every
+  # release reaches main as a pull request, so the gate still runs before anything is
+  # published, which is the moment that matters.
+  # The pull request only. `release` reaches `main` through a pull request that a human
+  # merges, so that run is the gate, and it finishes before main moves. Running again on
+  # the push afterwards tested the identical tree and doubled every number on the actions
+  # page for nothing.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  # One in-flight run per branch or PR; superseded runs are cancelled.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep the cache small and the link step quick; CI never needs a debugger.
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  rust:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple silicon, which is the platform SPEC PR-8
+        # describes and the one the benchmark baseline was measured on.
+        os: [macos-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Run the quality gate
+        # fmt, clippy -D warnings, tests, and the SPEC 5.1 budget benchmarks in
+        # Criterion's quick mode. The budgets have ~37x headroom against the
+        # recorded baseline, so shared-runner noise does not make them flaky;
+        # the benchmark *assertions* (NFR-9) still fail the build if a real
+        # regression lands.
+        run: ./scripts/check.sh
+
+  shell:
+    name: Shell tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both, because a script that only works with one platform's tools is a script
+        # that fails for half the people running it.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        # crate-readme.test.sh asks cargo what the packaged crate would contain, and
+        # spec-cites-real-tests.test.sh asks it where the compose-rust checkout is.
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Run the shell tests
+        # scripts/tests/ and the release script's own test beside it in
+        # .github/scripts/release/; the latter runs against throwaway temporary
+        # directories only.
+        #
+        # Every test runs whatever came before it. Stopping at the first red meant one
+        # failing test hid every test after it, and those went unrun without anyone
+        # being told. The step still fails, at the end, naming each test that did.
+        run: |
+          set -uo pipefail
+          failed=()
+          for test in scripts/tests/*.test.sh .github/scripts/release/test-*.sh; do
+            echo "== $test"
+            if ! bash "$test"; then
+              failed+=("$test")
+            fi
+          done
+          if (( ${#failed[@]} > 0 )); then
+            echo "${#failed[@]} shell test(s) failed:"
+            printf '  %s\n' "${failed[@]}"
+            exit 1
+          fi

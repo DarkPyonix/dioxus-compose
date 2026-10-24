@@ -1679,6 +1679,8 @@ if design.is_apple() {
 
 ### FR-34 HTML과 CSS로 쓴 Dioxus 화면 (`Draft`)
 
+추적: 이슈 #43. 렌더러 다리(계획을 compose-rust 레코드로 보내는 것)는 PR #67에 작성되어 있고 그 테스트는 통과한다. 다리는 compose-rust FR-42 그리기 원소(`AbsoluteBox`와 변별 테두리, 모서리별 반지름, 그림자, 클립, 알파, 오프셋, 크기 수정자)를 쓰며, 그것은 compose-rust PR #74에 있고 병합되지 않았다. compose-rust 쪽에 필요한 것은 compose-rust #90~#98, #100, #101(라벨 html-path)과 PR-2.1 측정 호출이다. 계획(소유자 결정): compose-rust 0.0.2를 crates.io에 #74와 #83을 담아 내고, #67을 compose-rust =0.0.2에 의존하도록 옮겨 CI가 통과하면 병합한다. 그 릴리스부터 HTML 예제가 창에 그려진다. 날짜는 정하지 않았고 이 병합과 릴리스를 기다린다. `samples/`의 예제는 열다섯 개이고(새로 `layout`, `landing`, `typography`, `motion`) Host 배치 테스트로 확인하며, 창에 그린 확인은 #67 병합 뒤에 한다.
+
 `div`, `span` 같은 HTML 요소와 CSS로 쓴 Dioxus 화면을 그립니다. 결정과 근거는 INTENT D20입니다.
 
 - **스타일과 레이아웃은 Host가 계산합니다.** `blitz-dom`을 창 없이 Host 안에서 돌려 CSS를 해석하고 상자와 텍스트 조각의 위치를 정합니다. 렌더러는 CSS를 모릅니다.
@@ -1713,6 +1715,8 @@ if design.is_apple() {
 
 #### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
 
+추적: 이슈 #46. 지금은 translate만 그려진다. 렌더러 쪽은 compose-rust FR-41이 필요하고 그것은 compose-rust PR #83에 있으며 병합되지 않았다. 일정은 FR-34의 compose-rust 0.0.2 계획과 같다. `samples/motion`이 `transform-origin`을 쓴 변환을 담는다.
+
 M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "M12 이후 과제로 SPEC에 남기도록 해", 날짜는 "일부 10-18 안"에서 transform을 10-18 안에 포함).
 
 - `translate`, `rotate`, `scale`, `skew`와 그 조합, `matrix()`, `transform-origin`을 상자와 그 안의 내용에 적용합니다.
@@ -1728,6 +1732,8 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
 
 #### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
+
+추적: 이슈 #46(렌더러 쪽), #47(레이아웃 속성, 경로 (가)). 구현 전이다. 렌더러가 재생하는 쪽은 compose-rust FR-41(compose-rust PR #83, 병합 전)이 필요하다. 레이아웃 속성 애니메이션(#47)은 Host가 매 프레임 진행시키므로 다리(PR #67) 말고는 compose-rust 변경이 필요 없다. `samples/motion`에 transition, `@keyframes`, 폭 transition이 있다.
 
 M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme에 transition 확인을 넣습니다.
 
@@ -1751,6 +1757,8 @@ M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme
 
 #### FR-34.3 HTML/CSS와 Compose 위젯을 한 앱에서 섞기 (`Agreed`, 목표 M12 이후)
 
+추적: 이슈 #59. 구현 전이다. 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고)가 먼저 들어와야 한다. 지금의 예제 열다섯 개는 모두 HTML 경로만 쓰고 섞은 예제는 없다.
+
 dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하나는 `div`, `h1`과 CSS이고(FR-34), 다른 하나는 `Column`, `Text` 같은 Compose 위젯 이름입니다(소유자 결정 2026-10-03: "그냥 dioxus-compose에서 둘다 구현하면 되잖아"). 기능 플래그로 어느 쪽도 끄지 않습니다. 이 항목은 둘을 한 화면에서 섞는 규칙입니다.
 
 - **한 노드는 한 세계에만 속합니다.** writer가 요소 이름으로 나눕니다. dioxus-compose가 정의한 위젯 이름은 위젯 세계이고, 그 밖은 HTML 세계입니다. 섞는 지점은 자리 표시 노드뿐입니다.
@@ -1768,6 +1776,8 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 4. 두 세계가 같은 색 역할을 쓰는 화면에서 테마를 바꾸면 두 세계가 같은 프레임에 바뀝니다.
 
 #### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
+
+추적: 이슈 #58. 구현 전이다. HTML 섬을 확대해 그리는 일은 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고) 위에 올라간다.
 
 HTML 화면은 VS Code처럼 페이지 전체를 확대한다. OS 글자 크기만 따로 키우지 않는다(소유자 결정 2026-10-03: "근데 그럼 vscode는 어떻게 그 부분이 문제가 없는건데? 개 기준으로 생각하면 되잖아"). VS Code는 `window.zoomLevel`(⌘+, ⌘-, ⌘0, 설정에 저장)로 UI 전체를 확대하고, 그래서 22px 행, 35px 탭, 아이콘이 글자와 같은 비율로 커져 잘리거나 겹치지 않는다. 검토는 compose-rust의 `.scratch/reviews/html-text-scaling.md`((e)안)에 있다.
 
@@ -1787,6 +1797,8 @@ HTML 화면은 VS Code처럼 페이지 전체를 확대한다. OS 글자 크기�
 5. OS 글자 배율을 바꾸면 그 값이 k의 시작값으로 Host에 도착한다. 데스크톱 세 플랫폼은 수동으로 확인하고 그렇게 적는다.
 
 ### FR-37 마크다운 크레이트 (`Agreed`)
+
+추적: 이슈 #24. 초안은 PR #68이고, compose-rust의 코드 색 역할을 기다린다.
 
 **FR-26을 넓힙니다.** FR-26은 "마크다운은 Host 쪽 편의 함수"라고 정했고, 지금의 `TextSpans::from_markdown`은 굵게, 기울임, 인라인 코드 셋만 압니다. 이 항목은 그 편의를 문단 하나가 아니라 문서 하나로 넓히되, FR-26의 원칙을 그대로 지킵니다. 마크다운을 아는 것은 Host뿐이고, 경계에는 지금 있는 위젯과 스팬만 건넙니다.
 
@@ -2216,7 +2228,7 @@ pr6 forwarder cost: 12.15 ns/call across the boundary, 0.44 ns/call in this modu
   1. C 호스트가 라이브러리를 링크해 `run`을 호출하면 창이 뜨고, 창을 닫으면 `run`이 0을 반환하며 프로세스가 정상 종료됩니다. **(2026-09-20 통과)**
      근거: `desktop/c/smoke_host.c`가 `run`의 반환값을 프로세스 종료 코드로 옮기고, `desktop/scripts/smoke-test.sh`가 그 호스트를 링크해 실행합니다. `native-renderer.yml`의 macOS 잡이 native-image 빌드 뒤에 이 스크립트를 돌리므로, 창이 뜨지 않거나 `run`이 0이 아닌 값을 돌려주면 잡이 실패합니다.
   2. 잘못된 툴체인(`GRAALVM_HOME` 미설정/없는 경로/`native-image` 없음/정적 AWT 아카이브 없음)에서 빌드가 즉시 실패하고 조치 방법을 출력합니다. **(2026-09-20 통과)**
-     근거: `scripts/tests/renderer-toolchain.test.sh`가 네 경우를 전부 임시 디렉터리로 재현해 `env.sh`가 1로 끝나고 설치 방법을 출력하는지 확인하고, 올바른 모양의 설치에서는 통과하는지도 함께 확인합니다. `build-native.sh`와 `smoke-test.sh`의 첫 실행문이 `env.sh`를 source하는지도 같은 파일이 봅니다. native-image 툴체인 없이 밀리초 단위로 돌기 때문에 PR마다 도는 `ci.yml`의 `scripts/tests` 루프에 들어 있습니다.
+     근거: `scripts/tests/renderer-toolchain.test.sh`가 네 경우를 전부 임시 디렉터리로 재현해 `env.sh`가 1로 끝나고 설치 방법을 출력하는지 확인하고, 올바른 모양의 설치에서는 통과하는지도 함께 확인합니다. `build-native.sh`와 `smoke-test.sh`의 첫 실행문이 `env.sh`를 source하는지도 같은 파일이 봅니다. native-image 툴체인 없이 밀리초 단위로 돌기 때문에 PR마다 도는 `test.yml`의 `scripts/tests` 루프에 들어 있습니다.
 
 ## 5. 비기능 요구사항
 

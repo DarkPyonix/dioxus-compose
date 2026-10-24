@@ -4,9 +4,12 @@
 //! [`build`] reads it off a laid-out blitz-dom document; [`plan`] turns it into the tree of
 //! drawing elements that goes to the renderer, and diffs one such tree against the last;
 //! [`bridge`] writes a plan into compose-rust's batch, a whole tree first and only what
-//! changed after that.
+//! changed after that. [`transform`] turns a computed CSS transform into a matrix, and
+//! [`motion`] reads the transitions and animations a document declares.
 
 pub(crate) mod bridge;
 pub(crate) mod build;
 pub(crate) mod display_list;
+pub(crate) mod motion;
 pub(crate) mod plan;
+pub(crate) mod transform;

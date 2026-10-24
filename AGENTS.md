@@ -9,8 +9,7 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 - `dioxus-compose/`: the crate. The Dioxus adapter (a `VirtualDom` writing compose-rust's
   records, the widget elements `rsx!` resolves, the hooks) and the HTML and CSS path
   (`dom`, `layout`, `paint`, gathered in `html`).
-- `samples/`: the HTML and CSS samples; `samples/native-widgets/` holds the Compose
-  widget samples.
+- `samples/`: the HTML and CSS samples. The Compose widget samples are compose-rust's.
 - compose-rust (github.com/DarkPyonix/compose-rust, pinned by rev in
   `dioxus-compose/Cargo.toml`): the boundary, the protocol, the schema, codegen, the
   Kotlin renderer and the design systems. A change to any of those is made there.
@@ -45,8 +44,8 @@ dioxus-compose lets Rust code author declarative UI with **Dioxus** (`dioxus-cor
 ## Branches
 
 `develop` is where work happens. `release` and `main` are produced from it by
-`scripts/publish-main.sh`, which strips `PROJECT.md`, `AGENTS.md`, `CLAUDE.md` and everything directly
-under `docs/`.
+`.github/scripts/release/sync-release.sh`, which strips `PROJECT.md`, `AGENTS.md`, `CLAUDE.md`, `experiments/` and everything
+directly under `docs/`.
 
 1. **Publishing is one way: develop to release to main.** Never merge `release` or `main`
    back into `develop`. Their history contains the deletion of the planning documents, and
@@ -77,6 +76,18 @@ under `docs/`.
    branches changes every file under that checkout, so a `git checkout` while an agent is
    working pulls the files out from under it. Work has been lost that way. Give a
    background agent its own worktree and leave that checkout alone until it finishes.
+8. **A merge into `main` is a release, and a release follows one order.** The owner's
+   words, 2026-10-17: "메인에 머지할 때는 새 버전 올릴 때 잖아". The steps:
+   1. raise the version on `develop`, in its own commit;
+   2. Release sync updates the `release` -> `main` pull request;
+   3. the checks on that pull request go green;
+   4. the owner merges it into `main`;
+   5. the tag `v<version>` goes on that merge commit on `main`, and nowhere else;
+   6. the tag publishes ("Publish to crates.io" refuses a tag that is not on `main` or
+      does not match `Cargo.toml`).
+
+   Never tag `develop` or `release`. Tell the leader before the merge into `main`, since
+   the merge is what starts a release.
 
 ## Where files go
 
@@ -88,7 +99,8 @@ under `docs/`.
 2. Where inside:
    - worktrees: `.claude/worktrees/<name>/` (ignored by git);
    - throwaway work, probes and downloads: `.scratch/<name>/` (ignored by git);
-   - experiments worth keeping: `experiments/<name>/`, committed;
+   - experiments worth keeping: `experiments/<name>/`, committed on develop and left off
+     main, so nothing on main (tests, workspace members, `include_str!`) may read from it;
    - build outputs: `target/` and `build/`, where the tools already put them.
 3. A change to another project this one builds on is kept as a patch, applied to a
    checkout inside `.scratch/`. A checkout of that project elsewhere is not where the
@@ -106,9 +118,9 @@ download went to `/tmp`, and worktrees went to `../agent-runs`, and the owner ha
 none of it.
 
 6. **The repository root holds only these entries**, approved by the owner (issue #52,
-   2026-10-03): `.github/`, `dioxus-compose/`, `docs/`, `experiments/`, `samples/`,
-   `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md` (the last three
-   stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
+   2026-10-03): `.github/`, `dioxus-compose/`, `docs/`, `experiments/` (stripped on
+   main), `samples/`, `scripts/`, and the files `AGENTS.md`, `CLAUDE.md`, `PROJECT.md`
+   (also stripped on main), `Cargo.toml`, `Cargo.lock`, `README.md`, `CHANGELOG.md`, `LICENSE`,
    `.gitignore`. Git-ignored working directories (`.claude/`, `.scratch/`, `target/`)
    are not part of the list. The renderer, the design systems and the renderer's Linux
    build container are compose-rust's (compose-rust#37 step 4), and live in that
@@ -129,7 +141,7 @@ the launchers inject them ahead of whatever the prompt says.
 
 1. **A background agent never builds the renderer.** Not `./kotlin build`, not
    `./kotlin test`, not Amper, Gradle, dx or native-image, and nothing under
-   `dioxus-compose-renderer/*/scripts/`. Those builds reach outside the worktree into
+   compose-rust's `renderer/scripts/` or `renderer/*/scripts/`. Those builds reach outside the worktree into
    caches every checkout on the machine shares (`~/.m2`, `~/.cache/JetBrains/Kotlin`,
    Gradle's), they cost tens of minutes each, and six agents were once told to run them
    and did, at the same time, which took the machine down.
@@ -192,6 +204,23 @@ the launchers inject them ahead of whatever the prompt says.
    though the question were settled makes the reader the second person to decide it,
    which is exactly what rule 2 forbids the first from doing. The same incident above
    travelled a whole message further because it was repeated rather than caught.
+
+## CI names
+
+Workflow files and names are the same in every thisisthepy and darkpyonix repository, so a
+status check means the same thing wherever it appears (owner-approved, 2026-10-04):
+
+- `test.yml`, "Test": the quality gate on every pull request.
+- `release-sync.yml`, "Release sync": develop to release, through
+  `.github/scripts/release/sync-release.sh`; a pull request then takes release to main.
+- `publish-crates.yml`, "Publish to crates.io": a `v*` tag on main publishes.
+- `pages.yml`, "Pages": the guide site.
+- `test-<target>.yml`, "<Target> ...": a special check for one target.
+
+Job names are short sentence-case statements of what the job does ("Test", "Clippy",
+"Build the docs"); a matrix job is "<what> (<os>)" or "<what> (<os>, <version>)", such as
+"Test (macos-latest)". A job with the same role carries the same name in every repository.
+Renaming a job renames its status check, so the owner re-selects main's required checks.
 
 ## Writing
 
