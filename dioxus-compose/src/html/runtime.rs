@@ -172,7 +172,7 @@ impl Runtime for HtmlRuntime {
         self.draw();
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render();
         self.draw();
     }

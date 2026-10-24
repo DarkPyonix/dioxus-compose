@@ -54,6 +54,7 @@
       <h2>On this page</h2>
       <ul>
         <li><a href="#html">The HTML and CSS path</a></li>
+        <li><a href="#drawing">What HTML screens do not draw on screen yet</a></li>
         <li><a href="#widgets">The Compose widget path</a></li>
         <li><a href="#platforms">Platforms for the widget path</a></li>
         <li><a href="#faq">FAQ</a></li>
@@ -79,18 +80,19 @@
           <tr><td><span class="pill works">implemented</span></td><td>Decorations: background colours, borders per side, corner radii, <code>box-shadow</code>, <code>opacity</code>, <code>visibility</code></td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Overflow: clipping, and scroll containers on either axis</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Backgrounds: linear and radial gradients, background images, <code>object-fit</code>, through an app-supplied <code>ImageResolver</code>; nothing is fetched</td></tr>
-          <tr><td><span class="pill works">implemented</span></td><td>Text: inline runs, <code>white-space</code>, <code>text-transform</code>, <code>letter-spacing</code>, generated content, with a replaceable <code>TextMeasurer</code></td></tr>
+          <tr><td><span class="pill works">implemented</span></td><td>Text: inline runs, <code>white-space</code>, <code>text-transform</code>, <code>letter-spacing</code>, <code>word-break</code>, <code>overflow-wrap</code>, <code>text-align: justify</code>, generated content, with a replaceable <code>TextMeasurer</code>. <code>text-overflow: ellipsis</code> and list markers are carried as data for the renderer to draw (not <code>lower-roman</code> and <code>upper-roman</code>, which Stylo drops)</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Events: clicks with bubbling and the browser defaults; <code>input</code>, <code>change</code> and <code>submit</code>; <code>select</code>, checkboxes, radio groups, labels; uncontrolled fields</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Keyed lists, a display-list diff and a plan diff that report only what changed</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Theming with custom properties and <code>prefers-color-scheme</code></td></tr>
           <tr><td><span class="pill works">implemented</span></td><td><code>&lt;script&gt;</code> is never run</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (<code>dioxus-compose/tests/fr34_box_tolerance.rs</code>, measured 2026-10-03 on macOS)</td></tr>
-          <tr><td><span class="pill works">implemented</span></td><td>Eleven examples in <code>samples/</code>, each tested on the Host against hand-worked layout and through the same calls a renderer makes</td></tr>
+          <tr><td><span class="pill works">implemented</span></td><td>Fifteen examples in <code>samples/</code>, each tested on the Host against hand-worked layout and through the same calls a renderer makes</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Drawing HTML screens on screen. The bridge writes the plan into compose-rust's batch: the whole tree on the first frame, then only what the plan diff reports, and nothing for an unchanged frame. Every plan kind becomes a compose-rust widget (<code>AbsoluteBox</code>, <code>Box</code>, <code>Text</code>, <code>Image</code>, scroll rows and columns, fields, checkboxes, radio buttons, dropdowns), and renderer events reach the Dioxus handlers. It is tested on the Host against the records the renderer receives; drawing on screen has not been confirmed by running the renderer yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Text styles and image fitting on screen. Text is drawn in the design system's typeface, because compose-rust's <code>Text</code> takes no font family or italic, so <code>font-family</code>, <code>font-style</code> and <code>text-decoration</code> do not reach the screen yet. <code>object-fit: fill</code> with a different aspect ratio is drawn letterboxed, because compose-rust's <code>Image</code> draws a picture whole and centred (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Text measured by Compose. Your measurer sizes single-font text; mixed fonts, table cells and form controls are measured by Parley. The synchronous measure call is being built in compose-rust (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
-          <tr><td><span class="pill partial">partial</span></td><td>CSS transforms: <code>translate</code> works; <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code> and <code>transform-origin</code> are not drawn (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
-          <tr><td><span class="pill planned">planned</span></td><td>CSS transitions and animations: opacity, transforms and colours in the renderer (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>); width, height and margins through the Host (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
+          <tr><td><span class="pill works">implemented</span></td><td>CSS 2D transforms on the Host: <code>translate</code>, <code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code> and <code>transform-origin</code> are a matrix on the box's display list entry and on its plan node. The box keeps the place layout gave it, what is inside it is carried with it, and a pointer lands on the shape that is drawn. A 3D transform is left out, and a warning names the element and the transform (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>)</td></tr>
+          <tr><td><span class="pill works">implemented</span></td><td>CSS transitions and animations on the Host. A transition or <code>@keyframes</code> animation of <code>opacity</code>, <code>transform</code> or <code>background-color</code> is described for the renderer (property, keyframes, duration, delay, easing, repeat, direction, fill) and costs the Host nothing per frame. One that changes layout (<code>width</code>, <code>margin</code> and the rest) is ticked: <code>HtmlDom::tick</code> resolves the page at the frame's time and returns what moved (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>, <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>). <code>prefers-reduced-motion</code> follows <code>HtmlConfig::reduced_motion</code></td></tr>
+          <tr><td><span class="pill partial">partial</span></td><td>Drawing transforms on screen. A 2D transform reaches compose-rust 0.0.2 as a <code>Transform</code> modifier. Transitions and animations are not written to the renderer yet, although compose-rust 0.0.2 carries animation records; 3D transforms are skipped with a warning (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>, <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>)</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Keys and focus as DOM events on HTML screens. Enter delivers <code>keydown</code> and <code>keypress</code>, bubbling from the focused element, and a field delivers <code>focus</code>, <code>blur</code>, <code>focusin</code> and <code>focusout</code>; tested on the Host. Enter is the one key compose-rust carries and it has no key release, so <code>keyup</code> is never sent; it reports a field losing the focus but not gaining it, so <code>focus</code> arrives with the first keystroke (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Light and dark while running. <code>prefers-color-scheme</code> follows the theme when the application switches it to light or dark, and only the boxes whose style changed are sent. A system change is applied by the renderer and not reported to the Host, so a theme that follows the system keeps the configured scheme (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>)</td></tr>
           <tr><td><span class="pill planned">planned</span></td><td>Zooming HTML screens the way VS Code does, starting from the system text size (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/58">#58</a>)</td></tr>
@@ -98,6 +100,17 @@
         </tbody>
       </table>
     </div>
+
+    <h2 id="drawing">What HTML screens do not draw on screen yet</h2>
+    <p>
+      The bridge writes the plan into compose-rust's batch, and the records are tested on the Host.
+      Drawing in a window has not been confirmed by running the renderer.
+    </p>
+    <ul>
+      <li>Transitions and animations. compose-rust 0.0.2 carries animation records; the bridge does not write them yet. The Host already describes the motions. 2D transforms are written as a <code>Transform</code> modifier.</li>
+      <li>Animating layout properties such as width (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>) is advanced by the Host each frame and
+        needs nothing more from compose-rust.</li>
+    </ul>
 
     <h2 id="widgets">The Compose widget path</h2>
     <div class="tablewrap">
@@ -108,7 +121,7 @@
           <tr><td><span class="pill works">implemented</span></td><td><code>LazyColumn</code> and <code>LazyRow</code> windowing: the renderer asks for a range and the Host builds only that</td></tr>
           <tr><td><span class="pill works">implemented</span></td><td>Seven design systems behind one role-based contract, unified or following the host platform</td></tr>
           <tr><td><span class="pill partial">partial</span></td><td>Streaming text: appended tails coalesce per frame, and there is no <code>rsx!</code>-level API for them</td></tr>
-          <tr><td><span class="pill planned">planned</span></td><td>The Markdown crate <code>dioxus-compose-markdown</code>, Markdown to widgets with streaming (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>)</td></tr>
+          <tr><td><span class="pill planned">planned</span></td><td>The Markdown crate <code>dioxus-compose-markdown</code>, Markdown to widgets with streaming (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/24">#24</a>; a draft in <a href="https://github.com/DarkPyonix/dioxus-compose/pull/68">#68</a>)</td></tr>
         </tbody>
       </table>
     </div>
@@ -141,8 +154,8 @@
       <dt>Is there a webview anywhere?</dt>
       <dd>No. CSS is computed in Rust by blitz-dom, and Compose draws the result.</dd>
       <dt>Is it on crates.io?</dt>
-      <dd>Version 0.0.0 is, as an early snapshot with the widget path only. The HTML path is on the
-        <code>develop</code> branch; see <a href="getting-started.html">Getting started</a>.</dd>
+      <dd>Yes, version 0.0.1, with both paths, on compose-rust 0.0.1. The 0.0.x releases are early and
+        the API will change; see <a href="getting-started.html">Getting started</a>.</dd>
       <dt>Do I need Kotlin?</dt>
       <dd>No. The renderer arrives prebuilt through compose-rust, and your code is Rust only.</dd>
     </dl>

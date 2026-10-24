@@ -1149,3 +1149,40 @@ fn fr34_plain_text_sends_no_span() {
         vec![Record::Prop(text, PropertyKind::Spans, Value::None)]
     );
 }
+
+fn transformed() -> Element {
+    rsx! {
+        div { style: "position: relative; width: 300px; height: 200px",
+            div { style: "position: absolute; left: 10px; top: 5px; width: 100px; height: 40px; background-color: rgb(255, 0, 0); transform: translate(20px, 30px) scale(2); transform-origin: 0 0" }
+        }
+    }
+}
+
+/// FR-34.1: a 2D transform goes to compose-rust as one `Transform` modifier. The origin is
+/// folded into the matrix, so the origin sent is (0, 0).
+#[test]
+fn fr34_1_transform_is_sent_as_a_matrix_about_the_top_left() {
+    let mut host = Host::html(transformed, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let node = node_with(&first, &Modifier::Background(rgb(255, 0, 0)));
+    let modifiers = modifiers_of(&first, node);
+    let sent = modifiers.iter().find_map(|modifier| match modifier {
+        Modifier::Transform {
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            origin_x,
+            origin_y,
+        } => Some([*a, *b, *c, *d, *e, *f, *origin_x, *origin_y]),
+        _ => None,
+    });
+    // `translate(20px, 30px) scale(2)` about the top left: x goes to 2x + 20.
+    assert_eq!(
+        sent,
+        Some([2.0, 0.0, 0.0, 2.0, 20.0, 30.0, 0.0, 0.0]),
+        "{modifiers:?}"
+    );
+}

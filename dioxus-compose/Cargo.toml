@@ -1,9 +1,8 @@
 [package]
 name = "dioxus-compose"
-# 0.0.0 on purpose: the boundary works and so do the desktop and iOS renderers, but the
-# widget vocabulary is still being filled in and nothing here is stable yet. A number that
-# says so is more honest than one that implies a first usable release.
-version = "0.0.0"
+# 0.0.1: the first release published with compose-rust 0.0.1. Nothing here is stable yet,
+# and a number that says so is more honest than one that implies a first usable release.
+version = "0.0.1"
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -13,6 +12,8 @@ homepage = "http://darkpyonix.dev/dioxus-compose/"
 keywords = ["ui", "gui", "dioxus", "compose", "desktop"]
 categories = ["gui"]
 readme = "../README.md"
+# Only the library goes to crates.io: tests, benchmarks and examples need the repository.
+exclude = ["tests/", "examples/", "benches/"]
 
 [lib]
 # An rlib only. The boundary's C, JNI and wasm exports are compose-rust's, and so is the
@@ -34,10 +35,11 @@ mock-renderer = ["compose-rust/mock-renderer"]
 native-renderer = ["compose-rust/native-renderer"]
 
 [dependencies]
-# The boundary, the protocol, the schema and the renderer it links. Pinned to one commit,
+# The boundary, the protocol, the schema and the renderer it links. Pinned to one tag,
 # because the records the Host writes and the renderer reads are versioned together: a
 # different compose-rust is a different wire format.
-compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", rev = "f7e7ce7bd1f40fefa59b931bd6ebf5423862acc8", default-features = false }
+# TODO: 배포되면 버전 의존성으로 바꾼다 (compose-rust 0.0.2 crates.io).
+compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", tag = "v0.0.2", default-features = false }
 dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
@@ -57,6 +59,9 @@ blitz-traits = "=0.2.0"
 # lines and stylo's computed values directly.
 parley = "=0.6.0"
 style = { package = "stylo", version = "=0.8.0" }
+# `ToCss`, which writes a computed transform back as CSS for the warning that names a 3D
+# transform the display list leaves out.
+style_traits = { package = "stylo_traits", version = "=0.8.0" }
 # The same Taffy blitz-dom drives, with the same algorithms switched on: the layout pass
 # implements Taffy's tree traits over blitz-dom's nodes.
 taffy = { version = "0.9", default-features = false, features = [

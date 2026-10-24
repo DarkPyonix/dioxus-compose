@@ -136,18 +136,25 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
 
     <h2 id="css">A CSS feature has no effect</h2>
     <ul>
-      <li><code>rotate</code>, <code>scale</code>, <code>skew</code>, <code>matrix()</code> and
-        <code>transform-origin</code> are not drawn; <code>translate</code> is
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
       <li><code>font-family</code>, <code>font-style</code> and <code>text-decoration</code> do not
         reach the screen. Text is drawn in the design system's typeface, because compose-rust's
         <code>Text</code> takes no font family or italic (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><code>object-fit: fill</code> on an image with a different aspect ratio is drawn
         letterboxed, because compose-rust's <code>Image</code> draws a picture whole and centred
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
-      <li>Transitions and animations do not play
-        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
-        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>).</li>
+      <li>A 3D transform (<code>rotateX</code>, <code>perspective</code>, a <code>matrix3d()</code>
+        that is not flat) is left out: the element is drawn without it, and a warning on stderr names
+        the element and the transform. The 2D ones are carried by the Host
+        (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>); drawing them on screen waits for compose-rust.</li>
+      <li>A transition or animation that does not move on screen is waiting for compose-rust's
+        animation records (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>,
+        <a href="https://github.com/DarkPyonix/dioxus-compose/issues/47">#47</a>). In the Host, <code>opacity</code>, <code>transform</code> and
+        <code>background-color</code> motions are in the display list, and the ones that change layout
+        come from <code>HtmlDom::tick</code>, which you call each frame while
+        <code>HtmlDom::needs_frames</code> is true.</li>
+      <li><code>@media (prefers-reduced-motion: reduce)</code> matches when
+        <code>HtmlConfig::reduced_motion</code> is set. The rewrite covers the stylesheets in
+        <code>HtmlConfig::stylesheets</code>, not a <code>&lt;style&gt;</code> element you render.</li>
       <li>A <code>&lt;script&gt;</code> does nothing, by design. Behaviour is written in Rust.</li>
       <li>The user-agent stylesheet gives <code>body</code> an 8px margin, as a browser's does.
         The examples start their stylesheets with <code>body { margin: 0; }</code>.</li>

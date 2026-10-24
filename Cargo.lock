@@ -323,10 +323,21 @@ dependencies = [
 
 [[package]]
 name = "compose-rust"
-version = "0.0.1"
-source = "git+https://github.com/DarkPyonix/compose-rust?rev=f7e7ce7bd1f40fefa59b931bd6ebf5423862acc8#f7e7ce7bd1f40fefa59b931bd6ebf5423862acc8"
+version = "0.0.2"
+source = "git+https://github.com/DarkPyonix/compose-rust?tag=v0.0.2#c4d92ed22abc5d17662b2885a3a323147a33fed6"
 dependencies = [
+ "compose-rust-macros",
  "jni",
+]
+
+[[package]]
+name = "compose-rust-macros"
+version = "0.0.2"
+source = "git+https://github.com/DarkPyonix/compose-rust?tag=v0.0.2#c4d92ed22abc5d17662b2885a3a323147a33fed6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -579,26 +590,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "dioxus-baseline"
-version = "0.0.0"
-dependencies = [
- "dioxus-compose",
- "sample-academic",
- "sample-calculator",
- "sample-chat",
- "sample-minimal",
- "sample-notepad",
- "sample-podcast",
- "sample-selfcare",
- "sample-social",
- "sample-statistics",
- "sample-store",
- "sample-todo",
-]
-
-[[package]]
 name = "dioxus-compose"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "blitz-dom",
  "blitz-html",
@@ -612,6 +605,7 @@ dependencies = [
  "dioxus-signals",
  "parley",
  "stylo",
+ "stylo_traits",
  "taffy",
 ]
 
@@ -2014,40 +2008,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sample-academic"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-calculator"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-chat"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-frames"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
-]
-
-[[package]]
 name = "sample-html-article"
 version = "0.0.0"
 dependencies = [
@@ -2091,6 +2051,36 @@ version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-landing"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-layout"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
+name = "sample-html-motion"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
  "sample-html-support",
 ]
 
@@ -2150,85 +2140,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sample-html-typography"
+version = "0.0.0"
+dependencies = [
+ "dioxus-compose",
+ "dioxus-hooks",
+ "dioxus-signals",
+ "sample-html-support",
+]
+
+[[package]]
 name = "sample-html-workbench"
 version = "0.0.0"
 dependencies = [
  "dioxus-compose",
  "dioxus-hooks",
  "dioxus-signals",
-]
-
-[[package]]
-name = "sample-minimal"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-notepad"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "futures-channel",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-podcast"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-selfcare"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-social"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-statistics"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-store"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
-]
-
-[[package]]
-name = "sample-todo"
-version = "0.1.0"
-dependencies = [
- "dioxus-compose",
- "dioxus-hooks",
- "sample-frames",
 ]
 
 [[package]]

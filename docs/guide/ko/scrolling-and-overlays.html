@@ -212,10 +212,17 @@
         위치는 렌더러가 갖습니다. 페이지 자체는 창 크기의 세로 스크롤 안에 놓입니다. Host 에서 테스트했고
         화면에서는 아직 확인하지 않았습니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
-      <li><strong>움직이는 오버레이.</strong> <span class="pill planned">계획</span> CSS transition 으로
-        나타나거나 미끄러져 들어오는 메뉴와 대화 상자는 지금 움직이지 않습니다. 애니메이션 속성이 첫
-        값에 머뭅니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
+      <li><strong>움직이는 오버레이.</strong> <span class="pill partial">부분</span> CSS transition 으로
+        나타나거나 미끄러져 들어오는 메뉴와 대화 상자는 렌더러가 재생하도록 설명으로 넘기고, 끝 값은 표시
+        목록에 들어 있습니다. compose-rust 에 애니메이션 레코드가 생기기 전까지는 화면에서 움직이지
+        않습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
     </ul>
+
+    <p>
+      <strong>예제 더 보기.</strong> <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>samples/layout</code></a> 에는 <code>position: sticky</code>,
+      <code>z-index</code>, relative 상자 안의 absolute 상자가 있으며, 오버레이를 이루는 조각들입니다.
+      <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>samples/motion</code></a> 에는 폭 transition 과 <code>@keyframes</code> 가 있습니다.
+    </p>
 
     <nav class="pagenav" aria-label="페이지 이동">
       <a class="prev" href="images.html"><span>이전</span>&larr; 이미지와 배경</a>
