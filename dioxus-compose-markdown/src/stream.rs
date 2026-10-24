@@ -417,24 +417,36 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
     } else {
         count - 2
     };
-    // A paragraph holding a backtick followed by a unit that opens with a code fence is
-    // not settled: while the fence is the last thing received it reads as a fence, but
-    // text that arrives later can show the line to be the end of an inline code span
-    // that began in the paragraph. The paragraph waits, and is parsed again with what
-    // follows it.
-    if settled > 0 && settled < count {
-        let next = floor_boundary(text, units[settled].range.start.min(text.len()));
-        let opens_fence = {
-            let line = text[next..].trim_start_matches(' ');
-            line.starts_with("```") || line.starts_with("~~~")
-        };
-        let before = &text[floor_boundary(text, units[settled - 1].range.start.min(text.len()))
-            ..floor_boundary(text, units[settled - 1].range.end.min(text.len()))];
-        if opens_fence && before.contains('`') {
-            settled -= 1;
+    // A block is settled only once a blank line separates it from the next one. Without
+    // the blank line, text that arrives later can still turn the next block's first line
+    // into a continuation of this one: the closing end of an inline code span, a
+    // strikethrough or an entity, a lazy quote line, a setext underline, a table row. The
+    // blank line is what CommonMark ends every one of those on, so it is the one point
+    // after which nothing that follows can reach back.
+    while settled > 0 {
+        let from = floor_boundary(text, units[settled - 1].range.start.min(text.len()));
+        let to = floor_boundary(text, units[settled].range.start.min(text.len()));
+        if from <= to && ends_with_blank_line(&text[from..to]) {
+            break;
         }
+        settled -= 1;
     }
     settled
+}
+
+/// Whether the text ends with a blank line: a line terminator, then a line holding
+/// nothing or only spaces and tabs, then a line terminator.
+fn ends_with_blank_line(text: &str) -> bool {
+    let blank = |character: char| character == ' ' || character == '\t';
+    let text = text.trim_end_matches(blank);
+    let text = if let Some(rest) = text.strip_suffix("\r\n") {
+        rest
+    } else if let Some(rest) = text.strip_suffix(['\n', '\r']) {
+        rest
+    } else {
+        return false;
+    };
+    text.trim_end_matches(blank).ends_with(['\n', '\r'])
 }
 
 /// The start of the line holding `position`. Lines end the three ways CommonMark says:

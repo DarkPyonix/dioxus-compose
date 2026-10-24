@@ -270,3 +270,34 @@ fn fr37_a_span_closed_on_the_next_line_streams_like_it_parses() {
         assert_eq!(streamed, whole, "{text:?}");
     }
 }
+
+/// A paragraph followed by a line that a later line reinterprets must not be frozen: here
+/// `~~(    code` and `)-` end up in different blocks than the prefix suggested. Every block
+/// frozen along the way has to equal the same block of the finished parse.
+///
+/// Found by the random test above with seed 0xae55216eb44ebcd8.
+#[test]
+fn fr37_a_block_is_not_frozen_until_a_blank_line_follows_it() {
+    let documents = [
+        "a ~~(\n)-\n\n**b**",
+        "&amp;# 2) ~~(    code\n)-\n\nnext",
+        "></div>é  \u{0}<div><script></div>|---|:-:|\n\n# &<!--\\*````rust\n    code\n\r&amp;# 2) ~~(    code\n)-\n\n**| a | b |\n```diff\n&\u{7f}<!--(|[>1. __- [ ] -->\n\n~~| a | b |\n~~~\n[y][x]---\n    code\n- [ ] `\\~~~\n2) ~~~\n* &한글---\n>2) 1. _    code\n</div>]<words hereéé\n`````diff\n    code\n<#-->[y][x]\n\n\n-->## ",
+    ];
+    for text in documents {
+        let whole = parse(text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        let mut buffer = [0_u8; 4];
+        for character in text.chars() {
+            stream.push_delta(character.encode_utf8(&mut buffer));
+            let frozen: Vec<_> = stream.blocks().take(stream.frozen_len()).cloned().collect();
+            assert_eq!(
+                frozen,
+                whole[..frozen.len().min(whole.len())],
+                "a frozen block differs from the finished parse\n{text:?}"
+            );
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(streamed, whole, "{text:?}");
+    }
+}
