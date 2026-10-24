@@ -39,9 +39,10 @@ pub fn app() -> Element {
 ```
 
 [`samples/hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello) 를 줄인
-것입니다. **지금은 배치까지 되고 아직 화면에 그려지지 않습니다**
-([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). Host 가 Rust 에서 레이아웃과 그리기 계획을 계산하고, 그 계획을 렌더러에 보내는 다리는
-compose-rust 의 그리기 원소를 기다립니다. [이유와 기다리는 것](#html-화면이-아직-그려지지-않는-이유).
+것입니다. **Rust 에서 배치하고, HTML 다리를 거쳐 렌더러로 보냅니다**
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). 렌더러가 받는 레코드는 Host 에서
+테스트합니다. 그것을 창에 그리는 것은 아직 렌더러를 돌려 확인하지 않았으므로, 다리는 아직 부분으로
+표시합니다.
 
 웹에서 쓰듯 Dioxus 앱을 씁니다. `div`, `span` 과 CSS 를 담은 `rsx!`, 훅과 시그널입니다. `blitz-dom` 이
 Host 안에서 스타일과 레이아웃을 계산하고, 상자와 글자를 그리는 것은
@@ -57,7 +58,7 @@ Host 안에서 스타일과 레이아웃을 계산하고, 상자와 글자를 �
 
 - [왜 만드는가](#왜-만드는가)
 - [현재 상태](#현재-상태)
-- [HTML 화면이 아직 그려지지 않는 이유](#html-화면이-아직-그려지지-않는-이유)
+- [HTML 화면이 아직 화면에 그리지 못하는 것](#html-화면이-아직-화면에-그리지-못하는-것)
 - [화면을 쓰는 두 가지 방법](#화면을-쓰는-두-가지-방법)
 - [시작하기](#시작하기)
 - [예제](#예제)
@@ -117,7 +118,7 @@ compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/t
 
 **0.0.x 는 초기 릴리스 단계입니다.** crates.io 의 dioxus-compose 0.0.1 에는 두 경로가 다 있고
 compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계획까지 되고 아직 그려지지 않습니다(렌더러
-다리는 작성되었고 compose-rust 를 기다립니다. 아래 참고). API 는 바뀝니다.
+다리는 그 릴리스에 없습니다. 아래 참고). API 는 바뀝니다.
 
 | 상태 | 항목 |
 |---|---|
@@ -126,33 +127,27 @@ compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계�
 | 구현 | VS Code 가 잰 텍스트 크기로, 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(2026-10-03 macOS 에서 측정) |
 | 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열다섯 개, 각각 Host 에서 테스트 |
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
-| 부분 | HTML 화면을 화면에 그리기: 계획이 있고 compose-rust 렌더러로 가는 다리는 [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)에 작성되어 테스트가 통과하며, 아직 병합되지 않은 [compose-rust #74](https://github.com/DarkPyonix/compose-rust/pull/74)의 그리기 원소를 기다리고, 그다음 compose-rust 0.0.2 를 기다림([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43). [이유](#html-화면이-아직-그려지지-않는-이유)) |
+| 부분 | HTML 화면을 화면에 그리기: 다리가 계획을 compose-rust 의 배치(batch)에 씀(`AbsoluteBox`, `Box`, `Text`, `Image`, 입력 컨트롤). 처음에는 트리 전체, 그 뒤로는 바뀐 것만 보내고, 렌더러의 이벤트는 Dioxus 핸들러에 닿음. 렌더러가 받는 레코드로 Host 에서 테스트했고, 화면에서는 아직 확인하지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면에서 DOM 이벤트로서의 키와 포커스: compose-rust 가 실어 나르는 유일한 키인 Enter 의 `keydown` 과 `keypress`, 입력 칸의 `focus`, `blur`, `focusin`, `focusout`. Host 에서 테스트함. compose-rust 는 입력 칸이 포커스를 잃는 것은 알리지만 얻는 것은 알리지 않아서 `focus` 는 첫 입력과 함께 오고, 키를 뗀 것은 실어 나르지 않아서 `keyup` 은 보내지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면의 `prefers-color-scheme` 은 앱이 실행 중에 테마를 밝게나 어둡게 바꾸면 따라감. 시스템의 변화는 렌더러가 적용하고 Host 에 알리지 않아서, 시스템을 따르는 테마에서는 설정한 색 구성표를 유지함([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 구현 | Host 에서 CSS 2D 변환(`translate`, `rotate`, `scale`, `skew`, `matrix()`, `transform-origin`)과 CSS transition, animation: 변환된 상자는 레이아웃 자리를 지킨 채 행렬을 싣고, 포인터는 그려진 모양에 닿고, `opacity`, `transform`, `background-color` 의 움직임은 렌더러가 재생하도록 설명으로 넘기며, 레이아웃을 바꾸는 움직임은 Host 가 프레임마다 돌립니다([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
-| 계획 | 변환, transition, animation 을 화면에 그리기: compose-rust 의 변환 수정자와 애니메이션 레코드를 기다림([compose-rust#83](https://github.com/DarkPyonix/compose-rust/pull/83)). 3D 변환은 compose-rust 가 그릴 때까지 경고와 함께 건너뜀 |
+| 부분 | 변환을 화면에 그리기: 2D 변환은 compose-rust 0.0.2 의 `Transform` 수정자로 갑니다. compose-rust 0.0.2 가 애니메이션 레코드를 싣지만 transition 과 animation 은 아직 렌더러에 쓰지 않고, 3D 변환은 경고와 함께 건너뜁니다([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |
 | 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24). 초안 [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
 
 전체 목록은 가이드의 [현황 페이지](http://darkpyonix.dev/dioxus-compose/ko/status.html)에 있습니다.
 
-### HTML 화면이 아직 그려지지 않는 이유
+### HTML 화면이 아직 화면에 그리지 못하는 것
 
-Host 는 HTML 화면을 배치하고 그리기를 계획하며, 둘 다 테스트가 있습니다. 없는 것은 마지막 단계, 곧
-계획을 compose-rust 렌더러에 보내는 일입니다. 각 부분의 상태는 다음과 같습니다.
+다리는 계획을 compose-rust 의 배치(batch)에 쓰고, 그 레코드는 Host 에서 테스트합니다. 창에 그리는 것은
+렌더러를 돌려 확인하지 않았습니다.
 
-- 다리는 [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)에 작성되어 있고, 그 테스트는 통과합니다.
-- compose-rust 의 FR-42 그리기 원소가 필요합니다. `AbsoluteBox` 와, 변마다 정하는 테두리, 모서리마다
-  정하는 반지름, 그림자, 클립, 알파, 오프셋, 크기 모디파이어입니다. 이것은 [compose-rust #74](https://github.com/DarkPyonix/compose-rust/pull/74)에 있고 아직
-  병합되지 않았습니다.
-- `motion` 예제의 렌더러 쪽(회전, 확대, 기울임, 렌더러가 재생하는 transition 과 animation)은
-  compose-rust 의 FR-41 이 필요합니다. 이것은 [compose-rust #83](https://github.com/DarkPyonix/compose-rust/pull/83)에 있고 아직 병합되지 않았습니다.
-- 폭 같은 레이아웃 속성의 애니메이션([#47](https://github.com/DarkPyonix/dioxus-compose/issues/47))은 Host 가 프레임마다 진행시키므로, 다리 말고는
-  compose-rust 에 필요한 것이 없습니다.
-
-소유자가 정한 계획은 이렇습니다. compose-rust 0.0.2 를 #74 와 #83 을 담아 crates.io 에 내고, [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)이
-compose-rust =0.0.2 에 의존하도록 옮긴 뒤 CI 가 통과하면 병합합니다. 그 릴리스부터 HTML 예제가 창에
-그려집니다. 날짜는 없습니다. 이 계획은 위의 두 병합과 그 릴리스를 기다리기 때문입니다.
+- transition 과 animation. compose-rust 0.0.2 는 애니메이션 레코드를 싣지만 다리가 아직 그것을 쓰지
+  않습니다. 움직임 설명은 이미 Host 가 합니다. 2D 변환은 `Transform` 수정자로 갑니다.
+- 폭 같은 레이아웃 속성의 애니메이션([#47](https://github.com/DarkPyonix/dioxus-compose/issues/47))은
+  Host 가 프레임마다 진행하며 compose-rust 에 더 필요한 것이 없습니다.
 
 ---
 
@@ -160,7 +155,7 @@ compose-rust =0.0.2 에 의존하도록 옮긴 뒤 CI 가 통과하면 병합합
 
 | 쓰는 것 | import | 지금 |
 |---|---|---|
-| HTML 요소와 CSS: `div`, `span`, `input`, 스타일시트 | `dioxus_compose::html::prelude::*` | Host 에서 배치하고 계획까지, 아직 그리지 않음 |
+| HTML 요소와 CSS: `div`, `span`, `input`, 스타일시트 | `dioxus_compose::html::prelude::*` | Host 에서 배치하고 렌더러로 보냄, 화면에서는 아직 확인하지 않음 |
 | Compose 위젯 이름: `Column`, `Text`, `Button` | `dioxus_compose::prelude::*` | 렌더러가 그림 |
 
 둘 다 늘 크레이트에 있고, 어느 쪽도 기능 플래그로 끄지 않습니다. 두 prelude 가 각자 자기 요소 이름을
@@ -240,8 +235,22 @@ fn main() {
 }
 ```
 
-`cargo run` 은 상자를 출력합니다. 렌더러 다리가 생기기 전까지는 HTML 화면을 그리는 것이 없으므로 아직
-창은 열리지 않습니다. 위젯 경로 앱은 대신 `dioxus_compose::launch(app)` 을 불러 창을 엽니다. 렌더러는
+`cargo run` 은 상자를 출력합니다. 대신 창에 페이지를 열려면 위젯 앱과 같은 방식으로 실행합니다.
+
+```rust
+fn config() -> HtmlConfig {
+    HtmlConfig { stylesheets: vec![STYLE.to_string()], ..HtmlConfig::default() }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new().with_html(config).launch(app);
+}
+```
+
+`dioxus_compose::html::launch(app)` 은 기본 설정으로 같은 일을 합니다. `cargo run -p sample-html-hello`
+가 이 방식으로 `samples/hello` 를 엽니다. 다리의 레코드는 Host 에서 테스트하고, 창 자체는 아직 렌더러를
+돌려 확인하지 않았습니다([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). 위젯 경로 앱은
+`dioxus_compose::launch(app)` 을 부릅니다. 렌더러는
 [compose-rust](https://github.com/DarkPyonix/compose-rust) 의 빌드 스크립트가 대상 플랫폼용으로 내려받는
 미리 빌드된 네이티브 라이브러리이고, 직접 빌드하는 방법은 그쪽에 있습니다.
 
@@ -294,7 +303,7 @@ your component (rsx! with div, span, CSS)
   -> blitz-dom document                Stylo resolves CSS, Taffy lays out
   -> DisplayList                       boxes, colours, text runs, fields, images
   -> Plan, and its diff                drawing elements; only what changed is sent
-  -> Compose renderer (compose-rust)   draws (the bridge is written in #67, not merged)
+  -> Compose renderer (compose-rust)   draws (bridge built; on screen not yet confirmed)
 ```
 
 **렌더러는 CSS 를 보지 않습니다.** 사각형, 색, 텍스트 조각을 받습니다. 그래서 렌더러는 작고 모든 앱에

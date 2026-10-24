@@ -1,0 +1,17 @@
+# dx project configuration for the Hello sample.
+#
+# An ordinary dx project, like the native-widget samples, so the layout is the one
+# `dx new` gives and the sample can be copied out of this repository as it is.
+
+[application]
+name = "Hello"
+asset_dir = "assets"
+
+[bundle]
+identifier = "dev.darkpyonix.dioxuscompose.samples.hello"
+publisher = "DarkPyonix"
+short_description = "A page written with HTML and CSS."
+long_description = "A heading, a paragraph with bold and italic words, and a link that counts its clicks, laid out by the Host and drawn by Compose."
+
+[macos]
+bundle_name = "Hello"

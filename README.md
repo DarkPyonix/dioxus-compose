@@ -39,10 +39,10 @@ pub fn app() -> Element {
 ```
 
 This is [`samples/hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello),
-trimmed. **It is laid out today and not drawn on screen yet**
-([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)): the Host computes the layout and a drawing plan in Rust, and the bridge that sends the
-plan to the renderer waits for compose-rust's drawing elements. [Why, and what it waits
-for](#why-html-screens-are-not-drawn-yet).
+trimmed. **It is laid out in Rust and sent to the renderer through the HTML bridge**
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). The records the renderer receives
+are tested on the Host; drawing them in a window has not been confirmed by running the renderer
+yet, so the bridge is still marked partial.
 
 You write a Dioxus app the way you would for the web: `rsx!` with `div`, `span` and CSS, hooks
 and signals. `blitz-dom` computes styles and layout inside the Host, and
@@ -58,7 +58,7 @@ way to write a screen. That path draws through the renderer today.
 
 - [Why this exists](#why-this-exists)
 - [Status](#status)
-- [Why HTML screens are not drawn yet](#why-html-screens-are-not-drawn-yet)
+- [What HTML screens do not draw on screen yet](#what-html-screens-do-not-draw-on-screen-yet)
 - [Two ways to write a screen](#two-ways-to-write-a-screen)
 - [Getting started](#getting-started)
 - [Samples](#samples)
@@ -121,7 +121,7 @@ measurements of this project.
 
 **0.0.x is an early release stage.** dioxus-compose 0.0.1 on crates.io has both paths and depends
 on compose-rust 0.0.1. HTML screens are laid out and planned but not yet drawn (the renderer bridge
-is written and waits for compose-rust, see below). The API will change.
+is not in that release, see below). The API will change.
 
 | State | Item |
 |---|---|
@@ -130,10 +130,12 @@ is written and waits for compose-rust, see below). The API will change.
 | implemented | Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (measured 2026-10-03, macOS) |
 | implemented | Fifteen HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
 | implemented | Compose widgets in `rsx!`, drawn by the renderer: macOS, Android and the web end to end; Windows, Linux and iOS build and start |
-| partial | Drawing HTML screens on screen: the plan exists and the bridge to compose-rust's renderer is written in [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67) (tests pass), and it waits for compose-rust's drawing elements in [compose-rust #74](https://github.com/DarkPyonix/compose-rust/pull/74), not merged, then for compose-rust 0.0.2 ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43); [why](#why-html-screens-are-not-drawn-yet)) |
+| partial | Drawing HTML screens on screen: the bridge writes the plan into compose-rust's batch (`AbsoluteBox`, `Box`, `Text`, `Image`, fields), first the whole tree and then only what changed, and renderer events reach the Dioxus handlers. Tested on the Host against the records the renderer receives; not yet confirmed on screen ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | partial | Text measured by Compose: the measure call is being implemented in compose-rust; Parley measures text until then ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| partial | Keys and focus as DOM events on HTML screens: `keydown` and `keypress` for Enter, the one key compose-rust carries, and `focus`, `blur`, `focusin` and `focusout` on fields. Tested on the Host. compose-rust reports a field losing the focus but not gaining it, so `focus` arrives with the first keystroke, and it carries no key release, so `keyup` is never sent ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| partial | `prefers-color-scheme` on HTML screens follows the theme when the application switches it to light or dark while running. A system change is applied by the renderer and not reported to the Host, so a theme that follows the system keeps the configured scheme ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | implemented | CSS 2D transforms (`translate`, `rotate`, `scale`, `skew`, `matrix()`, `transform-origin`) and CSS transitions and animations on the Host: a transformed box keeps its layout place and carries a matrix, a pointer lands on the shape that is drawn, a motion of `opacity`, `transform` or `background-color` is described for the renderer to play, and one that changes layout is ticked by the Host each frame ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
-| planned | Drawing transforms, transitions and animations on screen: waits for compose-rust's transform modifier and animation records ([compose-rust#83](https://github.com/DarkPyonix/compose-rust/pull/83)); 3D transforms are skipped with a warning until compose-rust draws them |
+| partial | Drawing transforms on screen: a 2D transform reaches compose-rust 0.0.2 as a `Transform` modifier. Transitions and animations are not written to the renderer yet, although compose-rust 0.0.2 carries animation records; 3D transforms are skipped with a warning ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | planned | Zooming HTML screens the way VS Code does |
 | planned | HTML and widgets on one screen |
 | planned | The Markdown crate `dioxus-compose-markdown` ([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24); draft [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
@@ -141,23 +143,15 @@ is written and waits for compose-rust, see below). The API will change.
 The [status page](http://darkpyonix.dev/dioxus-compose/en/status.html) of the guide has the full
 list.
 
-### Why HTML screens are not drawn yet
+### What HTML screens do not draw on screen yet
 
-The Host lays HTML screens out and plans the drawing today, and tests cover both. What is missing is
-the last step, sending the plan to compose-rust's renderer. This is where each part stands.
+The bridge writes the plan into compose-rust's batch, and the records are tested on the Host. Drawing
+in a window has not been confirmed by running the renderer.
 
-- The bridge is written in [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67), and its tests pass.
-- It needs compose-rust's FR-42 drawing elements: `AbsoluteBox` and the per-side border, per-corner
-  radius, shadow, clip, alpha, offset and size modifiers. They are in [compose-rust #74](https://github.com/DarkPyonix/compose-rust/pull/74), which is not merged.
-- The renderer half of the `motion` sample (rotate, scale and skew, and the transitions and
-  animations the renderer plays) needs compose-rust's FR-41. It is in [compose-rust #83](https://github.com/DarkPyonix/compose-rust/pull/83), which is not merged.
-- Animating layout properties such as width ([#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) is advanced by the Host each frame. It needs
-  nothing from compose-rust beyond the bridge.
-
-The plan, decided by the owner: compose-rust 0.0.2 is published on crates.io with #74 and #83, then
-[#67](https://github.com/DarkPyonix/dioxus-compose/pull/67) moves to depend on compose-rust =0.0.2 and merges when CI is green. From that release, HTML
-samples draw in a window. There is no date, because the plan waits on those two merges and that
-release.
+- Transitions and animations. compose-rust 0.0.2 carries animation records; the bridge does not write
+  them yet. The Host already describes the motions. 2D transforms are written as a `Transform` modifier.
+- Animating layout properties such as width ([#47](https://github.com/DarkPyonix/dioxus-compose/issues/47))
+  is advanced by the Host each frame and needs nothing more from compose-rust.
 
 ---
 
@@ -165,7 +159,7 @@ release.
 
 | You write | Import | Today |
 |---|---|---|
-| HTML elements and CSS: `div`, `span`, `input`, a stylesheet | `dioxus_compose::html::prelude::*` | Laid out and planned in the Host, not drawn yet |
+| HTML elements and CSS: `div`, `span`, `input`, a stylesheet | `dioxus_compose::html::prelude::*` | Laid out in the Host and sent to the renderer; not yet confirmed on screen |
 | Compose widget names: `Column`, `Text`, `Button` | `dioxus_compose::prelude::*` | Drawn by the renderer |
 
 Both are always in the crate; no feature flag turns either off. An `rsx!` block uses one vocabulary
@@ -245,9 +239,24 @@ fn main() {
 }
 ```
 
-`cargo run` prints the boxes. No window opens yet, because nothing draws HTML screens until the
-renderer bridge lands. A widget-path app calls `dioxus_compose::launch(app)` instead and opens a
-window. The renderer is a prebuilt native library that
+`cargo run` prints the boxes. To open the page in a window instead, launch it the way a widget app
+is launched:
+
+```rust
+fn config() -> HtmlConfig {
+    HtmlConfig { stylesheets: vec![STYLE.to_string()], ..HtmlConfig::default() }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new().with_html(config).launch(app);
+}
+```
+
+`dioxus_compose::html::launch(app)` does the same with the default configuration.
+`cargo run -p sample-html-hello` opens `samples/hello` this way. The bridge's records are tested on
+the Host, and the window itself has not been checked by running the renderer yet
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). A widget-path app calls
+`dioxus_compose::launch(app)`. The renderer is a prebuilt native library that
 [compose-rust](https://github.com/DarkPyonix/compose-rust)'s build script downloads for your target;
 building it yourself is covered there.
 
@@ -288,7 +297,7 @@ hand-worked layout. The guide quotes them chapter by chapter. The last four (`la
 | [`typography`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography) | Font size, weight and style, line height, letter spacing, alignment, case, white space, word breaking, ellipsis, generated content, list markers, decoration |
 | [`motion`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion) | Transforms with `transform-origin`, transitions, `@keyframes`, a width transition |
 
-Samples are laid out, not drawn on screen yet. See [why](#why-html-screens-are-not-drawn-yet).
+Samples are laid out and sent to the renderer; drawing them in a window is not confirmed yet. See [what is missing](#what-html-screens-do-not-draw-on-screen-yet).
 
 ---
 
@@ -300,7 +309,7 @@ your component (rsx! with div, span, CSS)
   -> blitz-dom document                Stylo resolves CSS, Taffy lays out
   -> DisplayList                       boxes, colours, text runs, fields, images
   -> Plan, and its diff                drawing elements; only what changed is sent
-  -> Compose renderer (compose-rust)   draws (the bridge is written in #67, not merged)
+  -> Compose renderer (compose-rust)   draws (bridge built; on screen not yet confirmed)
 ```
 
 **The renderer never sees CSS.** It gets rectangles, colours and runs of text. That keeps the
