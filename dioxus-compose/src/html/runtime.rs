@@ -24,9 +24,10 @@
 //! without telling the Host, so the page keeps the scheme its configuration names.
 //!
 //! Text is measured by the configured [`TextMeasurer`](crate::html::TextMeasurer), Parley by
-//! default. compose-rust has no call that asks the renderer to measure a string, so the
-//! page is laid out with Parley's answers and the renderer draws each run at the width
-//! that came out of them.
+//! default, and the renderer draws each run at the width that came out of it. compose-rust
+//! does have a measure call that asks the renderer how big a string or a node is. The page
+//! uses it for the Compose widgets it holds ([`WidgetView`](crate::html::WidgetView)), whose
+//! content only the renderer knows. Text is not measured with it yet.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
@@ -58,6 +59,8 @@ const FALLBACK_VIEWPORT: (f32, f32) = (800.0, 600.0);
 
 /// One HTML and CSS application, running as the Host's runtime.
 pub struct HtmlRuntime {
+    /// The name the page's widgets are registered under.
+    owner: u32,
     dom: HtmlDom,
     bridge: PlanBridge,
     batch: Batch,
@@ -110,7 +113,11 @@ impl HtmlRuntime {
         let subscription = on_animation_event(Rc::new(move |moment: AnimationMoment| {
             sink.borrow_mut().push(moment)
         }));
+        let owner = crate::html_widget::new_owner();
+        // The page's first render runs inside the constructor, and its widgets belong to it.
+        let _owner = crate::html_widget::OwnerScope::enter(owner);
         Self {
+            owner,
             moments,
             _moments: subscription,
             focused: None,
@@ -136,14 +143,19 @@ impl HtmlRuntime {
         } else {
             FALLBACK_VIEWPORT
         };
-        crate::html_widget::render_islands(&mut self.batch);
-        crate::html_widget::refresh(viewport.0);
+        let _owner = crate::html_widget::OwnerScope::enter(self.owner);
+        crate::html_widget::render_islands(self.owner, &mut self.batch);
+        crate::html_widget::refresh(self.owner, viewport.0);
         if let Some(plan) = self.plan_at(viewport) {
             self.bridge
                 .apply(plan, viewport, &self.dom, &mut self.batch);
         }
         let bridge = &self.bridge;
-        crate::html_widget::attach(&|node| bridge.node_id(PlanKey::Node(node)), &mut self.batch);
+        crate::html_widget::attach(
+            self.owner,
+            &|node| bridge.node_id(PlanKey::Node(node)),
+            &mut self.batch,
+        );
     }
 
     /// Lays the document out in `viewport`, in dp, and returns what to draw.
@@ -172,17 +184,23 @@ impl HtmlRuntime {
         run_dom: bool,
         batch: &mut Batch,
     ) -> Option<u32> {
+        let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         if run_dom {
             self.deliver_moments();
             self.dom.render();
         }
         let first = self.bridge.root_node().is_none();
-        crate::html_widget::render_islands(batch);
-        crate::html_widget::refresh(viewport.0);
+        let _owner = crate::html_widget::OwnerScope::enter(self.owner);
+        crate::html_widget::render_islands(self.owner, batch);
+        crate::html_widget::refresh(self.owner, viewport.0);
         let plan = self.plan_at(viewport)?;
         self.bridge.apply(plan, viewport, &self.dom, batch);
         let bridge = &self.bridge;
-        crate::html_widget::attach(&|node| bridge.node_id(PlanKey::Node(node)), batch);
+        crate::html_widget::attach(
+            self.owner,
+            &|node| bridge.node_id(PlanKey::Node(node)),
+            batch,
+        );
         if first { self.bridge.root_node() } else { None }
     }
 
@@ -287,18 +305,17 @@ impl Runtime for HtmlRuntime {
     }
 
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
+        let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         self.deliver_moments();
         self.dom.render();
         self.draw();
     }
 
     fn handle_event(&mut self, event: &HostEvent<'_>) -> Result<i64, ProtocolError> {
-        // A widget answers for itself. A click on one then reaches the box it sits in, so
-        // the handlers of the elements around it run after the widget's own.
-        if let Some((result, bubble)) = crate::html_widget::route_event(event) {
-            if let Some(place) = bubble {
-                self.dom.click_node(place);
-            }
+        // A widget answers for itself and does not consume a click, so the renderer offers
+        // it to the clickable box around the widget, which arrives here as an ordinary
+        // click on the page.
+        if let Some(result) = crate::html_widget::route_event(event) {
             return result;
         }
         let Some(handler) = self.bridge.handler(event.handler_id) else {
@@ -376,7 +393,7 @@ impl Runtime for HtmlRuntime {
         let outer = future.as_mut().poll(context);
         // Every widget tree is polled whether or not the page has work, so each one has
         // registered the waker.
-        if crate::html_widget::poll_islands(context) {
+        if crate::html_widget::poll_islands(self.owner, context) {
             return Poll::Ready(());
         }
         outer

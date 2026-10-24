@@ -171,34 +171,95 @@ fn fr34_3_widget_is_placed_at_the_offset_the_page_computed() {
     assert!(placed, "the box is not below the 30px block before it");
 }
 
+/// The handler ids the page's own boxes are given are small; a widget tree's start at
+/// `1 << 48`.
+fn clickable(mutations: &[Mutation<'_>], widget: bool) -> Option<(u32, u64)> {
+    mutations.iter().find_map(|mutation| match mutation {
+        Mutation::SetModifier {
+            node_id,
+            modifier: Modifier::Clickable { handler_id },
+            ..
+        } if (*handler_id >= 1 << 48) == widget => Some((*node_id, *handler_id)),
+        _ => None,
+    })
+}
+
 #[test]
-fn fr34_3_click_on_a_widget_runs_its_handler_then_the_wrapper() {
+fn fr34_3_click_on_a_widget_runs_its_handler_then_the_wrapper_once() {
     let mut host = host();
     LOG.with(|log| log.borrow_mut().clear());
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
-    let parent = widget_parent(&first);
-    // The widget's button is the only node in the widget range that carries a click.
-    let (button, handler) = first
-        .iter()
-        .find_map(|mutation| match mutation {
-            Mutation::SetModifier {
-                node_id,
-                modifier: Modifier::Clickable { handler_id },
-                ..
-            } if *handler_id >= 1 << 48 => Some((*node_id, *handler_id)),
-            _ => None,
+    let (button, handler) = clickable(&first, true).expect("the widget's button is not clickable");
+    let (wrapper, wrapper_handler) =
+        clickable(&first, false).expect("the wrapping div is not clickable");
+
+    // The renderer gives a press to the widget first. The widget does not consume it, so
+    // the renderer offers it to the clickable box around it.
+    let (_, consumed) = host
+        .dispatch(HostEvent {
+            node_id: button,
+            handler_id: handler,
+            payload: EventPayload::Clicked,
         })
-        .expect("the widget's button is not clickable");
-    let _ = parent;
+        .unwrap();
+    assert_eq!(consumed, 0, "a consumed click would never reach the wrapper");
+    assert_eq!(
+        LOG.with(|log| log.borrow().clone()),
+        vec!["widget"],
+        "the Host must not run the wrapper itself: the renderer delivers that click",
+    );
+
     host.dispatch(HostEvent {
-        node_id: button,
-        handler_id: handler,
+        node_id: wrapper,
+        handler_id: wrapper_handler,
         payload: EventPayload::Clicked,
     })
     .unwrap();
     assert_eq!(
         LOG.with(|log| log.borrow().clone()),
         vec!["widget", "wrapper"],
-        "the widget's handler must run first, then the wrapping div's",
+        "the widget's handler runs first, then the wrapping div's, once each",
+    );
+}
+
+mod island_page {
+    use super::widgets;
+    use dioxus_compose::html::prelude::*;
+
+    pub fn app() -> Element {
+        rsx! {
+            div { style: "width: 300px",
+                WidgetView { app: widgets::field, style: "display: block" }
+            }
+        }
+    }
+}
+
+fn screen() -> dioxus_compose::Element {
+    use dioxus_compose::prelude::*;
+    rsx! {
+        Column {
+            HtmlView { app: island_page::app, height: 200.0 }
+        }
+    }
+}
+
+#[test]
+fn fr34_3_widget_inside_an_htmlview_island_hangs_from_the_islands_box() {
+    install();
+    reset_window_size();
+    let mut host = Host::new(screen);
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+    let parent = widget_parent(&first);
+    assert!(
+        parent >= 0x8000_0000,
+        "the widget was inserted under node {parent}, which is not one of the island's boxes",
+    );
+    assert!(
+        first.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::Create { node_id, .. } if *node_id == parent
+        )),
+        "the island's box was not created by the island",
     );
 }

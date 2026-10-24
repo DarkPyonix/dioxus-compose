@@ -16,15 +16,21 @@
 //! written: the call that writes it asks for one more frame, and that frame lays the page
 //! out again with the real size.
 //!
-//! A click on a widget runs the widget's own handler first. The page then gets the click on
-//! the box, so the handlers of the elements around it run after, in the order CSS event
-//! flow gives them.
+//! A click on a widget runs the widget's own handler first and answers that it did not
+//! consume the click. The renderer's pointer handling then offers the same press to the
+//! clickable box around the widget, so the handlers of the elements around it run after,
+//! once each, in the order CSS event flow gives them. The Host does not deliver that second
+//! click itself: doing so as well would run the wrapper twice.
+//!
+//! Every page has its own set of widget trees, named by the owner that was current when the
+//! widget's component first ran. A page embedded in a widget tree with `HtmlView` is such a
+//! page too, so its widgets are never mixed up with the outer page's.
 
 // The component macro compares its `fn` props for equality. See `html_view`.
 #![allow(unpredictable_function_pointer_comparisons)]
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::pin::pin;
 use std::rc::Rc;
 use std::task::Context;
@@ -32,7 +38,6 @@ use std::task::Context;
 use compose_rust::Batch;
 use compose_rust::measure::{MeasureRequests, MeasureStatus, NodeConstraints, measurer};
 use compose_rust::protocol::{HostEvent, Mutation, ProtocolError};
-use compose_rust::schema::EventPayload;
 use dioxus_core::{Element, VirtualDom};
 use dioxus_core_macro::{Props, component, rsx};
 use dioxus_html as dioxus_elements;
@@ -55,6 +60,8 @@ const WIDGET_SLOTS: u32 = 2048;
 
 /// One widget tree and what the page knows about its place.
 struct Island {
+    /// The page this widget belongs to.
+    owner: u32,
     dom: VirtualDom,
     renderer: ComposeRenderer,
     /// The id range the tree writes in, released with the island.
@@ -79,9 +86,9 @@ struct Registry {
     next_token: u32,
     next_slot: u32,
     free_slots: Vec<u32>,
-    /// Another frame is needed: a widget was written that the renderer has not measured,
-    /// or a widget tree changed after the page was laid out.
-    pending: bool,
+    /// The pages that need another frame: a widget was written that the renderer has not
+    /// measured, or a widget tree changed after the page was laid out.
+    pending: HashSet<u32>,
 }
 
 impl Registry {
@@ -99,6 +106,38 @@ impl Registry {
 
 thread_local! {
     static REGISTRY: RefCell<Registry> = RefCell::new(Registry::default());
+    /// The page whose code is running, which a widget registers itself with.
+    static CURRENT_OWNER: Cell<u32> = const { Cell::new(0) };
+    static NEXT_OWNER: Cell<u32> = const { Cell::new(1) };
+}
+
+/// A name for a page, to give its widgets.
+pub(crate) fn new_owner() -> u32 {
+    NEXT_OWNER.with(|next| {
+        let owner = next.get();
+        next.set(owner + 1);
+        owner
+    })
+}
+
+/// Makes `owner` the page whose widgets are registered, until it is dropped. The previous
+/// owner comes back after, so a page built inside another page's call nests.
+pub(crate) struct OwnerScope {
+    previous: u32,
+}
+
+impl OwnerScope {
+    pub(crate) fn enter(owner: u32) -> Self {
+        Self {
+            previous: CURRENT_OWNER.with(|current| current.replace(owner)),
+        }
+    }
+}
+
+impl Drop for OwnerScope {
+    fn drop(&mut self) {
+        CURRENT_OWNER.with(|current| current.set(self.previous));
+    }
 }
 
 /// Keeps one widget tree registered for as long as the component that made it lives.
@@ -112,9 +151,11 @@ impl IslandHandle {
             registry.next_token += 1;
             let token = registry.next_token;
             if let Some(slot) = registry.take_slot() {
+                let owner = CURRENT_OWNER.with(Cell::get);
                 registry.islands.insert(
                     token,
                     Island {
+                        owner,
                         dom: VirtualDom::new(app),
                         renderer: ComposeRenderer::with_id_bases(
                             WIDGET_NODE_BASE + slot * WIDGET_NODE_SPAN,
@@ -191,10 +232,13 @@ pub(crate) fn size_of(token: u32, place: NodeId) -> Option<(f32, f32)> {
 }
 
 /// Builds or updates every widget tree, writing into `batch`.
-pub(crate) fn render_islands(batch: &mut Batch) {
+pub(crate) fn render_islands(owner: u32, batch: &mut Batch) {
     REGISTRY.with_borrow_mut(|registry| {
         let mut changed_after_layout = false;
         for island in registry.islands.values_mut() {
+            if island.owner != owner {
+                continue;
+            }
             std::mem::swap(island.renderer.batch_mut(), batch);
             if island.built {
                 island.dom.render_immediate(&mut island.renderer);
@@ -210,19 +254,21 @@ pub(crate) fn render_islands(batch: &mut Batch) {
                 island.root = island.renderer.root_node();
             }
         }
-        registry.pending |= changed_after_layout;
+        if changed_after_layout {
+            registry.pending.insert(owner);
+        }
     });
 }
 
 /// Asks the renderer how big every attached widget is, in one call, with at most `width`
 /// dp of room. A widget that was written in an earlier call is applied by now; one that
 /// was written in this call is not measured, because the renderer does not know it yet.
-pub(crate) fn refresh(width: f32) {
+pub(crate) fn refresh(owner: u32, width: f32) {
     REGISTRY.with_borrow_mut(|registry| {
         let mut requests = MeasureRequests::new();
         let mut tokens = Vec::new();
         for (&token, island) in &registry.islands {
-            if let (true, Some(root)) = (island.attached, island.root) {
+            if let (true, true, Some(root)) = (island.owner == owner, island.attached, island.root) {
                 let _ = requests.node(
                     root,
                     NodeConstraints {
@@ -259,11 +305,11 @@ pub(crate) fn refresh(width: f32) {
 
 /// Inserts every widget tree that is built and not yet in place under the renderer node
 /// `host_of` names for the page element it stands for, and asks for a frame to measure it.
-pub(crate) fn attach(host_of: &dyn Fn(NodeId) -> Option<u32>, batch: &mut Batch) {
+pub(crate) fn attach(owner: u32, host_of: &dyn Fn(NodeId) -> Option<u32>, batch: &mut Batch) {
     REGISTRY.with_borrow_mut(|registry| {
         let mut attached_any = false;
         for island in registry.islands.values_mut() {
-            if island.attached {
+            if island.owner != owner || island.attached {
                 continue;
             }
             let (Some(root), Some(place)) = (island.root, island.place) else {
@@ -280,17 +326,22 @@ pub(crate) fn attach(host_of: &dyn Fn(NodeId) -> Option<u32>, batch: &mut Batch)
             island.attached = true;
             attached_any = true;
         }
-        registry.pending |= attached_any;
+        if attached_any {
+            registry.pending.insert(owner);
+        }
     });
 }
 
 /// Asks every widget tree whether it has work, and says whether a frame is needed: some tree
 /// did, or the page is waiting to measure a widget. Every tree is polled even after one is
 /// ready, so each registers the waker.
-pub(crate) fn poll_islands(context: &mut Context<'_>) -> bool {
+pub(crate) fn poll_islands(owner: u32, context: &mut Context<'_>) -> bool {
     REGISTRY.with_borrow_mut(|registry| {
-        let mut ready = std::mem::take(&mut registry.pending);
+        let mut ready = registry.pending.remove(&owner);
         for island in registry.islands.values_mut() {
+            if island.owner != owner {
+                continue;
+            }
             let work = island.dom.wait_for_work();
             let mut work = pin!(work);
             if work.as_mut().poll(context).is_ready() {
@@ -302,23 +353,15 @@ pub(crate) fn poll_islands(context: &mut Context<'_>) -> bool {
     })
 }
 
-/// What came of an event that named a widget's handler: the handler's result, and the page
-/// element to deliver a click on, for a click.
-pub(crate) type Routed = (Result<i64, ProtocolError>, Option<NodeId>);
-
 /// Hands an event to the widget tree whose handler it names. `None` when the handler is not
-/// a widget tree's, which means it belongs to the page.
-pub(crate) fn route_event(event: &HostEvent<'_>) -> Option<Routed> {
+/// a widget tree's, which means it belongs to the page. Handler ids are unique across
+/// pages, so the owner does not need to be named.
+pub(crate) fn route_event(event: &HostEvent<'_>) -> Option<Result<i64, ProtocolError>> {
     REGISTRY.with_borrow_mut(|registry| {
         let island = registry
             .islands
             .values_mut()
             .find(|island| island.renderer.handler(event.handler_id).is_some())?;
-        let result = deliver_event(&mut island.dom, &island.renderer, event);
-        let bubble = match (&result, &event.payload) {
-            (Ok(_), EventPayload::Clicked) => island.place,
-            _ => None,
-        };
-        Some((result, bubble))
+        Some(deliver_event(&mut island.dom, &island.renderer, event))
     })
 }
