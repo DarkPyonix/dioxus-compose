@@ -43,12 +43,12 @@ pub(crate) struct WatchGuard {
 
 impl Drop for WatchGuard {
     fn drop(&mut self) {
-        if let Ok(mut watchers) = self.watchers.lock() {
-            if let Some(list) = watchers.entries.get_mut(&self.key) {
-                list.retain(|(token, _)| *token != self.token);
-                if list.is_empty() {
-                    watchers.entries.remove(&self.key);
-                }
+        if let Ok(mut watchers) = self.watchers.lock()
+            && let Some(list) = watchers.entries.get_mut(&self.key)
+        {
+            list.retain(|(token, _)| *token != self.token);
+            if list.is_empty() {
+                watchers.entries.remove(&self.key);
             }
         }
     }
@@ -286,10 +286,10 @@ impl MarkdownStream {
         // A block that came out the same as last time keeps the value it had, so the
         // screen sees the same shared block and does not look inside it to find out.
         for (index, block) in fresh.iter_mut().enumerate() {
-            if let Some(old) = previous_open.get(index) {
-                if old == block {
-                    *block = old.clone();
-                }
+            if let Some(old) = previous_open.get(index)
+                && old == block
+            {
+                *block = old.clone();
             }
         }
         let open = fresh.split_off(settled_count);
@@ -364,11 +364,11 @@ impl MarkdownStream {
             }
         };
         let end = before.len.max(after_len);
-        if let Some(first) = first_changed {
-            if end > first {
-                for chunk in first / CHUNK..end.div_ceil(CHUNK) {
-                    call(WatchKey::Chunk(chunk));
-                }
+        if let Some(first) = first_changed
+            && end > first
+        {
+            for chunk in first / CHUNK..end.div_ceil(CHUNK) {
+                call(WatchKey::Chunk(chunk));
             }
         }
         let chunks_before = before.len.div_ceil(CHUNK);

@@ -80,10 +80,10 @@ pub fn diff_spans(text: &str) -> Vec<CodeSpan> {
     for line in text.split_inclusive('\n') {
         let content = line.strip_suffix('\n').unwrap_or(line);
         let content = content.strip_suffix('\r').unwrap_or(content);
-        if let Some(role) = diff_role(content) {
-            if !content.is_empty() {
-                spans.push(CodeSpan::colored(offset as u32, content.len() as u32, role));
-            }
+        if let Some(role) = diff_role(content)
+            && !content.is_empty()
+        {
+            spans.push(CodeSpan::colored(offset as u32, content.len() as u32, role));
         }
         offset += line.len();
     }

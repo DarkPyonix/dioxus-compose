@@ -37,6 +37,9 @@ impl Labels {
     }
 }
 
+/// What an [`ImageResolver`] calls: an image address in, an image id out.
+type ImageLookup = Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>;
+
 /// Turns an image address into an asset the application registered.
 ///
 /// The crate never fetches anything: agent output is untrusted, and whether to go to the
@@ -44,7 +47,7 @@ impl Labels {
 /// its description and its address. With one, the resolver decides, and an image it
 /// returns `None` for is shown the same way.
 #[derive(Clone)]
-pub struct ImageResolver(Arc<dyn Fn(&str) -> Option<u32> + Send + Sync>);
+pub struct ImageResolver(ImageLookup);
 
 impl ImageResolver {
     /// `resolve` receives the address exactly as the document wrote it and returns the id

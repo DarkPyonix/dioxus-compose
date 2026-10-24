@@ -164,11 +164,13 @@ impl InlineBuilder {
             return;
         }
         let len = text.len() as u32;
-        if let Some(last) = self.inline.runs.last_mut() {
-            if last.start + last.len == start && last.style == style && last.link == link {
-                last.len += len;
-                return;
-            }
+        if let Some(last) = self.inline.runs.last_mut()
+            && last.start + last.len == start
+            && last.style == style
+            && last.link == link
+        {
+            last.len += len;
+            return;
         }
         self.inline.runs.push(Run {
             start,
@@ -257,10 +259,7 @@ fn apply_bare_links(inline: &mut Inline) {
                 .find(|character: char| character.is_whitespace() || character == '<')
                 .unwrap_or(rest.len());
         // Trailing punctuation belongs to the sentence, not the address.
-        loop {
-            let Some(last) = text[..end].chars().next_back() else {
-                break;
-            };
+        while let Some(last) = text[..end].chars().next_back() {
             if end <= start + scheme {
                 break;
             }
@@ -698,11 +697,11 @@ impl Converter {
             TagEnd::Paragraph | TagEnd::Heading(_) | TagEnd::TableCell => self.flush_inline(),
             TagEnd::BlockQuote(_) => {
                 self.flush_implicit();
-                if self.opened.pop() == Some(true) {
-                    if let Some(Frame::Quote(blocks)) = self.frames.pop() {
-                        self.depth = self.depth.saturating_sub(1);
-                        self.push_block(Block::Quote(blocks));
-                    }
+                if self.opened.pop() == Some(true)
+                    && let Some(Frame::Quote(blocks)) = self.frames.pop()
+                {
+                    self.depth = self.depth.saturating_sub(1);
+                    self.push_block(Block::Quote(blocks));
                 }
             }
             TagEnd::CodeBlock => {
@@ -719,19 +718,19 @@ impl Converter {
             }
             TagEnd::List(_) => {
                 self.flush_implicit();
-                if self.opened.pop() == Some(true) {
-                    if let Some(Frame::List { start, items }) = self.frames.pop() {
-                        self.depth = self.depth.saturating_sub(1);
-                        self.push_block(Block::List { start, items });
-                    }
+                if self.opened.pop() == Some(true)
+                    && let Some(Frame::List { start, items }) = self.frames.pop()
+                {
+                    self.depth = self.depth.saturating_sub(1);
+                    self.push_block(Block::List { start, items });
                 }
             }
             TagEnd::Item => {
                 self.flush_implicit();
-                if self.opened.pop() == Some(true) {
-                    if let Some(Frame::Item(item)) = self.frames.pop() {
-                        self.attach_item(item);
-                    }
+                if self.opened.pop() == Some(true)
+                    && let Some(Frame::Item(item)) = self.frames.pop()
+                {
+                    self.attach_item(item);
                 }
             }
             TagEnd::Table => {

@@ -185,11 +185,12 @@ mod engine {
         if end <= start {
             return;
         }
-        if let Some(last) = spans.last_mut() {
-            if last.role == Some(role) && (last.start + last.len) as usize == start {
-                last.len += (end - start) as u32;
-                return;
-            }
+        if let Some(last) = spans.last_mut()
+            && last.role == Some(role)
+            && (last.start + last.len) as usize == start
+        {
+            last.len += (end - start) as u32;
+            return;
         }
         spans.push(CodeSpan::colored(start as u32, (end - start) as u32, role));
     }

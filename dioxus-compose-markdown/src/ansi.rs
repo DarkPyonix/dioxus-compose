@@ -274,10 +274,10 @@ pub fn clean(raw: &str, max_lines: usize) -> Cleaned {
                         }
                     }
                     // Character set designations carry one more character.
-                    '(' | ')' | '*' | '+' | '-' | '.' | '/' | '#' | '%' => {
-                        if chars.next().is_none() {
-                            break;
-                        }
+                    '(' | ')' | '*' | '+' | '-' | '.' | '/' | '#' | '%'
+                        if chars.next().is_none() =>
+                    {
+                        break;
                     }
                     _ => {}
                 }

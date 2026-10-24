@@ -151,10 +151,10 @@ impl Tree {
     }
 
     fn detach(&mut self, node_id: u32) {
-        if let Some(parent) = self.parents.remove(&node_id) {
-            if let Some(parent) = self.nodes.get_mut(&parent) {
-                parent.children.retain(|child| *child != node_id);
-            }
+        if let Some(parent) = self.parents.remove(&node_id)
+            && let Some(parent) = self.nodes.get_mut(&parent)
+        {
+            parent.children.retain(|child| *child != node_id);
         }
     }
 

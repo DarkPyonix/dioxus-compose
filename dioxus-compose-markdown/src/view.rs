@@ -649,10 +649,10 @@ fn CodeFrame(
             );
         }
         let current = colours.read();
-        if let Some((done, result)) = &*current {
-            if *done == key {
-                spans = clip(result, prepared.text.len());
-            }
+        if let Some((done, result)) = &*current
+            && *done == key
+        {
+            spans = clip(result, prepared.text.len());
         }
     }
     let text_spans = code_spans(&spans);
