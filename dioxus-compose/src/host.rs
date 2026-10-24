@@ -54,62 +54,7 @@ impl Runtime for DioxusRuntime {
         if let Some(result) = crate::html_view::route_event(event) {
             return result;
         }
-        let Some((element, node_id, name)) = self.renderer.handler(event.handler_id) else {
-            return Err(ProtocolError::InvalidValueKind(0));
-        };
-        if event.node_id != node_id {
-            return Err(ProtocolError::InvalidValueKind(0));
-        }
-        let mut key_event = None;
-        // A press on a link run arrives as a click on the handler the run was given, and
-        // reaches the `Text`'s link listener with the value the application named it by.
-        let link = self.renderer.link_value(event.handler_id);
-        let event_data = match event.payload {
-            EventPayload::Clicked if link.is_some() => {
-                Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
-            }
-            EventPayload::Clicked | EventPayload::FocusLost => {
-                Event::new(Rc::new(()), true).into_any()
-            }
-            EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
-                Event::new(Rc::new(text.to_owned()), true).into_any()
-            }
-            EventPayload::KeyDown {
-                key,
-                shift_key,
-                ctrl_key,
-                alt_key,
-                meta_key,
-            } => {
-                let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
-                key_event = Some(value.clone());
-                Event::new(Rc::new(value), true).into_any()
-            }
-            EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
-            EventPayload::FilesDropped(paths) => {
-                Event::new(Rc::new(FileDrop::new(paths)), true).into_any()
-            }
-            EventPayload::RangeRequested { start, count } => {
-                Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
-            }
-            EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
-            // The Host answers these itself and never hands them to a runtime. One that
-            // arrives here was addressed to a handler, which none of them can be.
-            EventPayload::ProtocolError { .. }
-            | EventPayload::WindowSizeChanged { .. }
-            | EventPayload::DesignSystemResolved(_)
-            | EventPayload::Resync
-            | EventPayload::LifecycleStart
-            | EventPayload::LifecycleStop
-            | EventPayload::NotificationActivated { .. }
-            | EventPayload::NotificationPermissionChanged(_)
-            | EventPayload::AnimationEvent { .. }
-            | EventPayload::ReducedMotionChanged(_) => {
-                return Err(ProtocolError::InvalidValueKind(0));
-            }
-        };
-        self.dom.runtime().handle_event(name, event_data, element);
-        Ok(i64::from(key_event.is_some_and(|event| event.consumed())))
+        deliver_event(&mut self.dom, &self.renderer, event)
     }
 
     fn size_token(&self, node_id: u32) -> Option<u32> {
@@ -133,6 +78,78 @@ impl Runtime for DioxusRuntime {
     fn run_in_context(&mut self, action: &mut dyn FnMut()) {
         self.dom.in_scope(ScopeId::ROOT, action);
     }
+}
+
+/// Delivers a renderer event to the Dioxus handler it names, in the tree `renderer` wrote.
+///
+/// Shared by the runtime that owns a widget tree and by a widget tree placed inside an HTML
+/// page, which keeps its own `VirtualDom` and `ComposeRenderer`.
+pub(crate) fn deliver_event(
+    dom: &mut VirtualDom,
+    renderer: &ComposeRenderer,
+    event: &HostEvent<'_>,
+) -> Result<i64, ProtocolError> {
+    let Some((element, node_id, name)) = renderer.handler(event.handler_id) else {
+        return Err(ProtocolError::InvalidValueKind(0));
+    };
+    if event.node_id != node_id {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
+    let mut key_event = None;
+    // A press on a link run arrives as a click on the handler the run was given, and
+    // reaches the `Text`'s link listener with the value the application named it by.
+    let link = renderer.link_value(event.handler_id);
+    let event_data = match event.payload {
+        EventPayload::Clicked if link.is_some() => {
+            Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
+        }
+        EventPayload::Clicked | EventPayload::FocusLost => {
+            Event::new(Rc::new(()), true).into_any()
+        }
+        EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
+            Event::new(Rc::new(text.to_owned()), true).into_any()
+        }
+        EventPayload::KeyDown {
+            key,
+            shift_key,
+            ctrl_key,
+            alt_key,
+            meta_key,
+        } => {
+            let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
+            key_event = Some(value.clone());
+            Event::new(Rc::new(value), true).into_any()
+        }
+        EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
+        EventPayload::FilesDropped(paths) => {
+            Event::new(Rc::new(FileDrop::new(paths)), true).into_any()
+        }
+        EventPayload::RangeRequested { start, count } => {
+            Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
+        }
+        EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
+        // The Host answers these itself and never hands them to a runtime. One that
+        // arrives here was addressed to a handler, which none of them can be.
+        EventPayload::ProtocolError { .. }
+        | EventPayload::WindowSizeChanged { .. }
+        | EventPayload::DesignSystemResolved(_)
+        | EventPayload::Resync
+        | EventPayload::LifecycleStart
+        | EventPayload::LifecycleStop
+        | EventPayload::NotificationActivated { .. }
+        | EventPayload::NotificationPermissionChanged(_)
+        | EventPayload::AnimationEvent { .. }
+        | EventPayload::ReducedMotionChanged(_)
+        | EventPayload::CodeChanged { .. }
+        | EventPayload::CodeEditRejected { .. }
+        | EventPayload::CodeHovered { .. }
+        | EventPayload::CodeSaveRequested { .. }
+        | EventPayload::DecorationActivated { .. } => {
+            return Err(ProtocolError::InvalidValueKind(0));
+        }
+    };
+    dom.runtime().handle_event(name, event_data, element);
+    Ok(i64::from(key_event.is_some_and(|event| event.consumed())))
 }
 
 /// The runtime factory for one Dioxus application.
