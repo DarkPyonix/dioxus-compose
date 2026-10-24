@@ -43,7 +43,7 @@ impl Runtime for DioxusRuntime {
         self.dom.rebuild(&mut self.renderer);
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render_immediate(&mut self.renderer);
     }
 
@@ -96,7 +96,9 @@ impl Runtime for DioxusRuntime {
             | EventPayload::LifecycleStart
             | EventPayload::LifecycleStop
             | EventPayload::NotificationActivated { .. }
-            | EventPayload::NotificationPermissionChanged(_) => {
+            | EventPayload::NotificationPermissionChanged(_)
+            | EventPayload::AnimationEvent { .. }
+            | EventPayload::ReducedMotionChanged(_) => {
                 return Err(ProtocolError::InvalidValueKind(0));
             }
         };
