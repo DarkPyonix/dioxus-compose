@@ -348,7 +348,7 @@ dependencies = [
 [[package]]
 name = "compose-rust"
 version = "0.0.2"
-source = "git+https://github.com/DarkPyonix/compose-rust?tag=v0.0.2#c4d92ed22abc5d17662b2885a3a323147a33fed6"
+source = "git+https://github.com/DarkPyonix/compose-rust?rev=d8205850bc032b40c418b7283787afd99ab84e4c#d8205850bc032b40c418b7283787afd99ab84e4c"
 dependencies = [
  "compose-rust-macros",
  "jni",
@@ -357,7 +357,7 @@ dependencies = [
 [[package]]
 name = "compose-rust-macros"
 version = "0.0.2"
-source = "git+https://github.com/DarkPyonix/compose-rust?tag=v0.0.2#c4d92ed22abc5d17662b2885a3a323147a33fed6"
+source = "git+https://github.com/DarkPyonix/compose-rust?rev=d8205850bc032b40c418b7283787afd99ab84e4c#d8205850bc032b40c418b7283787afd99ab84e4c"
 dependencies = [
  "proc-macro2",
  "quote",

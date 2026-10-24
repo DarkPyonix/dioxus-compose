@@ -8,8 +8,9 @@ use dioxus_signals::WritableExt as _;
 use crate as dioxus_elements;
 use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
-    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole, Paint,
-    ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole,
+    OverflowWrap, Paint, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
+    WordBreak,
 };
 use compose_rust::{FileDrop, KeyEvent, RangeRequest};
 
@@ -428,6 +429,25 @@ pub fn Text(
     #[props(default)] text_align: Option<TextAlign>,
     #[props(default)] max_lines: Option<u32>,
     #[props(default)] overflow: Option<TextOverflow>,
+    /// The fonts to try, in order, for text whose `type_role` is `TypeRole::None`. Text
+    /// with a role is set in the theme's font whatever this says.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
+    /// Where a line may break: CSS `word-break`.
+    #[props(default)]
+    word_break: Option<WordBreak>,
+    /// Whether a word too long for its line may be broken inside: CSS `overflow-wrap`.
+    #[props(default)]
+    overflow_wrap: Option<OverflowWrap>,
+    /// How many spaces apart the tab stops are. Left out, eight.
+    #[props(default)]
+    tab_size: Option<u8>,
+    /// The sizes are CSS pixels, which the system's font scale does not enlarge.
+    #[props(default)]
+    absolute_size: bool,
+    /// Whether lines wrap at the width they are given. `false` is CSS `nowrap` and `pre`.
+    #[props(default = true)]
+    soft_wrap: bool,
     /// Says this string usually grows at the end, the way a reply arriving token by token
     /// does. While it only grows, the Renderer is sent the new tail rather than the whole
     /// string again. Any other change is sent whole, so this never changes what is shown.
@@ -439,6 +459,12 @@ pub fn Text(
     #[props(default)]
     on_link: Option<EventHandler<u64>>,
 ) -> Element {
+    // Worked out before the element, because the run list travels twice: its records as
+    // `spans` and its font table as `span_fonts`, and only one of them can take it.
+    let span_fonts = (spans.font_entry_count() > 0)
+        .then(|| AttributeValue::any_value(crate::renderer::SpanFontTable(spans.clone())));
+    let spans = (!spans.is_empty()).then(|| AttributeValue::any_value(spans));
+    let font = (!font.is_empty()).then(|| AttributeValue::any_value(font));
     let text: dioxus_core::AttributeValue = if streaming {
         dioxus_core::AttributeValue::any_value(crate::renderer::GrowingText(text))
     } else {
@@ -465,9 +491,19 @@ pub fn Text(
                     fill_max_height,
                     // Left out entirely when there are none, so a Text that says nothing
                     // about runs travels exactly as it did before runs existed.
-                    spans: (!spans.is_empty()).then(|| AttributeValue::any_value(spans)),
+                    span_fonts,
+                    spans,
                     text,
-                    type_role: role(type_role),
+                    // Sent only when there is one, and as its tag when there is:
+                    // `TypeRole::None` is tag 0 and has to arrive as a value, because
+                    // absent is the default rung.
+                    type_role: type_role.map(|role| i64::from(u16::from(role))),
+                    font,
+                    word_break: role(word_break),
+                    overflow_wrap: role(overflow_wrap),
+                    tab_size: i64::from(tab_size.unwrap_or(0)),
+                    absolute_size: i64::from(absolute_size),
+                    soft_wrap: (!soft_wrap).then_some(false),
                     font_size: dp(font_size),
                     font_weight: i64::from(font_weight.unwrap_or(0)),
                     line_height: dp(line_height),
@@ -532,7 +568,7 @@ pub fn TextField(
             placeholder,
             enabled,
             multiline,
-            type_role: role(type_role),
+            type_role: type_role.map(|role| i64::from(u16::from(role))),
             onvaluechange: move |event| on_value_change.call((*event.data()).clone()),
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),
@@ -2403,6 +2439,122 @@ pub fn SplitPane(
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as f32),
             ondismiss: move |_| on_dismiss.call(()),
             {children}
+        }
+    }
+}
+
+/// Several lines of code that the reader edits.
+///
+/// The document belongs to the Renderer from the moment it opens. The caret, the selection,
+/// the scroll position, the undo history and anything an input method is still composing
+/// stay there, exactly as a text field's do, and `on_change` hears about every committed
+/// edit with the version of the document it produced. Give that to a language server as it
+/// is: the range is in the document as it stood before the edit and columns are UTF-16
+/// units, which is what a language server counts.
+///
+/// `text` is what the editor opens with, as version 0. Giving it text that differs from
+/// what the editor holds replaces the whole document and starts again from version 0,
+/// which is opening a file. Giving it the text it already holds does nothing, so an
+/// application that writes each change back into the signal it passes here keeps the
+/// reader's caret and undo history. To open the same text afresh, give the editor a new
+/// key: a new node is a new document.
+///
+/// `syntax_spans` colour the text and `decorations` draw over it. Each run and each
+/// decoration names the version its range was written against, and the editor moves it
+/// along with whatever the reader typed since, dropping it where its text was deleted. So a
+/// list computed while the reader kept typing still lands on the text it was about, and
+/// the application has nothing to do until it has a newer list.
+///
+/// `handle` addresses the editor for edits the application makes itself: formatting,
+/// accepting a completion, reloading a file. See [`crate::CodeEditorHandle`].
+///
+/// The gutter, the line numbers, the current line, the weight of an underline and how
+/// faint a suggestion is are the design system's, and the text is set in its monospace
+/// rung.
+#[component]
+pub fn CodeEditor(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// The document the editor opens with.
+    #[props(into, default)]
+    text: String,
+    /// Colour runs for the syntax, usually in the code colour roles.
+    #[props(default)]
+    syntax_spans: compose_rust::code::SyntaxSpans,
+    /// Underlines, lenses, hover anchors and inline suggestions.
+    #[props(default)]
+    decorations: compose_rust::code::Decorations,
+    /// How many columns a tab advances. Left to the design system where it is not given.
+    #[props(default)]
+    tab_width: Option<u32>,
+    /// What edits asked of the application's own handle are addressed to.
+    #[props(default)]
+    handle: Option<crate::CodeEditorHandle>,
+    /// Every committed edit, in order.
+    #[props(default)]
+    on_change: EventHandler<compose_rust::code::CodeChange>,
+    /// An edit asked of the handle that the editor did not apply, because the reader had
+    /// changed the same place in the meantime.
+    #[props(default)]
+    on_edit_rejected: EventHandler<compose_rust::code::EditRejected>,
+    /// A pointer came to rest over a place in the editor, or left it.
+    #[props(default)]
+    on_hover: EventHandler<compose_rust::code::CodeHover>,
+    /// The reader pressed the platform's save shortcut.
+    #[props(default)]
+    on_save: EventHandler<compose_rust::code::SaveRequest>,
+    /// A lens was pressed or a suggestion accepted, named by the id it was given.
+    #[props(default)]
+    on_decoration_click: EventHandler<u64>,
+) -> Element {
+    rsx! {
+        codeeditor {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            editor: handle.map(|handle| i64::from(handle.token())),
+            text,
+            // Left out entirely while there are none, so an editor without them sends
+            // nothing for them at all.
+            syntax_spans: (!syntax_spans.is_empty()).then(|| AttributeValue::any_value(syntax_spans)),
+            decorations: (!decorations.is_empty()).then(|| AttributeValue::any_value(decorations)),
+            tab_width: tab_width.map(i64::from),
+            oncodechange: move |event: dioxus_core::Event<compose_rust::code::CodeChange>| {
+                on_change.call(event.data().as_ref().clone());
+            },
+            oneditrejected: move |event: dioxus_core::Event<compose_rust::code::EditRejected>| {
+                on_edit_rejected.call(*event.data());
+            },
+            onhover: move |event: dioxus_core::Event<compose_rust::code::CodeHover>| {
+                on_hover.call(*event.data());
+            },
+            onsave: move |event: dioxus_core::Event<compose_rust::code::SaveRequest>| {
+                on_save.call(*event.data());
+            },
+            ondecorationclick: move |event: dioxus_core::Event<u64>| {
+                on_decoration_click.call(*event.data());
+            },
         }
     }
 }

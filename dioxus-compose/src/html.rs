@@ -97,6 +97,7 @@ pub use crate::paint::plan::{
 };
 pub use blitz_dom::BaseDocument;
 pub use blitz_traits::shell::ColorScheme;
+pub use crate::html_widget::WidgetView;
 pub use runtime::{HtmlRuntime, launch, runtime_for};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
@@ -142,7 +143,7 @@ pub fn layout_document_with(
 /// widgets as `dioxus_elements`, and this one names the HTML elements, so an `rsx!` block
 /// takes one or the other.
 pub mod prelude {
-    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, launch};
+    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, WidgetView, launch};
     pub use dioxus_core::{Element, VirtualDom};
     pub use dioxus_core_macro::rsx;
     pub use dioxus_html as dioxus_elements;
