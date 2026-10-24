@@ -256,7 +256,7 @@ fn fr37_a_span_closed_on_the_next_line_streams_like_it_parses() {
         "words here```rust\n```\r<script><!--x-->",
         "a ```rust\n```\n<script>x",
         // The input the seed produced, with the part that mattered around it.
-        "\u{7f}|---|:-:|\n|https://example.com/xa\0+ + *한글\u{1b}[31mwords here```rust\n```\r<script><!--# _[한글\t```diff\n~~<https://a.b><div>😀|```diff\n`\u{1b}[31m<!--- #   </div>[words here\\|#     + ```<https://a.b> <script>&#x41;(- [ ] \\[x]#| a | b |\n|    code\n>&__- [ ] <https://a.b>word- [x] * \u{7f}|---|:-:|\n    |---|:-:|\nword~~_## \t:]\r\n    https://example.com/x## [[(```\r_]:\n+ words here\01. \\\0\0## | a | b |\n</div>&amp;<div>![```diff\n      code\n| a | b |\n>)한글word",
+        "\u{7f}|---|:-:|\n|https://example.com/xa\u{0}+ + *한글\u{1b}[31mwords here```rust\n```\r<script><!--# _[한글\t```diff\n~~<https://a.b><div>😀|```diff\n`\u{1b}[31m<!--- #   </div>[words here\\|#     + ```<https://a.b> <script>&#x41;(- [ ] \\[x]#| a | b |\n|    code\n>&__- [ ] <https://a.b>word- [x] * \u{7f}|---|:-:|\n    |---|:-:|\nword~~_## \t:]\r\n    https://example.com/x## [[(```\r_]:\n+ words here\u{0}1. \\\u{0}\u{0}## | a | b |\n</div>&amp;<div>![```diff\n      code\n| a | b |\n>)한글word",
     ];
     for text in documents {
         let whole = parse(text, DEFAULT_MAX_DEPTH);
