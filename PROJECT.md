@@ -60,6 +60,14 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 | M6 | Android | SPEC PR-5 수용 기준 통과 | PR-5 |
 | M7 | Web | PR-6 구현 (메모리 공유 + 생성된 JS forwarder) | PR-6 |
 | M8 | 배포 | 렌더러 아티팩트 배포 파이프라인과 체크섬 검증 | NFR-11 |
+| M12 | HTML/CSS 렌더러 | 기존 HTML 경로의 요구 사항을 만족한다. FR-34와 그 하위 항목(FR-34.1~FR-34.4)이 수용 기준의 대상이다. compose-rust의 FR-40(measure call)과 FR-41(변환과 애니메이션)은 이 항목의 의존성이다. | FR-34, FR-34.1, FR-34.2, FR-34.3, FR-34.4 |
+| M13 | 워크벤치가 쓰는 CSS 기능 지원 | Code-OSS 워크벤치 CSS가 쓰는 HTML/CSS 기능을 blitz-dom 경로에서 범용 능력으로 지원하고, 워크벤치 화면이 FR-34 허용 오차 표를 통과한다. 워크벤치 chrome의 rsx와 Code-OSS CSS 사본은 앱 코드라 Ember 저장소가 만들고, dioxus-compose는 범용 HTML/CSS 능력만 갖는다. 워크벤치는 수용 기준의 대상으로만 쓴다. | FR-34 |
+
+Ember PROJECT.md의 "dioxus-compose M13 workbench"가 가리키는 것이 M13 항목이고, M9~M11은 이 문서에 아직 정의되지 않았습니다.
+
+**M12 현황.** HTML 경로, measure call 기반 텍스트 측정, span, 변환과 모션, HtmlView와 WidgetView, blitz 패치를 통한 포커스 선택자(PR #111, 리뷰 중)가 develop에 있습니다. 남은 것은 FR-34 허용 오차의 재측정과 native-image 빌드에서의 창과 IME 확인(사람이 하는 수동 점검), 줌(#58, compose-rust #267 대기), 3D 변환(FR-41.3의 수용 기준은 소유자 결정 사항), compose-rust의 span 글자 크기와 밀도 및 글꼴 변경 신호입니다. 새 예정일은 2026-11-01입니다. 다만 수동 점검과 compose-rust 또는 소유자 결정에 막힌 항목은 막힘이 풀릴 때까지 날짜가 없습니다. 기존 예정일은 2026-10-15였습니다.
+
+**M13 현황.** 갭 분석이 끝났습니다. `:focus`, `:focus-within`, `:focus-visible`은 진행 중이고, `:has()`는 Ember 쪽에서 상태 클래스로 대체됩니다(darkpyonix-ember#142). 남은 것은 hover와 포인터 이벤트, outline, pointer-events, codicon @font-face, mask와 SVG, sticky입니다. 이 항목들은 아직 SPEC 근거가 없고 소유자 질문이 대기 중입니다. 새 예정일은 소유자가 결정한 뒤 약 2주이며, 그 전까지는 없습니다. 기존 예정일은 2026-10-18이었습니다.
 
 **M1이 프로젝트의 생사를 가릅니다.** 여기서 한글 조합이 정상이면 나머지는 분량 문제이고, 실패하면 INTENT를 다시 검토합니다.
 
