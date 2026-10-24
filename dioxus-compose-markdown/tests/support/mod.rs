@@ -226,8 +226,12 @@ impl Tree {
         };
         let indent = "  ".repeat(depth);
         let _ = write!(out, "{indent}{:?}", node.widget);
+        // A property written as 0 means the same as one never written: the Host leaves a
+        // neutral value out of a new node, and sends it only to take back a value the node
+        // held before. A node reused for another block can hold the explicit 0, and the
+        // screen it draws is the same, so the dump does not tell them apart.
         let int = |kind: PropertyKind| match node.props.get(&(kind as u16)) {
-            Some(Prop::Int(value)) => Some(*value),
+            Some(Prop::Int(value)) if *value != 0 => Some(*value),
             _ => None,
         };
         let flag = |kind: PropertyKind| node.props.get(&(kind as u16)) == Some(&Prop::Bool(true));
@@ -253,7 +257,11 @@ impl Tree {
         if node.props.get(&(PropertyKind::Enabled as u16)) == Some(&Prop::Bool(false)) {
             out.push_str(" disabled");
         }
-        if let Some(asset) = int(PropertyKind::Asset) {
+        let asset = match node.props.get(&(PropertyKind::Asset as u16)) {
+            Some(Prop::Int(value)) => Some(*value),
+            _ => None,
+        };
+        if let Some(asset) = asset {
             let _ = write!(out, " asset={asset}");
         }
         if let Some(text) = &node.text {
