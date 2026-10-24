@@ -77,8 +77,8 @@ pub type NodeId = usize;
 pub use crate::dom::{HtmlConfig, HtmlDom, element_by_id};
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
 pub use crate::layout::measure::{
-    OverflowWrap, ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics,
-    TextStyle, TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint, WordBreak,
+    OverflowWrap, ParleyMeasurer, SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer,
+    TextMetrics, TextStyle, TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint, WordBreak,
 };
 pub use crate::layout::renderer_measure::RendererMeasurer;
 pub use crate::paint::bridge::{

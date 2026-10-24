@@ -11,6 +11,7 @@
 
 use std::borrow::Cow;
 
+use crate::paint::display_list::Rgba;
 use parley::{
     FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight,
     OverflowWrap as ParleyOverflowWrap, StyleProperty, WordBreakStrength,
@@ -187,6 +188,41 @@ pub struct TextMeasureRequest<'a> {
     pub white_space: TextWhiteSpace,
 }
 
+/// A stretch of one inline formatting context's text that differs from the rest of it, in
+/// the properties compose-rust's spans carry: bold, italic, the two lines, a colour and a
+/// font family. Everything else (size, letter spacing, line height) is the same across the
+/// whole text, which is why these can ride beside it as spans.
+///
+/// The range counts bytes of the text the request carries (after white space collapsing and
+/// `text-transform`), so it indexes the same string the renderer measures and draws.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpanRun {
+    pub start: usize,
+    pub end: usize,
+    /// Bolder than the text around it.
+    pub bold: bool,
+    /// Slanted where the text around it is not.
+    pub italic: bool,
+    pub underline: bool,
+    pub line_through: bool,
+    /// The run's colour when it is not the text's.
+    pub color: Option<Rgba>,
+    /// The run's `font-family` list when it is not the text's.
+    pub font_family: Option<Vec<String>>,
+}
+
+impl SpanRun {
+    /// Whether `other` says the same about its letters, wherever it sits.
+    pub(crate) fn same_look(&self, other: &SpanRun) -> bool {
+        self.bold == other.bold
+            && self.italic == other.italic
+            && self.underline == other.underline
+            && self.line_through == other.line_through
+            && self.color == other.color
+            && self.font_family == other.font_family
+    }
+}
+
 /// A [`TextMeasurer`]'s answer, in CSS pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TextMetrics {
@@ -207,6 +243,15 @@ pub struct TextMetrics {
 /// is given its final one). The answer must depend only on the request.
 pub trait TextMeasurer {
     fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics;
+
+    /// Like [`measure`](TextMeasurer::measure) for text whose runs differ in weight, slant,
+    /// lines, colour or font family: a paragraph with a bold phrase in it. A measurer that
+    /// can size such runs does; the default ignores them and answers for the text as one
+    /// style, which is what a measurer that shapes with a single font can do.
+    fn measure_spans(&mut self, request: &TextMeasureRequest<'_>, runs: &[SpanRun]) -> TextMetrics {
+        let _ = runs;
+        self.measure(request)
+    }
 
     /// Called when a layout pass is over. A measurer that cannot answer a question while
     /// the pass runs (it answers with an estimate and keeps the question) resolves what it

@@ -35,6 +35,7 @@ use compose_rust::spans::{TextSpan, TextSpans};
 
 use crate::html::NodeId;
 use crate::layout::measure::{TextLineHeight, TextStyle};
+use crate::layout::renderer_measure::{SpanBase, wire_spans};
 use crate::paint::animate;
 use crate::paint::display_list::{
     AnimatedProperty, Animation as CssAnimation, GradientStop, Rect, Rgba, TextAlign, TileRepeat,
@@ -151,6 +152,8 @@ enum Prop {
     Int(i64),
     Float(f32),
     Spans(TextSpans),
+    /// The font table of a list of runs, which travels as a property of its own.
+    SpanFonts(TextSpans),
 }
 
 impl Prop {
@@ -162,6 +165,7 @@ impl Prop {
             Prop::Int(value) => PropertyValue::Integer(*value),
             Prop::Float(value) => PropertyValue::Float(*value),
             Prop::Spans(value) => PropertyValue::Bytes(value.as_bytes()),
+            Prop::SpanFonts(value) => PropertyValue::Bytes(value.font_table()),
         }
     }
 }
@@ -900,7 +904,9 @@ impl PlanBridge {
             PlanKind::Text(text) => {
                 self.set_prop(batch, key, PropertyKind::Text, Prop::Str(text.text.clone()));
                 self.set_text_style(batch, key, &text.style, text.color);
-                self.set_prop(batch, key, PropertyKind::Spans, slant_and_lines(text));
+                let (spans, span_fonts) = text_spans(text);
+                self.set_prop(batch, key, PropertyKind::Spans, spans);
+                self.set_prop(batch, key, PropertyKind::SpanFonts, span_fonts);
                 self.set_prop(
                     batch,
                     key,
@@ -1676,6 +1682,37 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
             Prop::Int(literal(color).to_bits() as i64),
         ),
     ]
+}
+
+/// The `Spans` and `SpanFonts` properties of a run of text.
+///
+/// A run that carries spans is a whole inline formatting context, and its spans go out with
+/// the font table for the runs that name a family: the renderer measures and draws the
+/// text, bold phrase and link included, as one. A run without spans sends the slant and
+/// lines of the whole text, if it has any, and no font table.
+fn text_spans(text: &PlanText) -> (Prop, Prop) {
+    if text.spans.is_empty() {
+        return (slant_and_lines(text), Prop::None);
+    }
+    let base = SpanBase {
+        italic: text.style.italic,
+        underline: text.decoration.underline,
+        line_through: text.decoration.line_through,
+    };
+    let spans = wire_spans(text.text.len(), base, &text.spans, &mut |colour| {
+        Some(literal(colour))
+    });
+    let fonts = if spans.font_entry_count() > 0 {
+        Prop::SpanFonts(spans.clone())
+    } else {
+        Prop::None
+    };
+    let spans = if spans.is_empty() {
+        Prop::None
+    } else {
+        Prop::Spans(spans)
+    };
+    (spans, fonts)
 }
 
 /// The slant and the lines of a run of text, as one span over all of it.
