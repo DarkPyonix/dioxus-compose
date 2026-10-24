@@ -5,8 +5,8 @@ use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch};
 use dioxus_compose::schema::{EventPayload, Modifier, WidgetKind};
 use dioxus_compose::window::reset_window_size;
-use std::collections::HashSet;
 use std::cell::Cell;
+use std::collections::HashSet;
 
 mod page {
     use dioxus_compose::html::prelude::*;
