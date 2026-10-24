@@ -510,3 +510,109 @@ fn fr34_1_changing_only_the_transform_sends_only_that_modifier() {
     // The identical layout again is no change at all.
     assert!(diff(&after, &plan_of(&mut dom)).is_empty());
 }
+
+const ONE_BOX: &str = r#"
+.box { position: absolute; left: 20px; top: 20px; width: 100px; height: 50px; background-color: rgb(51, 102, 153); }
+"#;
+
+fn one_box() -> Element {
+    rsx! {
+        div { id: "subject", class: "box" }
+    }
+}
+
+enum Expect {
+    /// Left out, listed once under the function's name, and drawn at its layout place.
+    Skipped(&'static str),
+    /// Not 3D and does nothing: no transform, no entry in the list, and the box stays put.
+    Untransformed,
+    /// A translation folded into the box's place: no transform, no entry, and the box moves
+    /// by the given amount.
+    Folded(f32, f32),
+    /// A flat transform kept as a 2D matrix, with no entry in the list.
+    Matrix,
+}
+
+/// Every 3D function the layout can be given, one box each, with what the code does now.
+///
+/// The code decides per function. A function that is 3D keeps the whole transform out.
+/// A function that is 3D only by its arguments (a `z` of 0 or a scale of 1 on the z axis)
+/// is flat, and is folded into a 2D form or dropped, as the 2D function it reduces to.
+///
+/// - `rotateX`, `rotateY`, `rotate3d` with an axis that is not the z axis: a turn about x or
+///   y is a 3D rotation, so the transform is skipped.
+/// - `rotate3d(0, 0, 1, 30deg)` is a turn about z, which is a 2D rotation, so it is a matrix.
+/// - `translateZ` and `translate3d` with a non-zero z move the box out of the plane, so they
+///   are skipped. With z = 0 (`translateZ(0px)`, or `translate3d(10px, 20px, 0px)`) they
+///   reduce to the 2D form: `translateZ(0)` is nothing, `translate3d` is a plain translation.
+/// - `scaleZ` and `scale3d` with a z other than 1 scale the depth, so they are skipped.
+///   `scaleZ(1)` does nothing, and `scale3d(2, 3, 1)` is the 2D `scale(2, 3)`.
+/// - `perspective()` has no 2D form, and the code skips every `perspective()` regardless of
+///   its length.
+/// - `matrix3d()` is skipped when it is not flat (here the z row carries a perspective term
+///   of 0.001). A flat `matrix3d()` would be a 2D matrix.
+/// - A mixed list is one transform: `translate(10px) rotateY(30deg)` has a 3D part, so the
+///   whole list is skipped, and the `translate(10px)` is not applied either. The box stays
+///   at x = 20.
+#[test]
+fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
+    let cases: &[(&str, Expect)] = &[
+        ("rotateX(45deg)", Expect::Skipped("rotateX(")),
+        ("rotateY(30deg)", Expect::Skipped("rotateY(")),
+        ("rotate3d(1, 1, 0, 45deg)", Expect::Skipped("rotate3d(")),
+        ("rotate3d(0, 0, 1, 30deg)", Expect::Matrix),
+        ("translateZ(10px)", Expect::Skipped("translateZ(")),
+        ("translateZ(0px)", Expect::Untransformed),
+        ("translate3d(10px, 0px, 10px)", Expect::Skipped("translate3d(")),
+        ("translate3d(10px, 20px, 0px)", Expect::Folded(10.0, 20.0)),
+        ("scaleZ(2)", Expect::Skipped("scaleZ(")),
+        ("scaleZ(1)", Expect::Untransformed),
+        ("scale3d(2, 2, 2)", Expect::Skipped("scale3d(")),
+        ("scale3d(2, 3, 1)", Expect::Matrix),
+        ("perspective(100px)", Expect::Skipped("perspective(")),
+        (
+            "matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.001, 0, 0, 0, 1)",
+            Expect::Skipped("matrix3d("),
+        ),
+        ("translate(10px) rotateY(30deg)", Expect::Skipped("rotateY(")),
+    ];
+
+    for (css, expect) in cases {
+        let style = format!("{ONE_BOX}#subject {{ transform: {css}; }}");
+        let mut dom = HtmlDom::with_config(one_box, config(&style));
+        let list = dom.layout(800.0, 600.0, 1.0).clone();
+        let subject = entry(&dom, &list, "subject");
+        let skipped = &list.skipped_transforms;
+        let rect = (subject.rect.x, subject.rect.y);
+
+        match expect {
+            Expect::Skipped(name) => {
+                assert!(subject.transform.is_none(), "`{css}` is drawn untransformed");
+                assert_eq!(rect, (20.0, 20.0), "`{css}` stays at its layout place");
+                assert_eq!(skipped.len(), 1, "`{css}`: {skipped:#?}");
+                assert_eq!(skipped[0].node, subject.node, "`{css}`");
+                assert_eq!(skipped[0].tag, "div", "`{css}`");
+                assert!(
+                    skipped[0].transform.contains(*name),
+                    "`{css}` is listed as `{}`, expected it to name `{name}`",
+                    skipped[0].transform
+                );
+            }
+            Expect::Untransformed => {
+                assert!(subject.transform.is_none(), "`{css}`");
+                assert_eq!(rect, (20.0, 20.0), "`{css}`");
+                assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
+            }
+            Expect::Folded(dx, dy) => {
+                assert!(subject.transform.is_none(), "`{css}` is folded into the place");
+                assert_eq!(rect, (20.0 + dx, 20.0 + dy), "`{css}`");
+                assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
+            }
+            Expect::Matrix => {
+                assert!(subject.transform.is_some(), "`{css}` is drawn as a 2D matrix");
+                assert_eq!(rect, (20.0, 20.0), "`{css}` keeps the layout place");
+                assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
+            }
+        }
+    }
+}
