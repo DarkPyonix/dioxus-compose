@@ -104,7 +104,8 @@ impl MockRenderer {
                 | Mutation::WithdrawNotification { .. }
                 | Mutation::RequestNotificationPermission
                 | Mutation::StartAnimation(_)
-                | Mutation::ControlAnimation { .. } => {}
+                | Mutation::ControlAnimation { .. }
+                | Mutation::EditCode { .. } => {}
             }
         }
     }

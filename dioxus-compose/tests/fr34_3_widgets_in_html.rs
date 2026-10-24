@@ -65,7 +65,7 @@ mod widgets {
 
     pub fn field() -> Element {
         rsx! {
-            Button { onclick: move |_| log("widget"), Text { text: "press" } }
+            Button { text: "press", on_click: move |_| log("widget") }
         }
     }
 }
@@ -163,8 +163,9 @@ fn fr34_3_widget_is_placed_at_the_offset_the_page_computed() {
     let mut host = host();
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
     let parent = widget_parent(&first);
+    let first_modifiers = modifiers_of(&first, parent);
     let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
-    let placed = modifiers_of(&first, parent)
+    let placed = first_modifiers
         .into_iter()
         .chain(modifiers_of(&second, parent))
         .any(|modifier| matches!(modifier, Modifier::Offset { y, .. } if y == 30.0));
