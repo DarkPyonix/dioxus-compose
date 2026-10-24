@@ -417,6 +417,13 @@ pub mod elements {
     // Children laid where the Host put them, each at its own `offset`. Nothing of its own:
     // where a child goes is the child's modifier, not the box's property.
     element!(absolutebox, "AbsoluteBox", []);
+    // The editor's own attributes. Its text and its colouring cross the boundary as the
+    // Host writes them, and its events are declared on the element in widgets.rs.
+    element!(
+        codeeditor,
+        "CodeEditor",
+        [editor, text, syntax_spans, decorations, tab_width]
+    );
 
     #[doc(hidden)]
     pub mod completions {
