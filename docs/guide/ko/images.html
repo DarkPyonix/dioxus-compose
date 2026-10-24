@@ -189,7 +189,12 @@
     <h2 id="planned">아직 없는 것</h2>
     <ul>
       <li><strong>화면 위의 이미지.</strong> <span class="pill partial">부분</span> 계획은 모든 이미지와
-        배경에 에셋을 지정하지만, 렌더러 다리가 생기기 전까지는 그리는 것이 없습니다
+        배경에 에셋을 지정하고, 다리는 그것을 <code>Image</code> 로 렌더러에 보냅니다. 배경 그라디언트와
+        이미지는 칠하는 영역 크기의 상자가 되고, 타일마다 상자가 하나씩입니다. Host 에서 테스트했고 화면에서는
+        아직 확인하지 않았습니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
+      <li><strong>비율이 다른 <code>object-fit: fill</code>.</strong>
+        <span class="pill partial">부분</span> compose-rust 의 <code>Image</code> 는 그림을 통째로 가운데에
+        그리므로, 늘어나지 않고 여백을 두고 그려집니다
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
     </ul>
 

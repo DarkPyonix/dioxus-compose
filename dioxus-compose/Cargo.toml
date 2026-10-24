@@ -35,9 +35,9 @@ mock-renderer = ["compose-rust/mock-renderer"]
 native-renderer = ["compose-rust/native-renderer"]
 
 [dependencies]
-# The boundary, the protocol, the schema and the renderer it links. Pinned to one exact
-# version, because the records the Host writes and the renderer reads are versioned
-# together: a different compose-rust is a different wire format.
+# The boundary, the protocol, the schema and the renderer it links. Pinned to one tag,
+# because the records the Host writes and the renderer reads are versioned together: a
+# different compose-rust is a different wire format.
 # TODO: 배포되면 버전 의존성으로 바꾼다 (compose-rust 0.0.2 crates.io).
 compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", tag = "v0.0.2", default-features = false }
 dioxus-core.workspace = true

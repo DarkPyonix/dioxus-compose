@@ -247,6 +247,11 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
 
     <h2 id="planned">Not yet</h2>
     <ul>
+      <li><strong>Typefaces, italics and underlines on screen.</strong>
+        <span class="pill partial">partial</span> The bridge draws text in the design system's
+        typeface, because compose-rust's <code>Text</code> takes no font family or italic. So
+        <code>font-family</code>, <code>font-style</code> and <code>text-decoration</code> shape the
+        layout in the Host but do not reach the screen yet (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li><strong>Roman numeral markers.</strong> <code>list-style-type: lower-roman</code> and
         <code>upper-roman</code> are not drawn yet. The Stylo version the layout pass uses (0.8)
         does not know the keywords in its servo build, so it drops the declaration when the

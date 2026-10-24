@@ -26,8 +26,8 @@ use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
     DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, PlayDirection,
-    Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun,
-    Transform2D,
+    Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign,
+    TextDecoration, TextRun, Transform2D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved};
@@ -645,6 +645,7 @@ impl Painter<'_, '_> {
                 text: measured.text.clone(),
                 style: measured.style.clone(),
                 color: measured.color,
+                decoration: measured.decoration,
                 align: measured.align,
                 wrap_width: measured.wrap_width,
                 line_count: measured.metrics.line_count,
@@ -756,6 +757,7 @@ impl Painter<'_, '_> {
                     text: text.to_string(),
                     style: convert::text_style(&owner_style),
                     color: convert::text_color(&owner_style),
+                    decoration: convert::text_decoration(self.doc, owner),
                     align: TextAlign::Start,
                     wrap_width: None,
                     line_count: 1,
@@ -802,6 +804,7 @@ fn marker_run(
         text: marker.text.text.clone(),
         style: marker.text.style.clone(),
         color: marker.text.color,
+        decoration: TextDecoration::default(),
         align: TextAlign::Start,
         wrap_width: None,
         line_count: metrics.line_count,
@@ -822,12 +825,28 @@ fn display_key(doc: &BaseDocument, node: &Node) -> NodeId {
         return node.id;
     }
     let boxes = layout_children(node);
-    node.children
+    let wrapped: Vec<NodeId> = node
+        .children
         .iter()
         .copied()
-        .find(|child| !boxes.contains(child) && doc.get_node(*child).is_some())
-        .unwrap_or(node.id)
+        .filter(|child| doc.get_node(*child).is_some())
+        .collect();
+    if let Some(child) = wrapped.iter().copied().find(|child| !boxes.contains(child)) {
+        return child;
+    }
+    // Everything the block wraps has a box of its own (an image, a form control), so each
+    // is listed under its own id and none is free to stand for the block. The block takes
+    // the first one's id with a tag bit set: still a function of DOM nodes only, and never
+    // the id of a box that is listed itself.
+    match wrapped.first() {
+        Some(&child) => child | ANONYMOUS_BLOCK_TAG,
+        None => node.id,
+    }
 }
+
+/// Set on the id an anonymous block is listed under when it wraps only nodes that have
+/// boxes of their own, so that it cannot be mistaken for the first of them.
+const ANONYMOUS_BLOCK_TAG: NodeId = 1 << (usize::BITS - 1);
 
 /// The element text belongs to: for text shaped in an anonymous block's own style, the
 /// element the block was made inside.
