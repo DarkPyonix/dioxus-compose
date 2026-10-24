@@ -163,7 +163,6 @@ fn fr34_3_widget_is_placed_at_the_offset_the_page_computed() {
     let mut host = host();
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
     let parent = widget_parent(&first);
-    let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
     // A box is placed inside its container, so the widget's box sits at the top of the
     // wrapping div, and the wrapping div is the one 30px below the block before it.
     let container = first
@@ -175,9 +174,15 @@ fn fr34_3_widget_is_placed_at_the_offset_the_page_computed() {
             _ => None,
         })
         .expect("the widget's box is not inside a container");
-    let offsets = |node| {
-        modifiers_of(&first, node)
-            .into_iter()
+    // Copied out of the first batch, because rendering the second frame borrows the host
+    // mutably and the batch cannot outlive that.
+    let first_container = modifiers_of(&first, container);
+    let first_parent = modifiers_of(&first, parent);
+    let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
+    let offsets = |before: &[Modifier], node| {
+        before
+            .iter()
+            .cloned()
             .chain(modifiers_of(&second, node))
             .filter_map(|modifier| match modifier {
                 Modifier::Offset { y, .. } => Some(y),
@@ -186,14 +191,14 @@ fn fr34_3_widget_is_placed_at_the_offset_the_page_computed() {
             .collect::<Vec<f32>>()
     };
     assert!(
-        offsets(container).contains(&30.0),
+        offsets(&first_container, container).contains(&30.0),
         "the wrapping div is not below the 30px block before it: {:?}",
-        offsets(container),
+        offsets(&first_container, container),
     );
     assert!(
-        offsets(parent).iter().all(|y| *y == 0.0),
+        offsets(&first_parent, parent).iter().all(|y| *y == 0.0),
         "the widget's box is not at the top of the wrapping div: {:?}",
-        offsets(parent),
+        offsets(&first_parent, parent),
     );
 }
 
