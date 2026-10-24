@@ -186,6 +186,7 @@ fn measure_markers(
                     style: style.clone(),
                     color,
                     align: TextAlign::Start,
+                    decoration: TextDecoration::default(),
                     metrics,
                     wrap_width: None,
                     marker_prefix: 0,

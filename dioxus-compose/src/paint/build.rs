@@ -26,8 +26,8 @@ use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
     DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, PlayDirection,
-    Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextRun,
-    Transform2D,
+    Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration,
+    TextRun, Transform2D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved};
@@ -804,6 +804,7 @@ fn marker_run(
         text: marker.text.text.clone(),
         style: marker.text.style.clone(),
         color: marker.text.color,
+        decoration: TextDecoration::default(),
         align: TextAlign::Start,
         wrap_width: None,
         line_count: metrics.line_count,

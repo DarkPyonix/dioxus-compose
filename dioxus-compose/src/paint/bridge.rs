@@ -322,6 +322,9 @@ impl PlanBridge {
                 PlanChange::ModifierSet { key, .. } | PlanChange::ModifierRemoved { key, .. } => {
                     dirty.insert(key);
                 }
+                // The renderer is not told to play animations yet: the bridge writes no
+                // `StartAnimation`, so a node's animations change nothing it sends.
+                PlanChange::AnimationsChanged { .. } | PlanChange::AnimationStarted { .. } => {}
             }
         }
 

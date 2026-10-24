@@ -1158,7 +1158,7 @@ fn transformed() -> Element {
     }
 }
 
-/// FR-34.1: a 2D transform goes to compose-rust as one `Transform` modifier. The origin is
+/// A 2D transform goes to compose-rust as one `Transform` modifier. The origin is
 /// folded into the matrix, so the origin sent is (0, 0).
 #[test]
 fn fr34_1_transform_is_sent_as_a_matrix_about_the_top_left() {
