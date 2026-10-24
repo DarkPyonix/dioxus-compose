@@ -147,7 +147,7 @@ fn draft_text(dom: &HtmlDom) -> String {
     let draft = dom
         .virtual_dom()
         .runtime()
-        .consume_context::<Board>()
+        .consume_context::<Board>(ScopeId::APP)
         .expect("the board app provides its cards as context")
         .draft;
     dom.virtual_dom().in_runtime(|| draft.cloned())
