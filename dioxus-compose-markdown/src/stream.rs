@@ -411,6 +411,14 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
     if count < 2 {
         return 0;
     }
+    // A carriage return that is not followed by a line feed ends a line in CommonMark, but
+    // it is the one line ending the block parser does not scan the same way from every
+    // starting point: text before it and text after it can come out differently once more
+    // arrives. Nothing is frozen while the text holds one; `finish` builds it all in one
+    // pass. Agent output ends its lines with line feeds, so this costs nothing in practice.
+    if has_bare_carriage_return(text) {
+        return 0;
+    }
     let last_start = floor_boundary(text, units[count - 1].range.start.min(text.len()));
     let mut settled = if text[last_start..].contains(['\n', '\r']) {
         count - 1
@@ -432,6 +440,15 @@ fn settled_units(text: &str, units: &[crate::parse::Unit]) -> usize {
         settled -= 1;
     }
     settled
+}
+
+/// Whether a carriage return stands without a line feed after it.
+fn has_bare_carriage_return(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes
+        .iter()
+        .enumerate()
+        .any(|(at, byte)| *byte == b'\r' && bytes.get(at + 1) != Some(&b'\n'))
 }
 
 /// Whether the text ends with a blank line: a line terminator, then a line holding

@@ -301,3 +301,32 @@ fn fr37_a_block_is_not_frozen_until_a_blank_line_follows_it() {
         assert_eq!(streamed, whole, "{text:?}");
     }
 }
+
+/// A block is not frozen while the text holds a bare carriage return: a block parsed from
+/// a prefix there can come out differently from the same block in the whole text.
+///
+/// Found by the random test above with seed 0x2dafa4decceb639f.
+#[test]
+fn fr37_nothing_freezes_around_a_bare_carriage_return() {
+    let documents = [
+        "# t\n\n    code\n\r\u{0}word\r-x\n\n| a | b |\n```  >-`|```diff\nlast",
+        "(- [x] ``https://example.com/x<script>-)\t~~&amp;-  ****(\\[<!--__2) &#``| a | b |\n---\n    code\n\r\u{0}word\r-😀## \n\n| a | b |\n```  >-`|```diff\n\\## - https://example.com/x",
+    ];
+    for text in documents {
+        let whole = parse(text, DEFAULT_MAX_DEPTH);
+        let mut stream = MarkdownStream::new(MarkdownOptions::default());
+        let mut buffer = [0_u8; 4];
+        for character in text.chars() {
+            stream.push_delta(character.encode_utf8(&mut buffer));
+            let frozen: Vec<_> = stream.blocks().take(stream.frozen_len()).cloned().collect();
+            assert_eq!(
+                frozen,
+                whole[..frozen.len().min(whole.len())],
+                "a frozen block differs from the finished parse\n{text:?}"
+            );
+        }
+        stream.finish();
+        let streamed: Vec<_> = stream.blocks().cloned().collect();
+        assert_eq!(streamed, whole, "{text:?}");
+    }
+}
