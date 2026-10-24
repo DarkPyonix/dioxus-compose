@@ -86,8 +86,9 @@ impl HtmlRuntime {
         let configured_scheme = config.color_scheme;
         let moments: Rc<RefCell<Vec<AnimationMoment>>> = Rc::default();
         let sink = moments.clone();
-        let subscription =
-            on_animation_event(Rc::new(move |moment| sink.borrow_mut().push(moment)));
+        let subscription = on_animation_event(Rc::new(move |moment: AnimationMoment| {
+            sink.borrow_mut().push(moment)
+        }));
         Self {
             moments,
             _moments: subscription,
