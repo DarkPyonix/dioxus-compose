@@ -661,6 +661,7 @@ impl Painter<'_, '_> {
                 } else {
                     RunMarker::None
                 },
+                spans: measured.spans.clone(),
             });
         } else if node.flags.is_inline_root() {
             runs = self.parley_runs(node, &content);
@@ -767,6 +768,7 @@ impl Painter<'_, '_> {
                     baseline: metrics.ascent / scale,
                     ellipsis: None,
                     marker: RunMarker::None,
+                    spans: Vec::new(),
                 });
             }
         }
@@ -814,6 +816,7 @@ fn marker_run(
         baseline: metrics.first_baseline,
         ellipsis: None,
         marker: RunMarker::Marker,
+        spans: Vec::new(),
     }
 }
 

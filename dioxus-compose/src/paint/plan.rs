@@ -48,7 +48,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
-use crate::layout::measure::TextStyle;
+use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
     Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat, Transform2D,
@@ -271,6 +271,10 @@ pub struct PlanText {
     pub ellipsis: Option<f32>,
     /// Whether the text is a list marker, or starts with one.
     pub marker: RunMarker,
+    /// The runs of `text` that differ in weight, slant, lines, colour or font family, with
+    /// their colours resolved. Empty for text in one style; the bridge then sends the text
+    /// as one run, and otherwise as the text and its spans together.
+    pub spans: Vec<SpanRun>,
 }
 
 /// The image of a [`PlanKind::Image`]. The node is the `<img>` element's content box.
@@ -1177,6 +1181,16 @@ impl<'a> Builder<'a> {
         let opacity = self.slots[content].opacity;
         for (index, run) in entry.texts.iter().enumerate() {
             let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
+            let spans: Vec<SpanRun> = run
+                .spans
+                .iter()
+                .map(|span| SpanRun {
+                    color: span
+                        .color
+                        .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
+                    ..span.clone()
+                })
+                .collect();
             self.push(
                 content,
                 Slot {
@@ -1194,6 +1208,7 @@ impl<'a> Builder<'a> {
                         soft_wrap: run.wrap_width.is_some(),
                         ellipsis: run.ellipsis,
                         marker: run.marker,
+                        spans,
                     }),
                     modifiers: vec![
                         PlanModifier::Offset {

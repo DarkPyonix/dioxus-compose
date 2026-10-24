@@ -36,6 +36,7 @@
 pub(crate) mod background;
 pub(crate) mod convert;
 pub(crate) mod image;
+pub(crate) mod inline_spans;
 pub(crate) mod list;
 pub(crate) mod measure;
 pub(crate) mod renderer_measure;
@@ -63,7 +64,8 @@ use crate::paint::display_list::{
     MeasuredMarker, MeasuredText, MeasuredTexts, Rgba, TextAlign, TextDecoration,
 };
 use measure::{
-    TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint,
+    SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace,
+    WidthConstraint,
 };
 
 /// The room a `<select>` keeps beside its widest option for the dropdown's indicator, in
@@ -258,6 +260,7 @@ fn measure_markers(
                     metrics,
                     wrap_width: None,
                     marker_prefix: 0,
+                    spans: Vec::new(),
                 },
                 gap,
                 inside: marker.inside,
@@ -280,6 +283,8 @@ struct PreparedText {
     white_space: TextWhiteSpace,
     /// Bytes at the start of `text` that are an inside list marker.
     marker_prefix: usize,
+    /// Where the text differs from its own style: a bold phrase, a link. In bytes of `text`.
+    spans: Vec<SpanRun>,
 }
 
 enum Route {
@@ -621,12 +626,15 @@ impl MeasuredTree<'_> {
                         AvailableSpace::MaxContent => WidthConstraint::MaxContent,
                     },
                 };
-                let mut metrics = measurer.measure(&TextMeasureRequest {
-                    text: &prepared.text,
-                    style: &prepared.style,
-                    width: constraint,
-                    white_space: prepared.white_space,
-                });
+                let mut metrics = measurer.measure_spans(
+                    &TextMeasureRequest {
+                        text: &prepared.text,
+                        style: &prepared.style,
+                        width: constraint,
+                        white_space: prepared.white_space,
+                    },
+                    &prepared.spans,
+                );
                 // `text-align: justify` stretches every line that ends in a soft wrap to the
                 // full width, so when the text takes more than one line the widest line is
                 // the width it wrapped at. A forced break (`\n`) ends a line that is not
@@ -668,6 +676,7 @@ impl MeasuredTree<'_> {
                         metrics,
                         wrap_width,
                         marker_prefix: prepared.marker_prefix,
+                        spans: prepared.spans,
                     },
                 );
             }
@@ -932,7 +941,7 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     if content.spaced {
         return None;
     }
-    let holders = content.holders;
+    let holders = std::mem::take(&mut content.holders);
     let Some(&first) = holders.first() else {
         return Some(None);
     };
@@ -940,30 +949,51 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     let styled = |id: usize| {
         doc.get_node(id)
             .and_then(|node| node.primary_styles())
-            .map(|style| {
-                (
-                    convert::text_style(&style),
-                    convert::text_color(&style),
-                    convert::text_transform(&style),
-                    convert::white_space(&style),
-                )
+            .map(|style| inline_spans::Held {
+                style: convert::text_style(&style),
+                color: convert::text_color(&style),
+                transform: convert::text_transform(&style),
+                white_space: convert::white_space(&style),
+                decoration: convert::text_decoration(doc, id),
             })
     };
-    let (mut style, color, transform, white_space) = styled(first)?;
-    let decoration = convert::text_decoration(doc, first);
-    for &holder in &holders[1..] {
-        let (other_style, other_color, other_transform, other_white_space) = styled(holder)?;
-        if other_style != style
-            || other_color != color
-            || other_transform != transform
-            || other_white_space.wrap != white_space.wrap
-            || convert::text_decoration(doc, holder) != decoration
-        {
-            return None;
-        }
+    let mut helds: HashMap<usize, inline_spans::Held> = HashMap::new();
+    for &holder in &holders {
+        helds.insert(holder, styled(holder)?);
     }
-
+    // All the text in one style: the measurer is asked about one run, drawn in the style of
+    // the element that holds it. Text of several styles is one run with spans, when every
+    // difference is one a span can carry.
+    let uniform = holders[1..].iter().all(|holder| {
+        let (one, other) = (&helds[&first], &helds[holder]);
+        one.style == other.style
+            && one.color == other.color
+            && one.transform == other.transform
+            && one.white_space.wrap == other.white_space.wrap
+            && one.decoration == other.decoration
+    });
     let root_style = node.primary_styles()?;
+    let base = if uniform {
+        helds[&first].clone()
+    } else {
+        // Text that is not in one style is set in the style of the element that holds all
+        // of it. Plain text inside inherits it, and an element inside only changes the part
+        // it wraps.
+        inline_spans::Held {
+            style: convert::text_style(&root_style),
+            color: convert::text_color(&root_style),
+            transform: convert::text_transform(&root_style),
+            white_space: convert::white_space(&root_style),
+            decoration: convert::text_decoration(doc, root),
+        }
+    };
+    let inline_spans::Held {
+        mut style,
+        color,
+        transform,
+        white_space,
+        decoration,
+    } = base.clone();
     // The root's own line height is the least every line takes (its strut), whatever the
     // text inside sets, as blitz-dom floors each span's line height by it.
     if let (TextLineHeight::Px(text_line), TextLineHeight::Px(root_line)) = (
@@ -982,15 +1012,18 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         .text
         .strip_prefix(blitz_prefix.as_str())
         .unwrap_or(&layout.text);
-    let text = if convert::collapses_white_space(&root_style) {
-        // Collapsible white space at the start and end of a line is removed (CSS Text 3,
-        // 4.1.2). Only ASCII white space collapses; a no-break space stays.
-        own_text
-            .trim_matches(|c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}'))
-            .to_string()
+    let collapses = convert::collapses_white_space(&root_style);
+    // Collapsible white space at the start and end of a line is removed (CSS Text 3,
+    // 4.1.2). Only ASCII white space collapses; a no-break space stays.
+    let (lead, kept) = if collapses {
+        let is_space = |c: char| matches!(c, ' ' | '\t' | '\n' | '\r' | '\u{c}');
+        let trimmed = own_text.trim_matches(is_space);
+        let lead = own_text.len() - own_text.trim_start_matches(is_space).len();
+        (lead, trimmed)
     } else {
-        own_text.to_string()
+        (0, own_text)
     };
+    let text = kept.to_string();
     if text.is_empty() {
         return Some(None);
     }
@@ -1000,19 +1033,98 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         _ => String::new(),
     };
 
+    let (body, spans) = if uniform {
+        (convert::transform_text(&text, transform), Vec::new())
+    } else {
+        // A press on a piece of a text drawn as one is the renderer's to report, by the
+        // span it lands on, and the page does not register spans for the renderer to
+        // report yet. Until it does, a link inside the text stays with the fallback
+        // shaper, which draws it as a run of its own that a click reaches.
+        let handled = |holder: usize| {
+            LISTENING.with(|listening| listening.borrow().contains(&holder))
+                || doc.get_node(holder).is_some_and(|node| {
+                    node.element_data()
+                        .is_some_and(|element| &*element.name.local == "a")
+                        && node.attr(local("href")).is_some()
+                })
+        };
+        if holders
+            .iter()
+            .any(|&holder| holder != root && handled(holder))
+        {
+            warn_unspanned(
+                doc,
+                root,
+                "holds an element with an event handler or a link among text in other styles, and an event on a piece of a text drawn as one is not routed to that element",
+            );
+            return None;
+        }
+        let known = |holder: usize| helds.contains_key(&holder);
+        let Some(segments) = inline_spans::align(own_text, &content.pieces, collapses, &known)
+        else {
+            warn_unspanned(
+                doc,
+                root,
+                "holds text that could not be matched to the elements that wrote it",
+            );
+            return None;
+        };
+        let segments = inline_spans::clip(segments, lead..lead + text.len());
+        match inline_spans::build(&text, &segments, &helds, &base, marker_prefix.len()) {
+            Ok(built) => built,
+            Err(reason) => {
+                warn_unspanned(doc, root, reason);
+                return None;
+            }
+        }
+    };
+
     Some(Some(PreparedText {
         owner: common_ancestor(doc, root, &holders),
-        text: format!(
-            "{marker_prefix}{}",
-            convert::transform_text(&text, transform)
-        ),
+        text: format!("{marker_prefix}{body}"),
         style,
         color,
         decoration,
         align: convert::text_align(&root_style),
         white_space,
         marker_prefix: marker_prefix.len(),
+        spans,
     }))
+}
+
+thread_local! {
+    /// The nodes the page has event listeners on, set by the document before it lays out.
+    /// An element that listens inside a text drawn as one would lose its events, since the
+    /// renderer reports a press on the text and not on a piece of it.
+    static LISTENING: std::cell::RefCell<HashSet<usize>> = std::cell::RefCell::new(HashSet::new());
+}
+
+/// Tells the layout which nodes have event listeners.
+pub(crate) fn set_listening(nodes: HashSet<usize>) {
+    LISTENING.with(|listening| *listening.borrow_mut() = nodes);
+}
+
+/// Says on stderr, once for each element and reason, that an inline formatting context
+/// stays with the fallback shaper because its text changes something a span cannot carry.
+/// The text is then laid out and drawn piece by piece, so it will not line up with how the
+/// renderer shapes a whole line.
+fn warn_unspanned(doc: &BaseDocument, root: usize, reason: &'static str) {
+    use std::cell::RefCell;
+    thread_local! {
+        static WARNED: RefCell<HashSet<(usize, &'static str)>> = RefCell::new(HashSet::new());
+    }
+    if !WARNED.with(|warned| warned.borrow_mut().insert((root, reason))) {
+        return;
+    }
+    let tag = doc
+        .get_node(root)
+        .and_then(|node| node.element_data())
+        .map_or("(anonymous)", |element| &*element.name.local);
+    eprintln!(
+        "dioxus-compose: <{tag}> (node {root}) {reason}. A line of text can vary in bold, \
+         italic, underline, line-through, colour and font family; anything else in it is \
+         laid out and drawn by the fallback shaper, one piece at a time."
+    );
 }
 
 /// The content size of a `<select>`: as wide as its widest option's label plus
@@ -1140,6 +1252,10 @@ fn collect_fixed(doc: &BaseDocument, id: usize, out: &mut Vec<usize>) {
 struct InlineContent {
     /// The nodes whose children include a text node that is not only white space.
     holders: Vec<usize>,
+    /// Every text node of the context in document order, white space included, with the
+    /// node that holds it. The ranges of the context's text that belong to each element are
+    /// worked out from these.
+    pieces: Vec<inline_spans::Piece>,
     /// Whether an inline element inside takes room beside its text.
     spaced: bool,
 }
@@ -1170,6 +1286,10 @@ fn collect_inline_content(doc: &BaseDocument, id: usize, content: &mut InlineCon
                 if !text.content.trim().is_empty() && !content.holders.contains(&holder) {
                     content.holders.push(holder);
                 }
+                content.pieces.push(inline_spans::Piece {
+                    holder,
+                    raw: text.content.to_string(),
+                });
             }
             // An element, or the anonymous box blitz-dom makes for a `::before` or `::after`
             // (only pseudo-elements are reachable through `before`, `children` and `after`;
