@@ -779,7 +779,7 @@ rsx! {
 - `selected: Option<K>`(`K: Clone + PartialEq`)입니다. `Some`이면 상세가 보여야 하는 상태이고, 한 패널만 들어가는 자리에서는 상세가 보입니다. `None`이면 목록입니다.
 - `on_select_change: EventHandler<Option<K>>`입니다. 사용자가 뒤로 가면(`SplitPane`의 `on_dismiss`) `None`으로 한 번 불립니다. 넓은 자리에서 선택을 비우는 일은 앱의 몫입니다.
 - 접는 기준은 기본적으로 `SplitPane`과 같습니다. 합성의 자기 폭을 디자인 시스템 규칙으로 판단합니다.
-- `collapse_below: Option<f32>`(기본 `None`)는 앱이 정하는 임계값입니다. `Some(v)`이면 합성이 `use_node_size()`(FR-28)로 자기 폭을 재서 `v`보다 좁을 때 `selected`와 무관하게 한 패널만 `selected_index`로 그립니다. `None`이면 디자인 시스템 규칙이 정합니다. 이 경로는 compose-rust 변경이 필요 없습니다. 대가는 패널이 바뀔 때 자식이 다시 만들어질 수 있다는 것입니다.
+- `collapse_below: Option<f32>`(기본 `None`)는 앱이 정하는 임계값입니다. `Some(v)`이면 합성이 `use_node_size()`(FR-28)로 자기 폭을 재서 `v`보다 좁을 때 `SplitPane` 없이 선택된 패널 하나만 그린다(`selected`가 `Some`이면 상세, `None`이면 목록). 뒤로 가기는 `on_select_change(None)`을 거친다. 이유는 `SplitPane`에 한 패널만 그리도록 강제하는 속성이 없기 때문이며, 그 속성을 더하는 일은 compose-rust 이슈 #TBD가 추적한다. `None`이면 디자인 시스템 규칙이 정합니다. 이 경로는 compose-rust 변경이 필요 없습니다. 대가는 패널이 바뀔 때 자식이 다시 만들어질 수 있다는 것입니다.
 - 선택이 있는 채로 넓어졌다 좁아져도 `selected`는 그대로입니다. 합성은 선택 상태를 따로 저장하지 않습니다.
 
 수용 기준:
@@ -787,7 +787,7 @@ rsx! {
 1. `selected`가 `Some`일 때 `SplitPane`의 `selected_index`가 `1`로, `None`일 때 `0`으로 실립니다. 테스트 `fr15_5_2_selected_maps_to_pane_index`.
 2. 목 렌더러가 `on_dismiss` 핸들러를 부르면 `on_select_change(None)`이 정확히 한 번 불립니다. 테스트 `fr15_5_2_back_clears_selection_once`.
 3. 목록과 상세가 모두 같은 `SplitPane`의 자식으로 만들어지고, 선택이 바뀌어도 목록 노드에 `Create` 레코드가 나오지 않습니다. 테스트 `fr15_5_2_selection_keeps_list_nodes`.
-4. `collapse_below`가 `Some(v)`이고 목 렌더러가 자기 폭을 `v` 미만으로 보고하면, 선택과 무관하게 한 패널만 `selected_index`로 실립니다. `None`이면 디자인 시스템 규칙이 정합니다. 테스트 `fr15_5_2_collapse_below_overrides_design_rule`.
+4. `collapse_below`가 `Some(v)`이고 목 렌더러가 자기 폭을 `v` 미만으로 보고하면, `SplitPane` 노드 없이 `selected`가 가리키는 패널 하나만 만들어진다. `None`이면 디자인 시스템 규칙이 정합니다. 테스트 `fr15_5_2_collapse_below_overrides_design_rule`.
 5. 수동: 넓은 창에서 두 패널이 나란히 보이고, 창을 좁히면 선택 여부에 따라 목록 또는 상세 하나만 보입니다. 뒤로 가기가 목록으로 돌아갑니다. 여섯 디자인 시스템에서 확인합니다.
 
 #### 15.5.3 `Table` (`Draft`)
