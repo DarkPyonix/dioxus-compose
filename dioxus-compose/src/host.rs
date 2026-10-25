@@ -259,7 +259,8 @@ pub(crate) fn deliver_event(
         | EventPayload::NotificationActivated { .. }
         | EventPayload::NotificationPermissionChanged(_)
         | EventPayload::AnimationEvent { .. }
-        | EventPayload::ReducedMotionChanged(_) => {
+        | EventPayload::ReducedMotionChanged(_)
+        | EventPayload::ZoomChanged { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };
