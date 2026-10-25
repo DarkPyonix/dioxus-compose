@@ -573,13 +573,15 @@ impl ComposeRenderer {
                     return None;
                 };
                 let any = any.as_any();
-                let (base, property, to, spec) =
+                let (base, property, to, spec, from, watch) =
                     if let Some(alpha) = any.downcast_ref::<crate::hooks::Animated<f32>>() {
                         (
                             Modifier::Alpha(alpha.target),
                             AnimatedProperty::Alpha,
                             KeyframeValue::Alpha(alpha.target),
                             alpha.spec,
+                            alpha.enter_from.map(KeyframeValue::Alpha),
+                            alpha.watch,
                         )
                     } else if let Some(paint) =
                         any.downcast_ref::<crate::hooks::Animated<compose_rust::Paint>>()
@@ -589,6 +591,8 @@ impl ComposeRenderer {
                             AnimatedProperty::Background,
                             KeyframeValue::Paint(paint.target),
                             paint.spec,
+                            paint.enter_from.map(KeyframeValue::Paint),
+                            paint.watch,
                         )
                     } else {
                         let offset = any.downcast_ref::<crate::hooks::Animated<(f32, f32)>>()?;
@@ -609,18 +613,32 @@ impl ComposeRenderer {
                                 TransformFunction::translate(x, y),
                             ])),
                             offset.spec,
+                            offset.enter_from.map(|(from_x, from_y)| {
+                                KeyframeValue::Transform(std::borrow::Cow::Owned(vec![
+                                    TransformFunction::translate(from_x, from_y),
+                                ]))
+                            }),
+                            offset.watch,
                         )
                     };
-                if !self.animated.insert((node_id, name)) {
+                // A node that appears with a starting value plays from it to the target; a
+                // later change plays from whatever is on screen.
+                let first = self.animated.insert((node_id, name));
+                if !first || from.is_some() {
                     let animation_id = self.next_animation_id;
                     self.next_animation_id = self.next_animation_id.wrapping_add(1).max(1);
-                    self.write(Mutation::StartAnimation(compose_rust::transition(
-                        node_id,
-                        animation_id,
-                        property,
-                        to,
-                        spec,
-                    )));
+                    let mut animation =
+                        compose_rust::transition(node_id, animation_id, property, to, spec);
+                    if let (true, Some(from)) = (first, from) {
+                        let start = &mut animation.keyframes.to_mut()[0];
+                        start.value = from;
+                        start.from_presented = false;
+                    }
+                    if watch != 0 {
+                        animation.events = compose_rust::AnimationEvents::END;
+                        crate::animated_visibility::watch_animation(animation_id, watch);
+                    }
+                    self.write(Mutation::StartAnimation(animation));
                 }
                 Some(Some((slot, base)))
             }

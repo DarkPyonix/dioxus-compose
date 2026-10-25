@@ -21,6 +21,7 @@ pub use compose_rust::ios_main;
 // (`dom`), styles and the layout pass (`layout`), and the display list and plan the
 // renderer draws (`paint`). Their public names are gathered in `html`, apart from the
 // crate root, because some of them (`Brush`, `TextAlign`) already mean a widget's here.
+mod animated_visibility;
 mod dom;
 mod extensions;
 mod hooks;
@@ -48,6 +49,7 @@ pub use hooks::{
     use_node_size, use_notification_activated, use_notification_permission, use_reduced_motion,
     use_theme, use_window_size, use_zoom,
 };
+pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use html_view::HtmlView;
 pub use widgets::{
@@ -138,7 +140,7 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        AbsoluteBox, Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonKind,
+        AbsoluteBox, AnimatedVisibility, Alignment, Arrangement, AssetKind, Badge, Enter, Exit, Brush, Button, ButtonKind,
         ButtonVariant, Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, Cursor,
         DatePicker, DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element,
         FileDrop, FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent,
