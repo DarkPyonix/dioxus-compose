@@ -158,9 +158,8 @@ impl Seen {
     fn island_zooms(&self) -> Vec<(u32, f32)> {
         self.props
             .iter()
-            .filter_map(|&(node, property, value)| {
-                (property == PropertyKind::IslandZoom).then(|| (node, value.unwrap_or(f32::NAN)))
-            })
+            .filter(|&&(_, property, _)| property == PropertyKind::IslandZoom)
+            .map(|&(node, _, value)| (node, value.unwrap_or(f32::NAN)))
             .collect()
     }
 
@@ -461,7 +460,7 @@ fn zoom_buttons() -> Element {
 #[test]
 fn fr34_4_use_zoom_reads_the_report_and_sets_the_level() {
     install();
-    let mut host = Host::html(zoom_buttons, || HtmlConfig::default());
+    let mut host = Host::html(zoom_buttons, HtmlConfig::default);
     let first = seen(host.rebuild().unwrap());
     assert!(first.texts.contains(&"k 1.00 level 0".to_string()), "{:?}", first.texts);
     let (node, handler) = first.clickable[0];
@@ -501,7 +500,7 @@ fn set_level_button() -> Element {
 #[test]
 fn fr34_4_set_level_reaches_the_window_record() {
     install();
-    let mut host = Host::html(set_level_button, || HtmlConfig::default());
+    let mut host = Host::html(set_level_button, HtmlConfig::default);
     let first = seen(host.rebuild().unwrap());
     let (node, handler) = first.clickable[0];
     assert!(first.levels.iter().all(Option::is_none), "nothing asked at start");
