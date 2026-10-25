@@ -349,7 +349,7 @@ impl ComposeRenderer {
     /// applied.
     fn modifier_for(
         &mut self,
-        element: ElementId,
+        _element: ElementId,
         node_id: u32,
         name: &'static str,
         value: &AttributeValue,
@@ -381,7 +381,6 @@ impl ComposeRenderer {
         const BORDER_EACH: u16 = 14;
         const ELEVATION: u16 = 15;
         const CLIP: u16 = 16;
-        const CLICKABLE: u16 = 17;
         const PADDING: u16 = 18;
         const OBSERVE_SIZE: u16 = 19;
         const MOTION: u16 = 20;
@@ -408,7 +407,6 @@ impl ComposeRenderer {
             "background" => Some(BACKGROUND),
             "border_width" | "border_color" => Some(BORDER),
             "elevation" => Some(ELEVATION),
-            "onclickable" => Some(CLICKABLE),
             "padding" | "padding_role" => Some(PADDING),
             "observe_size" => Some(OBSERVE_SIZE),
             "motion" => Some(MOTION),
@@ -649,21 +647,6 @@ impl ComposeRenderer {
                 Some(Some((CLIP, Modifier::Clip(*enabled))))
             }
             "alpha" => Some(Some((ALPHA, Modifier::Alpha(float(value)?)))),
-            "onclickable" => {
-                let AttributeValue::Listener(_) = value else {
-                    return Some(None);
-                };
-                let handler_id = self.next_handler_id;
-                self.next_handler_id += 1;
-                self.handlers.push(Handler {
-                    id: handler_id,
-                    element,
-                    node_id,
-                    name,
-                    link: 0,
-                });
-                Some(Some((CLICKABLE, Modifier::Clickable { handler_id })))
-            }
             _ => None,
         }
     }
@@ -1304,6 +1287,12 @@ impl WriteMutations for ComposeRenderer {
                 self.sync_pointer_handler(id, node_id);
                 return;
             }
+            // The press modifier is written from the listener (`create_event_listener`),
+            // so the attribute itself, which a container without a handler carries as
+            // `None`, writes nothing.
+            if name == "onclickable" {
+                return;
+            }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
                 if let Some((index, modifier)) = slot {
                     self.write(Mutation::SetModifier {
@@ -1344,6 +1333,15 @@ impl WriteMutations for ComposeRenderer {
         if is_pointer_event(name) {
             self.sync_pointer_handler(id, node_id);
         }
+        // A listener reaches the Renderer here and not through `set_attribute`, so the
+        // press modifier is written from the listener's handler.
+        if is_clickable_event(name) {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index: CLICKABLE_SLOT,
+                modifier: compose_rust::Modifier::Clickable { handler_id },
+            });
+        }
         if let Some(property) = event_property(name) {
             self.write(Mutation::SetProp {
                 node_id,
@@ -1362,6 +1360,15 @@ impl WriteMutations for ComposeRenderer {
             return;
         };
         self.handlers.swap_remove(position);
+        if is_clickable_event(name)
+            && let Some(node_id) = self.node(id)
+        {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index: CLICKABLE_SLOT,
+                modifier: compose_rust::Modifier::Empty,
+            });
+        }
         if is_pointer_event(name)
             && let Some(node_id) = self.node(id)
         {
@@ -1412,6 +1419,13 @@ fn widget_kind(name: &str) -> Result<WidgetKind, ProtocolError> {
 
 fn property_kind(name: &str) -> Option<PropertyKind> {
     PropertyKind::from_name(name).ok()
+}
+
+/// The chain position of the press modifier, which `modifier_for` also uses.
+const CLICKABLE_SLOT: u16 = 17;
+
+fn is_clickable_event(name: &str) -> bool {
+    matches!(name, "clickable" | "onclickable")
 }
 
 fn is_pointer_event(name: &str) -> bool {
