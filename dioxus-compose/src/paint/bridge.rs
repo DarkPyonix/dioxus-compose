@@ -688,7 +688,11 @@ impl PlanBridge {
                 node,
                 name: None,
                 property,
-                elapsed: (-animation.delay).clamp(0.0, seconds),
+                elapsed: if animation.delay < 0.0 {
+                    (-animation.delay).min(seconds)
+                } else {
+                    0.0
+                },
             });
         }
     }

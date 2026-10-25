@@ -438,6 +438,11 @@ fn transition_line(kind: &str, event: &TransitionEvent) -> String {
         .downcast::<TransitionEventData>()
         .expect("the Host sent this event, so it carries the Host's data")
         .clone();
+    assert!(
+        data.elapsed_time().is_sign_positive(),
+        "elapsedTime is never negative zero: {kind} {}",
+        data.elapsed_time()
+    );
     format!(
         "{kind} {} {:?} [{}]",
         data.property_name(),
