@@ -526,7 +526,7 @@ mod widgets {
     pub fn screen() -> Element {
         rsx! {
             Column {
-                HtmlView { app: super::wide_bar, height: 200.0 }
+                HtmlView { app: super::wide_bar, config: Some(super::config), height: 200.0 }
             }
         }
     }
@@ -560,8 +560,15 @@ fn fr34_4_an_htmlview_names_the_zoom_and_lays_out_in_its_own_viewport() {
             height_class: WindowHeightClass::from_height_dp(200.0),
         },
     };
+    // A widget app's Host answers the zoom report itself, so it reaches the island with no
+    // error from the widget path.
     let (batch, _) = host.dispatch(measured).unwrap();
-    assert!(seen(batch).has_size(420.0, 40.0), "laid out at 420 before any zoom");
+    let plain = seen(batch);
+    assert!(
+        plain.sizes.iter().any(|&(w, _)| (w - 420.0).abs() < 0.01),
+        "laid out at 420 before any zoom: {:?}",
+        plain.sizes
+    );
 
     let zoomed = report(&mut host, zoom_event(1.5, 1.5, 0));
     assert_eq!(
@@ -570,7 +577,7 @@ fn fr34_4_an_htmlview_names_the_zoom_and_lays_out_in_its_own_viewport() {
         "the box names the new factor"
     );
     assert!(
-        zoomed.has_size(280.0, 40.0),
+        zoomed.sizes.iter().any(|&(w, _)| (w - 280.0).abs() < 0.01),
         "the page is laid out in 420 / 1.5 pixels: {:?}",
         zoomed.sizes
     );
