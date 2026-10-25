@@ -47,7 +47,7 @@ fn nested_app() -> Element {
 /// The node that subscribed to exactly `kinds`, and its handler.
 fn subscribed(batch: &[u8], kinds: u32) -> (u32, u64) {
     let mut mask = None;
-    let mut handler = None;
+    let mut handlers = Vec::new();
     for record in decode_batch(batch).unwrap() {
         if let Mutation::SetProp {
             node_id,
@@ -59,13 +59,15 @@ fn subscribed(batch: &[u8], kinds: u32) -> (u32, u64) {
                 mask = Some(node_id);
             }
             if property == PropertyKind::OnPointer {
-                handler = Some((node_id, number as u64));
+                handlers.push((node_id, number as u64));
             }
         }
     }
     let node = mask.unwrap_or_else(|| panic!("no node subscribed to {kinds}"));
-    let (owner, handler) = handler.expect("a subscribed node has a handler");
-    assert_eq!(owner, node);
+    let handler = handlers
+        .iter()
+        .find_map(|(owner, handler)| (*owner == node).then_some(*handler))
+        .expect("a subscribed node has a handler");
     (node, handler)
 }
 
