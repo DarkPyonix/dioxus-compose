@@ -105,7 +105,10 @@ impl MockRenderer {
                 | Mutation::RequestNotificationPermission
                 | Mutation::StartAnimation(_)
                 | Mutation::ControlAnimation { .. }
-                | Mutation::EditCode { .. } => {}
+                | Mutation::EditCode { .. }
+                | Mutation::SetSelection { .. }
+                | Mutation::RevealRange { .. }
+                | Mutation::SetFolded { .. } => {}
             }
         }
     }

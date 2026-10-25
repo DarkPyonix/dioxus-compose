@@ -248,6 +248,51 @@ pub(crate) fn deliver_event(
         EventPayload::DecorationActivated { decoration } => {
             Event::new(Rc::new(decoration), true).into_any()
         }
+        EventPayload::SelectionChanged {
+            version,
+            anchor_line,
+            anchor_column,
+            active_line,
+            active_column,
+        } => Event::new(
+            Rc::new(compose_rust::code::SelectionChange {
+                version,
+                anchor: Position::new(anchor_line, anchor_column),
+                active: Position::new(active_line, active_column),
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::VisibleRangeChanged {
+            version,
+            first_line,
+            last_line,
+        } => Event::new(
+            Rc::new(compose_rust::code::VisibleRange {
+                version,
+                first_line,
+                last_line,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::EditorFocusChanged { focused } => {
+            Event::new(Rc::new(focused), true).into_any()
+        }
+        EventPayload::FoldChanged {
+            start_line,
+            collapsed,
+        } => Event::new(
+            Rc::new(compose_rust::code::FoldChange {
+                start_line,
+                collapsed,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CompositionChanged { composing } => {
+            Event::new(Rc::new(composing), true).into_any()
+        }
         // The Host answers these itself and never hands them to a runtime: a zoom report
         // updates the state `use_zoom` and every island read, and wakes them, before any
         // runtime is asked. One that arrives here was addressed to a handler, which none

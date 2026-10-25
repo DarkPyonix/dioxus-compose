@@ -449,7 +449,7 @@ pub mod elements {
     element!(
         codeeditor,
         "CodeEditor",
-        [editor, text, syntax_spans, decorations, tab_width]
+        [editor, text, syntax_spans, decorations, folds, gutter_decorations, tab_width]
     );
 
     #[doc(hidden)]
@@ -618,4 +618,12 @@ pub mod events {
     event!(onsave, compose_rust::code::SaveRequest);
     // The id the application gave the decoration that was pressed or accepted.
     event!(ondecorationclick, u64);
+    // The rest of a code editor's reports: the selection moving, the visible lines
+    // changing, the editor gaining or losing focus (true is gained), a stretch folded or
+    // unfolded, and an input method starting or ending a composition (true is started).
+    event!(onselectionchange, compose_rust::code::SelectionChange);
+    event!(onvisiblerangechange, compose_rust::code::VisibleRange);
+    event!(oneditorfocuschange, bool);
+    event!(onfoldchange, compose_rust::code::FoldChange);
+    event!(oncompositionchange, bool);
 }
