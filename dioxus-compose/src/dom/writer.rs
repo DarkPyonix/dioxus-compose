@@ -159,7 +159,7 @@ pub(crate) fn element_name(tag: &str, namespace: Option<&str>) -> QualName {
     )
 }
 
-fn attribute_name(name: &str, namespace: Option<&str>) -> QualName {
+pub(crate) fn attribute_name(name: &str, namespace: Option<&str>) -> QualName {
     QualName::new(
         None,
         Namespace::from(namespace.unwrap_or("")),

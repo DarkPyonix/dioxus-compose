@@ -180,6 +180,16 @@ impl HtmlRuntime {
         if self.measured_under.replace(under) != Some(under) {
             self.dom.invalidate_text_measurements();
         }
+        // The theme's colour roles, as `--dxc-*` custom properties, set before the styles
+        // are resolved so a switch restyles the page in the frame that changed the theme.
+        self.dom.set_root_variables(&crate::theme_variables::theme_variable_declarations(
+            &under.0,
+            under.1,
+            match scheme {
+                ColorScheme::Dark => ThemeScheme::Dark,
+                _ => ThemeScheme::Light,
+            },
+        ));
         // One CSS pixel is one dp, so the page is laid out at a scale of one. The renderer
         // turns dp into device pixels.
         self.dom.layout(viewport.0, viewport.1, 1.0);
