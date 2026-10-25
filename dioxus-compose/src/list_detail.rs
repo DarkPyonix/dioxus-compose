@@ -6,7 +6,7 @@ use dioxus_core_macro::{Props, component, rsx};
 
 use crate as dioxus_elements;
 use crate::hooks::use_node_size;
-use crate::widgets::{Button, Column, SplitPane};
+use crate::widgets::{Column, SplitPane};
 
 /// A list and the detail of what is selected in it.
 ///
@@ -21,8 +21,8 @@ use crate::widgets::{Button, Column, SplitPane};
 /// pane shows is the design system's, unless `collapse_below` is given.
 ///
 /// With `collapse_below: Some(width)` the composition measures its own width and, below
-/// `width` dp, draws only the pane `selected` points at, with a back button above the
-/// detail. Nothing is measured until the Renderer reports a size, and until then the
+/// `width` dp, draws only the pane `selected` points at. The detail brings its own back
+/// control, which calls `on_select_change` with `None`. Nothing is measured until the Renderer reports a size, and until then the
 /// design system decides. Crossing the threshold rebuilds the panes, because they move
 /// between parents.
 ///
@@ -77,11 +77,10 @@ pub fn ListDetail<K: Clone + PartialEq + 'static>(
             fill_max_width,
             fill_max_height,
             if forced_single {
+                // Going back is the application's own control in the detail, calling
+                // on_select_change(None); the system back gesture will go the same way
+                // once use_back exists.
                 if pane == 1 {
-                    Button {
-                        text: "Back",
-                        on_click: move |_| on_select_change.call(None),
-                    }
                     {detail}
                 } else {
                     {list}
