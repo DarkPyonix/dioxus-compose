@@ -6,6 +6,7 @@
 //! mutations to the document in `writer`.
 
 pub(crate) mod form;
+mod pointer;
 mod writer;
 
 use std::any::Any;
@@ -40,6 +41,9 @@ use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
 };
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
+pub use pointer::{
+    Cursor, PointerInput, PointerKind, PointerSubscription, PointerType, UserSelect, WheelMode,
+};
 use writer::{DomWriter, WriterState, attribute_name, element_name};
 
 /// What a browser's own stylesheet says about `<select>` and blitz-dom's does not: the
@@ -189,6 +193,8 @@ pub struct HtmlDom {
     theme_variables: String,
     /// The application's own declarations for `root`.
     root_style: String,
+    /// What the pointer reports have left: `:hover`, `:active` and the captures.
+    pointer: pointer::PointerState,
 }
 
 impl HtmlDom {
@@ -255,6 +261,7 @@ impl HtmlDom {
             root,
             theme_variables: String::new(),
             root_style: String::new(),
+            pointer: pointer::PointerState::default(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
         dom.vdom.rebuild(&mut writer);
@@ -1261,6 +1268,9 @@ fn not_sent(kind: &str) -> ! {
 
 impl HtmlEventConverter for Converter {
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
+        if let Some(input) = event.downcast::<pointer::EventData>() {
+            return MouseData::new(input.clone());
+        }
         let pointer = event
             .downcast::<PointerData>()
             .expect("every mouse event this document sends carries PointerData")
@@ -1316,8 +1326,12 @@ impl HtmlEventConverter for Converter {
     fn convert_mounted_data(&self, _: &PlatformEventData) -> dioxus_html::MountedData {
         not_sent("mounted")
     }
-    fn convert_pointer_data(&self, _: &PlatformEventData) -> dioxus_html::PointerData {
-        not_sent("pointer")
+    fn convert_pointer_data(&self, event: &PlatformEventData) -> dioxus_html::PointerData {
+        let data = event
+            .downcast::<pointer::EventData>()
+            .expect("every pointer event this document sends carries the pointer event data")
+            .clone();
+        dioxus_html::PointerData::new(data)
     }
     fn convert_resize_data(&self, _: &PlatformEventData) -> dioxus_html::ResizeData {
         not_sent("resize")
@@ -1344,7 +1358,11 @@ impl HtmlEventConverter for Converter {
     fn convert_visible_data(&self, _: &PlatformEventData) -> dioxus_html::VisibleData {
         not_sent("visible")
     }
-    fn convert_wheel_data(&self, _: &PlatformEventData) -> dioxus_html::WheelData {
-        not_sent("wheel")
+    fn convert_wheel_data(&self, event: &PlatformEventData) -> dioxus_html::WheelData {
+        let data = event
+            .downcast::<pointer::EventData>()
+            .expect("every wheel event this document sends carries the pointer event data")
+            .clone();
+        dioxus_html::WheelData::new(data)
     }
 }
