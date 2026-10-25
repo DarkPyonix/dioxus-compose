@@ -1093,6 +1093,36 @@ impl ComposeRenderer {
             Some(node_id) => self.locate(Slot::Node(node_id)),
         }
     }
+
+    /// Announces the pointer handler of `id` when the node names kinds to be told about, and
+    /// withdraws it when it stops naming any.
+    fn sync_pointer_handler(&mut self, id: ElementId, node_id: u32) {
+        let handler = self
+            .handlers
+            .iter()
+            .find(|handler| handler.element == id && is_pointer_event(handler.name))
+            .map(|handler| handler.id);
+        match (self.pointer_on.contains(&id.0), handler) {
+            (true, Some(handler_id)) => {
+                if self.pointer_announced.insert(id.0) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::Integer(handler_id as i64),
+                    });
+                }
+            }
+            (false, _) | (true, None) => {
+                if self.pointer_announced.remove(&id.0) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::None,
+                    });
+                }
+            }
+        }
+    }
 }
 
 impl WriteMutations for ComposeRenderer {
@@ -1285,36 +1315,6 @@ impl WriteMutations for ComposeRenderer {
                 property,
                 value: PropertyValue::Integer(handler_id as i64),
             });
-        }
-    }
-
-    /// Announces the pointer handler of `id` when the node names kinds to be told about, and
-    /// withdraws it when it stops naming any.
-    fn sync_pointer_handler(&mut self, id: ElementId, node_id: u32) {
-        let handler = self
-            .handlers
-            .iter()
-            .find(|handler| handler.element == id && is_pointer_event(handler.name))
-            .map(|handler| handler.id);
-        match (self.pointer_on.contains(&id.0), handler) {
-            (true, Some(handler_id)) => {
-                if self.pointer_announced.insert(id.0) {
-                    self.write(Mutation::SetProp {
-                        node_id,
-                        property: PropertyKind::OnPointer,
-                        value: PropertyValue::Integer(handler_id as i64),
-                    });
-                }
-            }
-            (false, _) | (true, None) => {
-                if self.pointer_announced.remove(&id.0) {
-                    self.write(Mutation::SetProp {
-                        node_id,
-                        property: PropertyKind::OnPointer,
-                        value: PropertyValue::None,
-                    });
-                }
-            }
         }
     }
 
