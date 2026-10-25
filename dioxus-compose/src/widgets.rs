@@ -2751,6 +2751,12 @@ pub fn CodeEditor(
     /// Underlines, lenses, hover anchors and inline suggestions.
     #[props(default)]
     decorations: compose_rust::code::Decorations,
+    /// The stretches of lines that can be folded, and which of them are folded now.
+    #[props(default)]
+    folds: compose_rust::code::Folds,
+    /// The marks drawn beside the line numbers.
+    #[props(default)]
+    gutter_decorations: compose_rust::code::GutterDecorations,
     /// How many columns a tab advances. Left to the design system where it is not given.
     #[props(default)]
     tab_width: Option<u32>,
@@ -2773,6 +2779,21 @@ pub fn CodeEditor(
     /// A lens was pressed or a suggestion accepted, named by the id it was given.
     #[props(default)]
     on_decoration_click: EventHandler<u64>,
+    /// The selection moved.
+    #[props(default)]
+    on_selection_change: EventHandler<compose_rust::code::SelectionChange>,
+    /// The lines on screen changed.
+    #[props(default)]
+    on_visible_range_change: EventHandler<compose_rust::code::VisibleRange>,
+    /// The editor gained (true) or lost (false) the keyboard focus.
+    #[props(default)]
+    on_editor_focus_change: EventHandler<bool>,
+    /// The reader folded or unfolded a stretch.
+    #[props(default)]
+    on_fold_change: EventHandler<compose_rust::code::FoldChange>,
+    /// An input method started (true) or ended (false) a composition.
+    #[props(default)]
+    on_composition_change: EventHandler<bool>,
 ) -> Element {
     rsx! {
         codeeditor {
@@ -2795,6 +2816,8 @@ pub fn CodeEditor(
             // nothing for them at all.
             syntax_spans: (!syntax_spans.is_empty()).then(|| AttributeValue::any_value(syntax_spans)),
             decorations: (!decorations.is_empty()).then(|| AttributeValue::any_value(decorations)),
+            folds: (!folds.is_empty()).then(|| AttributeValue::any_value(folds)),
+            gutter_decorations: (!gutter_decorations.is_empty()).then(|| AttributeValue::any_value(gutter_decorations)),
             tab_width: tab_width.map(i64::from),
             oncodechange: move |event: dioxus_core::Event<compose_rust::code::CodeChange>| {
                 on_change.call(event.data().as_ref().clone());
@@ -2810,6 +2833,21 @@ pub fn CodeEditor(
             },
             ondecorationclick: move |event: dioxus_core::Event<u64>| {
                 on_decoration_click.call(*event.data());
+            },
+            onselectionchange: move |event: dioxus_core::Event<compose_rust::code::SelectionChange>| {
+                on_selection_change.call(*event.data());
+            },
+            onvisiblerangechange: move |event: dioxus_core::Event<compose_rust::code::VisibleRange>| {
+                on_visible_range_change.call(*event.data());
+            },
+            oneditorfocuschange: move |event: dioxus_core::Event<bool>| {
+                on_editor_focus_change.call(*event.data());
+            },
+            onfoldchange: move |event: dioxus_core::Event<compose_rust::code::FoldChange>| {
+                on_fold_change.call(*event.data());
+            },
+            oncompositionchange: move |event: dioxus_core::Event<bool>| {
+                on_composition_change.call(*event.data());
             },
         }
     }

@@ -847,6 +847,12 @@ impl ComposeRenderer {
                     any.downcast_ref::<compose_rust::code::Decorations>()
                 {
                     PropertyValue::Bytes(decorations.as_bytes())
+                } else if let Some(folds) = any.downcast_ref::<compose_rust::code::Folds>() {
+                    PropertyValue::Bytes(folds.as_bytes())
+                } else if let Some(marks) =
+                    any.downcast_ref::<compose_rust::code::GutterDecorations>()
+                {
+                    PropertyValue::Bytes(marks.as_bytes())
                 } else if let Some(spans) = any.downcast_ref::<compose_rust::code::SyntaxSpans>() {
                     PropertyValue::Bytes(spans.as_bytes())
                 } else {
@@ -1450,6 +1456,11 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "hover" | "onhover" => Some(PropertyKind::OnHover),
         "save" | "onsave" => Some(PropertyKind::OnSave),
         "decorationclick" | "ondecorationclick" => Some(PropertyKind::OnDecorationClick),
+        "selectionchange" | "onselectionchange" => Some(PropertyKind::OnSelectionChange),
+        "visiblerangechange" | "onvisiblerangechange" => Some(PropertyKind::OnVisibleRangeChange),
+        "editorfocuschange" | "oneditorfocuschange" => Some(PropertyKind::OnEditorFocusChange),
+        "foldchange" | "onfoldchange" => Some(PropertyKind::OnFoldChange),
+        "compositionchange" | "oncompositionchange" => Some(PropertyKind::OnCompositionChange),
         _ => None,
     }
 }
