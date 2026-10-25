@@ -24,6 +24,7 @@ pub use compose_rust::ios_main;
 mod dom;
 mod extensions;
 mod hooks;
+mod hover;
 pub mod host;
 pub mod html;
 mod html_view;
@@ -49,6 +50,7 @@ pub use hooks::{
     use_theme, use_window_size, use_zoom,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
+pub use hover::{HoverHandle, use_hover};
 pub use html_view::HtmlView;
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
@@ -149,7 +151,7 @@ pub mod prelude {
         Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
         Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
         TopAppBar, TypeRole, UserSelect, WindowHeightClass, WindowSize, WindowSizeClass, asset,
-        brush, component, launch, rsx, show_message, use_design_system, use_node_size, use_theme,
+        brush, component, launch, rsx, show_message, use_design_system, use_hover, use_node_size, use_theme, HoverHandle,
         use_window_size, use_zoom, Zoom, ZoomHandle,
     };
     // Under its own name, and the one thing in this list that could shadow something a
