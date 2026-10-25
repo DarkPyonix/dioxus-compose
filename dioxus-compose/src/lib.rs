@@ -46,7 +46,7 @@ pub use hooks::{
     Animated, CodeEditorHandle, animate_color_as_state, animate_float_as_state,
     animate_offset_as_state, use_animation_event, use_code_editor, use_design_system,
     use_node_size, use_notification_activated, use_notification_permission, use_reduced_motion,
-    use_theme, use_window_size,
+    use_theme, use_window_size, use_zoom,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use html_view::HtmlView;
@@ -150,7 +150,7 @@ pub mod prelude {
         Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
         TopAppBar, TypeRole, UserSelect, WindowHeightClass, WindowSize, WindowSizeClass, asset,
         brush, component, launch, rsx, show_message, use_design_system, use_node_size, use_theme,
-        use_window_size,
+        use_window_size, use_zoom, Zoom, ZoomHandle,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
@@ -437,7 +437,7 @@ pub mod elements {
     );
     // Children laid where the Host put them, each at its own `offset`. Nothing of its own:
     // where a child goes is the child's modifier, not the box's property.
-    element!(absolutebox, "AbsoluteBox", []);
+    element!(absolutebox, "AbsoluteBox", [island_zoom]);
     // The editor's own attributes. Its text and its colouring cross the boundary as the
     // Host writes them, and its events are declared on the element in widgets.rs.
     element!(

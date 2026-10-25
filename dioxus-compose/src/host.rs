@@ -248,8 +248,10 @@ pub(crate) fn deliver_event(
         EventPayload::DecorationActivated { decoration } => {
             Event::new(Rc::new(decoration), true).into_any()
         }
-        // The Host answers these itself and never hands them to a runtime. One that
-        // arrives here was addressed to a handler, which none of them can be.
+        // The Host answers these itself and never hands them to a runtime: a zoom report
+        // updates the state `use_zoom` and every island read, and wakes them, before any
+        // runtime is asked. One that arrives here was addressed to a handler, which none
+        // of them can be.
         EventPayload::ProtocolError { .. }
         | EventPayload::WindowSizeChanged { .. }
         | EventPayload::DesignSystemResolved(_)
@@ -259,7 +261,8 @@ pub(crate) fn deliver_event(
         | EventPayload::NotificationActivated { .. }
         | EventPayload::NotificationPermissionChanged(_)
         | EventPayload::AnimationEvent { .. }
-        | EventPayload::ReducedMotionChanged(_) => {
+        | EventPayload::ReducedMotionChanged(_)
+        | EventPayload::ZoomChanged { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };

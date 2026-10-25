@@ -60,6 +60,24 @@ use crate::paint::plan::LiteralColours;
 /// out again at that size.
 const FALLBACK_VIEWPORT: (f32, f32) = (800.0, 600.0);
 
+/// The factor the page is drawn at: what the renderer reported, kept to a number a page can
+/// be laid out at. One before the renderer has said anything.
+pub(crate) fn page_zoom() -> f32 {
+    let k = compose_rust::zoom().k;
+    if k.is_finite() && k > 0.0 { k } else { 1.0 }
+}
+
+/// A length the renderer measured, as the page's CSS pixels.
+///
+/// Window and box sizes arrive in zoomed dp: the units widgets are drawn in, which already
+/// carry the application's share of the zoom, `1.2^level`. The page is drawn at
+/// `k = os * 1.2^level`, so zoomed dp over the system's text size `os` is the width the
+/// page is laid out in and the one a `width` media query is answered with.
+pub(crate) fn css_extent(dp: f32) -> f32 {
+    let os = compose_rust::zoom().os;
+    if os.is_finite() && os > 0.0 { dp / os } else { dp }
+}
+
 /// One HTML and CSS application, running as the Host's runtime.
 pub struct HtmlRuntime {
     /// The name the page's widgets are registered under.
@@ -87,6 +105,10 @@ pub struct HtmlRuntime {
     moments: Rc<RefCell<Vec<AnimationMoment>>>,
     /// Keeps the registration for animation events for as long as the runtime lives.
     _moments: AnimationEventSubscription,
+    /// Keeps the registration for the renderer's zoom reports for as long as the runtime
+    /// lives. A report is answered with a frame only when something reads it, and the page
+    /// does: it is laid out in a viewport and a resolution that depend on it.
+    _zoom: compose_rust::zoom::ZoomSubscription,
 }
 
 impl HtmlRuntime {
@@ -95,7 +117,10 @@ impl HtmlRuntime {
     }
 
     pub fn with_config(app: fn() -> Element, config: HtmlConfig) -> Self {
-        Self::with_bridge(app, config, PlanBridge::new())
+        // The page is the whole screen, so it names its own factor on a root of its own.
+        let mut bridge = PlanBridge::new();
+        bridge.wrap_in_island();
+        Self::with_bridge(app, config, bridge)
     }
 
     /// A runtime whose page is one island inside a tree some other writer owns: its
@@ -130,6 +155,7 @@ impl HtmlRuntime {
             moments,
             measured_under: None,
             _moments: subscription,
+            _zoom: compose_rust::zoom::subscribe(std::sync::Arc::new(|| {})),
             focused: None,
             configured_scheme,
             dom: HtmlDom::with_config(app, config),
@@ -149,7 +175,7 @@ impl HtmlRuntime {
     fn draw(&mut self) {
         let size = compose_rust::window_size();
         let viewport = if size.width_dp > 0.0 && size.height_dp > 0.0 {
-            (size.width_dp, size.height_dp)
+            (css_extent(size.width_dp), css_extent(size.height_dp))
         } else {
             FALLBACK_VIEWPORT
         };
@@ -196,9 +222,13 @@ impl HtmlRuntime {
                     _ => ThemeScheme::Light,
                 },
             ));
-        // One CSS pixel is one dp, so the page is laid out at a scale of one. The renderer
-        // turns dp into device pixels.
-        self.dom.layout(viewport.0, viewport.1, 1.0);
+        // The page is drawn at `k`, so its text is measured at `k` and the layout is told
+        // the resolution it is drawn at: a CSS pixel is one dp of the island's own
+        // density, which the renderer scales by `k`. The viewport is already in CSS pixels.
+        let zoom = page_zoom();
+        self.dom.set_zoom(zoom);
+        self.bridge.set_zoom(zoom);
+        self.dom.layout(viewport.0, viewport.1, zoom);
         self.dom.plan(&mut LiteralColours)
     }
 

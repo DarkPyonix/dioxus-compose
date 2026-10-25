@@ -27,6 +27,7 @@ use dioxus_core_macro::{Props, component, rsx};
 
 use crate as dioxus_elements;
 use crate::html::{HtmlConfig, HtmlRuntime};
+use crate::html::{css_extent, page_zoom};
 use crate::renderer::ComposeRenderer;
 
 /// The first renderer node id an island may use. The widget tree numbers its nodes up from
@@ -51,8 +52,9 @@ struct Island {
     slot: u32,
     /// The width the box was last measured at, in dp.
     width: f32,
-    /// The viewport the page was last laid out in.
-    drawn: Option<(f32, f32)>,
+    /// The viewport the page was last laid out in, in CSS pixels, and the factor it was
+    /// drawn at.
+    drawn: Option<((f32, f32), f32)>,
     /// The page has work of its own to run before it draws.
     dirty: bool,
 }
@@ -173,15 +175,20 @@ pub(crate) fn draw_islands(renderer: &mut ComposeRenderer) {
             };
             let measured = compose_rust::window::node_size(token);
             let window = compose_rust::window_size();
-            let viewport = viewport_for(
+            // What the renderer measured is in the units the widgets around the page are
+            // drawn in. The page is drawn at `k`, so its viewport in CSS pixels is that
+            // many dp divided by the page's share of the zoom.
+            let (width, height) = viewport_for(
                 (island.width, measured.height_dp),
                 (window.width_dp, window.height_dp),
             );
-            if island.drawn == Some(viewport) && !island.dirty {
+            let viewport = (css_extent(width), css_extent(height));
+            let zoom = page_zoom();
+            if island.drawn == Some((viewport, zoom)) && !island.dirty {
                 continue;
             }
             let run_dom = std::mem::take(&mut island.dirty);
-            island.drawn = Some(viewport);
+            island.drawn = Some((viewport, zoom));
             let batch: &mut Batch = renderer.batch_mut();
             if let Some(root) = island.runtime.render_into(viewport, run_dom, batch) {
                 batch.write(Mutation::Insert {
@@ -250,12 +257,16 @@ pub fn HtmlView(
     #[props(default)] fill_max_height: bool,
 ) -> Element {
     let size = crate::hooks::use_node_size();
+    // The page is drawn at the renderer's zoom, so a report of a new one re-renders the box
+    // that names it.
+    let zoom = crate::hooks::use_zoom().get();
     let token = size.token() as u32;
     dioxus_core::use_hook(|| Rc::new(IslandHandle::register(token, app, config)));
     set_width(token, size.measured().width_dp);
     rsx! {
         absolutebox {
             observe_size: size.token(),
+            island_zoom: f64::from(if zoom.k.is_finite() && zoom.k > 0.0 { zoom.k } else { 1.0 }),
             weight: weight.map(f64::from),
             width: width.map(f64::from),
             height: height.map(f64::from),

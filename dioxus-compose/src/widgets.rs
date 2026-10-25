@@ -101,6 +101,11 @@ pub fn AbsoluteBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// The factor an HTML island is drawn at, on the island's root: the Renderer draws what
+    /// is inside at its density times this, with no font scale of its own. Left out, the
+    /// box draws its children as the widgets around it are drawn.
+    #[props(default)]
+    island_zoom: Option<f32>,
 ) -> Element {
     use compose_rust::Modifier;
     let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
@@ -136,6 +141,7 @@ pub fn AbsoluteBox(
     };
     rsx! {
         absolutebox {
+            island_zoom: island_zoom.map(f64::from),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),

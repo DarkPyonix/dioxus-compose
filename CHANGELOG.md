@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### HTML screens zoom as a whole
+
+An HTML screen is zoomed the way an editor zooms. The renderer reports `k`, the system's
+text size times `1.2^level`, and the page is laid out in a viewport of the window's size
+over `k`, drawn at `k`, and measured at `k`. A `width` media query sees that viewport and a
+`resolution` query sees `k`. `html::launch` and every `HtmlView` do this, and
+`use_zoom()` reads the factor and level and sets the level (`zoom_in`, `zoom_out`, `reset`,
+`set_level`). `AbsoluteBox` takes `island_zoom`. The zoom starts at 1 until the renderer
+reports one, which is where the web target stays. Checking a real VS Code at the same
+zoom, and the system text size on each desktop, is manual. The renderer is pinned at the
+compose-rust commit that has the zoom report and the island factor.
+
 ### Transforms and renderer-played animations from rsx
 
 `AbsoluteBox` takes a CSS `transform` matrix with its `transform_origin`, or a Compose style

@@ -195,6 +195,8 @@ pub struct HtmlDom {
     root_style: String,
     /// What the pointer reports have left: `:hover`, `:active` and the captures.
     pointer: pointer::PointerState,
+    /// The factor the page is drawn at, which its text is measured at too.
+    zoom: f32,
 }
 
 impl HtmlDom {
@@ -262,6 +264,7 @@ impl HtmlDom {
             theme_variables: String::new(),
             root_style: String::new(),
             pointer: pointer::PointerState::default(),
+            zoom: 1.0,
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
         dom.vdom.rebuild(&mut writer);
@@ -955,9 +958,31 @@ impl HtmlDom {
         self.measurer.invalidate();
     }
 
+    /// The factor the page is zoomed by. One until [`HtmlDom::set_zoom`] says otherwise.
+    pub fn zoom(&self) -> f32 {
+        self.zoom
+    }
+
+    /// Zooms the page by `zoom`: the factor it is drawn at, which is the system's text size
+    /// times the application's zoom. The text is measured at it from the next layout on,
+    /// and the answers kept from another zoom are dropped. Returns whether the zoom changed.
+    ///
+    /// This does not move the viewport or the resolution a media query sees; those are
+    /// the arguments of [`HtmlDom::layout`].
+    pub fn set_zoom(&mut self, zoom: f32) -> bool {
+        let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
+        if zoom.to_bits() == self.zoom.to_bits() {
+            return false;
+        }
+        self.zoom = zoom;
+        self.measurer.set_zoom(zoom);
+        true
+    }
+
     /// Replaces the text measurer; the next layout uses it.
     pub fn set_measurer(&mut self, measurer: Box<dyn TextMeasurer>) {
         self.measurer = measurer;
+        self.measurer.set_zoom(self.zoom);
     }
 
     fn set_viewport(&mut self, width: f32, height: f32, scale: f32) {

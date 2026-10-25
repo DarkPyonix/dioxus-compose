@@ -114,6 +114,7 @@ fn property_of(attribute: &str) -> Option<&'static str> {
         "tab_size" => "TabSize",
         "absolute_size" => "AbsoluteSize",
         "soft_wrap" => "SoftWrap",
+        "island_zoom" => "IslandZoom",
         "decorations" => "Decorations",
         "syntax_spans" => "SyntaxSpans",
         "tab_width" => "TabWidth",
