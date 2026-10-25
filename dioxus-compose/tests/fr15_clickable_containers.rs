@@ -1,6 +1,7 @@
 //! A container widget that is given `on_click` writes a `Clickable` modifier and calls the
 //! handler when the Renderer reports the press; one that is not given it writes none.
 
+use dioxus_compose::Box as ComposeBox;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch};
 use dioxus_compose::schema::Modifier;
