@@ -72,13 +72,18 @@ jobs:
           fi
           echo "$GITHUB_SHA is on main"
 
+      - name: Build the patched blitz-dom
+        # The workspace patches blitz-dom with a directory scripts/apply-patches.sh builds,
+        # and cargo fails to load the workspace without it.
+        run: ./scripts/apply-patches.sh
+
       - name: Build
         # The mock renderer, as test.yml and scripts/check.sh use: the boundary is exercised
         # without downloading a renderer.
-        run: cargo build --workspace --features dioxus-compose/mock-renderer
+        run: cargo build --workspace --features dioxus-compose/mock-renderer,dioxus-compose/patched-blitz
 
       - name: Test
-        run: cargo test --workspace --features dioxus-compose/mock-renderer
+        run: cargo test --workspace --features dioxus-compose/mock-renderer,dioxus-compose/patched-blitz
 
       - name: Package and build the crate as crates.io would
         # Builds the packaged crate on its own with default features, so a file missing
@@ -126,6 +131,12 @@ jobs:
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Build the patched blitz-dom
+        # Cargo loads the workspace before it packages the crate, and the workspace names the
+        # directory this script builds. The package itself carries no patch: [patch] sections
+        # are not published, so the crate resolves blitz-dom from crates.io.
+        run: ./scripts/apply-patches.sh
 
       - name: Publish
         # Default features only, so this is exactly what a consumer gets.

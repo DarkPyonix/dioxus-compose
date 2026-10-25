@@ -96,6 +96,11 @@ jobs:
         # spec-cites-real-tests.test.sh asks it where the compose-rust checkout is.
         run: rustup toolchain install stable --profile minimal && rustup default stable
 
+      - name: Build the patched blitz-dom
+        # The workspace patches blitz-dom with a directory scripts/apply-patches.sh builds,
+        # and cargo (which crate-readme.test.sh runs) fails to load the workspace without it.
+        run: ./scripts/apply-patches.sh
+
       - name: Run the shell tests
         # scripts/tests/ and the release script's own test beside it in
         # .github/scripts/release/; the latter runs against throwaway temporary

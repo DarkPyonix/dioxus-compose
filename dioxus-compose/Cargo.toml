@@ -33,6 +33,11 @@ bench = false
 default = ["native-renderer"]
 mock-renderer = ["compose-rust/mock-renderer"]
 native-renderer = ["compose-rust/native-renderer"]
+# Calls the blitz-dom API that scripts/patches/blitz-dom-0.2.4/ adds, so `:focus-visible`
+# follows where the focus came from. Off by default because the release on crates.io does
+# not have that API: a consumer of the published crate gets blitz-dom as published. The
+# workspace's checks turn it on after scripts/apply-patches.sh has built the patched copy.
+patched-blitz = []
 
 [dependencies]
 # The boundary, the protocol, the schema and the renderer it links. Pinned to one tag,

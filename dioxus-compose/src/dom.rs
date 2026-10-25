@@ -563,14 +563,40 @@ impl HtmlDom {
     /// What a renderer calls when `node` gains the focus: `focus` to the node's own
     /// handler, which does not bubble, then `focusin` to the nearest handler at or around
     /// it, which does, in the order a browser sends them.
+    ///
+    /// The node also takes the document's focus state, so `:focus`, and with the patched
+    /// blitz-dom `:focus-within` on its ancestors, apply on the next layout. A focus that
+    /// arrives here does not show `:focus-visible`: that is for focus that came from the
+    /// keyboard, which is [`HtmlDom::focus_by_keyboard`].
     pub fn focus(&mut self, node: NodeId) {
+        #[cfg(feature = "patched-blitz")]
+        self.doc.set_focus_from_keyboard(false);
+        self.focus_node(node);
+    }
+
+    /// [`HtmlDom::focus`] for focus that came from the keyboard, such as Tab: the node
+    /// also matches `:focus-visible`, which a browser shows for keyboard focus and not for
+    /// a pointer press. Without the `patched-blitz` feature the pinned blitz-dom marks
+    /// every focus as keyboard focus, so this and `focus` do the same.
+    pub fn focus_by_keyboard(&mut self, node: NodeId) {
+        #[cfg(feature = "patched-blitz")]
+        self.doc.set_focus_from_keyboard(true);
+        self.focus_node(node);
+    }
+
+    fn focus_node(&mut self, node: NodeId) {
+        self.doc.set_focus_to(node);
         self.send_focus(node, "focus", "focusin");
     }
 
     /// What a renderer calls when `node` loses the focus: `blur` to the node's own handler,
     /// then `focusout` bubbling from it. A field whose text changed gets its `change`
     /// before this, from [`HtmlDom::change`].
+    /// A node that is not the focused one leaves the focus where it is.
     pub fn blur(&mut self, node: NodeId) {
+        if self.doc.get_focussed_node_id() == Some(node) {
+            self.doc.clear_focus();
+        }
         self.send_focus(node, "blur", "focusout");
     }
 
