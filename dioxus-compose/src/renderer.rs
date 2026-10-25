@@ -5,8 +5,8 @@ use compose_rust::schema::{PropertyKind, WidgetKind};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
-use std::collections::HashMap;
 use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 
 /// The inclusive range of design-property tags. Extension properties follow this range.
@@ -178,6 +178,11 @@ pub struct ComposeRenderer {
 
     /// Which editor node each code editor handle is attached to, by the handle's token.
     editors: HashMap<u32, u32>,
+    /// The elements whose `pointer_kinds` is not empty. A pointer handler is announced to
+    /// the Renderer only for these, so a node that names no kinds takes no pointer input.
+    pointer_on: HashSet<usize>,
+    /// The elements the Renderer was told a pointer handler for.
+    pointer_announced: HashSet<usize>,
     /// The animated attributes each node has already been given a value for. The first
     /// value is where the node starts; every later one is a change to animate.
     animated: std::collections::HashSet<(u32, &'static str)>,
@@ -248,6 +253,8 @@ impl ComposeRenderer {
 
             // Empty for a screen without an editor handle, which allocates nothing.
             editors: HashMap::new(),
+            pointer_on: HashSet::new(),
+            pointer_announced: HashSet::new(),
             animated: std::collections::HashSet::new(),
             next_animation_id: 1,
             stack: Vec::with_capacity(64),
@@ -1222,6 +1229,16 @@ impl WriteMutations for ComposeRenderer {
                 }
                 return;
             }
+            if name == "pointer_kinds" {
+                if matches!(value, AttributeValue::Int(kinds) if *kinds != 0) {
+                    self.pointer_on.insert(id.0);
+                } else {
+                    self.pointer_on.remove(&id.0);
+                }
+                self.set_property(node_id, Some(id), name, value);
+                self.sync_pointer_handler(id, node_id);
+                return;
+            }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
                 if let Some((index, modifier)) = slot {
                     self.write(Mutation::SetModifier {
@@ -1259,12 +1276,45 @@ impl WriteMutations for ComposeRenderer {
             name,
             link: 0,
         });
+        if is_pointer_event(name) {
+            self.sync_pointer_handler(id, node_id);
+        }
         if let Some(property) = event_property(name) {
             self.write(Mutation::SetProp {
                 node_id,
                 property,
                 value: PropertyValue::Integer(handler_id as i64),
             });
+        }
+    }
+
+    /// Announces the pointer handler of `id` when the node names kinds to be told about, and
+    /// withdraws it when it stops naming any.
+    fn sync_pointer_handler(&mut self, id: ElementId, node_id: u32) {
+        let handler = self
+            .handlers
+            .iter()
+            .find(|handler| handler.element == id && is_pointer_event(handler.name))
+            .map(|handler| handler.id);
+        match (self.pointer_on.contains(&id.0), handler) {
+            (true, Some(handler_id)) => {
+                if self.pointer_announced.insert(id.0) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::Integer(handler_id as i64),
+                    });
+                }
+            }
+            (false, _) | (true, None) => {
+                if self.pointer_announced.remove(&id.0) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::None,
+                    });
+                }
+            }
         }
     }
 
@@ -1277,6 +1327,11 @@ impl WriteMutations for ComposeRenderer {
             return;
         };
         self.handlers.swap_remove(position);
+        if is_pointer_event(name)
+            && let Some(node_id) = self.node(id)
+        {
+            self.sync_pointer_handler(id, node_id);
+        }
         if let (Some(node_id), Some(property)) = (self.node(id), event_property(name)) {
             self.write(Mutation::SetProp {
                 node_id,
@@ -1300,6 +1355,8 @@ impl WriteMutations for ComposeRenderer {
             *slot = None;
         }
         self.handlers.retain(|handler| handler.element != id);
+        self.pointer_on.remove(&id.0);
+        self.pointer_announced.remove(&id.0);
     }
 
     fn push_root(&mut self, id: ElementId) {
@@ -1319,6 +1376,10 @@ fn widget_kind(name: &str) -> Result<WidgetKind, ProtocolError> {
 
 fn property_kind(name: &str) -> Option<PropertyKind> {
     PropertyKind::from_name(name).ok()
+}
+
+fn is_pointer_event(name: &str) -> bool {
+    matches!(name, "pointer" | "onpointer")
 }
 
 fn event_property(name: &str) -> Option<PropertyKind> {

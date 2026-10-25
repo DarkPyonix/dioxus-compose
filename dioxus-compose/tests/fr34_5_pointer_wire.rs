@@ -133,14 +133,22 @@ fn pointer(kind: PointerKind, x: f32, y: f32) -> EventPayload<'static> {
     }
 }
 
-fn send(host: &mut Host, (node_id, handler_id): (u32, u64), payload: EventPayload<'static>) -> i64 {
-    host.dispatch(HostEvent {
-        node_id,
-        handler_id,
-        payload,
-    })
-    .expect("the pointer event is dispatched")
-    .1
+/// Dispatches `payload` and returns the batch the event's own frame wrote, and the result.
+/// A dispatch renders the frame it asked for, so the restyle is in this batch and a
+/// `render_frame` after it has nothing left to send.
+fn send(
+    host: &mut Host,
+    (node_id, handler_id): (u32, u64),
+    payload: EventPayload<'static>,
+) -> (Vec<Record>, i64) {
+    let (batch, result) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload,
+        })
+        .expect("the pointer event is dispatched");
+    (records(batch), result)
 }
 
 #[test]
@@ -178,32 +186,26 @@ fn fr34_5_pointer_event_reaches_handler_and_hovers() {
         .count();
     assert_eq!(before, 1, "{first:#?}");
 
-    assert_eq!(
-        send(&mut host, target, pointer(PointerKind::Move, 5.0, 5.0)),
-        0
-    );
+    let (next, result) = send(&mut host, target, pointer(PointerKind::Move, 5.0, 5.0));
+    assert_eq!(result, 0);
     assert_eq!(take_heard(), ["move a"]);
-    // The next frame carries the `:hover` background and nothing else of the box.
-    let next = records(host.render_frame(0).unwrap());
+    // The event's own frame carries the `:hover` background.
     assert!(
         next.contains(&Record::Background(target.0, rgb(255, 0, 0))),
         "{next:#?}"
     );
 
     // A handler that prevents the default answers that the event was used.
-    assert_eq!(
-        send(
-            &mut host,
-            target,
-            pointer(PointerKind::ContextMenu, 5.0, 5.0)
-        ),
-        1
+    let (_, result) = send(
+        &mut host,
+        target,
+        pointer(PointerKind::ContextMenu, 5.0, 5.0),
     );
+    assert_eq!(result, 1);
     assert_eq!(take_heard(), ["contextmenu a"]);
 
     // The pointer leaving the page takes the hover away again.
-    send(&mut host, target, pointer(PointerKind::Leave, 5.0, -40.0));
-    let after = records(host.render_frame(0).unwrap());
+    let (after, _) = send(&mut host, target, pointer(PointerKind::Leave, 5.0, -40.0));
     assert!(
         after.contains(&Record::Background(target.0, rgb(0, 0, 255))),
         "{after:#?}"
@@ -242,11 +244,8 @@ fn fr34_5_root_hover_rule_works_without_a_listener() {
         .collect::<Vec<_>>();
     assert!(b_background.len() >= 2, "{first:#?}");
     // The renderer reports the pointer at (5, 25) to the root: over the second row.
-    assert_eq!(
-        send(&mut host, root, pointer(PointerKind::Move, 5.0, 25.0)),
-        0
-    );
-    let next = records(host.render_frame(0).unwrap());
+    let (next, result) = send(&mut host, root, pointer(PointerKind::Move, 5.0, 25.0));
+    assert_eq!(result, 0);
     assert!(
         next.iter().any(|record| matches!(
             record,
@@ -275,8 +274,7 @@ fn fr34_5_hover_rule_changing_only_the_cursor_is_resent() {
             _ => None,
         })
         .expect("a pointer cursor is written");
-    send(&mut host, root, pointer(PointerKind::Move, 5.0, 45.0));
-    let next = records(host.render_frame(0).unwrap());
+    let (next, _) = send(&mut host, root, pointer(PointerKind::Move, 5.0, 45.0));
     // `grab` is 7. The plan node of `#e` did not change, only its cursor.
     assert!(
         next.contains(&Record::Int(e, PropertyKind::Cursor, 7)),
