@@ -728,6 +728,109 @@ tag 16, 24바이트: node_id: u32, handler_id: u64, value: f64
 - 위젯을 추가해도 `DesignSystem` enum과 규칙 테이블 외에는 바뀌지 않습니다(FR-14.2 회귀 검사).
 - 각 위젯에 프로토콜 왕복 테스트가 있습니다(PR-4 벡터).
 
+#### 15.5.1 `use_hover` (`Draft`)
+
+추적: 이슈 #125.
+
+호버 상태를 신호로 들고 있는 일은 목록 행, 카드, 사이드바 항목이 모두 되풀이합니다. 지금은 `pointer_kinds`와 `on_pointer`를 직접 맞추고 `Signal<bool>`을 따로 둡니다. 이 훅은 그 조합을 한 호출로 줄입니다. 새 이벤트도 새 경계 호출도 만들지 않고, 기존 `PointerKinds::ENTER | LEAVE`만 씁니다.
+
+```rust
+let hover = use_hover();
+rsx! {
+    Row {
+        pointer_kinds: hover.kinds(),
+        on_pointer: hover.handler(),
+        background: if hover.is_hovered() { Some(row_hover_paint) } else { None },
+        // ...
+    }
+}
+```
+
+- `use_hover() -> HoverHandle`입니다. `is_hovered() -> bool`은 신호를 읽으므로 호출한 컴포넌트가 값이 바뀔 때 다시 그려집니다. `kinds()`는 `PointerKinds::ENTER | PointerKinds::LEAVE`이고, `handler()`는 `Enter`에서 참, `Leave`에서 거짓으로 바꿉니다.
+- 같은 값이면 신호를 쓰지 않습니다. 같은 상태의 반복 이벤트가 다시 그리기를 일으키지 않습니다.
+- 이 훅은 `consume`을 호출하지 않습니다. 조상의 `on_pointer`와 렌더러의 기본 처리는 그대로 받습니다.
+- 터치 기기에서는 `Enter`가 발생하지 않으므로 항상 거짓입니다(FR-18.1). 호버로만 보이는 UI를 두지 않는 것은 애플리케이션의 책임입니다.
+
+수용 기준:
+
+1. 목 렌더러가 `Enter`를 보내면 `is_hovered()`가 참이 되고 그 컴포넌트가 다시 그려집니다. `Leave`를 보내면 거짓이 됩니다. 테스트 `fr15_5_1_enter_leave_toggle_hover`.
+2. `Enter`를 두 번 연달아 보내도 다시 그리기는 한 번입니다. 테스트 `fr15_5_1_repeated_enter_does_not_rerender`.
+3. `kinds()`를 단 노드의 속성 레코드에 `ENTER`와 `LEAVE`만 실리고 `MOVE`는 실리지 않습니다. 테스트 `fr15_5_1_subscribes_enter_and_leave_only`.
+4. 이 훅을 쓰는 노드의 `on_pointer`가 `consume`을 부르지 않아 조상 구독자가 같은 이벤트를 받습니다. 테스트 `fr15_5_1_does_not_consume`.
+5. 수동: 데스크톱에서 행 위로 포인터를 옮기면 강조가 따라옵니다. 터치 기기에서는 강조가 생기지 않습니다.
+
+#### 15.5.2 `ListDetail` (`Draft`)
+
+추적: 이슈 #126.
+
+목록과 상세를 나란히 놓다가 좁아지면 한 번에 하나만 보여 주는 화면(홈, 프로젝트, 채널)이 씁니다. 새 위젯이 아니라 `SplitPane`(좁은 자리의 한 패널 규칙을 이미 가진다) 위의 합성 컴포넌트입니다. 스키마도 경계도 바뀌지 않습니다.
+
+```rust
+rsx! {
+    ListDetail::<SessionId> {
+        selected: selected(),
+        on_select_change: move |next| selected.set(next),
+        list: rsx! { SessionList {} },
+        detail: rsx! { SessionView {} },
+    }
+}
+```
+
+- `selected: Option<K>`(`K: Clone + PartialEq`)입니다. `Some`이면 상세가 보여야 하는 상태이고, 한 패널만 들어가는 자리에서는 상세가 보입니다. `None`이면 목록입니다.
+- `on_select_change: EventHandler<Option<K>>`입니다. 사용자가 뒤로 가면(`SplitPane`의 `on_dismiss`) `None`으로 한 번 불립니다. 넓은 자리에서 선택을 비우는 일은 앱의 몫입니다.
+- 접는 기준은 기본적으로 `SplitPane`과 같습니다. 합성의 자기 폭을 디자인 시스템 규칙으로 판단합니다.
+- `collapse_below: Option<f32>`(기본 `None`)는 앱이 정하는 임계값입니다. `Some(v)`이면 합성이 `use_node_size()`(FR-28)로 자기 폭을 재서 `v`보다 좁을 때 `selected`와 무관하게 한 패널만 `selected_index`로 그립니다. `None`이면 디자인 시스템 규칙이 정합니다. 이 경로는 compose-rust 변경이 필요 없습니다. 대가는 패널이 바뀔 때 자식이 다시 만들어질 수 있다는 것입니다.
+- 선택이 있는 채로 넓어졌다 좁아져도 `selected`는 그대로입니다. 합성은 선택 상태를 따로 저장하지 않습니다.
+
+수용 기준:
+
+1. `selected`가 `Some`일 때 `SplitPane`의 `selected_index`가 `1`로, `None`일 때 `0`으로 실립니다. 테스트 `fr15_5_2_selected_maps_to_pane_index`.
+2. 목 렌더러가 `on_dismiss` 핸들러를 부르면 `on_select_change(None)`이 정확히 한 번 불립니다. 테스트 `fr15_5_2_back_clears_selection_once`.
+3. 목록과 상세가 모두 같은 `SplitPane`의 자식으로 만들어지고, 선택이 바뀌어도 목록 노드에 `Create` 레코드가 나오지 않습니다. 테스트 `fr15_5_2_selection_keeps_list_nodes`.
+4. `collapse_below`가 `Some(v)`이고 목 렌더러가 자기 폭을 `v` 미만으로 보고하면, 선택과 무관하게 한 패널만 `selected_index`로 실립니다. `None`이면 디자인 시스템 규칙이 정합니다. 테스트 `fr15_5_2_collapse_below_overrides_design_rule`.
+5. 수동: 넓은 창에서 두 패널이 나란히 보이고, 창을 좁히면 선택 여부에 따라 목록 또는 상세 하나만 보입니다. 뒤로 가기가 목록으로 돌아갑니다. 여섯 디자인 시스템에서 확인합니다.
+
+#### 15.5.3 `Table` (`Draft`)
+
+추적: 이슈 #127.
+
+모니터, 순위처럼 같은 열 구조의 행이 계속 갱신되는 화면이 씁니다. `LazyColumn`(FR-8)의 윈도잉을 그대로 쓰고, 열 너비를 머리행과 모든 행이 나눠 갖게 합니다. 새 위젯 태그도 경계 호출도 만들지 않습니다.
+
+```rust
+rsx! {
+    Table {
+        columns: vec![
+            ColumnSpec::content("name"),
+            ColumnSpec::weight("status", 1.0),
+            ColumnSpec::fixed("score", 72.0),
+        ],
+        row_count: rows.len(),
+        row_key: move |i| rows[i].id.to_string(),
+        header: move |col: &ColumnSpec| rsx! { Text { text: col.label() } },
+        cell: move |row: usize, col: usize| rsx! { Text { text: rows[row].cell(col) } },
+        on_row_click: move |row| { /* ... */ },
+    }
+}
+```
+
+- `ColumnSpec`의 너비는 `Fixed(dp)`, `Weight(f32)`, `Content` 셋 중 하나입니다.
+- `Content`의 폭은 그 열의 머리 글자와 셀 값 중 가장 넓은 것에 맞춥니다. 셀 값은 지금까지 그려진 행에서 잽니다. 그려진 적이 있는 값 중 가장 큰 값을 유지하므로, 스크롤하는 동안 열이 줄었다 늘었다 하지 않습니다. 데이터 원본(행 소스나 키 집합)이 통째로 바뀔 때만 다시 잽니다.
+- 머리행은 `LazyColumn` 바깥에 있어 스크롤되지 않습니다(`sticky_header`가 기본이고 끌 수 있습니다).
+- 본문은 `LazyColumn`이고, 행 `i`의 `item_key`가 `row_key(i)`입니다. 한 행의 셀은 한 `Row`의 자식이며, 셀 `j`는 `columns[j]`의 너비를 받습니다.
+- 가로 스크롤은 이 항목에 없습니다. 폭이 모자라면 `Weight` 열이 줄어듭니다.
+
+수용 기준:
+
+1. 머리행의 셀 `j`와 임의 행의 셀 `j`가 같은 너비 모디파이어(`Width`, `Weight`, 내용 폭)를 받습니다. 테스트 `fr15_5_3_cells_share_column_widths`.
+2. 행 1000개짜리 표가 `LazyColumn`의 창만 만들고, 창 밖 행의 노드는 없습니다. 테스트 `fr15_5_3_only_window_rows_exist`.
+3. 한 행의 값 하나가 바뀌면 그 셀의 텍스트 속성 레코드 하나만 나오고, 다른 행에는 `Create`/`Insert`가 나오지 않습니다. 테스트 `fr15_5_3_row_update_is_one_record`.
+4. 행의 순서가 바뀌면 같은 key의 행 노드가 `Move`로 옮겨지고 다시 만들어지지 않습니다. 테스트 `fr15_5_3_reorder_moves_rows_by_key`.
+5. 머리행 노드가 `LazyColumn`의 부모 밖 형제로 있습니다. 테스트 `fr15_5_3_header_is_outside_the_scrolling_list`.
+6. `Content` 열의 폭이 지금까지 그려진 행 중 가장 넓은 셀에 맞습니다. 테스트 `fr15_5_3_content_width_fits_widest_drawn_cell`.
+7. 넓은 셀이 있는 행을 창 밖으로 스크롤해 내보내도 `Content` 열의 폭이 줄지 않습니다(목 렌더러로 확인). 테스트 `fr15_5_3_content_width_keeps_largest_seen`.
+8. 데이터 원본을 교체하면 `Content` 열의 폭이 새로 계산됩니다(목 렌더러로 확인). 테스트 `fr15_5_3_content_width_recomputes_on_data_replace`.
+9. 수동: 스크롤하는 동안 머리행이 제자리에 있고 열 선이 정렬됩니다. 창 크기를 바꿔도 `Weight` 열이 함께 늘고 줄어듭니다.
+
 ### FR-16 에셋 전달 (`Agreed`)
 
 `Image`와 `Icon`은 리소스가 경계를 넘어야 합니다. 13.7에서 "별도 요구사항으로 분리"한 그 프로토콜입니다.
@@ -1492,6 +1595,43 @@ E2를 기본 경로로 삼으면 KSP가 Rust 열거형, Dioxus element, 컴포�
 - 14.1이 정한 것을 뒤집지 않습니다. 흉내 낸 반투명을 "Liquid Glass를 구현했다"고 말하지 않는다는 규칙은 그대로이고, 이것은 그 주장이 아니라 흐림을 말할 어휘입니다.
 - 수용 기준: 같은 `Material(Regular)` 선언이 여섯 시스템에서 서로 다른 픽셀을 냅니다. 흐림을 지원하지 않는 환경에서 대비를 지키는 불투명 대체가 나옵니다(14.1의 3번 그대로).
 
+#### 21.9 `Popover` (`Draft`)
+
+추적: 이슈 #129. compose-rust의 `Popover` 위젯에 의존하며, 그 이슈는 아직 열리지 않았습니다. 그 위젯이 들어오기 전에는 수용 기준 1-4를 목 렌더러로만 검증하고, 5는 수동입니다.
+
+`Menu`는 항목 목록용입니다. 작성창에 붙는 모델 선택기처럼 앵커에 붙는 **임의 내용**은 `Menu`로 말할 수 없습니다. `Popover`는 앵커에 붙고 임의 자식을 담는 팝업입니다. 위치는 렌더러가 정하고 Host는 좌표를 알지 못합니다(FR-15.2.3).
+
+```rust
+rsx! {
+    Popover {
+        open: open(),
+        placement: Placement::Top,
+        align: Align::Start,
+        offset: 8.0,
+        scrim: false,
+        on_dismiss: move |_| open.set(false),
+        anchor: rsx! { Button { on_click: move |_| open.set(true), text: "Model" } },
+        // 나머지 자식이 내용입니다.
+        ModelList {}
+    }
+}
+```
+
+- `open`과 `on_dismiss`는 `Menu`의 `expanded`, `on_dismiss`와 같은 규칙입니다. 열림은 렌더러의 상태이고, Host 속성은 초기값과 바깥에서 오는 변경을 줍니다(D5).
+- `placement`(`Top|Bottom|Start|End`), `align`(`Start|Center|End`), `offset`(dp)입니다. 선호 방향에 들어가지 않으면 렌더러가 반대로 뒤집습니다. 정렬 축도 창 안으로 밀립니다. Host로는 좌표가 오가지 않습니다.
+- 내용은 아무 자식이나 됩니다. 팝업 면의 배경, 모서리, 고도는 디자인 시스템 규칙입니다. 흐림이 필요하면 내용 최상위 컨테이너에 `material`을 답니다(FR-23.3).
+- 앵커 노드 자식 `0`이 첫째이고 나머지가 내용입니다. `Menu`와 같은 규약이므로 FR-1의 삽입 인덱스 규칙이 그대로 적용됩니다.
+- `scrim`이 참이면 팝업 뒤를 덮고 바깥 누름이 `on_dismiss`를 부릅니다. 거짓이면 비모달이고, 바깥 누름도 `on_dismiss`를 부릅니다. Esc도 같습니다.
+- compose-rust 의존: 새 `Popover` 위젯(자식 0이 앵커, 나머지가 내용), 속성 `Placement`, `Align`, `OffsetDp`, 렌더러의 가장자리 뒤집기, `Scrim`, 바깥 누름과 Esc에 의한 `OnDismiss`가 필요합니다. 흐림은 기존 `Modifier::Material`을 씁니다.
+
+수용 기준:
+
+1. `Popover`가 `popover` 위젯 노드 하나로 나가고, 자식 0이 앵커이며 나머지가 내용입니다. 레코드의 속성에 `Placement`, `Align`, `OffsetDp`가 실립니다. 테스트 `fr21_9_popover_wire_shape`.
+2. 열려 있을 때만 내용을 선언해도 내용이 앵커 뒤에 섭니다(삽입 인덱스 회귀, FR-1). 열고 닫기를 되풀이해도 같습니다. 테스트 `fr21_9_popover_content_stays_behind_anchor`.
+3. 목 렌더러가 `OnDismiss`를 보내면 `on_dismiss`가 정확히 한 번 불립니다. 테스트 `fr21_9_dismiss_fires_once`.
+4. 임의 자식(`TextField`, `LazyColumn` 포함)이 팝업 안에서 만들어지고, 이벤트가 각 핸들러로 갑니다. 테스트 `fr21_9_popover_hosts_arbitrary_children`.
+5. 수동: 창 위쪽 가장자리 근처의 앵커에서 `Top`이 `Bottom`으로 뒤집히고, 아래쪽에서는 그대로 `Top`입니다. 오른쪽 가장자리에서는 정렬 축이 창 안으로 밀립니다. 바깥 누름과 Esc가 닫습니다. 여섯 디자인 시스템에서 면과 화살표가 시스템마다 다릅니다.
+
 ### FR-24 모션 (`Draft`)
 
 13.7은 "애니메이션 스펙"을 뺐고 그 이유는 옳았습니다. Host가 duration과 easing을 보내면 디자인 시스템이 모션을 결정한다는 FR-14가 무너집니다. 빠져 있던 것은 값이 아니라 **말할 방법**이었습니다. 색과 간격이 역할로 말해지듯 모션도 역할로 말합니다.
@@ -1501,6 +1641,40 @@ E2를 기본 경로로 삼으면 KSP가 Rust 열거형, Dioxus element, 컴포�
 - 값은 전부 디자인 시스템 표에 있습니다. Material 3의 emphasized 곡선과 Cupertino의 스프링은 같은 역할에 대한 서로 다른 답입니다.
 - 접근성: 시스템이 모션 감소를 요청하면 Renderer가 모든 역할을 `Instant`로 해석합니다. Host는 관여하지 않습니다(D5).
 - 수용 기준: `Motion(Standard)`을 단 노드의 보임 전환이 여섯 시스템에서 서로 다른 길이로 끝납니다. 모션 감소가 켜진 상태에서는 여섯 모두 한 프레임 안에 끝납니다. 정상 상태 할당이 없습니다.
+
+#### 24.1 `AnimatedVisibility` (`Draft`)
+
+추적: 이슈 #128. 높이 접힘은 compose-rust의 크기 애니메이션(`AnimateContentSize` 모디파이어, 또는 `Motion`이 크기 변화를 재생한다는 확인)에 의존하며, 그 이슈는 아직 열리지 않았습니다. 페이드와 이동은 dioxus-compose만으로 됩니다.
+
+`visible`이 바뀔 때 자식이 나타나고 사라지는 동안 모션을 재생하는 컴포넌트입니다. 재생은 렌더러가 하고(D5), 이 컴포넌트는 언제 자식을 선언하고 언제 거둘지만 정합니다.
+
+```rust
+rsx! {
+    AnimatedVisibility {
+        visible: open(),
+        enter: Enter::fade().and(Enter::expand_vertically()),
+        exit: Exit::fade().and(Exit::shrink_vertically()),
+        spec: AnimationSpec::STANDARD,
+        ToolCallGroup {}
+    }
+}
+```
+
+- `visible: bool`, `enter: Enter`, `exit: Exit`, 선택적 `spec`입니다. `Enter`와 `Exit`의 요소는 `fade`, `slide(offset)`(dioxus-compose만으로 재생), `expand_vertically`와 `shrink_vertically`(compose-rust의 크기 애니메이션이 필요)입니다.
+- 나타남: `visible`이 거짓에서 참이 되면 자식을 선언하고, 시작 값에서 끝 값으로 `StartAnimation`을 한 번 보냅니다. 재생하는 동안 이 컴포넌트는 다시 그려지지 않습니다.
+- 사라짐: `visible`이 참에서 거짓이 되면 자식을 그대로 둔 채 퇴장 애니메이션을 시작하고, 렌더러가 종료를 알린 뒤에 자식을 거둡니다. 종료 전에 `visible`이 다시 참이 되면 거두지 않고 현재 값에서 나타남으로 이어 갑니다.
+- 레이아웃 차지: 사라진 뒤의 노드는 레이아웃을 차지하지 않습니다. 높이 접힘 없이 사라지는 경우는 이 규칙을 따릅니다.
+- 모션 감소: `use_reduced_motion()`이 켜져 있으면 애니메이션 없이 즉시 선언하고 거둡니다.
+- 처음부터 `visible`이 참이면 나타남을 재생하지 않습니다.
+
+수용 기준:
+
+1. `visible`이 거짓에서 참이 되면 자식 노드가 만들어지고 `StartAnimation`이 정확히 한 번 갑니다. 목 렌더러가 재생하는 동안 이 컴포넌트가 다시 그려지지 않습니다. 테스트 `fr24_1_enter_starts_one_animation`.
+2. 참에서 거짓이 되면 노드가 즉시 지워지지 않고, 목 렌더러가 종료 이벤트를 보낸 뒤에 지워집니다. 테스트 `fr24_1_exit_removes_after_end_event`.
+3. 퇴장 중에 `visible`이 참으로 돌아오면 노드는 지워지지 않고 `StartAnimation`이 현재 값에서 시작합니다. 테스트 `fr24_1_interrupted_exit_resumes`.
+4. 모션 감소가 켜진 상태에서는 `StartAnimation`이 나오지 않고, 노드는 한 번의 배치 안에 선언되고 지워집니다. 테스트 `fr24_1_reduced_motion_is_immediate`.
+5. 처음부터 참이면 `StartAnimation`이 없습니다. 테스트 `fr24_1_initially_visible_does_not_animate`.
+6. 수동: 페이드와 이동이 여섯 디자인 시스템에서 각 시스템의 길이와 곡선으로 나옵니다. 높이 접힘과 펼침은 compose-rust의 크기 애니메이션이 들어온 뒤에 같은 방식으로 확인합니다.
 
 ### FR-25 Grid (`Draft`)
 
