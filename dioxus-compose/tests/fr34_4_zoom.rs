@@ -254,11 +254,9 @@ fn fr34_4_css_viewport_is_the_window_over_k() {
     }
 }
 
-/// The window is reported in the units the widgets are drawn in, and those already carry
-/// the application's share of the zoom, `1.2^level`. Level 2 at a system text size of 1.25
-/// draws the page at k = 1.8, and a window of 1200 of those units is 960 page pixels wide:
-/// the units over the system's share alone, not over k, which would divide the level out
-/// twice.
+/// Window sizes arrive in zoomed dp, so the viewport is the window over the system's text
+/// size `os`, which equals the window over `k` at level 0. Level 2 at `os` = 1.25 is
+/// k = 1.8, and a window of 1200 zoomed dp is 960 page pixels wide.
 #[test]
 fn fr34_4_the_application_share_is_not_divided_out_twice() {
     let (mut host, _) = started();
@@ -266,7 +264,7 @@ fn fr34_4_the_application_share_is_not_divided_out_twice() {
     let zoomed = report(&mut host, zoom_event(1.25 * 1.44, 1.25, 2));
     assert!(
         zoomed.has_size(960.0, 40.0),
-        "1200 units at a system size of 1.25 are 960 page pixels: {:?}",
+        "1200 zoomed dp over os = 1.25 are 960 page pixels: {:?}",
         zoomed.sizes
     );
 }
