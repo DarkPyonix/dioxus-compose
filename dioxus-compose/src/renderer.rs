@@ -381,7 +381,6 @@ impl ComposeRenderer {
         const BORDER_EACH: u16 = 14;
         const ELEVATION: u16 = 15;
         const CLIP: u16 = 16;
-        const CLICKABLE: u16 = CLICKABLE_SLOT;
         const PADDING: u16 = 18;
         const OBSERVE_SIZE: u16 = 19;
         const MOTION: u16 = 20;
@@ -408,7 +407,6 @@ impl ComposeRenderer {
             "background" => Some(BACKGROUND),
             "border_width" | "border_color" => Some(BORDER),
             "elevation" => Some(ELEVATION),
-            "onclickable" => Some(CLICKABLE),
             "padding" | "padding_role" => Some(PADDING),
             "observe_size" => Some(OBSERVE_SIZE),
             "motion" => Some(MOTION),
@@ -631,21 +629,6 @@ impl ComposeRenderer {
                 Some(Some((CLIP, Modifier::Clip(*enabled))))
             }
             "alpha" => Some(Some((ALPHA, Modifier::Alpha(float(value)?)))),
-            "onclickable" => {
-                let AttributeValue::Listener(_) = value else {
-                    return Some(None);
-                };
-                let handler_id = self.next_handler_id;
-                self.next_handler_id += 1;
-                self.handlers.push(Handler {
-                    id: handler_id,
-                    element,
-                    node_id,
-                    name,
-                    link: 0,
-                });
-                Some(Some((CLICKABLE, Modifier::Clickable { handler_id })))
-            }
             _ => None,
         }
     }
