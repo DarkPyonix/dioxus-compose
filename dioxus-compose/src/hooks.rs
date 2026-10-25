@@ -324,6 +324,12 @@ pub fn use_animation_event(handler: impl FnMut(compose_rust::AnimationMoment) + 
 pub struct Animated<T> {
     pub target: T,
     pub spec: compose_rust::AnimationSpec,
+    /// Where a node that appears with this value starts, for the node's first value only.
+    /// Without it a node starts at its target and nothing is played.
+    pub(crate) enter_from: Option<T>,
+    /// Non-zero asks the Renderer to report when the animation of a change ends, under
+    /// this key. Zero reports nothing.
+    pub(crate) watch: u64,
 }
 
 impl<T: Copy> Animated<T> {
@@ -336,7 +342,12 @@ impl<T: Copy> Animated<T> {
 /// `AbsoluteBox` as `animated_alpha`. A change is one `StartAnimation` and the Renderer
 /// plays it on its own clock: this component is not rendered again while it plays.
 pub fn animate_float_as_state(target: f32, spec: compose_rust::AnimationSpec) -> Animated<f32> {
-    Animated { target, spec }
+    Animated {
+        target,
+        spec,
+        enter_from: None,
+        watch: 0,
+    }
 }
 
 /// A background the Renderer animates to whenever `target` changes, given to an
@@ -345,7 +356,12 @@ pub fn animate_color_as_state(
     target: compose_rust::Paint,
     spec: compose_rust::AnimationSpec,
 ) -> Animated<compose_rust::Paint> {
-    Animated { target, spec }
+    Animated {
+        target,
+        spec,
+        enter_from: None,
+        watch: 0,
+    }
 }
 
 /// A translation in dp the Renderer animates to whenever `target` changes, given to an
@@ -354,5 +370,10 @@ pub fn animate_offset_as_state(
     target: (f32, f32),
     spec: compose_rust::AnimationSpec,
 ) -> Animated<(f32, f32)> {
-    Animated { target, spec }
+    Animated {
+        target,
+        spec,
+        enter_from: None,
+        watch: 0,
+    }
 }
