@@ -30,6 +30,7 @@ pub mod html;
 mod html_view;
 mod html_widget;
 mod layout;
+mod list_detail;
 mod paint;
 pub mod renderer;
 pub mod theme_variables;
@@ -52,6 +53,7 @@ pub use hooks::{
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use hover::{HoverHandle, use_hover};
 pub use html_view::HtmlView;
+pub use list_detail::ListDetail;
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
     ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon,
@@ -149,7 +151,7 @@ pub mod prelude {
         NavigationItem, Paint, Palette, PointerEvent, PointerKinds, ProgressIndicator, Props,
         RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
         Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
-        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
+        ListDetail, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
         TopAppBar, TypeRole, UserSelect, WindowHeightClass, WindowSize, WindowSizeClass, asset,
         brush, component, launch, rsx, show_message, use_design_system, use_hover, use_node_size, use_theme, HoverHandle,
         use_window_size, use_zoom, Zoom, ZoomHandle,
