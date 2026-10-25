@@ -67,17 +67,10 @@ pub(crate) fn page_zoom() -> f32 {
     if k.is_finite() && k > 0.0 { k } else { 1.0 }
 }
 
-/// A length the renderer measured, in the units its layout runs in, as the page's CSS
-/// pixels.
-///
-/// The renderer draws a page at `k = os * 1.2^level` and everything else at the
-/// application's share of that alone, `1.2^level`, so a window or a box that measures `dp`
-/// there measures `dp * 1.2^level / k` CSS pixels: the width the page is laid out in, and
-/// the one a `width` media query is answered with.
+/// A length the renderer measured, as the page's CSS pixels: the length over `k`. This is
+/// the width the page is laid out in, and the one a `width` media query is answered with.
 pub(crate) fn css_extent(dp: f32) -> f32 {
-    let zoom = compose_rust::zoom();
-    let k = page_zoom();
-    dp * zoom.app() / k
+    dp / page_zoom()
 }
 
 /// One HTML and CSS application, running as the Host's runtime.
