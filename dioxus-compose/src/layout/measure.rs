@@ -264,6 +264,13 @@ pub trait TextMeasurer {
     /// Called when what the measurer's answers depend on changed (the theme, the design
     /// system), so answers it kept are stale. The default keeps nothing.
     fn invalidate(&mut self) {}
+
+    /// Called when the page is zoomed by `zoom`: the factor the page is drawn at, so the
+    /// text has to be measured at the same one. A measurer that keeps answers drops the
+    /// ones made at another zoom. The default has no zoom to apply.
+    fn set_zoom(&mut self, zoom: f32) {
+        let _ = zoom;
+    }
 }
 
 impl<F> TextMeasurer for F

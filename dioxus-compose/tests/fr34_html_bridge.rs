@@ -343,10 +343,23 @@ fn fr42_first_frame_creates_the_widget_of_every_plan_kind() {
         Value::Str("Ada".to_string())
     )));
 
-    let window = match first[0] {
-        Record::Create(node, WidgetKind::ScrollColumn) => node,
-        ref other => panic!("the window's scroll comes first: {other:?}"),
+    // The window's own box, which names the factor the page is drawn at, is the one node
+    // nothing inserts. The page's scroll hangs from it.
+    let window = match first.iter().rev().find_map(|record| match record {
+        Record::Create(node, WidgetKind::AbsoluteBox) => Some(*node),
+        _ => None,
+    }) {
+        Some(node) => node,
+        None => panic!("the window's box is created: {first:#?}"),
     };
+    assert!(
+        first.iter().any(|record| matches!(
+            record,
+            Record::Insert { parent, node, .. }
+                if *parent == window && created(&first, WidgetKind::ScrollColumn).contains(node)
+        )),
+        "the window's scroll hangs from the window's box: {first:#?}"
+    );
     for record in &first {
         if let Record::Create(node, _) = record
             && *node != window

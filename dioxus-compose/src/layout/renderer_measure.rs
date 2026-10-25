@@ -128,10 +128,12 @@ struct Key {
     /// The encoded runs and their font table; both empty for text in one style.
     spans: Vec<u8>,
     span_fonts: Vec<u8>,
+    /// The bits of the zoom the answer was measured at.
+    zoom: u32,
 }
 
 impl Key {
-    fn of(request: &TextMeasureRequest<'_>, spans: &TextSpans) -> Self {
+    fn of(request: &TextMeasureRequest<'_>, spans: &TextSpans, zoom: f32) -> Self {
         let style = request.style;
         let (constraint, width) = match request.width {
             WidthConstraint::MinContent => (0, 0.0),
@@ -156,6 +158,7 @@ impl Key {
             collapse: request.white_space.collapse as u8,
             spans: spans.as_bytes().to_vec(),
             span_fonts: spans.font_table().to_vec(),
+            zoom: zoom.to_bits(),
         }
     }
 }
@@ -178,6 +181,8 @@ pub struct RendererMeasurer {
     requests: MeasureRequests,
     results: Vec<MeasureResult>,
     calls: usize,
+    /// The factor the page is drawn at, which the renderer measures at as well.
+    zoom: f32,
 }
 
 impl RendererMeasurer {
@@ -195,12 +200,18 @@ impl RendererMeasurer {
             requests: MeasureRequests::new(),
             results: Vec::new(),
             calls: 0,
+            zoom: 1.0,
         }
     }
 
     /// How many measure calls this measurer has made.
     pub fn calls(&self) -> usize {
         self.calls
+    }
+
+    /// The zoom the text is measured at.
+    pub fn zoom(&self) -> f32 {
+        self.zoom
     }
 
     /// Forgets every answer, for when what the renderer measures with changed.
@@ -241,9 +252,9 @@ fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
             OverflowWrap::BreakWord => WireOverflowWrap::BreakWord,
         }),
         // The page's sizes are CSS pixels, which the system's font scale does not enlarge.
-        // A page zoom plugs in where the requests are built in `settle`: the zoom is set on
-        // `self.requests` before the questions are added, the cache key gains the zoom, and
-        // a change of zoom calls `clear`.
+        // The page's zoom travels beside the style: `settle` sets it on the requests before
+        // the questions are added, the cache key holds it, and a change of zoom clears the
+        // answers.
         absolute_size: true,
         ..WireStyle::default()
     }
@@ -265,7 +276,7 @@ impl TextMeasurer for RendererMeasurer {
             };
             wire_spans(request.text.len(), base, runs, &mut |_| None)
         };
-        let key = Key::of(request, &spans);
+        let key = Key::of(request, &spans, self.zoom);
         if let Some(metrics) = self.answers.get(&key) {
             return *metrics;
         }
@@ -286,6 +297,14 @@ impl TextMeasurer for RendererMeasurer {
         self.clear();
     }
 
+    fn set_zoom(&mut self, zoom: f32) {
+        let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
+        if zoom.to_bits() != self.zoom.to_bits() {
+            self.zoom = zoom;
+            self.clear();
+        }
+    }
+
     fn settle(&mut self) -> bool {
         if self.asked.is_empty() {
             return false;
@@ -296,6 +315,7 @@ impl TextMeasurer for RendererMeasurer {
             return false;
         };
         self.requests.clear();
+        self.requests.set_zoom(self.zoom);
         for question in &questions {
             let constraint = match question.width {
                 WidthConstraint::MinContent => TextConstraint::MinContent,

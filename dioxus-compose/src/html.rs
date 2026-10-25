@@ -107,6 +107,7 @@ pub use blitz_traits::shell::ColorScheme;
 pub use motion_events::{
     onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart, transition,
 };
+pub(crate) use runtime::{css_extent, page_zoom};
 pub use runtime::{HtmlRuntime, launch, runtime_for};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
@@ -159,6 +160,8 @@ pub mod prelude {
         launch, onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart,
         transition,
     };
+    pub use crate::hooks::use_zoom;
+    pub use compose_rust::{Zoom, ZoomHandle};
     pub use dioxus_core::{Element, VirtualDom};
     pub use dioxus_core_macro::rsx;
     pub use dioxus_html as dioxus_elements;
