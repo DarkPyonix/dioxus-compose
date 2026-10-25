@@ -1597,7 +1597,7 @@ E2를 기본 경로로 삼으면 KSP가 Rust 열거형, Dioxus element, 컴포�
 
 #### 21.9 `Popover` (`Draft`)
 
-추적: 이슈 #129. compose-rust의 `Popover` 위젯에 의존하며, 그 이슈는 아직 열리지 않았습니다. 그 위젯이 들어오기 전에는 수용 기준 1-4를 목 렌더러로만 검증하고, 5는 수동입니다.
+추적: 이슈 #129. compose-rust FR-51(`Popover` 위젯)에 의존합니다. 그 위젯이 들어오기 전에는 수용 기준 1-4를 목 렌더러로만 검증하고, 5는 수동입니다.
 
 `Menu`는 항목 목록용입니다. 작성창에 붙는 모델 선택기처럼 앵커에 붙는 **임의 내용**은 `Menu`로 말할 수 없습니다. `Popover`는 앵커에 붙고 임의 자식을 담는 팝업입니다. 위치는 렌더러가 정하고 Host는 좌표를 알지 못합니다(FR-15.2.3).
 
@@ -1622,7 +1622,7 @@ rsx! {
 - 내용은 아무 자식이나 됩니다. 팝업 면의 배경, 모서리, 고도는 디자인 시스템 규칙입니다. 흐림이 필요하면 내용 최상위 컨테이너에 `material`을 답니다(FR-23.3).
 - 앵커 노드 자식 `0`이 첫째이고 나머지가 내용입니다. `Menu`와 같은 규약이므로 FR-1의 삽입 인덱스 규칙이 그대로 적용됩니다.
 - `scrim`이 참이면 팝업 뒤를 덮고 바깥 누름이 `on_dismiss`를 부릅니다. 거짓이면 비모달이고, 바깥 누름도 `on_dismiss`를 부릅니다. Esc도 같습니다.
-- compose-rust 의존: 새 `Popover` 위젯(자식 0이 앵커, 나머지가 내용), 속성 `Placement`, `Align`, `OffsetDp`, 렌더러의 가장자리 뒤집기, `Scrim`, 바깥 누름과 Esc에 의한 `OnDismiss`가 필요합니다. 흐림은 기존 `Modifier::Material`을 씁니다.
+- compose-rust 의존: compose-rust FR-51입니다. Popup 기반 `Popover` 위젯이며, 자식 0이 앵커입니다. 열림 상태는 렌더러가 갖고 `OnDismiss`는 `Menu`와 공유합니다. 컨테이너 역할은 `ContainerRole.Popover`입니다. 흐림은 `Modifier::Material`로 줍니다.
 
 수용 기준:
 
@@ -1644,7 +1644,7 @@ rsx! {
 
 #### 24.1 `AnimatedVisibility` (`Draft`)
 
-추적: 이슈 #128. 높이 접힘은 compose-rust의 크기 애니메이션(`AnimateContentSize` 모디파이어, 또는 `Motion`이 크기 변화를 재생한다는 확인)에 의존하며, 그 이슈는 아직 열리지 않았습니다. 페이드와 이동은 dioxus-compose만으로 됩니다.
+추적: 이슈 #128. compose-rust 변경은 필요하지 않습니다. 높이 접힘은 기존 `Modifier::Motion(role)`을 씁니다.
 
 `visible`이 바뀔 때 자식이 나타나고 사라지는 동안 모션을 재생하는 컴포넌트입니다. 재생은 렌더러가 하고(D5), 이 컴포넌트는 언제 자식을 선언하고 언제 거둘지만 정합니다.
 
@@ -1660,10 +1660,10 @@ rsx! {
 }
 ```
 
-- `visible: bool`, `enter: Enter`, `exit: Exit`, 선택적 `spec`입니다. `Enter`와 `Exit`의 요소는 `fade`, `slide(offset)`(dioxus-compose만으로 재생), `expand_vertically`와 `shrink_vertically`(compose-rust의 크기 애니메이션이 필요)입니다.
+- `visible: bool`, `enter: Enter`, `exit: Exit`, 선택적 `spec`입니다. `Enter`와 `Exit`의 요소는 `fade`, `slide(offset)`, `expand_vertically`와 `shrink_vertically`입니다. 페이드와 이동은 자식의 불투명도와 오프셋을 재생합니다. 높이 접힘은 컨테이너의 `Modifier::Motion(role)`(테마 모션의 animateContentSize)이 재생합니다.
 - 나타남: `visible`이 거짓에서 참이 되면 자식을 선언하고, 시작 값에서 끝 값으로 `StartAnimation`을 한 번 보냅니다. 재생하는 동안 이 컴포넌트는 다시 그려지지 않습니다.
 - 사라짐: `visible`이 참에서 거짓이 되면 자식을 그대로 둔 채 퇴장 애니메이션을 시작하고, 렌더러가 종료를 알린 뒤에 자식을 거둡니다. 종료 전에 `visible`이 다시 참이 되면 거두지 않고 현재 값에서 나타남으로 이어 갑니다.
-- 레이아웃 차지: 사라진 뒤의 노드는 레이아웃을 차지하지 않습니다. 높이 접힘 없이 사라지는 경우는 이 규칙을 따릅니다.
+- 퇴장 순서: 자식은 퇴장 애니메이션(fade, slide)이 끝날 때까지 선언된 채로 남습니다. 그다음 컨테이너의 `Motion(role)`이 높이를 접고, 접힘이 끝나면 자식을 거둡니다. 거둬진 노드는 레이아웃을 차지하지 않습니다.
 - 모션 감소: `use_reduced_motion()`이 켜져 있으면 애니메이션 없이 즉시 선언하고 거둡니다.
 - 처음부터 `visible`이 참이면 나타남을 재생하지 않습니다.
 
@@ -1674,7 +1674,8 @@ rsx! {
 3. 퇴장 중에 `visible`이 참으로 돌아오면 노드는 지워지지 않고 `StartAnimation`이 현재 값에서 시작합니다. 테스트 `fr24_1_interrupted_exit_resumes`.
 4. 모션 감소가 켜진 상태에서는 `StartAnimation`이 나오지 않고, 노드는 한 번의 배치 안에 선언되고 지워집니다. 테스트 `fr24_1_reduced_motion_is_immediate`.
 5. 처음부터 참이면 `StartAnimation`이 없습니다. 테스트 `fr24_1_initially_visible_does_not_animate`.
-6. 수동: 페이드와 이동이 여섯 디자인 시스템에서 각 시스템의 길이와 곡선으로 나옵니다. 높이 접힘과 펼침은 compose-rust의 크기 애니메이션이 들어온 뒤에 같은 방식으로 확인합니다.
+6. 퇴장 애니메이션이 끝나기 전까지 자식은 선언된 채로 남고, 끝난 뒤에 노드가 지워집니다. 목 렌더러가 종료 이벤트를 보내기 전에는 `Delete`가 나오지 않고, 보낸 뒤에 나옵니다. 테스트 `fr24_1_exiting_child_stays_composed_until_end`.
+7. 수동: 페이드와 이동이 여섯 디자인 시스템에서 각 시스템의 길이와 곡선으로 나오고, 높이 접힘과 펼침이 레이아웃을 부드럽게 밀고 당깁니다.
 
 ### FR-25 Grid (`Draft`)
 
