@@ -50,7 +50,7 @@ use dioxus_html::{Code, Key, Modifiers};
 use crate::dom::{HtmlConfig, HtmlDom};
 use crate::html::{ColorScheme, NodeId, PlanKey};
 use crate::paint::animate;
-use crate::paint::bridge::{BridgeEvent, PlanBridge};
+use crate::paint::bridge::{BridgeEvent, HostMomentKind, PlanBridge};
 use crate::paint::plan::LiteralColours;
 
 /// The viewport a page is laid out in before the renderer has said how large the window
@@ -76,7 +76,10 @@ pub struct HtmlRuntime {
     configured_scheme: ColorScheme,
     /// The theme and design system the text sizes were measured under. A change of either
     /// makes the renderer's earlier answers wrong.
-    measured_under: Option<(compose_rust::schema::Theme, compose_rust::schema::DesignSystem)>,
+    measured_under: Option<(
+        compose_rust::schema::Theme,
+        compose_rust::schema::DesignSystem,
+    )>,
     /// The animation moments the renderer reported since the last frame, which the next
     /// frame delivers to the page before it renders.
     moments: Rc<RefCell<Vec<AnimationMoment>>>,
@@ -217,6 +220,7 @@ impl HtmlRuntime {
         crate::html_widget::refresh(self.owner, viewport.0);
         let plan = self.plan_at(viewport)?;
         self.bridge.apply(plan, viewport, &self.dom, batch);
+        self.deliver_host_moments();
         let bridge = &self.bridge;
         crate::html_widget::attach(
             self.owner,
@@ -259,12 +263,59 @@ impl HtmlRuntime {
                     self.dom
                         .animation_event(target.node, "animationend", name, elapsed);
                 }
+                (None, AnimationEventKind::Active) => {
+                    let property = animate::css_name(target.property);
+                    self.dom
+                        .transition_moment(target.node, "transitionstart", property, elapsed);
+                }
                 (None, AnimationEventKind::End) => {
                     let property = animate::css_name(target.property);
                     self.dom.transition_event(target.node, property, elapsed);
                 }
                 _ => {}
             }
+        }
+    }
+
+    /// Delivers the moments only the Host knows, which the last frame produced:
+    /// `transitionrun` when it sent a transition, and `transitioncancel` or
+    /// `animationcancel` when an animation that had not ended was replaced, cancelled or
+    /// removed with its node. The page hears them in the order they happened, and a run
+    /// always comes before the renderer's `transitionstart`, which only arrives later.
+    fn deliver_host_moments(&mut self) {
+        for moment in self.bridge.take_host_moments() {
+            let property = animate::css_name(moment.property);
+            let node = moment.node;
+            let event = match (&moment.name, moment.kind) {
+                (None, HostMomentKind::Run) => "transitionrun",
+                (None, HostMomentKind::Cancel) => "transitioncancel",
+                (Some(_), HostMomentKind::Cancel) => "animationcancel",
+                (Some(_), HostMomentKind::Run) => continue,
+            };
+            // A removed node's handlers are gone with it. Dispatch would climb to the
+            // elements around it, so the event is dropped unless the node still has its own.
+            if moment.removed && !self.dom.listeners(node).contains(&event) {
+                continue;
+            }
+            let _ = {
+                match (&moment.name, moment.kind) {
+                    (None, HostMomentKind::Run) => {
+                        self.dom
+                            .transition_moment(node, "transitionrun", property, moment.elapsed)
+                    }
+                    (None, HostMomentKind::Cancel) => self.dom.transition_moment(
+                        node,
+                        "transitioncancel",
+                        property,
+                        moment.elapsed,
+                    ),
+                    (Some(name), HostMomentKind::Cancel) => {
+                        self.dom
+                            .animation_event(node, "animationcancel", name, moment.elapsed)
+                    }
+                    (Some(_), HostMomentKind::Run) => None,
+                }
+            };
         }
     }
 
@@ -324,6 +375,7 @@ impl Runtime for HtmlRuntime {
 
     fn rebuild(&mut self) {
         self.draw();
+        self.deliver_host_moments();
     }
 
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
@@ -331,6 +383,7 @@ impl Runtime for HtmlRuntime {
         self.deliver_moments();
         self.dom.render();
         self.draw();
+        self.deliver_host_moments();
     }
 
     fn handle_event(&mut self, event: &HostEvent<'_>) -> Result<i64, ProtocolError> {

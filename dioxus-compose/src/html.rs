@@ -69,12 +69,14 @@ use crate::dom;
 use crate::layout::{self, image};
 use crate::paint::build;
 
+mod motion_events;
 mod runtime;
 
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
 pub type NodeId = usize;
 
-pub use crate::dom::{HtmlConfig, HtmlDom, element_by_id};
+pub use crate::dom::{HtmlConfig, HtmlDom, TransitionEventData, element_by_id};
+pub use crate::html_widget::WidgetView;
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
 pub use crate::layout::measure::{
     OverflowWrap, ParleyMeasurer, SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer,
@@ -99,7 +101,9 @@ pub use crate::paint::plan::{
 };
 pub use blitz_dom::BaseDocument;
 pub use blitz_traits::shell::ColorScheme;
-pub use crate::html_widget::WidgetView;
+pub use motion_events::{
+    onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart, transition,
+};
 pub use runtime::{HtmlRuntime, launch, runtime_for};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
@@ -147,7 +151,11 @@ pub fn layout_document_with(
 /// widgets as `dioxus_elements`, and this one names the HTML elements, so an `rsx!` block
 /// takes one or the other.
 pub mod prelude {
-    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, WidgetView, launch};
+    pub use super::{
+        AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, TransitionEventData, WidgetView,
+        launch, onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart,
+        transition,
+    };
     pub use dioxus_core::{Element, VirtualDom};
     pub use dioxus_core_macro::rsx;
     pub use dioxus_html as dioxus_elements;

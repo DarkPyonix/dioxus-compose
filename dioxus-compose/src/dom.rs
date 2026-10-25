@@ -819,8 +819,8 @@ impl HtmlDom {
     }
 
     /// What a renderer calls when it reports a moment of a `@keyframes` animation playing
-    /// on `node`: delivers `name` (`animationstart`, `animationiteration` or
-    /// `animationend`) to the nearest handler at or around it, bubbling as a browser's
+    /// on `node`: delivers `name` (`animationstart`, `animationiteration`,
+    /// `animationend` or `animationcancel`) to the nearest handler at or around it, bubbling as a browser's
     /// does. `elapsed` is the active time in seconds, without the delay. Returns the node
     /// whose handler received it.
     pub fn animation_event(
@@ -849,12 +849,26 @@ impl HtmlDom {
         property: &str,
         elapsed: f32,
     ) -> Option<NodeId> {
-        let (target, element) = self.listener_target(node, "transitionend")?;
+        self.transition_moment(node, "transitionend", property, elapsed)
+    }
+
+    /// Delivers the transition event `name` (`transitionrun`, `transitionstart`,
+    /// `transitionend` or `transitioncancel`) for `property` on `node`, to the nearest
+    /// handler at or around it. `elapsed` is the transition's time in seconds, without the
+    /// delay. Returns the node whose handler received it.
+    pub fn transition_moment(
+        &mut self,
+        node: NodeId,
+        name: &'static str,
+        property: &str,
+        elapsed: f32,
+    ) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, name)?;
         let data = TransitionEventData {
             property: property.to_owned(),
             elapsed,
         };
-        self.send(element, "transitionend", Box::new(data), true);
+        self.send(element, name, Box::new(data), true);
         Some(target)
     }
 
@@ -1170,11 +1184,43 @@ impl HasAnimationData for AnimationEventData {
     }
 }
 
-/// What a transition event carries: the CSS property and the time it ran.
+/// What a transition event the Host sends carries: the CSS property and the time it ran.
+///
+/// `dioxus-html` gives a page no accessors on its `TransitionData`, so a page reads these
+/// by downcasting the event's data to this type:
+///
+/// ```ignore
+/// ontransitionend: move |evt| {
+///     if let Some(data) = evt.data().downcast::<TransitionEventData>() {
+///         let (property, seconds) = (data.property_name(), data.elapsed_time());
+///     }
+/// }
+/// ```
+///
+/// [`transition`](crate::html::transition) does the downcast. It returns `None` for an
+/// event that did not come from the Host, which carries some other type.
 #[derive(Clone)]
-struct TransitionEventData {
+pub struct TransitionEventData {
     property: String,
     elapsed: f32,
+}
+
+impl TransitionEventData {
+    /// The CSS name of the property, such as `opacity`.
+    pub fn property_name(&self) -> &str {
+        &self.property
+    }
+
+    /// The time in seconds the transition had run, without its delay.
+    pub fn elapsed_time(&self) -> f32 {
+        self.elapsed
+    }
+
+    /// The pseudo element the transition ran on. Pseudo elements are not transitioned, so
+    /// this is always empty.
+    pub fn pseudo_element(&self) -> &str {
+        ""
+    }
 }
 
 impl HasTransitionData for TransitionEventData {
