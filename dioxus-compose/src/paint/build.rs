@@ -14,7 +14,7 @@ use blitz_dom::{BaseDocument, Node, NodeData};
 use parley::PositionedLayoutItem;
 use style::properties::ComputedValues;
 use style::properties::generated::longhands::position::computed_value::T as Position;
-use style::values::computed::{BorderStyle, Length, Overflow};
+use style::values::computed::{BorderStyle, Length, OutlineStyle, Overflow};
 use style::values::specified::text::TextOverflowSide;
 
 use crate::dom::form;
@@ -25,7 +25,7 @@ use crate::layout::image::ImageLookup;
 use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
-    DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, PlayDirection,
+    DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection,
     Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign,
     TextDecoration, TextRun, Transform2D,
 };
@@ -495,6 +495,8 @@ impl Painter<'_, '_> {
             background: None,
             backgrounds: Vec::new(),
             border: None,
+            outline: None,
+            pointer_events: true,
             radii: None,
             shadows: Vec::new(),
             clip: placed.clip,
@@ -526,6 +528,10 @@ impl Painter<'_, '_> {
                 style::computed_values::visibility::T::Visible
             );
             entry.clips_children = clips(style);
+            entry.pointer_events = !matches!(
+                style.clone_pointer_events(),
+                style::values::computed::PointerEvents::None
+            );
             let overflow_x = style.clone_overflow_x();
             let overflow_y = style.clone_overflow_y();
             if scrolls(overflow_x) || scrolls(overflow_y) {
@@ -602,6 +608,7 @@ impl Painter<'_, '_> {
             });
         }
 
+        entry.outline = outline(style);
         entry.radii = corner_radii(style, entry.rect.width, entry.rect.height);
 
         entry.shadows = style
@@ -880,6 +887,25 @@ fn rest_value(animation: &Animation) -> AnimatedValue {
         PlayDirection::Normal | PlayDirection::Alternate => animation.start(),
         PlayDirection::Reverse | PlayDirection::AlternateReverse => animation.end(),
     }
+}
+
+/// The `outline` of a box, or `None` when its style is `none` or its width is zero.
+/// `outline-style: auto` is drawn as a solid line.
+fn outline(style: &ComputedValues) -> Option<Outline> {
+    let line = match style.clone_outline_style() {
+        OutlineStyle::Auto => BorderLine::Solid,
+        OutlineStyle::BorderStyle(line) => border_line(line),
+    };
+    let width = style.clone_outline_width().to_f32_px();
+    if line == BorderLine::None || width <= 0.0 {
+        return None;
+    }
+    Some(Outline {
+        width,
+        offset: style.clone_outline_offset().px(),
+        color: convert::resolve_color(&style.clone_outline_color(), style),
+        line,
+    })
 }
 
 fn border_line(style: BorderStyle) -> BorderLine {

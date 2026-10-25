@@ -88,7 +88,7 @@ pub use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
     BorderLine, BoxShadow, Corners, DisplayList, DisplayListDiff, Easing, FillMode, GradientStop,
     InputField, InputKind, Iterations, Keyframe, LinearGradient, Matrix2D, NodeEntry, ObjectFit,
-    PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker, ScrollContainer,
+    Outline, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker, ScrollContainer,
     Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun, TileRepeat,
     Transform2D, TransformFunction, TransitionStart,
 };

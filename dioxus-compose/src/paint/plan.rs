@@ -51,7 +51,7 @@ use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
-    Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat, Transform2D,
+    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat, Transform2D,
     bounds_of,
 };
 
@@ -178,6 +178,10 @@ pub enum PlanKey {
     InheritedClip(NodeId),
     /// The image of an `<img>`.
     Image(NodeId),
+    /// The `outline` of a box: a border-only box around the border box, placed beside the
+    /// box (or inside it, when the box is transformed) so that it can draw outside the
+    /// box's bounds.
+    Outline(NodeId),
 }
 
 impl PlanKey {
@@ -193,7 +197,8 @@ impl PlanKey {
             | PlanKey::ScrollRow(node)
             | PlanKey::ScrollContent(node)
             | PlanKey::InheritedClip(node)
-            | PlanKey::Image(node) => Some(node),
+            | PlanKey::Image(node)
+            | PlanKey::Outline(node) => Some(node),
         }
     }
 }
@@ -884,6 +889,56 @@ impl<'a> Builder<'a> {
                 .insert(PlanKey::Node(entry.node), entry.animations.clone());
         }
 
+        if let (Some(outline), Some(area)) = (entry.outline, outline_area(entry)) {
+            // The outline is drawn over the box and everything inside it, outside the box's
+            // bounds. Beside the box in its container, it is not clipped by the box, and
+            // it is drawn after everything inside the box. A transformed box carries it
+            // inside, so that it moves with the box.
+            let (target, origin, alpha) = if entry.transform.is_some() {
+                (node, (rect.x, rect.y), 1.0)
+            } else if provided_opacity > 0.0 {
+                (container, (ox, oy), entry.opacity / provided_opacity)
+            } else {
+                (container, (ox, oy), 1.0)
+            };
+            let mut outline_modifiers = vec![
+                PlanModifier::Offset {
+                    x: area.x - origin.0,
+                    y: area.y - origin.1,
+                },
+                PlanModifier::RequiredSize {
+                    width: area.width,
+                    height: area.height,
+                },
+            ];
+            if alpha < 1.0 - 1e-4 {
+                outline_modifiers.push(PlanModifier::Alpha(alpha.max(0.0)));
+            }
+            if let Some(radii) = entry.radii {
+                push_shape(&mut outline_modifiers, outline_radii(&radii, &outline));
+            }
+            outline_modifiers.push(PlanModifier::Border {
+                width: outline.width,
+                color: self
+                    .colours
+                    .resolve(entry.node, ColourUse::Border, outline.color),
+            });
+            self.push(
+                target,
+                Slot {
+                    key: PlanKey::Outline(entry.node),
+                    kind: PlanKind::Box,
+                    modifiers: outline_modifiers,
+                    children: Vec::new(),
+                    parent: None,
+                    origin: (area.x, area.y),
+                    clip: provided_clip,
+                    opacity: entry.opacity,
+                    drawn: Some(area),
+                },
+            );
+        }
+
         let content = if let Some(scroll) = entry.scroll {
             let viewport = scroll.viewport;
             let content_width = scroll.content_width.max(viewport.width);
@@ -1319,6 +1374,45 @@ fn one_radius(radius: Radius) -> f32 {
     }
 }
 
+/// The box an outline's line fills the border of: the border box grown by the outline's
+/// offset and width on every side, so the line sits `offset` outside the border box. A
+/// negative offset shrinks it. `None` when the box has no outline or nothing is left.
+fn outline_area(entry: &NodeEntry) -> Option<Rect> {
+    let outline = entry.outline?;
+    if !entry.visible || outline.width <= 0.0 {
+        return None;
+    }
+    let grow = outline.offset + outline.width;
+    let rect = entry.rect;
+    let area = Rect::new(
+        rect.x - grow,
+        rect.y - grow,
+        rect.width + 2.0 * grow,
+        rect.height + 2.0 * grow,
+    );
+    (area.width > 0.0 && area.height > 0.0).then_some(area)
+}
+
+/// The corner radii of an outline's outer edge: the border radii grown by the offset and
+/// the width, so the outline follows the shape of the border. A square corner stays
+/// square.
+fn outline_radii(radii: &Corners<Radius>, outline: &Outline) -> Corners<f32> {
+    let grow = outline.offset + outline.width;
+    let outer = |radius: Radius| {
+        if radius.is_zero() {
+            0.0
+        } else {
+            (radius.x.min(radius.y) + grow).max(0.0)
+        }
+    };
+    Corners {
+        top_left: outer(radii.top_left),
+        top_right: outer(radii.top_right),
+        bottom_right: outer(radii.bottom_right),
+        bottom_left: outer(radii.bottom_left),
+    }
+}
+
 /// The radii of the padding box's corners: the outer radii less the adjoining borders.
 fn inner_radii(radii: &Corners<Radius>, widths: &Sides<f32>) -> Corners<f32> {
     let inner = |radius: Radius, horizontal: f32, vertical: f32| {
@@ -1369,6 +1463,7 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     if decorated {
         bounds = union(bounds, Some(entry.rect));
     }
+    bounds = union(bounds, outline_area(entry));
     for shadow in entry.shadows.iter().filter(|shadow| !shadow.inset) {
         let reach = shadow.blur.max(0.0) + shadow.spread;
         let rect = entry.rect;
