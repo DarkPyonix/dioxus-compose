@@ -268,7 +268,8 @@ pub(crate) fn refresh(owner: u32, width: f32) {
         let mut requests = MeasureRequests::new();
         let mut tokens = Vec::new();
         for (&token, island) in &registry.islands {
-            if let (true, true, Some(root)) = (island.owner == owner, island.attached, island.root) {
+            if let (true, true, Some(root)) = (island.owner == owner, island.attached, island.root)
+            {
                 let _ = requests.node(
                     root,
                     NodeConstraints {

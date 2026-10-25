@@ -562,22 +562,40 @@ fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
     let cases: &[(&str, Expect)] = &[
         ("transform: rotateX(45deg)", Expect::Skipped("rotateX(")),
         ("transform: rotateY(30deg)", Expect::Skipped("rotateY(")),
-        ("transform: rotate3d(1, 1, 0, 45deg)", Expect::Skipped("rotate3d(")),
+        (
+            "transform: rotate3d(1, 1, 0, 45deg)",
+            Expect::Skipped("rotate3d("),
+        ),
         ("transform: rotate3d(0, 0, 1, 30deg)", Expect::Matrix),
-        ("transform: translateZ(10px)", Expect::Skipped("translateZ(")),
+        (
+            "transform: translateZ(10px)",
+            Expect::Skipped("translateZ("),
+        ),
         ("transform: translateZ(0px)", Expect::Untransformed),
-        ("transform: translate3d(10px, 0px, 10px)", Expect::Skipped("translate3d(")),
-        ("transform: translate3d(10px, 20px, 0px)", Expect::Folded(10.0, 20.0)),
+        (
+            "transform: translate3d(10px, 0px, 10px)",
+            Expect::Skipped("translate3d("),
+        ),
+        (
+            "transform: translate3d(10px, 20px, 0px)",
+            Expect::Folded(10.0, 20.0),
+        ),
         ("transform: scaleZ(2)", Expect::Skipped("scaleZ(")),
         ("transform: scaleZ(1)", Expect::Untransformed),
         ("transform: scale3d(2, 2, 2)", Expect::Skipped("scale3d(")),
         ("transform: scale3d(2, 3, 1)", Expect::Matrix),
-        ("transform: perspective(100px)", Expect::Skipped("perspective(")),
+        (
+            "transform: perspective(100px)",
+            Expect::Skipped("perspective("),
+        ),
         (
             "transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.001, 0, 0, 0, 1)",
             Expect::Skipped("matrix3d("),
         ),
-        ("transform: translate(10px) rotateY(30deg)", Expect::Skipped("rotateY(")),
+        (
+            "transform: translate(10px) rotateY(30deg)",
+            Expect::Skipped("rotateY("),
+        ),
         // The individual properties are read by the same code (`functions_of`), and their
         // 3D forms are listed under the property name, as `describe` writes it.
         ("rotate: x 45deg", Expect::Skipped("rotate:")),
@@ -599,7 +617,10 @@ fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
 
         match expect {
             Expect::Skipped(name) => {
-                assert!(subject.transform.is_none(), "`{css}` is drawn untransformed");
+                assert!(
+                    subject.transform.is_none(),
+                    "`{css}` is drawn untransformed"
+                );
                 assert_eq!(rect, (20.0, 20.0), "`{css}` stays at its layout place");
                 assert_eq!(skipped.len(), 1, "`{css}`: {skipped:#?}");
                 assert_eq!(skipped[0].node, subject.node, "`{css}`");
@@ -616,12 +637,18 @@ fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
                 assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
             }
             Expect::Folded(dx, dy) => {
-                assert!(subject.transform.is_none(), "`{css}` is folded into the place");
+                assert!(
+                    subject.transform.is_none(),
+                    "`{css}` is folded into the place"
+                );
                 assert_eq!(rect, (20.0 + dx, 20.0 + dy), "`{css}`");
                 assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
             }
             Expect::Matrix => {
-                assert!(subject.transform.is_some(), "`{css}` is drawn as a 2D matrix");
+                assert!(
+                    subject.transform.is_some(),
+                    "`{css}` is drawn as a 2D matrix"
+                );
                 assert_eq!(rect, (20.0, 20.0), "`{css}` keeps the layout place");
                 assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
             }

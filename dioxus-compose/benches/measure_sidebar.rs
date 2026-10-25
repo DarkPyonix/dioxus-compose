@@ -10,7 +10,6 @@
 //!
 //! Written against compose-rust develop, where the measure call lives.
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use compose_rust::boundary::{RendererApi, install_renderer_api};
 use compose_rust::measure::{
     MeasureRequests, MeasureResult, TextConstraint, TextStyle, fake_measure, measurer,
@@ -18,6 +17,7 @@ use compose_rust::measure::{
 use compose_rust::protocol::{HostEvent, ProtocolError};
 use compose_rust::spans::TextSpans;
 use compose_rust::{Batch, FontRef, FontRefs, GenericFamily, Host, Runtime, TypeRole};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::cell::Cell;
 use std::ffi::c_int;
 

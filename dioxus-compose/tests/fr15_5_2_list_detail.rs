@@ -3,9 +3,9 @@
 
 use std::cell::{Cell, RefCell};
 
+use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
-use dioxus_compose::Host;
 use dioxus_compose::schema::{EventPayload, Modifier, PropertyKind, WidgetKind};
 
 thread_local! {
@@ -101,7 +101,12 @@ fn start(selected: Option<u32>, collapse: Option<f32>) -> Host {
     Host::new(app)
 }
 
-fn dispatch(host: &mut Host, node_id: u32, handler_id: u64, payload: EventPayload<'static>) -> Vec<Record> {
+fn dispatch(
+    host: &mut Host,
+    node_id: u32,
+    handler_id: u64,
+    payload: EventPayload<'static>,
+) -> Vec<Record> {
     let (batch, _) = host
         .dispatch(HostEvent {
             node_id,
@@ -152,7 +157,9 @@ fn fr15_5_2_selection_keeps_list_nodes() {
     after.extend(records(host.render_frame(0).unwrap()));
     assert_eq!(int(&after, pane, PropertyKind::SelectedIndex), Some(1));
     assert!(
-        !after.iter().any(|record| matches!(record, Record::Create(..))),
+        !after
+            .iter()
+            .any(|record| matches!(record, Record::Create(..))),
         "a selection rebuilt a node: {after:?}"
     );
 }

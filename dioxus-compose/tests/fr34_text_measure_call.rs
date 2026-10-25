@@ -11,8 +11,8 @@ use std::ffi::c_int;
 use dioxus_compose::Host;
 use dioxus_compose::boundary::{RendererApi, install_renderer_api};
 use dioxus_compose::html::{
-    HtmlConfig, OverflowWrap, ParleyMeasurer, RendererMeasurer, TextLineHeight,
-    TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak,
+    HtmlConfig, OverflowWrap, ParleyMeasurer, RendererMeasurer, TextLineHeight, TextMeasureRequest,
+    TextMeasurer, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak,
 };
 use dioxus_compose::measure::{
     CONSTRAINT_AT_MOST, MEASURE_RECORD_LEN, MEASURE_TEXT, MeasureResult, RESULT_OK,

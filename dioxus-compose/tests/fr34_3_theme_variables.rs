@@ -6,9 +6,7 @@ use dioxus_compose::html::{
     HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
 };
 use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch};
-use dioxus_compose::schema::{
-    COLOR_ROLE_SCHEMA, ColorScheme, EventPayload, Modifier, Paint,
-};
+use dioxus_compose::schema::{COLOR_ROLE_SCHEMA, ColorScheme, EventPayload, Modifier, Paint};
 use dioxus_compose::theme_variables::{theme_variable_declarations, theme_variable_names};
 use dioxus_compose::tokens::table;
 use dioxus_compose::{Color, ColorRole, Host, Palette};
@@ -110,7 +108,10 @@ fn fr34_3_theme_variables_follow_colour_roles() {
         .iter()
         .map(|variant| expected_name(variant.name))
         .collect();
-    assert_eq!(names, wanted, "one variable per ColorRole variant, none more");
+    assert_eq!(
+        names, wanted,
+        "one variable per ColorRole variant, none more"
+    );
 
     let mut unique = names.clone();
     unique.sort();
@@ -245,18 +246,21 @@ mod with_widget {
         let after = decode_batch(batch).unwrap();
         let theme = dioxus_compose::theme::current_theme();
         let palette = theme.palette.expect("the palette is the theme's now");
-        let resolved = palette.resolve(
-            dioxus_compose::design_system(),
-            ColorScheme::Light,
-        )[ColorRole::Primary as usize - 1];
-        assert_eq!(resolved, BRAND, "the widget's Primary role now resolves to the brand colour");
+        let resolved = palette.resolve(dioxus_compose::design_system(), ColorScheme::Light)
+            [ColorRole::Primary as usize - 1];
+        assert_eq!(
+            resolved, BRAND,
+            "the widget's Primary role now resolves to the brand colour"
+        );
         assert_eq!(
             backgrounds(batch),
             vec![resolved],
             "the div takes that same colour in the batch that changed the theme"
         );
         assert!(
-            after.iter().any(|record| matches!(record, Mutation::SetTheme(_))),
+            after
+                .iter()
+                .any(|record| matches!(record, Mutation::SetTheme(_))),
             "the same batch carries the theme change the widget's role follows"
         );
     }

@@ -475,7 +475,10 @@ impl PlanBridge {
                 },
             });
         }
-        if self.zoom_sent.is_some_and(|sent| sent.to_bits() == self.zoom.to_bits()) {
+        if self
+            .zoom_sent
+            .is_some_and(|sent| sent.to_bits() == self.zoom.to_bits())
+        {
             return;
         }
         self.zoom_sent = Some(self.zoom);

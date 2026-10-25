@@ -85,11 +85,28 @@ fn words<'a>(run: &'a TextRun, span: &SpanRun) -> &'a str {
 fn fr34_helpcenter_closed_topics_stack_under_the_search_field() {
     let dom = open();
 
-    assert_rect(entry(&dom, "search").rect, 16.0, 52.0, 568.0, 32.0, "search");
-    assert_rect(entry(&dom, "summary").rect, 16.0, 92.0, 568.0, 20.0, "summary");
+    assert_rect(
+        entry(&dom, "search").rect,
+        16.0,
+        52.0,
+        568.0,
+        32.0,
+        "search",
+    );
+    assert_rect(
+        entry(&dom, "summary").rect,
+        16.0,
+        92.0,
+        568.0,
+        20.0,
+        "summary",
+    );
     assert_eq!(summary(&dom), "4 of 4 topics");
 
-    for (index, id) in ["reset", "export", "billing", "shortcuts"].iter().enumerate() {
+    for (index, id) in ["reset", "export", "billing", "shortcuts"]
+        .iter()
+        .enumerate()
+    {
         let top = 124.0 + 50.0 * index as f32;
         assert_rect(
             entry(&dom, &format!("topic-{id}")).rect,
@@ -113,13 +130,45 @@ fn fr34_helpcenter_closed_topics_stack_under_the_search_field() {
 fn fr34_helpcenter_a_long_name_is_cut_with_an_ellipsis() {
     let dom = open();
 
-    assert_rect(entry(&dom, "head-reset").rect, 17.0, 125.0, 566.0, 40.0, "head");
-    assert_rect(entry(&dom, "name-reset").rect, 29.0, 135.0, 527.0, 20.0, "name");
-    assert_rect(entry(&dom, "chevron-reset").rect, 564.0, 135.0, 7.0, 20.0, "chevron");
-    assert_close(entry(&dom, "name-reset").texts[0].rect.width, 133.0, "short name");
+    assert_rect(
+        entry(&dom, "head-reset").rect,
+        17.0,
+        125.0,
+        566.0,
+        40.0,
+        "head",
+    );
+    assert_rect(
+        entry(&dom, "name-reset").rect,
+        29.0,
+        135.0,
+        527.0,
+        20.0,
+        "name",
+    );
+    assert_rect(
+        entry(&dom, "chevron-reset").rect,
+        564.0,
+        135.0,
+        7.0,
+        20.0,
+        "chevron",
+    );
+    assert_close(
+        entry(&dom, "name-reset").texts[0].rect.width,
+        133.0,
+        "short name",
+    );
 
     // The export heading is 50px below the first: 175, so its name is at y = 185.
-    assert_rect(entry(&dom, "name-export").rect, 29.0, 185.0, 527.0, 20.0, "long name");
+    assert_rect(
+        entry(&dom, "name-export").rect,
+        29.0,
+        185.0,
+        527.0,
+        20.0,
+        "long name",
+    );
     let run = &entry(&dom, "name-export").texts[0];
     assert_eq!(run.line_count, 1);
     assert_close(run.rect.width, 784.0, "long name run");
@@ -139,10 +188,38 @@ fn fr34_helpcenter_opening_a_topic_shows_its_answer_and_pushes_the_rest_down() {
     let mut dom = open();
     click(&mut dom, "head-reset", 1.0);
 
-    assert_rect(entry(&dom, "topic-reset").rect, 16.0, 124.0, 568.0, 94.0, "topic");
-    assert_rect(entry(&dom, "body-reset").rect, 17.0, 165.0, 566.0, 52.0, "body");
-    assert_rect(entry(&dom, "answer-reset").rect, 29.0, 165.0, 542.0, 40.0, "answer");
-    assert_rect(entry(&dom, "topic-export").rect, 16.0, 226.0, 568.0, 42.0, "export");
+    assert_rect(
+        entry(&dom, "topic-reset").rect,
+        16.0,
+        124.0,
+        568.0,
+        94.0,
+        "topic",
+    );
+    assert_rect(
+        entry(&dom, "body-reset").rect,
+        17.0,
+        165.0,
+        566.0,
+        52.0,
+        "body",
+    );
+    assert_rect(
+        entry(&dom, "answer-reset").rect,
+        29.0,
+        165.0,
+        542.0,
+        40.0,
+        "answer",
+    );
+    assert_rect(
+        entry(&dom, "topic-export").rect,
+        16.0,
+        226.0,
+        568.0,
+        42.0,
+        "export",
+    );
 
     let run = answer(&dom, "answer-reset");
     assert_eq!(
@@ -159,8 +236,22 @@ fn fr34_helpcenter_opening_a_topic_shows_its_answer_and_pushes_the_rest_down() {
 
     click(&mut dom, "head-reset", 2.0);
     assert!(dom.element_by_id("body-reset").is_none());
-    assert_rect(entry(&dom, "topic-reset").rect, 16.0, 124.0, 568.0, 42.0, "closed again");
-    assert_rect(entry(&dom, "topic-export").rect, 16.0, 174.0, 568.0, 42.0, "export back");
+    assert_rect(
+        entry(&dom, "topic-reset").rect,
+        16.0,
+        124.0,
+        568.0,
+        42.0,
+        "closed again",
+    );
+    assert_rect(
+        entry(&dom, "topic-export").rect,
+        16.0,
+        174.0,
+        568.0,
+        42.0,
+        "export back",
+    );
 }
 
 /// The chevron has no transform while its topic is closed. Opening the topic gives it a
@@ -192,8 +283,18 @@ fn fr34_helpcenter_the_chevron_turns_by_a_transition_when_a_topic_opens() {
     assert_eq!(started[0].easing, Easing::Ease);
 
     let entry = entry(&dom, "chevron-reset");
-    let transform = entry.transform.as_ref().expect("the open chevron is turned");
-    assert_rect(transform.bounds(&entry.rect), 557.5, 141.5, 20.0, 7.0, "turned chevron");
+    let transform = entry
+        .transform
+        .as_ref()
+        .expect("the open chevron is turned");
+    assert_rect(
+        transform.bounds(&entry.rect),
+        557.5,
+        141.5,
+        20.0,
+        7.0,
+        "turned chevron",
+    );
 }
 
 /// The billing answer is 164 characters. At 77 to a line it needs three lines (two hold
@@ -215,8 +316,22 @@ fn fr34_helpcenter_colour_and_a_link_are_spans_over_one_text() {
     let mut dom = open();
     click(&mut dom, "head-billing", 1.0);
 
-    assert_rect(entry(&dom, "topic-billing").rect, 16.0, 224.0, 568.0, 114.0, "topic");
-    assert_rect(entry(&dom, "answer-billing").rect, 29.0, 265.0, 542.0, 60.0, "answer");
+    assert_rect(
+        entry(&dom, "topic-billing").rect,
+        16.0,
+        224.0,
+        568.0,
+        114.0,
+        "topic",
+    );
+    assert_rect(
+        entry(&dom, "answer-billing").rect,
+        29.0,
+        265.0,
+        542.0,
+        60.0,
+        "answer",
+    );
 
     let run = answer(&dom, "answer-billing");
     assert_eq!(run.line_count, 3);
@@ -239,7 +354,11 @@ fn fr34_helpcenter_colour_and_a_link_are_spans_over_one_text() {
 
     let list = dom.display_list().unwrap();
     for entry in list.entries.iter().filter(|entry| entry.tag == "span") {
-        let text = entry.texts.first().map(|run| run.text.as_str()).unwrap_or("");
+        let text = entry
+            .texts
+            .first()
+            .map(|run| run.text.as_str())
+            .unwrap_or("");
         assert!(
             text != "billing page" && !text.starts_with("Cards that fail"),
             "inline spans have no entry of their own: {text}"
@@ -255,8 +374,22 @@ fn fr34_helpcenter_inline_code_carries_its_own_family() {
     let mut dom = open();
     click(&mut dom, "head-export", 1.0);
 
-    assert_rect(entry(&dom, "topic-export").rect, 16.0, 174.0, 568.0, 74.0, "topic");
-    assert_rect(entry(&dom, "answer-export").rect, 29.0, 215.0, 542.0, 20.0, "answer");
+    assert_rect(
+        entry(&dom, "topic-export").rect,
+        16.0,
+        174.0,
+        568.0,
+        74.0,
+        "topic",
+    );
+    assert_rect(
+        entry(&dom, "answer-export").rect,
+        29.0,
+        215.0,
+        542.0,
+        20.0,
+        "answer",
+    );
 
     let run = answer(&dom, "answer-export");
     assert_eq!(run.line_count, 1);
@@ -267,7 +400,11 @@ fn fr34_helpcenter_inline_code_carries_its_own_family() {
         .find(|span| span.font_family.is_some())
         .unwrap_or_else(|| panic!("no span with its own family in {:?}", run.spans));
     assert_eq!(words(run, code), "export.csv");
-    let bold = run.spans.iter().find(|span| span.bold).expect("a bold span");
+    let bold = run
+        .spans
+        .iter()
+        .find(|span| span.bold)
+        .expect("a bold span");
     assert_eq!(words(run, bold), "Export");
 }
 
@@ -280,7 +417,14 @@ fn fr34_helpcenter_the_shortcuts_are_a_numbered_list() {
     let mut dom = open();
     click(&mut dom, "head-shortcuts", 1.0);
 
-    assert_rect(entry(&dom, "answer-shortcuts").rect, 29.0, 315.0, 542.0, 60.0, "list");
+    assert_rect(
+        entry(&dom, "answer-shortcuts").rect,
+        29.0,
+        315.0,
+        542.0,
+        60.0,
+        "list",
+    );
     for (index, (marker, text)) in [
         ("1.", "Press / to focus the search"),
         ("2.", "Press Esc to clear it"),
@@ -296,7 +440,14 @@ fn fr34_helpcenter_the_shortcuts_are_a_numbered_list() {
         assert_eq!(item.texts.len(), 2, "#{id}: the marker and the text");
         assert_eq!(item.texts[0].marker, RunMarker::Marker);
         assert_eq!(item.texts[0].text, *marker);
-        assert_rect(item.texts[0].rect, 28.0, top, 14.0, 20.0, &format!("{id} marker"));
+        assert_rect(
+            item.texts[0].rect,
+            28.0,
+            top,
+            14.0,
+            20.0,
+            &format!("{id} marker"),
+        );
         assert_eq!(item.texts[1].text, *text);
         assert_close(item.texts[1].rect.x, 49.0, &format!("{id} text x"));
     }
@@ -314,7 +465,14 @@ fn fr34_helpcenter_search_filters_topics_by_name() {
 
     search(&mut dom, "PASS");
     assert_eq!(summary(&dom), "1 of 4 topics");
-    assert_rect(entry(&dom, "topic-reset").rect, 16.0, 124.0, 568.0, 94.0, "reset");
+    assert_rect(
+        entry(&dom, "topic-reset").rect,
+        16.0,
+        124.0,
+        568.0,
+        94.0,
+        "reset",
+    );
     for id in ["export", "billing", "shortcuts"] {
         assert!(dom.element_by_id(&format!("topic-{id}")).is_none(), "#{id}");
     }
@@ -328,6 +486,20 @@ fn fr34_helpcenter_search_filters_topics_by_name() {
     search(&mut dom, "");
     assert_eq!(summary(&dom), "4 of 4 topics");
     assert!(dom.element_by_id("empty").is_none());
-    assert_rect(entry(&dom, "topic-reset").rect, 16.0, 124.0, 568.0, 94.0, "reset open");
-    assert_rect(entry(&dom, "topic-export").rect, 16.0, 226.0, 568.0, 42.0, "export");
+    assert_rect(
+        entry(&dom, "topic-reset").rect,
+        16.0,
+        124.0,
+        568.0,
+        94.0,
+        "reset open",
+    );
+    assert_rect(
+        entry(&dom, "topic-export").rect,
+        16.0,
+        226.0,
+        568.0,
+        42.0,
+        "export",
+    );
 }

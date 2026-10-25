@@ -7,8 +7,8 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     BaseDocument, HtmlConfig, HtmlDom, PlanKey, PlanModifier, Rect, Rgba, Sides,
-    TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint, element_by_id,
-    layout_document, plan_from,
+    TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint, element_by_id, layout_document,
+    plan_from,
 };
 
 struct FakeMeasurer;
@@ -63,7 +63,10 @@ html, body { margin: 0; }
     // The line sits 2px outside the border box and is 3px wide, so the box that carries
     // it reaches 5px past every edge of the 100 by 50 box at (50, 40).
     let a = outline_modifiers(html, "a");
-    assert!(a.contains(&PlanModifier::Offset { x: 45.0, y: 35.0 }), "{a:?}");
+    assert!(
+        a.contains(&PlanModifier::Offset { x: 45.0, y: 35.0 }),
+        "{a:?}"
+    );
     assert!(
         a.contains(&PlanModifier::RequiredSize {
             width: 110.0,
@@ -101,7 +104,10 @@ html, body { margin: 0; }
     // The inner edge of the line is 4px inside the border box and the line is 2px wide,
     // so the box that carries it is 2px inside every edge.
     let a = outline_modifiers(html, "a");
-    assert!(a.contains(&PlanModifier::Offset { x: 52.0, y: 42.0 }), "{a:?}");
+    assert!(
+        a.contains(&PlanModifier::Offset { x: 52.0, y: 42.0 }),
+        "{a:?}"
+    );
     assert!(
         a.contains(&PlanModifier::RequiredSize {
             width: 96.0,
