@@ -9,6 +9,7 @@ use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     Cursor, HtmlConfig, HtmlDom, PointerInput, PointerKind, Rgba, UserSelect, WheelMode,
 };
+use dioxus_html::InteractionElementOffset;
 
 thread_local! {
     static LOG: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -256,7 +257,7 @@ fn fr34_5_pointer_events_none_skips_hit() {
 
 #[test]
 fn fr34_5_cursor_reported_for_hit_node() {
-    let mut dom = dom();
+    let dom = dom();
     let sash = dom.element_by_id("sash").unwrap();
     assert_eq!(dom.cursor(sash), Cursor::ColResize);
     let tree = dom.element_by_id("tree").unwrap();
