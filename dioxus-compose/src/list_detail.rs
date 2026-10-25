@@ -4,7 +4,6 @@
 use dioxus_core::{Element, EventHandler};
 use dioxus_core_macro::{Props, component, rsx};
 
-use crate as dioxus_elements;
 use crate::hooks::use_node_size;
 use crate::widgets::{Column, SplitPane};
 
