@@ -274,6 +274,9 @@ pub(crate) struct PointerState {
     /// The node whose capture the last release ended. The same release still arrives for
     /// the subscribed ancestors of that node, and they take it as the capture did.
     released: Option<(u32, NodeId)>,
+    /// Set when `:hover` or `:active` moved to other elements and the page has not been
+    /// drawn since.
+    restyle: bool,
 }
 
 /// The kinds of report a listener for `event` needs.
@@ -350,6 +353,12 @@ impl HtmlDom {
     /// pointer is over nothing the page draws.
     pub fn hovered(&self) -> Option<NodeId> {
         self.pointer.hover.first().copied()
+    }
+
+    /// Whether a pointer report moved `:hover` or `:active` since the last call, which
+    /// means the page needs a frame to be restyled. Reading it clears it.
+    pub fn take_pointer_restyle(&mut self) -> bool {
+        std::mem::take(&mut self.pointer.restyle)
     }
 
     /// Whether `node` matches `:hover` now.
@@ -506,6 +515,7 @@ impl HtmlDom {
         for id in next.iter().copied().filter(|id| !previous.contains(id)) {
             self.doc.snapshot_node_and(id, |node| node.hover());
         }
+        self.pointer.restyle |= next != previous;
         self.pointer.hover = next;
     }
 
@@ -518,6 +528,7 @@ impl HtmlDom {
         for id in next.iter().copied().filter(|id| !previous.contains(id)) {
             self.doc.snapshot_node_and(id, |node| node.active());
         }
+        self.pointer.restyle |= next != previous;
         self.pointer.active = next;
     }
 
@@ -533,48 +544,213 @@ impl HtmlDom {
             })
     }
 
-    /// The `user-select` the page gives `node`, inherited: the nearest `style` attribute
-    /// from `node` outwards that sets it to something other than `auto`.
+    /// The `user-select` the page gives `node`, inherited: the nearest element from `node`
+    /// outwards whose value is not `auto`.
     ///
-    /// The style engine this document uses does not know the property, so a stylesheet
-    /// rule is not seen; a declaration in an element's `style` attribute is.
+    /// The style engine this document uses does not know the property, so it is read here:
+    /// from the `style` attribute and from the rules of the `<style>` elements, matched
+    /// with the engine's selector matching and ordered by importance, specificity and
+    /// position. Rules inside `@media` are not read, since their conditions are not
+    /// evaluated here.
     pub fn user_select(&self, node: NodeId) -> UserSelect {
+        let author = self.author_user_select();
         for id in self.ancestors(node) {
-            let Some(style) = self
+            let inline = self
                 .doc
                 .get_node(id)
                 .and_then(|node| node.attr(local("style")))
-            else {
-                continue;
-            };
-            let mut found = None;
-            for declaration in style.split(';') {
-                let Some((name, value)) = declaration.split_once(':') else {
-                    continue;
-                };
-                let name = name.trim().to_ascii_lowercase();
-                if !matches!(
-                    name.as_str(),
-                    "user-select" | "-webkit-user-select" | "-moz-user-select"
-                ) {
-                    continue;
+                .and_then(declared_user_select);
+            let value = match (inline, author.get(&id)) {
+                (Some((value, important)), Some((author_important, _, _, author_value))) => {
+                    if important || !author_important {
+                        value
+                    } else {
+                        *author_value
+                    }
                 }
-                let value = value.replace("!important", "").trim().to_ascii_lowercase();
-                found = match value.as_str() {
-                    "none" | "-moz-none" => Some(UserSelect::None),
-                    "text" => Some(UserSelect::Text),
-                    "all" => Some(UserSelect::All),
-                    "auto" => Some(UserSelect::Auto),
-                    _ => found,
-                };
-            }
-            match found {
-                Some(UserSelect::Auto) | None => {}
-                Some(value) => return value,
+                (Some((value, _)), None) => value,
+                (None, Some((_, _, _, value))) => *value,
+                (None, None) => continue,
+            };
+            if value != UserSelect::Auto {
+                return value;
             }
         }
         UserSelect::Auto
     }
+
+    /// The author stylesheets' `user-select` for each node a rule reaches, with the key the
+    /// cascade orders by: importance, specificity, position.
+    fn author_user_select(&self) -> HashMap<NodeId, (bool, u32, usize, UserSelect)> {
+        let mut winners: HashMap<NodeId, (bool, u32, usize, UserSelect)> = HashMap::new();
+        let mut position = 0;
+        for (_, node) in self.doc.tree().iter() {
+            let NodeData::Text(text) = &node.data else {
+                continue;
+            };
+            let in_style = node
+                .parent
+                .and_then(|parent| self.doc.get_node(parent))
+                .is_some_and(|parent| parent.is_element_with_tag_name(&local("style")));
+            if !in_style {
+                continue;
+            }
+            for (selectors, body) in style_rules(&text.content) {
+                position += 1;
+                let Some((value, important)) = declared_user_select(&body) else {
+                    continue;
+                };
+                for part in split_selectors(&selectors) {
+                    if part.is_empty() || part.contains("::") {
+                        continue;
+                    }
+                    let Ok(matched) = self.doc.query_selector_all(&part) else {
+                        continue;
+                    };
+                    let key = (important, specificity(&part), position);
+                    for id in matched {
+                        let better = winners
+                            .get(&id)
+                            .is_none_or(|(i, s, p, _)| key > (*i, *s, *p));
+                        if better {
+                            winners.insert(id, (key.0, key.1, key.2, value));
+                        }
+                    }
+                }
+            }
+        }
+        winners
+    }
+}
+
+/// The last `user-select` a declaration block sets, and whether it is `!important`.
+fn declared_user_select(block: &str) -> Option<(UserSelect, bool)> {
+    let mut found = None;
+    for declaration in block.split(';') {
+        let Some((name, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        if !matches!(
+            name.trim().to_ascii_lowercase().as_str(),
+            "user-select" | "-webkit-user-select" | "-moz-user-select"
+        ) {
+            continue;
+        }
+        let value = value.trim().to_ascii_lowercase();
+        let important = value.contains("!important");
+        let keyword = value.replace("!important", "");
+        let parsed = match keyword.trim() {
+            "none" | "-moz-none" => UserSelect::None,
+            "text" => UserSelect::Text,
+            "all" => UserSelect::All,
+            "auto" => UserSelect::Auto,
+            _ => continue,
+        };
+        found = Some((parsed, important));
+    }
+    found
+}
+
+/// The style rules of a stylesheet as (selector list, declaration block), in order. Rules
+/// inside `@supports` and `@layer` are included; other at-rules are skipped whole.
+fn style_rules(css: &str) -> Vec<(String, String)> {
+    let mut clean = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find("/*") {
+        clean.push_str(&rest[..start]);
+        rest = match rest[start + 2..].find("*/") {
+            Some(end) => &rest[start + 2 + end + 2..],
+            None => "",
+        };
+    }
+    clean.push_str(rest);
+    let mut rules = Vec::new();
+    collect_rules(&clean, &mut rules);
+    rules
+}
+
+fn collect_rules(css: &str, rules: &mut Vec<(String, String)>) {
+    let mut rest = css;
+    while let Some(open) = rest.find('{') {
+        let prelude = rest[..open].trim();
+        let mut depth = 1;
+        let mut close = rest.len();
+        for (offset, c) in rest[open + 1..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = open + 1 + offset;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let body = &rest[open + 1..close];
+        if let Some(at) = prelude.strip_prefix('@') {
+            if at.starts_with("supports") || at.starts_with("layer") {
+                collect_rules(body, rules);
+            }
+        } else if !prelude.is_empty() {
+            // A statement before the rule (`@import url(a.css);`) ends at its semicolon.
+            let selectors = prelude.rsplit(';').next().unwrap_or(prelude).trim();
+            rules.push((selectors.to_string(), body.to_string()));
+        }
+        rest = rest.get(close + 1..).unwrap_or("");
+    }
+}
+
+/// The selectors of a comma-separated list, split outside brackets and parentheses.
+fn split_selectors(list: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut depth = 0;
+    let mut current = String::new();
+    for c in list.chars() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(current.trim().to_string());
+                current.clear();
+                continue;
+            }
+            _ => {}
+        }
+        current.push(c);
+    }
+    parts.push(current.trim().to_string());
+    parts
+}
+
+/// A selector's specificity as one number: ids, then classes, attributes and
+/// pseudo-classes, then tags.
+fn specificity(selector: &str) -> u32 {
+    let (mut ids, mut classes, mut tags) = (0u32, 0u32, 0u32);
+    let chars: Vec<char> = selector.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '#' => ids += 1,
+            '.' | '[' | ':' => classes += 1,
+            c if c.is_ascii_alphabetic() => {
+                let starts_compound =
+                    i == 0 || matches!(chars[i - 1], ' ' | '>' | '+' | '~' | '(' | ',');
+                if starts_compound {
+                    tags += 1;
+                }
+                while i + 1 < chars.len()
+                    && (chars[i + 1].is_ascii_alphanumeric() || matches!(chars[i + 1], '-' | '_'))
+                {
+                    i += 1;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    ids.min(255) * 65536 + classes.min(255) * 256 + tags.min(255)
 }
 
 /// What a mouse, pointer or wheel event carries to its handler.

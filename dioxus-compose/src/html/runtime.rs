@@ -463,12 +463,18 @@ impl Runtime for HtmlRuntime {
     }
 
     fn poll_work(&mut self, context: &mut Context<'_>) -> Poll<()> {
+        // A pointer that moved `:hover` or `:active` changed no signal, but the page has to
+        // be restyled, so it asks for a frame as a handler's write does.
+        let restyled = self.dom.take_pointer_restyle();
         let future = self.dom.virtual_dom_mut().wait_for_work();
         let mut future = pin!(future);
         let outer = future.as_mut().poll(context);
         // Every widget tree is polled whether or not the page has work, so each one has
         // registered the waker.
         if crate::html_widget::poll_islands(self.owner, context) {
+            return Poll::Ready(());
+        }
+        if restyled {
             return Poll::Ready(());
         }
         outer

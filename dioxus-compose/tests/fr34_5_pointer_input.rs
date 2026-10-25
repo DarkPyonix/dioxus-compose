@@ -33,6 +33,12 @@ html, body { margin: 0; padding: 0; }
 #sash { position: absolute; left: 100px; top: 100px; width: 4px; height: 50px;
         cursor: col-resize; }
 #other { position: absolute; left: 200px; top: 100px; width: 50px; height: 50px; }
+.nosel { user-select: none; }
+.nosel .sel { -webkit-user-select: text; }
+#ssid { user-select: all; }
+.imp { user-select: none !important; }
+/* a comment with { braces } */
+@media (min-width: 9999px) { .never { user-select: none; } }
 #cover { position: absolute; left: 300px; top: 0; width: 50px; height: 50px;
          pointer-events: none; }
 ";
@@ -82,6 +88,13 @@ fn page() -> Element {
             div { id: "leaf" }
         }
         div { id: "plain" }
+        div { id: "ss", class: "nosel",
+            div { id: "ss_child" }
+            div { id: "ss_text", class: "sel" }
+            div { id: "ssid", class: "nosel" }
+            div { id: "ssimp", class: "imp", style: "user-select: text" }
+        }
+        div { id: "never", class: "never" }
     }
 }
 
@@ -314,4 +327,36 @@ fn nfr7_unknown_pointer_kind_is_none() {
     assert_eq!(PointerKind::from_wire(0), None);
     assert_eq!(PointerKind::from_wire(9), None);
     assert_eq!(PointerKind::from_wire(4), Some(PointerKind::Down));
+}
+
+#[test]
+fn fr34_5_user_select_from_stylesheet_rules() {
+    let dom = dom();
+    let id = |name: &str| dom.element_by_id(name).unwrap();
+    // A rule on the parent reaches the child by inheritance.
+    assert_eq!(dom.user_select(id("ss")), UserSelect::None);
+    assert_eq!(dom.user_select(id("ss_child")), UserSelect::None);
+    // A more specific selector beats the rule before it, and the prefixed name counts.
+    assert_eq!(dom.user_select(id("ss_text")), UserSelect::Text);
+    // An id selector beats a class selector whatever the order.
+    assert_eq!(dom.user_select(id("ssid")), UserSelect::All);
+    // An important rule beats the element's own style attribute.
+    assert_eq!(dom.user_select(id("ssimp")), UserSelect::None);
+    // A rule that no node matches, or that sits in a media block, changes nothing.
+    assert_eq!(dom.user_select(id("never")), UserSelect::Auto);
+}
+
+#[test]
+fn fr34_5_hover_change_asks_for_a_frame() {
+    let mut dom = dom();
+    assert!(!dom.take_pointer_restyle());
+    at(&mut dom, "a", PointerKind::Move, 5.0, 5.0);
+    assert!(dom.take_pointer_restyle());
+    assert!(!dom.take_pointer_restyle());
+    // A move inside the same box changes nothing, so asks for nothing.
+    at(&mut dom, "a", PointerKind::Move, 6.0, 5.0);
+    assert!(!dom.take_pointer_restyle());
+    let node = dom.element_by_id("press").unwrap();
+    dom.pointer_event(node, &PointerInput::press(5.0, 5.0, 1, 1));
+    assert!(dom.take_pointer_restyle());
 }
