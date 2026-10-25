@@ -344,7 +344,7 @@ impl HtmlDom {
             let in_style = node
                 .parent
                 .and_then(|parent| self.doc.get_node(parent))
-                .is_some_and(|parent| parent.is_element_with_tag_name(&local("style")));
+                .is_some_and(|parent| parent.data.is_element_with_tag_name(&local("style")));
             in_style && (text.content.contains(":hover") || text.content.contains(":active"))
         })
     }
@@ -591,7 +591,7 @@ impl HtmlDom {
             let in_style = node
                 .parent
                 .and_then(|parent| self.doc.get_node(parent))
-                .is_some_and(|parent| parent.is_element_with_tag_name(&local("style")));
+                .is_some_and(|parent| parent.data.is_element_with_tag_name(&local("style")));
             if !in_style {
                 continue;
             }
