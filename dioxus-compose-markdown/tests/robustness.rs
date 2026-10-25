@@ -224,8 +224,11 @@ const SAMPLES: usize = 7;
 /// Each measured run should take long enough that scheduler noise is a small share of it.
 const MIN_RUN: Duration = Duration::from_millis(20);
 
-/// Largest input the calibration grows to, so a fast machine cannot make the test slow.
-const MAX_UNITS: usize = 640_000;
+/// Largest input the test parses, in repetitions. Above this the measurement drifts from
+/// the cost of the parser: the nested structure and its buffers stop fitting in cache, and
+/// a release run doubled 640k to 1.28M repetitions at 2.67x with no quadratic work behind
+/// it. The test compares three sizes, n, 2n and 4n, with 4n at most this large.
+const MAX_LARGEST: usize = 320_000;
 
 /// Runs the parse once to warm up, then records `SAMPLES` timed runs.
 fn samples(text: &str) -> Vec<Duration> {
@@ -244,26 +247,34 @@ fn minimum(samples: &[Duration]) -> Duration {
 }
 
 /// Doubling a pathological input at most doubles the time, give or take noise: the
-/// criterion allows two and a half. The small input is grown until one run takes long
-/// enough to measure, and the ratio compares minimums of several runs.
+/// criterion allows two and a half. The test takes the time at n, 2n and 4n and checks each
+/// doubling against the limit by its geometric mean, sqrt(t4n / tn). A linear parser gives
+/// about 2 per doubling and a quadratic one about 4, so the quadratic case fails clearly.
+/// The small input is grown until one run takes long enough to measure, within the cap.
 #[test]
 fn fr37_pathological_nesting_costs_linear_time() {
     for unit in [">", "[", "- ", "*", "`", "<"] {
         let mut count = 20_000;
         let mut small_samples = samples(&format!("{}x\n", unit.repeat(count)));
-        while minimum(&small_samples) < MIN_RUN && count < MAX_UNITS {
+        while minimum(&small_samples) < MIN_RUN && count * 4 * 2 <= MAX_LARGEST {
             count *= 2;
             small_samples = samples(&format!("{}x\n", unit.repeat(count)));
         }
-        let large_samples = samples(&format!("{}x\n", unit.repeat(count * 2)));
-        let (small, large) = (minimum(&small_samples), minimum(&large_samples));
-        let ratio = large.as_secs_f64() / small.as_secs_f64().max(1e-9);
+        let middle_samples = samples(&format!("{}x\n", unit.repeat(count * 2)));
+        let large_samples = samples(&format!("{}x\n", unit.repeat(count * 4)));
+        let small = minimum(&small_samples).as_secs_f64().max(1e-9);
+        let middle = minimum(&middle_samples).as_secs_f64();
+        let large = minimum(&large_samples).as_secs_f64();
+        let per_doubling = (large / small).sqrt();
         assert!(
-            ratio <= 2.5,
-            "{unit:?}: doubling the input from {count} to {} repetitions took {ratio:.2} times \
-             as long (minimum {small:?} to {large:?}).\nsmall samples: {small_samples:?}\n\
-             large samples: {large_samples:?}",
-            count * 2
+            per_doubling <= 2.5,
+            "{unit:?}: doubling the input from {count} to {} repetitions took {per_doubling:.2} \
+             times as long per doubling (minimums {small:.6}s, {middle:.6}s, {large:.6}s).\n\
+             {count} repetitions: {small_samples:?}\n{} repetitions: {middle_samples:?}\n\
+             {} repetitions: {large_samples:?}",
+            count * 2,
+            count * 2,
+            count * 4
         );
     }
 }
