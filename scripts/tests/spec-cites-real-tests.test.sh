@@ -41,16 +41,14 @@ if [[ -n "$compose_rust_version" ]]; then
     fi
 fi
 
-# A test name in the SPEC looks like `fr14_something_or_other`: a requirement prefix, an
-# underscore, and lowercase words. Anything else in backticks is a type, a path or a flag.
+# Which names count is decided by scripts/spec-cited-tests.sh, which skips planned ones.
 while read -r name; do
     if ! grep -rq "fn $name\b\|fun $name\b" \
         --include='*.rs' --include='*.kt' \
         "${roots[@]}" 2>/dev/null; then
         missing+=("$name")
     fi
-done < <(grep -oE '`(fr|nfr|pr)[0-9]+(_[0-9]+)*_[a-z0-9_]+`' docs/SPEC.md |
-    tr -d '`' | sort -u)
+done < <(scripts/spec-cited-tests.sh docs/SPEC.md)
 
 if [[ ${#missing[@]} -gt 0 && $compose_rust_checked -eq 0 ]]; then
     printf 'skip  compose-rust v%s could not be fetched, so %d names found nowhere here\n' \

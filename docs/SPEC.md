@@ -821,14 +821,14 @@ rsx! {
 
 수용 기준:
 
-1. 머리행의 셀 `j`와 임의 행의 셀 `j`가 같은 너비 모디파이어(`Width`, `Weight`, 내용 폭)를 받습니다. 테스트 `fr15_5_3_cells_share_column_widths`.
-2. 행 1000개짜리 표가 `LazyColumn`의 창만 만들고, 창 밖 행의 노드는 없습니다. 테스트 `fr15_5_3_only_window_rows_exist`.
-3. 한 행의 값 하나가 바뀌면 그 셀의 텍스트 속성 레코드 하나만 나오고, 다른 행에는 `Create`/`Insert`가 나오지 않습니다. 테스트 `fr15_5_3_row_update_is_one_record`.
-4. 행의 순서가 바뀌면 같은 key의 행 노드가 `Move`로 옮겨지고 다시 만들어지지 않습니다. 테스트 `fr15_5_3_reorder_moves_rows_by_key`.
-5. 머리행 노드가 `LazyColumn`의 부모 밖 형제로 있습니다. 테스트 `fr15_5_3_header_is_outside_the_scrolling_list`.
-6. `Content` 열의 폭이 지금까지 그려진 행 중 가장 넓은 셀에 맞습니다. 테스트 `fr15_5_3_content_width_fits_widest_drawn_cell`.
-7. 넓은 셀이 있는 행을 창 밖으로 스크롤해 내보내도 `Content` 열의 폭이 줄지 않습니다(목 렌더러로 확인). 테스트 `fr15_5_3_content_width_keeps_largest_seen`.
-8. 데이터 원본을 교체하면 `Content` 열의 폭이 새로 계산됩니다(목 렌더러로 확인). 테스트 `fr15_5_3_content_width_recomputes_on_data_replace`.
+1. 머리행의 셀 `j`와 임의 행의 셀 `j`가 같은 너비 모디파이어(`Width`, `Weight`, 내용 폭)를 받습니다. 테스트 `fr15_5_3_cells_share_column_widths` (예정).
+2. 행 1000개짜리 표가 `LazyColumn`의 창만 만들고, 창 밖 행의 노드는 없습니다. 테스트 `fr15_5_3_only_window_rows_exist` (예정).
+3. 한 행의 값 하나가 바뀌면 그 셀의 텍스트 속성 레코드 하나만 나오고, 다른 행에는 `Create`/`Insert`가 나오지 않습니다. 테스트 `fr15_5_3_row_update_is_one_record` (예정).
+4. 행의 순서가 바뀌면 같은 key의 행 노드가 `Move`로 옮겨지고 다시 만들어지지 않습니다. 테스트 `fr15_5_3_reorder_moves_rows_by_key` (예정).
+5. 머리행 노드가 `LazyColumn`의 부모 밖 형제로 있습니다. 테스트 `fr15_5_3_header_is_outside_the_scrolling_list` (예정).
+6. `Content` 열의 폭이 지금까지 그려진 행 중 가장 넓은 셀에 맞습니다. 테스트 `fr15_5_3_content_width_fits_widest_drawn_cell` (예정).
+7. 넓은 셀이 있는 행을 창 밖으로 스크롤해 내보내도 `Content` 열의 폭이 줄지 않습니다(목 렌더러로 확인). 테스트 `fr15_5_3_content_width_keeps_largest_seen` (예정).
+8. 데이터 원본을 교체하면 `Content` 열의 폭이 새로 계산됩니다(목 렌더러로 확인). 테스트 `fr15_5_3_content_width_recomputes_on_data_replace` (예정).
 9. 수동: 스크롤하는 동안 머리행이 제자리에 있고 열 선이 정렬됩니다. 창 크기를 바꿔도 `Weight` 열이 함께 늘고 줄어듭니다.
 
 ### FR-16 에셋 전달 (`Agreed`)
@@ -1626,10 +1626,10 @@ rsx! {
 
 수용 기준:
 
-1. `Popover`가 `popover` 위젯 노드 하나로 나가고, 자식 0이 앵커이며 나머지가 내용입니다. 레코드의 속성에 `Placement`, `Align`, `OffsetDp`가 실립니다. 테스트 `fr21_9_popover_wire_shape`.
-2. 열려 있을 때만 내용을 선언해도 내용이 앵커 뒤에 섭니다(삽입 인덱스 회귀, FR-1). 열고 닫기를 되풀이해도 같습니다. 테스트 `fr21_9_popover_content_stays_behind_anchor`.
-3. 목 렌더러가 `OnDismiss`를 보내면 `on_dismiss`가 정확히 한 번 불립니다. 테스트 `fr21_9_dismiss_fires_once`.
-4. 임의 자식(`TextField`, `LazyColumn` 포함)이 팝업 안에서 만들어지고, 이벤트가 각 핸들러로 갑니다. 테스트 `fr21_9_popover_hosts_arbitrary_children`.
+1. `Popover`가 `popover` 위젯 노드 하나로 나가고, 자식 0이 앵커이며 나머지가 내용입니다. 레코드의 속성에 `Placement`, `Align`, `OffsetDp`가 실립니다. 테스트 `fr21_9_popover_wire_shape` (예정).
+2. 열려 있을 때만 내용을 선언해도 내용이 앵커 뒤에 섭니다(삽입 인덱스 회귀, FR-1). 열고 닫기를 되풀이해도 같습니다. 테스트 `fr21_9_popover_content_stays_behind_anchor` (예정).
+3. 목 렌더러가 `OnDismiss`를 보내면 `on_dismiss`가 정확히 한 번 불립니다. 테스트 `fr21_9_dismiss_fires_once` (예정).
+4. 임의 자식(`TextField`, `LazyColumn` 포함)이 팝업 안에서 만들어지고, 이벤트가 각 핸들러로 갑니다. 테스트 `fr21_9_popover_hosts_arbitrary_children` (예정).
 5. 수동: 창 위쪽 가장자리 근처의 앵커에서 `Top`이 `Bottom`으로 뒤집히고, 아래쪽에서는 그대로 `Top`입니다. 오른쪽 가장자리에서는 정렬 축이 창 안으로 밀립니다. 바깥 누름과 Esc가 닫습니다. 여섯 디자인 시스템에서 면과 화살표가 시스템마다 다릅니다.
 
 ### FR-24 모션 (`Draft`)
@@ -1985,12 +1985,12 @@ Code-OSS 워크벤치가 쓰는 CSS와 입력 중 dioxus-compose에 없는 것�
 1. 포인터 이동, hover 상태, `:hover`와 `:active`. 포인터가 노드 위에 있는 동안 `:hover` 규칙이 맞고, 포인터가 움직이면 hover가 따라 움직이며, `mouseenter`, `mouseleave`가 핸들러에 도착합니다. 리스트 행, 탭, 액션바, 스크롤바 슬라이더가 쓰는 규칙으로 확인합니다. 테스트 `fr34_5_hover_matches_hover_rule`, `fr34_5_hover_moves_with_pointer`, `fr34_5_mouseenter_leave_reach_handlers`. Host만(경계 호출 확인 전제).
 2. `mousedown`, `mouseup`, `dblclick`, `contextmenu`, `wheel`, drag와 포인터 캡처. 적중 판정은 FR-34의 변환된 모양 기준을 재사용하고, 포인터 캡처가 걸린 동안은 포인터가 창 밖으로 나가도 이동과 `mouseup`이 캡처한 노드에 갑니다(분할선 끌기). 테스트 `fr34_5_dblclick_reaches_handler`, `fr34_5_contextmenu_targets_node`, `fr34_5_wheel_reaches_handler`, `fr34_5_pointer_capture_sash_drag`. Host만(경계 호출 확인 전제).
 3. `outline`과 `outline-offset`. 아웃라인은 테두리 상자 바깥에 그려지고 레이아웃에 영향을 주지 않으며, 음수 오프셋은 안쪽으로 들어옵니다. 포커스 링(리스트, 퀵 입력)으로 확인합니다. 테스트 `fr34_5_outline_drawn_outside_border_box`, `fr34_5_outline_negative_offset`. 기존 테두리 원소로 그릴 수 있으면 Host만이고, 새 원소가 필요하면 compose-rust 의존입니다.
-4. `@font-face`와 codicon 아이콘 글꼴. `@font-face`로 선언한 글꼴이 등록되고 `::before`의 사설 영역 글리프가 그 글꼴로 그려집니다. 이것이 없으면 액티비티 바가 빈 상자입니다. 테스트 `fr34_5_font_face_registers_family`, `fr34_5_codicon_glyph_draws_from_before`. **compose-rust 의존**: 글꼴 등록 호출이 경계에 필요합니다(PR-2 변경). compose-rust가 먼저입니다.
+4. `@font-face`와 codicon 아이콘 글꼴. `@font-face`로 선언한 글꼴이 등록되고 `::before`의 사설 영역 글리프가 그 글꼴로 그려집니다. 이것이 없으면 액티비티 바가 빈 상자입니다. 테스트 `fr34_5_font_face_registers_family` (예정), `fr34_5_codicon_glyph_draws_from_before` (예정). **compose-rust 의존**: 글꼴 등록 호출이 경계에 필요합니다(PR-2 변경). compose-rust가 먼저입니다.
 5. `pointer-events`, `cursor`, `user-select`. `pointer-events: none`인 노드는 적중 판정에서 건너뜁니다. `cursor`는 적중한 노드의 값이 렌더러에 보고되어 포인터 모양이 바뀝니다. `user-select: none`인 노드는 선택되지 않습니다(선택은 렌더러 소유, D5). 테스트 `fr34_5_pointer_events_none_skips_hit`, `fr34_5_cursor_reported_for_hit_node`, `fr34_5_user_select_none_blocks_selection`. `pointer-events`는 Host만이고 먼저 낼 수 있습니다. `cursor`와 `user-select`는 **compose-rust 의존**입니다.
-6. `mask-image`와 인라인 SVG 아이콘. `mask-image`(`-webkit-mask` 포함)는 마스크 모양을 `color`로 칠하고, 인라인 `svg`가 그려집니다. 테스트 `fr34_5_mask_image_tints_by_color`, `fr34_5_inline_svg_draws`. **compose-rust 의존**: 마스크 원소와 FR-16의 Svg 에셋 등록.
-7. `position: sticky`. 고정 탭 같은 요소가 스크롤 가장자리에 붙고 포함 블록 안에 머뭅니다. 테스트 `fr34_5_sticky_pins_at_scroll_edge`, `fr34_5_sticky_stays_in_containing_block`. **설계 제약**: 스크롤 위치는 렌더러가 소유하므로(D5) 붙는 위치를 Host가 계산할 수 없고, Taffy에도 sticky가 없습니다. 어느 쪽이 무엇을 맡을지는 구현할 때 정하며, 지금 이 항목에서 설계를 정하지 않습니다. 정해지면 이 기준에 기록하되 그것이 SPEC 변경이면 소유자의 승인을 받습니다.
-8. `::-webkit-scrollbar`, `-webkit-app-region`, `env()`. `::-webkit-scrollbar`(와 `scrollbar-width`)는 렌더러의 스크롤바 그리기에 반영되고, `-webkit-app-region: drag`인 영역은 창 이동 영역이 되며, `env(titlebar-area-*)`는 값을 가집니다. 테스트 `fr34_5_webkit_scrollbar_hides_bar`, `fr34_5_app_region_drag_moves_window`, `fr34_5_env_titlebar_area_resolves`. `::-webkit-scrollbar`와 `-webkit-app-region`은 **compose-rust 의존**(렌더러와 창 계층)이고, `env()`는 Host만입니다.
-9. 허용치 구역의 확장. FR-34의 허용치 표 방식(줄바꿈, 글자 위치, 한 줄의 폭, 상자)을 패널, 상태 바, 퀵 입력, 컨텍스트 메뉴, hover 위젯에도 같은 수치로 적용하고, 구역마다 측정 방법과 수치를 기록합니다. 테스트 `fr34_5_box_tolerance_panel`, `fr34_5_box_tolerance_status_bar`, `fr34_5_box_tolerance_quick_input`, `fr34_5_box_tolerance_context_menu`, `fr34_5_box_tolerance_hover_widget`. Host만이지만 텍스트 크기가 맞는 상자 경로에서 재는 FR-34의 측정 조건을 따릅니다.
+6. `mask-image`와 인라인 SVG 아이콘. `mask-image`(`-webkit-mask` 포함)는 마스크 모양을 `color`로 칠하고, 인라인 `svg`가 그려집니다. 테스트 `fr34_5_mask_image_tints_by_color` (예정), `fr34_5_inline_svg_draws` (예정). **compose-rust 의존**: 마스크 원소와 FR-16의 Svg 에셋 등록.
+7. `position: sticky`. 고정 탭 같은 요소가 스크롤 가장자리에 붙고 포함 블록 안에 머뭅니다. 테스트 `fr34_5_sticky_pins_at_scroll_edge` (예정), `fr34_5_sticky_stays_in_containing_block` (예정). **설계 제약**: 스크롤 위치는 렌더러가 소유하므로(D5) 붙는 위치를 Host가 계산할 수 없고, Taffy에도 sticky가 없습니다. 어느 쪽이 무엇을 맡을지는 구현할 때 정하며, 지금 이 항목에서 설계를 정하지 않습니다. 정해지면 이 기준에 기록하되 그것이 SPEC 변경이면 소유자의 승인을 받습니다.
+8. `::-webkit-scrollbar`, `-webkit-app-region`, `env()`. `::-webkit-scrollbar`(와 `scrollbar-width`)는 렌더러의 스크롤바 그리기에 반영되고, `-webkit-app-region: drag`인 영역은 창 이동 영역이 되며, `env(titlebar-area-*)`는 값을 가집니다. 테스트 `fr34_5_webkit_scrollbar_hides_bar` (예정), `fr34_5_app_region_drag_moves_window` (예정), `fr34_5_env_titlebar_area_resolves`. `::-webkit-scrollbar`와 `-webkit-app-region`은 **compose-rust 의존**(렌더러와 창 계층)이고, `env()`는 Host만입니다.
+9. 허용치 구역의 확장. FR-34의 허용치 표 방식(줄바꿈, 글자 위치, 한 줄의 폭, 상자)을 패널, 상태 바, 퀵 입력, 컨텍스트 메뉴, hover 위젯에도 같은 수치로 적용하고, 구역마다 측정 방법과 수치를 기록합니다. 테스트 `fr34_5_box_tolerance_panel` (예정), `fr34_5_box_tolerance_status_bar` (예정), `fr34_5_box_tolerance_quick_input` (예정), `fr34_5_box_tolerance_context_menu` (예정), `fr34_5_box_tolerance_hover_widget` (예정). Host만이지만 텍스트 크기가 맞는 상자 경로에서 재는 FR-34의 측정 조건을 따릅니다.
 
 기준 1에서 3, 5의 `pointer-events`, 9는 compose-rust 병합을 기다리지 않고 시작할 수 있습니다. 기준 1과 2는 같은 입력 경로라 이어서 구현합니다.
 
