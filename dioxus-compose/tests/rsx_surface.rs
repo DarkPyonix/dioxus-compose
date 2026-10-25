@@ -242,11 +242,18 @@ fn surface() -> Element {
                     text: "x = 1",
                     syntax_spans: code_lists().0,
                     decorations: code_lists().1,
+                    folds: compose_rust::code::Folds::new([compose_rust::code::Fold::new(0, 0, 1)]),
+                    gutter_decorations: compose_rust::code::GutterDecorations::new([compose_rust::code::GutterDecoration::dot(0, 0, 1)]),
                     tab_width: 4_u32,
                     on_change: move |_| fired("CodeEditor.on_change"),
                     on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
                     on_hover: move |_| fired("CodeEditor.on_hover"),
                     on_save: move |_| fired("CodeEditor.on_save"),
+                    on_selection_change: move |_| fired("CodeEditor.on_selection_change"),
+                    on_visible_range_change: move |_| fired("CodeEditor.on_visible_range_change"),
+                    on_editor_focus_change: move |_| fired("CodeEditor.on_editor_focus_change"),
+                    on_fold_change: move |_| fired("CodeEditor.on_fold_change"),
+                    on_composition_change: move |_| fired("CodeEditor.on_composition_change"),
                     on_decoration_click: move |id: u64| fired(format!("CodeEditor.on_decoration_click({id})")),
                 }
                 SelectionContainer {
