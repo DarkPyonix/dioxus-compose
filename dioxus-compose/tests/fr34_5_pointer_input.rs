@@ -40,6 +40,12 @@ html, body { margin: 0; padding: 0; }
 .imp { user-select: none !important; }
 /* a comment with { braces } */
 @media (min-width: 9999px) { .never { user-select: none; } }
+@media (min-width: 300px) { .wide { user-select: text; } }
+@media (max-width: 300px) { .narrow { user-select: all; } }
+@media screen and (min-width: 100px) and (max-width: 500px) { .band { user-select: all; } }
+@media not all and (min-width: 100px) { .inverted { user-select: all; } }
+@media (prefers-color-scheme: dark) { .dark { user-select: all; } }
+@media (width >= 300px) { .range { user-select: none; } }
 #cover { position: absolute; left: 300px; top: 0; width: 50px; height: 50px;
          pointer-events: none; }
 ";
@@ -96,6 +102,12 @@ fn page() -> Element {
             div { id: "ssimp", class: "imp", style: "user-select: text" }
         }
         div { id: "never", class: "never" }
+        div { id: "wide", class: "wide" }
+        div { id: "narrow", class: "narrow" }
+        div { id: "band", class: "band" }
+        div { id: "inverted", class: "inverted" }
+        div { id: "dark", class: "dark" }
+        div { id: "range", class: "range" }
     }
 }
 
@@ -360,4 +372,25 @@ fn fr34_5_hover_change_asks_for_a_frame() {
     let node = dom.element_by_id("press").unwrap();
     dom.pointer_event(node, &PointerInput::press(5.0, 5.0, 1, 1));
     assert!(dom.take_pointer_restyle());
+}
+
+#[test]
+fn fr34_5_user_select_inside_media_queries() {
+    // The viewport is 400 by 300 CSS pixels, in the light scheme.
+    let dom = dom();
+    let value = |name: &str| dom.user_select(dom.element_by_id(name).unwrap());
+    assert_eq!(value("wide"), UserSelect::Text, "min-width holds");
+    assert_eq!(value("narrow"), UserSelect::Auto, "max-width does not hold");
+    assert_eq!(
+        value("band"),
+        UserSelect::All,
+        "a type and two features hold together"
+    );
+    assert_eq!(
+        value("inverted"),
+        UserSelect::Auto,
+        "a negated query that holds drops the block"
+    );
+    assert_eq!(value("dark"), UserSelect::Auto, "the scheme is light");
+    assert_eq!(value("range"), UserSelect::None, "the range form holds");
 }

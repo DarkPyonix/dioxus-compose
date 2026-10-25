@@ -272,6 +272,7 @@ impl HtmlDom {
     /// Runs pending work (handlers that wrote signals, scopes marked dirty) and applies
     /// the resulting mutations to the document.
     pub fn render(&mut self) {
+        self.forget_author_styles();
         let mut writer = DomWriter::new(&mut self.doc, &mut self.state);
         self.vdom.render_immediate(&mut writer);
     }
@@ -297,6 +298,7 @@ impl HtmlDom {
 
     fn layout_at(&mut self, width: f32, height: f32, scale: f32, ticked: bool) -> &DisplayList {
         self.set_viewport(width, height, scale);
+        self.forget_author_styles();
         let now = self.now;
         let resolver = self
             .images
@@ -989,6 +991,18 @@ impl ClickTargets for HtmlDom {
 
     fn listens(&self, node: NodeId, event: &str) -> bool {
         self.listener_target(node, event).is_some()
+    }
+
+    fn pointer_kinds(&self, node: NodeId) -> u32 {
+        self.subscribed_kinds(node)
+    }
+
+    fn pointer_cursor(&self, node: NodeId) -> u32 {
+        self.cursor(node) as u32
+    }
+
+    fn pointer_user_select(&self, node: NodeId) -> u32 {
+        self.user_select(node) as u32
     }
 
     fn run_target(&self, owner: NodeId, container: NodeId) -> Option<NodeId> {

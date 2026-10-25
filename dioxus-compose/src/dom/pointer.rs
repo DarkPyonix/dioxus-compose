@@ -19,6 +19,7 @@
 //!   no other box is hovered meanwhile (dragging a splitter).
 
 use std::any::Any;
+use std::cell::{Ref, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -257,8 +258,8 @@ impl Cursor {
 #[repr(u32)]
 pub enum UserSelect {
     Auto = 0,
-    Text = 1,
-    None = 2,
+    None = 1,
+    Text = 2,
     All = 3,
 }
 
@@ -277,7 +278,14 @@ pub(crate) struct PointerState {
     /// Set when `:hover` or `:active` moved to other elements and the page has not been
     /// drawn since.
     restyle: bool,
+    /// The author stylesheets' `user-select`, worked out on first use after a layout.
+    author: RefCell<Option<AuthorSelect>>,
+    /// The kinds each subscribed node takes, worked out on first use after a change.
+    kinds: RefCell<Option<HashMap<NodeId, u32>>>,
 }
+
+/// For each node a `user-select` rule reaches: importance, specificity, position, value.
+type AuthorSelect = HashMap<NodeId, (bool, u32, usize, UserSelect)>;
 
 /// The kinds of report a listener for `event` needs.
 fn kinds_for(event: &str) -> u32 {
@@ -554,6 +562,7 @@ impl HtmlDom {
     /// evaluated here.
     pub fn user_select(&self, node: NodeId) -> UserSelect {
         let author = self.author_user_select();
+        let author = &*author;
         for id in self.ancestors(node) {
             let inline = self
                 .doc
@@ -581,8 +590,49 @@ impl HtmlDom {
 
     /// The author stylesheets' `user-select` for each node a rule reaches, with the key the
     /// cascade orders by: importance, specificity, position.
-    fn author_user_select(&self) -> HashMap<NodeId, (bool, u32, usize, UserSelect)> {
-        let mut winners: HashMap<NodeId, (bool, u32, usize, UserSelect)> = HashMap::new();
+    fn author_user_select(&self) -> Ref<'_, AuthorSelect> {
+        if self.pointer.author.borrow().is_none() {
+            let computed = self.compute_author_user_select();
+            *self.pointer.author.borrow_mut() = Some(computed);
+        }
+        Ref::map(self.pointer.author.borrow(), |cached| {
+            cached.as_ref().expect("filled just above")
+        })
+    }
+
+    /// Drops what was worked out from the stylesheets; the next use works it out again.
+    pub(crate) fn forget_author_styles(&self) {
+        self.pointer.author.borrow_mut().take();
+        self.pointer.kinds.borrow_mut().take();
+    }
+
+    /// The kinds of report `node` takes, 0 when it is not subscribed.
+    pub(crate) fn subscribed_kinds(&self, node: NodeId) -> u32 {
+        if self.pointer.kinds.borrow().is_none() {
+            let all = self
+                .pointer_subscriptions()
+                .into_iter()
+                .map(|subscription| (subscription.node, subscription.kinds))
+                .collect();
+            *self.pointer.kinds.borrow_mut() = Some(all);
+        }
+        self.pointer
+            .kinds
+            .borrow()
+            .as_ref()
+            .and_then(|all| all.get(&node).copied())
+            .unwrap_or(0)
+    }
+
+    fn compute_author_user_select(&self) -> AuthorSelect {
+        let viewport = self.doc.viewport();
+        let scale = viewport.hidpi_scale.max(f32::MIN_POSITIVE);
+        let env = MediaEnv {
+            width: viewport.window_size.0 as f32 / scale,
+            height: viewport.window_size.1 as f32 / scale,
+            dark: matches!(self.color_scheme, crate::html::ColorScheme::Dark),
+        };
+        let mut winners: AuthorSelect = HashMap::new();
         let mut position = 0;
         for (_, node) in self.doc.tree().iter() {
             let NodeData::Text(text) = &node.data else {
@@ -595,7 +645,7 @@ impl HtmlDom {
             if !in_style {
                 continue;
             }
-            for (selectors, body) in style_rules(&text.content) {
+            for (selectors, body) in style_rules(&text.content, &env) {
                 position += 1;
                 let Some((value, important)) = declared_user_select(&body) else {
                     continue;
@@ -653,7 +703,7 @@ fn declared_user_select(block: &str) -> Option<(UserSelect, bool)> {
 
 /// The style rules of a stylesheet as (selector list, declaration block), in order. Rules
 /// inside `@supports` and `@layer` are included; other at-rules are skipped whole.
-fn style_rules(css: &str) -> Vec<(String, String)> {
+fn style_rules(css: &str, env: &MediaEnv) -> Vec<(String, String)> {
     let mut clean = String::with_capacity(css.len());
     let mut rest = css;
     while let Some(start) = rest.find("/*") {
@@ -665,11 +715,11 @@ fn style_rules(css: &str) -> Vec<(String, String)> {
     }
     clean.push_str(rest);
     let mut rules = Vec::new();
-    collect_rules(&clean, &mut rules);
+    collect_rules(&clean, env, &mut rules);
     rules
 }
 
-fn collect_rules(css: &str, rules: &mut Vec<(String, String)>) {
+fn collect_rules(css: &str, env: &MediaEnv, rules: &mut Vec<(String, String)>) {
     let mut rest = css;
     while let Some(open) = rest.find('{') {
         let prelude = rest[..open].trim();
@@ -691,7 +741,11 @@ fn collect_rules(css: &str, rules: &mut Vec<(String, String)>) {
         let body = &rest[open + 1..close];
         if let Some(at) = prelude.strip_prefix('@') {
             if at.starts_with("supports") || at.starts_with("layer") {
-                collect_rules(body, rules);
+                collect_rules(body, env, rules);
+            } else if let Some(queries) = at.strip_prefix("media")
+                && media_matches(queries, env)
+            {
+                collect_rules(body, env, rules);
             }
         } else if !prelude.is_empty() {
             // A statement before the rule (`@import url(a.css);`) ends at its semicolon.
@@ -700,6 +754,105 @@ fn collect_rules(css: &str, rules: &mut Vec<(String, String)>) {
         }
         rest = rest.get(close + 1..).unwrap_or("");
     }
+}
+
+/// The window a media query is asked about.
+struct MediaEnv {
+    /// The viewport in CSS pixels.
+    width: f32,
+    height: f32,
+    dark: bool,
+}
+
+/// Whether a media query list holds: any of its comma-separated queries does. Knows the
+/// media types, `and`, `not`, `only`, the width, height, orientation and
+/// `prefers-color-scheme` features (with `min-`, `max-` and range forms), and takes any
+/// other feature not to hold.
+fn media_matches(list: &str, env: &MediaEnv) -> bool {
+    let list = list.trim();
+    list.is_empty()
+        || list
+            .split(',')
+            .any(|query| query_matches(query.trim(), env))
+}
+
+fn query_matches(query: &str, env: &MediaEnv) -> bool {
+    let query = query.to_ascii_lowercase();
+    let (negated, query) = match query.strip_prefix("not ") {
+        Some(rest) => (true, rest),
+        None => (false, query.strip_prefix("only ").unwrap_or(&query)),
+    };
+    let holds = query.split(" and ").all(|part| {
+        let part = part.trim();
+        match part {
+            "all" | "screen" => true,
+            "print" | "speech" => false,
+            _ => match part
+                .strip_prefix('(')
+                .and_then(|rest| rest.strip_suffix(')'))
+            {
+                Some(condition) => feature_holds(condition.trim(), env),
+                None => false,
+            },
+        }
+    });
+    holds != negated
+}
+
+fn feature_holds(condition: &str, env: &MediaEnv) -> bool {
+    if let Some((name, value)) = condition.split_once(':') {
+        let (name, value) = (name.trim(), value.trim());
+        return match name {
+            "min-width" => length(value).is_some_and(|v| env.width >= v),
+            "max-width" => length(value).is_some_and(|v| env.width <= v),
+            "min-height" => length(value).is_some_and(|v| env.height >= v),
+            "max-height" => length(value).is_some_and(|v| env.height <= v),
+            "width" => length(value).is_some_and(|v| env.width == v),
+            "height" => length(value).is_some_and(|v| env.height == v),
+            "prefers-color-scheme" => value == if env.dark { "dark" } else { "light" },
+            "orientation" => {
+                value
+                    == if env.width >= env.height {
+                        "landscape"
+                    } else {
+                        "portrait"
+                    }
+            }
+            _ => false,
+        };
+    }
+    for op in [">=", "<=", ">", "<", "="] {
+        if let Some((name, value)) = condition.split_once(op) {
+            let actual = match name.trim() {
+                "width" => env.width,
+                "height" => env.height,
+                _ => return false,
+            };
+            let Some(value) = length(value.trim()) else {
+                return false;
+            };
+            return match op {
+                ">=" => actual >= value,
+                "<=" => actual <= value,
+                ">" => actual > value,
+                "<" => actual < value,
+                _ => actual == value,
+            };
+        }
+    }
+    // A bare feature (`(width)`) holds when the viewport has the dimension.
+    matches!(condition, "width" | "height")
+}
+
+/// A media query length in CSS pixels.
+fn length(value: &str) -> Option<f32> {
+    let value = value.trim();
+    for (unit, factor) in [("px", 1.0), ("rem", 16.0), ("em", 16.0)] {
+        if let Some(number) = value.strip_suffix(unit) {
+            return number.trim().parse::<f32>().ok().map(|n| n * factor);
+        }
+    }
+    (value == "0").then_some(0.0)
 }
 
 /// The selectors of a comma-separated list, split outside brackets and parentheses.
