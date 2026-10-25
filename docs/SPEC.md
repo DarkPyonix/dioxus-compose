@@ -779,7 +779,7 @@ rsx! {
 - `selected: Option<K>`(`K: Clone + PartialEq`)이다. `Some`이면 상세가 보여야 하는 상태이고, 한 패널만 들어가는 자리에서는 상세가 보인다. `None`이면 목록이다.
 - `on_select_change: EventHandler<Option<K>>`이다. 사용자가 뒤로 가면(`SplitPane`의 `on_dismiss`) `None`으로 한 번 불린다. 넓은 자리에서 선택을 비우는 일은 앱의 몫이다.
 - 접는 기준은 기본적으로 `SplitPane`과 같다. 합성의 자기 폭을 디자인 시스템 규칙으로 판단한다.
-- `collapse_below: Option<f32>`(기본 `None`)는 앱이 정하는 임계값이다. `Some(v)`이면 합성이 `use_node_size()`(FR-28)로 자기 폭을 재서 `v`보다 좁을 때 `SplitPane` 없이 선택된 패널 하나만 그린다(`selected`가 `Some`이면 상세, `None`이면 목록). 뒤로 가기는 `on_select_change(None)`을 거친다. 이유는 `SplitPane`에 한 패널만 그리도록 강제하는 속성이 없기 때문이며, 그 속성을 더하는 일은 compose-rust 이슈 #TBD가 추적한다. `None`이면 디자인 시스템 규칙이 정한다. 이 경로는 compose-rust 변경이 필요 없다. 대가는 패널이 바뀔 때 자식이 다시 만들어질 수 있다는 것이다.
+- `collapse_below: Option<f32>`(기본 `None`)는 앱이 정하는 임계값이다. `Some(v)`이면 합성이 `use_node_size()`(FR-28)로 자기 폭을 재서 `v`보다 좁을 때 `SplitPane` 없이 선택된 패널 하나만 그린다(`selected`가 `Some`이면 상세, `None`이면 목록). 뒤로 가기는 `on_select_change(None)`을 거친다. 이유는 `SplitPane`에 한 패널만 그리도록 강제하는 속성이 없기 때문이며, 그 속성을 더하는 일은 compose-rust 이슈 #314가 추적한다. `None`이면 디자인 시스템 규칙이 정한다. 이 경로는 compose-rust 변경이 필요 없다. 대가는 패널이 바뀔 때 자식이 다시 만들어질 수 있다는 것이다.
 - 선택이 있는 채로 넓어졌다 좁아져도 `selected`는 그대로다. 합성은 선택 상태를 따로 저장하지 않는다.
 
 수용 기준:
