@@ -217,30 +217,53 @@ fn fr37_ten_thousand_levels_stay_within_the_cap() {
     }
 }
 
-fn best_of_three(text: &str) -> Duration {
-    (0..3)
+/// Timed runs per input. The minimum of several runs is the least noise-affected estimate of
+/// the cost, because load only ever adds time.
+const SAMPLES: usize = 7;
+
+/// Each measured run should take long enough that scheduler noise is a small share of it.
+const MIN_RUN: Duration = Duration::from_millis(20);
+
+/// Largest input the calibration grows to, so a fast machine cannot make the test slow.
+const MAX_UNITS: usize = 640_000;
+
+/// Runs the parse once to warm up, then records `SAMPLES` timed runs.
+fn samples(text: &str) -> Vec<Duration> {
+    std::hint::black_box(parse(text, DEFAULT_MAX_DEPTH));
+    (0..SAMPLES)
         .map(|_| {
             let started = Instant::now();
-            let blocks = parse(text, DEFAULT_MAX_DEPTH);
-            std::hint::black_box(blocks);
+            std::hint::black_box(parse(text, DEFAULT_MAX_DEPTH));
             started.elapsed()
         })
-        .min()
-        .unwrap()
+        .collect()
+}
+
+fn minimum(samples: &[Duration]) -> Duration {
+    *samples.iter().min().unwrap()
 }
 
 /// Doubling a pathological input at most doubles the time, give or take noise: the
-/// criterion allows two and a half.
+/// criterion allows two and a half. The small input is grown until one run takes long
+/// enough to measure, and the ratio compares minimums of several runs.
 #[test]
 fn fr37_pathological_nesting_costs_linear_time() {
     for unit in [">", "[", "- ", "*", "`", "<"] {
-        let small = format!("{}x\n", unit.repeat(20_000));
-        let large = format!("{}x\n", unit.repeat(40_000));
-        let (small, large) = (best_of_three(&small), best_of_three(&large));
+        let mut count = 20_000;
+        let mut small_samples = samples(&format!("{}x\n", unit.repeat(count)));
+        while minimum(&small_samples) < MIN_RUN && count < MAX_UNITS {
+            count *= 2;
+            small_samples = samples(&format!("{}x\n", unit.repeat(count)));
+        }
+        let large_samples = samples(&format!("{}x\n", unit.repeat(count * 2)));
+        let (small, large) = (minimum(&small_samples), minimum(&large_samples));
         let ratio = large.as_secs_f64() / small.as_secs_f64().max(1e-9);
         assert!(
             ratio <= 2.5,
-            "{unit:?}: doubling the input took {ratio:.2} times as long ({small:?} to {large:?})"
+            "{unit:?}: doubling the input from {count} to {} repetitions took {ratio:.2} times \
+             as long (minimum {small:?} to {large:?}).\nsmall samples: {small_samples:?}\n\
+             large samples: {large_samples:?}",
+            count * 2
         );
     }
 }
