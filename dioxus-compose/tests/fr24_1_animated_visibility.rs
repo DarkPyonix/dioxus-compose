@@ -4,7 +4,8 @@
 //! send back.
 
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{HostEvent, Mutation, PropertyKind, PropertyValue, decode_batch};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::schema::PropertyKind;
 use dioxus_compose::protocol::encode_event;
 use dioxus_compose::{
     Animation, AnimationEventKind, AnimationEvents, EventPayload, Host, ReducedMotion, WidgetKind,
