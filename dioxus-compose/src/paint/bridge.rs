@@ -95,6 +95,11 @@ pub trait ClickTargets {
         0
     }
 
+    /// The document root, whose pointer subscription the page's top box carries.
+    fn pointer_root(&self) -> Option<NodeId> {
+        None
+    }
+
     /// The CSS `cursor` of `node` as the wire value; 0 (`auto`) leaves it to the widget.
     fn pointer_cursor(&self, node: NodeId) -> u32 {
         let _ = node;
@@ -477,6 +482,7 @@ impl PlanBridge {
                 }
             }
         }
+        self.sync_pointer(batch, clicks);
         self.previous = Some(plan);
     }
 
@@ -964,6 +970,101 @@ impl PlanBridge {
         }
     }
 
+    /// Brings what the renderer knows of each node's pointer input up to date: the
+    /// subscription, the cursor and the user-select. Checked for every node after each
+    /// layout, since a listener or a `:hover` rule can change them while the plan node
+    /// stays as it was. The page's top box carries the document root's subscription.
+    fn sync_pointer(&mut self, batch: &mut Batch, clicks: &dyn ClickTargets) {
+        let root = clicks.pointer_root();
+        let keys: Vec<PlanKey> = self.nodes.keys().copied().collect();
+        for key in keys {
+            let (dom, kinds, cursor, user_select) = match key {
+                PlanKey::Page => match root {
+                    Some(root) => (root, clicks.pointer_kinds(root), 0, 0),
+                    None => continue,
+                },
+                PlanKey::Node(dom) => (
+                    dom,
+                    if Some(dom) == root {
+                        0
+                    } else {
+                        clicks.pointer_kinds(dom)
+                    },
+                    clicks.pointer_cursor(dom),
+                    clicks.pointer_user_select(dom),
+                ),
+                _ => continue,
+            };
+            let Some(placed) = self.nodes.get_mut(&key) else {
+                continue;
+            };
+            let sent = placed.pointer;
+            let handler = match sent.and_then(|sent| sent.handler) {
+                Some(existing) => Some(existing),
+                None if kinds != 0 => {
+                    let handler_id = self.next_handler_id;
+                    self.next_handler_id += 1;
+                    placed.handlers.push(handler_id);
+                    self.handlers.insert(
+                        handler_id,
+                        BridgeHandler {
+                            node_id: placed.id,
+                            node: dom,
+                            event: BridgeEvent::Pointer,
+                        },
+                    );
+                    batch.write(Mutation::SetProp {
+                        node_id: placed.id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::Integer(handler_id as i64),
+                    });
+                    Some((handler_id, dom))
+                }
+                None => None,
+            };
+            let now = PointerSent {
+                handler,
+                kinds,
+                cursor,
+                user_select,
+            };
+            let before = sent.unwrap_or(PointerSent {
+                handler: None,
+                kinds: 0,
+                cursor: 0,
+                user_select: 0,
+            });
+            if now.kinds != before.kinds && (handler.is_some() || before.kinds != 0) {
+                batch.write(Mutation::SetProp {
+                    node_id: placed.id,
+                    property: PropertyKind::PointerKinds,
+                    value: if kinds == 0 {
+                        PropertyValue::None
+                    } else {
+                        PropertyValue::Integer(i64::from(kinds))
+                    },
+                });
+            }
+            for (property, new, old) in [
+                (PropertyKind::Cursor, cursor, before.cursor),
+                (PropertyKind::UserSelect, user_select, before.user_select),
+            ] {
+                if new != old {
+                    batch.write(Mutation::SetProp {
+                        node_id: placed.id,
+                        property,
+                        value: if new == 0 {
+                            PropertyValue::None
+                        } else {
+                            PropertyValue::Integer(i64::from(new))
+                        },
+                    });
+                }
+            }
+            placed.pointer = Some(now);
+        }
+    }
+
     /// Sets a property, unless the renderer already has that value.
     fn set_prop(&mut self, batch: &mut Batch, key: PlanKey, property: PropertyKind, value: Prop) {
         let Some(placed) = self.nodes.get_mut(&key) else {
@@ -1332,87 +1433,6 @@ impl PlanBridge {
                 property: PropertyKind::OnKeyDown,
                 value,
             });
-        }
-
-        // The pointer subscription, and the cursor and user-select the page gives the box.
-        // Nothing is sent for a node with no listener and no value to give.
-        let wanted = match key {
-            PlanKey::Node(dom) => {
-                let kinds = clicks.pointer_kinds(dom);
-                Some((
-                    dom,
-                    kinds,
-                    clicks.pointer_cursor(dom),
-                    clicks.pointer_user_select(dom),
-                ))
-            }
-            _ => None,
-        };
-        if let Some((dom, kinds, cursor, user_select)) = wanted {
-            let sent = placed.pointer;
-            let handler = match sent.and_then(|sent| sent.handler) {
-                Some(existing) => Some(existing),
-                None if kinds != 0 => {
-                    let handler_id = self.next_handler_id;
-                    self.next_handler_id += 1;
-                    placed.handlers.push(handler_id);
-                    self.handlers.insert(
-                        handler_id,
-                        BridgeHandler {
-                            node_id: placed.id,
-                            node: dom,
-                            event: BridgeEvent::Pointer,
-                        },
-                    );
-                    batch.write(Mutation::SetProp {
-                        node_id: placed.id,
-                        property: PropertyKind::OnPointer,
-                        value: PropertyValue::Integer(handler_id as i64),
-                    });
-                    Some((handler_id, dom))
-                }
-                None => None,
-            };
-            let now = PointerSent {
-                handler,
-                kinds,
-                cursor,
-                user_select,
-            };
-            let before = sent.unwrap_or(PointerSent {
-                handler: None,
-                kinds: 0,
-                cursor: 0,
-                user_select: 0,
-            });
-            if now.kinds != before.kinds && (handler.is_some() || before.kinds != 0) {
-                batch.write(Mutation::SetProp {
-                    node_id: placed.id,
-                    property: PropertyKind::PointerKinds,
-                    value: if kinds == 0 {
-                        PropertyValue::None
-                    } else {
-                        PropertyValue::Integer(i64::from(kinds))
-                    },
-                });
-            }
-            for (property, new, old) in [
-                (PropertyKind::Cursor, cursor, before.cursor),
-                (PropertyKind::UserSelect, user_select, before.user_select),
-            ] {
-                if new != old {
-                    batch.write(Mutation::SetProp {
-                        node_id: placed.id,
-                        property,
-                        value: if new == 0 {
-                            PropertyValue::None
-                        } else {
-                            PropertyValue::Integer(i64::from(new))
-                        },
-                    });
-                }
-            }
-            placed.pointer = Some(now);
         }
 
         let mut modifiers = wire_modifiers(node, &pins);

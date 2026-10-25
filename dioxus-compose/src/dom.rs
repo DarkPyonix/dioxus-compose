@@ -993,6 +993,10 @@ impl ClickTargets for HtmlDom {
         self.listener_target(node, event).is_some()
     }
 
+    fn pointer_root(&self) -> Option<NodeId> {
+        Some(self.root)
+    }
+
     fn pointer_kinds(&self, node: NodeId) -> u32 {
         self.subscribed_kinds(node)
     }

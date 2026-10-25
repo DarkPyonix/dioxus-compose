@@ -391,11 +391,15 @@ impl HtmlDom {
         let Some(list) = self.current.as_ref() else {
             return false;
         };
-        let Some(origin) = list.get(node).map(|entry| (entry.rect.x, entry.rect.y)) else {
-            return false;
-        };
-        let Some(point) = list.project(node, origin.0 + input.x, origin.1 + input.y) else {
-            return false;
+        // The document root has a box only if the page drew one; its reports come from the
+        // page's top box, whose space is the document's.
+        let point = match list.get(node).map(|entry| (entry.rect.x, entry.rect.y)) {
+            Some(origin) => match list.project(node, origin.0 + input.x, origin.1 + input.y) {
+                Some(point) => point,
+                None => return false,
+            },
+            None if node == self.root => (input.x, input.y),
+            None => return false,
         };
         let hit = list.hit_test(point.0, point.1);
 

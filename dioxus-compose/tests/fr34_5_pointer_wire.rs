@@ -209,3 +209,77 @@ fn fr34_5_pointer_event_reaches_handler_and_hovers() {
         "{after:#?}"
     );
 }
+
+fn changing() -> Element {
+    rsx! {
+        div { id: "c", class: "row", onmousemove: move |_| {} }
+        div { id: "d", class: "row" }
+        div { id: "e", class: "row" }
+    }
+}
+
+fn changing_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![format!(
+            "{SHEET} #e {{ cursor: pointer; }} #e:hover {{ cursor: grab; }}"
+        )],
+        ..HtmlConfig::default()
+    }
+}
+
+#[test]
+fn fr34_5_root_hover_rule_works_without_a_listener() {
+    // The page has `:hover` rules and no listener on `#b`, whose box is not subscribed.
+    let mut host = Host::html(page, config);
+    let first = records(host.rebuild().unwrap());
+    let root = subscribed(&first, 63);
+    let b_background = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Background(node, _) => Some(*node),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(b_background.len() >= 2, "{first:#?}");
+    // The renderer reports the pointer at (5, 25) to the root: over the second row.
+    assert_eq!(
+        send(&mut host, root, pointer(PointerKind::Move, 5.0, 25.0)),
+        0
+    );
+    let next = records(host.render_frame(0).unwrap());
+    assert!(
+        next.iter().any(|record| matches!(
+            record,
+            Record::Background(_, paint) if *paint == rgb(255, 0, 0)
+        )),
+        "{next:#?}"
+    );
+    // Only the row under the pointer turned: the first row stays blue.
+    let reds = next
+        .iter()
+        .filter(|record| matches!(record, Record::Background(_, paint) if *paint == rgb(255, 0, 0)))
+        .count();
+    assert_eq!(reds, 1, "{next:#?}");
+}
+
+#[test]
+fn fr34_5_hover_rule_changing_only_the_cursor_is_resent() {
+    let mut host = Host::html(changing, changing_config);
+    let first = records(host.rebuild().unwrap());
+    let root = subscribed(&first, 63);
+    // `#e` is pointer (2) before the pointer is over it.
+    let e = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Int(node, PropertyKind::Cursor, 2) => Some(*node),
+            _ => None,
+        })
+        .expect("a pointer cursor is written");
+    send(&mut host, root, pointer(PointerKind::Move, 5.0, 45.0));
+    let next = records(host.render_frame(0).unwrap());
+    // `grab` is 7. The plan node of `#e` did not change, only its cursor.
+    assert!(
+        next.contains(&Record::Int(e, PropertyKind::Cursor, 7)),
+        "{next:#?}"
+    );
+}
