@@ -291,6 +291,7 @@ fn surface() -> Element {
                 }
                 Surface {
                     background: Paint::Role(ColorRole::SurfaceVariant),
+                    on_click: move |()| fired("Surface.on_click"),
                     Slider {
                         value: 0.25,
                         min: -1.0,
@@ -949,10 +950,7 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-/// - `Clickable`: the attribute is declared as `onclickable`, and rsx reads any attribute
-///   starting with `on` as an event, which has to be a function in `events`. There is
-///   none by that name, so the attribute cannot be written.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach", "Clickable"];
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {

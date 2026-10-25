@@ -528,6 +528,59 @@ pub mod events {
     }
 
     event!(onclick, ());
+
+    /// What `onclickable` accepts: a closure, like any event, or an `Option` of a listener
+    /// callback, so a widget can pass along a handler it may not have. A `None` writes no
+    /// modifier at all.
+    pub trait IntoClickable<Marker> {
+        fn into_clickable(self) -> dioxus_core::AttributeValue;
+    }
+
+    pub struct ClosureMarker<Marker>(std::marker::PhantomData<Marker>);
+    pub struct OptionalMarker;
+
+    impl<Marker, F: SuperInto<ListenerCallback<()>, Marker>> IntoClickable<ClosureMarker<Marker>>
+        for F
+    {
+        fn into_clickable(self) -> dioxus_core::AttributeValue {
+            dioxus_core::AttributeValue::Listener(self.super_into())
+        }
+    }
+
+    impl IntoClickable<OptionalMarker> for Option<ListenerCallback<()>> {
+        fn into_clickable(self) -> dioxus_core::AttributeValue {
+            match self {
+                Some(callback) => dioxus_core::AttributeValue::Listener(callback),
+                None => dioxus_core::AttributeValue::None,
+            }
+        }
+    }
+
+    /// Makes a node respond to a press with a click on its own handler, whatever widget it
+    /// is. The Renderer decides what a press looks like, so the handler gets the empty
+    /// click payload and nothing else.
+    pub fn onclickable<Marker>(handler: impl IntoClickable<Marker>) -> Attribute {
+        Attribute::new("onclickable", handler.into_clickable(), None, false)
+    }
+
+    pub mod onclickable {
+        use super::*;
+
+        pub fn call_with_explicit_closure<Marker, Return>(
+            handler: impl FnMut(Event<()>) -> Return + 'static,
+        ) -> Attribute
+        where
+            Return: SpawnIfAsync<Marker> + 'static,
+        {
+            Attribute::new(
+                "onclickable",
+                dioxus_core::AttributeValue::Listener(ListenerCallback::new(handler)),
+                None,
+                false,
+            )
+        }
+    }
+
     // A press on one run of a `Text`, carrying the value the application gave that run.
     // It travels as a click on a handler of the run's own, so no new event exists for it.
     event!(onlink, u64);
