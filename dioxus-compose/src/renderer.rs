@@ -349,7 +349,7 @@ impl ComposeRenderer {
     /// applied.
     fn modifier_for(
         &mut self,
-        element: ElementId,
+        _element: ElementId,
         node_id: u32,
         name: &'static str,
         value: &AttributeValue,
