@@ -101,6 +101,11 @@ pub fn AbsoluteBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
     /// The factor an HTML island is drawn at, on the island's root: the Renderer draws what
     /// is inside at its density times this, with no font scale of its own. Left out, the
     /// box draws its children as the widgets around it are drawn.
@@ -145,6 +150,7 @@ pub fn AbsoluteBox(
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
             required_size: required_size.map(|(width, height)| {
@@ -216,12 +222,18 @@ pub fn Column(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         column {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
@@ -295,12 +307,18 @@ pub fn Row(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         row {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
@@ -371,12 +389,18 @@ pub fn ComposeBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         composebox {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
@@ -961,12 +985,18 @@ pub fn Card(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         card {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
@@ -1034,12 +1064,18 @@ pub fn Surface(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         surface {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
