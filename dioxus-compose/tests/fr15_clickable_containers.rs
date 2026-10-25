@@ -124,3 +124,9 @@ fn raw_app() -> Element {
 fn fr15_onclickable_is_writable_from_rsx_on_a_bare_element() {
     press_the_only_clickable_node(raw_app);
 }
+
+#[test]
+fn fr15_container_without_on_click_renders_without_a_protocol_error() {
+    let mut host = Host::new(plain_app);
+    assert!(host.rebuild().is_ok());
+}

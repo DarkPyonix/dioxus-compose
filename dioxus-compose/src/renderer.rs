@@ -1269,6 +1269,12 @@ impl WriteMutations for ComposeRenderer {
                 self.sync_pointer_handler(id, node_id);
                 return;
             }
+            // The press modifier is written from the listener (`create_event_listener`),
+            // so the attribute itself, which a container without a handler carries as
+            // `None`, writes nothing.
+            if name == "onclickable" {
+                return;
+            }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
                 if let Some((index, modifier)) = slot {
                     self.write(Mutation::SetModifier {
