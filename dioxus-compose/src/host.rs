@@ -122,6 +122,13 @@ pub(crate) fn deliver_event(
     if event.node_id != node_id {
         return Err(ProtocolError::InvalidValueKind(0));
     }
+    // A pointer handler takes pointer payloads and nothing else, and no other handler
+    // takes one: the listener downcasts what it is given, so a payload of the wrong shape
+    // is refused here instead of reaching it.
+    let pointer_handler = matches!(name, "pointer" | "onpointer");
+    if pointer_handler != matches!(event.payload, EventPayload::Pointer { .. }) {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
     let mut key_event = None;
     let mut pointer_event = None;
     // A press on a link run arrives as a click on the handler the run was given, and

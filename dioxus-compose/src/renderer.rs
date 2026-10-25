@@ -183,6 +183,9 @@ pub struct ComposeRenderer {
     pointer_on: HashSet<usize>,
     /// The elements the Renderer was told a pointer handler for.
     pointer_announced: HashSet<usize>,
+    /// The pointer-related properties each node was given a value for, so one that was
+    /// never set is never cleared and an unset one costs no record.
+    pointer_sent: HashSet<(u32, u16)>,
     /// The animated attributes each node has already been given a value for. The first
     /// value is where the node starts; every later one is a change to animate.
     animated: std::collections::HashSet<(u32, &'static str)>,
@@ -255,6 +258,7 @@ impl ComposeRenderer {
             editors: HashMap::new(),
             pointer_on: HashSet::new(),
             pointer_announced: HashSet::new(),
+            pointer_sent: HashSet::new(),
             animated: std::collections::HashSet::new(),
             next_animation_id: 1,
             stack: Vec::with_capacity(64),
@@ -786,6 +790,19 @@ impl ComposeRenderer {
             self.batch.fail(ProtocolError::InvalidProperty(0));
             return;
         };
+        if matches!(
+            property,
+            PropertyKind::PointerKinds | PropertyKind::Cursor | PropertyKind::UserSelect
+        ) {
+            let key = (node_id, property as u16);
+            if matches!(value, AttributeValue::None) {
+                if !self.pointer_sent.remove(&key) {
+                    return;
+                }
+            } else {
+                self.pointer_sent.insert(key);
+            }
+        }
         if let AttributeValue::Any(value) = value {
             let any = value.as_any();
             if let Some(growing) = any.downcast_ref::<GrowingText>()
@@ -1349,6 +1366,7 @@ impl WriteMutations for ComposeRenderer {
         {
             self.detach(Slot::Node(node_id));
             self.write(Mutation::Remove { node_id });
+            self.pointer_sent.retain(|(sent, _)| *sent != node_id);
             self.forget(node_id);
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
