@@ -566,6 +566,9 @@ fn fr37_a_theme_change_costs_coloured_code_and_diff_nothing() {
             })
             .expect("the design system change failed");
         let mutations = decode_batch(batch).expect("decode");
-        assert!(mutations.is_empty(), "switching to {system:?} sent {mutations:?}");
+        assert!(
+            mutations.is_empty(),
+            "switching to {system:?} sent {mutations:?}"
+        );
     }
 }

@@ -75,7 +75,11 @@ pub(crate) fn page_zoom() -> f32 {
 /// page is laid out in and the one a `width` media query is answered with.
 pub(crate) fn css_extent(dp: f32) -> f32 {
     let os = compose_rust::zoom().os;
-    if os.is_finite() && os > 0.0 { dp / os } else { dp }
+    if os.is_finite() && os > 0.0 {
+        dp / os
+    } else {
+        dp
+    }
 }
 
 /// One HTML and CSS application, running as the Host's runtime.

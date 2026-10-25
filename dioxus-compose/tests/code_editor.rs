@@ -5,9 +5,7 @@ use std::cell::RefCell;
 
 use dioxus_compose::code::SYNTAX_SPAN_LEN;
 use dioxus_compose::prelude::*;
-use dioxus_compose::protocol::{
-    HostEvent, Mutation, PropertyValue, decode_batch, encode_event,
-};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
 
 /// One decoded record with its borrowed parts made owned, so the batch can be dropped.

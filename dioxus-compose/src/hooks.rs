@@ -62,7 +62,9 @@ pub fn use_window_size() -> WindowSize {
 /// the batch the handler produces, and the answer is a new report. Nothing is enlarged
 /// before the renderer answers, so reading right after a set still gives the old value.
 pub fn use_zoom() -> compose_rust::ZoomHandle {
-    dioxus_core::use_hook(|| Rc::new(compose_rust::zoom::subscribe(dioxus_core::schedule_update())));
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::zoom::subscribe(dioxus_core::schedule_update()))
+    });
     compose_rust::ZoomHandle::default()
 }
 

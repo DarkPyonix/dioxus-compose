@@ -274,11 +274,10 @@ pub fn AnimatedVisibility(
     let leaving = phase == Phase::Leaving;
     let spec = spec.unwrap_or(AnimationSpec::STANDARD);
     let from_start = state.from_start.get();
-    let container_motion = ((enter.expand || exit.shrink) && !reduced)
-        .then(|| {
-            let role: u16 = motion.unwrap_or(MotionRole::Standard).into();
-            i64::from(role)
-        });
+    let container_motion = ((enter.expand || exit.shrink) && !reduced).then(|| {
+        let role: u16 = motion.unwrap_or(MotionRole::Standard).into();
+        i64::from(role)
+    });
 
     let alpha = (!reduced).then(|| Animated::<f32> {
         target: if leaving && exit.fade { 0.0 } else { 1.0 },

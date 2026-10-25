@@ -107,8 +107,8 @@ pub use blitz_traits::shell::ColorScheme;
 pub use motion_events::{
     onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart, transition,
 };
-pub(crate) use runtime::{css_extent, page_zoom};
 pub use runtime::{HtmlRuntime, launch, runtime_for};
+pub(crate) use runtime::{css_extent, page_zoom};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are

@@ -190,7 +190,9 @@ fn seen(bytes: &[u8]) -> Seen {
                 match modifier {
                     Modifier::ObserveSize { .. } => seen.observed.push(node_id),
                     Modifier::RequiredSize { width, height } => seen.sizes.push((width, height)),
-                    Modifier::Clickable { handler_id } => seen.clickable.push((node_id, handler_id)),
+                    Modifier::Clickable { handler_id } => {
+                        seen.clickable.push((node_id, handler_id))
+                    }
                     _ => {}
                 }
             }
@@ -282,8 +284,15 @@ fn fr34_4_island_zoom_is_written_on_the_window_box() {
         .map(|(node, _)| *node)
         .collect();
     let zooms = first.island_zooms();
-    assert_eq!(zooms.len(), 1, "one island root names the factor: {zooms:?}");
-    assert_eq!(zooms[0].1, 1.0, "before the renderer reports anything it is one");
+    assert_eq!(
+        zooms.len(),
+        1,
+        "one island root names the factor: {zooms:?}"
+    );
+    assert_eq!(
+        zooms[0].1, 1.0,
+        "before the renderer reports anything it is one"
+    );
     assert!(
         boxes.contains(&zooms[0].0),
         "the factor is on an AbsoluteBox, the only node the renderer reads it from"
@@ -336,12 +345,19 @@ fn fr34_4_a_zoom_change_clears_the_measure_cache_and_lays_out_once() {
     );
 
     host.render_frame(0).unwrap();
-    assert_eq!(CALLS.with(Cell::get), settled, "a frame at the same zoom asks nothing");
+    assert_eq!(
+        CALLS.with(Cell::get),
+        settled,
+        "a frame at the same zoom asks nothing"
+    );
 
     ZOOMS.with_borrow_mut(Vec::clear);
     host.dispatch(zoom_event(1.5, 1.5, 0)).unwrap();
     let after = CALLS.with(Cell::get);
-    assert!(after > settled, "the zoom changed and the text was not measured again");
+    assert!(
+        after > settled,
+        "the zoom changed and the text was not measured again"
+    );
     assert!(
         after - settled <= 3,
         "{} measure calls for one change of zoom: the page asks per node, not per pass",
@@ -367,10 +383,22 @@ fn fr34_4_a_zoom_change_clears_the_measure_cache_and_lays_out_once() {
 #[test]
 fn fr34_4_media_queries_follow_the_zoom() {
     let (mut host, first) = started();
-    assert_eq!(first.widths_of_height(10.0), vec![100.0], "800 wide is below min-width: 1000px");
-    assert_eq!(first.widths_of_height(11.0), vec![150.0], "one dppx is below min-resolution: 1.4dppx");
+    assert_eq!(
+        first.widths_of_height(10.0),
+        vec![100.0],
+        "800 wide is below min-width: 1000px"
+    );
+    assert_eq!(
+        first.widths_of_height(11.0),
+        vec![150.0],
+        "one dppx is below min-resolution: 1.4dppx"
+    );
     let plain = report(&mut host, window_event(1200.0, 900.0));
-    assert_eq!(plain.widths_of_height(10.0), vec![200.0], "1200 wide matches min-width: 1000px");
+    assert_eq!(
+        plain.widths_of_height(10.0),
+        vec![200.0],
+        "1200 wide matches min-width: 1000px"
+    );
 
     let zoomed = report(&mut host, zoom_event(1.5, 1.5, 0));
     assert_eq!(
@@ -462,7 +490,11 @@ fn fr34_4_use_zoom_reads_the_report_and_sets_the_level() {
     install();
     let mut host = Host::html(zoom_buttons, HtmlConfig::default);
     let first = seen(host.rebuild().unwrap());
-    assert!(first.texts.contains(&"k 1.00 level 0".to_string()), "{:?}", first.texts);
+    assert!(
+        first.texts.contains(&"k 1.00 level 0".to_string()),
+        "{:?}",
+        first.texts
+    );
     let (node, handler) = first.clickable[0];
 
     let reported = report(&mut host, zoom_event(1.8, 1.25, 2));
@@ -503,7 +535,10 @@ fn fr34_4_set_level_reaches_the_window_record() {
     let mut host = Host::html(set_level_button, HtmlConfig::default);
     let first = seen(host.rebuild().unwrap());
     let (node, handler) = first.clickable[0];
-    assert!(first.levels.iter().all(Option::is_none), "nothing asked at start");
+    assert!(
+        first.levels.iter().all(Option::is_none),
+        "nothing asked at start"
+    );
     let (batch, _) = host
         .dispatch(HostEvent {
             node_id: node,
@@ -545,7 +580,11 @@ fn fr34_4_an_htmlview_names_the_zoom_and_lays_out_in_its_own_viewport() {
         .copied()
         .expect("the island's box is measured");
     let zooms = first.island_zooms();
-    assert_eq!(zooms.len(), 1, "the island's box names the factor: {zooms:?}");
+    assert_eq!(
+        zooms.len(),
+        1,
+        "the island's box names the factor: {zooms:?}"
+    );
     assert_eq!(zooms[0].1, 1.0);
 
     // The box measures 420 units. Reported at 1.5 with no application zoom, its page is

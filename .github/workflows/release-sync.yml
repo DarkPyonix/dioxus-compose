@@ -30,6 +30,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +55,15 @@ jobs:
             git push origin release
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Run the Test gate on the release branch
+        # The push above uses GITHUB_TOKEN, which does not start pull_request workflows, so
+        # the pull request into main would show no checks. A workflow_dispatch run is the
+        # exception GitHub allows, and its checks attach to the same head commit.
+        if: steps.push.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run test.yml --ref release || echo "::warning::could not dispatch Test on release; run it by hand"
 
       - name: Open the pull request into main
         if: steps.push.outputs.changed == 'true'
