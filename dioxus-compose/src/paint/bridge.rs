@@ -109,6 +109,10 @@ pub struct HostMoment {
     /// The `@keyframes` name; `None` for a transition.
     pub name: Option<String>,
     pub property: AnimatedProperty,
+    /// The node was removed. Its event goes to the node's own handlers or nowhere: the
+    /// event dispatch climbs from a node to the elements around it, and a detached node
+    /// may still point at its old parent.
+    pub removed: bool,
     /// The animation's time in seconds when it happened, without the delay.
     pub elapsed: f32,
 }
@@ -342,7 +346,7 @@ impl PlanBridge {
     /// The animation `running` on `key` is gone before its end: replaced, cancelled or
     /// removed. Records the cancel for a page that asked to hear about the animation, and
     /// forgets the animation either way. One that already ended is not cancelled.
-    fn cancelled(&mut self, key: PlanKey, running: &Running) {
+    fn cancelled(&mut self, key: PlanKey, running: &Running, removed: bool) {
         let listened = self.targets.remove(&running.id).is_some();
         let ended = self.finished.remove(&running.id);
         if let PlanKey::Node(node) = key
@@ -354,6 +358,7 @@ impl PlanBridge {
                 node,
                 name: running.animation.name.clone(),
                 property: running.property,
+                removed,
                 elapsed: 0.0,
             });
         }
@@ -678,7 +683,7 @@ impl PlanBridge {
         list.push(running);
         // The one replaced is cancelled before the new one runs, as a browser orders them.
         for old in replaced {
-            self.cancelled(key, &old);
+            self.cancelled(key, &old, false);
         }
         if let PlanKey::Node(node) = key
             && clicks.listens(node, "transitionrun")
@@ -688,6 +693,7 @@ impl PlanBridge {
                 node,
                 name: None,
                 property,
+                removed: false,
                 elapsed: if animation.delay < 0.0 {
                     (-animation.delay).min(seconds)
                 } else {
@@ -739,7 +745,7 @@ impl PlanBridge {
                     continue;
                 }
                 // The new one has the same key on the wire and replaces it.
-                self.cancelled(key, &running);
+                self.cancelled(key, &running, false);
             }
             if let Some(running) = self.start(batch, key, slot, animation, size, clicks) {
                 next.push(running);
@@ -747,7 +753,7 @@ impl PlanBridge {
         }
         for gone in unmatched {
             self.control(batch, key, &gone, AnimationControl::Cancel);
-            self.cancelled(key, &gone);
+            self.cancelled(key, &gone, false);
         }
         if !next.is_empty() {
             self.playing.insert(key, next);
@@ -878,7 +884,7 @@ impl PlanBridge {
             // The cancel is addressed to the removed node itself and to nothing above it: a
             // browser does not bubble an event from a detached element. The page has
             // usually dropped the node's handlers by now, and then the event goes nowhere.
-            self.cancelled(key, &running);
+            self.cancelled(key, &running, true);
         }
         for handler in placed.handlers {
             self.handlers.remove(&handler);

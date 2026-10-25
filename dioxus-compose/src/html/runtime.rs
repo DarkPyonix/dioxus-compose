@@ -276,6 +276,17 @@ impl HtmlRuntime {
         for moment in self.bridge.take_host_moments() {
             let property = animate::css_name(moment.property);
             let node = moment.node;
+            let event = match (&moment.name, moment.kind) {
+                (None, HostMomentKind::Run) => "transitionrun",
+                (None, HostMomentKind::Cancel) => "transitioncancel",
+                (Some(_), HostMomentKind::Cancel) => "animationcancel",
+                (Some(_), HostMomentKind::Run) => continue,
+            };
+            // A removed node's handlers are gone with it. Dispatch would climb to the
+            // elements around it, so the event is dropped unless the node still has its own.
+            if moment.removed && !self.dom.listeners(node).contains(&event) {
+                continue;
+            }
             let _ = {
                 match (&moment.name, moment.kind) {
                     (None, HostMomentKind::Run) => {
