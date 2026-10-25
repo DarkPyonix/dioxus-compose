@@ -381,7 +381,7 @@ impl ComposeRenderer {
         const BORDER_EACH: u16 = 14;
         const ELEVATION: u16 = 15;
         const CLIP: u16 = 16;
-        const CLICKABLE: u16 = 17;
+        const CLICKABLE: u16 = CLICKABLE_SLOT;
         const PADDING: u16 = 18;
         const OBSERVE_SIZE: u16 = 19;
         const MOTION: u16 = 20;
@@ -1326,6 +1326,15 @@ impl WriteMutations for ComposeRenderer {
         if is_pointer_event(name) {
             self.sync_pointer_handler(id, node_id);
         }
+        // A listener reaches the Renderer here and not through `set_attribute`, so the
+        // press modifier is written from the listener's handler.
+        if is_clickable_event(name) {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index: CLICKABLE_SLOT,
+                modifier: compose_rust::Modifier::Clickable { handler_id },
+            });
+        }
         if let Some(property) = event_property(name) {
             self.write(Mutation::SetProp {
                 node_id,
@@ -1344,6 +1353,15 @@ impl WriteMutations for ComposeRenderer {
             return;
         };
         self.handlers.swap_remove(position);
+        if is_clickable_event(name)
+            && let Some(node_id) = self.node(id)
+        {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index: CLICKABLE_SLOT,
+                modifier: compose_rust::Modifier::Empty,
+            });
+        }
         if is_pointer_event(name)
             && let Some(node_id) = self.node(id)
         {
@@ -1394,6 +1412,13 @@ fn widget_kind(name: &str) -> Result<WidgetKind, ProtocolError> {
 
 fn property_kind(name: &str) -> Option<PropertyKind> {
     PropertyKind::from_name(name).ok()
+}
+
+/// The chain position of the press modifier, which `modifier_for` also uses.
+const CLICKABLE_SLOT: u16 = 17;
+
+fn is_clickable_event(name: &str) -> bool {
+    matches!(name, "clickable" | "onclickable")
 }
 
 fn is_pointer_event(name: &str) -> bool {
