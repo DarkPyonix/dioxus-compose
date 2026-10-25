@@ -8,11 +8,11 @@ use dioxus_signals::WritableExt as _;
 use crate as dioxus_elements;
 use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
-    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole,
-    OverflowWrap, Paint, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
-    WordBreak,
+    Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, Cursor, IconRole, MaterialRole,
+    MotionRole, OverflowWrap, Paint, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow,
+    TypeRole, UserSelect, WordBreak,
 };
-use compose_rust::{FileDrop, KeyEvent, RangeRequest};
+use compose_rust::{FileDrop, KeyEvent, PointerEvent, PointerKinds, RangeRequest};
 
 /// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
@@ -86,6 +86,21 @@ pub fn AbsoluteBox(
     #[props(default)]
     animated_offset: Option<crate::hooks::Animated<(f32, f32)>>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     use compose_rust::Modifier;
     let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
@@ -121,6 +136,10 @@ pub fn AbsoluteBox(
     };
     rsx! {
         absolutebox {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
             required_size: required_size.map(|(width, height)| {
                 AttributeValue::any_value(Modifier::RequiredSize { width, height })
@@ -176,9 +195,28 @@ pub fn Column(
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         column {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -236,9 +274,28 @@ pub fn Row(
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         row {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -293,9 +350,28 @@ pub fn ComposeBox(
     #[props(default)] fill_max_height: bool,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         composebox {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -336,9 +412,28 @@ pub fn ScrollColumn(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         scrollcolumn {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -376,9 +471,28 @@ pub fn ScrollRow(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         scrollrow {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -458,6 +572,21 @@ pub fn Text(
     /// handler a press on a link run does nothing.
     #[props(default)]
     on_link: Option<EventHandler<u64>>,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     // Worked out before the element, because the run list travels twice: its records as
     // `spans` and its font table as `span_fonts`, and only one of them can take it.
@@ -476,6 +605,10 @@ pub fn Text(
         ($($listener:tt)*) => {
             rsx! {
                 text {
+                    cursor: opt_role(cursor),
+                    user_select: opt_role(user_select),
+                    pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+                    onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
                     weight: opt_dp(weight),
                     width: opt_dp(width),
                     height: opt_dp(height),
@@ -604,6 +737,10 @@ pub fn Button(
     #[props(default)]
     icon: Option<IconRole>,
     #[props(default = true)] enabled: bool,
+    /// What the button is, apart from how loud its variant is: a plain button, or one key
+    /// of a dense grid of them.
+    #[props(default)]
+    button_kind: Option<ButtonKind>,
     #[props(default)] variant: Option<ButtonVariant>,
     /// The label's colour, for the rare button whose meaning is not the variant's.
     /// A destructive action is the case that needs it: it is a plain button in every
@@ -614,6 +751,7 @@ pub fn Button(
 ) -> Element {
     rsx! {
         button {
+            button_kind: opt_role(button_kind),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -668,9 +806,28 @@ pub fn Spacer(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         spacer {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -783,9 +940,28 @@ pub fn Card(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         card {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -837,9 +1013,28 @@ pub fn Surface(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         surface {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -2320,9 +2515,28 @@ pub fn SelectionContainer(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         selectioncontainer {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),

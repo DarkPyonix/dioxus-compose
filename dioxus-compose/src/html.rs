@@ -75,7 +75,10 @@ mod runtime;
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
 pub type NodeId = usize;
 
-pub use crate::dom::{HtmlConfig, HtmlDom, TransitionEventData, element_by_id};
+pub use crate::dom::{
+    Cursor, HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerSubscription, PointerType,
+    TransitionEventData, UserSelect, WheelMode, element_by_id,
+};
 pub use crate::html_widget::WidgetView;
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
 pub use crate::layout::measure::{
@@ -90,9 +93,9 @@ pub use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
     BorderLine, BoxShadow, Corners, DisplayList, DisplayListDiff, Easing, FillMode, GradientStop,
     InputField, InputKind, Iterations, Keyframe, LinearGradient, Matrix2D, NodeEntry, ObjectFit,
-    Outline, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker, ScrollContainer,
-    Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun, TileRepeat,
-    Transform2D, TransformFunction, TransitionStart,
+    Outline, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker,
+    ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun,
+    TileRepeat, Transform2D, TransformFunction, TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,

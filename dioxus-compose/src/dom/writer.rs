@@ -63,6 +63,13 @@ impl WriterState {
         self.listeners.get(&node).map(Vec::as_slice).unwrap_or(&[])
     }
 
+    /// Every node with a listener, with the event names it listens for.
+    pub(crate) fn listening(&self) -> impl Iterator<Item = (NodeId, &[&'static str])> {
+        self.listeners
+            .iter()
+            .map(|(node, names)| (*node, names.as_slice()))
+    }
+
     /// Records what the renderer committed to the field `node`.
     pub(crate) fn commit(&mut self, node: NodeId, value: &str) {
         self.committed.insert(node, value.to_string());

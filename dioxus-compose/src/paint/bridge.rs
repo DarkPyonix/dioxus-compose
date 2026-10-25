@@ -87,6 +87,30 @@ pub trait ClickTargets {
         let _ = (node, event);
         false
     }
+
+    /// The kinds of pointer report the box drawn for `node` takes, as a bit mask of
+    /// `1 << (kind - 1)`. 0 for a node the page does not listen to.
+    fn pointer_kinds(&self, node: NodeId) -> u32 {
+        let _ = node;
+        0
+    }
+
+    /// The document root, whose pointer subscription the page's top box carries.
+    fn pointer_root(&self) -> Option<NodeId> {
+        None
+    }
+
+    /// The CSS `cursor` of `node` as the wire value; 0 (`auto`) leaves it to the widget.
+    fn pointer_cursor(&self, node: NodeId) -> u32 {
+        let _ = node;
+        0
+    }
+
+    /// The CSS `user-select` of `node` as the wire value; 0 (`auto`) follows the parent.
+    fn pointer_user_select(&self, node: NodeId) -> u32 {
+        let _ = node;
+        0
+    }
 }
 
 /// What an animation event from the renderer is for in the page.
@@ -158,6 +182,9 @@ pub enum BridgeEvent {
     Toggle,
     /// The user picked an option of a `<select>`.
     Choose,
+    /// The pointer did something in a box that has a pointer listener, or that `:hover`
+    /// and `:active` need to follow.
+    Pointer,
 }
 
 /// One handler the bridge gave the renderer.
@@ -169,6 +196,15 @@ pub struct BridgeHandler {
     /// The DOM node the event is for.
     pub node: NodeId,
     pub event: BridgeEvent,
+}
+
+/// What the renderer was last told about a node's pointer input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PointerSent {
+    handler: Option<(u64, NodeId)>,
+    kinds: u32,
+    cursor: u32,
+    user_select: u32,
 }
 
 /// A property value as last sent, to tell whether the next one is new.
@@ -232,6 +268,9 @@ struct Placed {
     /// The key handler of a box whose element listens for keys, and that element. A
     /// field's key handler is set once, with its other handlers, and is not this.
     keys: Option<(u64, NodeId)>,
+    /// The pointer subscription as sent: the handler, the DOM node, the kinds taken, the
+    /// cursor and the user-select values.
+    pointer: Option<PointerSent>,
     /// What a text field shows: the last value the Host sent or the user typed, whichever
     /// came last.
     shown: String,
@@ -443,6 +482,7 @@ impl PlanBridge {
                 }
             }
         }
+        self.sync_pointer(batch, clicks);
         self.previous = Some(plan);
     }
 
@@ -792,6 +832,7 @@ impl PlanBridge {
                 handlers: Vec::new(),
                 click: None,
                 keys: None,
+                pointer: None,
                 shown: String::new(),
             },
         );
@@ -926,6 +967,101 @@ impl PlanBridge {
         }
         if let Some(placed) = self.nodes.get_mut(&parent) {
             placed.children = current;
+        }
+    }
+
+    /// Brings what the renderer knows of each node's pointer input up to date: the
+    /// subscription, the cursor and the user-select. Checked for every node after each
+    /// layout, since a listener or a `:hover` rule can change them while the plan node
+    /// stays as it was. The page's top box carries the document root's subscription.
+    fn sync_pointer(&mut self, batch: &mut Batch, clicks: &dyn ClickTargets) {
+        let root = clicks.pointer_root();
+        let keys: Vec<PlanKey> = self.nodes.keys().copied().collect();
+        for key in keys {
+            let (dom, kinds, cursor, user_select) = match key {
+                PlanKey::Page => match root {
+                    Some(root) => (root, clicks.pointer_kinds(root), 0, 0),
+                    None => continue,
+                },
+                PlanKey::Node(dom) => (
+                    dom,
+                    if Some(dom) == root {
+                        0
+                    } else {
+                        clicks.pointer_kinds(dom)
+                    },
+                    clicks.pointer_cursor(dom),
+                    clicks.pointer_user_select(dom),
+                ),
+                _ => continue,
+            };
+            let Some(placed) = self.nodes.get_mut(&key) else {
+                continue;
+            };
+            let sent = placed.pointer;
+            let handler = match sent.and_then(|sent| sent.handler) {
+                Some(existing) => Some(existing),
+                None if kinds != 0 => {
+                    let handler_id = self.next_handler_id;
+                    self.next_handler_id += 1;
+                    placed.handlers.push(handler_id);
+                    self.handlers.insert(
+                        handler_id,
+                        BridgeHandler {
+                            node_id: placed.id,
+                            node: dom,
+                            event: BridgeEvent::Pointer,
+                        },
+                    );
+                    batch.write(Mutation::SetProp {
+                        node_id: placed.id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::Integer(handler_id as i64),
+                    });
+                    Some((handler_id, dom))
+                }
+                None => None,
+            };
+            let now = PointerSent {
+                handler,
+                kinds,
+                cursor,
+                user_select,
+            };
+            let before = sent.unwrap_or(PointerSent {
+                handler: None,
+                kinds: 0,
+                cursor: 0,
+                user_select: 0,
+            });
+            if now.kinds != before.kinds && (handler.is_some() || before.kinds != 0) {
+                batch.write(Mutation::SetProp {
+                    node_id: placed.id,
+                    property: PropertyKind::PointerKinds,
+                    value: if kinds == 0 {
+                        PropertyValue::None
+                    } else {
+                        PropertyValue::Integer(i64::from(kinds))
+                    },
+                });
+            }
+            for (property, new, old) in [
+                (PropertyKind::Cursor, cursor, before.cursor),
+                (PropertyKind::UserSelect, user_select, before.user_select),
+            ] {
+                if new != old {
+                    batch.write(Mutation::SetProp {
+                        node_id: placed.id,
+                        property,
+                        value: if new == 0 {
+                            PropertyValue::None
+                        } else {
+                            PropertyValue::Integer(i64::from(new))
+                        },
+                    });
+                }
+            }
+            placed.pointer = Some(now);
         }
     }
 
