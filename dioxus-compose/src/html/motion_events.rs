@@ -6,6 +6,7 @@
 //! Each function here builds the listener attribute for one of them, to be spread into an
 //! element: `div { ..[ontransitionrun(|event| { /* ... */ })] }`.
 
+use crate::dom::TransitionEventData;
 use dioxus_core::{Attribute, AttributeValue, Event};
 use dioxus_html::{AnimationData, PlatformEventData, TransitionData};
 
@@ -50,3 +51,11 @@ motion_listener!(
     onanimationcancel,
     AnimationData
 );
+
+/// The Host's data of a transition event: the property, the elapsed time and the pseudo
+/// element. `None` when the event did not come from the Host, whose data is some other
+/// type. `dioxus-html` has no accessors on `TransitionData`, so this is how a page reads
+/// them.
+pub fn transition(event: &Event<TransitionData>) -> Option<&TransitionEventData> {
+    event.downcast::<TransitionEventData>()
+}

@@ -432,18 +432,23 @@ fn moments() -> Vec<String> {
     MOMENTS.with(|moments| moments.borrow().clone())
 }
 
-/// `TransitionData` has no accessors in dioxus-html 0.7.10, only `Debug`, `PartialEq` and a
-/// downcast to the Host's private type, so the Debug text is what a page can read.
 fn transition_line(kind: &str, event: &TransitionEvent) -> String {
-    format!("{kind} {:?}", event.data())
+    let data = event
+        .data()
+        .downcast::<TransitionEventData>()
+        .expect("the Host sent this event, so it carries the Host's data")
+        .clone();
+    format!(
+        "{kind} {} {:?} [{}]",
+        data.property_name(),
+        data.elapsed_time(),
+        data.pseudo_element()
+    )
 }
 
 /// What `transition_line` gives for a transition of `opacity`.
 fn expected(kind: &str, elapsed: f32) -> String {
-    format!(
-        "{kind} TransitionData {{ property_name: \"opacity\", pseudo_element: \"\", \
-         elapsed_time: {elapsed:?} }}"
-    )
+    format!("{kind} opacity {elapsed:?} []")
 }
 
 fn animation_line(kind: &str, event: &AnimationEvent) -> String {

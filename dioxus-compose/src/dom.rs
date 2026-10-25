@@ -1072,11 +1072,43 @@ impl HasAnimationData for AnimationEventData {
     }
 }
 
-/// What a transition event carries: the CSS property and the time it ran.
+/// What a transition event the Host sends carries: the CSS property and the time it ran.
+///
+/// `dioxus-html` gives a page no accessors on its `TransitionData`, so a page reads these
+/// by downcasting the event's data to this type:
+///
+/// ```ignore
+/// ontransitionend: move |evt| {
+///     if let Some(data) = evt.data().downcast::<TransitionEventData>() {
+///         let (property, seconds) = (data.property_name(), data.elapsed_time());
+///     }
+/// }
+/// ```
+///
+/// [`transition`](crate::html::transition) does the downcast. It returns `None` for an
+/// event that did not come from the Host, which carries some other type.
 #[derive(Clone)]
-struct TransitionEventData {
+pub struct TransitionEventData {
     property: String,
     elapsed: f32,
+}
+
+impl TransitionEventData {
+    /// The CSS name of the property, such as `opacity`.
+    pub fn property_name(&self) -> &str {
+        &self.property
+    }
+
+    /// The time in seconds the transition had run, without its delay.
+    pub fn elapsed_time(&self) -> f32 {
+        self.elapsed
+    }
+
+    /// The pseudo element the transition ran on. Pseudo elements are not transitioned, so
+    /// this is always empty.
+    pub fn pseudo_element(&self) -> &str {
+        ""
+    }
 }
 
 impl HasTransitionData for TransitionEventData {
