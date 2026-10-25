@@ -18,7 +18,8 @@ use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PropertyKind, WIDGET_SCHEMA, WidgetKind,
+    EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PointerKind, PointerType, PropertyKind,
+    WIDGET_SCHEMA, WheelDeltaMode, WidgetKind,
 };
 use dioxus_compose::spans::{TextSpan, TextSpans};
 use dioxus_compose::{FontRef, FontRefs, GenericFamily, OverflowWrap, WordBreak};
@@ -124,6 +125,7 @@ fn surface() -> Element {
                     icon: IconRole::Send,
                     enabled: true,
                     variant: ButtonVariant::Tonal,
+                    button_kind: ButtonKind::ActionKey,
                     color: ERROR,
                     on_click: move |_| fired("Button.on_click"),
                 }
@@ -145,6 +147,12 @@ fn surface() -> Element {
                 spacing: 8.0,
                 space_role: SpaceRole::Md,
                 alignment: Alignment::Center,
+                cursor: Cursor::Pointer,
+                user_select: UserSelect::None,
+                pointer_kinds: PointerKinds::MOVE | PointerKinds::WHEEL,
+                on_pointer: move |event: PointerEvent| {
+                    fired(format!("Column.on_pointer({:?})", event.kind()))
+                },
                 Row {
                     width: 320.0,
                     height: 48.0,
@@ -548,6 +556,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Spacing, float(8.0)),
                 (P::SpaceRole, role(SpaceRole::Md)),
                 (P::Alignment, role(Alignment::Center)),
+                (P::Cursor, role(Cursor::Pointer)),
+                (P::UserSelect, role(UserSelect::None)),
+                (P::PointerKinds, int(1 | 64)),
+                (P::OnPointer, Handler),
             ],
         ),
         (
@@ -620,6 +632,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Icon, role(IconRole::Send)),
                 (P::Enabled, flag(true)),
                 (P::Variant, role(ButtonVariant::Tonal)),
+                (P::ButtonKind, role(ButtonKind::ActionKey)),
                 (P::Color, int(paint_bits(ERROR))),
                 (P::OnClick, Handler),
             ],
@@ -990,6 +1003,26 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             P::OnClick,
             EventPayload::Clicked,
             "FloatingAction.on_click",
+        ),
+        (
+            W::Column,
+            P::OnPointer,
+            EventPayload::Pointer {
+                kind: PointerKind::Move,
+                pointer_id: 1,
+                pointer_type: PointerType::Mouse,
+                x: 3.0,
+                y: 4.0,
+                buttons: 0,
+                button: 0,
+                modifiers: 0,
+                click_count: 0,
+                delta_x: 0.0,
+                delta_y: 0.0,
+                delta_mode: WheelDeltaMode::Pixel,
+                timestamp_nanos: 0,
+            },
+            "Column.on_pointer(Move)",
         ),
         (
             W::TextField,

@@ -30,8 +30,8 @@ mod html_view;
 mod html_widget;
 mod layout;
 mod paint;
-pub mod theme_variables;
 pub mod renderer;
+pub mod theme_variables;
 mod widgets;
 
 pub use dioxus_core::{Element, VirtualDom};
@@ -45,8 +45,8 @@ pub use extensions::LinearProgressIndicator;
 pub use hooks::{
     Animated, CodeEditorHandle, animate_color_as_state, animate_float_as_state,
     animate_offset_as_state, use_animation_event, use_code_editor, use_design_system,
-    use_node_size, use_notification_activated, use_notification_permission,
-    use_reduced_motion, use_theme, use_window_size,
+    use_node_size, use_notification_activated, use_notification_permission, use_reduced_motion,
+    use_theme, use_window_size,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use html_view::HtmlView;
@@ -138,18 +138,19 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        AbsoluteBox, Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant,
-        Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, DatePicker,
-        DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop,
-        FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent,
+        AbsoluteBox, Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonKind,
+        ButtonVariant, Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, Cursor,
+        DatePicker, DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element,
+        FileDrop, FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent,
         LaunchBuilder, LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode,
         MaterialRole, Menu, Message, MessageDuration, Modifier, MotionRole, Navigation,
-        NavigationItem, Paint, Palette, ProgressIndicator, Props, RadioButton, RangeRequest, Row,
-        Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider,
-        SpaceRole, Spacer, SplitPane, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField,
-        TextOverflow, Theme, TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, WindowHeightClass,
-        WindowSize, WindowSizeClass, asset, brush, component, launch, rsx, show_message,
-        use_design_system, use_node_size, use_theme, use_window_size,
+        NavigationItem, Paint, Palette, PointerEvent, PointerKinds, ProgressIndicator, Props,
+        RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
+        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
+        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
+        TopAppBar, TypeRole, UserSelect, WindowHeightClass, WindowSize, WindowSizeClass, asset,
+        brush, component, launch, rsx, show_message, use_design_system, use_node_size, use_theme,
+        use_window_size,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
@@ -228,6 +229,13 @@ pub mod elements {
             // keeps a screen from lighting up every container it has.
             pub const onfilesentered: AttributeDescription = ("onfilesentered", None, false);
             pub const onfilesdropped: AttributeDescription = ("onfilesdropped", None, false);
+            // Pointer input is subscribed to by naming the kinds, and a handler is only
+            // announced to the Renderer for a node that names some.
+            pub const pointer_kinds: AttributeDescription = ("pointer_kinds", None, false);
+            pub const onpointer: AttributeDescription = ("onpointer", None, false);
+            // What the Host resolved from CSS for the node, or the application chose.
+            pub const cursor: AttributeDescription = ("cursor", None, false);
+            pub const user_select: AttributeDescription = ("user_select", None, false);
             // The elements an HTML and CSS screen is drawn with. The ones with more than one
             // number carry the whole `compose_rust::Modifier`, so the numbers of one box
             // arrive together as one record.
@@ -313,7 +321,11 @@ pub mod elements {
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
     // second place a role icon reaches the tree, because a toolbar is a row of icon
     // buttons and nothing else in the vocabulary can place one.
-    element!(button, "Button", [text, icon, enabled, variant, color]);
+    element!(
+        button,
+        "Button",
+        [text, icon, enabled, variant, color, button_kind]
+    );
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.
     element!(spacer, "Spacer", []);
@@ -531,6 +543,8 @@ pub mod events {
     // not need to know.
     event!(onfilesentered, ());
     event!(onfilesdropped, crate::FileDrop);
+    // A pointer did something in a node that subscribed to it with `pointer_kinds`.
+    event!(onpointer, crate::PointerEvent);
     // A control reports the value the user landed on, as one f64. A picker reads it as
     // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
     // the wire property with the text field's value change, because both are "this

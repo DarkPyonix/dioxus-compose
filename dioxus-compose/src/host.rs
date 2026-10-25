@@ -10,7 +10,7 @@ use crate::renderer::ComposeRenderer;
 use compose_rust::code::{CodeChange, CodeHover, CodeRange, EditRejected, Position, SaveRequest};
 use compose_rust::protocol::{HostEvent, ProtocolError};
 use compose_rust::schema::{EventPayload, LoopMode, Theme, Window};
-use compose_rust::{Batch, FileDrop, KeyEvent, RangeRequest, Runtime};
+use compose_rust::{Batch, FileDrop, KeyEvent, PointerEvent, RangeRequest, Runtime};
 use dioxus_core::{Element, Event, ScopeId, VirtualDom};
 use std::future::Future;
 use std::pin::pin;
@@ -122,7 +122,15 @@ pub(crate) fn deliver_event(
     if event.node_id != node_id {
         return Err(ProtocolError::InvalidValueKind(0));
     }
+    // A pointer handler takes pointer payloads and nothing else, and no other handler
+    // takes one: the listener downcasts what it is given, so a payload of the wrong shape
+    // is refused here instead of reaching it.
+    let pointer_handler = matches!(name, "pointer" | "onpointer");
+    if pointer_handler != matches!(event.payload, EventPayload::Pointer { .. }) {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
     let mut key_event = None;
+    let mut pointer_event = None;
     // A press on a link run arrives as a click on the handler the run was given, and
     // reaches the `Text`'s link listener with the value the application named it by.
     let link = renderer.link_value(event.handler_id);
@@ -130,9 +138,7 @@ pub(crate) fn deliver_event(
         EventPayload::Clicked if link.is_some() => {
             Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
         }
-        EventPayload::Clicked | EventPayload::FocusLost => {
-            Event::new(Rc::new(()), true).into_any()
-        }
+        EventPayload::Clicked | EventPayload::FocusLost => Event::new(Rc::new(()), true).into_any(),
         EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
             Event::new(Rc::new(text.to_owned()), true).into_any()
         }
@@ -145,6 +151,39 @@ pub(crate) fn deliver_event(
         } => {
             let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
             key_event = Some(value.clone());
+            Event::new(Rc::new(value), true).into_any()
+        }
+        EventPayload::Pointer {
+            kind,
+            pointer_id,
+            pointer_type,
+            x,
+            y,
+            buttons,
+            button,
+            modifiers,
+            click_count,
+            delta_x,
+            delta_y,
+            delta_mode,
+            timestamp_nanos,
+        } => {
+            let value = PointerEvent::new(
+                kind,
+                pointer_id,
+                pointer_type,
+                x,
+                y,
+                buttons,
+                button,
+                modifiers,
+                click_count,
+                delta_x,
+                delta_y,
+                delta_mode,
+                timestamp_nanos,
+            );
+            pointer_event = Some(value.clone());
             Event::new(Rc::new(value), true).into_any()
         }
         EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
@@ -225,7 +264,10 @@ pub(crate) fn deliver_event(
         }
     };
     dom.runtime().handle_event(name, event_data, element);
-    Ok(i64::from(key_event.is_some_and(|event| event.consumed())))
+    Ok(i64::from(
+        key_event.is_some_and(|event| event.consumed())
+            || pointer_event.is_some_and(|event| event.consumed()),
+    ))
 }
 
 /// The runtime factory for one Dioxus application.

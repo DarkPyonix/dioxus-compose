@@ -42,12 +42,14 @@ use compose_rust::animation::{AnimationEventSubscription, on_animation_event};
 use compose_rust::protocol::{HostEvent, ProtocolError};
 use compose_rust::schema::{
     AnimationEventKind, ColorScheme as ThemeScheme, EventPayload, Key as WireKey,
+    PointerKind as WirePointerKind, PointerType as WirePointerType,
+    WheelDeltaMode as WireWheelMode,
 };
 use compose_rust::{AnimationMoment, Batch, Runtime};
 use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Modifiers};
 
-use crate::dom::{HtmlConfig, HtmlDom};
+use crate::dom::{HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerType, WheelMode};
 use crate::html::{ColorScheme, NodeId, PlanKey};
 use crate::paint::animate;
 use crate::paint::bridge::{BridgeEvent, HostMomentKind, PlanBridge};
@@ -185,14 +187,15 @@ impl HtmlRuntime {
         }
         // The theme's colour roles, as `--dxc-*` custom properties, set before the styles
         // are resolved so a switch restyles the page in the frame that changed the theme.
-        self.dom.set_root_variables(&crate::theme_variables::theme_variable_declarations(
-            &under.0,
-            under.1,
-            match scheme {
-                ColorScheme::Dark => ThemeScheme::Dark,
-                _ => ThemeScheme::Light,
-            },
-        ));
+        self.dom
+            .set_root_variables(&crate::theme_variables::theme_variable_declarations(
+                &under.0,
+                under.1,
+                match scheme {
+                    ColorScheme::Dark => ThemeScheme::Dark,
+                    _ => ThemeScheme::Light,
+                },
+            ));
         // One CSS pixel is one dp, so the page is laid out at a scale of one. The renderer
         // turns dp into device pixels.
         self.dom.layout(viewport.0, viewport.1, 1.0);
@@ -447,6 +450,60 @@ impl Runtime for HtmlRuntime {
                 // one must not offer it again.
                 return Ok(i64::from(prevented || !from_field));
             }
+            (
+                BridgeEvent::Pointer,
+                EventPayload::Pointer {
+                    kind,
+                    pointer_id,
+                    pointer_type,
+                    x,
+                    y,
+                    buttons,
+                    button,
+                    modifiers,
+                    click_count,
+                    delta_x,
+                    delta_y,
+                    delta_mode,
+                    ..
+                },
+            ) => {
+                let input = PointerInput {
+                    kind: match kind {
+                        WirePointerKind::Move => PointerKind::Move,
+                        WirePointerKind::Enter => PointerKind::Enter,
+                        WirePointerKind::Leave => PointerKind::Leave,
+                        WirePointerKind::Down => PointerKind::Down,
+                        WirePointerKind::Up => PointerKind::Up,
+                        WirePointerKind::Cancel => PointerKind::Cancel,
+                        WirePointerKind::Wheel => PointerKind::Wheel,
+                        WirePointerKind::ContextMenu => PointerKind::ContextMenu,
+                    },
+                    pointer_id: *pointer_id,
+                    pointer_type: match pointer_type {
+                        WirePointerType::Mouse => PointerType::Mouse,
+                        WirePointerType::Touch => PointerType::Touch,
+                        WirePointerType::Pen => PointerType::Pen,
+                    },
+                    x: *x,
+                    y: *y,
+                    buttons: *buttons,
+                    button: *button,
+                    modifiers: *modifiers,
+                    click_count: *click_count,
+                    delta_x: *delta_x,
+                    delta_y: *delta_y,
+                    delta_mode: match delta_mode {
+                        WireWheelMode::Pixel => WheelMode::Pixel,
+                        WireWheelMode::Line => WheelMode::Line,
+                        WireWheelMode::Page => WheelMode::Page,
+                    },
+                };
+                // A handler that prevents the default consumes the event, which keeps it
+                // from the boxes around this one. The frame that restyles `:hover` and
+                // `:active` is asked for by `poll_work`, as a handler's write is.
+                return Ok(i64::from(self.dom.pointer_event(node, &input)));
+            }
             (BridgeEvent::Toggle, EventPayload::ValueChanged(value)) => {
                 self.dom.check(node, *value != 0.0);
             }
@@ -463,12 +520,18 @@ impl Runtime for HtmlRuntime {
     }
 
     fn poll_work(&mut self, context: &mut Context<'_>) -> Poll<()> {
+        // A pointer that moved `:hover` or `:active` changed no signal, but the page has to
+        // be restyled, so it asks for a frame as a handler's write does.
+        let restyled = self.dom.take_pointer_restyle();
         let future = self.dom.virtual_dom_mut().wait_for_work();
         let mut future = pin!(future);
         let outer = future.as_mut().poll(context);
         // Every widget tree is polled whether or not the page has work, so each one has
         // registered the waker.
         if crate::html_widget::poll_islands(self.owner, context) {
+            return Poll::Ready(());
+        }
+        if restyled {
             return Poll::Ready(());
         }
         outer

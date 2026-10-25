@@ -43,7 +43,7 @@ patched-blitz = []
 # The boundary, the protocol, the schema and the renderer it links. Pinned to one tag,
 # because the records the Host writes and the renderer reads are versioned together: a
 # different compose-rust is a different wire format.
-compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", rev = "d8205850bc032b40c418b7283787afd99ab84e4c", default-features = false }
+compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", rev = "1b7fc7686ff92cdb8b3db0544c37aac2c0af3485", default-features = false }
 dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
