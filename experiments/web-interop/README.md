@@ -110,8 +110,12 @@ Two practical notes on the working direction:
 - Rust's data segments land at its link-time base (`arena_ptr` = 1 MiB here) in
   a memory Kotlin's `kotlin.wasm.unsafe` allocator also hands out addresses in.
   Nothing collided in this experiment, but production use needs the two ranges
-  separated deliberately, with `--global-base` / `--stack-first` on the Rust
-  side.
+  separated deliberately on the Rust side. `--global-base` alone is not enough:
+  rustc passes `--stack-first` to wasm-ld for wasm32-unknown-unknown, which puts
+  the shadow stack below the global base, so the Host links with
+  `-Clink-arg=--no-stack-first` as well (compose-rust's
+  `renderer/web/scripts/build-host.sh`, checked by its
+  `scripts/tests/web-stack-placement.test.sh`).
 
 ## Question 2: is a wasm-to-wasm call actually direct?
 
