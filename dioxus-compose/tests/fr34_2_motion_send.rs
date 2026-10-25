@@ -432,12 +432,17 @@ fn moments() -> Vec<String> {
     MOMENTS.with(|moments| moments.borrow().clone())
 }
 
+/// `TransitionData` has no accessors in dioxus-html 0.7.10, only `Debug`, `PartialEq` and a
+/// downcast to the Host's private type, so the Debug text is what a page can read.
 fn transition_line(kind: &str, event: &TransitionEvent) -> String {
+    format!("{kind} {:?}", event.data())
+}
+
+/// What `transition_line` gives for a transition of `opacity`.
+fn expected(kind: &str, elapsed: f32) -> String {
     format!(
-        "{kind} {} {} [{}]",
-        event.property_name(),
-        event.elapsed_time(),
-        event.pseudo_element()
+        "{kind} TransitionData {{ property_name: \"opacity\", pseudo_element: \"\", \
+         elapsed_time: {elapsed:?} }}"
     )
 }
 
@@ -511,7 +516,7 @@ fn fr34_2_transitionrun_comes_before_transitionstart_and_transitionend() {
     );
     assert_eq!(
         moments(),
-        vec!["run opacity 0 []"],
+        vec![expected("run", 0.0)],
         "the run fires when the transition is sent, with no help from the renderer"
     );
 
@@ -529,7 +534,11 @@ fn fr34_2_transitionrun_comes_before_transitionstart_and_transitionend() {
     );
     assert_eq!(
         moments(),
-        vec!["run opacity 0 []", "start opacity 0 []", "end opacity 0 []"]
+        vec![
+            expected("run", 0.0),
+            expected("start", 0.0),
+            expected("end", 0.0)
+        ]
     );
 }
 
@@ -555,7 +564,7 @@ fn fr34_2_transitionrun_carries_the_time_a_negative_delay_has_already_run() {
     let first = owned(host.rebuild().unwrap());
     let target = clickable(&first);
     click(&mut host, target);
-    assert_eq!(moments(), vec!["run opacity 0.25 []"]);
+    assert_eq!(moments(), vec![expected("run", 0.25)]);
 }
 
 /// A transition that is replaced by another of the same property before it ends is
@@ -571,9 +580,9 @@ fn fr34_2_a_replaced_transition_is_cancelled_before_the_new_one_runs() {
     assert_eq!(
         moments(),
         vec![
-            "run opacity 0 []",
-            "cancel opacity 0 []",
-            "run opacity 0 []"
+            expected("run", 0.0),
+            expected("cancel", 0.0),
+            expected("run", 0.0)
         ]
     );
 }
@@ -596,7 +605,11 @@ fn fr34_2_no_transitioncancel_after_the_transition_ended() {
     click(&mut host, target);
     assert_eq!(
         moments(),
-        vec!["run opacity 0 []", "end opacity 0 []", "run opacity 0 []"]
+        vec![
+            expected("run", 0.0),
+            expected("end", 0.0),
+            expected("run", 0.0)
+        ]
     );
 }
 
@@ -626,9 +639,9 @@ fn fr34_2_removing_the_node_sends_no_cancel_to_its_ancestors() {
     let first = owned(host.rebuild().unwrap());
     let target = clickable(&first);
     click(&mut host, target);
-    assert_eq!(moments(), vec!["run opacity 0 []"]);
+    assert_eq!(moments(), vec![expected("run", 0.0)]);
     click(&mut host, target);
-    assert_eq!(moments(), vec!["run opacity 0 []"]);
+    assert_eq!(moments(), vec![expected("run", 0.0)]);
 }
 
 /// Once a transition ended, removing its node cancels nothing.
@@ -649,7 +662,7 @@ fn fr34_2_no_cancel_when_a_node_is_removed_after_its_transition_ended() {
     click(&mut host, target);
     assert_eq!(
         moments(),
-        vec!["run opacity 0 []", "end opacity 0 []"],
+        vec![expected("run", 0.0), expected("end", 0.0)],
         "the end is the last word on the transition"
     );
 }
