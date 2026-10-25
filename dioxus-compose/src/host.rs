@@ -220,6 +220,7 @@ pub(crate) fn deliver_event(
         | EventPayload::NotificationActivated { .. }
         | EventPayload::NotificationPermissionChanged(_)
         | EventPayload::AnimationEvent { .. }
+        | EventPayload::Pointer { .. }
         | EventPayload::ReducedMotionChanged(_) => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
