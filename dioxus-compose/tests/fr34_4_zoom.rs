@@ -526,7 +526,7 @@ mod widgets {
     pub fn screen() -> Element {
         rsx! {
             Column {
-                HtmlView { app: super::wide_bar, config: Some(super::config), height: 200.0 }
+                HtmlView { app: super::wide_bar, config: Some(super::config as fn() -> dioxus_compose::html::HtmlConfig), height: 200.0 }
             }
         }
     }
