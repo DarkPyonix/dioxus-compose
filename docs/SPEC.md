@@ -1644,9 +1644,9 @@ rsx! {
 
 #### 24.1 `AnimatedVisibility` (`Draft`)
 
-추적: 이슈 #128. compose-rust 변경은 필요하지 않습니다. 높이 접힘은 기존 `Modifier::Motion(role)`을 씁니다.
+추적: 이슈 #128. compose-rust 변경은 필요하지 않다. 높이 접힘은 기존 `Modifier::Motion(role)`을 쓴다.
 
-`visible`이 바뀔 때 자식이 나타나고 사라지는 동안 모션을 재생하는 컴포넌트입니다. 재생은 렌더러가 하고(D5), 이 컴포넌트는 언제 자식을 선언하고 언제 거둘지만 정합니다.
+`visible`이 바뀔 때 자식이 나타나고 사라지는 동안 모션을 재생하는 컴포넌트다. 재생은 렌더러가 하고(D5), 이 컴포넌트는 언제 자식을 선언하고 언제 거둘지만 정한다.
 
 ```rust
 rsx! {
@@ -1660,22 +1660,22 @@ rsx! {
 }
 ```
 
-- `visible: bool`, `enter: Enter`, `exit: Exit`, 선택적 `spec`입니다. `Enter`와 `Exit`의 요소는 `fade`, `slide(offset)`, `expand_vertically`와 `shrink_vertically`입니다. 페이드와 이동은 자식의 불투명도와 오프셋을 재생합니다. 높이 접힘은 컨테이너의 `Modifier::Motion(role)`(테마 모션의 animateContentSize)이 재생합니다.
-- 나타남: `visible`이 거짓에서 참이 되면 자식을 선언하고, 시작 값에서 끝 값으로 `StartAnimation`을 한 번 보냅니다. 재생하는 동안 이 컴포넌트는 다시 그려지지 않습니다.
-- 사라짐: `visible`이 참에서 거짓이 되면 자식을 그대로 둔 채 퇴장 애니메이션을 시작하고, 렌더러가 종료를 알린 뒤에 자식을 거둡니다. 종료 전에 `visible`이 다시 참이 되면 거두지 않고 현재 값에서 나타남으로 이어 갑니다.
-- 퇴장 순서: 자식은 퇴장 애니메이션(fade, slide)이 끝날 때까지 선언된 채로 남습니다. 끝나면 자식을 거두고, 그다음 컨테이너의 `Motion(role)`이 높이를 접습니다. `shrink_vertically`만 있으면 자식을 즉시 거둡니다. 이유: 프로토콜에는 렌더러의 크기 애니메이션이 끝났다는 이벤트가 없어서, 접힘이 끝난 뒤에 거두는 것을 지금은 관찰할 수 없다. 이벤트는 compose-rust 이슈 #TBD에서 요청한다. 거둬진 노드는 레이아웃을 차지하지 않습니다.
-- 모션 감소: `use_reduced_motion()`이 켜져 있으면 애니메이션 없이 즉시 선언하고 거둡니다.
-- 처음부터 `visible`이 참이면 나타남을 재생하지 않습니다.
+- `visible: bool`, `enter: Enter`, `exit: Exit`, 선택적 `spec`이다. `Enter`와 `Exit`의 요소는 `fade`, `slide(offset)`, `expand_vertically`와 `shrink_vertically`다. 페이드와 이동은 자식의 불투명도와 오프셋을 재생한다. 높이 접힘은 컨테이너의 `Modifier::Motion(role)`(테마 모션의 animateContentSize)이 재생한다.
+- 나타남: `visible`이 거짓에서 참이 되면 자식을 선언하고, 시작 값에서 끝 값으로 `StartAnimation`을 한 번 보낸다. 재생하는 동안 이 컴포넌트는 다시 그려지지 않는다.
+- 사라짐: `visible`이 참에서 거짓이 되면 자식을 그대로 둔 채 퇴장 애니메이션을 시작하고, 렌더러가 종료를 알린 뒤에 자식을 거둔다. 종료 전에 `visible`이 다시 참이 되면 거두지 않고 현재 값에서 나타남으로 이어 간다.
+- 퇴장 순서: 자식은 퇴장 애니메이션(fade, slide)이 끝날 때까지 선언된 채로 남는다. 끝나면 자식을 거두고, 그다음 컨테이너의 `Motion(role)`이 높이를 접는다. `shrink_vertically`만 있으면 자식을 즉시 거둔다. 이유: 프로토콜에는 렌더러의 크기 애니메이션이 끝났다는 이벤트가 없어서, 접힘이 끝난 뒤에 거두는 것을 지금은 관찰할 수 없다. 이벤트는 compose-rust 이슈 #TBD에서 요청한다. 거둬진 노드는 레이아웃을 차지하지 않는다.
+- 모션 감소: `use_reduced_motion()`이 켜져 있으면 애니메이션 없이 즉시 선언하고 거둔다.
+- 처음부터 `visible`이 참이면 나타남을 재생하지 않는다.
 
 수용 기준:
 
-1. `visible`이 거짓에서 참이 되면 자식 노드가 만들어지고 `StartAnimation`이 정확히 한 번 갑니다. 목 렌더러가 재생하는 동안 이 컴포넌트가 다시 그려지지 않습니다. 테스트 `fr24_1_enter_starts_one_animation`.
-2. 참에서 거짓이 되면 노드가 즉시 지워지지 않고, 목 렌더러가 종료 이벤트를 보낸 뒤에 지워집니다. 테스트 `fr24_1_exit_removes_after_end_event`.
-3. 퇴장 중에 `visible`이 참으로 돌아오면 노드는 지워지지 않고 `StartAnimation`이 현재 값에서 시작합니다. 테스트 `fr24_1_interrupted_exit_resumes`.
-4. 모션 감소가 켜진 상태에서는 `StartAnimation`이 나오지 않고, 노드는 한 번의 배치 안에 선언되고 지워집니다. 테스트 `fr24_1_reduced_motion_is_immediate`.
-5. 처음부터 참이면 `StartAnimation`이 없습니다. 테스트 `fr24_1_initially_visible_does_not_animate`.
-6. 퇴장 애니메이션(fade, slide)이 끝나기 전까지 자식은 선언된 채로 남고, 끝난 뒤에 노드가 지워집니다. 높이 접힘의 끝은 기다리지 않습니다. 목 렌더러가 종료 이벤트를 보내기 전에는 `Delete`가 나오지 않고, 보낸 뒤에 나옵니다. 테스트 `fr24_1_exiting_child_stays_composed_until_end`.
-7. 수동: 페이드와 이동이 여섯 디자인 시스템에서 각 시스템의 길이와 곡선으로 나오고, 높이 접힘과 펼침이 레이아웃을 부드럽게 밀고 당깁니다.
+1. `visible`이 거짓에서 참이 되면 자식 노드가 만들어지고 `StartAnimation`이 정확히 한 번 간다. 목 렌더러가 재생하는 동안 이 컴포넌트가 다시 그려지지 않는다. 테스트 `fr24_1_enter_starts_one_animation`.
+2. 참에서 거짓이 되면 노드가 즉시 지워지지 않고, 목 렌더러가 종료 이벤트를 보낸 뒤에 지워진다. 테스트 `fr24_1_exit_removes_after_end_event`.
+3. 퇴장 중에 `visible`이 참으로 돌아오면 노드는 지워지지 않고 `StartAnimation`이 현재 값에서 시작한다. 테스트 `fr24_1_interrupted_exit_resumes`.
+4. 모션 감소가 켜진 상태에서는 `StartAnimation`이 나오지 않고, 노드는 한 번의 배치 안에 선언되고 지워진다. 테스트 `fr24_1_reduced_motion_is_immediate`.
+5. 처음부터 참이면 `StartAnimation`이 없다. 테스트 `fr24_1_initially_visible_does_not_animate`.
+6. 퇴장 애니메이션(fade, slide)이 끝나기 전까지 자식은 선언된 채로 남고, 끝난 뒤에 노드가 지워진다. 높이 접힘의 끝은 기다리지 않는다. 목 렌더러가 종료 이벤트를 보내기 전에는 `Delete`가 나오지 않고, 보낸 뒤에 나온다. 테스트 `fr24_1_exiting_child_stays_composed_until_end`.
+7. 수동: 페이드와 이동이 여섯 디자인 시스템에서 각 시스템의 길이와 곡선으로 나오고, 높이 접힘과 펼침이 레이아웃을 부드럽게 밀고 당긴다.
 
 ### FR-25 Grid (`Draft`)
 
