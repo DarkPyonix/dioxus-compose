@@ -157,14 +157,10 @@ fn fr15_5_1_does_not_consume() {
     OUTER_HEARD.with(|heard| heard.set(0));
     let mut host = Host::new(nested_app);
     let target = subscribed(host.rebuild().unwrap(), ENTER_LEAVE);
+    // The hover handler does not consume, so each event bubbles on to the ancestor's
+    // handler as well: it hears the Enter and the Leave sent to the row.
     assert_eq!(send(&mut host, target, PointerKind::Enter), 0);
-    assert_eq!(send(&mut host, target, PointerKind::Leave), 0);
-
-    // The same hover handler leaves an event unconsumed, so the renderer goes on to the
-    // ancestor's subscription, whose handler hears the same kind.
-    let mut host = Host::new(nested_app);
-    let first = host.rebuild().unwrap().to_vec();
-    let outer = subscribed(&first, PointerKinds::ENTER.bits());
-    assert_eq!(send(&mut host, outer, PointerKind::Enter), 0);
     assert_eq!(OUTER_HEARD.with(Cell::get), 1);
+    assert_eq!(send(&mut host, target, PointerKind::Leave), 0);
+    assert_eq!(OUTER_HEARD.with(Cell::get), 2);
 }
