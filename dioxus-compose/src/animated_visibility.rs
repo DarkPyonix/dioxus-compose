@@ -280,13 +280,13 @@ pub fn AnimatedVisibility(
             i64::from(role)
         });
 
-    let alpha = (!reduced).then(|| Animated {
+    let alpha = (!reduced).then(|| Animated::<f32> {
         target: if leaving && exit.fade { 0.0 } else { 1.0 },
         spec,
         enter_from: (from_start && enter.fade).then_some(0.0),
         watch: if leaving && exit.fade { state.key } else { 0 },
     });
-    let offset = (!reduced).then(|| Animated {
+    let offset = (!reduced).then(|| Animated::<(f32, f32)> {
         target: if leaving {
             exit.slide.unwrap_or((0.0, 0.0))
         } else {
