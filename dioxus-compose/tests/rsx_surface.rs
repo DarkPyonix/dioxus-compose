@@ -231,6 +231,7 @@ fn surface() -> Element {
                     clip: true,
                     alpha: 0.5,
                     transform: (0.0, 1.0, -1.0, 0.0, 4.0, 0.0),
+                    island_zoom: 1.5,
                     AbsoluteBox {
                         offset: (12.0, 24.0),
                         required_size: (100.0, 40.0),
@@ -643,6 +644,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             vec![(P::ItemCount, int(3)), (P::OnRangeRequested, Handler)],
         ),
         (W::ScrollColumn, vec![]),
+        (W::AbsoluteBox, vec![(P::IslandZoom, float(1.5))]),
         (W::AbsoluteBox, vec![]),
         (W::ScrollRow, vec![]),
         (

@@ -40,6 +40,32 @@ pub fn use_window_size() -> WindowSize {
     compose_rust::window::window_size()
 }
 
+/// How large the screen is drawn, to read and to change while the app runs.
+///
+/// The factor is `k = os * 1.2^level`: the system's text size times the application's zoom
+/// level, which steps from -8 to 8 the way an editor's zoom does. The renderer reads the
+/// system's size, answers the zoom keys and keeps the level between runs. A page written
+/// with HTML elements is laid out in a viewport of the window's size divided by `k` and
+/// drawn at `k`, so this hook is for what the page cannot know about itself: a menu's
+/// "Zoom In", a status bar that shows the level.
+///
+/// ```ignore
+/// let zoom = use_zoom();
+/// rsx! {
+///     button { onclick: move |_| zoom.zoom_in(), "Zoom in" }
+///     span { "{zoom.get().k:.2}x, level {zoom.get().level}" }
+/// }
+/// ```
+///
+/// The component re-renders when the renderer reports a different `k`, `os` or `level`.
+/// `set_level` asks the renderer to draw at a level; it rides out on the window record in
+/// the batch the handler produces, and the answer is a new report. Nothing is enlarged
+/// before the renderer answers, so reading right after a set still gives the old value.
+pub fn use_zoom() -> compose_rust::ZoomHandle {
+    dioxus_core::use_hook(|| Rc::new(compose_rust::zoom::subscribe(dioxus_core::schedule_update())));
+    compose_rust::ZoomHandle::default()
+}
+
 /// Follows one node's size, and re-renders this component when its class changes.
 ///
 /// The token is the name the screen gives the node, because a node id belongs to the

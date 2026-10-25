@@ -288,6 +288,17 @@ pub struct PlanBridge {
     next_handler_id: u64,
     /// The scroll the page is placed in.
     viewport_node: Option<u32>,
+    /// Whether the page is the whole screen, and so is wrapped in an island root of its own
+    /// that names the factor it is drawn at. A page inside a widget tree hangs from a box
+    /// the tree already has, and that box names the factor.
+    wraps_island: bool,
+    /// The box that names the factor a whole-screen page is drawn at.
+    island_node: Option<u32>,
+    /// The factor the page is drawn at, and the one the island root last named.
+    zoom: f32,
+    zoom_sent: Option<f32>,
+    /// The size the scroll of a whole-screen page was last given.
+    viewport_sent: Option<(f32, f32)>,
     nodes: HashMap<PlanKey, Placed>,
     handlers: HashMap<u64, BridgeHandler>,
     previous: Option<Plan>,
@@ -338,6 +349,11 @@ impl PlanBridge {
             next_node_id: first_node,
             next_handler_id: first_handler,
             viewport_node: None,
+            wraps_island: false,
+            island_node: None,
+            zoom: 1.0,
+            zoom_sent: None,
+            viewport_sent: None,
             nodes: HashMap::new(),
             handlers: HashMap::new(),
             previous: None,
@@ -429,6 +445,47 @@ impl PlanBridge {
         }
     }
 
+    /// Wraps the page in an `AbsoluteBox` that fills the window and names the factor the
+    /// page is drawn at, for a page that is the whole screen. Call before the first plan.
+    pub(crate) fn wrap_in_island(&mut self) {
+        self.wraps_island = true;
+    }
+
+    /// The factor the page is drawn at, written on the island root with the next plan.
+    pub(crate) fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom;
+    }
+
+    /// Names the factor on the island root when it differs from the one it last named, and
+    /// gives the scroll the viewport's size when that changed.
+    fn sync_zoom(&mut self, viewport: (f32, f32), batch: &mut Batch) {
+        let Some(island) = self.island_node else {
+            return;
+        };
+        if let Some(scroll) = self.viewport_node
+            && self.viewport_sent != Some(viewport)
+        {
+            self.viewport_sent = Some(viewport);
+            batch.write(Mutation::SetModifier {
+                node_id: scroll,
+                index: 0,
+                modifier: Modifier::RequiredSize {
+                    width: viewport.0,
+                    height: viewport.1,
+                },
+            });
+        }
+        if self.zoom_sent.is_some_and(|sent| sent.to_bits() == self.zoom.to_bits()) {
+            return;
+        }
+        self.zoom_sent = Some(self.zoom);
+        batch.write(Mutation::SetProp {
+            node_id: island,
+            property: PropertyKind::IslandZoom,
+            value: PropertyValue::Float(self.zoom),
+        });
+    }
+
     /// Writes into `batch` what turns the renderer's tree into `plan`: everything on the
     /// first call, what changed since the previous plan after that.
     ///
@@ -448,16 +505,31 @@ impl PlanBridge {
         match self.previous.take() {
             None => {
                 let viewport_node = self.create(batch, WidgetKind::ScrollColumn);
-                batch.write(Mutation::SetModifier {
-                    node_id: viewport_node,
-                    index: 0,
-                    modifier: Modifier::FillMaxWidth,
-                });
-                batch.write(Mutation::SetModifier {
-                    node_id: viewport_node,
-                    index: 1,
-                    modifier: Modifier::FillMaxHeight,
-                });
+                if self.wraps_island {
+                    // An island box measures its children without bounds, so the scroll
+                    // cannot fill what it is in. It is given the window's size instead,
+                    // in the page's own pixels.
+                    batch.write(Mutation::SetModifier {
+                        node_id: viewport_node,
+                        index: 0,
+                        modifier: Modifier::RequiredSize {
+                            width: viewport.0,
+                            height: viewport.1,
+                        },
+                    });
+                    self.viewport_sent = Some(viewport);
+                } else {
+                    batch.write(Mutation::SetModifier {
+                        node_id: viewport_node,
+                        index: 0,
+                        modifier: Modifier::FillMaxWidth,
+                    });
+                    batch.write(Mutation::SetModifier {
+                        node_id: viewport_node,
+                        index: 1,
+                        modifier: Modifier::FillMaxHeight,
+                    });
+                }
                 self.viewport_node = Some(viewport_node);
                 let page = self.build(batch, &plan.root, None, clicks);
                 batch.write(Mutation::Insert {
@@ -466,6 +538,25 @@ impl PlanBridge {
                     index: 0,
                 });
                 self.play(batch, &plan, Vec::new(), Vec::new(), clicks);
+                if self.wraps_island {
+                    let island = self.create(batch, WidgetKind::AbsoluteBox);
+                    batch.write(Mutation::SetModifier {
+                        node_id: island,
+                        index: 0,
+                        modifier: Modifier::FillMaxWidth,
+                    });
+                    batch.write(Mutation::SetModifier {
+                        node_id: island,
+                        index: 1,
+                        modifier: Modifier::FillMaxHeight,
+                    });
+                    batch.write(Mutation::Insert {
+                        parent_id: island,
+                        node_id: viewport_node,
+                        index: 0,
+                    });
+                    self.island_node = Some(island);
+                }
             }
             Some(previous) => {
                 self.apply_changes(batch, &previous, &plan, &pinned, clicks);
@@ -482,6 +573,7 @@ impl PlanBridge {
                 }
             }
         }
+        self.sync_zoom(viewport, batch);
         self.sync_pointer(batch, clicks);
         self.previous = Some(plan);
     }

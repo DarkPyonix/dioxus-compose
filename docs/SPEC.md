@@ -1781,11 +1781,11 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 
 HTML 화면은 VS Code처럼 페이지 전체를 확대한다. OS 글자 크기만 따로 키우지 않는다(소유자 결정 2026-10-03: "근데 그럼 vscode는 어떻게 그 부분이 문제가 없는건데? 개 기준으로 생각하면 되잖아"). VS Code는 `window.zoomLevel`(⌘+, ⌘-, ⌘0, 설정에 저장)로 UI 전체를 확대하고, 그래서 22px 행, 35px 탭, 아이콘이 글자와 같은 비율로 커져 잘리거나 겹치지 않는다. 검토는 compose-rust의 `.scratch/reviews/html-text-scaling.md`((e)안)에 있다.
 
-- **확대 배율 k.** HTML 세계 전체가 k배로 그려진다. Host는 CSS 뷰포트를 `창 크기 / k`로 잡고 CSS px로 배치한다. Renderer는 HTML 섬(`AbsoluteBox` 아래)을 `Density(density × k, fontScale = 1)`로 그린다. 그래서 글자, 상자, 테두리, 아이콘, 적중 영역, HTML 안의 위젯이 모두 같이 커지고, 위젯 안의 역할 텍스트가 두 번 커지지 않는다.
+- **확대 배율 k.** HTML 세계 전체가 k배로 그려진다. Host는 CSS 뷰포트를 `창 크기 / os`로 잡고 CSS px로 배치한다. 창과 노드 크기는 Renderer가 줌된 dp(물리 px / (density × 1.2^수준))로 보내므로, 이것은 표시 dp로 잰 `창 / k`와 같은 값이다(브라우저 확대와 같은 뜻, compose-rust #291 결정 (A), 2026-10-25). Renderer는 HTML 섬(`AbsoluteBox` 아래)을 `Density(density × k, fontScale = 1)`로 그린다. 그래서 글자, 상자, 테두리, 아이콘, 적중 영역, HTML 안의 위젯이 모두 같이 커지고, 위젯 안의 역할 텍스트가 두 번 커지지 않는다.
 - **k의 값.** `k = OS 글자 배율 × 1.2^수준`이고, 수준은 -8에서 8 사이의 정수다(VS Code와 같은 단계). 데스크톱은 OS 글자 배율을 따른다(소유자 결정). ⌘+, ⌘-, ⌘0(다른 플랫폼은 Ctrl)로 수준을 바꾸고, 앱이 그 키를 먼저 쓰지 않았을 때만 Renderer가 받는다. 수준은 UI 쪽 상태이므로 Renderer가 앱 ID마다 플랫폼 설정 저장소에 저장한다(D5, compose-rust FR-43). Host는 바뀐 k를 이벤트로 받고, 메뉴의 확대 명령처럼 앱이 직접 정할 때는 창 노드의 수준 속성으로 바꾼다. dioxus-compose는 그 둘을 확대 수준을 읽고 바꾸는 API와 훅으로 준다.
 - **측정.** 텍스트와 위젯의 측정(PR-2.1)은 그리는 것과 같은 Density로 잰다. 측정 요청이 k를 담는다(compose-rust).
 - **k가 바뀔 때.** 전체 재배치다. 드문 일이라 프레임 예산(NFR-9) 문제가 아니다. Host의 측정 캐시를 비운다.
-- **미디어 쿼리.** 폭 쿼리는 `창 크기 / k`로, `resolution`은 `density × k`로 판정한다. 브라우저 확대와 같다.
+- **미디어 쿼리.** 폭 쿼리는 위의 CSS 뷰포트(`창 크기 / os`, 창은 줌된 dp)로, `resolution`은 `density × k`로 판정한다. 브라우저 확대와 같다.
 - **rem/em만 키우기**(`<meta name="text-scale" content="scale">`와 같은 방식)는 앱이 옵트인할 때만 쓴다. M14 뒤의 일이다.
 - Web(Kotlin/Wasm) 대상에서는 브라우저 확대가 이미 장치 픽셀 비율로 들어오므로 k의 시작값은 1이다.
 

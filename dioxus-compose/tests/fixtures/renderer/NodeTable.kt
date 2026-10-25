@@ -533,6 +533,26 @@ class NodeTable {
                 PropertyKind.OnDismiss,
                 -> true
 
+                // Pointer subscription, cursor and selectability belong to the nodes a
+                // pointer can sit over as a region: the containers, text and the HTML
+                // region root. A picker takes only its value, range and events. The interpreter
+                // does not act on them yet.
+                PropertyKind.OnPointer,
+                PropertyKind.PointerKinds,
+                PropertyKind.Cursor,
+                PropertyKind.UserSelect,
+                -> widget == WidgetKind.Text ||
+                    widget == WidgetKind.Column ||
+                    widget == WidgetKind.Row ||
+                    widget == WidgetKind.Box ||
+                    widget == WidgetKind.Card ||
+                    widget == WidgetKind.Surface ||
+                    widget == WidgetKind.ScrollColumn ||
+                    widget == WidgetKind.ScrollRow ||
+                    widget == WidgetKind.SelectionContainer ||
+                    widget == WidgetKind.Spacer ||
+                    widget == WidgetKind.AbsoluteBox
+
                 // A Tooltip's text is the explanation it shows, and its description in the
                 // accessibility tree. A destination's is its label.
                 PropertyKind.Text ->
@@ -721,11 +741,19 @@ class NodeTable {
                 PropertyKind.SoftWrap,
                 -> widget == WidgetKind.Text
 
+                // How large an HTML island is drawn. Only the island's root has one.
+                PropertyKind.IslandZoom -> widget == WidgetKind.AbsoluteBox
+
                 // How many a badge counts. Nothing else counts anything.
                 PropertyKind.Count -> widget == WidgetKind.Badge
 
                 // Whether a split pane's side pane may be folded away.
                 PropertyKind.Collapsible -> widget == WidgetKind.SplitPane
+
+                // What a button is apart from its emphasis: a plain one, or a key of a
+                // dense grid. Only a button has a kind; a chip or a floating action is
+                // already its own component.
+                PropertyKind.ButtonKind -> widget == WidgetKind.Button
 
                 // A code editor's lists, its tab width and the handlers only it reports to.
                 PropertyKind.Decorations,
