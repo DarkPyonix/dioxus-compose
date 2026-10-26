@@ -105,7 +105,8 @@
        text sizes from a TextMeasurer
   -&gt; DisplayList                       boxes in paint order, absolute rectangles
   -&gt; Plan, and diff against the last   drawing elements nested in their containers
-  -&gt; renderer (Compose)                planned: the bridge is not built yet</code></pre>
+  -&gt; PlanBridge                        writes the plan into compose-rust's batch
+  -&gt; renderer (Compose)                draws it (not yet confirmed on screen)</code></pre>
 </figure>
     <p>
       단계마다 들여다볼 수 있는 값이고, 예제는 그렇게 테스트됩니다. <code>DisplayList</code> 는 레이아웃이
@@ -120,10 +121,38 @@
       Rust 의 한 곳에서 더해집니다.
     </p>
     <p>
-      아직 없는 것이 둘입니다. 계획을 compose-rust 의 <code>AbsoluteBox</code> 와 그리기 모디파이어로 넘기는
-      다리가 <span class="pill partial">부분</span> 이고, Host 가 레이아웃 도중 텍스트 조각의 크기를
-      Compose 에 묻는 동기 호출도 그렇습니다
-      (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
+      계획을 렌더러로 나르는 것은 <code>dioxus_compose::html::PlanBridge</code> 입니다. 첫 프레임에는
+      트리 전체를 compose-rust 의 배치(batch)에 쓰고, 그 뒤로는 계획 diff 가 알려 주는 것(만들어지거나
+      옮겨지거나 지워진 노드, 값이 바뀐 속성과 모디파이어)만 씁니다. 그래서 바뀐 것이 없는 프레임은
+      아무것도 보내지 않습니다. 계획의 모든 종류는 compose-rust 위젯이 됩니다. <code>AbsoluteBox</code>,
+      <code>Box</code>, <code>Text</code>, <code>Image</code>, <code>ScrollColumn</code>,
+      <code>ScrollRow</code>, <code>TextField</code>, <code>Checkbox</code>, <code>RadioButton</code>,
+      <code>Dropdown</code> 입니다.
+    </p>
+    <ul>
+      <li>모서리는 하나씩(<code>CornerEach</code>), 물리적 순서인 왼쪽 위, 오른쪽 위, 오른쪽 아래, 왼쪽
+        아래로 보냅니다.</li>
+      <li><code>box-shadow</code> 목록은 마지막 것부터 보냅니다. 그래야 브라우저처럼 CSS 의 첫 그림자가
+        맨 위에 옵니다.</li>
+      <li><code>visible</code> 이 아닌 <code>overflow</code> 는 모두 클립으로 보냅니다.</li>
+      <li>배경 그라디언트와 이미지는 칠하는 영역 크기의 상자가 되고, 타일마다 상자가 하나씩입니다.</li>
+      <li>페이지는 창 크기의 세로 스크롤 안에 놓입니다. 페이지 안의 스크롤 컨테이너는 렌더러에서
+        스크롤되고, 스크롤 위치는 렌더러가 가집니다.</li>
+    </ul>
+    <p>
+      이벤트도 같은 길로 돌아옵니다. 클릭 핸들러가 있는 상자, label, 버튼, submit 입력, 그리고 링크 같은
+      인라인 요소의 텍스트를 누르는 것, 타이핑한 글자(<code>oninput</code>), 입력란에서 포커스가 떠나는
+      것(<code>onchange</code>), 한 줄 입력란의 Enter(폼을 제출합니다), 체크박스와 라디오 토글, select
+      선택입니다. 각각 그 DOM 노드의 Dioxus 핸들러에 닿습니다.
+    </p>
+    <p>
+      다리는 <span class="pill partial">부분</span> 입니다. 렌더러가 받는 레코드로 Host 에서 테스트하고,
+      화면에 그려지는 것은 아직 렌더러를 돌려 확인하지 않았습니다. compose-rust 에 아직 동기 측정 호출이
+      없으므로 텍스트는 여전히 Parley 가 잽니다. compose-rust 의 <code>Text</code> 가 글꼴 패밀리와
+      기울임을 받지 않으므로 텍스트는 디자인 시스템의 글꼴로 그려지고, <code>font-family</code>,
+      <code>font-style</code>, <code>text-decoration</code> 은 아직 화면에 닿지 않습니다. compose-rust
+      의 <code>Image</code> 는 그림을 통째로 가운데에 그리므로, 비율이 다른 <code>object-fit: fill</code>
+      이미지는 여백을 두고 그려집니다(<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>
 
     <h2 id="widgets">위젯 경로</h2>

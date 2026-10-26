@@ -14,7 +14,9 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
-pattern='SPEC|FR-[0-9]|NFR-[0-9]|PR-[0-9]|INTENT'
+# SPEC and INTENT only as whole words, so a word that contains them ("SPECIMEN") is not a
+# citation. Spelled without \b, which BSD and GNU grep do not agree on.
+pattern='(^|[^A-Za-z])(SPEC|INTENT)([^A-Za-z]|$)|FR-[0-9]|NFR-[0-9]|PR-[0-9]'
 
 # Paths where the documents are the subject rather than a citation. The publishing script
 # decides which files to strip and its test asserts on those names; one test reads the
@@ -22,7 +24,7 @@ pattern='SPEC|FR-[0-9]|NFR-[0-9]|PR-[0-9]|INTENT'
 # tell a run those three files are not its to edit, which cannot be said without saying
 # which files. A citation is a claim about where a reason came from, and none of these is
 # that.
-exempt='^(\.github/scripts/release/sync-release\.sh|\.github/scripts/release/test-sync-release\.sh|scripts/launch-agent\.sh|scripts/launch-agy\.sh|scripts/launch-codex\.sh|scripts/tests/no-spec-citations\.test\.sh|scripts/tests/planning-docs\.test\.sh|scripts/tests/spec-cites-real-tests\.test\.sh|scripts/tests/agent-launchers\.test\.sh)$'
+exempt='^(\.github/scripts/release/sync-release\.sh|\.github/scripts/release/test-sync-release\.sh|scripts/launch-agent\.sh|scripts/launch-agy\.sh|scripts/launch-codex\.sh|scripts/tests/no-spec-citations\.test\.sh|scripts/tests/planning-docs\.test\.sh|scripts/tests/spec-cites-real-tests\.test\.sh|scripts/spec-cited-tests\.sh|scripts/tests/spec-cited-tests\.test\.sh|scripts/tests/agent-launchers\.test\.sh)$'
 
 files=()
 while IFS= read -r file; do

@@ -11,8 +11,10 @@
 
 use std::borrow::Cow;
 
+use crate::paint::display_list::Rgba;
 use parley::{
-    FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight, StyleProperty,
+    FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight,
+    OverflowWrap as ParleyOverflowWrap, StyleProperty, WordBreakStrength,
 };
 
 /// The font properties that decide how large a run of text is.
@@ -31,6 +33,39 @@ pub struct TextStyle {
     pub letter_spacing: f32,
     /// Height of one line.
     pub line_height: TextLineHeight,
+    /// `word-break`: where inside words a line may break.
+    pub word_break: WordBreak,
+    /// `overflow-wrap` (and its alias `word-wrap`): whether a word that does not fit a line
+    /// on its own may be broken.
+    pub overflow_wrap: OverflowWrap,
+}
+
+/// CSS `word-break`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WordBreak {
+    /// Lines break at the places the script allows: spaces, hyphens, and between CJK
+    /// characters.
+    #[default]
+    Normal,
+    /// Lines may break between any two characters.
+    BreakAll,
+    /// Lines do not break between CJK characters; spaces break as they do in `Normal`.
+    KeepAll,
+}
+
+/// CSS `overflow-wrap`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OverflowWrap {
+    /// A word that is too long for its line overflows it.
+    #[default]
+    Normal,
+    /// A word that is too long for a line of its own is broken between characters, and
+    /// those break points count when the min-content width is worked out, so the box may
+    /// shrink to one character.
+    Anywhere,
+    /// Like `Anywhere`, but the break points are left out of the min-content width, so the
+    /// box does not shrink below its longest word.
+    BreakWord,
 }
 
 impl TextStyle {
@@ -153,6 +188,41 @@ pub struct TextMeasureRequest<'a> {
     pub white_space: TextWhiteSpace,
 }
 
+/// A stretch of one inline formatting context's text that differs from the rest of it, in
+/// the properties compose-rust's spans carry: bold, italic, the two lines, a colour and a
+/// font family. Everything else (size, letter spacing, line height) is the same across the
+/// whole text, which is why these can ride beside it as spans.
+///
+/// The range counts bytes of the text the request carries (after white space collapsing and
+/// `text-transform`), so it indexes the same string the renderer measures and draws.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpanRun {
+    pub start: usize,
+    pub end: usize,
+    /// Bolder than the text around it.
+    pub bold: bool,
+    /// Slanted where the text around it is not.
+    pub italic: bool,
+    pub underline: bool,
+    pub line_through: bool,
+    /// The run's colour when it is not the text's.
+    pub color: Option<Rgba>,
+    /// The run's `font-family` list when it is not the text's.
+    pub font_family: Option<Vec<String>>,
+}
+
+impl SpanRun {
+    /// Whether `other` says the same about its letters, wherever it sits.
+    pub(crate) fn same_look(&self, other: &SpanRun) -> bool {
+        self.bold == other.bold
+            && self.italic == other.italic
+            && self.underline == other.underline
+            && self.line_through == other.line_through
+            && self.color == other.color
+            && self.font_family == other.font_family
+    }
+}
+
 /// A [`TextMeasurer`]'s answer, in CSS pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct TextMetrics {
@@ -173,6 +243,34 @@ pub struct TextMetrics {
 /// is given its final one). The answer must depend only on the request.
 pub trait TextMeasurer {
     fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics;
+
+    /// Like [`measure`](TextMeasurer::measure) for text whose runs differ in weight, slant,
+    /// lines, colour or font family: a paragraph with a bold phrase in it. A measurer that
+    /// can size such runs does; the default ignores them and answers for the text as one
+    /// style, which is what a measurer that shapes with a single font can do.
+    fn measure_spans(&mut self, request: &TextMeasureRequest<'_>, runs: &[SpanRun]) -> TextMetrics {
+        let _ = runs;
+        self.measure(request)
+    }
+
+    /// Called when a layout pass is over. A measurer that cannot answer a question while
+    /// the pass runs (it answers with an estimate and keeps the question) resolves what it
+    /// kept here, all at once, and returns `true` when its answers changed, so the layout
+    /// runs again with them. The default has nothing to resolve.
+    fn settle(&mut self) -> bool {
+        false
+    }
+
+    /// Called when what the measurer's answers depend on changed (the theme, the design
+    /// system), so answers it kept are stale. The default keeps nothing.
+    fn invalidate(&mut self) {}
+
+    /// Called when the page is zoomed by `zoom`: the factor the page is drawn at, so the
+    /// text has to be measured at the same one. A measurer that keeps answers drops the
+    /// ones made at another zoom. The default has no zoom to apply.
+    fn set_zoom(&mut self, zoom: f32) {
+        let _ = zoom;
+    }
 }
 
 impl<F> TextMeasurer for F
@@ -235,6 +333,16 @@ impl TextMeasurer for ParleyMeasurer {
             FontStyle::Normal
         }));
         builder.push_default(StyleProperty::LetterSpacing(style.letter_spacing));
+        builder.push_default(StyleProperty::WordBreak(match style.word_break {
+            WordBreak::Normal => WordBreakStrength::Normal,
+            WordBreak::BreakAll => WordBreakStrength::BreakAll,
+            WordBreak::KeepAll => WordBreakStrength::KeepAll,
+        }));
+        builder.push_default(StyleProperty::OverflowWrap(match style.overflow_wrap {
+            OverflowWrap::Normal => ParleyOverflowWrap::Normal,
+            OverflowWrap::Anywhere => ParleyOverflowWrap::Anywhere,
+            OverflowWrap::BreakWord => ParleyOverflowWrap::BreakWord,
+        }));
         builder.push_default(StyleProperty::LineHeight(match style.line_height {
             // The same reading of `normal` blitz-dom applies, so the default measurer and
             // blitz-dom's own text agree.

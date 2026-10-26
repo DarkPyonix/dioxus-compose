@@ -16,19 +16,38 @@
 //! application's [`ImageResolver`]: it names the asset for a URL when the plan is built,
 //! and may tell layout an image's natural size. Without one, an image draws nothing.
 //!
-//! Text is sized by a [`TextMeasurer`] the caller supplies, so the engine that draws the
-//! text can also be the one that decides how much room it takes. [`ParleyMeasurer`] is the
-//! default.
+//! Text is sized by a [`TextMeasurer`], so the engine that draws the text can also be the
+//! one that decides how much room it takes. The default is [`RendererMeasurer`], which asks
+//! the renderer with the measure call, once per layout pass for every run the pass needs,
+//! and answers with [`ParleyMeasurer`] where no renderer is there to ask.
 //!
 //! JavaScript is never run. A `<script>` element is an ordinary element that the
 //! user-agent stylesheet hides.
+//!
+//! CSS `transform` is carried as a 2D matrix about `transform-origin` on the entry
+//! ([`NodeEntry::transform`]) and as a modifier of the plan node ([`PlanModifier::Transform`]);
+//! a pointer is hit-tested against the transformed shape. 3D transforms are left out, and
+//! named in [`DisplayList::skipped_transforms`]. A CSS transition or `@keyframes` animation
+//! of `opacity`, `transform` or `background-color` is described for the renderer to play
+//! ([`TransitionStart`], [`NodeEntry::animations`]), and one that changes layout is ticked by
+//! the Host ([`HtmlDom::set_time`], [`HtmlDom::needs_frames`], [`HtmlDom::tick`]).
 //!
 //! Events go back to the Dioxus handlers of the DOM nodes they land on: clicks through
 //! [`HtmlDom::click`], with what a browser does after a click (a checkbox ticks, a submit
 //! button submits its form), and the `input`, `change` and `submit` events of form controls
 //! through [`HtmlDom::input`], [`HtmlDom::change`], [`HtmlDom::select`],
 //! [`HtmlDom::check`] and [`HtmlDom::submit`], which a renderer calls with what the user
-//! committed in its own fields.
+//! committed in its own fields. Keys go to the focused element's `keydown`, `keypress` and
+//! `keyup` handlers through [`HtmlDom::key_down`] and [`HtmlDom::key_up`], and focus to its
+//! `focus`, `blur`, `focusin` and `focusout` handlers through [`HtmlDom::focus`] and
+//! [`HtmlDom::blur`]. `prefers-color-scheme` is answered with the configured scheme until
+//! [`HtmlDom::set_color_scheme`] changes it.
+//!
+//! [`launch`] runs such an app in a window, the way [`crate::launch`] runs one written with
+//! the Compose widgets: every frame that changes something is laid out, planned, and
+//! written to compose-rust by a [`PlanBridge`], which sends only what differs from the
+//! frame before. [`HtmlRuntime`] is that path as a compose-rust runtime, for a Host built
+//! by hand.
 //!
 //! The names live here rather than at the crate root because the Compose widget path
 //! already uses some of them there for something else: [`Brush`], [`ColorScheme`] and
@@ -50,20 +69,33 @@ use crate::dom;
 use crate::layout::{self, image};
 use crate::paint::build;
 
+mod motion_events;
+mod runtime;
+
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
 pub type NodeId = usize;
 
-pub use crate::dom::{HtmlConfig, HtmlDom, element_by_id};
+pub use crate::dom::{
+    Cursor, HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerSubscription, PointerType,
+    TransitionEventData, UserSelect, WheelMode, element_by_id,
+};
+pub use crate::html_widget::WidgetView;
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
 pub use crate::layout::measure::{
-    ParleyMeasurer, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
-    TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint,
+    OverflowWrap, ParleyMeasurer, SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer,
+    TextMetrics, TextStyle, TextWhiteSpace, WhiteSpaceCollapse, WidthConstraint, WordBreak,
+};
+pub use crate::layout::renderer_measure::RendererMeasurer;
+pub use crate::paint::bridge::{
+    AnimationTarget, BridgeEvent, BridgeHandler, ClickTargets, PlanBridge, widget_for,
 };
 pub use crate::paint::display_list::{
-    BackgroundImage, BackgroundLayer, Border, BorderLine, BoxShadow, Corners, DisplayList,
-    DisplayListDiff, GradientStop, InputField, InputKind, LinearGradient, NodeEntry, ObjectFit,
-    RadialGradient, Radius, Rect, ReplacedImage, Rgba, ScrollContainer, Sides, TextAlign, TextRun,
-    TileRepeat,
+    AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
+    BorderLine, BoxShadow, Corners, DisplayList, DisplayListDiff, Easing, FillMode, GradientStop,
+    InputField, InputKind, Iterations, Keyframe, LinearGradient, Matrix2D, NodeEntry, ObjectFit,
+    Outline, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker,
+    ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun,
+    TileRepeat, Transform2D, TransformFunction, TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,
@@ -72,6 +104,11 @@ pub use crate::paint::plan::{
 };
 pub use blitz_dom::BaseDocument;
 pub use blitz_traits::shell::ColorScheme;
+pub use motion_events::{
+    onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart, transition,
+};
+pub use runtime::{HtmlRuntime, launch, runtime_for};
+pub(crate) use runtime::{css_extent, page_zoom};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
@@ -104,10 +141,12 @@ pub fn layout_document_with(
     base_url: Option<&str>,
 ) -> DisplayList {
     let mut lookup = image::ImageLookup::new(images, base_url);
-    layout::resolve_styles(doc);
+    layout::resolve_styles(doc, 0.0);
     image::apply_natural_sizes(doc, &mut lookup);
+    // A bare document has no page behind it to listen.
+    layout::set_listening(Default::default());
     let texts = layout::run_layout(doc, measurer);
-    build::build_display_list(doc, &texts, &mut lookup)
+    build::build_display_list(doc, &texts, &mut lookup, None)
 }
 
 /// What an app needs in scope to write `rsx!` with HTML elements.
@@ -116,7 +155,13 @@ pub fn layout_document_with(
 /// widgets as `dioxus_elements`, and this one names the HTML elements, so an `rsx!` block
 /// takes one or the other.
 pub mod prelude {
-    pub use super::{AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize};
+    pub use super::{
+        AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, TransitionEventData, WidgetView,
+        launch, onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart,
+        transition,
+    };
+    pub use crate::hooks::use_zoom;
+    pub use compose_rust::{Zoom, ZoomHandle};
     pub use dioxus_core::{Element, VirtualDom};
     pub use dioxus_core_macro::rsx;
     pub use dioxus_html as dioxus_elements;

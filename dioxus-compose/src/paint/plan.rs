@@ -48,10 +48,11 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
-use crate::layout::measure::TextStyle;
+use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
-    BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
-    Sides, TextAlign, TileRepeat,
+    Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
+    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat,
+    Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -65,6 +66,11 @@ pub struct Plan {
     pub root: PlanNode,
     /// Every brush a [`PlanModifier::BackgroundBrush`] in the tree names, once.
     pub brushes: BTreeMap<BrushId, Brush>,
+    /// The transitions the display list says began, by the node they play on. These are
+    /// events: they are in the plan built for the layout that started them and in none
+    /// after, and [`diff`] reports each as a [`PlanChange::AnimationStarted`] when the
+    /// plan it compares to lacks it.
+    pub transitions: Vec<(PlanKey, Animation)>,
 }
 
 /// Names a [`Brush`] by its content: two equal brushes have the same id, in this plan and
@@ -172,6 +178,10 @@ pub enum PlanKey {
     InheritedClip(NodeId),
     /// The image of an `<img>`.
     Image(NodeId),
+    /// The `outline` of a box: a border-only box around the border box, placed beside the
+    /// box (or inside it, when the box is transformed) so that it can draw outside the
+    /// box's bounds.
+    Outline(NodeId),
 }
 
 impl PlanKey {
@@ -187,7 +197,8 @@ impl PlanKey {
             | PlanKey::ScrollRow(node)
             | PlanKey::ScrollContent(node)
             | PlanKey::InheritedClip(node)
-            | PlanKey::Image(node) => Some(node),
+            | PlanKey::Image(node)
+            | PlanKey::Outline(node) => Some(node),
         }
     }
 }
@@ -197,9 +208,13 @@ impl PlanKey {
 pub struct PlanNode {
     pub key: PlanKey,
     pub kind: PlanKind,
-    /// In a fixed order: offset, size, alpha, shape, shadows, background, background
-    /// brushes, border, clip.
+    /// In a fixed order: offset, size, transform, alpha, shape, shadows, background,
+    /// background brushes, border, clip.
     pub modifiers: Vec<PlanModifier>,
+    /// The `@keyframes` animations a renderer plays on the node for as long as they are
+    /// listed. Each plays on the node's own value of the property it names, over the
+    /// node's modifiers.
+    pub animations: Vec<Animation>,
     /// Back to front.
     pub children: Vec<PlanNode>,
 }
@@ -240,13 +255,31 @@ impl PlanKind {
 /// The text of a [`PlanKind::Text`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanText {
+    /// The element the text belongs to: the innermost element that holds all of it, which
+    /// may be an inline element (a link, an emphasis) inside the box the run is drawn in.
+    /// A click on the run is a click on this element.
+    pub owner: NodeId,
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
+    /// The lines drawn through or under the text.
+    pub decoration: TextDecoration,
+    /// How lines sit in the node's width. With [`TextAlign::Justify`] and `soft_wrap`, the
+    /// node's width is the width the lines are stretched to, every line but the last.
     pub align: TextAlign,
     /// Whether lines wrap at the node's width. A run laid out as one unconstrained line
     /// does not.
     pub soft_wrap: bool,
+    /// `Some(width)` when `text-overflow: ellipsis` cuts the text: lines that reach past
+    /// `width` end in an ellipsis in the place of what is cut. The renderer draws it; the
+    /// Host does not shape the ellipsis.
+    pub ellipsis: Option<f32>,
+    /// Whether the text is a list marker, or starts with one.
+    pub marker: RunMarker,
+    /// The runs of `text` that differ in weight, slant, lines, colour or font family, with
+    /// their colours resolved. Empty for text in one style; the bridge then sends the text
+    /// as one run, and otherwise as the text and its spans together.
+    pub spans: Vec<SpanRun>,
 }
 
 /// The image of a [`PlanKind::Image`]. The node is the `<img>` element's content box.
@@ -308,6 +341,10 @@ pub enum PlanModifier {
         width: f32,
         height: f32,
     },
+    /// Draws the node, and everything inside it, through a 2D matrix about a point of the
+    /// node. The node keeps the place and size layout gave it: this moves how it is drawn,
+    /// and where a pointer lands on it, and nothing else.
+    Transform(Transform2D),
     /// The width a text run is laid out in. Its height is the renderer's.
     Width(f32),
     /// Applies to the node and everything inside it as one group: the group is composed
@@ -319,8 +356,8 @@ pub enum PlanModifier {
     },
     /// Rounds each corner by its own radius.
     CornerEach(Corners<f32>),
-    /// One outer shadow, in the node's shape. A box with several shadows has several,
-    /// back to front.
+    /// One outer shadow, in the node's shape. A box with several shadows has several, in
+    /// CSS order: the first is drawn on top.
     Shadow {
         x: f32,
         y: f32,
@@ -357,6 +394,7 @@ pub enum PlanModifier {
 pub enum ModifierSlot {
     Offset,
     RequiredSize,
+    Transform,
     Width,
     Alpha,
     Shape,
@@ -401,6 +439,14 @@ pub enum PlanChange {
     },
     /// The node no longer has a modifier in `slot`.
     ModifierRemoved { key: PlanKey, slot: ModifierSlot },
+    /// The `@keyframes` animations on the node are now these: a renderer starts the ones it
+    /// is not playing and stops the ones that are no longer listed.
+    AnimationsChanged {
+        key: PlanKey,
+        animations: Vec<Animation>,
+    },
+    /// A transition began on the node.
+    AnimationStarted { key: PlanKey, animation: Animation },
 }
 
 /// Which colour of a node is being resolved.
@@ -557,6 +603,15 @@ struct Builder<'a> {
     slots: Vec<Slot>,
     /// Per placed entry: the slot its descendants go into.
     content: HashMap<NodeId, usize>,
+    /// What each entry draws, in document coordinates, with every transform around it
+    /// applied.
+    drawn: Vec<Option<Rect>>,
+    /// The animations of the nodes that have any, by plan key.
+    animated: HashMap<PlanKey, Vec<Animation>>,
+    transitions: &'a [crate::paint::display_list::TransitionStart],
+    /// The boxes that are the place of a Compose widget. They stay containers while empty,
+    /// because the renderer hangs the widget tree under them.
+    widget_places: HashSet<PlanKey>,
 }
 
 impl<'a> Builder<'a> {
@@ -571,7 +626,24 @@ impl<'a> Builder<'a> {
             .enumerate()
             .map(|(index, entry)| (entry.node, index))
             .collect();
-        let mut subtree: Vec<Option<Rect>> = entries.iter().map(drawn_bounds).collect();
+        let worlds = world_matrices(entries, &by_node);
+        let drawn: Vec<Option<Rect>> = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let bounds = drawn_bounds(entry)?;
+                Some(match worlds[index] {
+                    Some(world) => bounds_of(&[
+                        world.apply(bounds.x, bounds.y),
+                        world.apply(bounds.right(), bounds.y),
+                        world.apply(bounds.right(), bounds.bottom()),
+                        world.apply(bounds.x, bounds.bottom()),
+                    ]),
+                    None => bounds,
+                })
+            })
+            .collect();
+        let mut subtree: Vec<Option<Rect>> = drawn.clone();
         for (index, entry) in entries.iter().enumerate() {
             let Some(own) = subtree[index] else {
                 continue;
@@ -609,6 +681,10 @@ impl<'a> Builder<'a> {
             subtree,
             slots: vec![page],
             content: HashMap::new(),
+            drawn,
+            animated: HashMap::new(),
+            transitions: &list.transitions,
+            widget_places: HashSet::new(),
         }
     }
 
@@ -617,9 +693,15 @@ impl<'a> Builder<'a> {
             self.place(index);
         }
         let root = self.finish(0);
+        let transitions = self
+            .transitions
+            .iter()
+            .map(|start| (PlanKey::Node(start.node), start.animation.clone()))
+            .collect();
         Plan {
             root,
             brushes: std::mem::take(&mut self.brushes),
+            transitions,
         }
     }
 
@@ -644,8 +726,10 @@ impl<'a> Builder<'a> {
             if !seen.insert(id) {
                 break;
             }
+            // Everything inside a transformed box is drawn through its transform, so it stays
+            // inside the box whatever it overlaps.
             if let Some(&container) = self.content.get(&id)
-                && !self.drawn_after(container, bounds)
+                && (self.is_transformed(id) || !self.drawn_after(container, bounds))
             {
                 return container;
             }
@@ -655,6 +739,12 @@ impl<'a> Builder<'a> {
                 .and_then(|&at| self.entries[at].parent);
         }
         0
+    }
+
+    fn is_transformed(&self, node: NodeId) -> bool {
+        self.by_node
+            .get(&node)
+            .is_some_and(|&at| self.entries[at].transform.is_some())
     }
 
     /// Whether anything placed after the end of `container`'s subtree, in tree order,
@@ -749,6 +839,9 @@ impl<'a> Builder<'a> {
                 height: rect.height,
             },
         ];
+        if let Some(transform) = &entry.transform {
+            modifiers.push(PlanModifier::Transform(transform.clone()));
+        }
         // The entry's opacity includes every ancestor's; the container already applies
         // the part that belongs to them.
         if provided_opacity > 0.0 {
@@ -785,9 +878,66 @@ impl<'a> Builder<'a> {
                     provided_clip
                 },
                 opacity: entry.opacity,
-                drawn: drawn_bounds(entry),
+                drawn: self.drawn[index],
             },
         );
+        if entry.widget {
+            self.widget_places.insert(PlanKey::Node(entry.node));
+        }
+        if !entry.animations.is_empty() {
+            self.animated
+                .insert(PlanKey::Node(entry.node), entry.animations.clone());
+        }
+
+        if let (Some(outline), Some(area)) = (entry.outline, outline_area(entry)) {
+            // The outline is drawn over the box and everything inside it, outside the box's
+            // bounds. Beside the box in its container, it is not clipped by the box, and
+            // it is drawn after everything inside the box. A transformed box carries it
+            // inside, so that it moves with the box.
+            let (target, origin, alpha) = if entry.transform.is_some() {
+                (node, (rect.x, rect.y), 1.0)
+            } else if provided_opacity > 0.0 {
+                (container, (ox, oy), entry.opacity / provided_opacity)
+            } else {
+                (container, (ox, oy), 1.0)
+            };
+            let mut outline_modifiers = vec![
+                PlanModifier::Offset {
+                    x: area.x - origin.0,
+                    y: area.y - origin.1,
+                },
+                PlanModifier::RequiredSize {
+                    width: area.width,
+                    height: area.height,
+                },
+            ];
+            if alpha < 1.0 - 1e-4 {
+                outline_modifiers.push(PlanModifier::Alpha(alpha.max(0.0)));
+            }
+            if let Some(radii) = entry.radii {
+                push_shape(&mut outline_modifiers, outline_radii(&radii, &outline));
+            }
+            outline_modifiers.push(PlanModifier::Border {
+                width: outline.width,
+                color: self
+                    .colours
+                    .resolve(entry.node, ColourUse::Border, outline.color),
+            });
+            self.push(
+                target,
+                Slot {
+                    key: PlanKey::Outline(entry.node),
+                    kind: PlanKind::Box,
+                    modifiers: outline_modifiers,
+                    children: Vec::new(),
+                    parent: None,
+                    origin: (area.x, area.y),
+                    clip: provided_clip,
+                    opacity: entry.opacity,
+                    drawn: Some(area),
+                },
+            );
+        }
 
         let content = if let Some(scroll) = entry.scroll {
             let viewport = scroll.viewport;
@@ -1086,6 +1236,16 @@ impl<'a> Builder<'a> {
         let opacity = self.slots[content].opacity;
         for (index, run) in entry.texts.iter().enumerate() {
             let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
+            let spans: Vec<SpanRun> = run
+                .spans
+                .iter()
+                .map(|span| SpanRun {
+                    color: span
+                        .color
+                        .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
+                    ..span.clone()
+                })
+                .collect();
             self.push(
                 content,
                 Slot {
@@ -1094,11 +1254,16 @@ impl<'a> Builder<'a> {
                         index,
                     },
                     kind: PlanKind::Text(PlanText {
+                        owner: run.owner,
                         text: run.text.clone(),
                         style: run.style.clone(),
                         color,
+                        decoration: run.decoration,
                         align: run.align,
                         soft_wrap: run.wrap_width.is_some(),
+                        ellipsis: run.ellipsis,
+                        marker: run.marker,
+                        spans,
                     }),
                     modifiers: vec![
                         PlanModifier::Offset {
@@ -1182,13 +1347,18 @@ impl<'a> Builder<'a> {
             .collect();
         let kind = match (&source.key, &source.kind) {
             // A box with nothing inside it has no children to place.
-            (PlanKey::Node(_), PlanKind::AbsoluteBox) if children.is_empty() => PlanKind::Box,
+            (key @ PlanKey::Node(_), PlanKind::AbsoluteBox)
+                if children.is_empty() && !self.widget_places.contains(key) =>
+            {
+                PlanKind::Box
+            }
             (_, kind) => kind.clone(),
         };
         PlanNode {
             key: source.key,
             kind,
             modifiers: source.modifiers.clone(),
+            animations: self.animated.get(&source.key).cloned().unwrap_or_default(),
             children,
         }
     }
@@ -1201,6 +1371,45 @@ fn one_radius(radius: Radius) -> f32 {
         0.0
     } else {
         radius.x.min(radius.y)
+    }
+}
+
+/// The box an outline's line fills the border of: the border box grown by the outline's
+/// offset and width on every side, so the line sits `offset` outside the border box. A
+/// negative offset shrinks it. `None` when the box has no outline or nothing is left.
+fn outline_area(entry: &NodeEntry) -> Option<Rect> {
+    let outline = entry.outline?;
+    if !entry.visible || outline.width <= 0.0 {
+        return None;
+    }
+    let grow = outline.offset + outline.width;
+    let rect = entry.rect;
+    let area = Rect::new(
+        rect.x - grow,
+        rect.y - grow,
+        rect.width + 2.0 * grow,
+        rect.height + 2.0 * grow,
+    );
+    (area.width > 0.0 && area.height > 0.0).then_some(area)
+}
+
+/// The corner radii of an outline's outer edge: the border radii grown by the offset and
+/// the width, so the outline follows the shape of the border. A square corner stays
+/// square.
+fn outline_radii(radii: &Corners<Radius>, outline: &Outline) -> Corners<f32> {
+    let grow = outline.offset + outline.width;
+    let outer = |radius: Radius| {
+        if radius.is_zero() {
+            0.0
+        } else {
+            (radius.x.min(radius.y) + grow).max(0.0)
+        }
+    };
+    Corners {
+        top_left: outer(radii.top_left),
+        top_right: outer(radii.top_right),
+        bottom_right: outer(radii.bottom_right),
+        bottom_left: outer(radii.bottom_left),
     }
 }
 
@@ -1254,6 +1463,7 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     if decorated {
         bounds = union(bounds, Some(entry.rect));
     }
+    bounds = union(bounds, outline_area(entry));
     for shadow in entry.shadows.iter().filter(|shadow| !shadow.inset) {
         let reach = shadow.blur.max(0.0) + shadow.spread;
         let rect = entry.rect;
@@ -1285,6 +1495,47 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
         }
         (bounds, _) => bounds,
     }
+}
+
+/// For each entry, the matrix that carries a point of the untransformed layout to where it
+/// is drawn: the transforms of the entry and of every box around it, outermost applied
+/// last. `None` for an entry nothing transforms.
+fn world_matrices(
+    entries: &[NodeEntry],
+    by_node: &HashMap<NodeId, usize>,
+) -> Vec<Option<Matrix2D>> {
+    if entries.iter().all(|entry| entry.transform.is_none()) {
+        return vec![None; entries.len()];
+    }
+    entries
+        .iter()
+        .map(|entry| {
+            let mut chain = vec![entry];
+            let mut seen = HashSet::from([entry.node]);
+            let mut parent = entry.parent;
+            while let Some(id) = parent {
+                if !seen.insert(id) {
+                    break;
+                }
+                let Some(&at) = by_node.get(&id) else {
+                    break;
+                };
+                chain.push(&entries[at]);
+                parent = entries[at].parent;
+            }
+            let mut world = Matrix2D::IDENTITY;
+            let mut any = false;
+            // From the outermost box in: each box's own transform applies first to what is
+            // inside it, so the outer ones multiply on the left.
+            for above in chain.iter().rev() {
+                if let Some(transform) = &above.transform {
+                    world = world.times(&transform.in_document(&above.rect));
+                    any = true;
+                }
+            }
+            any.then_some(world)
+        })
+        .collect()
 }
 
 fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
@@ -1335,6 +1586,7 @@ fn slots(modifiers: &[PlanModifier]) -> Vec<(ModifierSlot, &PlanModifier)> {
             let slot = match modifier {
                 PlanModifier::Offset { .. } => ModifierSlot::Offset,
                 PlanModifier::RequiredSize { .. } => ModifierSlot::RequiredSize,
+                PlanModifier::Transform(_) => ModifierSlot::Transform,
                 PlanModifier::Width(_) => ModifierSlot::Width,
                 PlanModifier::Alpha(_) => ModifierSlot::Alpha,
                 PlanModifier::Shape { .. } => ModifierSlot::Shape,
@@ -1417,6 +1669,18 @@ pub fn diff(previous: &Plan, next: &Plan) -> Vec<PlanChange> {
             node: next.root.clone(),
         });
     }
+    for (key, animation) in &next.transitions {
+        let already = previous
+            .transitions
+            .iter()
+            .any(|(other_key, other)| other_key == key && other == animation);
+        if !already && new.contains_key(key) {
+            changes.push(PlanChange::AnimationStarted {
+                key: *key,
+                animation: animation.clone(),
+            });
+        }
+    }
     changes
 }
 
@@ -1453,6 +1717,13 @@ fn diff_node(
         changes.push(PlanChange::KindChanged {
             key: node.key,
             kind: node.kind.clone(),
+        });
+    }
+
+    if before.animations != node.animations {
+        changes.push(PlanChange::AnimationsChanged {
+            key: node.key,
+            animations: node.animations.clone(),
         });
     }
 

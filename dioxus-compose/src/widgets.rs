@@ -8,10 +8,11 @@ use dioxus_signals::WritableExt as _;
 use crate as dioxus_elements;
 use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
-    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole, Paint,
-    ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, Cursor, IconRole, MaterialRole,
+    MotionRole, OverflowWrap, Paint, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow,
+    TypeRole, UserSelect, WordBreak,
 };
-use compose_rust::{FileDrop, KeyEvent, RangeRequest};
+use compose_rust::{FileDrop, KeyEvent, PointerEvent, PointerKinds, RangeRequest};
 
 /// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
@@ -36,6 +37,142 @@ fn opt_paint(value: Option<Paint>) -> Option<i64> {
 
 fn dp(value: Option<f32>) -> f64 {
     f64::from(value.unwrap_or(0.0))
+}
+
+/// A box that places each child where the Host already put it, for a screen whose layout
+/// was computed before it got here, such as an HTML page laid out by a CSS engine.
+///
+/// Every property is the box's own place and decoration, in CSS's terms: `offset` from the
+/// box it is in, `required_size` whatever that box allows, a border and a radius for each
+/// side and corner in CSS order (top, right, bottom, left and top left, top right, bottom
+/// right, bottom left), one `box-shadow`, `overflow: hidden` and `opacity`. A child is
+/// placed by giving it its own `offset`, which for anything but another `AbsoluteBox`
+/// means wrapping it in one. Equal sides and equal corners go out as the ordinary border
+/// and shape records.
+#[component]
+pub fn AbsoluteBox(
+    #[props(default)] offset: Option<(f32, f32)>,
+    #[props(default)] required_size: Option<(f32, f32)>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] border: Option<([f32; 4], [Paint; 4])>,
+    #[props(default)] corners: Option<[f32; 4]>,
+    /// x and y offset, blur, spread and paint, as CSS `box-shadow` takes them.
+    #[props(default)]
+    shadow: Option<(f32, f32, f32, f32, Paint)>,
+    #[props(default)] clip: bool,
+    #[props(default)] alpha: Option<f32>,
+    /// CSS `matrix(a, b, c, d, e, f)`, with `e` and `f` in dp. Drawn without moving the
+    /// layout, and a pointer is tested against the shape that is drawn.
+    #[props(default)]
+    transform: Option<(f32, f32, f32, f32, f32, f32)>,
+    /// The point the transform turns about, as a fraction of the box's size. The middle,
+    /// as in CSS, when it is not given.
+    #[props(default)]
+    transform_origin: Option<(f32, f32)>,
+    /// Compose's `graphicsLayer`: a rotation, a scale, a translation and an opacity, drawn
+    /// as a `Transform` and an `Alpha`. It takes the place of `transform` and `alpha`.
+    #[props(default)]
+    graphics_layer: Option<compose_rust::GraphicsLayer>,
+    /// An opacity the Renderer animates to, from `animate_float_as_state`. It takes the
+    /// place of `alpha`.
+    #[props(default)]
+    animated_alpha: Option<crate::hooks::Animated<f32>>,
+    /// A background the Renderer animates to, from `animate_color_as_state`. It takes the
+    /// place of `background`.
+    #[props(default)]
+    animated_background: Option<crate::hooks::Animated<Paint>>,
+    /// A translation the Renderer animates to, from `animate_offset_as_state`. It takes the
+    /// place of `transform` and `graphics_layer`.
+    #[props(default)]
+    animated_offset: Option<crate::hooks::Animated<(f32, f32)>>,
+    children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The factor an HTML island is drawn at, on the island's root: the Renderer draws what
+    /// is inside at its density times this, with no font scale of its own. Left out, the
+    /// box draws its children as the widgets around it are drawn.
+    #[props(default)]
+    island_zoom: Option<f32>,
+) -> Element {
+    use compose_rust::Modifier;
+    let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
+    // An animated value takes the place of the plain one in the same slot, and a graphics
+    // layer takes the place of a bare transform and opacity.
+    let background = if animated_background.is_some() {
+        None
+    } else {
+        opt_paint(background)
+    };
+    let alpha = if animated_alpha.is_some() {
+        None
+    } else {
+        opt_dp(graphics_layer.map(|layer| layer.alpha).or(alpha))
+    };
+    let transform = if animated_offset.is_some() {
+        None
+    } else if let Some(layer) = graphics_layer {
+        Some(AttributeValue::any_value(layer.transform()))
+    } else {
+        transform.map(|(a, b, c, d, e, f)| {
+            AttributeValue::any_value(Modifier::Transform {
+                a,
+                b,
+                c,
+                d,
+                e,
+                f,
+                origin_x,
+                origin_y,
+            })
+        })
+    };
+    rsx! {
+        absolutebox {
+            island_zoom: island_zoom.map(f64::from),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
+            required_size: required_size.map(|(width, height)| {
+                AttributeValue::any_value(Modifier::RequiredSize { width, height })
+            }),
+            background,
+            border_each: border.map(|(widths, paints)| {
+                AttributeValue::any_value(Modifier::border_sides(widths, paints))
+            }),
+            corner_each: corners.map(|radii| AttributeValue::any_value(Modifier::corner_radii(radii))),
+            shadow: shadow.map(|(x, y, blur, spread, paint)| {
+                AttributeValue::any_value(Modifier::Shadow { x, y, blur, spread, paint })
+            }),
+            clip: clip.then_some(true),
+            alpha,
+            transform,
+            animated_alpha: animated_alpha.map(AttributeValue::any_value),
+            animated_background: animated_background.map(AttributeValue::any_value),
+            animated_offset: animated_offset.map(AttributeValue::any_value),
+            {children}
+        }
+    }
 }
 
 #[component]
@@ -70,9 +207,34 @@ pub fn Column(
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         column {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -130,9 +292,34 @@ pub fn Row(
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         row {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -187,9 +374,34 @@ pub fn ComposeBox(
     #[props(default)] fill_max_height: bool,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         composebox {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -230,9 +442,28 @@ pub fn ScrollColumn(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         scrollcolumn {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -270,9 +501,28 @@ pub fn ScrollRow(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         scrollrow {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -312,7 +562,7 @@ pub fn Text(
     /// Runs of different treatment inside [text]: a bold phrase, a link, a piece of
     /// code. Left out, the widget travels exactly as it did before runs existed.
     #[props(default)]
-    spans: crate::spans::TextSpans,
+    spans: compose_rust::spans::TextSpans,
     #[props(into)] text: String,
     #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] font_size: Option<f32>,
@@ -323,37 +573,117 @@ pub fn Text(
     #[props(default)] text_align: Option<TextAlign>,
     #[props(default)] max_lines: Option<u32>,
     #[props(default)] overflow: Option<TextOverflow>,
+    /// The fonts to try, in order, for text whose `type_role` is `TypeRole::None`. Text
+    /// with a role is set in the theme's font whatever this says.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
+    /// Where a line may break: CSS `word-break`.
+    #[props(default)]
+    word_break: Option<WordBreak>,
+    /// Whether a word too long for its line may be broken inside: CSS `overflow-wrap`.
+    #[props(default)]
+    overflow_wrap: Option<OverflowWrap>,
+    /// How many spaces apart the tab stops are. Left out, eight.
+    #[props(default)]
+    tab_size: Option<u8>,
+    /// The sizes are CSS pixels, which the system's font scale does not enlarge.
+    #[props(default)]
+    absolute_size: bool,
+    /// Whether lines wrap at the width they are given. `false` is CSS `nowrap` and `pre`.
+    #[props(default = true)]
+    soft_wrap: bool,
+    /// Says this string usually grows at the end, the way a reply arriving token by token
+    /// does. While it only grows, the Renderer is sent the new tail rather than the whole
+    /// string again. Any other change is sent whole, so this never changes what is shown.
+    #[props(default)]
+    streaming: bool,
+    /// Called with a link run's value when that run is pressed. The value is whatever the
+    /// run's `on_click` named it, so one handler can tell several links apart. Without a
+    /// handler a press on a link run does nothing.
+    #[props(default)]
+    on_link: Option<EventHandler<u64>>,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
-    rsx! {
-        text {
-            weight: opt_dp(weight),
-            width: opt_dp(width),
-            height: opt_dp(height),
-            padding: opt_dp(padding),
-            padding_role: opt_role(padding_role),
-            background: opt_paint(background),
-            shape_role: opt_role(shape_role),
-            corner_radius: opt_dp(corner_radius),
-            border_width: opt_dp(border_width),
-            border_color: opt_paint(border_color),
-            elevation: opt_dp(elevation),
-            fill_max_width,
-            fill_max_height,
-            // Left out entirely when there are none, so a Text that says nothing about
-            // runs travels exactly as it did before runs existed.
-            spans: (!spans.is_empty()).then(|| AttributeValue::any_value(spans)),
-            text,
-            type_role: role(type_role),
-            font_size: dp(font_size),
-            font_weight: i64::from(font_weight.unwrap_or(0)),
-            line_height: dp(line_height),
-            letter_spacing: dp(letter_spacing),
-            color: color.map_or(0, |paint| paint.to_bits() as i64),
-            text_align: role(text_align),
-            max_lines: i64::from(max_lines.unwrap_or(0)),
-            overflow: role(overflow),
-        }
+    // Worked out before the element, because the run list travels twice: its records as
+    // `spans` and its font table as `span_fonts`, and only one of them can take it.
+    let span_fonts = (spans.font_entry_count() > 0)
+        .then(|| AttributeValue::any_value(crate::renderer::SpanFontTable(spans.clone())));
+    let spans = (!spans.is_empty()).then(|| AttributeValue::any_value(spans));
+    let font = (!font.is_empty()).then(|| AttributeValue::any_value(font));
+    let text: dioxus_core::AttributeValue = if streaming {
+        dioxus_core::AttributeValue::any_value(crate::renderer::GrowingText(text))
+    } else {
+        dioxus_core::AttributeValue::Text(text)
+    };
+    // The element is written out twice so that a `Text` without a link handler carries no
+    // listener at all, and travels exactly as it did before links reported anything.
+    macro_rules! text_element {
+        ($($listener:tt)*) => {
+            rsx! {
+                text {
+                    cursor: opt_role(cursor),
+                    user_select: opt_role(user_select),
+                    pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+                    onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+                    weight: opt_dp(weight),
+                    width: opt_dp(width),
+                    height: opt_dp(height),
+                    padding: opt_dp(padding),
+                    padding_role: opt_role(padding_role),
+                    background: opt_paint(background),
+                    shape_role: opt_role(shape_role),
+                    corner_radius: opt_dp(corner_radius),
+                    border_width: opt_dp(border_width),
+                    border_color: opt_paint(border_color),
+                    elevation: opt_dp(elevation),
+                    fill_max_width,
+                    fill_max_height,
+                    // Left out entirely when there are none, so a Text that says nothing
+                    // about runs travels exactly as it did before runs existed.
+                    span_fonts,
+                    spans,
+                    text,
+                    // Sent only when there is one, and as its tag when there is:
+                    // `TypeRole::None` is tag 0 and has to arrive as a value, because
+                    // absent is the default rung.
+                    type_role: type_role.map(|role| i64::from(u16::from(role))),
+                    font,
+                    word_break: role(word_break),
+                    overflow_wrap: role(overflow_wrap),
+                    tab_size: i64::from(tab_size.unwrap_or(0)),
+                    absolute_size: i64::from(absolute_size),
+                    soft_wrap: (!soft_wrap).then_some(false),
+                    font_size: dp(font_size),
+                    font_weight: i64::from(font_weight.unwrap_or(0)),
+                    line_height: dp(line_height),
+                    letter_spacing: dp(letter_spacing),
+                    color: color.map_or(0, |paint| paint.to_bits() as i64),
+                    text_align: role(text_align),
+                    max_lines: i64::from(max_lines.unwrap_or(0)),
+                    overflow: role(overflow),
+                    $($listener)*
+                }
+            }
+        };
     }
+    if let Some(on_link) = on_link {
+        return text_element!(onlink: move |event: dioxus_core::Event<u64>| on_link.call(*event.data()),);
+    }
+    text_element!()
 }
 
 #[component]
@@ -401,7 +731,7 @@ pub fn TextField(
             placeholder,
             enabled,
             multiline,
-            type_role: role(type_role),
+            type_role: type_role.map(|role| i64::from(u16::from(role))),
             onvaluechange: move |event| on_value_change.call((*event.data()).clone()),
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),
@@ -437,16 +767,28 @@ pub fn Button(
     #[props(default)]
     icon: Option<IconRole>,
     #[props(default = true)] enabled: bool,
+    /// What the button is, apart from how loud its variant is: a plain button, or one key
+    /// of a dense grid of them.
+    #[props(default)]
+    button_kind: Option<ButtonKind>,
     #[props(default)] variant: Option<ButtonVariant>,
     /// The label's colour, for the rare button whose meaning is not the variant's.
     /// A destructive action is the case that needs it: it is a plain button in every
     /// design system, and what marks it is that its label is the error colour.
     #[props(default)]
     color: Option<Paint>,
+    /// How many lines the label may take. Left out, one: a Button label does not wrap, so
+    /// a squeezed button keeps the whole word instead of breaking a Hangul label by syllable.
+    #[props(default)]
+    max_lines: Option<u32>,
+    /// What happens to a label cut by `max_lines` or by a narrow button. Left out, an ellipsis.
+    #[props(default)]
+    overflow: Option<TextOverflow>,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
         button {
+            button_kind: opt_role(button_kind),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -465,6 +807,8 @@ pub fn Button(
             enabled,
             variant: role(variant),
             color: opt_paint(color),
+            max_lines: i64::from(max_lines.unwrap_or(0)),
+            overflow: role(overflow),
             onclick: move |_| on_click.call(()),
         }
     }
@@ -501,9 +845,28 @@ pub fn Spacer(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         spacer {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -616,9 +979,34 @@ pub fn Card(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         card {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -670,9 +1058,34 @@ pub fn Surface(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
 ) -> Element {
     rsx! {
         surface {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -2153,9 +2566,28 @@ pub fn SelectionContainer(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         selectioncontainer {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2272,6 +2704,160 @@ pub fn SplitPane(
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as f32),
             ondismiss: move |_| on_dismiss.call(()),
             {children}
+        }
+    }
+}
+
+/// Several lines of code that the reader edits.
+///
+/// The document belongs to the Renderer from the moment it opens. The caret, the selection,
+/// the scroll position, the undo history and anything an input method is still composing
+/// stay there, exactly as a text field's do, and `on_change` hears about every committed
+/// edit with the version of the document it produced. Give that to a language server as it
+/// is: the range is in the document as it stood before the edit and columns are UTF-16
+/// units, which is what a language server counts.
+///
+/// `text` is what the editor opens with, as version 0. Giving it text that differs from
+/// what the editor holds replaces the whole document and starts again from version 0,
+/// which is opening a file. Giving it the text it already holds does nothing, so an
+/// application that writes each change back into the signal it passes here keeps the
+/// reader's caret and undo history. To open the same text afresh, give the editor a new
+/// key: a new node is a new document.
+///
+/// `syntax_spans` colour the text and `decorations` draw over it. Each run and each
+/// decoration names the version its range was written against, and the editor moves it
+/// along with whatever the reader typed since, dropping it where its text was deleted. So a
+/// list computed while the reader kept typing still lands on the text it was about, and
+/// the application has nothing to do until it has a newer list.
+///
+/// `handle` addresses the editor for edits the application makes itself: formatting,
+/// accepting a completion, reloading a file. See [`crate::CodeEditorHandle`].
+///
+/// The gutter, the line numbers, the current line, the weight of an underline and how
+/// faint a suggestion is are the design system's, and the text is set in its monospace
+/// rung.
+#[component]
+pub fn CodeEditor(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// The document the editor opens with.
+    #[props(into, default)]
+    text: String,
+    /// Colour runs for the syntax, usually in the code colour roles.
+    #[props(default)]
+    syntax_spans: compose_rust::code::SyntaxSpans,
+    /// Underlines, lenses, hover anchors and inline suggestions.
+    #[props(default)]
+    decorations: compose_rust::code::Decorations,
+    /// The stretches of lines that can be folded, and which of them are folded now.
+    #[props(default)]
+    folds: compose_rust::code::Folds,
+    /// The marks drawn beside the line numbers.
+    #[props(default)]
+    gutter_decorations: compose_rust::code::GutterDecorations,
+    /// How many columns a tab advances. Left to the design system where it is not given.
+    #[props(default)]
+    tab_width: Option<u32>,
+    /// What edits asked of the application's own handle are addressed to.
+    #[props(default)]
+    handle: Option<crate::CodeEditorHandle>,
+    /// Every committed edit, in order.
+    #[props(default)]
+    on_change: EventHandler<compose_rust::code::CodeChange>,
+    /// An edit asked of the handle that the editor did not apply, because the reader had
+    /// changed the same place in the meantime.
+    #[props(default)]
+    on_edit_rejected: EventHandler<compose_rust::code::EditRejected>,
+    /// A pointer came to rest over a place in the editor, or left it.
+    #[props(default)]
+    on_hover: EventHandler<compose_rust::code::CodeHover>,
+    /// The reader pressed the platform's save shortcut.
+    #[props(default)]
+    on_save: EventHandler<compose_rust::code::SaveRequest>,
+    /// A lens was pressed or a suggestion accepted, named by the id it was given.
+    #[props(default)]
+    on_decoration_click: EventHandler<u64>,
+    /// The selection moved.
+    #[props(default)]
+    on_selection_change: EventHandler<compose_rust::code::SelectionChange>,
+    /// The lines on screen changed.
+    #[props(default)]
+    on_visible_range_change: EventHandler<compose_rust::code::VisibleRange>,
+    /// The editor gained (true) or lost (false) the keyboard focus.
+    #[props(default)]
+    on_editor_focus_change: EventHandler<bool>,
+    /// The reader folded or unfolded a stretch.
+    #[props(default)]
+    on_fold_change: EventHandler<compose_rust::code::FoldChange>,
+    /// An input method started (true) or ended (false) a composition.
+    #[props(default)]
+    on_composition_change: EventHandler<bool>,
+) -> Element {
+    rsx! {
+        codeeditor {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            editor: handle.map(|handle| i64::from(handle.token())),
+            text,
+            // Left out entirely while there are none, so an editor without them sends
+            // nothing for them at all.
+            syntax_spans: (!syntax_spans.is_empty()).then(|| AttributeValue::any_value(syntax_spans)),
+            decorations: (!decorations.is_empty()).then(|| AttributeValue::any_value(decorations)),
+            folds: (!folds.is_empty()).then(|| AttributeValue::any_value(folds)),
+            gutter_decorations: (!gutter_decorations.is_empty()).then(|| AttributeValue::any_value(gutter_decorations)),
+            tab_width: tab_width.map(i64::from),
+            oncodechange: move |event: dioxus_core::Event<compose_rust::code::CodeChange>| {
+                on_change.call(event.data().as_ref().clone());
+            },
+            oneditrejected: move |event: dioxus_core::Event<compose_rust::code::EditRejected>| {
+                on_edit_rejected.call(*event.data());
+            },
+            onhover: move |event: dioxus_core::Event<compose_rust::code::CodeHover>| {
+                on_hover.call(*event.data());
+            },
+            onsave: move |event: dioxus_core::Event<compose_rust::code::SaveRequest>| {
+                on_save.call(*event.data());
+            },
+            ondecorationclick: move |event: dioxus_core::Event<u64>| {
+                on_decoration_click.call(*event.data());
+            },
+            onselectionchange: move |event: dioxus_core::Event<compose_rust::code::SelectionChange>| {
+                on_selection_change.call(*event.data());
+            },
+            onvisiblerangechange: move |event: dioxus_core::Event<compose_rust::code::VisibleRange>| {
+                on_visible_range_change.call(*event.data());
+            },
+            oneditorfocuschange: move |event: dioxus_core::Event<bool>| {
+                on_editor_focus_change.call(*event.data());
+            },
+            onfoldchange: move |event: dioxus_core::Event<compose_rust::code::FoldChange>| {
+                on_fold_change.call(*event.data());
+            },
+            oncompositionchange: move |event: dioxus_core::Event<bool>| {
+                on_composition_change.call(*event.data());
+            },
         }
     }
 }

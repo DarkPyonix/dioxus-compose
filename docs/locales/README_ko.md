@@ -39,17 +39,18 @@ pub fn app() -> Element {
 ```
 
 [`samples/hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello) 를 줄인
-것입니다. **지금은 배치까지 되고, 렌더러 다리가 생기면 그려집니다**
-([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). HTML 경로는 Rust 에서 레이아웃과 그리기
-계획을 계산하지만, 아직 화면에 픽셀을 놓지는 않습니다.
+것입니다. **Rust 에서 배치하고, HTML 다리를 거쳐 렌더러로 보냅니다**
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). 렌더러가 받는 레코드는 Host 에서
+테스트합니다. 그것을 창에 그리는 것은 아직 렌더러를 돌려 확인하지 않았으므로, 다리는 아직 부분으로
+표시합니다.
 
 웹에서 쓰듯 Dioxus 앱을 씁니다. `div`, `span` 과 CSS 를 담은 `rsx!`, 훅과 시그널입니다. `blitz-dom` 이
 Host 안에서 스타일과 레이아웃을 계산하고, 상자와 글자를 그리는 것은
 [compose-rust](https://github.com/DarkPyonix/compose-rust) 의 AOT 컴파일된 Compose 렌더러입니다. Compose
 의 텍스트 레이아웃과 플랫폼 IME 를 그대로 씁니다.
 
-같은 크레이트는 `rsx!` 안에서 Compose 위젯 이름(`Column`, `Text`, `Button`)도 받습니다. 그 경로는 지금
-렌더러가 그립니다.
+같은 크레이트는 `rsx!` 안에서 Compose 위젯 이름(`Column`, `Text`, `Button`)도 받으며, 화면을 쓰는 두
+번째 방법입니다. 그 경로는 지금 렌더러가 그립니다.
 
 ---
 
@@ -57,8 +58,10 @@ Host 안에서 스타일과 레이아웃을 계산하고, 상자와 글자를 �
 
 - [왜 만드는가](#왜-만드는가)
 - [현재 상태](#현재-상태)
+- [HTML 화면이 아직 화면에 그리지 못하는 것](#html-화면이-아직-화면에-그리지-못하는-것)
 - [화면을 쓰는 두 가지 방법](#화면을-쓰는-두-가지-방법)
 - [시작하기](#시작하기)
+- [예제](#예제)
 - [동작 방식](#동작-방식)
 - [성능](#성능)
 - [저장소 구조](#저장소-구조)
@@ -115,23 +118,36 @@ compose-rust의 [`samples/notepad`](https://github.com/DarkPyonix/compose-rust/t
 
 **0.0.x 는 초기 릴리스 단계입니다.** crates.io 의 dioxus-compose 0.0.1 에는 두 경로가 다 있고
 compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계획까지 되고 아직 그려지지 않습니다(렌더러
-다리는 검토 중). API 는 바뀝니다.
+다리는 그 릴리스에 없습니다. 아래 참고). API 는 바뀝니다.
 
 | 상태 | 항목 |
 |---|---|
 | 구현 | blitz-dom 으로 Host 에서 하는 HTML 과 CSS 레이아웃: 블록, 인라인, flexbox, grid, 표, `fixed` 를 포함한 위치 지정, overflow 와 스크롤 컨테이너, 테두리, 모서리, 그림자, 불투명도, 그라디언트를 포함한 배경, 앱이 넘기는 리졸버를 거치는 이미지 |
 | 구현 | HTML 이벤트와 폼: 클릭, `input` / `change` / `submit`, `select`, 체크박스와 라디오 그룹, 비제어 입력란, 키가 있는 목록, `text-transform` 과 `white-space` |
 | 구현 | VS Code 가 잰 텍스트 크기로, 워크벤치 세 구역의 상자 326 개 중 324 개가 VS Code 와 1px 이내(2026-10-03 macOS 에서 측정) |
-| 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열한 개, 각각 Host 에서 테스트 |
+| 구현 | [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 의 HTML 과 CSS 예제 열일곱 개, 각각 Host 에서 테스트 |
 | 구현 | `rsx!` 의 Compose 위젯을 렌더러가 그림: macOS, Android, 웹은 처음부터 끝까지, Windows, Linux, iOS 는 빌드되고 시작됨 |
-| 부분 | HTML 화면을 화면에 그리기: 계획은 있고, compose-rust 렌더러(`AbsoluteBox`)로 가는 다리가 없음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43). [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67)에 작성되어 검토 대기) |
+| 부분 | HTML 화면을 화면에 그리기: 다리가 계획을 compose-rust 의 배치(batch)에 씀(`AbsoluteBox`, `Box`, `Text`, `Image`, 입력 컨트롤). 처음에는 트리 전체, 그 뒤로는 바뀐 것만 보내고, 렌더러의 이벤트는 Dioxus 핸들러에 닿음. 렌더러가 받는 레코드로 Host 에서 테스트했고, 화면에서는 아직 확인하지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | 부분 | Compose 로 텍스트 재기: 측정 호출을 compose-rust 에서 만드는 중이고, 그때까지는 Parley 가 잼([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
-| 계획 | `translate` 밖의 CSS 변환, CSS transition 과 animation([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
+| 부분 | HTML 화면에서 DOM 이벤트로서의 키와 포커스: compose-rust 가 실어 나르는 유일한 키인 Enter 의 `keydown` 과 `keypress`, 입력 칸의 `focus`, `blur`, `focusin`, `focusout`. Host 에서 테스트함. compose-rust 는 입력 칸이 포커스를 잃는 것은 알리지만 얻는 것은 알리지 않아서 `focus` 는 첫 입력과 함께 오고, 키를 뗀 것은 실어 나르지 않아서 `keyup` 은 보내지 않음([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 부분 | HTML 화면의 `prefers-color-scheme` 은 앱이 실행 중에 테마를 밝게나 어둡게 바꾸면 따라감. 시스템의 변화는 렌더러가 적용하고 Host 에 알리지 않아서, 시스템을 따르는 테마에서는 설정한 색 구성표를 유지함([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| 구현 | Host 에서 CSS 2D 변환(`translate`, `rotate`, `scale`, `skew`, `matrix()`, `transform-origin`)과 CSS transition, animation: 변환된 상자는 레이아웃 자리를 지킨 채 행렬을 싣고, 포인터는 그려진 모양에 닿고, `opacity`, `transform`, `background-color` 의 움직임은 렌더러가 재생하도록 설명으로 넘기며, 레이아웃을 바꾸는 움직임은 Host 가 프레임마다 돌립니다([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
+| 부분 | 변환을 화면에 그리기: 2D 변환은 compose-rust 0.0.2 의 `Transform` 수정자로 갑니다. compose-rust 0.0.2 가 애니메이션 레코드를 싣지만 transition 과 animation 은 아직 렌더러에 쓰지 않고, 3D 변환은 경고와 함께 건너뜁니다([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | 계획 | VS Code 처럼 HTML 화면 확대 |
 | 계획 | 한 화면에 HTML 과 위젯 |
 | 계획 | 마크다운 크레이트 `dioxus-compose-markdown`([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24). 초안 [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
 
 전체 목록은 가이드의 [현황 페이지](http://darkpyonix.dev/dioxus-compose/ko/status.html)에 있습니다.
+
+### HTML 화면이 아직 화면에 그리지 못하는 것
+
+다리는 계획을 compose-rust 의 배치(batch)에 쓰고, 그 레코드는 Host 에서 테스트합니다. 창에 그리는 것은
+렌더러를 돌려 확인하지 않았습니다.
+
+- transition 과 animation. compose-rust 0.0.2 는 애니메이션 레코드를 싣지만 다리가 아직 그것을 쓰지
+  않습니다. 움직임 설명은 이미 Host 가 합니다. 2D 변환은 `Transform` 수정자로 갑니다.
+- 폭 같은 레이아웃 속성의 애니메이션([#47](https://github.com/DarkPyonix/dioxus-compose/issues/47))은
+  Host 가 프레임마다 진행하며 compose-rust 에 더 필요한 것이 없습니다.
 
 ---
 
@@ -139,7 +155,7 @@ compose-rust 0.0.1 에 의존합니다. HTML 화면은 배치와 그리기 계�
 
 | 쓰는 것 | import | 지금 |
 |---|---|---|
-| HTML 요소와 CSS: `div`, `span`, `input`, 스타일시트 | `dioxus_compose::html::prelude::*` | Host 에서 배치하고 계획까지, 아직 그리지 않음 |
+| HTML 요소와 CSS: `div`, `span`, `input`, 스타일시트 | `dioxus_compose::html::prelude::*` | Host 에서 배치하고 렌더러로 보냄, 화면에서는 아직 확인하지 않음 |
 | Compose 위젯 이름: `Column`, `Text`, `Button` | `dioxus_compose::prelude::*` | 렌더러가 그림 |
 
 둘 다 늘 크레이트에 있고, 어느 쪽도 기능 플래그로 끄지 않습니다. 두 prelude 가 각자 자기 요소 이름을
@@ -219,20 +235,68 @@ fn main() {
 }
 ```
 
-`cargo run` 은 상자를 출력합니다. 렌더러 다리가 생기기 전까지는 HTML 화면을 그리는 것이 없으므로 아직
-창은 열리지 않습니다. 위젯 경로 앱은 대신 `dioxus_compose::launch(app)` 을 불러 창을 엽니다. 렌더러는
+`cargo run` 은 상자를 출력합니다. 대신 창에 페이지를 열려면 위젯 앱과 같은 방식으로 실행합니다.
+
+```rust
+fn config() -> HtmlConfig {
+    HtmlConfig { stylesheets: vec![STYLE.to_string()], ..HtmlConfig::default() }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new().with_html(config).launch(app);
+}
+```
+
+`dioxus_compose::html::launch(app)` 은 기본 설정으로 같은 일을 합니다. `cargo run -p sample-html-hello`
+가 이 방식으로 `samples/hello` 를 엽니다. 다리의 레코드는 Host 에서 테스트하고, 창 자체는 아직 렌더러를
+돌려 확인하지 않았습니다([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). 위젯 경로 앱은
+`dioxus_compose::launch(app)` 을 부릅니다. 렌더러는
 [compose-rust](https://github.com/DarkPyonix/compose-rust) 의 빌드 스크립트가 대상 플랫폼용으로 내려받는
 미리 빌드된 네이티브 라이브러리이고, 직접 빌드하는 방법은 그쪽에 있습니다.
 
-예제의 테스트는 체크아웃에서 cargo 로 돌립니다.
+예제의 테스트는 체크아웃에서 cargo 로 돌립니다. 먼저 `./scripts/apply-patches.sh` 를 한 번 실행합니다. 워크스페이스가
+패치된 blitz-dom 사본을 빌드에 쓰기 때문에, 그 사본이 생기기 전에는 cargo 가
+`failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4` 로 멈춥니다.
 
 ```bash
+./scripts/apply-patches.sh
 cargo test -p sample-html-hello
 cargo test --workspace
 ```
 
 [시작하기 페이지](http://darkpyonix.dev/dioxus-compose/ko/getting-started.html)가 클릭과 폼까지 같은
 순서로 안내합니다.
+
+---
+
+## 예제
+
+[`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples) 에 Dioxus 앱 열일곱 개가 있습니다. 웹에서 쓰듯 HTML 요소, CSS,
+훅, 시그널로 쓴 것입니다. 하나가 크레이트 하나이고, 각각 손으로 계산한 배치와 비교하는 테스트를 Host
+에서 돌립니다. 가이드가 장마다 이 예제들을 인용합니다. 마지막 여섯(`layout`, `landing`,
+`typography`, `motion`, `kanban`, `helpcenter`)은 `develop` 에 있으므로 링크도 그쪽을 가리킵니다.
+
+| 예제 | 보여 주는 것 |
+|---|---|
+| [`hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello) | 제목, 인라인 굵게와 기울임, 클릭 수를 세는 링크 |
+| [`article`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/article) | 제목, 줄바꿈되는 문단, 목록, 인용, 코드 블록 |
+| [`dashboard`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/dashboard) | 상단 바, 사이드바, 줄바꿈되는 지표 카드. 모두 flexbox |
+| [`gallery`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/gallery) | 그라디언트 헤더 아래 CSS grid 사진 목록 |
+| [`settings`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/settings) | 폼: 텍스트 입력란, 텍스트 영역, select, 체크박스, 라디오 그룹 |
+| [`table`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/table) | 옆으로 스크롤되는 HTML 표, 금액 머리글로 정렬 |
+| [`chat`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/chat) | 아래에 고정된 입력 줄 위로 스크롤되는 대화 |
+| [`todo`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/todo) | 키가 있는 행의 추가, 체크, 삭제, 순서 바꾸기 |
+| [`overlay`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/overlay) | 드롭다운 메뉴, 고정 배경 위 대화 상자, 잘린 미리보기 |
+| [`theme`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/theme) | CSS 사용자 정의 속성으로 쓴 색, 어두운 세트, 덮어쓰기 버튼 |
+| [`workbench`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/workbench) | 작은 코드 편집기: 액티비티 바, 파일 트리, 탭, 상태 표시줄 |
+| [`layout`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout) | flexbox(줄바꿈, 간격, grow, shrink, basis, 정렬, 순서), grid(영역, `auto-fill`, 칸 걸치기, 선 지정 배치), `sticky`, `z-index`, relative 안의 absolute |
+| [`landing`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing) | 반응형 페이지: 휴대폰, 태블릿, 데스크톱 폭의 `@media`, 가운데 정렬한 컨테이너, 카드 격자, 요금표, 푸터, 그라디언트 배경, 그림자와 모서리 반지름 |
+| [`typography`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography) | 글자 크기, 굵기, 스타일, 줄 높이, 자간, 정렬, 대소문자, 공백 처리, 단어 끊기, 말줄임, 생성된 내용, 목록 기호, 꾸밈선 |
+| [`motion`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion) | `transform-origin` 이 있는 변환, transition, `@keyframes`, 폭 transition |
+| [`kanban`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/kanban) | flex 열 세 개로 된 보드: 열 사이로 옮기는 카드, 열마다 세는 개수, 빈 열 안내 문구, 카드를 추가하는 폼 |
+| [`helpcenter`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/helpcenter) | 열고 닫는 항목, 항목을 거르는 검색 필드, 말줄임표로 잘리는 긴 이름, 전환으로 도는 화살표, 굵게, 기울임, 코드, 색, 링크가 섞인 답변, 번호 목록 |
+
+예제는 배치까지 되고 아직 화면에 그려지지 않습니다. [이유](#html-화면이-아직-그려지지-않는-이유).
 
 ---
 
@@ -244,7 +308,7 @@ your component (rsx! with div, span, CSS)
   -> blitz-dom document                Stylo resolves CSS, Taffy lays out
   -> DisplayList                       boxes, colours, text runs, fields, images
   -> Plan, and its diff                drawing elements; only what changed is sent
-  -> Compose renderer (compose-rust)   draws (the bridge is not built yet)
+  -> Compose renderer (compose-rust)   draws (bridge built; on screen not yet confirmed)
 ```
 
 **렌더러는 CSS 를 보지 않습니다.** 사각형, 색, 텍스트 조각을 받습니다. 그래서 렌더러는 작고 모든 앱에
@@ -294,7 +358,7 @@ dioxus-compose/
 │  ├─ src/dom, layout, paint  # blitz-dom 문서와 이벤트, 레이아웃 단계, 그리기 목록과 계획
 │  ├─ examples/           #   desktop_demo, 위젯 경로 데모
 │  └─ tests/              #   크레이트 테스트
-├─ samples/               # HTML 과 CSS 로 쓴 앱 열한 개, 하나에 크레이트 하나
+├─ samples/               # HTML 과 CSS 로 쓴 앱 열일곱 개, 하나에 크레이트 하나
 ├─ experiments/           # 남겨 둘 만한 실험 (develop 에만 있고 main 에는 없음)
 ├─ scripts/               # 품질 검사와 저장소 도구
 └─ docs/

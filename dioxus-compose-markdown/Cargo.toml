@@ -1,0 +1,42 @@
+[package]
+name = "dioxus-compose-markdown"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Markdown documents for dioxus-compose: one-shot or streamed, drawn with the widgets that already exist"
+repository = "https://github.com/DarkPyonix/dioxus-compose"
+keywords = ["markdown", "dioxus", "compose", "streaming", "ui"]
+categories = ["gui", "text-processing"]
+readme = "README.md"
+
+[lib]
+bench = false
+
+[dependencies]
+# Without the renderer feature: a library that draws markdown has no business deciding
+# whether the application downloads a renderer. The application's own dependency on
+# dioxus-compose turns it on, and Cargo unifies the two.
+#
+# Everything Dioxus is reached through dioxus-compose's prelude, which re-exports the
+# crates `rsx!` expands into. Naming them here as well would put two `dioxus_core`s in
+# scope, and the macro's expansion refuses an ambiguous path.
+dioxus-compose = { path = "../dioxus-compose", default-features = false }
+# The parser. Default features off: they are the command line binary (getopts) and the
+# HTML writer, and this crate uses neither.
+pulldown-cmark = { version = "0.13.4", default-features = false }
+
+# The highlighter, through two-face's re-export of syntect so the two can never disagree
+# about the version. `syntect-fancy` selects the pure-Rust regex engine and the grammar
+# dump built for it, so there is no C library (Oniguruma) to cross-compile for iOS and
+# Android. A browser has no worker thread to highlight on, so a web build leaves the
+# highlighter out entirely and draws code as plain monospace.
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+two-face = { version = "0.5.1", default-features = false, features = ["syntect-fancy"] }
+
+[target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
+criterion = "0.7"
+
+[[bench]]
+name = "streaming"
+harness = false

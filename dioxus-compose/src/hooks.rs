@@ -40,6 +40,34 @@ pub fn use_window_size() -> WindowSize {
     compose_rust::window::window_size()
 }
 
+/// How large the screen is drawn, to read and to change while the app runs.
+///
+/// The factor is `k = os * 1.2^level`: the system's text size times the application's zoom
+/// level, which steps from -8 to 8 the way an editor's zoom does. The renderer reads the
+/// system's size, answers the zoom keys and keeps the level between runs. A page written
+/// with HTML elements is laid out in a viewport of the window's size divided by `k` and
+/// drawn at `k`, so this hook is for what the page cannot know about itself: a menu's
+/// "Zoom In", a status bar that shows the level.
+///
+/// ```ignore
+/// let zoom = use_zoom();
+/// rsx! {
+///     button { onclick: move |_| zoom.zoom_in(), "Zoom in" }
+///     span { "{zoom.get().k:.2}x, level {zoom.get().level}" }
+/// }
+/// ```
+///
+/// The component re-renders when the renderer reports a different `k`, `os` or `level`.
+/// `set_level` asks the renderer to draw at a level; it rides out on the window record in
+/// the batch the handler produces, and the answer is a new report. Nothing is enlarged
+/// before the renderer answers, so reading right after a set still gives the old value.
+pub fn use_zoom() -> compose_rust::ZoomHandle {
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::zoom::subscribe(dioxus_core::schedule_update()))
+    });
+    compose_rust::ZoomHandle::default()
+}
+
 /// Follows one node's size, and re-renders this component when its class changes.
 ///
 /// The token is the name the screen gives the node, because a node id belongs to the
@@ -164,4 +192,190 @@ pub fn use_notification_activated(handler: impl FnMut(NotificationActivation) + 
             move |activation: NotificationActivation| callback.call(activation),
         )))
     });
+}
+
+/// One edit asked of a code editor, waiting for the batch it goes out in.
+pub(crate) struct PendingEdit {
+    pub(crate) token: u32,
+    pub(crate) request_id: u32,
+    pub(crate) base_version: u32,
+    pub(crate) range: compose_rust::code::CodeRange,
+    pub(crate) text: String,
+}
+
+thread_local! {
+    static EDITS: std::cell::RefCell<Vec<PendingEdit>> = const { std::cell::RefCell::new(Vec::new()) };
+    static NEXT_EDITOR_TOKEN: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
+}
+
+/// A way to change the document a code editor holds, for formatting, accepting a
+/// completion or reloading a file that changed underneath it.
+///
+/// Created with [`use_code_editor`] and handed to the editor as its `handle`. An edit is
+/// written against a version, the one the application last heard of. Where the reader has
+/// typed since, the Renderer moves the range along with what they typed; where they typed
+/// in the same place, it refuses the edit and says so through `on_edit_rejected`, because
+/// an application must never type over its reader. An edit that is applied comes back as
+/// an ordinary change, so the version stays one sequence whoever made the edit.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CodeEditorHandle {
+    token: u32,
+}
+
+impl CodeEditorHandle {
+    /// A handle attached to no editor yet. [`use_code_editor`] is the usual way to get one,
+    /// because it keeps the same handle across renders.
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        let token = NEXT_EDITOR_TOKEN.with(|next| {
+            let token = next.get();
+            next.set(token.checked_add(1).unwrap_or(1));
+            token
+        });
+        Self { token }
+    }
+
+    pub(crate) fn token(self) -> u32 {
+        self.token
+    }
+
+    /// Replaces `range` of the document as it stood at `base_version` with `text`.
+    ///
+    /// It goes out with the batch the current call produces, so call it from a component,
+    /// an event handler or a task on the thread the application runs on. A worker updates
+    /// a signal instead, and the component that reads the signal calls this.
+    ///
+    /// `request_id` is the application's own name for the edit, returned if it is refused.
+    pub fn edit(
+        &self,
+        request_id: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        text: impl Into<String>,
+    ) {
+        let edit = PendingEdit {
+            token: self.token,
+            request_id,
+            base_version,
+            range,
+            text: text.into(),
+        };
+        EDITS.with_borrow_mut(|edits| edits.push(edit));
+    }
+}
+
+/// A handle to the editor this component draws, the same one on every render.
+pub fn use_code_editor() -> CodeEditorHandle {
+    dioxus_core::use_hook(CodeEditorHandle::new)
+}
+
+/// Hands every queued edit to `emit` and empties the queue.
+pub(crate) fn drain_edits(mut emit: impl FnMut(&PendingEdit)) {
+    let mut taken = EDITS.with_borrow_mut(std::mem::take);
+    if taken.is_empty() {
+        return;
+    }
+    for edit in &taken {
+        emit(edit);
+    }
+    taken.clear();
+    EDITS.with_borrow_mut(|edits| {
+        if edits.is_empty() {
+            *edits = taken;
+        }
+    });
+}
+
+/// Forgets every queued edit, for a new runtime taking over the thread: an edit addressed
+/// to the old one's editor names nothing in the new one.
+pub(crate) fn reset_edits() {
+    EDITS.with_borrow_mut(Vec::clear);
+}
+
+/// Whether the platform asks for reduced motion, and a re-render when that changes.
+///
+/// The Renderer reports it once after start and again only when the setting changes.
+/// Nothing is reduced on the application's behalf: an animation is played as it was
+/// described, so a screen that should hold still when asked reads this and asks for less.
+pub fn use_reduced_motion() -> compose_rust::ReducedMotion {
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::animation::subscribe_reduced_motion(
+            dioxus_core::schedule_update(),
+        ))
+    });
+    compose_rust::reduced_motion()
+}
+
+/// Runs `handler` for every event the Renderer reports about an animation it is playing.
+///
+/// Only the kinds an animation asked for are ever reported, so an application that asks
+/// for none hears nothing and pays nothing while its animations play.
+pub fn use_animation_event(handler: impl FnMut(compose_rust::AnimationMoment) + 'static) {
+    let callback = dioxus_hooks::use_callback(handler);
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::animation::on_animation_event(Rc::new(
+            move |moment: compose_rust::AnimationMoment| callback.call(moment),
+        )))
+    });
+}
+
+/// A value the Renderer animates to whenever it changes: what
+/// [`animate_float_as_state`] returns. [`value`](Self::value) is the target, because the
+/// value in between is the Renderer's and is never sent back.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Animated<T> {
+    pub target: T,
+    pub spec: compose_rust::AnimationSpec,
+    /// Where a node that appears with this value starts, for the node's first value only.
+    /// Without it a node starts at its target and nothing is played.
+    pub(crate) enter_from: Option<T>,
+    /// Non-zero asks the Renderer to report when the animation of a change ends, under
+    /// this key. Zero reports nothing.
+    pub(crate) watch: u64,
+}
+
+impl<T: Copy> Animated<T> {
+    pub fn value(&self) -> T {
+        self.target
+    }
+}
+
+/// An opacity the Renderer animates to whenever `target` changes, given to an
+/// `AbsoluteBox` as `animated_alpha`. A change is one `StartAnimation` and the Renderer
+/// plays it on its own clock: this component is not rendered again while it plays.
+pub fn animate_float_as_state(target: f32, spec: compose_rust::AnimationSpec) -> Animated<f32> {
+    Animated {
+        target,
+        spec,
+        enter_from: None,
+        watch: 0,
+    }
+}
+
+/// A background the Renderer animates to whenever `target` changes, given to an
+/// `AbsoluteBox` as `animated_background`.
+pub fn animate_color_as_state(
+    target: compose_rust::Paint,
+    spec: compose_rust::AnimationSpec,
+) -> Animated<compose_rust::Paint> {
+    Animated {
+        target,
+        spec,
+        enter_from: None,
+        watch: 0,
+    }
+}
+
+/// A translation in dp the Renderer animates to whenever `target` changes, given to an
+/// `AbsoluteBox` as `animated_offset`. Drawn as a transform, so the layout does not move.
+pub fn animate_offset_as_state(
+    target: (f32, f32),
+    spec: compose_rust::AnimationSpec,
+) -> Animated<(f32, f32)> {
+    Animated {
+        target,
+        spec,
+        enter_from: None,
+        watch: 0,
+    }
 }

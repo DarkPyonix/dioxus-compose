@@ -1,17 +1,24 @@
 [workspace]
 members = [
     "dioxus-compose",
+    "dioxus-compose-markdown",
     "samples/article",
     "samples/chat",
     "samples/dashboard",
     "samples/gallery",
     "samples/hello",
+    "samples/helpcenter",
+    "samples/kanban",
+    "samples/landing",
+    "samples/layout",
+    "samples/motion",
     "samples/overlay",
     "samples/settings",
     "samples/support",
     "samples/table",
     "samples/theme",
     "samples/todo",
+    "samples/typography",
     "samples/workbench",
 ]
 resolver = "2"
@@ -31,3 +38,12 @@ dioxus-core = "0.7.10"
 dioxus-core-macro = "0.7.10"
 dioxus-hooks = "0.7"
 dioxus-signals = "0.7"
+
+# blitz-dom 0.2.4 never matches :focus-within or :focus-visible. The copy below is the
+# crates.io release with the patches under scripts/patches/blitz-dom-0.2.4/ applied.
+# Run scripts/apply-patches.sh first: until it has built that directory, cargo stops with
+# "failed to load source for dependency `blitz-dom`" and a missing path under
+# .scratch/patched/. The patch only reaches this workspace; a published dioxus-compose
+# resolves the unpatched crates.io release.
+[patch.crates-io]
+blitz-dom = { path = ".scratch/patched/blitz-dom-0.2.4" }

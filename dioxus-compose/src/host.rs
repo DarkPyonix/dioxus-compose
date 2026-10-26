@@ -5,10 +5,12 @@
 //! event names. Here that is a `VirtualDom` diffing into a [`ComposeRenderer`], which is the
 //! whole of what this crate adds to the Host.
 
+use crate::html::HtmlConfig;
 use crate::renderer::ComposeRenderer;
+use compose_rust::code::{CodeChange, CodeHover, CodeRange, EditRejected, Position, SaveRequest};
 use compose_rust::protocol::{HostEvent, ProtocolError};
 use compose_rust::schema::{EventPayload, LoopMode, Theme, Window};
-use compose_rust::{Batch, FileDrop, KeyEvent, RangeRequest, Runtime};
+use compose_rust::{Batch, FileDrop, KeyEvent, PointerEvent, RangeRequest, Runtime};
 use dioxus_core::{Element, Event, ScopeId, VirtualDom};
 use std::future::Future;
 use std::pin::pin;
@@ -23,10 +25,34 @@ pub struct DioxusRuntime {
 
 impl DioxusRuntime {
     pub fn new(app: fn() -> Element) -> Self {
+        // Edits queued against an editor of a runtime that is going away name nothing in
+        // this one.
+        crate::hooks::reset_edits();
         Self {
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
         }
+    }
+}
+
+impl DioxusRuntime {
+    /// Writes the edits asked of code editor handles, after the tree, so an editor created
+    /// in this same call already exists when its first edit arrives. A handle no editor
+    /// carries names nothing, and its edit is dropped here rather than sent to a node the
+    /// Renderer would have to report as unknown.
+    fn flush_code_edits(&mut self) {
+        let renderer = &mut self.renderer;
+        crate::hooks::drain_edits(|edit| {
+            if let Some(node_id) = renderer.editor_node(edit.token) {
+                renderer.edit_code(
+                    node_id,
+                    edit.request_id,
+                    edit.base_version,
+                    edit.range,
+                    &edit.text,
+                );
+            }
+        });
     }
 }
 
@@ -41,61 +67,21 @@ impl Runtime for DioxusRuntime {
 
     fn rebuild(&mut self) {
         self.dom.rebuild(&mut self.renderer);
+        self.flush_code_edits();
+        crate::html_view::draw_islands(&mut self.renderer);
     }
 
-    fn render(&mut self) {
+    fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render_immediate(&mut self.renderer);
+        self.flush_code_edits();
+        crate::html_view::draw_islands(&mut self.renderer);
     }
 
     fn handle_event(&mut self, event: &HostEvent<'_>) -> Result<i64, ProtocolError> {
-        let Some((element, node_id, name)) = self.renderer.handler(event.handler_id) else {
-            return Err(ProtocolError::InvalidValueKind(0));
-        };
-        if event.node_id != node_id {
-            return Err(ProtocolError::InvalidValueKind(0));
+        if let Some(result) = crate::html_view::route_event(event) {
+            return result;
         }
-        let mut key_event = None;
-        let event_data = match event.payload {
-            EventPayload::Clicked | EventPayload::FocusLost => {
-                Event::new(Rc::new(()), true).into_any()
-            }
-            EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
-                Event::new(Rc::new(text.to_owned()), true).into_any()
-            }
-            EventPayload::KeyDown {
-                key,
-                shift_key,
-                ctrl_key,
-                alt_key,
-                meta_key,
-            } => {
-                let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
-                key_event = Some(value.clone());
-                Event::new(Rc::new(value), true).into_any()
-            }
-            EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
-            EventPayload::FilesDropped(paths) => {
-                Event::new(Rc::new(FileDrop::new(paths)), true).into_any()
-            }
-            EventPayload::RangeRequested { start, count } => {
-                Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
-            }
-            EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
-            // The Host answers these itself and never hands them to a runtime. One that
-            // arrives here was addressed to a handler, which none of them can be.
-            EventPayload::ProtocolError { .. }
-            | EventPayload::WindowSizeChanged { .. }
-            | EventPayload::DesignSystemResolved(_)
-            | EventPayload::Resync
-            | EventPayload::LifecycleStart
-            | EventPayload::LifecycleStop
-            | EventPayload::NotificationActivated { .. }
-            | EventPayload::NotificationPermissionChanged(_) => {
-                return Err(ProtocolError::InvalidValueKind(0));
-            }
-        };
-        self.dom.runtime().handle_event(name, event_data, element);
-        Ok(i64::from(key_event.is_some_and(|event| event.consumed())))
+        deliver_event(&mut self.dom, &self.renderer, event)
     }
 
     fn size_token(&self, node_id: u32) -> Option<u32> {
@@ -105,7 +91,13 @@ impl Runtime for DioxusRuntime {
     fn poll_work(&mut self, context: &mut Context<'_>) -> Poll<()> {
         let future = self.dom.wait_for_work();
         let mut future = pin!(future);
-        future.as_mut().poll(context)
+        let outer = future.as_mut().poll(context);
+        // Every island is polled whether or not the widget tree has work, so each one has
+        // registered the waker.
+        if crate::html_view::poll_islands(context) {
+            return Poll::Ready(());
+        }
+        outer
     }
 
     /// A message's action runs in the root scope, so it can write signals and spawn tasks
@@ -113,6 +105,217 @@ impl Runtime for DioxusRuntime {
     fn run_in_context(&mut self, action: &mut dyn FnMut()) {
         self.dom.in_scope(ScopeId::ROOT, action);
     }
+}
+
+/// Delivers a renderer event to the Dioxus handler it names, in the tree `renderer` wrote.
+///
+/// Shared by the runtime that owns a widget tree and by a widget tree placed inside an HTML
+/// page, which keeps its own `VirtualDom` and `ComposeRenderer`.
+pub(crate) fn deliver_event(
+    dom: &mut VirtualDom,
+    renderer: &ComposeRenderer,
+    event: &HostEvent<'_>,
+) -> Result<i64, ProtocolError> {
+    let Some((element, node_id, name)) = renderer.handler(event.handler_id) else {
+        return Err(ProtocolError::InvalidValueKind(0));
+    };
+    if event.node_id != node_id {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
+    // A pointer handler takes pointer payloads and nothing else, and no other handler
+    // takes one: the listener downcasts what it is given, so a payload of the wrong shape
+    // is refused here instead of reaching it.
+    let pointer_handler = matches!(name, "pointer" | "onpointer");
+    if pointer_handler != matches!(event.payload, EventPayload::Pointer { .. }) {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
+    let mut key_event = None;
+    let mut pointer_event = None;
+    // A press on a link run arrives as a click on the handler the run was given, and
+    // reaches the `Text`'s link listener with the value the application named it by.
+    let link = renderer.link_value(event.handler_id);
+    let event_data = match event.payload {
+        EventPayload::Clicked if link.is_some() => {
+            Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
+        }
+        EventPayload::Clicked | EventPayload::FocusLost => Event::new(Rc::new(()), true).into_any(),
+        EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
+            Event::new(Rc::new(text.to_owned()), true).into_any()
+        }
+        EventPayload::KeyDown {
+            key,
+            shift_key,
+            ctrl_key,
+            alt_key,
+            meta_key,
+        } => {
+            let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
+            key_event = Some(value.clone());
+            Event::new(Rc::new(value), true).into_any()
+        }
+        EventPayload::Pointer {
+            kind,
+            pointer_id,
+            pointer_type,
+            x,
+            y,
+            buttons,
+            button,
+            modifiers,
+            click_count,
+            delta_x,
+            delta_y,
+            delta_mode,
+            timestamp_nanos,
+        } => {
+            let value = PointerEvent::new(
+                kind,
+                pointer_id,
+                pointer_type,
+                x,
+                y,
+                buttons,
+                button,
+                modifiers,
+                click_count,
+                delta_x,
+                delta_y,
+                delta_mode,
+                timestamp_nanos,
+            );
+            pointer_event = Some(value.clone());
+            Event::new(Rc::new(value), true).into_any()
+        }
+        EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
+        EventPayload::FilesDropped(paths) => {
+            Event::new(Rc::new(FileDrop::new(paths)), true).into_any()
+        }
+        EventPayload::RangeRequested { start, count } => {
+            Event::new(Rc::new(RangeRequest::new(start, count)), true).into_any()
+        }
+        EventPayload::ValueChanged(value) => Event::new(Rc::new(value), true).into_any(),
+        EventPayload::CodeChanged {
+            version,
+            start_line,
+            start_column,
+            end_line,
+            end_column,
+            text,
+        } => Event::new(
+            Rc::new(CodeChange {
+                version,
+                range: CodeRange::of(start_line, start_column, end_line, end_column),
+                text: text.to_owned(),
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeEditRejected {
+            request_id,
+            base_version,
+            current_version,
+            start_line,
+            start_column,
+            end_line,
+            end_column,
+        } => Event::new(
+            Rc::new(EditRejected {
+                request_id,
+                base_version,
+                current_version,
+                range: CodeRange::of(start_line, start_column, end_line, end_column),
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeHovered {
+            decoration,
+            line,
+            column,
+            phase,
+        } => Event::new(
+            Rc::new(CodeHover {
+                decoration: (decoration != 0).then_some(decoration),
+                position: Position::new(line, column),
+                phase,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeSaveRequested { version } => {
+            Event::new(Rc::new(SaveRequest { version }), true).into_any()
+        }
+        EventPayload::DecorationActivated { decoration } => {
+            Event::new(Rc::new(decoration), true).into_any()
+        }
+        EventPayload::SelectionChanged {
+            version,
+            anchor_line,
+            anchor_column,
+            active_line,
+            active_column,
+        } => Event::new(
+            Rc::new(compose_rust::code::SelectionChange {
+                version,
+                anchor: Position::new(anchor_line, anchor_column),
+                active: Position::new(active_line, active_column),
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::VisibleRangeChanged {
+            version,
+            first_line,
+            last_line,
+        } => Event::new(
+            Rc::new(compose_rust::code::VisibleRange {
+                version,
+                first_line,
+                last_line,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::EditorFocusChanged { focused } => {
+            Event::new(Rc::new(focused), true).into_any()
+        }
+        EventPayload::FoldChanged {
+            start_line,
+            collapsed,
+        } => Event::new(
+            Rc::new(compose_rust::code::FoldChange {
+                start_line,
+                collapsed,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CompositionChanged { composing } => {
+            Event::new(Rc::new(composing), true).into_any()
+        }
+        // The Host answers these itself and never hands them to a runtime: a zoom report
+        // updates the state `use_zoom` and every island read, and wakes them, before any
+        // runtime is asked. One that arrives here was addressed to a handler, which none
+        // of them can be.
+        EventPayload::ProtocolError { .. }
+        | EventPayload::WindowSizeChanged { .. }
+        | EventPayload::DesignSystemResolved(_)
+        | EventPayload::Resync
+        | EventPayload::LifecycleStart
+        | EventPayload::LifecycleStop
+        | EventPayload::NotificationActivated { .. }
+        | EventPayload::NotificationPermissionChanged(_)
+        | EventPayload::AnimationEvent { .. }
+        | EventPayload::ReducedMotionChanged(_)
+        | EventPayload::ZoomChanged { .. } => {
+            return Err(ProtocolError::InvalidValueKind(0));
+        }
+    };
+    dom.runtime().handle_event(name, event_data, element);
+    Ok(i64::from(
+        key_event.is_some_and(|event| event.consumed())
+            || pointer_event.is_some_and(|event| event.consumed()),
+    ))
 }
 
 /// The runtime factory for one Dioxus application.
@@ -133,6 +336,14 @@ pub struct Host(compose_rust::Host);
 impl Host {
     pub fn new(app: fn() -> Element) -> Self {
         Self(compose_rust::Host::new(runtime_for(app)))
+    }
+
+    /// A Host for an application written with HTML elements and CSS. `config` is called
+    /// for each runtime the Host makes; see [`crate::html::runtime_for`].
+    pub fn html(app: fn() -> Element, config: fn() -> HtmlConfig) -> Self {
+        Self(compose_rust::Host::new(crate::html::runtime_for(
+            app, config,
+        )))
     }
 
     /// The theme the application chose. Choosing nothing follows the host platform, with
@@ -161,8 +372,14 @@ impl std::ops::DerefMut for Host {
 }
 
 /// How a Dioxus application starts: compose-rust's launch, given a root component.
+///
+/// The component is written with the Compose widgets unless [`LaunchBuilder::with_html`]
+/// says it is written with HTML elements and CSS.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct LaunchBuilder(compose_rust::LaunchBuilder);
+pub struct LaunchBuilder {
+    core: compose_rust::LaunchBuilder,
+    html: Option<fn() -> HtmlConfig>,
+}
 
 impl LaunchBuilder {
     pub fn new() -> Self {
@@ -170,37 +387,64 @@ impl LaunchBuilder {
     }
 
     pub fn with_mode(self, mode: LoopMode) -> Self {
-        Self(self.0.with_mode(mode))
+        Self {
+            core: self.core.with_mode(mode),
+            ..self
+        }
     }
 
     /// `Theme::unified` for one design system everywhere, `Theme::adaptive` to follow the
     /// host platform. Not calling this follows the host platform, falling back to
     /// Material 3.
     pub fn with_theme(self, theme: Theme) -> Self {
-        Self(self.0.with_theme(theme))
+        Self {
+            core: self.core.with_theme(theme),
+            ..self
+        }
     }
 
     /// What the application asks of its own window: its size, and whether it wears the
     /// platform's title bar or has content run into it.
     pub fn with_window(self, window: Window) -> Self {
-        Self(self.0.with_window(window))
+        Self {
+            core: self.core.with_window(window),
+            ..self
+        }
+    }
+
+    /// The root component is written with HTML elements and CSS, laid out with the
+    /// configuration `config` returns. It is called for each runtime the Host makes, so a
+    /// renderer that asks for the whole tree again gets a fresh document.
+    pub fn with_html(self, config: fn() -> HtmlConfig) -> Self {
+        Self {
+            html: Some(config),
+            ..self
+        }
     }
 
     /// Runs the application. Does not return while it is running, and ends the process
     /// with a failing status if the renderer loop could not run at all.
     pub fn launch(self, app: fn() -> Element) {
-        self.0.launch_runtime(runtime_for(app));
+        self.core.launch_runtime(self.runtime(app));
     }
 
     /// [`LaunchBuilder::launch`] without the exit: the status the renderer loop ended
     /// with, handed back for a caller that has its own idea of what to do with it.
     pub fn try_launch(self, app: fn() -> Element) -> i32 {
-        self.0.try_launch_runtime(runtime_for(app))
+        self.core.try_launch_runtime(self.runtime(app))
     }
 
     /// The compose-rust builder underneath, for an entry point that takes one.
     pub fn into_core(self) -> compose_rust::LaunchBuilder {
-        self.0
+        self.core
+    }
+
+    /// The runtime factory for `app`, written the way this builder says it is.
+    pub fn runtime(self, app: fn() -> Element) -> Box<dyn Fn() -> Box<dyn Runtime> + Send + Sync> {
+        match self.html {
+            Some(config) => Box::new(crate::html::runtime_for(app, config)),
+            None => Box::new(runtime_for(app)),
+        }
     }
 }
 
@@ -213,5 +457,5 @@ pub fn launch(app: fn() -> Element) {
 #[cfg(target_family = "wasm")]
 #[doc(hidden)]
 pub fn web_start(builder: LaunchBuilder, app: fn() -> Element) -> u32 {
-    compose_rust::__web_start(builder.into_core(), runtime_for(app))
+    compose_rust::__web_start(builder.into_core(), builder.runtime(app))
 }

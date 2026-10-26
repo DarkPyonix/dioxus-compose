@@ -18,9 +18,27 @@ use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PropertyKind, WIDGET_SCHEMA, WidgetKind,
+    EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PointerKind, PointerType, PropertyKind,
+    WIDGET_SCHEMA, WheelDeltaMode, WidgetKind,
 };
-use dioxus_compose::spans::TextSpans;
+use dioxus_compose::spans::{TextSpan, TextSpans};
+use dioxus_compose::{FontRef, FontRefs, GenericFamily, OverflowWrap, WordBreak};
+
+/// The font list of the CSS text in `surface()`.
+fn css_font() -> FontRefs {
+    FontRefs::new([
+        FontRef::System("Menlo".to_owned()),
+        FontRef::Generic(GenericFamily::Monospace),
+    ])
+}
+
+/// Its runs: one names a font of its own.
+fn css_spans() -> TextSpans {
+    TextSpans::new_with_fonts([(
+        TextSpan::new(0, 3),
+        FontRefs::new([FontRef::Generic(GenericFamily::Serif)]),
+    )])
+}
 
 thread_local! {
     /// What the handlers written in `surface()` were called with, in order.
@@ -36,6 +54,22 @@ fn take_fired() -> Vec<String> {
 }
 
 const SPANS_SOURCE: &str = "every **widget** in `rsx`";
+
+/// The two lists a code editor carries, built the same way in surface() and expectations().
+fn code_lists() -> (SyntaxSpans, Decorations) {
+    (
+        SyntaxSpans::new([SyntaxSpan::role(
+            0,
+            CodeRange::of(0, 0, 0, 1),
+            ColorRole::Primary,
+        )]),
+        Decorations::new([Decoration::underline(
+            0,
+            CodeRange::of(0, 4, 0, 5),
+            Severity::Warning,
+        )]),
+    )
+}
 
 fn spans() -> (String, TextSpans) {
     TextSpans::from_markdown(SPANS_SOURCE)
@@ -91,7 +125,10 @@ fn surface() -> Element {
                     icon: IconRole::Send,
                     enabled: true,
                     variant: ButtonVariant::Tonal,
+                    button_kind: ButtonKind::ActionKey,
                     color: ERROR,
+                    max_lines: 2,
+                    overflow: TextOverflow::Clip,
                     on_click: move |_| fired("Button.on_click"),
                 }
             },
@@ -112,6 +149,12 @@ fn surface() -> Element {
                 spacing: 8.0,
                 space_role: SpaceRole::Md,
                 alignment: Alignment::Center,
+                cursor: Cursor::Pointer,
+                user_select: UserSelect::None,
+                pointer_kinds: PointerKinds::MOVE | PointerKinds::WHEEL,
+                on_pointer: move |event: PointerEvent| {
+                    fired(format!("Column.on_pointer({:?})", event.kind()))
+                },
                 Row {
                     width: 320.0,
                     height: 48.0,
@@ -140,6 +183,19 @@ fn surface() -> Element {
                         max_lines: 2,
                         overflow: TextOverflow::Ellipsis,
                     }
+                    // Text laid out by CSS: no rung of the ladder, and everything it says
+                    // about itself instead.
+                    Text {
+                        text: "css\ttext",
+                        spans: css_spans(),
+                        type_role: TypeRole::None,
+                        font: css_font(),
+                        word_break: WordBreak::KeepAll,
+                        overflow_wrap: OverflowWrap::BreakWord,
+                        tab_size: 2,
+                        absolute_size: true,
+                        soft_wrap: false,
+                    }
                 }
                 TextField {
                     placeholder: "Search",
@@ -167,6 +223,40 @@ fn surface() -> Element {
                     on_dismiss: move |_| fired("SplitPane.on_dismiss"),
                     Column {}
                     Column {}
+                }
+                AbsoluteBox {
+                    required_size: (320.0, 180.0),
+                    background: Paint::Role(ColorRole::Surface),
+                    border: ([1.0, 2.0, 1.0, 2.0], [OUTLINE; 4]),
+                    corners: [8.0, 0.0, 8.0, 0.0],
+                    shadow: (0.0, 2.0, 6.0, 0.0, OUTLINE),
+                    clip: true,
+                    alpha: 0.5,
+                    transform: (0.0, 1.0, -1.0, 0.0, 4.0, 0.0),
+                    island_zoom: 1.5,
+                    AbsoluteBox {
+                        offset: (12.0, 24.0),
+                        required_size: (100.0, 40.0),
+                        Text { text: "placed" }
+                    }
+                }
+                CodeEditor {
+                    text: "x = 1",
+                    syntax_spans: code_lists().0,
+                    decorations: code_lists().1,
+                    folds: compose_rust::code::Folds::new([compose_rust::code::Fold::new(0, 0, 1)]),
+                    gutter_decorations: compose_rust::code::GutterDecorations::new([compose_rust::code::GutterDecoration::dot(0, 0, 1)]),
+                    tab_width: 4_u32,
+                    on_change: move |_| fired("CodeEditor.on_change"),
+                    on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
+                    on_hover: move |_| fired("CodeEditor.on_hover"),
+                    on_save: move |_| fired("CodeEditor.on_save"),
+                    on_selection_change: move |_| fired("CodeEditor.on_selection_change"),
+                    on_visible_range_change: move |_| fired("CodeEditor.on_visible_range_change"),
+                    on_editor_focus_change: move |_| fired("CodeEditor.on_editor_focus_change"),
+                    on_fold_change: move |_| fired("CodeEditor.on_fold_change"),
+                    on_composition_change: move |_| fired("CodeEditor.on_composition_change"),
+                    on_decoration_click: move |id: u64| fired(format!("CodeEditor.on_decoration_click({id})")),
                 }
                 SelectionContainer {
                     Badge {
@@ -210,6 +300,7 @@ fn surface() -> Element {
                 }
                 Surface {
                     background: Paint::Role(ColorRole::SurfaceVariant),
+                    on_click: move |()| fired("Surface.on_click"),
                     Slider {
                         value: 0.25,
                         min: -1.0,
@@ -476,6 +567,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Spacing, float(8.0)),
                 (P::SpaceRole, role(SpaceRole::Md)),
                 (P::Alignment, role(Alignment::Center)),
+                (P::Cursor, role(Cursor::Pointer)),
+                (P::UserSelect, role(UserSelect::None)),
+                (P::PointerKinds, int(1 | 64)),
+                (P::OnPointer, Handler),
             ],
         ),
         (
@@ -507,6 +602,24 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Overflow, role(TextOverflow::Ellipsis)),
             ],
         ),
+        (
+            W::Text,
+            vec![
+                (P::Text, text("css\ttext")),
+                (P::TypeRole, int(0)),
+                (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
+                (P::Spans, is(Value::Bytes(css_spans().as_bytes().to_vec()))),
+                (
+                    P::SpanFonts,
+                    is(Value::Bytes(css_spans().font_table().to_vec())),
+                ),
+                (P::WordBreak, role(WordBreak::KeepAll)),
+                (P::OverflowWrap, role(OverflowWrap::BreakWord)),
+                (P::TabSize, int(2)),
+                (P::AbsoluteSize, int(1)),
+                (P::SoftWrap, flag(false)),
+            ],
+        ),
         (W::Text, vec![(P::Text, text("message 1"))]),
         (W::Text, vec![(P::Text, text("chip 0"))]),
         (W::Text, vec![(P::Text, text("tile 1"))]),
@@ -530,7 +643,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Icon, role(IconRole::Send)),
                 (P::Enabled, flag(true)),
                 (P::Variant, role(ButtonVariant::Tonal)),
+                (P::ButtonKind, role(ButtonKind::ActionKey)),
                 (P::Color, int(paint_bits(ERROR))),
+                (P::MaxLines, int(2)),
+                (P::Overflow, role(TextOverflow::Clip)),
                 (P::OnClick, Handler),
             ],
         ),
@@ -540,7 +656,29 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             vec![(P::ItemCount, int(3)), (P::OnRangeRequested, Handler)],
         ),
         (W::ScrollColumn, vec![]),
+        (W::AbsoluteBox, vec![(P::IslandZoom, float(1.5))]),
+        (W::AbsoluteBox, vec![]),
         (W::ScrollRow, vec![]),
+        (
+            W::CodeEditor,
+            vec![
+                (P::Text, text("x = 1")),
+                (
+                    P::SyntaxSpans,
+                    is(Value::Bytes(code_lists().0.as_bytes().to_vec())),
+                ),
+                (
+                    P::Decorations,
+                    is(Value::Bytes(code_lists().1.as_bytes().to_vec())),
+                ),
+                (P::TabWidth, int(4)),
+                (P::OnValueChange, Handler),
+                (P::OnEditRejected, Handler),
+                (P::OnHover, Handler),
+                (P::OnSave, Handler),
+                (P::OnDecorationClick, Handler),
+            ],
+        ),
         (
             W::SplitPane,
             vec![
@@ -823,10 +961,7 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-/// - `Clickable`: the attribute is declared as `onclickable`, and rsx reads any attribute
-///   starting with `on` as an event, which has to be a function in `events`. There is
-///   none by that name, so the attribute cannot be written.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach", "Clickable"];
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {
@@ -879,6 +1014,26 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             P::OnClick,
             EventPayload::Clicked,
             "FloatingAction.on_click",
+        ),
+        (
+            W::Column,
+            P::OnPointer,
+            EventPayload::Pointer {
+                kind: PointerKind::Move,
+                pointer_id: 1,
+                pointer_type: PointerType::Mouse,
+                x: 3.0,
+                y: 4.0,
+                buttons: 0,
+                button: 0,
+                modifiers: 0,
+                click_count: 0,
+                delta_x: 0.0,
+                delta_y: 0.0,
+                delta_mode: WheelDeltaMode::Pixel,
+                timestamp_nanos: 0,
+            },
+            "Column.on_pointer(Move)",
         ),
         (
             W::TextField,

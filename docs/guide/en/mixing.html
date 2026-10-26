@@ -77,7 +77,8 @@
       An app picks one prelude. <code>dioxus_compose::html::prelude::*</code> names the HTML elements
       and <code>dioxus_compose::prelude::*</code> names the widgets, each as
       <code>dioxus_elements</code>, so a block of <code>rsx!</code> sees one set or the other. The
-      widget path draws today; the HTML path is laid out and planned but not drawn
+      widget path draws today. The HTML path is laid out, planned and sent to the renderer through
+      the bridge, which is tested on the Host and not yet confirmed on screen
       (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>), and mixing builds
       on that bridge.
     </p>
@@ -139,6 +140,12 @@
       <span class="pill planned">planned</span> The design is settled and is scheduled after the
       HTML path draws on screen. <a href="https://github.com/DarkPyonix/dioxus-compose/issues/59">#59</a> tracks it; it builds on
       <a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>.
+    </p>
+
+    <p>
+      <strong>Examples.</strong> Every example in <a href="https://github.com/DarkPyonix/dioxus-compose/tree/main/samples">samples/</a> uses the HTML path
+      alone, including the newest four (<a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>samples/layout</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing"><code>samples/landing</code></a>, <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography"><code>samples/typography</code></a> and
+      <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>samples/motion</code></a>). None mixes widgets in yet.
     </p>
 
     <nav class="pagenav" aria-label="Pagination">

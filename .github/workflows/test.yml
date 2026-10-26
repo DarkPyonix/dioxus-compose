@@ -21,8 +21,11 @@ on:
   # merges, so that run is the gate, and it finishes before main moves. Running again on
   # the push afterwards tested the identical tree and doubled every number on the actions
   # page for nothing.
+  # develop as well: work reaches it through pull requests, and those had no gate at all.
+  # workflow_dispatch runs the gate by hand, and release-sync uses it on the release branch,
+  # because a push made with GITHUB_TOKEN does not start pull_request workflows.
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 concurrency:
@@ -95,6 +98,11 @@ jobs:
         # crate-readme.test.sh asks cargo what the packaged crate would contain, and
         # spec-cites-real-tests.test.sh asks it where the compose-rust checkout is.
         run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Build the patched blitz-dom
+        # The workspace patches blitz-dom with a directory scripts/apply-patches.sh builds,
+        # and cargo (which crate-readme.test.sh runs) fails to load the workspace without it.
+        run: ./scripts/apply-patches.sh
 
       - name: Run the shell tests
         # scripts/tests/ and the release script's own test beside it in

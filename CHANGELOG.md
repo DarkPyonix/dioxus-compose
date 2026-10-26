@@ -2,6 +2,69 @@
 
 ## Unreleased
 
+### HTML screens zoom as a whole
+
+An HTML screen is zoomed the way an editor zooms. The renderer reports `k`, the system's
+text size times `1.2^level`, and the page is laid out in a viewport of the window's size
+over `k`, drawn at `k`, and measured at `k`. A `width` media query sees that viewport and a
+`resolution` query sees `k`. `html::launch` and every `HtmlView` do this, and
+`use_zoom()` reads the factor and level and sets the level (`zoom_in`, `zoom_out`, `reset`,
+`set_level`). `AbsoluteBox` takes `island_zoom`. The zoom starts at 1 until the renderer
+reports one, which is where the web target stays. Checking a real VS Code at the same
+zoom, and the system text size on each desktop, is manual. The renderer is pinned at the
+compose-rust commit that has the zoom report and the island factor.
+
+### Transforms and renderer-played animations from rsx
+
+`AbsoluteBox` takes a CSS `transform` matrix with its `transform_origin`, or a Compose style
+`graphics_layer` (rotation, scale, translation and opacity). `animate_float_as_state`,
+`animate_color_as_state` and `animate_offset_as_state` give an `AbsoluteBox` an opacity, a
+background or a translation that the renderer animates to whenever the target changes: a
+change is one `StartAnimation` record, and the component is not rendered again while it
+plays. `use_reduced_motion` reads the platform's reduced motion setting and re-renders when
+it changes, and `use_animation_event` hears the animation events a screen asked for. These
+need compose-rust's transform and animation records, so compose-rust is pinned at the
+commit that has them (compose-rust #83).
+
+### HTML and CSS screens reach the renderer
+
+An HTML app is launched the way a widget app is: `dioxus_compose::html::launch(app)`, or
+`LaunchBuilder::new().with_html(config).launch(app)` to pass a configuration.
+`cargo run -p sample-html-hello` opens the hello sample in a window.
+
+The bridge writes the drawing plan into compose-rust's batch. The first frame sends the
+whole tree; after that only what the plan diff reports is sent, and a frame where nothing
+changed sends nothing. Every kind of drawing element has a compose-rust widget to become.
+Clicks, typed text, focus leaving a field, Enter in a field, checkbox and radio toggles and
+select choices come back to the Dioxus handlers.
+
+The records the renderer receives are tested on the Host. Drawing them on screen has not
+been confirmed by running the renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
+Text is still measured by Parley, and `font-family` does not reach the screen yet.
+`font-style: italic` and `oblique`, and `text-decoration-line: underline` and `line-through`
+alone or together, are sent as one span over the whole run of text, because compose-rust's
+text style has no slant or lines of its own and its spans do. A box's lines are drawn across
+the text inside it, as a browser draws them, so a link is underlined by the default
+stylesheet. Plain text sends no span.
+
+Keys and focus reach HTML elements as DOM events. Enter pressed in a field, or in a box
+whose element listens for keys, delivers `keydown` and then `keypress`, bubbling from the
+focused element; a handler that prevents the default keeps the field from submitting or
+starting a line. A field delivers `focus` and `focusin` before the first thing the user does
+in it, and `change`, `blur` and `focusout` when it loses the focus. Enter is the one key
+compose-rust carries, it has no key release, and it reports a field losing the focus but not
+gaining it, so `keyup` is never sent and `focus` arrives with the first keystroke.
+
+`prefers-color-scheme` follows the theme: an application that switches its theme to light or
+dark while running has its HTML screen restyled in the same frame, and only the boxes whose
+style changed are sent. A theme that follows the system keeps the configured scheme, because
+the renderer applies a system change without telling the Host.
+
+The hello sample builds for Android, iOS and the web as well as the desktop, with the entry
+points the native-widget samples have. `AbsoluteBox` and the `offset`, `required_size`,
+`border_each`, `corner_each`, `shadow`, `clip` and `alpha` attributes can be written in a
+widget `rsx!` app, as compose-rust's adapter writes them.
+
 ### The renderer is built for the platform where Compose publishes one
 
 macOS no longer carries a Java runtime. Where Compose publishes a target of its own, the

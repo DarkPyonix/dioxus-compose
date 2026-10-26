@@ -1,0 +1,112 @@
+--- a/src/document.rs
++++ b/src/document.rs
+@@ -38,6 +38,7 @@
+ use std::sync::{Arc, Mutex};
+ use std::task::Context as TaskContext;
+ use style::Atom;
++use style_dom::ElementState;
+ use style::animation::DocumentAnimationSet;
+ use style::attr::{AttrIdentifier, AttrValue};
+ use style::data::{ElementData as StyloElementData, ElementStyles};
+@@ -134,6 +135,9 @@
+     pub(crate) hover_node_id: Option<usize>,
+     /// The node which is currently focussed (if any)
+     pub(crate) focus_node_id: Option<usize>,
++    /// Whether the next focus change comes from keyboard navigation, which is what
++    /// `:focus-visible` follows.
++    pub(crate) focus_from_keyboard: bool,
+     /// The node which is currently active (if any)
+     pub(crate) active_node_id: Option<usize>,
+     /// The node which recieved a mousedown event (if any)
+@@ -272,6 +276,7 @@
+ 
+             hover_node_id: None,
+             focus_node_id: None,
++            focus_from_keyboard: false,
+             active_node_id: None,
+             mousedown_node_id: None,
+             has_active_animations: false,
+@@ -887,14 +892,35 @@
+     pub fn focus_next_node(&mut self) -> Option<usize> {
+         let focussed_node_id = self.get_focussed_node_id()?;
+         let id = self.next_node(&self.nodes[focussed_node_id], |node| node.is_focussable())?;
++        let previous = self.focus_from_keyboard;
++        self.focus_from_keyboard = true;
+         self.set_focus_to(id);
++        self.focus_from_keyboard = previous;
+         Some(id)
+     }
+ 
++    /// Say whether the focus changes that follow come from the keyboard. A focused
++    /// element matches `:focus-visible` only when its focus came from the keyboard.
++    pub fn set_focus_from_keyboard(&mut self, from_keyboard: bool) {
++        self.focus_from_keyboard = from_keyboard;
++    }
++
++    /// Set or clear `:focus-within` on `node_id` and each of its ancestors.
++    fn set_focus_within_chain(&mut self, node_id: usize, within: bool) {
++        let mut next = Some(node_id);
++        while let Some(id) = next {
++            next = self.nodes[id].parent;
++            if self.nodes[id].is_element() {
++                self.snapshot_node_and(id, |node| node.set_focus_within(within));
++            }
++        }
++    }
++
+     /// Clear the focussed node
+     pub fn clear_focus(&mut self) {
+         if let Some(id) = self.focus_node_id {
+             self.snapshot_node_and(id, |node| node.blur());
++            self.set_focus_within_chain(id, false);
+             self.focus_node_id = None;
+         }
+     }
+@@ -913,10 +939,18 @@
+         // Remove focus from the old node
+         if let Some(id) = self.focus_node_id {
+             self.snapshot_node_and(id, |node| node.blur());
++            self.set_focus_within_chain(id, false);
+         }
+ 
+         // Focus the new node
+-        self.snapshot_node_and(focus_node_id, |node| node.focus());
++        let from_keyboard = self.focus_from_keyboard;
++        self.snapshot_node_and(focus_node_id, |node| {
++            node.focus();
++            if !from_keyboard {
++                node.element_state.remove(ElementState::FOCUSRING);
++            }
++        });
++        self.set_focus_within_chain(focus_node_id, true);
+ 
+         self.focus_node_id = Some(focus_node_id);
+ 
+--- a/src/node/node.rs
++++ b/src/node/node.rs
+@@ -293,6 +293,12 @@
+         self.set_restyle_hint(RestyleHint::restyle_subtree());
+     }
+ 
++    /// Set or clear `:focus-within` on this element: it or a descendant has the focus.
++    pub fn set_focus_within(&mut self, within: bool) {
++        self.element_state.set(ElementState::FOCUS_WITHIN, within);
++        self.set_restyle_hint(RestyleHint::restyle_subtree());
++    }
++
+     pub fn is_focussed(&self) -> bool {
+         self.element_state.contains(ElementState::FOCUS)
+     }
+--- a/src/stylo.rs
++++ b/src/stylo.rs
+@@ -412,8 +412,8 @@
+             NonTSPseudoClass::Disabled => false,
+             NonTSPseudoClass::Enabled => false,
+             NonTSPseudoClass::Focus => self.element_state.contains(ElementState::FOCUS),
+-            NonTSPseudoClass::FocusWithin => false,
+-            NonTSPseudoClass::FocusVisible => false,
++            NonTSPseudoClass::FocusWithin => self.element_state.contains(ElementState::FOCUS_WITHIN),
++            NonTSPseudoClass::FocusVisible => self.element_state.contains(ElementState::FOCUSRING),
+             NonTSPseudoClass::Fullscreen => false,
+             NonTSPseudoClass::Hover => self.element_state.contains(ElementState::HOVER),
+             NonTSPseudoClass::Indeterminate => false,

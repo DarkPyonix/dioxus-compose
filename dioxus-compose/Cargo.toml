@@ -33,12 +33,17 @@ bench = false
 default = ["native-renderer"]
 mock-renderer = ["compose-rust/mock-renderer"]
 native-renderer = ["compose-rust/native-renderer"]
+# Calls the blitz-dom API that scripts/patches/blitz-dom-0.2.4/ adds, so `:focus-visible`
+# follows where the focus came from. Off by default because the release on crates.io does
+# not have that API: a consumer of the published crate gets blitz-dom as published. The
+# workspace's checks turn it on after scripts/apply-patches.sh has built the patched copy.
+patched-blitz = []
 
 [dependencies]
-# The boundary, the protocol, the schema and the renderer it links. Pinned to one exact
-# version, because the records the Host writes and the renderer reads are versioned
-# together: a different compose-rust is a different wire format.
-compose-rust = { version = "=0.0.1", default-features = false }
+# The boundary, the protocol, the schema and the renderer it links. Pinned to one tag,
+# because the records the Host writes and the renderer reads are versioned together: a
+# different compose-rust is a different wire format.
+compose-rust = { git = "https://github.com/DarkPyonix/compose-rust", tag = "v0.0.4", default-features = false }
 dioxus-core.workspace = true
 dioxus-core-macro.workspace = true
 dioxus-hooks.workspace = true
@@ -58,6 +63,9 @@ blitz-traits = "=0.2.0"
 # lines and stylo's computed values directly.
 parley = "=0.6.0"
 style = { package = "stylo", version = "=0.8.0" }
+# `ToCss`, which writes a computed transform back as CSS for the warning that names a 3D
+# transform the display list leaves out.
+style_traits = { package = "stylo_traits", version = "=0.8.0" }
 # The same Taffy blitz-dom drives, with the same algorithms switched on: the layout pass
 # implements Taffy's tree traits over blitz-dom's nodes.
 taffy = { version = "0.9", default-features = false, features = [
@@ -84,6 +92,12 @@ harness = false
 # `html_frame` in benches/baseline.json.
 [[bench]]
 name = "html_frame"
+harness = false
+
+# The Host's half of the measure call: two hundred labels, six hundred measurements in one
+# call, against the mock renderer.
+[[bench]]
+name = "measure_sidebar"
 harness = false
 
 [[example]]

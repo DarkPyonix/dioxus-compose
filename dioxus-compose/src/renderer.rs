@@ -5,7 +5,9 @@ use compose_rust::schema::{PropertyKind, WidgetKind};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
-use std::collections::HashMap;
+use std::collections::hash_map::RandomState;
+use std::collections::{HashMap, HashSet};
+use std::hash::BuildHasher;
 
 /// The inclusive range of design-property tags. Extension properties follow this range.
 const FIRST_OPTIONAL_PROPERTY: u16 = PropertyKind::TypeRole as u16;
@@ -19,13 +21,48 @@ const LAST_OPTIONAL_PROPERTY: u16 = PropertyKind::Variant as u16;
 /// absent are the same state, so the first empty one is worth no record.
 const SPANS_BIT: u32 = 63;
 
+/// The bits for the properties text laid out by CSS carries, in the same order as their
+/// tags. Kept apart for the same reason as the runs: their tags are far past the range
+/// above, and none of them has a zero that means anything but "not sent".
+const TEXT_LAYOUT_BITS: [(PropertyKind, u32); 7] = [
+    (PropertyKind::Font, 56),
+    (PropertyKind::WordBreak, 57),
+    (PropertyKind::OverflowWrap, 58),
+    (PropertyKind::TabSize, 59),
+    (PropertyKind::AbsoluteSize, 60),
+    (PropertyKind::SoftWrap, 61),
+    (PropertyKind::SpanFonts, 62),
+];
+
+/// The font table of a `Text`'s runs, as an attribute of its own. The same runs travel as
+/// `spans` and their fonts as this, so a run record keeps its own layout.
+#[derive(Clone, PartialEq)]
+pub struct SpanFontTable(pub compose_rust::spans::TextSpans);
+
 #[derive(Clone, Copy, Debug)]
 struct Handler {
     id: u64,
     element: ElementId,
     node_id: u32,
     name: &'static str,
+    /// The application's value for a link run, when this handler stands for one. Zero for
+    /// every handler a listener attribute created.
+    link: u64,
 }
+
+/// The listener name a link run's press is delivered to, without the `on` that the
+/// attribute is spelled with.
+pub(crate) const LINK_EVENT: &str = "link";
+
+/// A `Text`'s string marked as one that usually grows at the end.
+///
+/// Carried in place of a plain string when `Text { streaming: true }` is set. The Host
+/// remembers how much of it the Renderer already holds, and when the new string starts
+/// with exactly that, it sends only the tail as an `AppendText` instead of the whole
+/// string again. A string that changed anywhere else is sent whole, so the flag can never
+/// make the screen disagree with the Host; it only makes the common case cheap.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct GrowingText(pub(crate) String);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PathTarget {
@@ -71,7 +108,7 @@ struct StackNode {
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 14;
+const MODIFIER_SLOTS: usize = 22;
 
 /// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
 /// takes no slot in the Compose tree.
@@ -123,6 +160,36 @@ pub struct ComposeRenderer {
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
     /// Which application token each observed node was given, for reading a report back.
     size_tokens: HashMap<u32, u32>,
+    /// For each `Text` whose string is marked as growing, how many bytes the Renderer holds
+    /// and a keyed hash of them.
+    ///
+    /// A hash rather than a copy, so a growing string costs sixteen bytes here instead of
+    /// being held twice. The key is random per process, so text that arrives from outside,
+    /// which an agent's output is, cannot be written to collide on purpose.
+    sent_text: HashMap<u32, (usize, u64)>,
+    text_hasher: RandomState,
+    /// For each `Text` with link runs, the handler id each of its link values was given.
+    /// Kept, so a run that is resent with the same value keeps the same id and the list of
+    /// runs compares equal to what the Renderer already has.
+    link_handlers: HashMap<u32, Vec<(u64, u64)>>,
+    /// Where a list of runs is rewritten with the Host's handler ids before it is sent.
+    /// Reused, so resending runs does not allocate once it has grown.
+    span_scratch: Vec<u8>,
+
+    /// Which editor node each code editor handle is attached to, by the handle's token.
+    editors: HashMap<u32, u32>,
+    /// The elements whose `pointer_kinds` is not empty. A pointer handler is announced to
+    /// the Renderer only for these, so a node that names no kinds takes no pointer input.
+    pointer_on: HashSet<usize>,
+    /// The elements the Renderer was told a pointer handler for.
+    pointer_announced: HashSet<usize>,
+    /// The pointer-related properties each node was given a value for, so one that was
+    /// never set is never cleared and an unset one costs no record.
+    pointer_sent: HashSet<(u32, u16)>,
+    /// The animated attributes each node has already been given a value for. The first
+    /// value is where the node starts; every later one is a change to animate.
+    animated: std::collections::HashSet<(u32, &'static str)>,
+    next_animation_id: u32,
     stack: Vec<StackNode>,
 }
 
@@ -138,11 +205,37 @@ impl ComposeRenderer {
         self.size_tokens.get(&node_id).copied()
     }
 
+    /// Every observed node and the application's name for it, as `(node_id, token)`.
+    pub(crate) fn observed_nodes(&self) -> Vec<(u32, u32)> {
+        self.size_tokens
+            .iter()
+            .map(|(&node_id, &token)| (node_id, token))
+            .collect()
+    }
+
+    /// The drawn node nothing was inserted under: the root of the tree this wrote. When
+    /// the tree has several, the one created first.
+    pub(crate) fn root_node(&self) -> Option<u32> {
+        self.nodes
+            .iter()
+            .flatten()
+            .copied()
+            .filter(|&node| node != PLACEHOLDER_NODE && !self.parents.contains_key(&node))
+            .min()
+    }
+
     pub fn new() -> Self {
+        Self::with_id_bases(1, 1)
+    }
+
+    /// A renderer whose node ids start at `first_node` and whose handler ids start at
+    /// `first_handler`. A tree that shares a batch with another writer takes ids from a
+    /// range of its own, so the two never name the same node.
+    pub fn with_id_bases(first_node: u32, first_handler: u64) -> Self {
         Self {
             batch: Batch::new(),
-            next_node_id: 1,
-            next_handler_id: 1,
+            next_node_id: first_node,
+            next_handler_id: first_handler,
             nodes: Vec::with_capacity(256),
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
@@ -155,6 +248,19 @@ impl ComposeRenderer {
             // Empty until a screen asks, which is the point: a tree that observes nothing
             // allocates nothing here.
             size_tokens: HashMap::new(),
+            // Empty until a growing string or a link run arrives, for the same reason.
+            sent_text: HashMap::new(),
+            text_hasher: RandomState::new(),
+            link_handlers: HashMap::new(),
+            span_scratch: Vec::new(),
+
+            // Empty for a screen without an editor handle, which allocates nothing.
+            editors: HashMap::new(),
+            pointer_on: HashSet::new(),
+            pointer_announced: HashSet::new(),
+            pointer_sent: HashSet::new(),
+            animated: std::collections::HashSet::new(),
+            next_animation_id: 1,
             stack: Vec::with_capacity(64),
         }
     }
@@ -183,6 +289,15 @@ impl ComposeRenderer {
             .map(|handler| (handler.element, handler.node_id, handler.name))
     }
 
+    /// The application's value for the link run this handler stands for, if it stands for
+    /// one.
+    pub fn link_value(&self, handler_id: u64) -> Option<u64> {
+        self.handlers
+            .iter()
+            .find(|handler| handler.id == handler_id)
+            .and_then(|handler| (handler.link != 0).then_some(handler.link))
+    }
+
     pub fn set_text(
         &mut self,
         element: ElementId,
@@ -197,6 +312,24 @@ impl ComposeRenderer {
             text,
             selection,
         });
+    }
+
+    /// The editor node a code editor handle is attached to, if it is attached to one.
+    pub(crate) fn editor_node(&self, token: u32) -> Option<u32> {
+        self.editors.get(&token).copied()
+    }
+
+    /// Writes one edit the application asked of a code editor.
+    pub(crate) fn edit_code(
+        &mut self,
+        node_id: u32,
+        request_id: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        text: &str,
+    ) {
+        self.batch
+            .edit_code(node_id, request_id, base_version, range, text);
     }
 
     /// Turns a Modifier attribute written in `rsx!` into one slot of the node's chain.
@@ -216,29 +349,42 @@ impl ComposeRenderer {
     /// applied.
     fn modifier_for(
         &mut self,
-        element: ElementId,
+        _element: ElementId,
         node_id: u32,
         name: &'static str,
         value: &AttributeValue,
     ) -> Option<Option<(u16, compose_rust::Modifier)>> {
         use compose_rust::Modifier;
 
-        // Slot assignments. Append only: an existing slot never changes meaning, because a
-        // node keeps whatever a slot held until something overwrites it.
+        // Slot assignments, which are chain positions. Every write in one process uses
+        // this table, so a node never holds a value under a meaning it no longer has, but
+        // the relative order of the slots is the order the Renderer applies them in and
+        // has to stay what CSS and Compose both expect: where the box is and how big, then
+        // what it is drawn through, then what fills and outlines it, then what responds
+        // to a press, then how far its content sits inside.
         const WEIGHT: u16 = 0;
-        const FILL_MAX_WIDTH: u16 = 1;
-        const FILL_MAX_HEIGHT: u16 = 2;
-        const WIDTH: u16 = 3;
-        const HEIGHT: u16 = 4;
-        const SHAPE: u16 = 5;
-        const BACKGROUND: u16 = 6;
-        const BORDER: u16 = 7;
-        const ELEVATION: u16 = 8;
-        const CLICKABLE: u16 = 9;
-        const PADDING: u16 = 10;
-        const OBSERVE_SIZE: u16 = 11;
-        const MOTION: u16 = 12;
-        const MATERIAL: u16 = 13;
+        const OFFSET: u16 = 1;
+        const REQUIRED_SIZE: u16 = 2;
+        const FILL_MAX_WIDTH: u16 = 3;
+        const FILL_MAX_HEIGHT: u16 = 4;
+        const WIDTH: u16 = 5;
+        const HEIGHT: u16 = 6;
+        // The transform sits outside the opacity and the decoration, so all of them turn
+        // with the box, and inside the offset, so it turns about the box where it is.
+        const TRANSFORM: u16 = 7;
+        const ALPHA: u16 = 8;
+        const SHADOW: u16 = 9;
+        const CORNER_EACH: u16 = 10;
+        const SHAPE: u16 = 11;
+        const BACKGROUND: u16 = 12;
+        const BORDER: u16 = 13;
+        const BORDER_EACH: u16 = 14;
+        const ELEVATION: u16 = 15;
+        const CLIP: u16 = 16;
+        const PADDING: u16 = 18;
+        const OBSERVE_SIZE: u16 = 19;
+        const MOTION: u16 = 20;
+        const MATERIAL: u16 = 21;
 
         let float = |value: &AttributeValue| match value {
             AttributeValue::Float(number) => Some(*number as f32),
@@ -261,11 +407,21 @@ impl ComposeRenderer {
             "background" => Some(BACKGROUND),
             "border_width" | "border_color" => Some(BORDER),
             "elevation" => Some(ELEVATION),
-            "onclickable" => Some(CLICKABLE),
             "padding" | "padding_role" => Some(PADDING),
             "observe_size" => Some(OBSERVE_SIZE),
             "motion" => Some(MOTION),
             "material" => Some(MATERIAL),
+            "offset" => Some(OFFSET),
+            "animated_alpha" => Some(ALPHA),
+            "animated_background" => Some(BACKGROUND),
+            "animated_offset" => Some(TRANSFORM),
+            "required_size" => Some(REQUIRED_SIZE),
+            "alpha" => Some(ALPHA),
+            "shadow" => Some(SHADOW),
+            "corner_each" => Some(CORNER_EACH),
+            "border_each" => Some(BORDER_EACH),
+            "clip" => Some(CLIP),
+            "transform" => Some(TRANSFORM),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -384,20 +540,113 @@ impl ComposeRenderer {
                 };
                 Some(Some((BORDER, Modifier::Border { width, paint })))
             }
-            "onclickable" => {
-                let AttributeValue::Listener(_) = value else {
-                    return Some(None);
+            // A whole modifier, carried as itself so its numbers arrive as one record. Only
+            // the kind the attribute names is accepted, so a value meant for one slot can
+            // never land in another.
+            "offset" | "required_size" | "corner_each" | "border_each" | "shadow" | "transform" => {
+                let AttributeValue::Any(any) = value else {
+                    return None;
                 };
-                let handler_id = self.next_handler_id;
-                self.next_handler_id += 1;
-                self.handlers.push(Handler {
-                    id: handler_id,
-                    element,
-                    node_id,
-                    name,
-                });
-                Some(Some((CLICKABLE, Modifier::Clickable { handler_id })))
+                let modifier = any.as_any().downcast_ref::<Modifier>()?.clone();
+                let fits = match (&modifier, name) {
+                    (Modifier::Offset { .. }, "offset")
+                    | (Modifier::RequiredSize { .. }, "required_size")
+                    | (Modifier::Shadow { .. }, "shadow")
+                    | (Modifier::Transform { .. }, "transform") => true,
+                    // One radius or one border for every side is the record an ordinary
+                    // node already sends, which is what `Modifier::corner_radii` and
+                    // `Modifier::border_sides` give for equal values.
+                    (Modifier::CornerEach { .. } | Modifier::Shape { .. }, "corner_each") => true,
+                    (Modifier::BorderEach { .. } | Modifier::Border { .. }, "border_each") => true,
+                    _ => false,
+                };
+                fits.then_some(Some((slot, modifier)))
             }
+            // A value that is animated to. The node's underlying value becomes the target at
+            // once, and from the second value on a transition from whatever is on screen to
+            // it goes out in the same batch, for the Renderer to play on its own clock.
+            "animated_alpha" | "animated_background" | "animated_offset" => {
+                use compose_rust::{AnimatedProperty, KeyframeValue, TransformFunction};
+                let AttributeValue::Any(any) = value else {
+                    return None;
+                };
+                let any = any.as_any();
+                let (base, property, to, spec, from, watch) =
+                    if let Some(alpha) = any.downcast_ref::<crate::hooks::Animated<f32>>() {
+                        (
+                            Modifier::Alpha(alpha.target),
+                            AnimatedProperty::Alpha,
+                            KeyframeValue::Alpha(alpha.target),
+                            alpha.spec,
+                            alpha.enter_from.map(KeyframeValue::Alpha),
+                            alpha.watch,
+                        )
+                    } else if let Some(paint) =
+                        any.downcast_ref::<crate::hooks::Animated<compose_rust::Paint>>()
+                    {
+                        (
+                            Modifier::Background(paint.target),
+                            AnimatedProperty::Background,
+                            KeyframeValue::Paint(paint.target),
+                            paint.spec,
+                            paint.enter_from.map(KeyframeValue::Paint),
+                            paint.watch,
+                        )
+                    } else {
+                        let offset = any.downcast_ref::<crate::hooks::Animated<(f32, f32)>>()?;
+                        let (x, y) = offset.target;
+                        (
+                            Modifier::Transform {
+                                a: 1.0,
+                                b: 0.0,
+                                c: 0.0,
+                                d: 1.0,
+                                e: x,
+                                f: y,
+                                origin_x: 0.5,
+                                origin_y: 0.5,
+                            },
+                            AnimatedProperty::Transform,
+                            KeyframeValue::Transform(std::borrow::Cow::Owned(vec![
+                                TransformFunction::translate(x, y),
+                            ])),
+                            offset.spec,
+                            offset.enter_from.map(|(from_x, from_y)| {
+                                KeyframeValue::Transform(std::borrow::Cow::Owned(vec![
+                                    TransformFunction::translate(from_x, from_y),
+                                ]))
+                            }),
+                            offset.watch,
+                        )
+                    };
+                // A node that appears with a starting value plays from it to the target; a
+                // later change plays from whatever is on screen.
+                let first = self.animated.insert((node_id, name));
+                if !first || from.is_some() {
+                    let animation_id = self.next_animation_id;
+                    self.next_animation_id = self.next_animation_id.wrapping_add(1).max(1);
+                    let mut animation =
+                        compose_rust::transition(node_id, animation_id, property, to, spec);
+                    if let (true, Some(from)) = (first, from) {
+                        let start = &mut animation.keyframes.to_mut()[0];
+                        start.value = from;
+                        start.from_presented = false;
+                    }
+                    if watch != 0 {
+                        animation.events = compose_rust::AnimationEvents::END;
+                        crate::animated_visibility::watch_animation(animation_id, watch);
+                    }
+                    self.write(Mutation::StartAnimation(animation));
+                }
+                Some(Some((slot, base)))
+            }
+            "clip" => {
+                let AttributeValue::Bool(enabled) = value else {
+                    return None;
+                };
+                Some(Some((CLIP, Modifier::Clip(*enabled))))
+            }
+            "alpha" => Some(Some((ALPHA, Modifier::Alpha(float(value)?)))),
             _ => None,
         }
     }
@@ -451,7 +700,12 @@ impl ComposeRenderer {
                 paths.insert(path.clone(), PathTarget::Node(node_id));
                 for attribute in *attrs {
                     if let TemplateAttribute::Static { name, value, .. } = attribute {
-                        self.set_property(node_id, name, &AttributeValue::Text((*value).into()));
+                        self.set_property(
+                            node_id,
+                            None,
+                            name,
+                            &AttributeValue::Text((*value).into()),
+                        );
                     }
                 }
                 for (index, child) in children.iter().enumerate() {
@@ -506,6 +760,8 @@ impl ComposeRenderer {
             u32::from(tag - FIRST_OPTIONAL_PROPERTY)
         } else if property == PropertyKind::Spans {
             SPANS_BIT
+        } else if let Some((_, bit)) = TEXT_LAYOUT_BITS.iter().find(|(kind, _)| *kind == property) {
+            *bit
         } else {
             return true;
         };
@@ -522,13 +778,49 @@ impl ComposeRenderer {
         true
     }
 
-    fn set_property(&mut self, node_id: u32, name: &str, value: &AttributeValue) {
+    fn set_property(
+        &mut self,
+        node_id: u32,
+        element: Option<ElementId>,
+        name: &str,
+        value: &AttributeValue,
+    ) {
         let Some(property) = property_kind(name) else {
             // dioxus-core has no fallible WriteMutations methods. Preserve the
             // protocol error and surface it when the batch is finalized.
             self.batch.fail(ProtocolError::InvalidProperty(0));
             return;
         };
+        if matches!(
+            property,
+            PropertyKind::PointerKinds | PropertyKind::Cursor | PropertyKind::UserSelect
+        ) {
+            let key = (node_id, property as u16);
+            if matches!(value, AttributeValue::None) {
+                if !self.pointer_sent.remove(&key) {
+                    return;
+                }
+            } else {
+                self.pointer_sent.insert(key);
+            }
+        }
+        if let AttributeValue::Any(value) = value {
+            let any = value.as_any();
+            if let Some(growing) = any.downcast_ref::<GrowingText>()
+                && property == PropertyKind::Text
+            {
+                self.set_growing_text(node_id, &growing.0);
+                return;
+            }
+            if let (Some(spans), Some(element)) = (
+                any.downcast_ref::<compose_rust::spans::TextSpans>(),
+                element,
+            ) && spans.spans().any(|span| span.on_click.is_some())
+            {
+                self.set_linked_spans(node_id, element, property, spans);
+                return;
+            }
+        }
         let value = match value {
             AttributeValue::Text(value) => PropertyValue::String(value),
             AttributeValue::Float(value) => PropertyValue::Float(*value as f32),
@@ -547,16 +839,33 @@ impl ComposeRenderer {
                     // same reason: a list that has not changed compares equal before it
                     // reaches here and costs no record at all.
                     PropertyValue::Bytes(spans.as_bytes())
+                } else if let Some(table) = any.downcast_ref::<SpanFontTable>() {
+                    PropertyValue::Bytes(table.0.font_table())
+                } else if let Some(fonts) = any.downcast_ref::<compose_rust::fonts::FontRefs>() {
+                    PropertyValue::Bytes(fonts.as_bytes())
+                } else if let Some(decorations) =
+                    any.downcast_ref::<compose_rust::code::Decorations>()
+                {
+                    PropertyValue::Bytes(decorations.as_bytes())
+                } else if let Some(folds) = any.downcast_ref::<compose_rust::code::Folds>() {
+                    PropertyValue::Bytes(folds.as_bytes())
+                } else if let Some(marks) =
+                    any.downcast_ref::<compose_rust::code::GutterDecorations>()
+                {
+                    PropertyValue::Bytes(marks.as_bytes())
+                } else if let Some(spans) = any.downcast_ref::<compose_rust::code::SyntaxSpans>() {
+                    PropertyValue::Bytes(spans.as_bytes())
                 } else {
                     return;
                 }
             }
             AttributeValue::Listener(_) => return,
         };
-        let neutral = matches!(
-            value,
-            PropertyValue::None | PropertyValue::Integer(0) | PropertyValue::Float(0.0)
-        );
+        // A type role of zero is `TypeRole::None`, which is a value: text with no rung of
+        // the ladder. A Text with no role at all sends nothing, and one whose role was
+        // taken away sends `None`, which is what drops it on the other side.
+        let neutral = matches!(value, PropertyValue::None | PropertyValue::Float(0.0))
+            || (matches!(value, PropertyValue::Integer(0)) && property != PropertyKind::TypeRole);
         if !self.should_write_optional_property(node_id, property, neutral) {
             return;
         }
@@ -565,6 +874,95 @@ impl ComposeRenderer {
             property,
             value,
         });
+    }
+
+    /// Sends a growing string: only its tail when the Renderer already holds the rest,
+    /// and the whole string otherwise.
+    fn set_growing_text(&mut self, node_id: u32, text: &str) {
+        let full = self.text_hasher.hash_one(text.as_bytes());
+        let held = self.sent_text.get(&node_id).copied();
+        self.sent_text.insert(node_id, (text.len(), full));
+        if let Some((length, hash)) = held
+            && text.len() > length
+            && text.is_char_boundary(length)
+            && self.text_hasher.hash_one(&text.as_bytes()[..length]) == hash
+        {
+            self.write(Mutation::AppendText {
+                node_id,
+                text: &text[length..],
+            });
+            return;
+        }
+        self.write(Mutation::SetProp {
+            node_id,
+            property: PropertyKind::Text,
+            value: PropertyValue::String(text),
+        });
+    }
+
+    /// Sends a list of runs with every link value swapped for a handler id of the Host's.
+    ///
+    /// The value is the application's name for the link and means nothing to the
+    /// Renderer, which reports a press on a run by the id the run carries. So each value
+    /// gets a handler of its own, registered against this node under the link event, and
+    /// a press comes back with the value it stood for.
+    fn set_linked_spans(
+        &mut self,
+        node_id: u32,
+        element: ElementId,
+        property: PropertyKind,
+        spans: &compose_rust::spans::TextSpans,
+    ) {
+        const HANDLER_AT: usize = compose_rust::spans::SPAN_HANDLER_AT;
+        let mut scratch = std::mem::take(&mut self.span_scratch);
+        scratch.clear();
+        scratch.extend_from_slice(spans.as_bytes());
+        for record in scratch
+            .as_chunks_mut::<{ compose_rust::spans::SPAN_LEN }>()
+            .0
+        {
+            let mut word = [0_u8; 8];
+            word.copy_from_slice(&record[HANDLER_AT..HANDLER_AT + 8]);
+            let value = u64::from_le_bytes(word);
+            if value == 0 {
+                continue;
+            }
+            let handler_id = self.link_handler(node_id, element, value);
+            record[HANDLER_AT..HANDLER_AT + 8].copy_from_slice(&handler_id.to_le_bytes());
+        }
+        self.should_write_optional_property(node_id, property, false);
+        self.write(Mutation::SetProp {
+            node_id,
+            property,
+            value: PropertyValue::Bytes(&scratch),
+        });
+        self.span_scratch = scratch;
+    }
+
+    /// The handler id a link value on this node reports through, made the first time the
+    /// value is seen.
+    fn link_handler(&mut self, node_id: u32, element: ElementId, value: u64) -> u64 {
+        if let Some(known) = self
+            .link_handlers
+            .get(&node_id)
+            .and_then(|links| links.iter().find(|(link, _)| *link == value))
+        {
+            return known.1;
+        }
+        let handler_id = self.next_handler_id;
+        self.next_handler_id += 1;
+        self.handlers.push(Handler {
+            id: handler_id,
+            element,
+            node_id,
+            name: LINK_EVENT,
+            link: value,
+        });
+        self.link_handlers
+            .entry(node_id)
+            .or_default()
+            .push((value, handler_id));
+        handler_id
     }
 
     /// One past the last position under `parent`.
@@ -648,6 +1046,13 @@ impl ComposeRenderer {
     /// The caller has already taken the node out of its parent's list.
     fn forget(&mut self, node_id: u32) {
         self.parents.remove(&node_id);
+        self.sent_text.remove(&node_id);
+        if self.link_handlers.remove(&node_id).is_some() {
+            self.handlers.retain(|handler| handler.node_id != node_id);
+        }
+        if !self.editors.is_empty() {
+            self.editors.retain(|_, node| *node != node_id);
+        }
         for slot in self.children.remove(&node_id).unwrap_or_default() {
             match slot {
                 Slot::Node(child) => self.forget(child),
@@ -710,6 +1115,36 @@ impl ComposeRenderer {
         match self.node(id) {
             Some(PLACEHOLDER_NODE) | None => self.locate(Slot::Hole(id.0)),
             Some(node_id) => self.locate(Slot::Node(node_id)),
+        }
+    }
+
+    /// Announces the pointer handler of `id` when the node names kinds to be told about, and
+    /// withdraws it when it stops naming any.
+    fn sync_pointer_handler(&mut self, id: ElementId, node_id: u32) {
+        let handler = self
+            .handlers
+            .iter()
+            .find(|handler| handler.element == id && is_pointer_event(handler.name))
+            .map(|handler| handler.id);
+        match (self.pointer_on.contains(&id.0), handler) {
+            (true, Some(handler_id)) => {
+                if self.pointer_announced.insert(id.0) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::Integer(handler_id as i64),
+                    });
+                }
+            }
+            (false, _) | (true, None) => {
+                if self.pointer_announced.remove(&id.0) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::OnPointer,
+                        value: PropertyValue::None,
+                    });
+                }
+            }
         }
     }
 }
@@ -837,6 +1272,33 @@ impl WriteMutations for ComposeRenderer {
         id: ElementId,
     ) {
         if let Some(node_id) = self.node(id) {
+            // The Host's own name for an editor, kept here and never sent: an edit asked
+            // of the handle is addressed to whichever node carries it now.
+            if name == "editor" {
+                self.editors.retain(|_, node| *node != node_id);
+                if let AttributeValue::Int(token) = value
+                    && let Ok(token) = u32::try_from(*token)
+                {
+                    self.editors.insert(token, node_id);
+                }
+                return;
+            }
+            if name == "pointer_kinds" {
+                if matches!(value, AttributeValue::Int(kinds) if *kinds != 0) {
+                    self.pointer_on.insert(id.0);
+                } else {
+                    self.pointer_on.remove(&id.0);
+                }
+                self.set_property(node_id, Some(id), name, value);
+                self.sync_pointer_handler(id, node_id);
+                return;
+            }
+            // The press modifier is written from the listener (`create_event_listener`),
+            // so the attribute itself, which a container without a handler carries as
+            // `None`, writes nothing.
+            if name == "onclickable" {
+                return;
+            }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
                 if let Some((index, modifier)) = slot {
                     self.write(Mutation::SetModifier {
@@ -847,7 +1309,7 @@ impl WriteMutations for ComposeRenderer {
                 }
                 return;
             }
-            self.set_property(node_id, name, value);
+            self.set_property(node_id, Some(id), name, value);
         }
     }
 
@@ -872,7 +1334,20 @@ impl WriteMutations for ComposeRenderer {
             element: id,
             node_id,
             name,
+            link: 0,
         });
+        if is_pointer_event(name) {
+            self.sync_pointer_handler(id, node_id);
+        }
+        // A listener reaches the Renderer here and not through `set_attribute`, so the
+        // press modifier is written from the listener's handler.
+        if is_clickable_event(name) {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index: CLICKABLE_SLOT,
+                modifier: compose_rust::Modifier::Clickable { handler_id },
+            });
+        }
         if let Some(property) = event_property(name) {
             self.write(Mutation::SetProp {
                 node_id,
@@ -891,6 +1366,20 @@ impl WriteMutations for ComposeRenderer {
             return;
         };
         self.handlers.swap_remove(position);
+        if is_clickable_event(name)
+            && let Some(node_id) = self.node(id)
+        {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index: CLICKABLE_SLOT,
+                modifier: compose_rust::Modifier::Empty,
+            });
+        }
+        if is_pointer_event(name)
+            && let Some(node_id) = self.node(id)
+        {
+            self.sync_pointer_handler(id, node_id);
+        }
         if let (Some(node_id), Some(property)) = (self.node(id), event_property(name)) {
             self.write(Mutation::SetProp {
                 node_id,
@@ -908,12 +1397,15 @@ impl WriteMutations for ComposeRenderer {
         {
             self.detach(Slot::Node(node_id));
             self.write(Mutation::Remove { node_id });
+            self.pointer_sent.retain(|(sent, _)| *sent != node_id);
             self.forget(node_id);
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
             *slot = None;
         }
         self.handlers.retain(|handler| handler.element != id);
+        self.pointer_on.remove(&id.0);
+        self.pointer_announced.remove(&id.0);
     }
 
     fn push_root(&mut self, id: ElementId) {
@@ -935,6 +1427,17 @@ fn property_kind(name: &str) -> Option<PropertyKind> {
     PropertyKind::from_name(name).ok()
 }
 
+/// The chain position of the press modifier, which `modifier_for` also uses.
+const CLICKABLE_SLOT: u16 = 17;
+
+fn is_clickable_event(name: &str) -> bool {
+    matches!(name, "clickable" | "onclickable")
+}
+
+fn is_pointer_event(name: &str) -> bool {
+    matches!(name, "pointer" | "onpointer")
+}
+
 fn event_property(name: &str) -> Option<PropertyKind> {
     match name {
         "click" | "onclick" => Some(PropertyKind::OnClick),
@@ -947,6 +1450,17 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),
         "filesdropped" | "onfilesdropped" => Some(PropertyKind::OnFilesDropped),
         "change" | "onchange" => Some(PropertyKind::OnValueChange),
+        // A code editor's committed edits go out under the value change property too.
+        "codechange" | "oncodechange" => Some(PropertyKind::OnValueChange),
+        "editrejected" | "oneditrejected" => Some(PropertyKind::OnEditRejected),
+        "hover" | "onhover" => Some(PropertyKind::OnHover),
+        "save" | "onsave" => Some(PropertyKind::OnSave),
+        "decorationclick" | "ondecorationclick" => Some(PropertyKind::OnDecorationClick),
+        "selectionchange" | "onselectionchange" => Some(PropertyKind::OnSelectionChange),
+        "visiblerangechange" | "onvisiblerangechange" => Some(PropertyKind::OnVisibleRangeChange),
+        "editorfocuschange" | "oneditorfocuschange" => Some(PropertyKind::OnEditorFocusChange),
+        "foldchange" | "onfoldchange" => Some(PropertyKind::OnFoldChange),
+        "compositionchange" | "oncompositionchange" => Some(PropertyKind::OnCompositionChange),
         _ => None,
     }
 }

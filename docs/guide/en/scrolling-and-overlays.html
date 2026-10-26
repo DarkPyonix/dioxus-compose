@@ -210,15 +210,24 @@
 
     <h2 id="planned">Not yet</h2>
     <ul>
-      <li><strong>Scrolling on screen.</strong> <span class="pill partial">partial</span> In the plan
-        a scroll container becomes a Compose scroll container holding its content, and the renderer
-        will own the scroll position. Nothing scrolls until the renderer bridge lands
+      <li><strong>Scrolling on screen.</strong> <span class="pill partial">partial</span> The bridge
+        sends a scroll container as a <code>ScrollColumn</code> or <code>ScrollRow</code> holding its
+        content, and the renderer owns the scroll position. The page itself sits in a vertical scroll
+        the size of the window. This is tested on the Host and not yet confirmed on screen
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
-      <li><strong>Animated overlays.</strong> <span class="pill planned">planned</span> A menu or
-        dialog that fades or slides in with a CSS transition does not animate today: its animated
-        properties stay at their first value
+      <li><strong>Animated overlays.</strong> <span class="pill partial">partial</span> A menu or
+        dialog that fades or slides in with a CSS transition is described for the renderer, with its
+        end values in the display list. It does not animate on screen until compose-rust has the
+        animation records
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
     </ul>
+
+    <p>
+      <strong>More examples.</strong> <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout"><code>samples/layout</code></a> includes <code>position: sticky</code>,
+      <code>z-index</code> and an absolutely positioned box inside a relative one, which are the
+      pieces overlays are built from. <a href="https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion"><code>samples/motion</code></a> has a width transition and
+      <code>@keyframes</code>.
+    </p>
 
     <nav class="pagenav" aria-label="Pagination">
       <a class="prev" href="images.html"><span>Previous</span>&larr; Images and backgrounds</a>
