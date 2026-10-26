@@ -2190,6 +2190,33 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 5. 핸들의 편집이 `EditCode` 명령 하나로 나가고, 붙어 있지 않은 핸들의 편집은 나가지 않는다.
 6. 창에 그려 한글 조합, 큰 파일, 장식을 확인하는 것은 compose-rust 38.7의 몫이고 PR #111이 병합되고 배포된 뒤에 확인한다. 그 전에는 확인하지 않았다.
 
+### FR-54 rsx 화면의 미리보기와 빌드 없는 템플릿 반영 (`Draft`)
+
+추적: 이슈 #148. 도구, 화면 밖 그리기, PNG 내보내기, 목업 비교, CI는 compose-rust FR-54의 것이고(compose-rust #357, INTENT D24) 이 항목은 그 위에 얹는 rsx 쪽만 다룬다. 결정은 INTENT D21이다.
+
+#### 54.1 rsx의 미리보기
+
+- Dioxus 컴포넌트에 compose-rust와 같은 `#[preview]`를 붙인다. 컴포넌트는 `PreviewContext`(compose-rust 54.1)를 훅으로 읽는다. Compose 위젯으로 쓴 rsx와 HTML, CSS로 쓴 rsx(FR-34)가 모두 대상이다.
+- 고정 시각과 난수 씨앗을 문맥에서 받는 규칙은 compose-rust 54.1과 같다.
+
+#### 54.2 빌드 없는 템플릿 반영
+
+- `watch`가 도는 동안 rsx 리터럴만 바뀐 저장은 빌드하지 않는다. rsx 파서로 바뀐 템플릿을 만들어 실행 중인 미리보기 프로세스에 보내고, 프로세스는 `dioxus-devtools`의 `apply_changes`로 VirtualDom에 적용한다. 바뀐 노드만 Mutation으로 나간다.
+- 대상: 문자열 속성(`class`, `style`, 위젯 속성의 리터럴), 서식 문자열 안에서 이미 있던 식의 이동, 글, 요소의 추가와 삭제와 순서, 조건과 반복 안의 마크업, 컴포넌트의 리터럴 속성.
+- 대상이 아닌 변경(함수 본문, 훅, 새 식, 컴포넌트 서명)은 compose-rust 54.3의 다시 빌드 길로 간다. 도구가 어느 길로 갔는지 출력한다.
+- 템플릿을 적용하지 못하면 프로세스를 멈추지 않고 다시 빌드 길로 넘긴다(NFR-7과 같은 이유).
+- 템플릿을 받는 코드는 미리보기 빌드에만 들어가고 배포 빌드에는 없다.
+
+#### 54.3 수용 기준
+
+1. HTML, CSS rsx 화면과 Compose 위젯 rsx 화면에 붙인 `#[preview]`가 compose-rust 도구의 `list`에 나오고 `export`가 PNG를 쓴다(fr54_rsx_previews_are_listed_and_exported).
+2. `watch` 중에 `class` 문자열, `style` 값, 글 하나를 바꿔 저장하면 컴파일러가 돌지 않고, 바뀐 노드의 Mutation만 나간다(fr54_rsx_literal_change_applies_without_a_build).
+3. 2의 변경을 템플릿으로 반영한 그림과, 같은 소스를 다시 빌드해 내보낸 PNG가 바이트 단위로 같다(fr54_template_and_rebuild_draw_the_same).
+4. 함수 본문을 바꾸면 다시 빌드 길로 가고, 도구가 그렇게 출력한다(fr54_rust_change_falls_back_to_rebuild).
+5. 적용할 수 없는 템플릿을 받으면 프로세스가 죽지 않고 다시 빌드 길로 넘어간다(fr54_bad_template_falls_back).
+6. **시간.** 소유자의 Mac에서 rsx 리터럴 하나를 바꿔 저장한 때부터 새 그림의 첫 프레임까지 1초 이하이다. 다섯 번 잰 중앙값과 기계, 날짜를 이 항목 옆에 적는다. 작업 공간의 다른 크레이트에 있는 rsx에서도 같다.
+7. 배포 빌드의 실행 파일에 템플릿을 받는 코드와 개발 서버 연결 코드가 없다(fr54_release_build_has_no_hot_reload_client).
+
 ## 4. 경계 프로토콜
 
 ### PR-1 호출 모델: 동기·동일 스레드 직접 호출 (`Done`)
