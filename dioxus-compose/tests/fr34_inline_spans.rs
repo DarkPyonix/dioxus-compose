@@ -440,5 +440,8 @@ fn fr34_an_onclick_on_an_inline_element_in_a_mixed_paragraph_still_fires() {
         run.rect.y + run.rect.height / 2.0,
     );
     assert_eq!(dom.click(x, y), Some(word));
-    assert_eq!(PRESSED.with(|pressed| pressed.borrow().clone()), vec!["word"]);
+    assert_eq!(
+        PRESSED.with(|pressed| pressed.borrow().clone()),
+        vec!["word"]
+    );
 }

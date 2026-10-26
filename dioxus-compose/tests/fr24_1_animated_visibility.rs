@@ -4,9 +4,9 @@
 //! send back.
 
 use dioxus_compose::prelude::*;
+use dioxus_compose::protocol::encode_event;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::PropertyKind;
-use dioxus_compose::protocol::encode_event;
 use dioxus_compose::{
     Animation, AnimationEventKind, AnimationEvents, EventPayload, Host, ReducedMotion, WidgetKind,
 };
@@ -63,13 +63,21 @@ fn created(mutations: &[Mutation<'_>], widget: WidgetKind) -> u32 {
     mutations
         .iter()
         .find_map(|mutation| match mutation {
-            Mutation::Create { node_id, widget: kind } if *kind == widget => Some(*node_id),
+            Mutation::Create {
+                node_id,
+                widget: kind,
+            } if *kind == widget => Some(*node_id),
             _ => None,
         })
         .unwrap_or_else(|| panic!("no {widget:?} was created"))
 }
 
-fn event(host: &mut Host, node_id: u32, handler_id: u64, payload: EventPayload) -> Vec<Mutation<'static>> {
+fn event(
+    host: &mut Host,
+    node_id: u32,
+    handler_id: u64,
+    payload: EventPayload,
+) -> Vec<Mutation<'static>> {
     let mut wire = Vec::new();
     encode_event(
         &HostEvent {
@@ -124,7 +132,13 @@ fn removes(mutations: &[Mutation<'_>]) -> usize {
 
 fn creates_text(mutations: &[Mutation<'_>]) -> bool {
     mutations.iter().any(|mutation| {
-        matches!(mutation, Mutation::Create { widget: WidgetKind::Text, .. })
+        matches!(
+            mutation,
+            Mutation::Create {
+                widget: WidgetKind::Text,
+                ..
+            }
+        )
     })
 }
 
@@ -136,14 +150,24 @@ fn fr24_1_enter_starts_one_animation() {
     assert!(creates_text(&shown), "the child is declared: {shown:?}");
     let started = animations(&shown);
     assert_eq!(started.len(), 1, "one animation: {shown:?}");
-    assert_eq!(started[0].keyframes[0].value, dioxus_compose::KeyframeValue::Alpha(0.0));
-    assert!(!started[0].keyframes[0].from_presented, "it starts from the hidden value");
+    assert_eq!(
+        started[0].keyframes[0].value,
+        dioxus_compose::KeyframeValue::Alpha(0.0)
+    );
+    assert!(
+        !started[0].keyframes[0].from_presented,
+        "it starts from the hidden value"
+    );
     let renders = RENDERS.with(Cell::get);
     for frame in 1..=60_u64 {
         let batch = owned(host.render_frame(frame * 16_666_667).unwrap());
         assert!(batch.is_empty(), "frame {frame} carried {batch:?}");
     }
-    assert_eq!(renders, RENDERS.with(Cell::get), "the screen was rendered again");
+    assert_eq!(
+        renders,
+        RENDERS.with(Cell::get),
+        "the screen was rendered again"
+    );
 }
 
 #[test]
@@ -153,7 +177,11 @@ fn fr24_1_exit_removes_after_end_event() {
     let started = animations(&hidden);
     assert_eq!(started.len(), 1, "{hidden:?}");
     assert_eq!(removes(&hidden), 0, "not removed at once: {hidden:?}");
-    assert_ne!(started[0].events, AnimationEvents::NONE, "the end is asked for");
+    assert_ne!(
+        started[0].events,
+        AnimationEvents::NONE,
+        "the end is asked for"
+    );
     let after = ended(&mut host, &started[0]);
     assert!(removes(&after) >= 1, "removed after the end: {after:?}");
 }
@@ -169,10 +197,20 @@ fn fr24_1_interrupted_exit_resumes() {
     let resumed = animations(&back);
     assert_eq!(resumed.len(), 1, "{back:?}");
     assert_eq!(resumed[0].node_id, leaving[0].node_id, "on the same node");
-    assert_eq!(resumed[0].keyframes[0].value, dioxus_compose::KeyframeValue::Alpha(1.0));
-    assert!(resumed[0].keyframes[0].from_presented, "from the value on screen");
+    assert_eq!(
+        resumed[0].keyframes[0].value,
+        dioxus_compose::KeyframeValue::Alpha(1.0)
+    );
+    assert!(
+        resumed[0].keyframes[0].from_presented,
+        "from the value on screen"
+    );
     let late = ended(&mut host, &leaving[0]);
-    assert_eq!(removes(&late), 0, "an exit that was cancelled removes nothing: {late:?}");
+    assert_eq!(
+        removes(&late),
+        0,
+        "an exit that was cancelled removes nothing: {late:?}"
+    );
 }
 
 #[test]
@@ -189,7 +227,10 @@ fn fr24_1_reduced_motion_is_immediate() {
     assert!(animations(&shown).is_empty(), "{shown:?}");
     let hidden = click(&mut host, button, handler);
     assert!(animations(&hidden).is_empty(), "{hidden:?}");
-    assert!(removes(&hidden) >= 1, "removed in the same batch: {hidden:?}");
+    assert!(
+        removes(&hidden) >= 1,
+        "removed in the same batch: {hidden:?}"
+    );
 }
 
 #[test]
@@ -208,7 +249,11 @@ fn fr24_1_exiting_child_stays_composed_until_end() {
     assert_eq!(removes(&hidden), 0, "{hidden:?}");
     for frame in 1..=30_u64 {
         let batch = owned(host.render_frame(frame * 16_666_667).unwrap());
-        assert_eq!(removes(&batch), 0, "frame {frame} removed the child: {batch:?}");
+        assert_eq!(
+            removes(&batch),
+            0,
+            "frame {frame} removed the child: {batch:?}"
+        );
     }
     let after = ended(&mut host, &started[0]);
     assert!(removes(&after) >= 1, "{after:?}");

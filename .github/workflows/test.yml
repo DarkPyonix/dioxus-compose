@@ -21,8 +21,11 @@ on:
   # merges, so that run is the gate, and it finishes before main moves. Running again on
   # the push afterwards tested the identical tree and doubled every number on the actions
   # page for nothing.
+  # develop as well: work reaches it through pull requests, and those had no gate at all.
+  # workflow_dispatch runs the gate by hand, and release-sync uses it on the release branch,
+  # because a push made with GITHUB_TOKEN does not start pull_request workflows.
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 concurrency:

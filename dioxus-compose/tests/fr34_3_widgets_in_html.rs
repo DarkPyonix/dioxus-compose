@@ -140,19 +140,23 @@ fn fr34_3_widget_box_takes_the_size_the_renderer_measured() {
     let parent = widget_parent(&first);
     // The renderer did not know the widget when the first batch was computed, so the box
     // is still empty there.
-    assert!(!modifiers_of(&first, parent).iter().any(|modifier| matches!(
-        modifier,
-        Modifier::RequiredSize { width, height }
-            if *width == WIDGET_WIDTH && *height == WIDGET_HEIGHT
-    )));
-
-    let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
     assert!(
-        modifiers_of(&second, parent).iter().any(|modifier| matches!(
+        !modifiers_of(&first, parent).iter().any(|modifier| matches!(
             modifier,
             Modifier::RequiredSize { width, height }
                 if *width == WIDGET_WIDTH && *height == WIDGET_HEIGHT
-        )),
+        ))
+    );
+
+    let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
+    assert!(
+        modifiers_of(&second, parent)
+            .iter()
+            .any(|modifier| matches!(
+                modifier,
+                Modifier::RequiredSize { width, height }
+                    if *width == WIDGET_WIDTH && *height == WIDGET_HEIGHT
+            )),
         "the next frame did not lay the box out at the measured size: {:?}",
         modifiers_of(&second, parent),
     );
@@ -245,7 +249,10 @@ fn fr34_3_click_on_a_widget_runs_its_handler_then_the_wrapper_once() {
             payload: EventPayload::Clicked,
         })
         .unwrap();
-    assert_eq!(consumed, 0, "a consumed click would never reach the wrapper");
+    assert_eq!(
+        consumed, 0,
+        "a consumed click would never reach the wrapper"
+    );
     assert_eq!(
         LOG.with(|log| log.borrow().clone()),
         vec!["widget"],

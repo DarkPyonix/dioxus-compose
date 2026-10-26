@@ -298,7 +298,11 @@ impl TextMeasurer for RendererMeasurer {
     }
 
     fn set_zoom(&mut self, zoom: f32) {
-        let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
+        let zoom = if zoom.is_finite() && zoom > 0.0 {
+            zoom
+        } else {
+            1.0
+        };
         if zoom.to_bits() != self.zoom.to_bits() {
             self.zoom = zoom;
             self.clear();

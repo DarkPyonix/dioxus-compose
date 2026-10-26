@@ -970,7 +970,11 @@ impl HtmlDom {
     /// This does not move the viewport or the resolution a media query sees; those are
     /// the arguments of [`HtmlDom::layout`].
     pub fn set_zoom(&mut self, zoom: f32) -> bool {
-        let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
+        let zoom = if zoom.is_finite() && zoom > 0.0 {
+            zoom
+        } else {
+            1.0
+        };
         if zoom.to_bits() == self.zoom.to_bits() {
             return false;
         }

@@ -25,8 +25,8 @@ mod animated_visibility;
 mod dom;
 mod extensions;
 mod hooks;
-mod hover;
 pub mod host;
+mod hover;
 pub mod html;
 mod html_view;
 mod html_widget;
@@ -42,6 +42,7 @@ pub use dioxus_core::{Element, VirtualDom};
 // `#[derive(Props)]`. Without it an application that writes a component of its own fails
 // to compile on a macro it never typed, and the fix is to add `dioxus-core-macro` as a
 // second dependency, which defeats the promise that one dependency is enough.
+pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
@@ -51,7 +52,6 @@ pub use hooks::{
     use_node_size, use_notification_activated, use_notification_permission, use_reduced_motion,
     use_theme, use_window_size, use_zoom,
 };
-pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use hover::{HoverHandle, use_hover};
 pub use html_view::HtmlView;
@@ -144,19 +144,20 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        AbsoluteBox, AnimatedVisibility, Alignment, Arrangement, AssetKind, Badge, Enter, Exit, Brush, Button, ButtonKind,
-        ButtonVariant, Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme, Column, Cursor,
-        DatePicker, DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown, Element,
-        FileDrop, FileDropTarget, FloatingAction, HtmlView, Icon, IconRole, Image, Key, KeyEvent,
-        LaunchBuilder, LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, LoopMode,
-        MaterialRole, Menu, Message, MessageDuration, Modifier, MotionRole, Navigation,
-        NavigationItem, Paint, Palette, PointerEvent, PointerKinds, ProgressIndicator, Props,
-        RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
-        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
-        ListDetail, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
-        TopAppBar, TypeRole, UserSelect, WindowHeightClass, WindowSize, WindowSizeClass, asset,
-        brush, component, launch, rsx, show_message, use_design_system, use_hover, use_node_size, use_theme, HoverHandle,
-        use_window_size, use_zoom, Zoom, ZoomHandle,
+        AbsoluteBox, Alignment, AnimatedVisibility, Arrangement, AssetKind, Badge, Brush, Button,
+        ButtonKind, ButtonVariant, Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme,
+        Column, Cursor, DatePicker, DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown,
+        Element, Enter, Exit, FileDrop, FileDropTarget, FloatingAction, HoverHandle, HtmlView,
+        Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid, LazyRow,
+        LinearProgressIndicator, ListDetail, LoopMode, MaterialRole, Menu, Message,
+        MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
+        PointerEvent, PointerKinds, ProgressIndicator, Props, RadioButton, RangeRequest, Row,
+        Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider,
+        SpaceRole, Spacer, SplitPane, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField,
+        TextOverflow, Theme, TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, UserSelect,
+        WindowHeightClass, WindowSize, WindowSizeClass, Zoom, ZoomHandle, asset, brush, component,
+        launch, rsx, show_message, use_design_system, use_hover, use_node_size, use_theme,
+        use_window_size, use_zoom,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
@@ -449,7 +450,15 @@ pub mod elements {
     element!(
         codeeditor,
         "CodeEditor",
-        [editor, text, syntax_spans, decorations, folds, gutter_decorations, tab_width]
+        [
+            editor,
+            text,
+            syntax_spans,
+            decorations,
+            folds,
+            gutter_decorations,
+            tab_width
+        ]
     );
 
     #[doc(hidden)]
