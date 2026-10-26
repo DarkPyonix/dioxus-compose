@@ -777,6 +777,13 @@ pub fn Button(
     /// design system, and what marks it is that its label is the error colour.
     #[props(default)]
     color: Option<Paint>,
+    /// How many lines the label may take. Left out, one: a Button label does not wrap, so
+    /// a squeezed button keeps the whole word instead of breaking a Hangul label by syllable.
+    #[props(default)]
+    max_lines: Option<u32>,
+    /// What happens to a label cut by `max_lines` or by a narrow button. Left out, an ellipsis.
+    #[props(default)]
+    overflow: Option<TextOverflow>,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
@@ -800,6 +807,8 @@ pub fn Button(
             enabled,
             variant: role(variant),
             color: opt_paint(color),
+            max_lines: i64::from(max_lines.unwrap_or(0)),
+            overflow: role(overflow),
             onclick: move |_| on_click.call(()),
         }
     }
