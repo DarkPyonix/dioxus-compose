@@ -2196,7 +2196,7 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 
 #### 54.1 rsx의 미리보기
 
-- Dioxus 컴포넌트에 compose-rust와 같은 `#[preview]`를 붙인다. 컴포넌트는 `PreviewContext`(compose-rust 54.1)를 훅으로 읽는다. Compose 위젯으로 쓴 rsx와 HTML, CSS로 쓴 rsx(FR-34)가 모두 대상이다.
+- Dioxus 컴포넌트에 compose-rust와 같은 `#[Preview]`를 붙인다. 컴포넌트는 `PreviewContext`(compose-rust 54.1)를 훅으로 읽는다. Compose 위젯으로 쓴 rsx와 HTML, CSS로 쓴 rsx(FR-34)가 모두 대상이다.
 - 고정 시각과 난수 씨앗을 문맥에서 받는 규칙은 compose-rust 54.1과 같다.
 
 #### 54.2 빌드 없는 템플릿 반영
@@ -2209,7 +2209,7 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 
 #### 54.3 수용 기준
 
-1. HTML, CSS rsx 화면과 Compose 위젯 rsx 화면에 붙인 `#[preview]`가 compose-rust 도구의 `list`에 나오고 `export`가 PNG를 쓴다(fr54_rsx_previews_are_listed_and_exported).
+1. HTML, CSS rsx 화면과 Compose 위젯 rsx 화면에 붙인 `#[Preview]`가 compose-rust 도구의 `list`에 나오고 `export`가 PNG를 쓴다(fr54_rsx_previews_are_listed_and_exported).
 2. `watch` 중에 `class` 문자열, `style` 값, 글 하나를 바꿔 저장하면 컴파일러가 돌지 않고, 바뀐 노드의 Mutation만 나간다(fr54_rsx_literal_change_applies_without_a_build).
 3. 2의 변경을 템플릿으로 반영한 그림과, 같은 소스를 다시 빌드해 내보낸 PNG가 바이트 단위로 같다(fr54_template_and_rebuild_draw_the_same).
 4. 함수 본문을 바꾸면 다시 빌드 길로 가고, 도구가 그렇게 출력한다(fr54_rust_change_falls_back_to_rebuild).
