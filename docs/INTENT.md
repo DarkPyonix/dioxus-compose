@@ -296,6 +296,29 @@ D19로 위젯 스키마와 렌더러가 compose-rust로 가면, 이 저장소에
 - VS Code의 CSS는 MIT인 Code-OSS(`microsoft/vscode`)에서 빌드한 것을 씁니다. 설치된 Microsoft 빌드는 제품 라이선스라 그 파일을 가져오지 않습니다.
 - JavaScript는 실행하지 않습니다. VS Code의 화면을 그대로 띄우는 것이 아니라, 같은 DOM 구조를 Rust로 만들고 같은 CSS로 그리는 것입니다. 동작은 다시 씁니다.
 
+### D21. rsx 화면은 compose-rust의 미리보기 도구로 보고, rsx 리터럴의 변경은 빌드 없이 반영한다 (2026-10-26)
+
+**소유자의 지시입니다(2026-10-26, darkpyonix 리더가 전달).**
+
+> [user] "미리보기 도구는 필요할거 같아. 구현할 방향 찾아서 스펙에 추가하도록 해." (2026-10-26)
+
+방향은 소유자가 리더에게 맡겼고, 아래는 리더의 결정입니다. 도구 자체(`#[Preview]`, 다시 빌드하고 다시 띄우는 대화형 창, 창 없는 결정적 PNG 내보내기, 목업 비교)는 compose-rust INTENT D24와 SPEC FR-54입니다(compose-rust #357). 이 저장소는 그 위에 rsx 쪽만 얹습니다. 요구사항은 SPEC FR-54입니다(이슈 #148).
+
+- **속성 이름은 `#[Preview]`입니다.** compose-rust의 `#[Composable]`과 같이 대문자로 시작합니다. 소유자의 말이 그 이유입니다.
+
+  > [user] "Jetpack Compose에서 Preview가 대문자로 시작하니까 P를 대문자로 해줘. Composable도 C 대문자로 하기로 했잖아" (2026-10-26)
+
+- **도구를 따로 만들지 않습니다.** rsx 컴포넌트에도 같은 `#[Preview]`를 붙이고, 같은 도구가 같은 렌더러로 그립니다. Compose 위젯으로 쓴 rsx와 HTML, CSS로 쓴 rsx(FR-34)가 모두 해당합니다.
+- **rsx 리터럴의 변경은 Dioxus의 템플릿 핫 리로드로 빌드 없이 반영합니다.** 문자열 속성(`class`, `style`, 위젯 속성의 리터럴), 글, 요소와 마크업의 배치는 rsx 파서가 바뀐 템플릿을 만들고, 실행 중인 VirtualDom에 `dioxus-devtools`의 `apply_changes`로 적용합니다. 목업을 맞추는 일의 대부분이 이런 값을 고치는 일이고, 이 길은 컴파일과 링크와 다시 띄우기를 모두 건너뜁니다. Dioxus 문서에 따르면 이 핫 리로드는 작업 공간의 모든 크레이트에서 됩니다.
+- 그 밖의 Rust 변경(함수 본문, 훅, 새 식, 속성 목록 변경)은 compose-rust FR-54의 다시 빌드 길로 갑니다.
+- **Rust 핫 패치(`subsecond`, `dx serve --hotpatch`)는 쓰지 않습니다.** 맨 위 크레이트만 패치하고 "라이브러리 + 한 줄짜리 바이너리" 구성을 제대로 패치하지 못한다고 스스로 밝히며, 이 저장소의 샘플과 Ember가 그 구성입니다(compose-rust D24의 표).
+
+- 도구는 compose-rust의 `compose-rust-preview`(`cargo install`로 설치)이고, 다시 빌드 길의 3초 기준은 Ember에도 적용합니다. 넘으면 Ember의 화면 코드를 크레이트로 나눕니다(리더 결정, 2026-10-26, compose-rust D24).
+
+**치르는 값.** 템플릿 핫 리로드는 Dioxus의 개발 서버 프로토콜에 기대므로 Dioxus 버전을 올릴 때마다 함께 확인해야 합니다. 템플릿만 바뀐 화면과 다시 빌드한 화면이 같은 그림을 내는지는 시험으로 지킵니다(FR-54 수용 기준 3).
+
+출처: Dioxus 0.7 핫 리로드 문서 <https://dioxuslabs.com/learn/0.7/essentials/ui/hotreload>, `dioxus-devtools` <https://docs.rs/dioxus-devtools/latest/dioxus_devtools/>, subsecond 문서 <https://docs.rs/subsecond/latest/subsecond/>.
+
 ### D15. iOS의 Liquid Glass는 시스템에게 받아 온다. UIKit을 Kotlin이 직접 몬다
 
 FR-14.1-2가 이미 기록했듯 Liquid Glass는 Compose가 그릴 수 있는 효과가 아닙니다. 시스템이 네이티브 탭 바, 네이티브 내비게이션 바, 네이티브 툴바에만 입히고, Compose 표면 안에서 부르는 API는 없습니다. 그러므로 iOS에서 진짜 유리를 얻는 방법은 하나뿐입니다. **그 크롬을 우리가 그리지 말고, 시스템의 것을 가져다 쓰는 것입니다.**
