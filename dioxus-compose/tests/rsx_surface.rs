@@ -127,6 +127,8 @@ fn surface() -> Element {
                     variant: ButtonVariant::Tonal,
                     button_kind: ButtonKind::ActionKey,
                     color: ERROR,
+                    max_lines: 2,
+                    overflow: TextOverflow::Clip,
                     on_click: move |_| fired("Button.on_click"),
                 }
             },
@@ -643,6 +645,8 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Variant, role(ButtonVariant::Tonal)),
                 (P::ButtonKind, role(ButtonKind::ActionKey)),
                 (P::Color, int(paint_bits(ERROR))),
+                (P::MaxLines, int(2)),
+                (P::Overflow, role(TextOverflow::Clip)),
                 (P::OnClick, Handler),
             ],
         ),
