@@ -256,6 +256,28 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode, measuri
     }
     row(out, file, mode, measuring, "smooth wheel 12px/frame", &wheel);
 
+    // The same scroll written straight into the editor's signal, as the window's probe
+    // does, with no pointer event: what the event path itself adds.
+    let mut wheel_signal = Samples::default();
+    for _ in 0..300 {
+        harness.frame(
+            |dom| {
+                dom.virtual_dom_mut().in_scope(ScopeId::ROOT, || {
+                    drive(|editor| editor.scroll_by(12.0, HEIGHT));
+                });
+            },
+            Some(&mut wheel_signal),
+        );
+    }
+    row(
+        out,
+        file,
+        mode,
+        measuring,
+        "smooth wheel 12px/frame, signal",
+        &wheel_signal,
+    );
+
     // Typing: 500 keystrokes into the textarea in the middle of the file, through the
     // `input` handler a window's text field reaches.
     harness.drive(|editor| editor.jump_to(middle, 12, HEIGHT));
@@ -274,6 +296,27 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode, measuri
         );
     }
     row(out, file, mode, measuring, "keystroke (500)", &typing);
+
+    let mut typing_signal = Samples::default();
+    for index in 0..500 {
+        let letter = key(index).to_string();
+        harness.frame(
+            |dom| {
+                dom.virtual_dom_mut().in_scope(ScopeId::ROOT, || {
+                    drive(|editor| editor.insert(&letter, HEIGHT));
+                });
+            },
+            Some(&mut typing_signal),
+        );
+    }
+    row(
+        out,
+        file,
+        mode,
+        measuring,
+        "keystroke (500), signal",
+        &typing_signal,
+    );
 }
 
 fn main() {
