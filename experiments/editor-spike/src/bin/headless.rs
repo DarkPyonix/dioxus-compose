@@ -32,8 +32,8 @@ use editor_spike::{
     Options, ScrollMode, Stats, count_cell, drive, generate, load, set_options, set_source,
 };
 
-const WIDTH: f32 = 1200.0;
-const HEIGHT: f32 = 800.0;
+const WIDTH: f32 = editor_spike::VIEWPORT.0;
+const HEIGHT: f32 = editor_spike::VIEWPORT.1;
 
 #[derive(Default)]
 struct Samples {

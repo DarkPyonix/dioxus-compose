@@ -40,6 +40,13 @@ pub const GUTTER_WIDTH: f32 = 64.0;
 pub const OVERSCAN: usize = 5;
 pub const SCROLLBAR_WIDTH: f32 = 14.0;
 const MIN_SLIDER: f32 = 20.0;
+/// Positions are written relative to a multiple of this many pixels at or above the
+/// scroll offset, as Monaco's `bigNumbersDelta` does, so no box and no offset in the page
+/// grows with the file. A 100,000 line file is 1,900,000px tall, and Compose cannot size a
+/// box past 262,143px.
+pub const BIG_NUMBERS_BLOCK: f32 = 100_000.0;
+/// The window the editor is measured in: small enough for a 1024x768 CI screen.
+pub const VIEWPORT: (f32, f32) = (960.0, 600.0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ScrollMode {
@@ -68,7 +75,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            viewport: (1200.0, 800.0),
+            viewport: VIEWPORT,
             scroll_mode: ScrollMode::Top,
         }
     }
@@ -459,6 +466,7 @@ pub fn app() -> Element {
 
     let state = editor.read();
     let scroll = state.scroll_top;
+    let delta = (scroll / BIG_NUMBERS_BLOCK).floor() * BIG_NUMBERS_BLOCK;
     let first = ((scroll / LINE_HEIGHT).floor() as usize).saturating_sub(OVERSCAN);
     let in_view = (height / LINE_HEIGHT).ceil() as usize + 1;
     let last = (first + in_view + 2 * OVERSCAN).min(state.lines.len());
@@ -494,7 +502,7 @@ pub fn app() -> Element {
                 index,
                 top: format!(
                     "top: {}; height: {}",
-                    px(index as f32 * LINE_HEIGHT),
+                    px(index as f32 * LINE_HEIGHT - delta),
                     px(LINE_HEIGHT)
                 ),
                 number: (index + 1).to_string(),
@@ -505,31 +513,33 @@ pub fn app() -> Element {
         })
         .collect();
     let content_height = state.content_height();
+    let cursor_in_view = (first..last).contains(&cursor.line);
     let max_scroll = state.max_scroll(height);
     drop(state);
 
     let offset = match scroll_mode {
-        ScrollMode::Top => format!("top: {}", px(-scroll)),
-        ScrollMode::Transform => format!("transform: translateY({})", px(-scroll)),
+        ScrollMode::Top => format!("top: {}", px(delta - scroll)),
+        ScrollMode::Transform => format!("transform: translateY({})", px(delta - scroll)),
     };
     let lines_content = format!("{offset}; width: {}", px(text_width));
-    let margin_overlays = format!("{offset}; height: {}", px(content_height));
+    let margin_overlays = offset.clone();
     let margin = format!("width: {}", px(GUTTER_WIDTH));
     let scrollable = format!("left: {}; width: {}", px(GUTTER_WIDTH), px(text_width));
     let cursor_top = cursor.line as f32 * LINE_HEIGHT;
     let cursor_left = cursor.column as f32 * CHAR_WIDTH;
     let cursor_style = format!(
         "top: {}; left: {}; width: 2px; height: {}",
-        px(cursor_top),
+        px(cursor_top - delta),
         px(cursor_left),
         px(LINE_HEIGHT)
     );
     // The textarea sits on the cursor, in the overflow guard's own coordinates. Above the
     // lines rather than Monaco's `z-index: -10`, so a click on the cursor reaches it: the
     // page cannot move the focus into a field from a handler.
+    // A cursor out of view leaves the textarea at the nearest edge, as Monaco's does.
     let input_style = format!(
         "top: {}; left: {}; width: 2px; height: {}; z-index: 10",
-        px(cursor_top - scroll),
+        px((cursor_top - scroll).clamp(0.0, (height - LINE_HEIGHT).max(0.0))),
         px(GUTTER_WIDTH + cursor_left),
         px(LINE_HEIGHT)
     );
@@ -604,7 +614,9 @@ pub fn app() -> Element {
                             }
                         }
                         div { class: "cursors-layer cursor-line-style",
-                            div { class: "cursor", style: "{cursor_style}" }
+                            if cursor_in_view {
+                                div { class: "cursor", style: "{cursor_style}" }
+                            }
                         }
                     }
                     div { class: "scrollbar vertical",

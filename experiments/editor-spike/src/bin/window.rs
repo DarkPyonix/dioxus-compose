@@ -39,8 +39,8 @@ use dioxus_compose::schema::Window;
 use dioxus_compose::{Batch, Runtime};
 use editor_spike::{Options, ScrollMode, Stats, drive, load, set_options, set_source};
 
-const WIDTH: f32 = 1200.0;
-const HEIGHT: f32 = 800.0;
+const WIDTH: f32 = editor_spike::VIEWPORT.0;
+const HEIGHT: f32 = editor_spike::VIEWPORT.1;
 /// Frames before a scenario starts, so the window has settled and every text it shows
 /// has been measured once.
 const SETTLE_FRAMES: usize = 60;
@@ -201,6 +201,7 @@ impl Probe {
         let mut key_host = Vec::new();
         let mut key_to_frame = Vec::new();
         let mut settle_interval = Vec::new();
+        let mut after_host = Vec::new();
         for pair in self.frames.windows(2) {
             let (this, next) = (&pair[0], &pair[1]);
             let gap = (next.start - this.start).as_nanos() as u64;
@@ -212,6 +213,7 @@ impl Probe {
             }
             host.push(this.host);
             interval.push(gap);
+            after_host.push(gap.saturating_sub(this.host));
             frame_time.push(next.frame_time.saturating_sub(this.frame_time));
             if this.key {
                 key_host.push(this.host);
@@ -230,16 +232,17 @@ impl Probe {
         );
         let _ = writeln!(
             out,
-            "| scenario | file | host render | frame interval | renderer frame clock | key: host | key to next frame |"
+            "| scenario | file | host render | frame interval | interval minus host | renderer frame clock | key: host | key to next frame |"
         );
-        let _ = writeln!(out, "|---|---|---|---|---|---|---|");
+        let _ = writeln!(out, "|---|---|---|---|---|---|---|---|");
         let _ = writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} |",
             self.scenario.name(),
             self.label,
             Stats::of(&host).cell(),
             Stats::of(&interval).cell(),
+            Stats::of(&after_host).cell(),
             Stats::of(&frame_time).cell(),
             Stats::of(&key_host).cell(),
             Stats::of(&key_to_frame).cell(),
