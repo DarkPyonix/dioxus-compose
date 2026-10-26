@@ -1,0 +1,106 @@
+# Editor spike: whether Ember's code editing area can be HTML and CSS (Monaco's DOM and
+# CSS, with only the lines in view in the DOM) instead of a native widget. Builds
+# experiments/editor-spike, measures the Host's stages with no renderer, then opens the
+# editor in a window and lets it drive itself through scrolling and typing. The numbers go
+# to the job summary and, with the logs and screenshots, to an artifact.
+#
+# It measures; it does not gate. Nothing fails on a number, only on a build that does not
+# build or a run that does not start. It runs on a pull request that touches the spike or
+# this file, and by hand.
+
+name: Editor spike
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - experiments/editor-spike/**
+      - .github/workflows/test-editor-spike.yml
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  measure:
+    name: Measure the editor spike (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Windows is measured where it is cheap to, and its failure says something about
+    # Windows rather than about the spike.
+    continue-on-error: ${{ matrix.os == 'windows-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - name: Cache cargo registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            experiments/editor-spike/target
+          key: editor-spike-${{ runner.os }}-${{ hashFiles('experiments/editor-spike/Cargo.lock', 'dioxus-compose/Cargo.toml') }}
+          restore-keys: |
+            editor-spike-${{ runner.os }}-
+
+      - name: Build the patched blitz-dom
+        # The spike is its own workspace and uses blitz-dom as published, but dioxus-compose
+        # inherits fields from the root workspace, whose patch names this directory.
+        run: ./scripts/apply-patches.sh
+
+      - name: Build the spike
+        run: cargo build --release --manifest-path experiments/editor-spike/Cargo.toml --bins
+
+      - name: Test the editor model
+        run: cargo test --release --manifest-path experiments/editor-spike/Cargo.toml --lib
+
+      - name: Find a real Rust file
+        # stylo's stylist.rs, about 4,500 lines, which the build has just downloaded.
+        run: |
+          real="$(find "$HOME/.cargo/registry/src" -path '*stylo-0.8.0/stylist.rs' | head -1)"
+          echo "real file: $real ($(wc -l < "$real") lines)"
+          echo "EDITOR_REAL_FILE=$real" >> "$GITHUB_ENV"
+
+      - name: Measure the Host's stages
+        run: |
+          mkdir -p spike-out
+          ./experiments/editor-spike/target/release/headless "$EDITOR_REAL_FILE" spike-out/headless.md
+          { echo "## Host stages, no renderer ($RUNNER_OS)"; echo; cat spike-out/headless.md; echo; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Measure in a window
+        run: |
+          exe=experiments/editor-spike/target/release/editor-window
+          [[ -f "$exe.exe" ]] && exe="$exe.exe"
+          bash experiments/editor-spike/scripts/run-window.sh "$exe" spike-out/window "$EDITOR_REAL_FILE"
+          cat spike-out/window/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the lock file the build resolved
+        if: always()
+        run: cp experiments/editor-spike/Cargo.lock spike-out/Cargo.lock || true
+
+      - name: Upload the measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editor-spike-${{ matrix.os }}
+          path: spike-out
