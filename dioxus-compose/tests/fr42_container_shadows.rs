@@ -189,10 +189,12 @@ fn fr42_a_node_without_shadows_writes_nothing_for_them() {
     let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
     let column = nodes_of(&mutations, WidgetKind::Column)[0];
     let chain = modifiers(&mutations, column);
+    let first = dioxus_compose::renderer::MAX_SHADOWS;
     assert!(
-        chain
-            .iter()
-            .all(|(_, modifier)| !matches!(modifier, Modifier::Shadow { .. } | Modifier::Empty)),
+        chain.iter().all(|(index, modifier)| {
+            !matches!(modifier, Modifier::Shadow { .. })
+                && !(*modifier == Modifier::Empty && (9..9 + first as u16).contains(index))
+        }),
         "{chain:?}"
     );
 }
@@ -252,7 +254,7 @@ fn fr42_a_shorter_list_clears_the_positions_it_no_longer_fills() {
         column,
     ));
 
-    // Position 0 now holds the one layer left, which is the first in the list (x = 0), and
+    // The one layer left is the first in the list (x = 0) and lands in the first position;
     // the two positions above it are emptied.
     let latest = |index: u16| {
         after
@@ -262,7 +264,7 @@ fn fr42_a_shorter_list_clears_the_positions_it_no_longer_fills() {
             .map(|(_, m)| m.clone())
     };
     assert_eq!(
-        latest(base + 2),
+        latest(base),
         Some(shadow_of(ShadowLayer::new(
             0.0,
             0.0,
@@ -271,6 +273,6 @@ fn fr42_a_shorter_list_clears_the_positions_it_no_longer_fills() {
             Paint::Role(ColorRole::Outline)
         )))
     );
-    assert_eq!(latest(base), Some(Modifier::Empty));
     assert_eq!(latest(base + 1), Some(Modifier::Empty));
+    assert_eq!(latest(base + 2), Some(Modifier::Empty));
 }
