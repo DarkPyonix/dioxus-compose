@@ -2190,24 +2190,6 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 5. 핸들의 편집이 `EditCode` 명령 하나로 나가고, 붙어 있지 않은 핸들의 편집은 나가지 않는다.
 6. 창에 그려 한글 조합, 큰 파일, 장식을 확인하는 것은 compose-rust 38.7의 몫이고 PR #111이 병합되고 배포된 뒤에 확인한다. 그 전에는 확인하지 않았다.
 
-### FR-39 컨테이너의 `shadow` 속성: 겹친 그림자 (`Draft`, compose-rust 이슈 #299)
-
-추적: compose-rust FR-51. 렌더러와 와이어는 compose-rust의 것이고, 이 항목은 rsx 표면만 다룬다.
-
-- `Column`, `Row`, `Box`, `Card`가 `shadow: Vec<ShadowLayer>`를 받는다. `ShadowLayer`는 x, y, blur, spread(dp)와 `Paint`(알파 포함)다. 목록은 CSS 순서라 첫 층이 맨 위에 놓인다.
-- 위젯은 층마다 `Shadow` 수정자 하나를, 수정자 사슬의 이어진 자리에 뒤 층부터 보낸다. 사슬은 앞에서 뒤로 그리기 때문이다. 자리는 모서리, 모양, 배경보다 앞이다.
-- 한 노드에 8층까지 쓴다(`MAX_SHADOWS`). 더 긴 목록은 위쪽 8층만 쓴다. 목록이 줄면 남는 자리를 `Empty`로 비운다. 그림자가 없는 노드는 레코드를 보내지 않는다.
-- `AbsoluteBox`의 `shadow`는 튜플 하나를 그대로 받는다.
-- 그림자의 모서리는 compose-rust가 노드의 `corner_radius`에서 읽는다. 이 기능이 보이려면 그 변경이 든 compose-rust 릴리스가 필요하다.
-
-#### 39.1 수용 기준
-
-1. 네 컨테이너 모두 층을 뒤 층부터, 이어진 자리에 보낸다(fr51_every_container_writes_its_layers_bottom_first).
-2. 그림자 자리는 모양과 배경 자리보다 앞이다(fr51_shadows_sit_ahead_of_the_shape_and_the_fill).
-3. 한도를 넘는 목록은 위쪽 층만 남긴다(fr51_a_list_longer_than_the_limit_keeps_the_top_layers).
-4. 그림자 없는 노드는 그림자도 비움 레코드도 보내지 않는다(fr51_a_node_without_shadows_writes_nothing_for_them).
-5. 목록이 줄면 남는 자리가 비워진다(fr51_a_shorter_list_clears_the_positions_it_no_longer_fills).
-
 ## 4. 경계 프로토콜
 
 ### PR-1 호출 모델: 동기·동일 스레드 직접 호출 (`Done`)
