@@ -96,7 +96,7 @@ fn shadows(chain: &Chain) -> Vec<(u16, Modifier)> {
 /// Each of the four containers writes both layers, the bottom one first, so the first layer
 /// in the list lies over the second as CSS draws it.
 #[test]
-fn fr51_every_container_writes_its_layers_bottom_first() {
+fn fr42_every_container_writes_its_layers_bottom_first() {
     let mut host = Host::new(layered);
     let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
     for widget in [
@@ -127,7 +127,7 @@ fn fr51_every_container_writes_its_layers_bottom_first() {
 /// A shadow is behind the node, so it is ahead of the shape and the fill in the chain, and
 /// the shape's clip does not cut it.
 #[test]
-fn fr51_shadows_sit_ahead_of_the_shape_and_the_fill() {
+fn fr42_shadows_sit_ahead_of_the_shape_and_the_fill() {
     let mut host = Host::new(layered);
     let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
     let column = nodes_of(&mutations, WidgetKind::Column)[0];
@@ -159,7 +159,7 @@ fn too_many() -> Element {
 /// A node carries `MAX_SHADOWS` layers. A longer list keeps the layers on top, the first
 /// ones, and drops the rest.
 #[test]
-fn fr51_a_list_longer_than_the_limit_keeps_the_top_layers() {
+fn fr42_a_list_longer_than_the_limit_keeps_the_top_layers() {
     let mut host = Host::new(too_many);
     let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
     let column = nodes_of(&mutations, WidgetKind::Column)[0];
@@ -184,7 +184,7 @@ fn none() -> Element {
 
 /// A node with no shadows costs no record, neither a shadow nor a clearing one.
 #[test]
-fn fr51_a_node_without_shadows_writes_nothing_for_them() {
+fn fr42_a_node_without_shadows_writes_nothing_for_them() {
     let mut host = Host::new(none);
     let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
     let column = nodes_of(&mutations, WidgetKind::Column)[0];
@@ -213,7 +213,7 @@ fn shrinking() -> Element {
 /// A list that gets shorter empties the positions it no longer fills, so a layer that was
 /// removed is not left drawn.
 #[test]
-fn fr51_a_shorter_list_clears_the_positions_it_no_longer_fills() {
+fn fr42_a_shorter_list_clears_the_positions_it_no_longer_fills() {
     let mut host = Host::new(shrinking);
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
     let column = nodes_of(&first, WidgetKind::Column)[0];
