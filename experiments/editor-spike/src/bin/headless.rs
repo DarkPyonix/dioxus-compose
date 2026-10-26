@@ -26,6 +26,7 @@ use dioxus_compose::Batch;
 use dioxus_compose::html::prelude::dioxus_core::ScopeId;
 use dioxus_compose::html::{
     HtmlConfig, HtmlDom, LiteralColours, ParleyMeasurer, PlanBridge, PointerInput,
+    TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics,
 };
 use dioxus_compose::protocol::decode_batch;
 use editor_spike::{
@@ -47,6 +48,41 @@ struct Samples {
     bytes: Vec<u64>,
 }
 
+/// Answers every text as one line of fixed-width characters, with no shaping: what the
+/// layout costs when measuring is free, which is close to a window whose renderer has
+/// measured every line already.
+struct FixedMeasurer;
+
+impl TextMeasurer for FixedMeasurer {
+    fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics {
+        let line = match request.style.line_height {
+            TextLineHeight::Px(px) => px,
+            TextLineHeight::Normal => request.style.font_size * 1.25,
+        };
+        TextMetrics {
+            width: request.text.chars().count() as f32 * request.style.font_size * 0.6,
+            height: line,
+            first_baseline: line * 0.75,
+            line_count: 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Measuring {
+    Parley,
+    Fixed,
+}
+
+impl Measuring {
+    fn name(self) -> &'static str {
+        match self {
+            Measuring::Parley => "Parley",
+            Measuring::Fixed => "fixed advance",
+        }
+    }
+}
+
 struct Harness {
     dom: HtmlDom,
     bridge: PlanBridge,
@@ -54,10 +90,14 @@ struct Harness {
 }
 
 impl Harness {
-    fn new() -> Self {
+    fn new(measuring: Measuring) -> Self {
+        let measurer: Box<dyn TextMeasurer> = match measuring {
+            Measuring::Parley => Box::new(ParleyMeasurer::new()),
+            Measuring::Fixed => Box::new(FixedMeasurer),
+        };
         let config = HtmlConfig {
             stylesheets: vec![editor_spike::STYLE.to_string()],
-            measurer: Some(Box::new(ParleyMeasurer::new())),
+            measurer: Some(measurer),
             ..HtmlConfig::default()
         };
         Self {
@@ -126,11 +166,19 @@ fn key(index: usize) -> char {
     }
 }
 
-fn row(out: &mut String, file: &str, mode: ScrollMode, scenario: &str, samples: &Samples) {
+fn row(
+    out: &mut String,
+    file: &str,
+    mode: ScrollMode,
+    measuring: Measuring,
+    scenario: &str,
+    samples: &Samples,
+) {
     let _ = writeln!(
         out,
-        "| {file} | {} | {scenario} | {} | {} | {} | {} | {} | {} | {} | {} |",
+        "| {file} | {} | {} | {scenario} | {} | {} | {} | {} | {} | {} | {} | {} |",
         mode.name(),
+        measuring.name(),
         Stats::of(&samples.total).cell(),
         Stats::of(&samples.event).cell(),
         Stats::of(&samples.render).cell(),
@@ -142,7 +190,7 @@ fn row(out: &mut String, file: &str, mode: ScrollMode, scenario: &str, samples: 
     );
 }
 
-fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
+fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode, measuring: Measuring) {
     set_source(lines.to_vec());
     set_options(Options {
         viewport: (WIDTH, HEIGHT),
@@ -152,7 +200,7 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
     // The first frame builds everything.
     let mut first = Samples::default();
     let built = Instant::now();
-    let mut harness = Harness::new();
+    let mut harness = Harness::new(measuring);
     let construct = built.elapsed();
     harness.frame(|_| {}, Some(&mut first));
     let _ = writeln!(
@@ -161,7 +209,7 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
         mode.name(),
         construct.as_secs_f64() * 1e3
     );
-    row(out, file, mode, "first frame", &first);
+    row(out, file, mode, measuring, "first frame", &first);
 
     // Nothing changed: what every frame costs at least, since a frame lays the whole
     // page out again.
@@ -169,7 +217,7 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
     for _ in 0..60 {
         harness.frame(|_| {}, Some(&mut idle));
     }
-    row(out, file, mode, "frame, nothing changed", &idle);
+    row(out, file, mode, measuring, "frame, nothing changed", &idle);
 
     let scrollable = harness.node("scrollable");
     let wheel_at = (WIDTH / 2.0, HEIGHT / 2.0);
@@ -187,7 +235,7 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
             Some(&mut page),
         );
     }
-    row(out, file, mode, "scroll one page (wheel)", &page);
+    row(out, file, mode, measuring, "scroll one page (wheel)", &page);
 
     // Smooth scrolling: 300 wheel turns of 12px from the middle of the file, about what a
     // trackpad sends at 60 frames a second.
@@ -206,7 +254,7 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
             Some(&mut wheel),
         );
     }
-    row(out, file, mode, "smooth wheel 12px/frame", &wheel);
+    row(out, file, mode, measuring, "smooth wheel 12px/frame", &wheel);
 
     // Typing: 500 keystrokes into the textarea in the middle of the file, through the
     // `input` handler a window's text field reaches.
@@ -225,7 +273,7 @@ fn run(out: &mut String, file: &str, lines: &[String], mode: ScrollMode) {
             Some(&mut typing),
         );
     }
-    row(out, file, mode, "keystroke (500)", &typing);
+    row(out, file, mode, measuring, "keystroke (500)", &typing);
 }
 
 fn main() {
@@ -236,22 +284,29 @@ fn main() {
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "Host stages per frame, ms as p50 / p95 / max (n). Records and bytes as p50 / p95 / max. Viewport {WIDTH}x{HEIGHT}, Parley measuring.\n"
+        "Host stages per frame, ms as p50 / p95 / max (n). Records and bytes as p50 / p95 / max. Viewport {WIDTH}x{HEIGHT}.\n"
     );
     let _ = writeln!(
         out,
-        "| file | scroll mode | scenario | total | event | render | layout | plan | apply | records | bytes |"
+        "| file | scroll mode | measuring | scenario | total | event | render | layout | plan | apply | records | bytes |"
     );
-    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|");
+    let _ = writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|---|");
 
     let generated = generate(100_000);
     let generated_label = "generated (100000 lines)".to_string();
     for mode in [ScrollMode::Top, ScrollMode::Transform] {
-        run(&mut out, &generated_label, &generated, mode);
+        run(&mut out, &generated_label, &generated, mode, Measuring::Parley);
     }
+    run(
+        &mut out,
+        &generated_label,
+        &generated,
+        ScrollMode::Top,
+        Measuring::Fixed,
+    );
     if let Some(path) = real.as_deref() {
         let (lines, label) = load(Some(path), 0);
-        run(&mut out, &label, &lines, ScrollMode::Top);
+        run(&mut out, &label, &lines, ScrollMode::Top, Measuring::Parley);
     }
 
     print!("{out}");
