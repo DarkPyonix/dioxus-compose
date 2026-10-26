@@ -708,6 +708,10 @@ pub fn TextField(
     /// path or a snippet of code wants the monospace rung; prose does not.
     #[props(default)]
     type_role: Option<TypeRole>,
+    /// The fonts to try, in order, for a field whose `type_role` is `TypeRole::None`, the
+    /// way `Text` takes them. A field with a role is set in the theme's font for it.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
     #[props(default)] on_value_change: EventHandler<String>,
     #[props(default)] on_submit: EventHandler<String>,
     #[props(default)] on_focus_lost: EventHandler<()>,
@@ -732,6 +736,7 @@ pub fn TextField(
             enabled,
             multiline,
             type_role: type_role.map(|role| i64::from(u16::from(role))),
+            font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
             onvaluechange: move |event| on_value_change.call((*event.data()).clone()),
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),

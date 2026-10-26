@@ -323,7 +323,7 @@ pub mod elements {
     element!(
         textfield,
         "TextField",
-        [placeholder, enabled, multiline, type_role]
+        [placeholder, enabled, multiline, type_role, font]
     );
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
     // second place a role icon reaches the tree, because a toolbar is a row of icon
