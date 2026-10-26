@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Several shadows on Column, Row, Box and Card
+
+These four take `shadow: Vec<ShadowLayer>`, a list in CSS order where the first layer is on
+top. Each layer is a `Shadow` modifier in its own chain position, up to eight, drawn behind
+the node. The shadow follows the node's corner radius once the renderer carries
+compose-rust's change for it. The chain positions after the shadows moved up by seven;
+nothing outside this crate depends on them.
+
 ### HTML screens zoom as a whole
 
 An HTML screen is zoomed the way an editor zooms. The renderer reports `k`, the system's

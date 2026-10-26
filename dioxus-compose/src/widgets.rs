@@ -14,6 +14,56 @@ use compose_rust::schema::{
 };
 use compose_rust::{FileDrop, KeyEvent, PointerEvent, PointerKinds, RangeRequest};
 
+/// One layer of a container's shadow, as CSS `box-shadow` gives one: an offset, a blur
+/// radius and a spread in dp, and a paint whose alpha is the shadow's opacity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShadowLayer {
+    pub x: f32,
+    pub y: f32,
+    pub blur: f32,
+    pub spread: f32,
+    pub paint: Paint,
+}
+
+impl ShadowLayer {
+    pub const fn new(x: f32, y: f32, blur: f32, spread: f32, paint: Paint) -> Self {
+        Self {
+            x,
+            y,
+            blur,
+            spread,
+            paint,
+        }
+    }
+}
+
+/// A shadow list in the order of the modifier chain, which draws a later modifier over an
+/// earlier one. Carried as one attribute value and written to one position each.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ShadowChain(pub(crate) Vec<compose_rust::Modifier>);
+
+/// The `shadow` attribute of a container from its list, which is in CSS order: the first
+/// layer is on top, so the chain gets it last. A list longer than the node can carry keeps
+/// the layers that are on top. An empty list sends nothing.
+fn shadow_attr(layers: &[ShadowLayer]) -> Option<AttributeValue> {
+    if layers.is_empty() {
+        return None;
+    }
+    let chain = layers
+        .iter()
+        .take(crate::renderer::MAX_SHADOWS)
+        .rev()
+        .map(|layer| compose_rust::Modifier::Shadow {
+            x: layer.x,
+            y: layer.y,
+            blur: layer.blur,
+            spread: layer.spread,
+            paint: layer.paint,
+        })
+        .collect();
+    Some(AttributeValue::any_value(ShadowChain(chain)))
+}
+
 /// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
 fn role(value: Option<impl Into<u16>>) -> i64 {
@@ -200,6 +250,10 @@ pub fn Column(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] arrangement: Option<Arrangement>,
@@ -249,6 +303,7 @@ pub fn Column(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             arrangement: role(arrangement),
@@ -285,6 +340,10 @@ pub fn Row(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] arrangement: Option<Arrangement>,
@@ -334,6 +393,7 @@ pub fn Row(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             arrangement: role(arrangement),
@@ -370,6 +430,10 @@ pub fn ComposeBox(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] alignment: Option<Alignment>,
@@ -416,6 +480,7 @@ pub fn ComposeBox(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             alignment: role(alignment),
@@ -976,6 +1041,10 @@ pub fn Card(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
@@ -1021,6 +1090,7 @@ pub fn Card(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             {children}
