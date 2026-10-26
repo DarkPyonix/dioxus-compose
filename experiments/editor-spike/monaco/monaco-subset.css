@@ -1,0 +1,40 @@
+/*!-----------------------------------------------------------
+ * Copyright (c) Microsoft Corporation. All rights reserved.
+ * Version: 0.52.2(404545bded1df6ffa41ea0af4e8ddb219018c6c1)
+ * Released under the MIT license
+ * https://github.com/microsoft/vscode/blob/main/LICENSE.txt
+ *-----------------------------------------------------------*/
+/*
+ * The rules of monaco-editor 0.52.2, min/vs/editor/editor.main.css, that the editor view
+ * below needs: the editor box, the overflow guard, the gutter and its line numbers, the
+ * view lines, the overlays (current line, selection), the cursor layer, the hidden input
+ * area and the scrollbar slider. Each rule is copied as published, one per line, in the
+ * order the file has them. Nothing else from the file is here. The full license is in
+ * LICENSE.txt beside this file.
+ *
+ * Left out on purpose: `.monaco-scrollable-element>.visible`, whose opacity transition
+ * would make the Host tick a motion on every scroll, and every rule for widgets the
+ * spike does not have (find, suggest, hover, minimap, folding).
+ */
+.monaco-editor .inputarea{background-color:transparent;border:none;color:transparent;margin:0;min-height:0;min-width:0;outline:none!important;overflow:hidden;padding:0;position:absolute;resize:none;z-index:-10}
+.monaco-editor .inputarea.ime-input{caret-color:var(--vscode-editorCursor-foreground);color:var(--vscode-editor-foreground);z-index:10}
+.monaco-editor .margin-view-overlays .current-line,.monaco-editor .view-overlays .current-line{box-sizing:border-box;display:block;height:100%;left:0;position:absolute;top:0}
+.monaco-editor .margin-view-overlays .line-numbers{bottom:0;box-sizing:border-box;cursor:default;display:inline-block;font-variant-numeric:tabular-nums;position:absolute;text-align:right;vertical-align:middle}
+.monaco-editor .line-numbers{color:var(--vscode-editorLineNumber-foreground)}
+.monaco-editor .line-numbers.active-line-number{color:var(--vscode-editorLineNumber-activeForeground)}
+.monaco-editor .margin{background-color:var(--vscode-editorGutter-background)}
+.monaco-editor .view-lines{white-space:nowrap}
+.monaco-editor .view-line{position:absolute;width:100%}
+.monaco-editor .lines-content>.view-lines>.view-line>span{bottom:0;position:absolute;top:0}
+.monaco-editor .lines-content .cslr{position:absolute}
+.monaco-editor .focused .selected-text{background-color:var(--vscode-editor-selectionBackground)}
+.monaco-editor .selected-text{background-color:var(--vscode-editor-inactiveSelectionBackground)}
+.monaco-editor .cursors-layer{position:absolute;top:0}
+.monaco-editor .cursors-layer>.cursor{box-sizing:border-box;overflow:hidden;position:absolute}
+.monaco-editor .overflow-guard{overflow:hidden;position:relative}
+.monaco-editor .view-overlays{position:absolute;top:0}
+.monaco-editor .margin-view-overlays>div,.monaco-editor .view-overlays>div{position:absolute;width:100%}
+.monaco-editor{overflow:visible;position:relative;-webkit-text-size-adjust:100%;color:var(--vscode-editor-foreground);overflow-wrap:normal}
+.monaco-editor,.monaco-editor-background{background-color:var(--vscode-editor-background)}
+.monaco-scrollable-element>.scrollbar>.slider{background:var(--vscode-scrollbarSlider-background)}
+.monaco-editor{font-family:-apple-system,BlinkMacSystemFont,Segoe WPC,Segoe UI,HelveticaNeue-Light,system-ui,Ubuntu,Droid Sans,sans-serif;--monaco-monospace-font:"SF Mono",Monaco,Menlo,Consolas,"Ubuntu Mono","Liberation Mono","DejaVu Sans Mono","Courier New",monospace}

@@ -1,0 +1,116 @@
+/*
+ * What Monaco writes at run time rather than in its stylesheet: the theme's colours (as
+ * the `--vscode-*` custom properties its theme service sets on the editor), the token
+ * classes `mtk1` to `mtk12` (generated from the theme's colour map), the current line's
+ * border (a theming participant), and the boxes its view parts size and place from
+ * script (the editor, the gutter, the scrollable element, the scrollbar). The colours are
+ * VS Code's Dark+ theme, which is MIT licensed like the rules beside this file.
+ *
+ * The positions that change while scrolling or typing (each line's `top`, the scroll
+ * offset, the cursor) are inline styles written by the view, as Monaco writes them.
+ */
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #1e1e1e;
+}
+
+.monaco-editor {
+    --vscode-editor-background: #1e1e1e;
+    --vscode-editor-foreground: #d4d4d4;
+    --vscode-editorGutter-background: #1e1e1e;
+    --vscode-editorLineNumber-foreground: #858585;
+    --vscode-editorLineNumber-activeForeground: #c6c6c6;
+    --vscode-editor-selectionBackground: #264f78;
+    --vscode-editor-inactiveSelectionBackground: #3a3d41;
+    --vscode-editor-lineHighlightBorder: #282828;
+    --vscode-editorCursor-foreground: #aeafad;
+    --vscode-scrollbarSlider-background: rgba(121, 121, 121, 0.4);
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.monaco-editor .overflow-guard {
+    width: 100%;
+    height: 100%;
+}
+
+.monaco-editor .margin {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+}
+
+.monaco-editor .margin-view-overlays {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+}
+
+.monaco-editor .margin-view-overlays .line-numbers,
+.monaco-editor .view-line {
+    font-family: Menlo, Monaco, "SF Mono", Consolas, "DejaVu Sans Mono", monospace;
+    font-size: 14px;
+    line-height: 19px;
+    white-space: pre;
+}
+
+.monaco-editor .margin-view-overlays .line-numbers {
+    left: 0;
+    width: 50px;
+}
+
+.monaco-editor .view-overlays .current-line {
+    width: 100%;
+    border: 2px solid var(--vscode-editor-lineHighlightBorder);
+}
+
+.monaco-editor .monaco-scrollable-element {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    overflow: hidden;
+}
+
+.monaco-editor .lines-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+}
+
+.monaco-editor .cursors-layer > .cursor {
+    background-color: var(--vscode-editorCursor-foreground);
+}
+
+.monaco-scrollable-element > .scrollbar.vertical {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 14px;
+    height: 100%;
+}
+
+.monaco-scrollable-element > .scrollbar > .slider {
+    position: absolute;
+    left: 0;
+    width: 14px;
+}
+
+/* The token colours, Dark+. */
+.mtk1 { color: #d4d4d4; }
+.mtk6 { color: #569cd6; }
+.mtk7 { color: #b5cea8; }
+.mtk8 { color: #6a9955; }
+.mtk9 { color: #ce9178; }
+.mtk10 { color: #4ec9b0; }
+.mtk11 { color: #dcdcaa; }
+.mtk12 { color: #c586c0; }

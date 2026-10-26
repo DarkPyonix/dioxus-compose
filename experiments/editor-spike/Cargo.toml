@@ -1,0 +1,33 @@
+# Deliberately outside the workspace, like blitz-layout-probe: a measurement, not anything
+# the project publishes. Its own `[workspace]` keeps it out of the member list, the quality
+# gate and the shared build directory. It builds against this checkout's dioxus-compose as
+# a path dependency, with blitz-dom as published (the workspace's patch does not reach it).
+[workspace]
+
+[package]
+name = "editor-spike"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.88"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "headless"
+path = "src/bin/headless.rs"
+
+[[bin]]
+name = "editor-window"
+path = "src/bin/window.rs"
+
+[dependencies]
+dioxus-compose = { path = "../../dioxus-compose" }
+dioxus-hooks = "0.7"
+dioxus-signals = "0.7"
+
+[profile.release]
+# The numbers are for an optimised build, as an application would ship.
+debug = false
