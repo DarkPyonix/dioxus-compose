@@ -44,14 +44,16 @@ pub(crate) mod renderer_measure;
 use std::cell::Ref;
 use std::collections::{HashMap, HashSet};
 
+use blitz_dom::node::{NodeFlags, TextLayout};
 use blitz_dom::{Atom, BaseDocument, LocalName, Node, NodeData};
 use style::properties::generated::longhands::position::computed_value::T as Position;
 use style::values::computed::length_percentage::CalcLengthPercentage;
 use style::values::computed::{
-    Length, LengthPercentage, MaxSize as StyloMaxSize, Size as StyloSize,
+    Display as StyloDisplay, Length, LengthPercentage, MaxSize as StyloMaxSize, Size as StyloSize,
 };
+use style::values::specified::box_::DisplayOutside;
 use taffy::{
-    AvailableSpace, BoxSizing, CacheTree, Dimension, Display, FlexDirection, Layout,
+    AvailableSpace, BoxSizing, Cache, CacheTree, Dimension, Display, FlexDirection, Layout,
     LayoutBlockContainer, LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput,
     LayoutPartialTree, Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero,
     RoundTree, RunMode, Size, SizingMode, Style, TraversePartialTree, TraverseTree,
@@ -87,6 +89,44 @@ pub(crate) fn resolve_calc_value(calc_ptr: *const (), basis: f32) -> f32 {
     calc.resolve(Length::new(basis)).px()
 }
 
+/// State kept between incremental layout passes on an [`HtmlDom`](crate::html::HtmlDom).
+#[derive(Default)]
+pub(crate) struct LayoutState {
+    pub(crate) initialized: bool,
+    pub(crate) texts: MeasuredTexts,
+    pub(crate) styles: HashMap<usize, Style<Atom>>,
+    pub(crate) computed_ptrs: HashMap<usize, usize>,
+    pub(crate) text_styles:
+        HashMap<usize, (TextStyle, TextWhiteSpace, TextAlign, Rgba, TextDecoration)>,
+    pub(crate) display_modes: HashMap<usize, StyloDisplay>,
+    pub(crate) positions: HashMap<usize, Position>,
+    pub(crate) viewport: Option<(u32, u32, u32)>,
+}
+
+impl LayoutState {
+    pub(crate) fn invalidate_all(&mut self) {
+        self.initialized = false;
+        self.texts.texts.clear();
+        self.texts.markers.clear();
+        self.styles.clear();
+        self.computed_ptrs.clear();
+        self.text_styles.clear();
+        self.display_modes.clear();
+        self.positions.clear();
+        self.viewport = None;
+    }
+
+    pub(crate) fn forget(&mut self, id: usize) {
+        self.texts.texts.remove(&id);
+        self.texts.markers.remove(&id);
+        self.styles.remove(&id);
+        self.computed_ptrs.remove(&id);
+        self.text_styles.remove(&id);
+        self.display_modes.remove(&id);
+        self.positions.remove(&id);
+    }
+}
+
 /// Runs stylo's cascade and blitz-dom's box construction: everything `BaseDocument::resolve`
 /// does except its own layout, which [`run_layout`] replaces.
 ///
@@ -101,11 +141,352 @@ pub(crate) fn resolve_styles(doc: &mut BaseDocument, now: f64) {
     doc.flush_styles_to_layout(root);
 }
 
+/// Resolves styles incrementally against `state`.
+///
+/// When `tree_dirty` is false and no restyled node changed its `display`, `position`, or
+/// text-shaping properties, skips full box reconstruction (`resolve_layout_children` and
+/// `resolve_deferred_tasks`) and updates Taffy styles only on nodes whose computed style
+/// changed. When box reconstruction does run, preserves Taffy caches on clean nodes outside
+/// the dirty subtrees and their ancestors.
+pub(crate) fn resolve_styles_incremental(
+    doc: &mut BaseDocument,
+    now: f64,
+    tree_dirty: bool,
+    dirty_nodes: &HashSet<usize>,
+    dirty_style_nodes: &HashSet<usize>,
+    state: &mut LayoutState,
+) -> HashSet<usize> {
+    doc.resolve_stylist(now);
+
+    let mut need_box_rebuild = !state.initialized || tree_dirty;
+    let mut box_style_changed_nodes = HashSet::new();
+    let mut text_style_changed_nodes = HashSet::new();
+    let mut computed_changed_nodes = Vec::new();
+
+    for (id, node) in doc.tree().iter() {
+        if !node.flags.is_in_document() {
+            continue;
+        }
+        let Some(primary) = node.primary_styles() else {
+            continue;
+        };
+        let ptr = (&*primary as *const style::properties::ComputedValues) as usize;
+        if state.initialized && state.computed_ptrs.get(&id) == Some(&ptr) {
+            continue;
+        }
+        state.computed_ptrs.insert(id, ptr);
+        computed_changed_nodes.push(id);
+
+        let disp = primary.clone_display();
+        let pos = primary.clone_position();
+        if state.display_modes.insert(id, disp) != Some(disp) {
+            if state.initialized {
+                box_style_changed_nodes.insert(id);
+            }
+            need_box_rebuild = true;
+        }
+        if state.positions.insert(id, pos) != Some(pos) {
+            if state.initialized {
+                box_style_changed_nodes.insert(id);
+            }
+            need_box_rebuild = true;
+        }
+        let ts = (
+            convert::text_style(&primary),
+            convert::white_space(&primary),
+            convert::text_align(&primary),
+            convert::text_color(&primary),
+            convert::text_decoration(doc, id),
+        );
+        if state.text_styles.get(&id) != Some(&ts) {
+            if state.initialized {
+                text_style_changed_nodes.insert(id);
+                if state
+                    .text_styles
+                    .get(&id)
+                    .is_some_and(|prev| prev.0 != ts.0 || prev.1 != ts.1)
+                {
+                    need_box_rebuild = true;
+                }
+            }
+            state.text_styles.insert(id, ts);
+        }
+    }
+
+    let mut saved_caches: HashMap<usize, Cache> = HashMap::new();
+    if state.initialized {
+        for (id, node) in doc.tree().iter() {
+            if node.flags.is_in_document() || node.layout_parent.get().is_some() {
+                saved_caches.insert(id, node.cache.clone());
+            }
+        }
+    }
+
+    if need_box_rebuild {
+        let mut parked: Vec<ParkedBoxSubtree> = Vec::new();
+
+        if state.initialized {
+            let mut rebuild_tree = HashSet::new();
+            let mut stack: Vec<usize> = dirty_nodes
+                .iter()
+                .chain(box_style_changed_nodes.iter())
+                .chain(text_style_changed_nodes.iter())
+                .copied()
+                .collect();
+            while let Some(id) = stack.pop() {
+                if rebuild_tree.insert(id)
+                    && let Some(node) = doc.get_node(id)
+                {
+                    stack.extend(node.children.iter().copied());
+                    if let Some(lc) = node.layout_children.borrow().as_ref() {
+                        stack.extend(lc.iter().copied());
+                    }
+                }
+            }
+            for &seed in dirty_nodes
+                .iter()
+                .chain(box_style_changed_nodes.iter())
+                .chain(text_style_changed_nodes.iter())
+            {
+                let mut cur = Some(seed);
+                while let Some(id) = cur {
+                    rebuild_tree.insert(id);
+                    if let Some(node) = doc.get_node(id) {
+                        if let Some(el) = node.element_data()
+                            && matches!(el.name.local.as_ref(), "ol" | "ul")
+                        {
+                            for &child_id in &node.children {
+                                rebuild_tree.insert(child_id);
+                            }
+                        }
+                        cur = node.layout_parent.get().or(node.parent);
+                    } else {
+                        cur = None;
+                    }
+                }
+            }
+
+            let candidate_ids: Vec<usize> = doc
+                .tree()
+                .iter()
+                .filter_map(|(id, node)| {
+                    if !node.flags.is_in_document()
+                        || rebuild_tree.contains(&id)
+                        || node.before.is_some()
+                        || node.after.is_some()
+                    {
+                        return None;
+                    }
+                    let has_box =
+                        node.layout_children.borrow().is_some() || node.flags.is_inline_root();
+                    if !has_box {
+                        return None;
+                    }
+                    let el = node.element_data()?;
+                    if matches!(
+                        el.name.local.as_ref(),
+                        "html"
+                            | "body"
+                            | "ol"
+                            | "ul"
+                            | "table"
+                            | "svg"
+                            | "input"
+                            | "textarea"
+                            | "select"
+                    ) {
+                        return None;
+                    }
+                    let disp = state.display_modes.get(&id)?;
+                    if disp.outside() != DisplayOutside::Block {
+                        return None;
+                    }
+                    let has_pseudo =
+                        node.stylo_element_data.borrow().as_ref().is_some_and(|d| {
+                            d.styles.pseudos.as_array().iter().any(Option::is_some)
+                        });
+                    if has_pseudo {
+                        return None;
+                    }
+                    Some(id)
+                })
+                .collect();
+
+            for id in candidate_ids {
+                if let Some(node) = doc.get_node_mut(id) {
+                    let children = std::mem::take(&mut node.children);
+                    let flags = node.flags;
+                    let inline_layout = node
+                        .element_data_mut()
+                        .and_then(|el| el.inline_layout_data.take());
+                    let layout_children = node.layout_children.borrow_mut().take();
+                    let paint_children = node.paint_children.borrow_mut().take();
+                    parked.push(ParkedBoxSubtree {
+                        id,
+                        children,
+                        flags,
+                        inline_layout,
+                        layout_children,
+                        paint_children,
+                    });
+                }
+            }
+        }
+
+        doc.resolve_layout_children();
+        doc.resolve_deferred_tasks();
+        let root = doc.root_element().id;
+        doc.flush_styles_to_layout(root);
+
+        for item in parked {
+            if let Some(node) = doc.get_node_mut(item.id) {
+                node.children = item.children;
+                node.flags = item.flags;
+                if let Some(el) = node.element_data_mut() {
+                    el.inline_layout_data = item.inline_layout;
+                }
+                *node.layout_children.borrow_mut() = item.layout_children;
+                *node.paint_children.borrow_mut() = item.paint_children;
+            }
+        }
+        flush_changed_nodes_only(doc, &computed_changed_nodes);
+    } else {
+        flush_changed_nodes_only(doc, &computed_changed_nodes);
+    }
+
+    let mut style_changed_nodes = HashSet::new();
+    if need_box_rebuild {
+        for (id, node) in doc.tree().iter() {
+            if !node.flags.is_in_document() && node.layout_parent.get().is_none() {
+                continue;
+            }
+            if state.styles.get(&id) != Some(&node.style) {
+                state.styles.insert(id, node.style.clone());
+                style_changed_nodes.insert(id);
+            }
+        }
+    } else {
+        for &id in &computed_changed_nodes {
+            if let Some(node) = doc.get_node(id)
+                && state.styles.get(&id) != Some(&node.style)
+            {
+                state.styles.insert(id, node.style.clone());
+                style_changed_nodes.insert(id);
+            }
+        }
+    }
+
+    // Build the set of nodes whose own layout cache must be invalidated:
+    // dirty_nodes, nodes inside a dirty subtree, nodes whose Taffy or text style changed,
+    // and all ancestors of those nodes.
+    let mut invalidated = HashSet::new();
+    let mut seeds = dirty_nodes.clone();
+    seeds.extend(dirty_style_nodes.iter().copied());
+    seeds.extend(style_changed_nodes.iter().copied());
+    seeds.extend(text_style_changed_nodes.iter().copied());
+
+    // Include descendants of any seed in `dirty_nodes` or `text_style_changed_nodes`.
+    let mut stack: Vec<usize> = dirty_nodes
+        .iter()
+        .chain(text_style_changed_nodes.iter())
+        .copied()
+        .collect();
+    while let Some(id) = stack.pop() {
+        if invalidated.insert(id)
+            && let Some(node) = doc.get_node(id)
+        {
+            stack.extend(node.children.iter().copied());
+            if let Some(layout_children) = node.layout_children.borrow().as_ref() {
+                stack.extend(layout_children.iter().copied());
+            }
+        }
+    }
+
+    // Include all seeds and their DOM / layout ancestors up to root.
+    for seed in seeds {
+        let mut cur = Some(seed);
+        while let Some(id) = cur {
+            invalidated.insert(id);
+            cur = doc
+                .get_node(id)
+                .and_then(|n| n.layout_parent.get().or(n.parent));
+        }
+    }
+
+    if state.initialized {
+        for (id, saved) in saved_caches {
+            if !invalidated.contains(&id)
+                && let Some(node) = doc.get_node_mut(id)
+            {
+                node.cache = saved;
+            }
+        }
+    }
+
+    for &id in &invalidated {
+        state.texts.texts.remove(&id);
+    }
+    state.initialized = true;
+    invalidated
+}
+
+struct ParkedBoxSubtree {
+    id: usize,
+    children: Vec<usize>,
+    flags: NodeFlags,
+    inline_layout: Option<Box<TextLayout>>,
+    layout_children: Option<Vec<usize>>,
+    paint_children: Option<Vec<usize>>,
+}
+
+/// Flushes computed styles to Taffy styles for `changed_nodes` without recursing into
+/// their unchanged subtrees, and updates the `layout_children` / `paint_children` sort
+/// order of their immediate parents without recursing into sibling subtrees.
+fn flush_changed_nodes_only(doc: &mut BaseDocument, changed_nodes: &[usize]) {
+    let mut flush_parents = HashSet::new();
+    for &id in changed_nodes {
+        let children = doc
+            .get_node(id)
+            .and_then(|n| n.layout_children.borrow_mut().take());
+        doc.flush_styles_to_layout(id);
+        if let Some(node) = doc.get_node(id) {
+            *node.layout_children.borrow_mut() = children;
+            if let Some(parent) = node.layout_parent.get().or(node.parent) {
+                flush_parents.insert(parent);
+            }
+        }
+    }
+    for parent in flush_parents {
+        let children = doc
+            .get_node(parent)
+            .and_then(|n| n.layout_children.borrow_mut().take());
+        if let Some(mut children) = children {
+            let mut child_grandchildren: Vec<(usize, Option<Vec<usize>>)> =
+                Vec::with_capacity(children.len());
+            for &c in &children {
+                let gc = doc
+                    .get_node(c)
+                    .and_then(|n| n.layout_children.borrow_mut().take());
+                child_grandchildren.push((c, gc));
+            }
+            if let Some(node) = doc.get_node(parent) {
+                *node.layout_children.borrow_mut() = Some(std::mem::take(&mut children));
+            }
+            doc.flush_styles_to_layout(parent);
+            for (c, gc) in child_grandchildren {
+                if let Some(node) = doc.get_node(c) {
+                    *node.layout_children.borrow_mut() = gc;
+                }
+            }
+        }
+    }
+}
+
 /// Lays the document out at its current viewport. Returns the text measured on the way,
 /// keyed by the inline formatting context that holds it, and the list markers that are
 /// drawn on their own.
 pub(crate) fn run_layout(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) -> MeasuredTexts {
-    let mut laid_out = run_layout_pass(doc, measurer);
+    let mut laid_out = run_layout_pass(doc, measurer, None);
     // A measurer that answers from outside the pass (the renderer) is given the questions
     // the pass asked, all at once, and the page is laid out again with its answers. The
     // answers are kept, so the second pass asks nothing new unless a width moved.
@@ -113,21 +494,87 @@ pub(crate) fn run_layout(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer
         if !measurer.settle() {
             break;
         }
-        laid_out = run_layout_pass(doc, measurer);
+        laid_out = run_layout_pass(doc, measurer, None);
     }
     laid_out
+}
+
+/// Incremental counterpart to [`run_layout`] that preserves Taffy caches and measured text
+/// runs on clean subtrees.
+pub(crate) fn run_layout_incremental(
+    doc: &mut BaseDocument,
+    measurer: &mut dyn TextMeasurer,
+    state: &mut LayoutState,
+    invalidated: &HashSet<usize>,
+) {
+    let viewport = doc.viewport();
+    let vp_key = (
+        viewport.window_size.0,
+        viewport.window_size.1,
+        viewport.scale().to_bits(),
+    );
+    let vp_changed = state.viewport != Some(vp_key);
+    state.viewport = Some(vp_key);
+
+    if !vp_changed && invalidated.is_empty() {
+        return;
+    }
+
+    let filter = if vp_changed { None } else { Some(invalidated) };
+    let mut laid_out = run_layout_pass(doc, measurer, filter);
+    for _ in 0..MAX_SETTLE_PASSES {
+        if !measurer.settle() {
+            break;
+        }
+        laid_out = run_layout_pass(doc, measurer, filter);
+    }
+    for (id, measured) in laid_out.texts {
+        state.texts.texts.insert(id, measured);
+    }
+    state.texts.markers = laid_out.markers;
+    // Prune any text entries for nodes that are no longer in the document.
+    state
+        .texts
+        .texts
+        .retain(|&id, _| doc.get_node(id).is_some());
+    state.styles.retain(|&id, _| doc.get_node(id).is_some());
+    state
+        .computed_ptrs
+        .retain(|&id, _| doc.get_node(id).is_some());
+    state
+        .text_styles
+        .retain(|&id, _| doc.get_node(id).is_some());
+    state
+        .display_modes
+        .retain(|&id, _| doc.get_node(id).is_some());
+    state.positions.retain(|&id, _| doc.get_node(id).is_some());
 }
 
 /// How many times a layout is repeated with the answers the measurer learned from the last
 /// pass. Answers are cached, so a page settles after one or two.
 const MAX_SETTLE_PASSES: usize = 3;
 
-fn run_layout_pass(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) -> MeasuredTexts {
+fn run_layout_pass(
+    doc: &mut BaseDocument,
+    measurer: &mut dyn TextMeasurer,
+    invalidated: Option<&HashSet<usize>>,
+) -> MeasuredTexts {
     // No size blitz-dom measured with Parley may answer for a node this pass measures.
-    let ids: Vec<usize> = doc.tree().iter().map(|(id, _)| id).collect();
-    for id in ids {
-        if let Some(node) = doc.get_node_mut(id) {
-            node.cache.clear();
+    match invalidated {
+        Some(dirty) => {
+            for &id in dirty {
+                if let Some(node) = doc.get_node_mut(id) {
+                    node.cache.clear();
+                }
+            }
+        }
+        None => {
+            let ids: Vec<usize> = doc.tree().iter().map(|(id, _)| id).collect();
+            for id in ids {
+                if let Some(node) = doc.get_node_mut(id) {
+                    node.cache.clear();
+                }
+            }
         }
     }
 
@@ -162,9 +609,16 @@ fn run_layout_pass(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) -> M
 /// The attribute that marks an element as the place of a Compose widget.
 pub(crate) const WIDGET_ATTRIBUTE: &str = "data-compose-widget";
 
+fn widget_attr_name() -> LocalName {
+    thread_local! {
+        static NAME: LocalName = LocalName::from(WIDGET_ATTRIBUTE);
+    }
+    NAME.with(Clone::clone)
+}
+
 /// The token of the widget an element stands for, if it is the place of one.
 fn widget_token(node: &Node) -> Option<u32> {
-    node.attr(local(WIDGET_ATTRIBUTE))?.parse().ok()
+    node.attr(widget_attr_name())?.parse().ok()
 }
 
 /// Gives each widget's place the size the renderer measured for it.
@@ -176,11 +630,13 @@ fn widget_token(node: &Node) -> Option<u32> {
 /// blitz-dom, which reads the box's size from its style. A widget the renderer has not
 /// measured yet keeps its `auto` size, and the page is laid out again once it has.
 fn size_widgets(doc: &mut BaseDocument) {
-    let ids: Vec<usize> = doc.tree().iter().map(|(id, _)| id).collect();
-    for id in ids {
-        let Some(token) = doc.get_node(id).and_then(widget_token) else {
-            continue;
-        };
+    let widget_ids: Vec<(usize, u32)> = doc
+        .tree()
+        .iter()
+        .filter(|(_, node)| node.flags.is_in_document())
+        .filter_map(|(id, node)| Some((id, widget_token(node)?)))
+        .collect();
+    for (id, token) in widget_ids {
         let Some((width, height)) = crate::html_widget::size_of(token, id) else {
             continue;
         };
@@ -217,10 +673,10 @@ fn measure_markers(
     texts: &HashMap<usize, MeasuredText>,
 ) -> HashMap<usize, MeasuredMarker> {
     let mut markers = HashMap::new();
-    for (id, _) in doc.tree().iter() {
-        let Some(node) = doc.get_node(id) else {
+    for (id, node) in doc.tree().iter() {
+        if !node.flags.is_in_document() {
             continue;
-        };
+        }
         if node.element_data().is_none() || node.style.display == Display::None {
             continue;
         }
@@ -1175,7 +1631,7 @@ fn size_selects_in_lines(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer
     let selects: Vec<usize> = doc
         .tree()
         .iter()
-        .filter(|(_, node)| form::tag(node) == Some("select"))
+        .filter(|(_, node)| node.flags.is_in_document() && form::tag(node) == Some("select"))
         .map(|(id, _)| id)
         .collect();
     for id in selects {

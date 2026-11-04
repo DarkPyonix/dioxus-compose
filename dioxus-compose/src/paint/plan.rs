@@ -59,7 +59,7 @@ use crate::paint::display_list::{
 const EPSILON: f32 = 0.01;
 
 /// A tree of drawing elements. Lengths are CSS pixels, which the renderer draws as dp.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Plan {
     /// The page: a [`PlanKind::AbsoluteBox`] keyed [`PlanKey::Page`] holding every
     /// top-level box.
@@ -71,6 +71,19 @@ pub struct Plan {
     /// after, and [`diff`] reports each as a [`PlanChange::AnimationStarted`] when the
     /// plan it compares to lacks it.
     pub transitions: Vec<(PlanKey, Animation)>,
+    /// Layout revision that built this plan, or `0` when built standalone via `plan_from`.
+    pub(crate) revision: u64,
+    /// True when [`HtmlDom::plan`] reused the plan from the previous layout because
+    /// [`HtmlDom::layout`] skipped recomputing an unchanged document.
+    pub(crate) unchanged: bool,
+}
+
+impl PartialEq for Plan {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.brushes == other.brushes
+            && self.transitions == other.transitions
+    }
 }
 
 /// Names a [`Brush`] by its content: two equal brushes have the same id, in this plan and
@@ -154,9 +167,10 @@ impl Brush {
 ///
 /// Every node comes from one display list entry, so every key but [`PlanKey::Page`] names
 /// a DOM node; the variant says which of the elements made for that node it is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PlanKey {
     /// The page every top-level box is placed in.
+    #[default]
     Page,
     /// The box of a display list entry.
     Node(NodeId),
@@ -220,10 +234,11 @@ pub struct PlanNode {
 }
 
 /// What a plan node is.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum PlanKind {
     /// Places each child at its own [`PlanModifier::Offset`]; children do not affect each
     /// other's place or size. Later children are drawn on top.
+    #[default]
     AbsoluteBox,
     /// A box with nothing inside: background, border, shadow.
     Box,
@@ -575,12 +590,15 @@ pub fn plan_from_images(
 }
 
 /// A plan node while the tree is being built: children are indices into the arena.
+#[derive(Default)]
 struct Slot {
     key: PlanKey,
     kind: PlanKind,
     modifiers: Vec<PlanModifier>,
     children: Vec<usize>,
     parent: Option<usize>,
+    /// Index of this slot inside `parent.children`.
+    index_in_parent: usize,
     /// What a child placed in this node is measured from, in document coordinates.
     origin: (f32, f32),
     /// The clip this node imposes on what is placed in it, in document coordinates.
@@ -590,6 +608,8 @@ struct Slot {
     /// What the node itself draws, for the overlap test; `None` for containers that draw
     /// nothing.
     drawn: Option<Rect>,
+    /// Bounding union of `drawn` over this slot and every slot inside its subtree.
+    subtree_drawn: Option<Rect>,
 }
 
 struct Builder<'a> {
@@ -667,10 +687,12 @@ impl<'a> Builder<'a> {
             modifiers: Vec::new(),
             children: Vec::new(),
             parent: None,
+            index_in_parent: 0,
             origin: (0.0, 0.0),
             clip: None,
             opacity: 1.0,
             drawn: None,
+            subtree_drawn: None,
         };
         Builder {
             entries,
@@ -702,16 +724,29 @@ impl<'a> Builder<'a> {
             root,
             brushes: std::mem::take(&mut self.brushes),
             transitions,
+            revision: 0,
+            unchanged: false,
         }
     }
 
     fn push(&mut self, parent: usize, slot: Slot) -> usize {
         let index = self.slots.len();
+        let index_in_parent = self.slots[parent].children.len();
+        let own_drawn = slot.drawn;
         self.slots.push(Slot {
             parent: Some(parent),
+            index_in_parent,
+            subtree_drawn: own_drawn,
             ..slot
         });
         self.slots[parent].children.push(index);
+        if let Some(rect) = own_drawn {
+            let mut cur = Some(parent);
+            while let Some(anc) = cur {
+                self.slots[anc].subtree_drawn = union(self.slots[anc].subtree_drawn, Some(rect));
+                cur = self.slots[anc].parent;
+            }
+        }
         index
     }
 
@@ -757,10 +792,7 @@ impl<'a> Builder<'a> {
         let mut at = container;
         while let Some(parent) = self.slots[at].parent {
             let siblings = &self.slots[parent].children;
-            let position = siblings
-                .iter()
-                .position(|&child| child == at)
-                .expect("a slot is among its parent's children");
+            let position = self.slots[at].index_in_parent;
             for &later in &siblings[position + 1..] {
                 if self.subtree_overlaps(later, &bounds) {
                     return true;
@@ -772,6 +804,12 @@ impl<'a> Builder<'a> {
     }
 
     fn subtree_overlaps(&self, slot: usize, bounds: &Rect) -> bool {
+        if !self.slots[slot]
+            .subtree_drawn
+            .is_some_and(|sub| overlaps(&sub, bounds))
+        {
+            return false;
+        }
         if self.slots[slot]
             .drawn
             .is_some_and(|drawn| overlaps(&drawn, bounds))
@@ -820,6 +858,7 @@ impl<'a> Builder<'a> {
                     clip: Some(clip),
                     opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             );
         }
@@ -879,6 +918,7 @@ impl<'a> Builder<'a> {
                 },
                 opacity: entry.opacity,
                 drawn: self.drawn[index],
+                ..Slot::default()
             },
         );
         if entry.widget {
@@ -935,6 +975,7 @@ impl<'a> Builder<'a> {
                     clip: provided_clip,
                     opacity: entry.opacity,
                     drawn: Some(area),
+                    ..Slot::default()
                 },
             );
         }
@@ -964,6 +1005,7 @@ impl<'a> Builder<'a> {
                 clip,
                 opacity: entry.opacity,
                 drawn: None,
+                ..Slot::default()
             };
             let inset = (viewport.x - rect.x, viewport.y - rect.y);
             let mut outer = node;
@@ -1014,6 +1056,7 @@ impl<'a> Builder<'a> {
                     clip,
                     opacity: entry.opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             )
         } else if entry.clips_children && has_border {
@@ -1045,6 +1088,7 @@ impl<'a> Builder<'a> {
                     clip: Some(intersect(provided_clip, padding)),
                     opacity: entry.opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             )
         } else {
@@ -1226,6 +1270,7 @@ impl<'a> Builder<'a> {
                 clip,
                 opacity,
                 drawn: None,
+                ..Slot::default()
             },
         );
     }
@@ -1278,6 +1323,7 @@ impl<'a> Builder<'a> {
                     clip,
                     opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             );
         }
@@ -1334,6 +1380,7 @@ impl<'a> Builder<'a> {
                 clip,
                 opacity,
                 drawn: None,
+                ..Slot::default()
             },
         );
     }
@@ -1636,6 +1683,9 @@ fn index_plan<'a>(
 /// another parent, or that became another kind of element is reported removed (where it
 /// was) and inserted (where it is), with everything inside it.
 pub fn diff(previous: &Plan, next: &Plan) -> Vec<PlanChange> {
+    if next.unchanged && previous.revision != 0 && previous.revision == next.revision {
+        return Vec::new();
+    }
     let mut old = HashMap::new();
     let mut old_order = Vec::new();
     index_plan(&previous.root, None, &mut old, &mut old_order);

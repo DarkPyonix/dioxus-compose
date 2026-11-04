@@ -45,7 +45,7 @@ pub(crate) struct SpanBase {
 /// The CSS font family list as compose-rust's font candidates, in the order CSS tries them.
 /// `cursive` and `fantasy` have no counterpart there and are left out, so the next
 /// candidate in the list is the one tried.
-fn font_refs(family: &[String]) -> FontRefs {
+pub(crate) fn font_refs(family: &[String]) -> FontRefs {
     FontRefs::new(family.iter().filter_map(|name| {
         Some(match name.as_str() {
             "system-ui" => FontRef::Generic(GenericFamily::SystemUi),
@@ -107,11 +107,11 @@ pub(crate) fn wire_spans(
 /// How many answers are kept before the cache starts over. A page asks for a few hundred.
 const CACHE_LIMIT: usize = 20_000;
 
-/// Everything the renderer's answer depends on. The font family is not part of it: the
-/// page sends no family to the renderer, which draws the design system's face.
+/// Everything the renderer's answer depends on, font family candidates included.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct Key {
     text: String,
+    font: Vec<u8>,
     font_size: u32,
     font_weight: u32,
     italic: bool,
@@ -142,6 +142,7 @@ impl Key {
         };
         Self {
             text: request.text.to_owned(),
+            font: font_refs(&style.font_family).as_bytes().to_vec(),
             font_size: style.font_size.to_bits(),
             font_weight: style.font_weight.to_bits(),
             italic: style.italic,
@@ -231,6 +232,7 @@ impl Default for RendererMeasurer {
 /// run, in the same units, so the measured size is the drawn size.
 fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
     WireStyle {
+        font: font_refs(&style.font_family),
         font_size: Some(style.font_size),
         font_weight: Some(style.font_weight.round().clamp(1.0, 1000.0) as u16),
         italic: style.italic,

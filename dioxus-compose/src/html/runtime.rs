@@ -113,6 +113,9 @@ pub struct HtmlRuntime {
     /// lives. A report is answered with a frame only when something reads it, and the page
     /// does: it is laid out in a viewport and a resolution that depend on it.
     _zoom: compose_rust::zoom::ZoomSubscription,
+    /// The `(layout_revision, viewport_w_bits, viewport_h_bits, zoom_bits)` last applied to
+    /// `self.bridge`, so an unchanged frame skips `dom.plan` and `bridge.apply`.
+    applied_revision: Option<(u64, u32, u32, u32)>,
 }
 
 impl HtmlRuntime {
@@ -167,6 +170,7 @@ impl HtmlRuntime {
             batch: Batch::new(),
             typed: HashMap::new(),
             edited: HashSet::new(),
+            applied_revision: None,
         }
     }
 
@@ -185,7 +189,9 @@ impl HtmlRuntime {
         };
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         crate::html_widget::render_islands(self.owner, &mut self.batch);
-        crate::html_widget::refresh(self.owner, viewport.0);
+        for place in crate::html_widget::refresh(self.owner, viewport.0) {
+            self.dom.mark_node_style_dirty(place);
+        }
         if let Some(plan) = self.plan_at(viewport) {
             self.bridge
                 .apply(plan, viewport, &self.dom, &mut self.batch);
@@ -233,6 +239,19 @@ impl HtmlRuntime {
         self.dom.set_zoom(zoom);
         self.bridge.set_zoom(zoom);
         self.dom.layout(viewport.0, viewport.1, zoom);
+        // TODO(DarkPyonix/compose-rust#410): when the renderer exposes a focus request
+        // mutation/property, forward `self.dom.focused()` changes from `HtmlDom` to the
+        // renderer's focus manager here.
+        let rev_key = (
+            self.dom.layout_revision(),
+            viewport.0.to_bits(),
+            viewport.1.to_bits(),
+            zoom.to_bits(),
+        );
+        if self.applied_revision == Some(rev_key) {
+            return None;
+        }
+        self.applied_revision = Some(rev_key);
         self.dom.plan(&mut LiteralColours)
     }
 
@@ -254,9 +273,12 @@ impl HtmlRuntime {
         let first = self.bridge.root_node().is_none();
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         crate::html_widget::render_islands(self.owner, batch);
-        crate::html_widget::refresh(self.owner, viewport.0);
-        let plan = self.plan_at(viewport)?;
-        self.bridge.apply(plan, viewport, &self.dom, batch);
+        for place in crate::html_widget::refresh(self.owner, viewport.0) {
+            self.dom.mark_node_style_dirty(place);
+        }
+        if let Some(plan) = self.plan_at(viewport) {
+            self.bridge.apply(plan, viewport, &self.dom, batch);
+        }
         self.deliver_host_moments();
         let bridge = &self.bridge;
         crate::html_widget::attach(
@@ -465,6 +487,14 @@ impl Runtime for HtmlRuntime {
                     meta_key,
                 },
             ) => {
+                // TODO(DarkPyonix/compose-rust#100): map the full W3C `Key`, `Code`,
+                // `Location`, `repeat`, and `is_composing` fields once `EventPayload::KeyDown`
+                // and `EventPayload::KeyUp` carry them on the wire.
+                // TODO(DarkPyonix/compose-rust#98): route IME `compositionstart`,
+                // `compositionupdate`, and `compositionend` wire payloads to
+                // `HtmlDom::composition_start`, `composition_update`, and `composition_end`.
+                // TODO(DarkPyonix/compose-rust#410): route renderer `FocusGained` wire
+                // payloads to `self.deliver_focus(node)`.
                 let (key, code) = match key {
                     WireKey::Enter => (Key::Enter, Code::Enter),
                 };

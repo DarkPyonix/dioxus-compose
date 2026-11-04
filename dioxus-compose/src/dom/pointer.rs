@@ -277,11 +277,15 @@ pub(crate) struct PointerState {
     released: Option<(u32, NodeId)>,
     /// Set when `:hover` or `:active` moved to other elements and the page has not been
     /// drawn since.
-    restyle: bool,
+    pub(crate) restyle: bool,
+    /// Cached answer for whether any `<style>` in the document mentions `:hover` or `:active`.
+    pub(crate) uses_pointer_state: RefCell<Option<bool>>,
     /// The author stylesheets' `user-select`, worked out on first use after a layout.
     author: RefCell<Option<AuthorSelect>>,
+    /// Cached flag for whether any `<style>` in the document declares `user-select`.
+    pub(crate) has_author_user_select: RefCell<Option<bool>>,
     /// The kinds each subscribed node takes, worked out on first use after a change.
-    kinds: RefCell<Option<HashMap<NodeId, u32>>>,
+    pub(crate) kinds: RefCell<Option<HashMap<NodeId, u32>>>,
 }
 
 /// For each node a `user-select` rule reaches: importance, specificity, position, value.
@@ -345,7 +349,10 @@ impl HtmlDom {
 
     /// Whether any `<style>` in the document mentions `:hover` or `:active`.
     fn stylesheets_use_pointer_state(&self) -> bool {
-        self.doc.tree().iter().any(|(_, node)| {
+        if let Some(cached) = *self.pointer.uses_pointer_state.borrow() {
+            return cached;
+        }
+        let uses = self.doc.tree().iter().any(|(_, node)| {
             let NodeData::Text(text) = &node.data else {
                 return false;
             };
@@ -354,7 +361,9 @@ impl HtmlDom {
                 .and_then(|parent| self.doc.get_node(parent))
                 .is_some_and(|parent| parent.data.is_element_with_tag_name(&local("style")));
             in_style && (text.content.contains(":hover") || text.content.contains(":active"))
-        })
+        });
+        *self.pointer.uses_pointer_state.borrow_mut() = Some(uses);
+        uses
     }
 
     /// The deepest box under the pointer as the last report left it, or `None` when the
@@ -608,6 +617,16 @@ impl HtmlDom {
     pub(crate) fn forget_author_styles(&self) {
         self.pointer.author.borrow_mut().take();
         self.pointer.kinds.borrow_mut().take();
+        self.pointer.uses_pointer_state.borrow_mut().take();
+        self.pointer.has_author_user_select.borrow_mut().take();
+    }
+
+    /// Drops only the node-matched `user-select` map when DOM nodes change without
+    /// changing `<style>` rules.
+    pub(crate) fn invalidate_author_user_select(&self) {
+        if *self.pointer.has_author_user_select.borrow() != Some(false) {
+            self.pointer.author.borrow_mut().take();
+        }
     }
 
     /// The kinds of report `node` takes, 0 when it is not subscribed.
@@ -629,6 +648,9 @@ impl HtmlDom {
     }
 
     fn compute_author_user_select(&self) -> AuthorSelect {
+        if *self.pointer.has_author_user_select.borrow() == Some(false) {
+            return HashMap::new();
+        }
         let viewport = self.doc.viewport();
         let scale = viewport.hidpi_scale.max(f32::MIN_POSITIVE);
         let env = MediaEnv {
@@ -638,7 +660,11 @@ impl HtmlDom {
         };
         let mut winners: AuthorSelect = HashMap::new();
         let mut position = 0;
+        let mut any_rule = false;
         for (_, node) in self.doc.tree().iter() {
+            if !node.flags.is_in_document() {
+                continue;
+            }
             let NodeData::Text(text) = &node.data else {
                 continue;
             };
@@ -649,11 +675,15 @@ impl HtmlDom {
             if !in_style {
                 continue;
             }
+            if !text.content.to_ascii_lowercase().contains("user-select") {
+                continue;
+            }
             for (selectors, body) in style_rules(&text.content, &env) {
                 position += 1;
                 let Some((value, important)) = declared_user_select(&body) else {
                     continue;
                 };
+                any_rule = true;
                 for part in split_selectors(&selectors) {
                     if part.is_empty() || part.contains("::") {
                         continue;
@@ -673,6 +703,7 @@ impl HtmlDom {
                 }
             }
         }
+        *self.pointer.has_author_user_select.borrow_mut() = Some(any_rule);
         winners
     }
 }
