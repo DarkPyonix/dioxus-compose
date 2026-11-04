@@ -10,30 +10,39 @@ mod pointer;
 mod writer;
 
 use std::any::Any;
+use std::cell::RefCell;
+use std::future::Future;
+use std::pin::{Pin, pin};
 use std::rc::Rc;
 use std::sync::{Arc, Once};
+use std::task::{Context, RawWaker, RawWakerVTable, Waker};
 
 use blitz_dom::{BaseDocument, DocumentConfig, NodeData};
 use blitz_html::HtmlProvider;
 use blitz_traits::net::{DummyNetProvider, Url};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_core::{Element, ElementId, Event, VirtualDom};
-use dioxus_html::geometry::{ClientPoint, ElementPoint, PagePoint, ScreenPoint};
+use dioxus_html::geometry::euclid::{Point2D, Size2D};
+use dioxus_html::geometry::{ClientPoint, ElementPoint, PagePoint, PixelsRect, ScreenPoint};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
 use dioxus_html::{
-    AnimationData, Code, FocusData, HasAnimationData, HasFocusData, HasKeyboardData, HasMouseData,
-    HasTransitionData, HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MouseData,
-    PlatformEventData, TransitionData,
+    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasCompositionData,
+    HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData, HtmlEventConverter, Key,
+    KeyboardData, Location, Modifiers, MountedData, MountedError, MouseData, PlatformEventData,
+    RenderedElementBacking, TransitionData,
 };
 
 use crate::html::NodeId;
 use crate::layout::image::{ImageLookup, ImageResolver, UNRESOLVED_BASE, apply_natural_sizes};
 use crate::layout::measure::TextMeasurer;
 use crate::layout::renderer_measure::RendererMeasurer;
-use crate::layout::{local, resolve_styles, run_layout};
+use crate::layout::{
+    LayoutState, local, resolve_styles, resolve_styles_incremental, run_layout,
+    run_layout_incremental,
+};
 use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{DisplayList, DisplayListDiff, Rect, Sides, SkippedTransform};
@@ -186,6 +195,8 @@ pub struct HtmlDom {
     previous: Option<DisplayList>,
     /// The time CSS transitions and animations are resolved at, in seconds.
     now: f64,
+    /// The `now` value at the most recent layout pass.
+    last_layout_now: Option<f64>,
     motion: MotionState,
     /// The `<html>` element, which carries the theme's custom properties.
     root: NodeId,
@@ -197,6 +208,16 @@ pub struct HtmlDom {
     pointer: pointer::PointerState,
     /// The factor the page is drawn at, which its text is measured at too.
     zoom: f32,
+    /// Cached styles and measured text runs across incremental layout passes.
+    layout_state: LayoutState,
+    /// Incremented each time `layout_at` recomputes the display list.
+    layout_revision: u64,
+    /// The `(layout_revision, plan)` cached from the last `HtmlDom::plan` call.
+    cached_plan: Option<(u64, Plan)>,
+    /// Focus requests queued from `MountedData::set_focus`.
+    focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
+    /// Shared snapshot of node client rectangles for `MountedData::get_client_rect`.
+    mounted_rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
 }
 
 impl HtmlDom {
@@ -259,25 +280,100 @@ impl HtmlDom {
             current: None,
             previous: None,
             now: 0.0,
+            last_layout_now: None,
             motion: MotionState::default(),
             root,
             theme_variables: String::new(),
             root_style: String::new(),
             pointer: pointer::PointerState::default(),
             zoom: 1.0,
+            layout_state: LayoutState::default(),
+            layout_revision: 0,
+            cached_plan: None,
+            focus_requests: Rc::default(),
+            mounted_rects: Rc::default(),
         };
-        let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state);
+        let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
         drop(writer);
+        dom.flush_mounts();
         dom
     }
 
     /// Runs pending work (handlers that wrote signals, scopes marked dirty) and applies
     /// the resulting mutations to the document.
     pub fn render(&mut self) {
-        self.forget_author_styles();
-        let mut writer = DomWriter::new(&mut self.doc, &mut self.state);
+        let mut writer = DomWriter::new(&mut self.doc, &mut self.state, &mut self.layout_state);
         self.vdom.render_immediate(&mut writer);
+        drop(writer);
+        if self.state.listeners_dirty {
+            self.pointer.kinds.borrow_mut().take();
+            self.state.listeners_dirty = false;
+        }
+        self.flush_mounts();
+    }
+
+    /// Applies any queued `autofocus` attribute, fires `onmounted` on newly mounted nodes,
+    /// polls any immediate `onmounted` async tasks once, and applies queued `set_focus`
+    /// requests.
+    fn flush_mounts(&mut self) {
+        if let Some(node) = self.state.pending_autofocus.take()
+            && is_connected(&self.doc, node)
+        {
+            self.focus(node);
+        }
+        let mounts = std::mem::take(&mut self.state.pending_mounts);
+        if mounts.is_empty() && self.focus_requests.borrow().is_empty() {
+            return;
+        }
+        for node in mounts {
+            if !is_connected(&self.doc, node) {
+                continue;
+            }
+            if self.state.listeners(node).contains(&"mounted")
+                && let Some(element) = self.state.element_of(node)
+            {
+                let backing = MountedElement {
+                    node,
+                    focus_requests: self.focus_requests.clone(),
+                    rects: self.mounted_rects.clone(),
+                };
+                self.send(element, "mounted", Box::new(backing), false);
+            }
+        }
+        // Poll the VirtualDom once with a noop waker so an `onmounted` async handler that
+        // calls `evt.set_focus(true).await` runs its immediate future to completion.
+        {
+            let waker = noop_waker();
+            let mut cx = Context::from_waker(&waker);
+            let fut = self.vdom.wait_for_work();
+            let mut fut = pin!(fut);
+            let _ = fut.as_mut().poll(&mut cx);
+        }
+
+        let requests = std::mem::take(&mut *self.focus_requests.borrow_mut());
+        for (node, focus) in requests {
+            if !is_connected(&self.doc, node) {
+                continue;
+            }
+            if focus {
+                self.focus(node);
+            } else {
+                self.blur(node);
+            }
+        }
+    }
+
+    /// Monotonic counter incremented whenever [`HtmlDom::layout`] recomputes the display list.
+    pub(crate) fn layout_revision(&self) -> u64 {
+        self.layout_revision
+    }
+
+    /// Marks `node` as having changed its intrinsic style/size (such as an embedded widget
+    /// measured by the renderer) so the next [`HtmlDom::layout`] recomputes its box and
+    /// ancestors.
+    pub(crate) fn mark_node_style_dirty(&mut self, node: NodeId) {
+        self.state.mark_style_dirty(node);
     }
 
     /// Lays the document out in a viewport of `width` by `height` CSS pixels at `scale`
@@ -300,18 +396,64 @@ impl HtmlDom {
     }
 
     fn layout_at(&mut self, width: f32, height: f32, scale: f32, ticked: bool) -> &DisplayList {
-        self.set_viewport(width, height, scale);
-        self.forget_author_styles();
+        let viewport_changed = self.set_viewport(width, height, scale);
+        let dirty = std::mem::take(&mut self.state.dirty);
+        let tree_dirty = std::mem::take(&mut self.state.tree_dirty);
+        let dirty_nodes = std::mem::take(&mut self.state.dirty_nodes);
+        let dirty_style_nodes = std::mem::take(&mut self.state.dirty_style_nodes);
+        let pointer_restyle = std::mem::take(&mut self.pointer.restyle);
+        let time_changed = self.last_layout_now != Some(self.now);
+        #[allow(clippy::unnecessary_unwrap)]
+        if !dirty
+            && !tree_dirty
+            && dirty_nodes.is_empty()
+            && dirty_style_nodes.is_empty()
+            && !viewport_changed
+            && !pointer_restyle
+            && !time_changed
+            && !ticked
+            && !self.motion.ticking
+            && self.current.is_some()
+        {
+            self.previous = self.current.clone();
+            return self
+                .current
+                .as_ref()
+                .expect("checked `self.current.is_some()` above");
+        }
+        self.last_layout_now = Some(self.now);
+        let stylesheet_dirty = std::mem::take(&mut self.state.stylesheet_dirty);
+        if stylesheet_dirty || viewport_changed {
+            self.forget_author_styles();
+        } else if tree_dirty || pointer_restyle {
+            self.invalidate_author_user_select();
+            if self.state.listeners_dirty {
+                self.pointer.kinds.borrow_mut().take();
+                self.state.listeners_dirty = false;
+            }
+        } else if self.state.listeners_dirty {
+            self.pointer.kinds.borrow_mut().take();
+            self.state.listeners_dirty = false;
+        }
         let now = self.now;
         let resolver = self
             .images
             .as_deref_mut()
             .map(|images| images as &mut dyn ImageResolver);
         let mut lookup = ImageLookup::new(resolver, Some(&self.base_url));
-        resolve_styles(&mut self.doc, now);
+        let was_initialized = self.layout_state.initialized;
+        let mut invalidated = resolve_styles_incremental(
+            &mut self.doc,
+            now,
+            tree_dirty,
+            &dirty_nodes,
+            &dirty_style_nodes,
+            &mut self.layout_state,
+        );
         let scan = self.motion.scan(&self.doc, now);
         for _ in 0..scan.catch_up {
             resolve_styles(&mut self.doc, now);
+            self.layout_state.invalidate_all();
         }
         let animating = self.doc.is_animating();
         // A page can declare a transition of `width` and leave it idle for as long as it
@@ -334,17 +476,52 @@ impl HtmlDom {
         let described = !ticking && !scan.nodes.is_empty();
         if described && animating && scan.needs_settling() {
             resolve_styles(&mut self.doc, now + f64::from(scan.horizon + SETTLE_MARGIN));
+            self.layout_state.invalidate_all();
         }
         apply_natural_sizes(&mut self.doc, &mut lookup);
         let listening = self
-            .doc
-            .tree()
-            .iter()
-            .map(|(id, _)| id)
-            .filter(|&id| !self.state.listeners(id).is_empty())
+            .state
+            .listening()
+            .filter_map(|(id, names)| (!names.is_empty()).then_some(id))
             .collect();
         crate::layout::set_listening(listening);
-        let texts = run_layout(&mut self.doc, &mut *self.measurer);
+        if !was_initialized || !self.layout_state.initialized {
+            if !self.layout_state.initialized {
+                resolve_styles_incremental(
+                    &mut self.doc,
+                    now,
+                    true,
+                    &dirty_nodes,
+                    &dirty_style_nodes,
+                    &mut self.layout_state,
+                );
+            }
+            let viewport = self.doc.viewport();
+            self.layout_state.viewport = Some((
+                viewport.window_size.0,
+                viewport.window_size.1,
+                viewport.scale().to_bits(),
+            ));
+            let texts = run_layout(&mut self.doc, &mut *self.measurer);
+            self.layout_state.texts = texts;
+            self.layout_state.initialized = true;
+            for (id, node) in self.doc.tree().iter() {
+                if node.flags.is_in_document() || node.layout_parent.get().is_some() {
+                    self.layout_state.styles.insert(id, node.style.clone());
+                }
+            }
+        } else {
+            if ticked || layout_running {
+                invalidated.extend(scan.layout_nodes.iter().copied());
+            }
+            run_layout_incremental(
+                &mut self.doc,
+                &mut *self.measurer,
+                &mut self.layout_state,
+                &invalidated,
+            );
+        }
+        let texts = &self.layout_state.texts;
         let list = if described {
             self.motion.begin_frame();
             let mut playing = Playing {
@@ -354,7 +531,7 @@ impl HtmlDom {
                 now,
                 skipped: Vec::new(),
             };
-            let mut list = build_display_list(&self.doc, &texts, &mut lookup, Some(&mut playing));
+            let mut list = build_display_list(&self.doc, texts, &mut lookup, Some(&mut playing));
             list.skipped_transforms.append(&mut playing.skipped);
             if animating {
                 list.transitions = transitions(&scan, self.current.as_ref(), &list);
@@ -362,10 +539,18 @@ impl HtmlDom {
             self.motion.end_frame();
             list
         } else {
-            build_display_list(&self.doc, &texts, &mut lookup, None)
+            build_display_list(&self.doc, texts, &mut lookup, None)
         };
+        {
+            let mut rects = self.mounted_rects.borrow_mut();
+            rects.clear();
+            for entry in &list.entries {
+                rects.insert(entry.node, entry.rect);
+            }
+        }
         self.report_skipped(&list);
         self.previous = self.current.replace(list);
+        self.layout_revision += 1;
         self.current
             .as_ref()
             .expect("the display list was stored on the line above")
@@ -459,16 +644,31 @@ impl HtmlDom {
     /// [`ImageResolver`] names. `None` before the first layout.
     pub fn plan(&mut self, colours: &mut dyn ColourResolver) -> Option<Plan> {
         let list = self.current.as_ref()?;
+        if let Some((rev, cached)) = &self.cached_plan
+            && *rev == self.layout_revision
+        {
+            let mut plan = cached.clone();
+            plan.transitions.clear();
+            plan.unchanged = true;
+            return Some(plan);
+        }
         let images = self
             .images
             .as_deref_mut()
             .map(|images| images as &mut dyn ImageResolver);
-        Some(plan_from_images(list, colours, images))
+        let mut plan = plan_from_images(list, colours, images);
+        plan.revision = self.layout_revision;
+        self.cached_plan = Some((self.layout_revision, plan.clone()));
+        Some(plan)
     }
 
     /// Replaces the image resolver; the next layout and plan use it.
     pub fn set_image_resolver(&mut self, images: Option<Box<dyn ImageResolver>>) {
         self.images = images;
+        self.cached_plan = None;
+        self.state.dirty = true;
+        self.state.tree_dirty = true;
+        self.layout_state.invalidate_all();
     }
 
     /// The topmost node at a point of the last layout, in document coordinates.
@@ -631,28 +831,161 @@ impl HtmlDom {
     /// A key an input method is still composing with is never delivered: it belongs to the
     /// composition, and the renderer keeps it.
     pub fn key_down(&mut self, node: NodeId, key: Key, code: Code, modifiers: Modifiers) -> bool {
+        let input = KeyInput::new(key, code, modifiers);
+        self.key_down_input(Some(node), &input)
+    }
+
+    /// Delivers a `keydown` (and `keypress` for character keys when not prevented or
+    /// composing) carrying full [`KeyInput`] metadata (`location`, `repeat`, `is_composing`,
+    /// `modifiers`). When `node` is `None`, routes to the currently focused element (or the
+    /// `<html>` root if no element is focused). When `key` is `Key::Tab` without Ctrl, Alt,
+    /// or Meta and no handler prevents the default, advances keyboard focus to the next (or
+    /// previous with Shift) focusable element in document order.
+    pub fn key_down_input(&mut self, node: Option<NodeId>, input: &KeyInput) -> bool {
+        let target = node
+            .or_else(|| self.doc.get_focussed_node_id())
+            .unwrap_or(self.root);
         let data = KeyEventData {
-            key,
-            code,
-            modifiers,
+            key: input.key.clone(),
+            code: input.code,
+            location: input.location,
+            modifiers: input.modifiers,
+            repeat: input.repeat,
+            is_composing: input.is_composing,
         };
-        let produces_character = matches!(data.key, Key::Enter | Key::Character(_));
-        if self.send_key(node, "keydown", &data) {
+        if self.send_key(target, "keydown", &data) {
             return true;
         }
-        produces_character && self.send_key(node, "keypress", &data)
+        let produces_character =
+            !input.is_composing && matches!(data.key, Key::Enter | Key::Character(_));
+        if produces_character && self.send_key(target, "keypress", &data) {
+            return true;
+        }
+        if input.key == Key::Tab
+            && !input.is_composing
+            && !input
+                .modifiers
+                .intersects(Modifiers::CONTROL | Modifiers::ALT | Modifiers::META)
+        {
+            let backward = input.modifiers.contains(Modifiers::SHIFT);
+            if self.advance_tab_focus(backward).is_some() {
+                return true;
+            }
+        }
+        false
     }
 
     /// What a renderer calls when the user lets go of a key while `node` has the focus:
     /// delivers `keyup` to the nearest handler at or around `node`. Returns whether a
     /// handler prevented the default.
     pub fn key_up(&mut self, node: NodeId, key: Key, code: Code, modifiers: Modifiers) -> bool {
+        let input = KeyInput::new(key, code, modifiers);
+        self.key_up_input(Some(node), &input)
+    }
+
+    /// Delivers a `keyup` carrying full [`KeyInput`] metadata to `node`, or to the currently
+    /// focused element (falling back to the `<html>` root) when `node` is `None`.
+    pub fn key_up_input(&mut self, node: Option<NodeId>, input: &KeyInput) -> bool {
+        let target = node
+            .or_else(|| self.doc.get_focussed_node_id())
+            .unwrap_or(self.root);
         let data = KeyEventData {
-            key,
-            code,
-            modifiers,
+            key: input.key.clone(),
+            code: input.code,
+            location: input.location,
+            modifiers: input.modifiers,
+            repeat: input.repeat,
+            is_composing: input.is_composing,
         };
-        self.send_key(node, "keyup", &data)
+        self.send_key(target, "keyup", &data)
+    }
+
+    /// Delivers `compositionstart` with `data` to the nearest handler at or around `node`.
+    pub fn composition_start(&mut self, node: NodeId, data: &str) -> Option<NodeId> {
+        self.send_composition(node, "compositionstart", data)
+    }
+
+    /// Delivers `compositionupdate` with `data` to the nearest handler at or around `node`.
+    pub fn composition_update(&mut self, node: NodeId, data: &str) -> Option<NodeId> {
+        self.send_composition(node, "compositionupdate", data)
+    }
+
+    /// Delivers `compositionend` with `data` to the nearest handler at or around `node`.
+    pub fn composition_end(&mut self, node: NodeId, data: &str) -> Option<NodeId> {
+        self.send_composition(node, "compositionend", data)
+    }
+
+    fn send_composition(&mut self, node: NodeId, name: &'static str, text: &str) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, name)?;
+        let data = CompositionEventData {
+            data: text.to_string(),
+        };
+        self.send(element, name, Box::new(data), true);
+        Some(target)
+    }
+
+    /// The node that currently holds the document's focus, if any.
+    pub fn focused(&self) -> Option<NodeId> {
+        self.doc.get_focussed_node_id()
+    }
+
+    /// Moves keyboard focus to the next (or previous when `backward` is true) focusable
+    /// element in document order.
+    fn advance_tab_focus(&mut self, backward: bool) -> Option<NodeId> {
+        let candidates = self.focusable_nodes();
+        if candidates.is_empty() {
+            return None;
+        }
+        let current = self.doc.get_focussed_node_id();
+        let next = match current.and_then(|cur| candidates.iter().position(|&id| id == cur)) {
+            Some(idx) => {
+                if backward {
+                    if idx == 0 {
+                        candidates[candidates.len() - 1]
+                    } else {
+                        candidates[idx - 1]
+                    }
+                } else {
+                    candidates[(idx + 1) % candidates.len()]
+                }
+            }
+            None => {
+                if backward {
+                    *candidates.last()?
+                } else {
+                    candidates[0]
+                }
+            }
+        };
+        self.focus_by_keyboard(next);
+        Some(next)
+    }
+
+    /// Connected elements that participate in sequential keyboard focus navigation (`Tab`),
+    /// in document tree order.
+    fn focusable_nodes(&self) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        self.collect_focusable(self.root, &mut out);
+        out
+    }
+
+    fn collect_focusable(&self, id: NodeId, out: &mut Vec<NodeId>) {
+        let Some(node) = self.doc.get_node(id) else {
+            return;
+        };
+        if node.style.display == taffy::Display::None
+            || node.attr(local("hidden")).is_some()
+            || node.attr(local("disabled")).is_some()
+        {
+            return;
+        }
+        if matches!(node.data, NodeData::Element(_)) && is_tab_focusable(&self.doc, id, node) {
+            out.push(id);
+        }
+        let children = node.children.clone();
+        for child in children {
+            self.collect_focusable(child, out);
+        }
     }
 
     /// What a renderer calls when `node` gains the focus: `focus` to the node's own
@@ -680,7 +1013,16 @@ impl HtmlDom {
     }
 
     fn focus_node(&mut self, node: NodeId) {
+        let previous = self.doc.get_focussed_node_id();
+        if previous == Some(node) {
+            return;
+        }
+        if let Some(prev) = previous {
+            self.state.mark_style_dirty(prev);
+            self.send_focus(prev, "blur", "focusout");
+        }
         self.doc.set_focus_to(node);
+        self.state.mark_style_dirty(node);
         self.send_focus(node, "focus", "focusin");
     }
 
@@ -691,17 +1033,19 @@ impl HtmlDom {
     pub fn blur(&mut self, node: NodeId) {
         if self.doc.get_focussed_node_id() == Some(node) {
             self.doc.clear_focus();
+            self.state.mark_style_dirty(node);
         }
         self.send_focus(node, "blur", "focusout");
     }
 
-    /// Whether a key pressed in or under `node` is for the page: `node` has a `keydown` or
-    /// `keypress` handler. A renderer routes the keys of these nodes' boxes back here.
+    /// Whether a key pressed in or under `node` is for the page: `node` has a `keydown`,
+    /// `keypress` or `keyup` handler. A renderer routes the keys of these nodes' boxes back
+    /// here.
     pub fn takes_keys(&self, node: NodeId) -> bool {
         self.state
             .listeners(node)
             .iter()
-            .any(|name| matches!(*name, "keydown" | "keypress"))
+            .any(|name| matches!(*name, "keydown" | "keypress" | "keyup"))
     }
 
     /// Clicks `hit`, at `point` or else at the centre of its box, and does what the click
@@ -732,6 +1076,7 @@ impl HtmlDom {
                 toggled.undo(&mut self.doc);
             } else if toggled.target_changed(&self.doc) {
                 let target = toggled.target;
+                self.state.mark_style_dirty(target);
                 self.send_form_event(target, "input");
                 self.send_form_event(target, "change");
             }
@@ -950,12 +1295,15 @@ impl HtmlDom {
         self.doc
             .mutate()
             .set_attribute(self.root, attribute_name("style", None), merged.trim());
+        self.state.mark_style_dirty(self.root);
     }
 
     /// Tells the text measurer that what its answers depend on changed, so it drops the
     /// answers it kept and the next layout measures again.
     pub fn invalidate_text_measurements(&mut self) {
         self.measurer.invalidate();
+        self.state.dirty = true;
+        self.layout_state.invalidate_all();
     }
 
     /// The factor the page is zoomed by. One until [`HtmlDom::set_zoom`] says otherwise.
@@ -980,6 +1328,8 @@ impl HtmlDom {
         }
         self.zoom = zoom;
         self.measurer.set_zoom(zoom);
+        self.state.dirty = true;
+        self.layout_state.invalidate_all();
         true
     }
 
@@ -987,25 +1337,30 @@ impl HtmlDom {
     pub fn set_measurer(&mut self, measurer: Box<dyn TextMeasurer>) {
         self.measurer = measurer;
         self.measurer.set_zoom(self.zoom);
+        self.state.dirty = true;
+        self.layout_state.invalidate_all();
     }
 
-    fn set_viewport(&mut self, width: f32, height: f32, scale: f32) {
+    fn set_viewport(&mut self, width: f32, height: f32, scale: f32) -> bool {
         let physical = (
             (width * scale).round().max(0.0) as u32,
             (height * scale).round().max(0.0) as u32,
         );
         let current = self.doc.viewport();
-        if current.window_size != physical
-            || current.hidpi_scale != scale
-            || !same_scheme(current.color_scheme, self.color_scheme)
-        {
+        let scheme_changed = !same_scheme(current.color_scheme, self.color_scheme);
+        if current.window_size != physical || current.hidpi_scale != scale || scheme_changed {
             self.doc.set_viewport(Viewport::new(
                 physical.0,
                 physical.1,
                 scale,
                 self.color_scheme,
             ));
+            if scheme_changed {
+                self.layout_state.invalidate_all();
+            }
+            return true;
         }
+        false
     }
 }
 
@@ -1164,13 +1519,40 @@ impl HasMouseData for PointerData {
     }
 }
 
-/// The key data a key event carries to its handler. Never part of a composition: a key an
-/// input method is composing with stays in the renderer.
+/// One keyboard input report for [`HtmlDom::key_down_input`] and [`HtmlDom::key_up_input`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyInput {
+    pub key: Key,
+    pub code: Code,
+    pub location: Location,
+    pub modifiers: Modifiers,
+    pub repeat: bool,
+    pub is_composing: bool,
+}
+
+impl KeyInput {
+    /// A non-repeating key input at [`Location::Standard`] outside IME composition.
+    pub fn new(key: Key, code: Code, modifiers: Modifiers) -> Self {
+        Self {
+            key,
+            code,
+            location: Location::Standard,
+            modifiers,
+            repeat: false,
+            is_composing: false,
+        }
+    }
+}
+
+/// The key data a key event carries to its handler.
 #[derive(Clone)]
 struct KeyEventData {
     key: Key,
     code: Code,
+    location: Location,
     modifiers: Modifiers,
+    repeat: bool,
+    is_composing: bool,
 }
 
 impl ModifiersInteraction for KeyEventData {
@@ -1189,20 +1571,102 @@ impl HasKeyboardData for KeyEventData {
     }
 
     fn location(&self) -> Location {
-        Location::Standard
+        self.location
     }
 
     fn is_auto_repeating(&self) -> bool {
-        false
+        self.repeat
     }
 
     fn is_composing(&self) -> bool {
-        false
+        self.is_composing
     }
 
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+/// What an IME composition event (`compositionstart`, `compositionupdate`, `compositionend`)
+/// carries to its handler.
+#[derive(Clone)]
+struct CompositionEventData {
+    data: String,
+}
+
+impl HasCompositionData for CompositionEventData {
+    fn data(&self) -> String {
+        self.data.clone()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Backing for `onmounted` (`MountedData`), allowing handlers to call `set_focus` or
+/// `get_client_rect` on the mounted DOM node.
+#[derive(Clone)]
+struct MountedElement {
+    node: NodeId,
+    focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
+    rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
+}
+
+impl RenderedElementBacking for MountedElement {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn get_client_rect(&self) -> Pin<Box<dyn Future<Output = Result<PixelsRect, MountedError>>>> {
+        let rect = self
+            .rects
+            .borrow()
+            .get(&self.node)
+            .copied()
+            .unwrap_or_default();
+        let pixels = PixelsRect::new(
+            Point2D::new(f64::from(rect.x), f64::from(rect.y)),
+            Size2D::new(f64::from(rect.width), f64::from(rect.height)),
+        );
+        Box::pin(async move { Ok(pixels) })
+    }
+
+    fn set_focus(&self, focus: bool) -> Pin<Box<dyn Future<Output = Result<(), MountedError>>>> {
+        self.focus_requests.borrow_mut().push((self.node, focus));
+        Box::pin(async { Ok(()) })
+    }
+}
+
+fn is_tab_focusable(doc: &BaseDocument, _id: NodeId, node: &blitz_dom::Node) -> bool {
+    if let Some(tabindex) = node
+        .attr(local("tabindex"))
+        .and_then(|v| v.trim().parse::<i32>().ok())
+    {
+        return tabindex >= 0;
+    }
+    match form::tag(node) {
+        Some("input") => !node
+            .attr(local("type"))
+            .is_some_and(|t| t.eq_ignore_ascii_case("hidden")),
+        Some("button" | "select" | "textarea") => true,
+        Some("a") => node.attr(local("href")).is_some(),
+        _ => {
+            let _ = doc;
+            false
+        }
+    }
+}
+
+fn noop_waker() -> Waker {
+    const VTABLE: RawWakerVTable = RawWakerVTable::new(
+        |_| RawWaker::new(std::ptr::null(), &VTABLE),
+        |_| {},
+        |_| {},
+        |_| {},
+    );
+    // Safety: the noop vtable never dereferences its data pointer.
+    unsafe { Waker::from_raw(RawWaker::new(std::ptr::null(), &VTABLE)) }
 }
 
 /// What a focus event carries: nothing beyond which element it is for.
@@ -1337,8 +1801,12 @@ impl HtmlEventConverter for Converter {
     fn convert_clipboard_data(&self, _: &PlatformEventData) -> dioxus_html::ClipboardData {
         not_sent("clipboard")
     }
-    fn convert_composition_data(&self, _: &PlatformEventData) -> dioxus_html::CompositionData {
-        not_sent("composition")
+    fn convert_composition_data(&self, event: &PlatformEventData) -> CompositionData {
+        let data = event
+            .downcast::<CompositionEventData>()
+            .expect("every composition event this document sends carries CompositionEventData")
+            .clone();
+        CompositionData::new(data)
     }
     fn convert_drag_data(&self, _: &PlatformEventData) -> dioxus_html::DragData {
         not_sent("drag")
@@ -1370,8 +1838,12 @@ impl HtmlEventConverter for Converter {
     fn convert_media_data(&self, _: &PlatformEventData) -> dioxus_html::MediaData {
         not_sent("media")
     }
-    fn convert_mounted_data(&self, _: &PlatformEventData) -> dioxus_html::MountedData {
-        not_sent("mounted")
+    fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
+        let data = event
+            .downcast::<MountedElement>()
+            .expect("every mounted event this document sends carries MountedElement")
+            .clone();
+        MountedData::new(data)
     }
     fn convert_pointer_data(&self, event: &PlatformEventData) -> dioxus_html::PointerData {
         let data = event

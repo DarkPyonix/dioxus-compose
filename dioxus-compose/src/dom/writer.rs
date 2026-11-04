@@ -6,14 +6,16 @@
 //! routed to the Dioxus element whose handler should run. dioxus-native-dom only counts
 //! listeners per event kind and leaves routing to blitz-dom's own event driver.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use blitz_dom::{BaseDocument, DocumentMutator, LocalName, Namespace, QualName};
 use dioxus_core::{
     AttributeValue, ElementId, Template, TemplateAttribute, TemplateNode, WriteMutations,
 };
+use style::invalidation::element::restyle_hints::RestyleHint;
 
 use crate::html::NodeId;
+use crate::layout::{LayoutState, local};
 
 const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 
@@ -30,10 +32,28 @@ pub(crate) struct WriterState {
     templates: HashMap<Template, Vec<NodeId>>,
     /// Event names with a listener, per node.
     listeners: HashMap<NodeId, Vec<&'static str>>,
+    /// Whether event listeners changed since the last pointer subscription check.
+    pub(crate) listeners_dirty: bool,
     /// The text the renderer last committed to a field, per node, kept until the app sets
     /// the field's `value` again. The renderer owns a field's text while the user edits it,
     /// so this, not the `value` attribute, is what the field holds now.
     committed: HashMap<NodeId, String>,
+    /// Whether any DOM mutation happened since the last layout pass.
+    pub(crate) dirty: bool,
+    /// Whether the DOM tree structure, text content, or non-style attributes changed since
+    /// the last layout pass.
+    pub(crate) tree_dirty: bool,
+    /// Whether any `<style>` element or its text changed since the last layout pass.
+    pub(crate) stylesheet_dirty: bool,
+    /// Nodes whose subtree structure, text content, or non-style attributes changed since
+    /// the last layout pass.
+    pub(crate) dirty_nodes: HashSet<NodeId>,
+    /// Nodes whose `style` or `class` attributes changed since the last layout pass.
+    pub(crate) dirty_style_nodes: HashSet<NodeId>,
+    /// Nodes that registered a `mounted` listener and have not yet received their mount event.
+    pub(crate) pending_mounts: Vec<NodeId>,
+    /// The most recently added or updated element carrying an active `autofocus` attribute.
+    pub(crate) pending_autofocus: Option<NodeId>,
 }
 
 impl WriterState {
@@ -93,15 +113,37 @@ impl WriterState {
     }
 
     fn forget(&mut self, node: NodeId) {
-        self.listeners.remove(&node);
-        self.node_to_element.remove(&node);
+        if self.listeners.remove(&node).is_some() {
+            self.listeners_dirty = true;
+        }
+        if let Some(element) = self.node_to_element.remove(&node)
+            && self.element_to_node.get(element.0) == Some(&Some(node))
+        {
+            self.element_to_node[element.0] = None;
+        }
         self.committed.remove(&node);
+        self.pending_mounts.retain(|&n| n != node);
+        if self.pending_autofocus == Some(node) {
+            self.pending_autofocus = None;
+        }
+    }
+
+    pub(crate) fn mark_tree_dirty(&mut self, node: NodeId) {
+        self.dirty = true;
+        self.tree_dirty = true;
+        self.dirty_nodes.insert(node);
+    }
+
+    pub(crate) fn mark_style_dirty(&mut self, node: NodeId) {
+        self.dirty = true;
+        self.dirty_style_nodes.insert(node);
     }
 }
 
 pub(crate) struct DomWriter<'a> {
     mutator: DocumentMutator<'a>,
     state: &'a mut WriterState,
+    layout_state: &'a mut LayoutState,
 }
 
 impl<'a> DomWriter<'a> {
@@ -125,10 +167,15 @@ impl<'a> DomWriter<'a> {
         }
     }
 
-    pub(crate) fn new(doc: &'a mut BaseDocument, state: &'a mut WriterState) -> Self {
+    pub(crate) fn new(
+        doc: &'a mut BaseDocument,
+        state: &'a mut WriterState,
+        layout_state: &'a mut LayoutState,
+    ) -> Self {
         Self {
             mutator: doc.mutate(),
             state,
+            layout_state,
         }
     }
 
@@ -137,6 +184,16 @@ impl<'a> DomWriter<'a> {
     }
 
     fn push_mapped(&mut self, node: NodeId, element: ElementId) {
+        if let Some(previous) = self.node(element) {
+            let detached = self
+                .mutator
+                .doc
+                .get_node(previous)
+                .is_some_and(|n| n.parent.is_none());
+            if detached && !self.state.stack.contains(&previous) {
+                self.drop_detached_subtree(previous);
+            }
+        }
         self.forget_subtree(node);
         self.state.map(node, element);
         self.state.stack.push(node);
@@ -146,8 +203,41 @@ impl<'a> DomWriter<'a> {
     /// it has dropped, and a new node must not inherit a dead node's handlers.
     fn forget_subtree(&mut self, node: NodeId) {
         self.state.forget(node);
+        self.layout_state.forget(node);
         for child in self.mutator.child_ids(node) {
             self.forget_subtree(child);
+        }
+    }
+
+    /// Recursively drops a detached node and its descendants from both `WriterState` and
+    /// `blitz-dom`'s slab when the node is not waiting on the writer's stack.
+    fn drop_detached_subtree(&mut self, node: NodeId) {
+        if self.state.stack.contains(&node) {
+            return;
+        }
+        let children = self.mutator.child_ids(node);
+        for child in children {
+            self.mutator.remove_node(child);
+            self.drop_detached_subtree(child);
+        }
+        self.state.forget(node);
+        self.layout_state.forget(node);
+        self.mutator.remove_node_if_unparented(node);
+    }
+
+    /// Scans a cloned template subtree for the first element with an `autofocus` attribute
+    /// and checks whether it introduces a `<style>` element.
+    fn scan_autofocus(&mut self, node: NodeId) {
+        if let Some(n) = self.mutator.doc.get_node(node) {
+            if n.attr(local("autofocus")).is_some() {
+                self.state.pending_autofocus = Some(node);
+            }
+            if n.data.is_element_with_tag_name(&local("style")) {
+                self.state.stylesheet_dirty = true;
+            }
+        }
+        for child in self.mutator.child_ids(node) {
+            self.scan_autofocus(child);
         }
     }
 
@@ -184,6 +274,21 @@ fn set_attribute_value(
     // Dioxus writes single CSS properties (`width: "10px"` in rsx) as attributes in the
     // "style" namespace.
     if namespace == Some("style") {
+        let styled = mutator
+            .doc
+            .get_node(node)
+            .is_some_and(|n| n.primary_styles().is_some());
+        if styled {
+            mutator.doc.snapshot_node(node);
+            if let Some(target) = mutator.doc.get_node_mut(node) {
+                target.set_restyle_hint(RestyleHint::restyle_subtree());
+            }
+            if let Some(parent) = mutator.doc.get_node(node).and_then(|n| n.parent)
+                && let Some(parent_node) = mutator.doc.get_node_mut(parent)
+            {
+                parent_node.set_restyle_hint(RestyleHint::restyle_subtree());
+            }
+        }
         match value {
             Some(value) => mutator.set_style_property(node, name, value),
             None => mutator.remove_style_property(node, name),
@@ -220,7 +325,7 @@ fn set_checkedness(mutator: &mut DocumentMutator<'_>, node: NodeId, checked: boo
 fn is_boolean_off(name: &str, value: &AttributeValue) -> bool {
     matches!(
         name,
-        "checked" | "disabled" | "readonly" | "hidden" | "selected" | "multiple"
+        "checked" | "disabled" | "readonly" | "hidden" | "selected" | "multiple" | "autofocus"
     ) && match value {
         AttributeValue::Bool(on) => !on,
         AttributeValue::Text(text) => text == "false",
@@ -268,6 +373,10 @@ impl WriteMutations for DomWriter<'_> {
         self.detach_moved(&children);
         if let Some(parent) = self.node(id) {
             self.mutator.append_children(parent, &children);
+            self.state.mark_tree_dirty(parent);
+            for &child in &children {
+                self.state.mark_tree_dirty(child);
+            }
         }
     }
 
@@ -281,8 +390,7 @@ impl WriteMutations for DomWriter<'_> {
                 .get_node(previous)
                 .is_some_and(|node| node.parent.is_none());
             if detached && !self.state.stack.contains(&previous) {
-                self.state.forget(previous);
-                self.mutator.remove_node_if_unparented(previous);
+                self.drop_detached_subtree(previous);
             }
         }
         if let Some(node) = self.node_at_path(path) {
@@ -293,11 +401,13 @@ impl WriteMutations for DomWriter<'_> {
     fn create_placeholder(&mut self, id: ElementId) {
         let node = self.mutator.create_comment_node();
         self.push_mapped(node, id);
+        self.state.mark_tree_dirty(node);
     }
 
     fn create_text_node(&mut self, value: &str, id: ElementId) {
         let node = self.mutator.create_text_node(value);
         self.push_mapped(node, id);
+        self.state.mark_tree_dirty(node);
     }
 
     fn load_template(&mut self, template: Template, index: usize, id: ElementId) {
@@ -314,13 +424,21 @@ impl WriteMutations for DomWriter<'_> {
         };
         let clone = self.mutator.deep_clone_node(prototype);
         self.push_mapped(clone, id);
+        self.scan_autofocus(clone);
+        self.state.mark_tree_dirty(clone);
     }
 
     fn replace_node_with(&mut self, id: ElementId, m: usize) {
         let replacements = self.state.take_stack(m);
         if let Some(anchor) = self.node(id) {
+            if let Some(parent) = self.mutator.doc.get_node(anchor).and_then(|n| n.parent) {
+                self.state.mark_tree_dirty(parent);
+            }
+            for &node in &replacements {
+                self.state.mark_tree_dirty(node);
+            }
             self.mutator.replace_node_with(anchor, &replacements);
-            self.state.forget(anchor);
+            self.drop_detached_subtree(anchor);
         }
     }
 
@@ -328,7 +446,14 @@ impl WriteMutations for DomWriter<'_> {
         // Take the new nodes first: the path is relative to the node below them.
         let replacements = self.state.take_stack(m);
         if let Some(anchor) = self.node_at_path(path) {
+            if let Some(parent) = self.mutator.doc.get_node(anchor).and_then(|n| n.parent) {
+                self.state.mark_tree_dirty(parent);
+            }
+            for &node in &replacements {
+                self.state.mark_tree_dirty(node);
+            }
             self.mutator.replace_node_with(anchor, &replacements);
+            self.drop_detached_subtree(anchor);
         }
     }
 
@@ -336,6 +461,12 @@ impl WriteMutations for DomWriter<'_> {
         let nodes = self.state.take_stack(m);
         self.detach_moved(&nodes);
         if let Some(anchor) = self.node(id) {
+            if let Some(parent) = self.mutator.doc.get_node(anchor).and_then(|n| n.parent) {
+                self.state.mark_tree_dirty(parent);
+            }
+            for &node in &nodes {
+                self.state.mark_tree_dirty(node);
+            }
             self.mutator.insert_nodes_after(anchor, &nodes);
         }
     }
@@ -344,6 +475,12 @@ impl WriteMutations for DomWriter<'_> {
         let nodes = self.state.take_stack(m);
         self.detach_moved(&nodes);
         if let Some(anchor) = self.node(id) {
+            if let Some(parent) = self.mutator.doc.get_node(anchor).and_then(|n| n.parent) {
+                self.state.mark_tree_dirty(parent);
+            }
+            for &node in &nodes {
+                self.state.mark_tree_dirty(node);
+            }
             self.mutator.insert_nodes_before(anchor, &nodes);
         }
     }
@@ -363,10 +500,17 @@ impl WriteMutations for DomWriter<'_> {
             // typed before.
             self.state.committed.remove(&node);
         }
+        let style_only = namespace == Some("style")
+            || (namespace.is_none() && matches!(name, "style" | "class"));
         if is_boolean_off(name, value) {
             set_attribute_value(&mut self.mutator, node, name, namespace, None);
             if namespace.is_none() && name == "checked" {
                 set_checkedness(&mut self.mutator, node, false);
+            }
+            if style_only {
+                self.state.mark_style_dirty(node);
+            } else {
+                self.state.mark_tree_dirty(node);
             }
             return;
         }
@@ -385,11 +529,31 @@ impl WriteMutations for DomWriter<'_> {
             // Present means checked, whatever the value; `None` removed it.
             set_checkedness(&mut self.mutator, node, text.is_some());
         }
+        if namespace.is_none() && name == "autofocus" && text.is_some() {
+            self.state.pending_autofocus = Some(node);
+        }
+        if style_only {
+            self.state.mark_style_dirty(node);
+        } else {
+            self.state.mark_tree_dirty(node);
+        }
     }
 
     fn set_node_text(&mut self, value: &str, id: ElementId) {
         if let Some(node) = self.node(id) {
             self.mutator.set_node_text(node, value);
+            self.state.mark_tree_dirty(node);
+            if let Some(parent) = self.mutator.doc.get_node(node).and_then(|n| n.parent) {
+                self.state.mark_tree_dirty(parent);
+                if self
+                    .mutator
+                    .doc
+                    .get_node(parent)
+                    .is_some_and(|p| p.data.is_element_with_tag_name(&local("style")))
+                {
+                    self.state.stylesheet_dirty = true;
+                }
+            }
         }
     }
 
@@ -401,7 +565,12 @@ impl WriteMutations for DomWriter<'_> {
         let names = self.state.listeners.entry(node).or_default();
         if !names.contains(&name) {
             names.push(name);
+            self.state.listeners_dirty = true;
         }
+        if name == "mounted" && !self.state.pending_mounts.contains(&node) {
+            self.state.pending_mounts.push(node);
+        }
+        self.state.dirty = true;
     }
 
     fn remove_event_listener(&mut self, name: &'static str, id: ElementId) {
@@ -409,14 +578,35 @@ impl WriteMutations for DomWriter<'_> {
             return;
         };
         if let Some(names) = self.state.listeners.get_mut(&node) {
+            let before = names.len();
             names.retain(|existing| *existing != name);
+            if names.len() != before {
+                self.state.listeners_dirty = true;
+            }
         }
+        if name == "mounted" {
+            self.state.pending_mounts.retain(|&n| n != node);
+        }
+        self.state.dirty = true;
     }
 
     fn remove_node(&mut self, id: ElementId) {
         if let Some(node) = self.node(id) {
+            if self
+                .mutator
+                .doc
+                .get_node(node)
+                .is_some_and(|n| n.data.is_element_with_tag_name(&local("style")))
+            {
+                self.state.stylesheet_dirty = true;
+            }
+            if let Some(parent) = self.mutator.doc.get_node(node).and_then(|n| n.parent) {
+                self.state.mark_tree_dirty(parent);
+            }
             self.mutator.remove_node(node);
-            self.state.forget(node);
+            self.drop_detached_subtree(node);
+            self.state.dirty = true;
+            self.state.tree_dirty = true;
         }
     }
 

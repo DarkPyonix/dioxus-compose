@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use compose_rust::Batch;
 use compose_rust::brush::{Brush as WireBrush, Stop, brush as register_brush};
+use compose_rust::fonts::FontRefs;
 use compose_rust::protocol::{Mutation, PropertyValue};
 use compose_rust::schema::{
     AnimationControl, AnimationEvents, Color, Modifier, Paint, PropertyKind,
@@ -35,7 +36,7 @@ use compose_rust::spans::{TextSpan, TextSpans};
 
 use crate::html::NodeId;
 use crate::layout::measure::{TextLineHeight, TextStyle};
-use crate::layout::renderer_measure::{SpanBase, wire_spans};
+use crate::layout::renderer_measure::{SpanBase, font_refs, wire_spans};
 use crate::paint::animate;
 use crate::paint::display_list::{
     AnimatedProperty, Animation as CssAnimation, GradientStop, Rect, Rgba, TextAlign, TileRepeat,
@@ -215,6 +216,7 @@ enum Prop {
     Bool(bool),
     Int(i64),
     Float(f32),
+    Fonts(FontRefs),
     Spans(TextSpans),
     /// The font table of a list of runs, which travels as a property of its own.
     SpanFonts(TextSpans),
@@ -228,6 +230,7 @@ impl Prop {
             Prop::Bool(value) => PropertyValue::Bool(*value),
             Prop::Int(value) => PropertyValue::Integer(*value),
             Prop::Float(value) => PropertyValue::Float(*value),
+            Prop::Fonts(value) => PropertyValue::Bytes(value.as_bytes()),
             Prop::Spans(value) => PropertyValue::Bytes(value.as_bytes()),
             Prop::SpanFonts(value) => PropertyValue::Bytes(value.font_table()),
         }
@@ -502,6 +505,15 @@ impl PlanBridge {
         clicks: &dyn ClickTargets,
         batch: &mut Batch,
     ) {
+        if plan.unchanged
+            && self
+                .previous
+                .as_ref()
+                .is_some_and(|prev| prev.revision != 0 && prev.revision == plan.revision)
+        {
+            self.sync_zoom(viewport, batch);
+            return;
+        }
         self.page_size = (viewport.0, viewport.1.max(page_extent(&plan.root)));
         self.brushes.clone_from(&plan.brushes);
         let pinned = self.pin(&plan);
@@ -632,14 +644,24 @@ impl PlanBridge {
                 dirty.insert(node.key);
             }
         }
-        dirty.insert(PlanKey::Page);
+        if let Some(placed) = self.nodes.get(&PlanKey::Page)
+            && placed.modifiers.first()
+                != Some(&Modifier::RequiredSize {
+                    width: self.page_size.0,
+                    height: self.page_size.1,
+                })
+        {
+            dirty.insert(PlanKey::Page);
+        }
 
-        for node in nodes {
-            if dirty.contains(&node.key) {
-                self.decorate(batch, node, clicks);
+        if !dirty.is_empty() {
+            for node in &nodes {
+                if dirty.contains(&node.key) {
+                    self.decorate(batch, node, clicks);
+                }
             }
         }
-        self.play(batch, plan, changed, started, clicks);
+        self.play_nodes(batch, &nodes, changed, started, clicks);
     }
 
     /// Records the properties the plan animates, and returns the nodes that gained one.
@@ -679,6 +701,23 @@ impl PlanBridge {
         clicks: &dyn ClickTargets,
     ) {
         let nodes = plan.nodes();
+        self.play_nodes(batch, &nodes, changed, started, clicks);
+    }
+
+    fn play_nodes(
+        &mut self,
+        batch: &mut Batch,
+        nodes: &[&PlanNode],
+        changed: Vec<(PlanKey, Vec<CssAnimation>)>,
+        started: Vec<(PlanKey, CssAnimation)>,
+        clicks: &dyn ClickTargets,
+    ) {
+        if changed.is_empty()
+            && started.is_empty()
+            && nodes.iter().all(|node| node.animations.is_empty())
+        {
+            return;
+        }
         let sizes: HashMap<PlanKey, (f32, f32)> = nodes
             .iter()
             .map(|node| (node.key, node_size(node).unwrap_or((0.0, 0.0))))
@@ -689,7 +728,7 @@ impl PlanBridge {
             self.sync_animations(batch, key, &animations, size_of(&key), clicks);
             done.insert(key);
         }
-        for node in &nodes {
+        for node in nodes {
             if !node.animations.is_empty()
                 && !done.contains(&node.key)
                 && !self.playing.contains_key(&node.key)
@@ -1225,6 +1264,7 @@ impl PlanBridge {
             PlanKind::Text(text) => {
                 self.set_prop(batch, key, PropertyKind::Text, Prop::Str(text.text.clone()));
                 self.set_text_style(batch, key, &text.style, text.color);
+                self.set_prop(batch, key, PropertyKind::Font, font_prop(&text.style));
                 let (spans, span_fonts) = text_spans(text);
                 self.set_prop(batch, key, PropertyKind::Spans, spans);
                 self.set_prop(batch, key, PropertyKind::SpanFonts, span_fonts);
@@ -1309,6 +1349,9 @@ impl PlanBridge {
             // Keys pressed in a field go to the page whether or not anything listens yet:
             // the renderer asks before Enter submits or starts a line, and the answer
             // depends on handlers that may be added later.
+            // TODO(DarkPyonix/compose-rust#100): extend OnKeyDown beyond Enter to general key events.
+            // TODO(DarkPyonix/compose-rust#98): wire IME composition events for HTML fields.
+            // TODO(DarkPyonix/compose-rust#410): wire OnFocusGained and programmatic focus requests.
             self.add_handler(
                 batch,
                 key,
@@ -1342,6 +1385,7 @@ impl PlanBridge {
             Prop::Bool(field.multiline),
         );
         self.set_text_style(batch, key, &field.style, field.color);
+        // TODO(DarkPyonix/compose-rust#349): send PropertyKind::Font on TextField once the renderer allows Font on TextField.
     }
 
     fn set_dropdown(
@@ -1389,6 +1433,14 @@ impl PlanBridge {
                     node_id: option,
                     property,
                     value: value.wire(),
+                });
+            }
+            let font = font_prop(&dropdown.style);
+            if font != Prop::None {
+                batch.write(Mutation::SetProp {
+                    node_id: option,
+                    property: PropertyKind::Font,
+                    value: font.wire(),
                 });
             }
             batch.write(Mutation::Insert {
@@ -2003,6 +2055,16 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
             Prop::Int(literal(color).to_bits() as i64),
         ),
     ]
+}
+
+/// The `PropertyKind::Font` property for a text style's `font-family` list.
+fn font_prop(style: &TextStyle) -> Prop {
+    let fonts = font_refs(&style.font_family);
+    if fonts.is_empty() {
+        Prop::None
+    } else {
+        Prop::Fonts(fonts)
+    }
 }
 
 /// The `Spans` and `SpanFonts` properties of a run of text.
