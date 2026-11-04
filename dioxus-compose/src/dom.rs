@@ -400,13 +400,16 @@ impl HtmlDom {
         let dirty = std::mem::take(&mut self.state.dirty);
         let tree_dirty = std::mem::take(&mut self.state.tree_dirty);
         let dirty_nodes = std::mem::take(&mut self.state.dirty_nodes);
+        let dirty_children_nodes = std::mem::take(&mut self.state.dirty_children_nodes);
         let dirty_style_nodes = std::mem::take(&mut self.state.dirty_style_nodes);
+        let non_inherited_style_nodes = std::mem::take(&mut self.state.non_inherited_style_nodes);
         let pointer_restyle = std::mem::take(&mut self.pointer.restyle);
         let time_changed = self.last_layout_now != Some(self.now);
         #[allow(clippy::unnecessary_unwrap)]
         if !dirty
             && !tree_dirty
             && dirty_nodes.is_empty()
+            && dirty_children_nodes.is_empty()
             && dirty_style_nodes.is_empty()
             && !viewport_changed
             && !pointer_restyle
@@ -447,7 +450,9 @@ impl HtmlDom {
             now,
             tree_dirty,
             &dirty_nodes,
+            &dirty_children_nodes,
             &dirty_style_nodes,
+            &non_inherited_style_nodes,
             &mut self.layout_state,
         );
         let scan = self.motion.scan(&self.doc, now);
@@ -492,7 +497,9 @@ impl HtmlDom {
                     now,
                     true,
                     &dirty_nodes,
+                    &dirty_children_nodes,
                     &dirty_style_nodes,
+                    &non_inherited_style_nodes,
                     &mut self.layout_state,
                 );
             }

@@ -148,15 +148,99 @@ pub(crate) fn resolve_styles(doc: &mut BaseDocument, now: f64) {
 /// `resolve_deferred_tasks`) and updates Taffy styles only on nodes whose computed style
 /// changed. When box reconstruction does run, preserves Taffy caches on clean nodes outside
 /// the dirty subtrees and their ancestors.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn resolve_styles_incremental(
     doc: &mut BaseDocument,
     now: f64,
     tree_dirty: bool,
     dirty_nodes: &HashSet<usize>,
+    dirty_children_nodes: &HashSet<usize>,
     dirty_style_nodes: &HashSet<usize>,
+    non_inherited_style_nodes: &HashSet<usize>,
     state: &mut LayoutState,
 ) -> HashSet<usize> {
+    let mut parked_restyle_children: Vec<(usize, Vec<usize>, Option<usize>)> = Vec::new();
+    if state.initialized {
+        for &id in non_inherited_style_nodes {
+            let can_park = doc.get_node(id).is_some_and(|n| {
+                n.flags.is_in_document()
+                    && n.primary_styles().is_some()
+                    && !n.has_snapshot
+                    && n.selector_flags.borrow().is_empty()
+                    && n.stylo_element_data.borrow().as_ref().is_some_and(|d| {
+                        !d.hint
+                            .intersects(style::invalidation::element::restyle_hints::RestyleHint::RESTYLE_DESCENDANTS)
+                    })
+            });
+            if !can_park {
+                continue;
+            }
+            let children = doc
+                .get_node(id)
+                .map(|n| n.children.clone())
+                .unwrap_or_default();
+            if children.is_empty() {
+                continue;
+            }
+            let mut keep = Vec::new();
+            let mut park = Vec::new();
+            let mut all_siblings_clean_or_new = true;
+            for (idx, &cid) in children.iter().enumerate() {
+                let child_needs_style = dirty_nodes.contains(&cid)
+                    || dirty_children_nodes.contains(&cid)
+                    || dirty_style_nodes.contains(&cid)
+                    || doc.get_node(cid).is_some_and(|cn| {
+                        cn.has_snapshot
+                            || match &cn.data {
+                                NodeData::Element(_) => {
+                                    cn.stylo_element_data.borrow().as_ref().is_none_or(|cd| {
+                                        cd.styles.primary.is_none() || !cd.hint.is_empty()
+                                    })
+                                }
+                                _ => false,
+                            }
+                    });
+                let child_has_flags = doc
+                    .get_node(cid)
+                    .is_some_and(|cn| !cn.selector_flags.borrow().is_empty());
+                if child_has_flags {
+                    all_siblings_clean_or_new = false;
+                    break;
+                }
+                if child_needs_style {
+                    keep.push(cid);
+                } else {
+                    park.push((idx, cid));
+                }
+            }
+            if !all_siblings_clean_or_new || park.is_empty() {
+                continue;
+            }
+            let saved_damage = doc.get_node(id).and_then(|n| {
+                n.stylo_element_data
+                    .borrow()
+                    .as_ref()
+                    .map(|d| d.damage.bits())
+            });
+            if let Some(node) = doc.get_node_mut(id) {
+                node.children = keep;
+                parked_restyle_children.push((id, children, saved_damage.map(|b| b as usize)));
+            }
+        }
+    }
+
     doc.resolve_stylist(now);
+
+    for (id, children, saved_damage) in parked_restyle_children {
+        if let Some(node) = doc.get_node_mut(id) {
+            node.children = children;
+            if let Some(bits) = saved_damage
+                && let Some(data) = node.stylo_element_data.borrow_mut().as_mut()
+            {
+                data.damage |= style::selector_parser::RestyleDamage::from_bits_retain(bits as u16);
+            }
+        }
+    }
 
     let mut need_box_rebuild = !state.initialized || tree_dirty;
     let mut box_style_changed_nodes = HashSet::new();
@@ -245,6 +329,7 @@ pub(crate) fn resolve_styles_incremental(
             }
             for &seed in dirty_nodes
                 .iter()
+                .chain(dirty_children_nodes.iter())
                 .chain(box_style_changed_nodes.iter())
                 .chain(text_style_changed_nodes.iter())
             {
@@ -253,10 +338,18 @@ pub(crate) fn resolve_styles_incremental(
                     rebuild_tree.insert(id);
                     if let Some(node) = doc.get_node(id) {
                         if let Some(el) = node.element_data()
-                            && matches!(el.name.local.as_ref(), "ol" | "ul")
+                            && matches!(
+                                el.name.local.as_ref(),
+                                "ol" | "ul" | "table" | "thead" | "tbody" | "tfoot" | "tr"
+                            )
                         {
-                            for &child_id in &node.children {
-                                rebuild_tree.insert(child_id);
+                            let mut sub = node.children.clone();
+                            while let Some(sub_id) = sub.pop() {
+                                if rebuild_tree.insert(sub_id)
+                                    && let Some(sub_node) = doc.get_node(sub_id)
+                                {
+                                    sub.extend(sub_node.children.iter().copied());
+                                }
                             }
                         }
                         cur = node.layout_parent.get().or(node.parent);
@@ -377,13 +470,19 @@ pub(crate) fn resolve_styles_incremental(
     }
 
     // Build the set of nodes whose own layout cache must be invalidated:
-    // dirty_nodes, nodes inside a dirty subtree, nodes whose Taffy or text style changed,
-    // and all ancestors of those nodes.
+    // dirty_nodes, dirty_children_nodes, nodes inside a dirty subtree, nodes whose Taffy,
+    // box, text, or embedded-widget style changed, and all ancestors of those nodes.
     let mut invalidated = HashSet::new();
     let mut seeds = dirty_nodes.clone();
-    seeds.extend(dirty_style_nodes.iter().copied());
+    seeds.extend(dirty_children_nodes.iter().copied());
+    seeds.extend(box_style_changed_nodes.iter().copied());
     seeds.extend(style_changed_nodes.iter().copied());
     seeds.extend(text_style_changed_nodes.iter().copied());
+    for &id in dirty_style_nodes {
+        if doc.get_node(id).is_some_and(|n| widget_token(n).is_some()) {
+            seeds.insert(id);
+        }
+    }
 
     // Include descendants of any seed in `dirty_nodes` or `text_style_changed_nodes`.
     let mut stack: Vec<usize> = dirty_nodes
@@ -407,9 +506,26 @@ pub(crate) fn resolve_styles_incremental(
         let mut cur = Some(seed);
         while let Some(id) = cur {
             invalidated.insert(id);
-            cur = doc
-                .get_node(id)
-                .and_then(|n| n.layout_parent.get().or(n.parent));
+            if let Some(node) = doc.get_node(id) {
+                if let Some(el) = node.element_data()
+                    && matches!(
+                        el.name.local.as_ref(),
+                        "ol" | "ul" | "table" | "thead" | "tbody" | "tfoot" | "tr"
+                    )
+                {
+                    let mut sub = node.children.clone();
+                    while let Some(sub_id) = sub.pop() {
+                        if invalidated.insert(sub_id)
+                            && let Some(sub_node) = doc.get_node(sub_id)
+                        {
+                            sub.extend(sub_node.children.iter().copied());
+                        }
+                    }
+                }
+                cur = node.layout_parent.get().or(node.parent);
+            } else {
+                cur = None;
+            }
         }
     }
 
