@@ -15,6 +15,7 @@ import dev.darkpyonix.composerust.protocol.Window
 import dev.darkpyonix.composerust.protocol.WidgetKind
 import dev.darkpyonix.composerust.protocol.Modifier as ProtocolModifier
 import dev.darkpyonix.composerust.foundation.code.CodeEditorModel
+import dev.darkpyonix.composerust.foundation.code.CodePosition
 import dev.darkpyonix.composerust.foundation.codeEvents
 import dev.darkpyonix.composerust.protocol.CodeEditorRecords
 import dev.darkpyonix.composerust.protocol.HostEvent
@@ -87,6 +88,10 @@ data class TableError(val code: Int, val message: String) {
         const val INVALID_ANIMATION = 11
         /** A code editor record or edit whose range, version or kind could not be honoured. */
         const val INVALID_CODE_EDIT = 12
+        /** A `Window` node placed anywhere but directly under the root. */
+        const val MISPLACED_WINDOW = 13
+        /** A node moved from the content of one `Window` into another, or out of its window. */
+        const val MOVE_BETWEEN_WINDOWS = 14
     }
 }
 
@@ -98,8 +103,20 @@ data class TableError(val code: Int, val message: String) {
  */
 class NodeTable {
     private val nodes = mutableStateMapOf<Int, Node>()
+
+    /** The code editors among them, so that what they report is collected without a walk of the tree. */
+    private val codeNodes = LinkedHashMap<Int, Node>()
     private val rootChildren = mutableStateListOf<Int>()
     private val errors = mutableListOf<TableError>()
+
+    /**
+     * The theme each `Window` node overrides the application's with. A window with
+     * no entry follows [theme]. Dropped with the node, so a closed window leaves nothing here.
+     */
+    private val windowThemes = mutableStateMapOf<Int, Theme>()
+
+    /** The `FocusWindow` commands of the batch just applied; the window manager drains them. */
+    private val focusRequests = mutableListOf<Int>()
 
     /**
      * What applying a batch gave a code editor to say: the change an edit from the Host
@@ -158,6 +175,49 @@ class NodeTable {
     var window: Window? by mutableStateOf(null)
         private set
 
+    /** The theme the window drawn for the `Window` node [windowId] uses; node 0 is the application's. */
+    fun themeFor(windowId: Int): Theme? =
+        if (windowId == ROOT_ID) theme else windowThemes[windowId] ?: theme
+
+    /** True when [windowId] has a theme of its own over the application's. */
+    internal fun overridesTheme(windowId: Int): Boolean = windowThemes.containsKey(windowId)
+
+    /** How many windows hold a theme override; zero once they are all gone. */
+    internal val windowThemeCount: Int get() = windowThemes.size
+
+    /**
+     * The zoom level the application asked for the window [windowId], or null where it left
+     * the level to the renderer. Node 0 is the single window of `SetWindow`.
+     */
+    fun zoomLevelFor(windowId: Int): Int? {
+        if (windowId == ROOT_ID) return window?.zoomLevel
+        val level = (nodes[windowId]?.props?.get(PropertyKind.WindowZoomLevel) as? PropertyValue.Integer)?.value
+        return level?.toInt()?.coerceIn(-8, 8)
+    }
+
+    /**
+     * The `Window` node the node [nodeId] is drawn in, itself included, or null for a node
+     * that sits in none (every node of a single window application).
+     */
+    fun windowOf(nodeId: Int): Int? {
+        var current = nodeId
+        var steps = nodes.size + 1
+        while (current != ROOT_ID && steps-- > 0) {
+            val node = nodes[current] ?: return null
+            if (node.widget == WidgetKind.Window) return current
+            current = node.parentId
+        }
+        return null
+    }
+
+    /** The `FocusWindow` commands applied since the last call, in order. */
+    internal fun drainFocusRequests(): List<Int> {
+        if (focusRequests.isEmpty()) return emptyList()
+        val drained = focusRequests.toList()
+        focusRequests.clear()
+        return drained
+    }
+
     /** Top-level nodes, in creation order until the Host parents them. */
     val roots: List<Int> get() = rootChildren
 
@@ -165,6 +225,9 @@ class NodeTable {
 
     /** Events code editors queued while a batch was applied; drained after it commits. */
     internal fun drainEvents(): List<HostEvent> {
+        // What is reported as where it ended up, the selection and the lines on screen, is
+        // said once for the whole batch: several moves in it are one report.
+        if (codeNodes.isNotEmpty()) for (node in codeNodes.values.toList()) collectCode(node, includeReports = true)
         if (outbox.isEmpty()) return emptyList()
         val drained = outbox.toList()
         outbox.clear()
@@ -192,9 +255,12 @@ class NodeTable {
     fun clear() {
         animations.clear()
         nodes.clear()
+        codeNodes.clear()
         rootChildren.clear()
         errors.clear()
         outbox.clear()
+        windowThemes.clear()
+        focusRequests.clear()
         assets.clear()
         messages.clear()
         theme = null
@@ -229,6 +295,12 @@ class NodeTable {
             // the batch is applied the window already looks the way it says. Keeping it
             // here as well is what lets a later rebuild change it.
             is Mutation.SetWindow -> window = mutation.window
+            // A theme for one window, and bringing one forward. The theme is kept with the
+            // window's node and read by the scene drawn for it; the focus request waits for
+            // the window manager, which owns the platform windows, and is acted on after
+            // the batch.
+            is Mutation.SetWindowTheme -> setWindowTheme(mutation)
+            is Mutation.FocusWindow -> focusWindow(mutation)
             // The bytes are read here, once, and never again: what a frame carries is the
             // id. A kind this Renderer cannot read, or a release of something that was
             // never registered, is reported and the rest of the batch still applies.
@@ -260,7 +332,72 @@ class NodeTable {
             // A request against the editor's document, which the editor may refuse. What
             // it did is reported once the batch is applied.
             is Mutation.EditCode -> editCode(mutation)
+
+            // The editor's selection and scroll are this side's, so these are requests
+            // too: each is checked against the document and refused, with a protocol
+            // error, where it names a place that is not in it.
+            is Mutation.SetSelection -> codeNode(mutation.nodeId, "SetSelection")?.let { (node, code) ->
+                code.hostSetSelection(
+                    mutation.baseVersion,
+                    mutation.anchorLine,
+                    mutation.anchorColumn,
+                    mutation.activeLine,
+                    mutation.activeColumn,
+                )
+                collectCode(node)
+            }
+            is Mutation.RevealRange -> codeNode(mutation.nodeId, "RevealRange")?.let { (node, code) ->
+                code.hostReveal(
+                    mutation.baseVersion,
+                    CodePosition(mutation.startLine, mutation.startColumn),
+                    CodePosition(mutation.endLine, mutation.endColumn),
+                    mutation.align,
+                )
+                collectCode(node)
+            }
+            is Mutation.SetFolded -> codeNode(mutation.nodeId, "SetFolded")?.let { (node, code) ->
+                code.hostSetFolded(mutation.startLine, mutation.collapsed)
+                collectCode(node)
+            }
         }
+    }
+
+    private fun windowNode(nodeId: Int, command: String): Node? {
+        val node = nodes[nodeId] ?: run {
+            fail(TableError.UNKNOWN_NODE, "$command for unknown node $nodeId")
+            return null
+        }
+        if (node.widget != WidgetKind.Window) {
+            fail(TableError.UNSUPPORTED_PROPERTY, "$command on ${node.widget}")
+            return null
+        }
+        return node
+    }
+
+    private fun setWindowTheme(mutation: Mutation.SetWindowTheme) {
+        windowNode(mutation.nodeId, "SetWindowTheme") ?: return
+        windowThemes[mutation.nodeId] = mutation.theme
+        mutation.theme.paletteProblems.forEach { problem ->
+            fail(TableError.INVALID_PALETTE, "window ${mutation.nodeId} theme palette: $problem")
+        }
+    }
+
+    private fun focusWindow(mutation: Mutation.FocusWindow) {
+        windowNode(mutation.nodeId, "FocusWindow") ?: return
+        focusRequests += mutation.nodeId
+    }
+
+    /** The code editor a command names, or null after reporting that it names none. */
+    private fun codeNode(nodeId: Int, command: String): Pair<Node, CodeEditorModel>? {
+        val node = nodes[nodeId] ?: run {
+            fail(TableError.UNKNOWN_NODE, "$command for unknown node $nodeId")
+            return null
+        }
+        val code = node.code ?: run {
+            fail(TableError.UNSUPPORTED_PROPERTY, "$command on ${node.widget}")
+            return null
+        }
+        return node to code
     }
 
     private fun editCode(mutation: Mutation.EditCode) {
@@ -307,14 +444,28 @@ class NodeTable {
                     }
                 } ?: emptyList(),
             )
+            PropertyKind.Folds -> code.setFolds(
+                (value as? PropertyValue.Bytes)?.value?.let { bytes ->
+                    CodeEditorRecords.decodeFolds(bytes) { message ->
+                        fail(TableError.INVALID_CODE_EDIT, "folds on node ${node.id}: $message")
+                    }
+                } ?: emptyList(),
+            )
+            PropertyKind.GutterDecorations -> code.setGutterDecorations(
+                (value as? PropertyValue.Bytes)?.value?.let { bytes ->
+                    CodeEditorRecords.decodeGutterDecorations(bytes) { message ->
+                        fail(TableError.INVALID_CODE_EDIT, "gutter decorations on node ${node.id}: $message")
+                    }
+                } ?: emptyList(),
+            )
             else -> return
         }
         collectCode(node)
     }
 
-    private fun collectCode(node: Node) {
+    private fun collectCode(node: Node, includeReports: Boolean = false) {
         val code = node.code ?: return
-        outbox += node.codeEvents(code.drainOutput()) { message ->
+        outbox += node.codeEvents(code.drainOutput(includeReports)) { message ->
             fail(TableError.INVALID_CODE_EDIT, "code editor ${node.id}: $message")
         }
     }
@@ -324,7 +475,9 @@ class NodeTable {
             fail(TableError.DUPLICATE_NODE, "node ${mutation.nodeId} already exists")
             return
         }
-        nodes[mutation.nodeId] = Node(mutation.nodeId, mutation.widget)
+        val created = Node(mutation.nodeId, mutation.widget)
+        nodes[mutation.nodeId] = created
+        if (created.code != null) codeNodes[mutation.nodeId] = created
         // A node the Host never inserts stays a root. The Host has no mutation that attaches
         // the application root, so the first created node is what the Renderer draws.
         // There is no mutation that attaches a root, so roots are inferred here.
@@ -402,6 +555,22 @@ class NodeTable {
             fail(TableError.UNKNOWN_NODE, "Insert into unknown parent $parentId")
             return
         }
+        // A window is a child of the root and nothing else, and what is drawn in one
+        // window cannot be moved into another: a composition is per window and Compose has
+        // no way to hand a node from one scene to the next. Both are the Host's
+        // mistake; the tree is left as it was and the process goes on.
+        if (nodes[nodeId]?.widget == WidgetKind.Window && parentId != ROOT_ID) {
+            fail(TableError.MISPLACED_WINDOW, "Window $nodeId must be a child of the root, not of $parentId")
+            return
+        }
+        val from = windowOf(nodes[nodeId]?.parentId ?: ROOT_ID)
+        if (from != null && from != windowOf(parentId)) {
+            fail(
+                TableError.MOVE_BETWEEN_WINDOWS,
+                "node $nodeId cannot move from window $from to $parentId",
+            )
+            return
+        }
         // A node cannot be placed under itself or under one of its own descendants: the
         // parent chain would then have no root, and anything that follows it, drawing the
         // tree or walking up from a node, recurses until the stack runs out. The tree the
@@ -438,6 +607,8 @@ class NodeTable {
 
     private fun removeSubtree(nodeId: Int) {
         val node = nodes.remove(nodeId) ?: return
+        codeNodes.remove(nodeId)
+        if (node.widget == WidgetKind.Window) windowThemes.remove(nodeId)
         animations.removeNode(nodeId)
         materials -= node.modifiers.count { it is ProtocolModifier.Material }
         node.children.toList().forEach(::removeSubtree)
@@ -541,6 +712,10 @@ class NodeTable {
                 PropertyKind.PointerKinds,
                 PropertyKind.Cursor,
                 PropertyKind.UserSelect,
+                // A dragged window passing over a node, and the key a node is pulled out
+                // into a window under, belong to the same containers a pointer can sit over.
+                PropertyKind.OnWindowDragOver,
+                PropertyKind.TearOffKey,
                 -> widget == WidgetKind.Text ||
                     widget == WidgetKind.Column ||
                     widget == WidgetKind.Row ||
@@ -608,6 +783,11 @@ class NodeTable {
                 -> widget == WidgetKind.Text ||
                     widget == WidgetKind.Button ||
                     widget == WidgetKind.TextField ||
+                    // A chip's label takes a line limit and an overflow, as a button's does.
+                    (
+                        widget == WidgetKind.Chip &&
+                            (property == PropertyKind.MaxLines || property == PropertyKind.Overflow)
+                        ) ||
                     // An icon takes a tint through the same Paint attribute text does, and
                     // so does a destination: its icon and label are properties rather than
                     // a child tree, so there is no Text node underneath to colour instead.
@@ -664,7 +844,19 @@ class NodeTable {
                     // over.
                     widget == WidgetKind.SplitPane ||
                     // An indicator's value is how far along it is, and it has no range.
-                    (property == PropertyKind.Value && widget == WidgetKind.ProgressIndicator)
+                    (property == PropertyKind.Value && widget == WidgetKind.ProgressIndicator) ||
+                    // A scroll container's target scroll offset in dp when the Host asks
+                    // to jump or animate to a position.
+                    (
+                        property == PropertyKind.Value &&
+                            (widget == WidgetKind.ScrollColumn || widget == WidgetKind.ScrollRow)
+                        ) ||
+                    // A Canvas's reference coordinate space (width in Min, height in Max)
+                    // when its commands are written in fractional or view-box coordinates.
+                    (
+                        (property == PropertyKind.Min || property == PropertyKind.Max) &&
+                            widget == WidgetKind.Canvas
+                        )
 
                 // One boolean for the three toggles: a selected radio button and a switch
                 // that is on are the same fact.
@@ -672,15 +864,21 @@ class NodeTable {
                     widget == WidgetKind.Checkbox ||
                         widget == WidgetKind.RadioButton ||
                         widget == WidgetKind.Switch ||
-                        // A chosen chip is the same fact again. It is the Host's, so it
-                        // arrives here and is never set by the chip itself.
-                        widget == WidgetKind.Chip
+                        // A chosen chip or a selected menu item is the same fact again.
+                        widget == WidgetKind.Chip ||
+                        widget == WidgetKind.Button
 
                 PropertyKind.Steps -> widget == WidgetKind.Slider
 
                 PropertyKind.Determinate,
                 PropertyKind.Circular,
-                -> widget == WidgetKind.ProgressIndicator
+                -> widget == WidgetKind.ProgressIndicator ||
+                    // On a scroll container, Determinate says whether a requested scroll
+                    // animates or jumps immediately.
+                    (
+                        property == PropertyKind.Determinate &&
+                            (widget == WidgetKind.ScrollColumn || widget == WidgetKind.ScrollRow)
+                        )
 
                 PropertyKind.Vertical -> widget == WidgetKind.Divider
 
@@ -730,9 +928,10 @@ class NodeTable {
 
                 // What text laid out by CSS needs: its own fonts, where its lines may
                 // break, its tab stops, sizes the system's font scale leaves alone, and
-                // whether it wraps at all. Only a Text: a control's label is set by the
-                // design system.
-                PropertyKind.Font,
+                // whether it wraps at all. A Text, and its own list of fonts on a TextField
+                // A control's label is set by the design system.
+                PropertyKind.Font -> widget == WidgetKind.Text || widget == WidgetKind.TextField
+
                 PropertyKind.SpanFonts,
                 PropertyKind.WordBreak,
                 PropertyKind.OverflowWrap,
@@ -744,11 +943,20 @@ class NodeTable {
                 // How large an HTML island is drawn. Only the island's root has one.
                 PropertyKind.IslandZoom -> widget == WidgetKind.AbsoluteBox
 
-                // How many a badge counts. Nothing else counts anything.
-                PropertyKind.Count -> widget == WidgetKind.Badge
+                // How many a badge counts, or the revision of a programmatic scroll request.
+                PropertyKind.Count ->
+                    widget == WidgetKind.Badge ||
+                        widget == WidgetKind.ScrollColumn ||
+                        widget == WidgetKind.ScrollRow
 
-                // Whether a split pane's side pane may be folded away.
-                PropertyKind.Collapsible -> widget == WidgetKind.SplitPane
+                // Whether a split pane's side pane may be folded away, a dropdown rests as
+                // a closed field on every design system, or a linear layout sizes its cross
+                // axis to its largest child.
+                PropertyKind.Collapsible ->
+                    widget == WidgetKind.SplitPane ||
+                        widget == WidgetKind.Dropdown ||
+                        widget == WidgetKind.Row ||
+                        widget == WidgetKind.Column
 
                 // What a button is apart from its emphasis: a plain one, or a key of a
                 // dense grid. Only a button has a kind; a chip or a floating action is
@@ -763,6 +971,13 @@ class NodeTable {
                 PropertyKind.OnHover,
                 PropertyKind.OnSave,
                 PropertyKind.OnDecorationClick,
+                PropertyKind.Folds,
+                PropertyKind.GutterDecorations,
+                PropertyKind.OnSelectionChange,
+                PropertyKind.OnVisibleRangeChange,
+                PropertyKind.OnEditorFocusChange,
+                PropertyKind.OnFoldChange,
+                PropertyKind.OnCompositionChange,
                 -> widget == WidgetKind.CodeEditor
 
                 // Files over a node and files let go on it. Only the widget that exists
@@ -777,6 +992,27 @@ class NodeTable {
                 PropertyKind.Columns,
                 PropertyKind.MinColumnWidth,
                 -> widget == WidgetKind.LazyGrid
+
+                // A window's own properties and handlers. The platform
+                // layer reads them; the table only keeps them on the node.
+                PropertyKind.WindowTitle,
+                PropertyKind.WindowSize,
+                PropertyKind.WindowMinSize,
+                PropertyKind.WindowResizable,
+                PropertyKind.WindowChrome,
+                PropertyKind.WindowTitleBar,
+                PropertyKind.WindowIcon,
+                PropertyKind.WindowPosition,
+                PropertyKind.WindowRestoreKey,
+                PropertyKind.WindowZoomLevel,
+                PropertyKind.DragFromPointer,
+                PropertyKind.OnWindowCloseRequested,
+                PropertyKind.OnWindowFocusChanged,
+                PropertyKind.OnWindowMoved,
+                PropertyKind.OnWindowDrag,
+                PropertyKind.OnWindowUnavailable,
+                PropertyKind.OnWindowClosed,
+                -> widget == WidgetKind.Window
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.
