@@ -28,6 +28,7 @@ impl DioxusRuntime {
         // Edits queued against an editor of a runtime that is going away name nothing in
         // this one.
         crate::hooks::reset_edits();
+        crate::hooks::clear_scope_windows();
         Self {
             dom: VirtualDom::new(app),
             renderer: ComposeRenderer::new(),
@@ -54,6 +55,95 @@ impl DioxusRuntime {
             }
         });
     }
+
+    fn bind_window_scopes(&mut self) {
+        let unresolved = crate::hooks::take_unresolved_scopes();
+        if unresolved.is_empty() || !self.renderer.has_windows() {
+            return;
+        }
+        let mut bound_any = false;
+        for scope in unresolved {
+            if let Some(window) = find_scope_window(&self.dom, &self.renderer, scope)
+                && window != 0
+            {
+                crate::hooks::record_scope_window(scope, window);
+                self.dom.mark_dirty(scope);
+                bound_any = true;
+            }
+        }
+        if bound_any {
+            self.dom.render_immediate(&mut self.renderer);
+            let _ = crate::hooks::take_unresolved_scopes();
+        }
+    }
+
+    fn flush_window_commands(&mut self) {
+        let renderer = &mut self.renderer;
+        crate::hooks::drain_window_commands(|cmd| {
+            renderer.apply_window_command(cmd);
+        });
+    }
+
+    fn finalize_frame(&mut self) {
+        crate::hooks::set_active_window(0);
+        self.bind_window_scopes();
+        self.flush_code_edits();
+        self.flush_window_commands();
+        crate::html_view::draw_islands(&mut self.renderer);
+        self.renderer.check_windows();
+        let _ = self.renderer.take_forgotten_windows();
+    }
+}
+
+fn find_scope_window(dom: &VirtualDom, renderer: &ComposeRenderer, scope: ScopeId) -> Option<u32> {
+    let vnode = dom.get_scope(scope)?.try_root_node()?;
+    find_vnode_window(dom, renderer, vnode)
+}
+
+fn find_vnode_window(
+    dom: &VirtualDom,
+    renderer: &ComposeRenderer,
+    vnode: &dioxus_core::VNode,
+) -> Option<u32> {
+    for root_idx in 0..vnode.template.roots.len() {
+        if let Some(el) = vnode.mounted_root(root_idx, dom)
+            && let Some(node_id) = renderer.node_id_of(el)
+        {
+            let win = renderer.window_of(node_id);
+            if win != 0 {
+                return Some(win);
+            }
+        }
+        if let Some(dyn_id) = vnode.template.roots[root_idx].dynamic_id() {
+            match &vnode.dynamic_nodes[dyn_id] {
+                dioxus_core::DynamicNode::Component(comp) => {
+                    if let Some(child_scope) = comp.mounted_scope_id(dyn_id, vnode, dom)
+                        && let Some(win) = find_scope_window(dom, renderer, child_scope)
+                    {
+                        return Some(win);
+                    }
+                }
+                dioxus_core::DynamicNode::Fragment(children) => {
+                    for child in children {
+                        if let Some(win) = find_vnode_window(dom, renderer, child) {
+                            return Some(win);
+                        }
+                    }
+                }
+                dioxus_core::DynamicNode::Text(_) | dioxus_core::DynamicNode::Placeholder(_) => {
+                    if let Some(el) = vnode.mounted_dynamic_node(dyn_id, dom)
+                        && let Some(node_id) = renderer.node_id_of(el)
+                    {
+                        let win = renderer.window_of(node_id);
+                        if win != 0 {
+                            return Some(win);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 impl Runtime for DioxusRuntime {
@@ -67,14 +157,12 @@ impl Runtime for DioxusRuntime {
 
     fn rebuild(&mut self) {
         self.dom.rebuild(&mut self.renderer);
-        self.flush_code_edits();
-        crate::html_view::draw_islands(&mut self.renderer);
+        self.finalize_frame();
     }
 
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
         self.dom.render_immediate(&mut self.renderer);
-        self.flush_code_edits();
-        crate::html_view::draw_islands(&mut self.renderer);
+        self.finalize_frame();
     }
 
     fn handle_event(&mut self, event: &HostEvent<'_>) -> Result<i64, ProtocolError> {
@@ -86,6 +174,10 @@ impl Runtime for DioxusRuntime {
 
     fn size_token(&self, node_id: u32) -> Option<u32> {
         self.renderer.size_token(node_id)
+    }
+
+    fn is_window(&self, node_id: u32) -> bool {
+        self.renderer.is_window(node_id)
     }
 
     fn poll_work(&mut self, context: &mut Context<'_>) -> Poll<()> {
@@ -293,6 +385,78 @@ pub(crate) fn deliver_event(
         EventPayload::CompositionChanged { composing } => {
             Event::new(Rc::new(composing), true).into_any()
         }
+        EventPayload::WindowCloseRequested
+        | EventPayload::WindowUnavailable
+        | EventPayload::WindowClosed => Event::new(Rc::new(()), true).into_any(),
+        EventPayload::WindowFocusChanged { focused } => {
+            Event::new(Rc::new(focused), true).into_any()
+        }
+        EventPayload::WindowMoved {
+            x,
+            y,
+            width,
+            height,
+        } => Event::new(
+            Rc::new(compose_rust::windows::WindowFrame {
+                x,
+                y,
+                width,
+                height,
+            }),
+            true,
+        )
+        .into_any(),
+        EventPayload::WindowDrag {
+            phase,
+            screen_x,
+            screen_y,
+            over_window,
+        } => {
+            let phase = match phase {
+                compose_rust::protocol::WINDOW_DRAG_MOVE => {
+                    compose_rust::windows::WindowDragPhase::Move
+                }
+                compose_rust::protocol::WINDOW_DRAG_END => {
+                    compose_rust::windows::WindowDragPhase::End
+                }
+                compose_rust::protocol::WINDOW_DRAG_CANCEL => {
+                    compose_rust::windows::WindowDragPhase::Cancel
+                }
+                _ => return Err(ProtocolError::InvalidValueKind(0)),
+            };
+            Event::new(
+                Rc::new(compose_rust::windows::WindowDragEvent {
+                    phase,
+                    screen_x,
+                    screen_y,
+                    over_window,
+                }),
+                true,
+            )
+            .into_any()
+        }
+        EventPayload::WindowDragOver { kind, window, x, y } => {
+            let kind = match kind {
+                compose_rust::protocol::WINDOW_DRAG_OVER_ENTER => {
+                    compose_rust::windows::WindowDragOverKind::Enter
+                }
+                compose_rust::protocol::WINDOW_DRAG_OVER_MOVE => {
+                    compose_rust::windows::WindowDragOverKind::Move
+                }
+                compose_rust::protocol::WINDOW_DRAG_OVER_LEAVE => {
+                    compose_rust::windows::WindowDragOverKind::Leave
+                }
+                compose_rust::protocol::WINDOW_DRAG_OVER_DROP => {
+                    compose_rust::windows::WindowDragOverKind::Drop
+                }
+                _ => return Err(ProtocolError::InvalidValueKind(0)),
+            };
+            Event::new(
+                Rc::new(compose_rust::windows::WindowDragOver { kind, window, x, y }),
+                true,
+            )
+            .into_any()
+        }
         // The Host answers these itself and never hands them to a runtime: a zoom report
         // updates the state `use_zoom` and every island read, and wakes them, before any
         // runtime is asked. One that arrives here was addressed to a handler, which none
@@ -307,10 +471,13 @@ pub(crate) fn deliver_event(
         | EventPayload::NotificationPermissionChanged(_)
         | EventPayload::AnimationEvent { .. }
         | EventPayload::ReducedMotionChanged(_)
-        | EventPayload::ZoomChanged { .. } => {
+        | EventPayload::ZoomChanged { .. }
+        | EventPayload::WindowRequested { .. }
+        | EventPayload::ApplicationReopen => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };
+    let _window_guard = crate::hooks::ActiveWindowGuard::enter(renderer.window_of(node_id));
     dom.runtime().handle_event(name, event_data, element);
     Ok(i64::from(
         key_event.is_some_and(|event| event.consumed())
@@ -350,6 +517,12 @@ impl Host {
     /// Material 3 where the platform has no look of its own.
     pub fn with_theme(app: fn() -> Element, theme: Theme) -> Self {
         Self(compose_rust::Host::with_theme(runtime_for(app), theme))
+    }
+
+    /// Sets the window record the Host emits on rebuild.
+    pub fn with_window(mut self, window: Window) -> Self {
+        self.0.set_window(window);
+        self
     }
 
     pub fn into_inner(self) -> compose_rust::Host {
@@ -408,6 +581,23 @@ impl LaunchBuilder {
     pub fn with_window(self, window: Window) -> Self {
         Self {
             core: self.core.with_window(window),
+            ..self
+        }
+    }
+
+    /// Runs the application in multi-window mode, where every direct child of the root is
+    /// a `window` element.
+    pub fn windows(self) -> Self {
+        Self {
+            core: self.core.windows(),
+            ..self
+        }
+    }
+
+    /// Sets what the Renderer loop does when the last open window closes.
+    pub fn on_last_window_closed(self, policy: compose_rust::windows::LastWindowClosed) -> Self {
+        Self {
+            core: self.core.on_last_window_closed(policy),
             ..self
         }
     }

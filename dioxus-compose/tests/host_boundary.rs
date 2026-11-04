@@ -108,7 +108,9 @@ impl MockRenderer {
                 | Mutation::EditCode { .. }
                 | Mutation::SetSelection { .. }
                 | Mutation::RevealRange { .. }
-                | Mutation::SetFolded { .. } => {}
+                | Mutation::SetFolded { .. }
+                | Mutation::SetWindowTheme { .. }
+                | Mutation::FocusWindow { .. } => {}
             }
         }
     }

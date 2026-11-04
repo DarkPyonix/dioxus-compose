@@ -43,14 +43,78 @@ pub use dioxus_core::{Element, VirtualDom};
 // to compile on a macro it never typed, and the fix is to add `dioxus-core-macro` as a
 // second dependency, which defeats the promise that one dependency is enough.
 pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
+pub use compose_rust::schema::TitleBar;
 pub use dioxus_core_macro::{Props, component, rsx};
+pub use elements::window;
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
+
+/// Marker types for `IntoAttributeValue` implementations on window element properties.
+pub mod window_attr_markers {
+    use dioxus_core::{AttributeValue, IntoAttributeValue};
+
+    pub struct PairF32;
+    pub struct PairF64;
+    pub struct PairI32;
+    pub struct ChromeAttr;
+    pub struct TitleBarAttr;
+    pub struct DragAttr;
+    pub struct DragTupleAttr;
+    pub struct ThemeAttr;
+
+    macro_rules! impl_attr {
+        ($marker:ty, $ty:ty, |$val:ident| $body:expr) => {
+            impl IntoAttributeValue<$marker> for $ty {
+                fn into_value(self) -> AttributeValue {
+                    let $val = self;
+                    $body
+                }
+            }
+
+            impl IntoAttributeValue<$marker> for Option<$ty> {
+                fn into_value(self) -> AttributeValue {
+                    match self {
+                        Some($val) => $body,
+                        None => AttributeValue::None,
+                    }
+                }
+            }
+        };
+    }
+
+    impl_attr!(PairF32, (f32, f32), |v| AttributeValue::any_value(v));
+    impl_attr!(PairF64, (f64, f64), |v| AttributeValue::any_value((
+        v.0 as f32, v.1 as f32
+    )));
+    impl_attr!(PairI32, (i32, i32), |v| AttributeValue::any_value((
+        v.0 as f32, v.1 as f32
+    )));
+    impl_attr!(ChromeAttr, compose_rust::schema::Chrome, |v| {
+        AttributeValue::Int(i64::from(v as u16))
+    });
+    impl_attr!(TitleBarAttr, compose_rust::schema::TitleBar, |v| {
+        AttributeValue::Int(i64::from(v as u16))
+    });
+    impl_attr!(DragAttr, compose_rust::windows::DragFromPointer, |v| {
+        AttributeValue::any_value(v)
+    });
+    impl_attr!(DragTupleAttr, (u32, f32, f32), |v| {
+        AttributeValue::any_value(compose_rust::windows::DragFromPointer {
+            pointer_id: v.0,
+            anchor_x: v.1,
+            anchor_y: v.2,
+        })
+    });
+    impl_attr!(ThemeAttr, compose_rust::schema::Theme, |v| {
+        AttributeValue::any_value(v)
+    });
+}
 pub use hooks::{
-    Animated, CodeEditorHandle, animate_color_as_state, animate_float_as_state,
-    animate_offset_as_state, use_animation_event, use_code_editor, use_design_system,
-    use_node_size, use_notification_activated, use_notification_permission, use_reduced_motion,
-    use_theme, use_window_size, use_zoom,
+    Animated, CodeEditorHandle, WindowHandle, ZoomHandle, animate_color_as_state,
+    animate_float_as_state, animate_offset_as_state, current_window, use_animation_event,
+    use_application_reopen, use_code_editor, use_design_system, use_node_size,
+    use_notification_activated, use_notification_permission, use_reduced_motion, use_theme,
+    use_window_requested, use_window_size, use_zoom,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use hover::{HoverHandle, use_hover};
@@ -151,19 +215,23 @@ pub mod prelude {
         Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid, LazyRow,
         LinearProgressIndicator, ListDetail, LoopMode, MaterialRole, Menu, Message,
         MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
-        PointerEvent, PointerKinds, ProgressIndicator, Props, RadioButton, RangeRequest, Row,
-        Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, ShapeRole, Sheet, Slider,
-        SpaceRole, Spacer, SplitPane, Stop, Surface, Switch, Tabs, Text, TextAlign, TextField,
-        TextOverflow, Theme, TileMode, TimePicker, Tooltip, TopAppBar, TypeRole, UserSelect,
-        WindowHeightClass, WindowSize, WindowSizeClass, Zoom, ZoomHandle, asset, brush, component,
-        launch, rsx, show_message, use_design_system, use_hover, use_node_size, use_theme,
-        use_window_size, use_zoom,
+        PointerEvent, PointerKind, PointerKinds, PointerType, ProgressIndicator, Props,
+        RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
+        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
+        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, TitleBar,
+        Tooltip, TopAppBar, TypeRole, UserSelect, WheelDeltaMode, WindowDragEvent, WindowDragOver,
+        WindowDragOverKind, WindowDragPhase, WindowEvent, WindowFrame, WindowHandle,
+        WindowHeightClass, WindowMode, WindowRequest, WindowSize, WindowSizeClass, Zoom,
+        ZoomHandle, asset, brush, component, current_window, launch, rsx, show_message,
+        use_application_reopen, use_design_system, use_hover, use_node_size, use_theme,
+        use_window_requested, use_window_size, use_zoom,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
     // this one instead. It is here because the alternative is a fully qualified path in
     // every `main`, and because `Chrome` beside it is meaningless on its own.
     pub use crate::schema::{Chrome, Window};
+    pub use crate::windows::{DragFromPointer, LastWindowClosed};
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
@@ -259,6 +327,9 @@ pub mod elements {
             pub const animated_background: AttributeDescription =
                 ("animated_background", None, false);
             pub const animated_offset: AttributeDescription = ("animated_offset", None, false);
+            pub const tear_off_key: AttributeDescription = ("tear_off_key", None, false);
+            pub const onwindowdragover: AttributeDescription = ("onwindowdragover", None, false);
+            pub const on_window_drag_over: AttributeDescription = ("onwindowdragover", None, false);
         };
     }
 
@@ -469,6 +540,41 @@ pub mod elements {
             tab_width
         ]
     );
+    // A platform window in a multi-window application, valid only directly under the root.
+    pub mod window {
+        use super::AttributeDescription;
+        pub use compose_rust::window::{
+            NodeSize, NodeSizeSubscription, WindowSize, WindowSizeSubscription, WindowSubscription,
+            next_node_token, node_size, reset_window_size, subscribe, subscribe_node,
+            subscribe_window,
+        };
+
+        pub const TAG_NAME: &str = "Window";
+        pub const NAME_SPACE: Option<&str> = None;
+        pub const title: AttributeDescription = ("title", None, false);
+        pub const size: AttributeDescription = ("size", None, false);
+        pub const min_size: AttributeDescription = ("min_size", None, false);
+        pub const resizable: AttributeDescription = ("resizable", None, false);
+        pub const chrome: AttributeDescription = ("chrome", None, false);
+        pub const title_bar: AttributeDescription = ("title_bar", None, false);
+        pub const icon: AttributeDescription = ("icon", None, false);
+        pub const position: AttributeDescription = ("position", None, false);
+        pub const restore_key: AttributeDescription = ("restore_key", None, false);
+        pub const zoom_level: AttributeDescription = ("zoom_level", None, false);
+        pub const drag_from_pointer: AttributeDescription = ("drag_from_pointer", None, false);
+        pub const theme: AttributeDescription = ("theme", None, false);
+        pub const window_title: AttributeDescription = ("window_title", None, false);
+        pub const window_size: AttributeDescription = ("window_size", None, false);
+        pub const window_min_size: AttributeDescription = ("window_min_size", None, false);
+        pub const window_resizable: AttributeDescription = ("window_resizable", None, false);
+        pub const window_chrome: AttributeDescription = ("window_chrome", None, false);
+        pub const window_title_bar: AttributeDescription = ("window_title_bar", None, false);
+        pub const window_icon: AttributeDescription = ("window_icon", None, false);
+        pub const window_position: AttributeDescription = ("window_position", None, false);
+        pub const window_restore_key: AttributeDescription = ("window_restore_key", None, false);
+        pub const window_zoom_level: AttributeDescription = ("window_zoom_level", None, false);
+        modifier_attributes!();
+    }
 
     #[doc(hidden)]
     pub mod completions {
@@ -516,6 +622,8 @@ pub mod elements {
             selectioncontainer {},
             splitpane {},
             absolutebox {},
+            codeeditor {},
+            window {},
         }
     }
 }
@@ -644,4 +752,103 @@ pub mod events {
     event!(oneditorfocuschange, bool);
     event!(onfoldchange, compose_rust::code::FoldChange);
     event!(oncompositionchange, bool);
+    // Window events and root window requests.
+    event!(onclosing, ());
+    event!(onclose_request, ());
+    event!(on_close_request, ());
+    event!(onwindowclose, ());
+    event!(onfocuschange, bool);
+    event!(on_focus_change, bool);
+    event!(onwindowfocus, bool);
+    event!(onmoved, compose_rust::windows::WindowFrame);
+    event!(on_moved, compose_rust::windows::WindowFrame);
+    event!(onwindowmoved, compose_rust::windows::WindowFrame);
+    event!(onwindowdrag, compose_rust::windows::WindowDragEvent);
+    event!(on_window_drag, compose_rust::windows::WindowDragEvent);
+    event!(onunavailable, ());
+    event!(on_unavailable, ());
+    event!(onwindowunavailable, ());
+    event!(onclosed, ());
+    event!(on_closed, ());
+    event!(onwindowclosed, ());
+
+    pub trait IntoWindowDragOver<Marker> {
+        fn into_window_drag_over(self) -> dioxus_core::AttributeValue;
+    }
+
+    impl<Marker, F: SuperInto<ListenerCallback<compose_rust::windows::WindowDragOver>, Marker>>
+        IntoWindowDragOver<ClosureMarker<Marker>> for F
+    {
+        fn into_window_drag_over(self) -> dioxus_core::AttributeValue {
+            dioxus_core::AttributeValue::Listener(self.super_into().erase())
+        }
+    }
+
+    impl IntoWindowDragOver<OptionalMarker>
+        for Option<ListenerCallback<compose_rust::windows::WindowDragOver>>
+    {
+        fn into_window_drag_over(self) -> dioxus_core::AttributeValue {
+            match self {
+                Some(callback) => dioxus_core::AttributeValue::Listener(callback.erase()),
+                None => dioxus_core::AttributeValue::None,
+            }
+        }
+    }
+
+    pub fn onwindowdragover<Marker>(handler: impl IntoWindowDragOver<Marker>) -> Attribute {
+        Attribute::new(
+            "onwindowdragover",
+            handler.into_window_drag_over(),
+            None,
+            false,
+        )
+    }
+
+    pub mod onwindowdragover {
+        use super::*;
+
+        pub fn call_with_explicit_closure<Marker, Return>(
+            handler: impl FnMut(Event<compose_rust::windows::WindowDragOver>) -> Return + 'static,
+        ) -> Attribute
+        where
+            Return: SpawnIfAsync<Marker> + 'static,
+        {
+            Attribute::new(
+                "onwindowdragover",
+                dioxus_core::AttributeValue::Listener(ListenerCallback::new(handler).erase()),
+                None,
+                false,
+            )
+        }
+    }
+
+    pub fn on_window_drag_over<Marker>(handler: impl IntoWindowDragOver<Marker>) -> Attribute {
+        Attribute::new(
+            "on_window_drag_over",
+            handler.into_window_drag_over(),
+            None,
+            false,
+        )
+    }
+
+    pub mod on_window_drag_over {
+        use super::*;
+
+        pub fn call_with_explicit_closure<Marker, Return>(
+            handler: impl FnMut(Event<compose_rust::windows::WindowDragOver>) -> Return + 'static,
+        ) -> Attribute
+        where
+            Return: SpawnIfAsync<Marker> + 'static,
+        {
+            Attribute::new(
+                "on_window_drag_over",
+                dioxus_core::AttributeValue::Listener(ListenerCallback::new(handler).erase()),
+                None,
+                false,
+            )
+        }
+    }
+
+    event!(onrequested, compose_rust::windows::WindowRequest);
+    event!(on_requested, compose_rust::windows::WindowRequest);
 }

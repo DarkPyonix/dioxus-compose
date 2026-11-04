@@ -190,6 +190,11 @@ pub struct ComposeRenderer {
     /// value is where the node starts; every later one is a change to animate.
     animated: std::collections::HashSet<(u32, &'static str)>,
     next_animation_id: u32,
+    /// The `Window` nodes currently alive in this tree.
+    windows: HashSet<u32>,
+    /// The `Window` nodes that were removed in the current frame, so the Host can drop
+    /// their per-window size and zoom subscriptions.
+    forgotten_windows: Vec<u32>,
     stack: Vec<StackNode>,
 }
 
@@ -220,8 +225,111 @@ impl ComposeRenderer {
             .iter()
             .flatten()
             .copied()
-            .filter(|&node| node != PLACEHOLDER_NODE && !self.parents.contains_key(&node))
+            .filter(|&node| {
+                node != PLACEHOLDER_NODE
+                    && self.parents.get(&node).copied().unwrap_or(PLACEHOLDER_NODE)
+                        == PLACEHOLDER_NODE
+            })
             .min()
+    }
+
+    /// Whether `node_id` is a `Window` node.
+    pub(crate) fn is_window(&self, node_id: u32) -> bool {
+        self.windows.contains(&node_id)
+    }
+
+    /// Whether any `Window` nodes exist in this tree.
+    pub(crate) fn has_windows(&self) -> bool {
+        !self.windows.is_empty()
+    }
+
+    /// The Compose node id for a mounted Dioxus `ElementId`, if any.
+    pub(crate) fn node_id_of(&self, element: ElementId) -> Option<u32> {
+        self.node(element).filter(|&id| id != PLACEHOLDER_NODE)
+    }
+
+    /// The `Window` node that contains `node_id`, or `0` if none does.
+    pub(crate) fn window_of(&self, node_id: u32) -> u32 {
+        if self.windows.is_empty() {
+            return 0;
+        }
+        let mut cur = node_id;
+        let mut steps = 0usize;
+        while cur != PLACEHOLDER_NODE {
+            if self.windows.contains(&cur) {
+                return cur;
+            }
+            let Some(&parent) = self.parents.get(&cur) else {
+                break;
+            };
+            cur = parent;
+            steps += 1;
+            if steps > self.parents.len() {
+                break;
+            }
+        }
+        0
+    }
+
+    /// Takes the `Window` node ids that were removed since the last drain.
+    pub(crate) fn take_forgotten_windows(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.forgotten_windows)
+    }
+
+    /// Writes a queued per-window command (`FocusWindow`, `SetWindowTheme`,
+    /// `WindowZoomLevel`) if the target `Window` node exists in this tree.
+    pub(crate) fn apply_window_command(&mut self, cmd: crate::hooks::PendingWindowCommand) {
+        use crate::hooks::PendingWindowCommand;
+        match cmd {
+            PendingWindowCommand::Focus(node_id) => {
+                if self.windows.contains(&node_id) {
+                    self.write(Mutation::FocusWindow { node_id });
+                }
+            }
+            PendingWindowCommand::Theme(node_id, theme) => {
+                if self.windows.contains(&node_id) {
+                    self.write(Mutation::SetWindowTheme { node_id, theme });
+                }
+            }
+            PendingWindowCommand::ZoomLevel(node_id, level) => {
+                if self.windows.contains(&node_id) {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property: PropertyKind::WindowZoomLevel,
+                        value: PropertyValue::Integer(i64::from(level)),
+                    });
+                }
+            }
+        }
+    }
+
+    /// Verifies that every live `Window` node has a close-request handler attached.
+    pub(crate) fn check_windows(&mut self) {
+        for &window_id in &self.windows {
+            let has_close = self.handlers.iter().any(|handler| {
+                handler.node_id == window_id
+                    && event_property(handler.name) == Some(PropertyKind::OnWindowCloseRequested)
+            });
+            if !has_close {
+                self.batch.fail(ProtocolError::InvalidProperty(
+                    PropertyKind::OnWindowCloseRequested as u16,
+                ));
+                return;
+            }
+        }
+    }
+
+    fn refresh_active_window(&self) {
+        let active = self
+            .stack
+            .iter()
+            .rev()
+            .find_map(|entry| {
+                let win = self.window_of(entry.node_id);
+                (win != 0).then_some(win)
+            })
+            .unwrap_or(0);
+        crate::hooks::set_active_window(active);
     }
 
     pub fn new() -> Self {
@@ -232,11 +340,13 @@ impl ComposeRenderer {
     /// `first_handler`. A tree that shares a batch with another writer takes ids from a
     /// range of its own, so the two never name the same node.
     pub fn with_id_bases(first_node: u32, first_handler: u64) -> Self {
+        let mut nodes = Vec::with_capacity(256);
+        nodes.push(Some(PLACEHOLDER_NODE));
         Self {
             batch: Batch::new(),
             next_node_id: first_node,
             next_handler_id: first_handler,
-            nodes: Vec::with_capacity(256),
+            nodes,
             handlers: Vec::with_capacity(64),
             parents: HashMap::with_capacity(256),
             placeholders: HashMap::with_capacity(16),
@@ -261,6 +371,8 @@ impl ComposeRenderer {
             pointer_sent: HashSet::new(),
             animated: std::collections::HashSet::new(),
             next_animation_id: 1,
+            windows: HashSet::new(),
+            forgotten_windows: Vec::new(),
             stack: Vec::with_capacity(64),
         }
     }
@@ -279,6 +391,7 @@ impl ComposeRenderer {
     }
 
     pub fn finish_frame(&mut self) -> Result<&[u8], ProtocolError> {
+        self.check_windows();
         self.batch.finish()
     }
 
@@ -658,6 +771,10 @@ impl ComposeRenderer {
     fn allocate_node(&mut self, widget: WidgetKind) -> u32 {
         let id = self.next_node_id;
         self.next_node_id = self.next_node_id.checked_add(1).unwrap_or(1);
+        if widget == WidgetKind::Window {
+            self.windows.insert(id);
+            crate::hooks::set_active_window(id);
+        }
         self.write(Mutation::Create {
             node_id: id,
             widget,
@@ -785,7 +902,23 @@ impl ComposeRenderer {
         name: &str,
         value: &AttributeValue,
     ) {
-        let Some(property) = property_kind(name) else {
+        if self.windows.contains(&node_id) && name == "theme" {
+            if let AttributeValue::Any(any) = value
+                && let Some(theme) = any.as_any().downcast_ref::<compose_rust::schema::Theme>()
+            {
+                self.write(Mutation::SetWindowTheme {
+                    node_id,
+                    theme: *theme,
+                });
+            }
+            return;
+        }
+        let property = if self.windows.contains(&node_id) {
+            window_property_kind(name).or_else(|| property_kind(name))
+        } else {
+            property_kind(name)
+        };
+        let Some(property) = property else {
             // dioxus-core has no fallible WriteMutations methods. Preserve the
             // protocol error and surface it when the batch is finalized.
             self.batch.fail(ProtocolError::InvalidProperty(0));
@@ -793,7 +926,10 @@ impl ComposeRenderer {
         };
         if matches!(
             property,
-            PropertyKind::PointerKinds | PropertyKind::Cursor | PropertyKind::UserSelect
+            PropertyKind::PointerKinds
+                | PropertyKind::Cursor
+                | PropertyKind::UserSelect
+                | PropertyKind::TearOffKey
         ) {
             let key = (node_id, property as u16);
             if matches!(value, AttributeValue::None) {
@@ -803,6 +939,158 @@ impl ComposeRenderer {
             } else {
                 self.pointer_sent.insert(key);
             }
+        }
+        if matches!(
+            property,
+            PropertyKind::WindowSize | PropertyKind::WindowMinSize | PropertyKind::WindowPosition
+        ) {
+            match value {
+                AttributeValue::None => {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property,
+                        value: PropertyValue::None,
+                    });
+                }
+                AttributeValue::Any(any) => {
+                    let a = any.as_any();
+                    let pair = a
+                        .downcast_ref::<(f32, f32)>()
+                        .copied()
+                        .or_else(|| {
+                            a.downcast_ref::<(f64, f64)>()
+                                .map(|&(x, y)| (x as f32, y as f32))
+                        })
+                        .or_else(|| {
+                            a.downcast_ref::<(i32, i32)>()
+                                .map(|&(x, y)| (x as f32, y as f32))
+                        });
+                    if let Some((first, second)) = pair {
+                        let mut bytes = [0_u8; 8];
+                        bytes[0..4].copy_from_slice(&first.to_le_bytes());
+                        bytes[4..8].copy_from_slice(&second.to_le_bytes());
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(&bytes),
+                        });
+                    } else if let Some(slice) = a.downcast_ref::<[u8; 8]>() {
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(slice),
+                        });
+                    } else if let Some(vec) = a.downcast_ref::<Vec<u8>>() {
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(vec),
+                        });
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if property == PropertyKind::DragFromPointer {
+            let encode_drag = |pointer_id: u32, anchor_x: f32, anchor_y: f32| -> [u8; 12] {
+                let mut bytes = [0_u8; 12];
+                bytes[0..4].copy_from_slice(&pointer_id.to_le_bytes());
+                bytes[4..8].copy_from_slice(&anchor_x.to_le_bytes());
+                bytes[8..12].copy_from_slice(&anchor_y.to_le_bytes());
+                bytes
+            };
+            match value {
+                AttributeValue::None => {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property,
+                        value: PropertyValue::None,
+                    });
+                }
+                AttributeValue::Any(any) => {
+                    let a = any.as_any();
+                    if let Some(drag) = a.downcast_ref::<compose_rust::windows::DragFromPointer>() {
+                        let bytes = encode_drag(drag.pointer_id, drag.anchor_x, drag.anchor_y);
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(&bytes),
+                        });
+                    } else if let Some(&(pointer_id, anchor_x, anchor_y)) =
+                        a.downcast_ref::<(u32, f32, f32)>()
+                    {
+                        let bytes = encode_drag(pointer_id, anchor_x, anchor_y);
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(&bytes),
+                        });
+                    } else if let Some(slice) = a.downcast_ref::<[u8; 12]>() {
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(slice),
+                        });
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        if property == PropertyKind::WindowZoomLevel {
+            let level = match value {
+                AttributeValue::Int(n) => Some(*n as i32),
+                AttributeValue::Float(n) => Some(*n as i32),
+                AttributeValue::Any(any) => any
+                    .as_any()
+                    .downcast_ref::<i8>()
+                    .map(|&n| i32::from(n))
+                    .or_else(|| any.as_any().downcast_ref::<i32>().copied())
+                    .or_else(|| any.as_any().downcast_ref::<i64>().map(|&n| n as i32)),
+                _ => None,
+            };
+            if let Some(level) = level {
+                let clamped = i64::from(compose_rust::zoom::clamp_level(
+                    level.clamp(i32::from(i8::MIN), i32::from(i8::MAX)) as i8,
+                ));
+                self.write(Mutation::SetProp {
+                    node_id,
+                    property,
+                    value: PropertyValue::Integer(clamped),
+                });
+            }
+            return;
+        }
+        if matches!(
+            property,
+            PropertyKind::WindowChrome | PropertyKind::WindowTitleBar | PropertyKind::WindowIcon
+        ) {
+            let number = match value {
+                AttributeValue::Int(n) => Some(*n),
+                AttributeValue::Float(n) => Some(*n as i64),
+                AttributeValue::Any(any) => {
+                    let a = any.as_any();
+                    if let Some(&chrome) = a.downcast_ref::<compose_rust::schema::Chrome>() {
+                        Some(i64::from(chrome as u16))
+                    } else if let Some(&tb) = a.downcast_ref::<compose_rust::schema::TitleBar>() {
+                        Some(i64::from(tb as u16))
+                    } else if let Some(&id) = a.downcast_ref::<u32>() {
+                        Some(i64::from(id))
+                    } else {
+                        a.downcast_ref::<u16>().map(|&v| i64::from(v))
+                    }
+                }
+                _ => None,
+            };
+            if let Some(number) = number {
+                self.write(Mutation::SetProp {
+                    node_id,
+                    property,
+                    value: PropertyValue::Integer(number),
+                });
+            }
+            return;
         }
         if let AttributeValue::Any(value) = value {
             let any = value.as_any();
@@ -1047,6 +1335,10 @@ impl ComposeRenderer {
     fn forget(&mut self, node_id: u32) {
         self.parents.remove(&node_id);
         self.sent_text.remove(&node_id);
+        if self.windows.remove(&node_id) {
+            self.forgotten_windows.push(node_id);
+            crate::hooks::remove_window_scopes(node_id);
+        }
         if self.link_handlers.remove(&node_id).is_some() {
             self.handlers.retain(|handler| handler.node_id != node_id);
         }
@@ -1067,6 +1359,7 @@ impl ComposeRenderer {
     fn insert_stack(&mut self, parent: u32, position: usize, count: usize) {
         let start = self.stack.len().saturating_sub(count);
         let nodes: Vec<_> = self.stack.drain(start..).collect();
+        self.refresh_active_window();
         let mut at = position;
         for node in nodes {
             at = self.insert_node(parent, node.node_id, at, node.element) + 1;
@@ -1091,8 +1384,26 @@ impl ComposeRenderer {
             };
             return self.attach(parent, Slot::Hole(element.0), position);
         }
-        let moving = self.parents.contains_key(&node_id);
+        if self.windows.contains(&node_id) && parent != PLACEHOLDER_NODE {
+            self.batch.fail(ProtocolError::MisplacedWindow);
+            return position;
+        }
+        let existing_parent = self.parents.get(&node_id).copied();
+        if let Some(from) = existing_parent
+            && from != parent
+        {
+            let leaving = self.window_of(from);
+            let entering = self.window_of(parent);
+            if leaving != entering && leaving != 0 && entering != 0 {
+                self.batch.fail(ProtocolError::MisplacedWindow);
+                return position;
+            }
+        }
+        let moving = existing_parent.is_some();
         let at = self.attach(parent, Slot::Node(node_id), position);
+        if parent == PLACEHOLDER_NODE && !self.windows.contains(&node_id) {
+            return at;
+        }
         let index = self.drawn_before(parent, at);
         self.write(if moving {
             Mutation::Move {
@@ -1205,6 +1516,7 @@ impl WriteMutations for ComposeRenderer {
                 element: None,
                 paths,
             });
+            self.refresh_active_window();
         }
     }
 
@@ -1249,6 +1561,7 @@ impl WriteMutations for ComposeRenderer {
                 list.remove(position);
             }
             self.insert_stack(parent, position, m);
+            self.refresh_active_window();
         }
     }
 
@@ -1296,7 +1609,10 @@ impl WriteMutations for ComposeRenderer {
             // The press modifier is written from the listener (`create_event_listener`),
             // so the attribute itself, which a container without a handler carries as
             // `None`, writes nothing.
-            if name == "onclickable" {
+            if matches!(
+                name,
+                "onclickable" | "onwindowdragover" | "on_window_drag_over"
+            ) {
                 return;
             }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
@@ -1427,6 +1743,23 @@ fn property_kind(name: &str) -> Option<PropertyKind> {
     PropertyKind::from_name(name).ok()
 }
 
+fn window_property_kind(name: &str) -> Option<PropertyKind> {
+    match name {
+        "title" | "window_title" => Some(PropertyKind::WindowTitle),
+        "size" | "window_size" => Some(PropertyKind::WindowSize),
+        "min_size" | "window_min_size" => Some(PropertyKind::WindowMinSize),
+        "resizable" | "window_resizable" => Some(PropertyKind::WindowResizable),
+        "chrome" | "window_chrome" => Some(PropertyKind::WindowChrome),
+        "title_bar" | "window_title_bar" => Some(PropertyKind::WindowTitleBar),
+        "icon" | "window_icon" => Some(PropertyKind::WindowIcon),
+        "position" | "window_position" => Some(PropertyKind::WindowPosition),
+        "restore_key" | "window_restore_key" => Some(PropertyKind::WindowRestoreKey),
+        "zoom_level" | "window_zoom_level" => Some(PropertyKind::WindowZoomLevel),
+        "drag_from_pointer" => Some(PropertyKind::DragFromPointer),
+        _ => None,
+    }
+}
+
 /// The chain position of the press modifier, which `modifier_for` also uses.
 const CLICKABLE_SLOT: u16 = 17;
 
@@ -1461,6 +1794,26 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "editorfocuschange" | "oneditorfocuschange" => Some(PropertyKind::OnEditorFocusChange),
         "foldchange" | "onfoldchange" => Some(PropertyKind::OnFoldChange),
         "compositionchange" | "oncompositionchange" => Some(PropertyKind::OnCompositionChange),
+        "closing" | "onclosing" | "close_request" | "onclose_request" | "on_close_request"
+        | "windowclose" | "onwindowclose" => Some(PropertyKind::OnWindowCloseRequested),
+        "focuschange" | "onfocuschange" | "on_focus_change" | "windowfocus" | "onwindowfocus" => {
+            Some(PropertyKind::OnWindowFocusChanged)
+        }
+        "moved" | "onmoved" | "on_moved" | "windowmoved" | "onwindowmoved" => {
+            Some(PropertyKind::OnWindowMoved)
+        }
+        "windowdrag" | "onwindowdrag" | "on_window_drag" => Some(PropertyKind::OnWindowDrag),
+        "unavailable"
+        | "onunavailable"
+        | "on_unavailable"
+        | "windowunavailable"
+        | "onwindowunavailable" => Some(PropertyKind::OnWindowUnavailable),
+        "closed" | "onclosed" | "on_closed" | "windowclosed" | "onwindowclosed" => {
+            Some(PropertyKind::OnWindowClosed)
+        }
+        "windowdragover" | "onwindowdragover" | "on_window_drag_over" => {
+            Some(PropertyKind::OnWindowDragOver)
+        }
         _ => None,
     }
 }
