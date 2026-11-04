@@ -227,6 +227,12 @@ pub fn Column(
     /// these nodes is not drawn yet (tracked as compose-rust #305).
     #[props(default)]
     on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         column {
@@ -235,6 +241,14 @@ pub fn Column(
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -312,6 +326,12 @@ pub fn Row(
     /// these nodes is not drawn yet (tracked as compose-rust #305).
     #[props(default)]
     on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         row {
@@ -320,6 +340,14 @@ pub fn Row(
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -394,6 +422,12 @@ pub fn ComposeBox(
     /// these nodes is not drawn yet (tracked as compose-rust #305).
     #[props(default)]
     on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         composebox {
@@ -402,6 +436,14 @@ pub fn ComposeBox(
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -999,6 +1041,12 @@ pub fn Card(
     /// these nodes is not drawn yet (tracked as compose-rust #305).
     #[props(default)]
     on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         card {
@@ -1007,6 +1055,14 @@ pub fn Card(
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -1078,6 +1134,12 @@ pub fn Surface(
     /// these nodes is not drawn yet (tracked as compose-rust #305).
     #[props(default)]
     on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         surface {
@@ -1086,6 +1148,14 @@ pub fn Surface(
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
             onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),

@@ -7,10 +7,248 @@
 //! woken by marking the component dirty.
 
 use compose_rust::notification::NotificationActivation;
-use compose_rust::schema::{DesignSystem, NotificationPermission};
+use compose_rust::schema::{DesignSystem, NotificationPermission, Theme};
 use compose_rust::theme::ThemeHandle;
 use compose_rust::window::{NodeSize, WindowSize};
+use compose_rust::windows::WindowRequest;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
+
+thread_local! {
+    /// The window node currently enclosing an event handler or a component render.
+    static ACTIVE_WINDOW: Cell<u32> = const { Cell::new(0) };
+    /// For each Dioxus scope that has rendered inside a window, the `Window` node id it
+    /// belongs to. Allows re-renders of a child component (`render_immediate`) to know
+    /// which window encloses them even when the `Window` template itself is not on the
+    /// renderer stack.
+    static SCOPE_WINDOWS: RefCell<HashMap<dioxus_core::ScopeId, u32>> =
+        RefCell::new(HashMap::new());
+    /// Scopes that ran during `SuspenseBoundary::create`'s dry-run pass (`to: None`)
+    /// before any `Window` node was created. Re-rendered right after `VirtualDom::rebuild`
+    /// once the real `Window` nodes and mounts are in place.
+    static UNRESOLVED_SCOPES: RefCell<Vec<dioxus_core::ScopeId>> =
+        const { RefCell::new(Vec::new()) };
+    /// Commands requested against a specific `Window` node (`focus`, `set_theme`,
+    /// `set_zoom_level`) waiting to be written into the current batch.
+    static WINDOW_COMMANDS: RefCell<Vec<PendingWindowCommand>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PendingWindowCommand {
+    Focus(u32),
+    Theme(u32, Theme),
+    ZoomLevel(u32, i8),
+}
+
+pub(crate) fn queue_window_command(cmd: PendingWindowCommand) {
+    WINDOW_COMMANDS.with_borrow_mut(|cmds| cmds.push(cmd));
+}
+
+pub(crate) fn drain_window_commands(mut emit: impl FnMut(PendingWindowCommand)) {
+    let mut taken = WINDOW_COMMANDS.with_borrow_mut(std::mem::take);
+    if taken.is_empty() {
+        return;
+    }
+    for cmd in taken.drain(..) {
+        emit(cmd);
+    }
+    WINDOW_COMMANDS.with_borrow_mut(|cmds| {
+        if cmds.is_empty() {
+            *cmds = taken;
+        }
+    });
+}
+
+fn pending_window_zoom_level(window: u32) -> Option<i8> {
+    WINDOW_COMMANDS.with_borrow(|cmds| {
+        cmds.iter().rev().find_map(|cmd| match *cmd {
+            PendingWindowCommand::ZoomLevel(id, level) if id == window => Some(level),
+            _ => None,
+        })
+    })
+}
+
+/// Guard that restores the previous active window when dropped.
+pub(crate) struct ActiveWindowGuard {
+    previous: u32,
+}
+
+impl ActiveWindowGuard {
+    pub(crate) fn enter(window: u32) -> Self {
+        let previous = ACTIVE_WINDOW.replace(window);
+        Self { previous }
+    }
+}
+
+impl Drop for ActiveWindowGuard {
+    fn drop(&mut self) {
+        ACTIVE_WINDOW.set(self.previous);
+    }
+}
+
+pub(crate) fn set_active_window(window: u32) {
+    ACTIVE_WINDOW.set(window);
+}
+
+pub(crate) fn clear_scope_windows() {
+    ACTIVE_WINDOW.set(0);
+    SCOPE_WINDOWS.with_borrow_mut(HashMap::clear);
+    UNRESOLVED_SCOPES.with_borrow_mut(Vec::clear);
+    WINDOW_COMMANDS.with_borrow_mut(Vec::clear);
+}
+
+pub(crate) fn take_unresolved_scopes() -> Vec<dioxus_core::ScopeId> {
+    UNRESOLVED_SCOPES.with_borrow_mut(std::mem::take)
+}
+
+pub(crate) fn record_scope_window(scope: dioxus_core::ScopeId, window: u32) {
+    if window != 0 {
+        SCOPE_WINDOWS.with_borrow_mut(|map| {
+            map.insert(scope, window);
+        });
+    }
+}
+
+pub(crate) fn remove_window_scopes(window: u32) {
+    SCOPE_WINDOWS.with_borrow_mut(|map| map.retain(|_, w| *w != window));
+    WINDOW_COMMANDS.with_borrow_mut(|cmds| {
+        cmds.retain(|cmd| match *cmd {
+            PendingWindowCommand::Focus(id)
+            | PendingWindowCommand::Theme(id, _)
+            | PendingWindowCommand::ZoomLevel(id, _) => id != window,
+        });
+    });
+}
+
+/// Resolves the `Window` node id that encloses the current component or event handler.
+pub(crate) fn resolve_current_window() -> u32 {
+    if let Some(scope) = dioxus_core::Runtime::try_current()
+        .as_ref()
+        .and_then(|rt| rt.try_current_scope_id())
+    {
+        if let Some(known) = SCOPE_WINDOWS.with_borrow(|map| map.get(&scope).copied()) {
+            return known;
+        }
+        let parent_id = dioxus_core::parent_scope();
+        if let Some(parent_id) = parent_id
+            && let Some(known) = SCOPE_WINDOWS.with_borrow(|map| map.get(&parent_id).copied())
+        {
+            SCOPE_WINDOWS.with_borrow_mut(|map| {
+                map.insert(scope, known);
+            });
+            return known;
+        }
+        let active = ACTIVE_WINDOW.get();
+        if active != 0 {
+            SCOPE_WINDOWS.with_borrow_mut(|map| {
+                map.insert(scope, active);
+            });
+            return active;
+        }
+        UNRESOLVED_SCOPES.with_borrow_mut(|list| {
+            if !list.contains(&scope) {
+                list.push(scope);
+            }
+        });
+        return 0;
+    }
+    ACTIVE_WINDOW.get()
+}
+
+/// A handle to one `Window` node, returned by [`current_window`].
+///
+/// In a single-window application its id is `0`.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct WindowHandle {
+    node_id: u32,
+}
+
+impl WindowHandle {
+    /// Creates a handle for the given `Window` node id (`0` for the single-window root).
+    pub const fn from_raw(node_id: u32) -> Self {
+        Self { node_id }
+    }
+
+    /// The `Window` node's id, or `0` in a single-window application.
+    pub const fn id(self) -> u32 {
+        self.node_id
+    }
+
+    /// Asks the Renderer to bring this window to the front and make it the key window.
+    ///
+    /// Emits one `FocusWindow` record in the batch the current call produces.
+    pub fn focus(self) {
+        if self.node_id != 0 {
+            queue_window_command(PendingWindowCommand::Focus(self.node_id));
+        }
+    }
+
+    /// Overrides the application theme for this window alone (`SetWindowTheme`).
+    ///
+    /// On the single-window root (`id == 0`), sets the application theme instead.
+    pub fn set_theme(self, theme: Theme) {
+        if self.node_id == 0 {
+            ThemeHandle::default().set(theme);
+        } else {
+            queue_window_command(PendingWindowCommand::Theme(self.node_id, theme));
+        }
+    }
+
+    /// Asks the Renderer to draw this window at `level` (`-8..=8`).
+    pub fn set_zoom_level(self, level: i8) {
+        ZoomHandle::for_window(self.node_id).set_level(level);
+    }
+
+    /// This window's size class and dimensions as last reported by the Renderer.
+    pub fn size(self) -> WindowSize {
+        if self.node_id == 0 {
+            compose_rust::window::window_size()
+        } else {
+            compose_rust::window::window_size_of(self.node_id)
+        }
+    }
+
+    /// This window's zoom factor and level as last reported by the Renderer.
+    pub fn zoom(self) -> compose_rust::Zoom {
+        if self.node_id == 0 {
+            compose_rust::zoom::zoom()
+        } else {
+            compose_rust::zoom::zoom_of(self.node_id)
+        }
+    }
+}
+
+/// The window the calling component or event handler belongs to.
+///
+/// Inside a `window { ... }` element this returns that window's [`WindowHandle`]; in a
+/// single-window application it returns the root handle (`id() == 0`).
+pub fn current_window() -> WindowHandle {
+    WindowHandle::from_raw(resolve_current_window())
+}
+
+/// Runs `handler` when the system or user asks for a new or restored window
+/// (`WindowRequested`).
+pub fn use_window_requested(handler: impl FnMut(WindowRequest) + 'static) {
+    let callback = dioxus_hooks::use_callback(handler);
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::windows::on_window_request(Rc::new(
+            move |request: WindowRequest| callback.call(request),
+        )))
+    });
+}
+
+/// Runs `handler` when the user reopens the application while it has no open windows
+/// (such as clicking the Dock icon on macOS under `LastWindowClosed::KeepRunning`).
+pub fn use_application_reopen(mut handler: impl FnMut() + 'static) {
+    let callback = dioxus_hooks::use_callback(move |(): ()| handler());
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::windows::on_application_reopen_handler(
+            Rc::new(move || callback.call(())),
+        ))
+    });
+}
 
 /// Reads the window's size class inside a component, and re-renders it when the class
 /// changes.
@@ -29,15 +267,108 @@ use std::rc::Rc;
 /// Only components that call this are woken, and only when the class actually changes.
 /// Resizing inside one class re-renders nothing.
 pub fn use_window_size() -> WindowSize {
-    // Rc, because hook state has to be `Clone` and the registration must not be
-    // duplicated: dropping the last handle with the component's hook state is what
-    // removes the subscription.
-    dioxus_core::use_hook(|| {
-        Rc::new(compose_rust::window::subscribe(
-            dioxus_core::schedule_update(),
-        ))
-    });
-    compose_rust::window::window_size()
+    let window = resolve_current_window();
+    let sub: Rc<RefCell<(u32, Option<EitherWindowSub>)>> =
+        dioxus_core::use_hook(|| Rc::new(RefCell::new((u32::MAX, None))));
+    let schedule = dioxus_core::schedule_update();
+    {
+        let mut state = sub.borrow_mut();
+        if state.0 != window || state.1.is_none() {
+            let new_sub = if window == 0 {
+                EitherWindowSub::Single(Rc::new(compose_rust::window::subscribe(schedule)))
+            } else {
+                EitherWindowSub::Multi(Rc::new(compose_rust::window::subscribe_window(
+                    window, schedule,
+                )))
+            };
+            *state = (window, Some(new_sub));
+        }
+    }
+    if window == 0 {
+        compose_rust::window::window_size()
+    } else {
+        compose_rust::window::window_size_of(window)
+    }
+}
+
+#[derive(Clone)]
+enum EitherWindowSub {
+    Single(#[allow(dead_code)] Rc<compose_rust::window::WindowSizeSubscription>),
+    Multi(#[allow(dead_code)] Rc<compose_rust::window::WindowSubscription>),
+}
+
+/// A handle on one window's zoom (or the single-window root's when `window == 0`).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ZoomHandle {
+    window: u32,
+}
+
+impl ZoomHandle {
+    /// A handle for the given `Window` node id (`0` for the single-window root).
+    pub const fn for_window(window: u32) -> Self {
+        Self { window }
+    }
+
+    /// What the Renderer last reported for this window.
+    pub fn get(&self) -> compose_rust::Zoom {
+        if self.window == 0 {
+            compose_rust::zoom::zoom()
+        } else {
+            compose_rust::zoom::zoom_of(self.window)
+        }
+    }
+
+    /// The zoom level (`-8..=8`) last reported for this window.
+    pub fn level(&self) -> i8 {
+        self.get().level
+    }
+
+    /// Sets the application zoom level for this window, kept inside its range.
+    pub fn set_level(&self, level: i8) {
+        let clamped = compose_rust::zoom::clamp_level(level);
+        if self.window == 0 {
+            compose_rust::ZoomHandle::default().set_level(clamped);
+        } else {
+            queue_window_command(PendingWindowCommand::ZoomLevel(self.window, clamped));
+        }
+    }
+
+    /// One step larger, as a "Zoom In" menu item does.
+    pub fn zoom_in(&self) {
+        if self.window == 0 {
+            compose_rust::ZoomHandle::default().zoom_in();
+        } else {
+            let cur = pending_window_zoom_level(self.window)
+                .unwrap_or_else(|| compose_rust::zoom::zoom_of(self.window).level);
+            self.set_level(cur.saturating_add(1));
+        }
+    }
+
+    /// One step smaller.
+    pub fn zoom_out(&self) {
+        if self.window == 0 {
+            compose_rust::ZoomHandle::default().zoom_out();
+        } else {
+            let cur = pending_window_zoom_level(self.window)
+                .unwrap_or_else(|| compose_rust::zoom::zoom_of(self.window).level);
+            self.set_level(cur.saturating_sub(1));
+        }
+    }
+
+    /// Back to the system's own size.
+    pub fn reset(&self) {
+        if self.window == 0 {
+            compose_rust::ZoomHandle::default().reset();
+        } else {
+            self.set_level(0);
+        }
+    }
+}
+
+#[derive(Clone)]
+enum EitherZoomSub {
+    Single(#[allow(dead_code)] Rc<compose_rust::zoom::ZoomSubscription>),
+    Multi(#[allow(dead_code)] Rc<compose_rust::zoom::WindowZoomSubscription>),
 }
 
 /// How large the screen is drawn, to read and to change while the app runs.
@@ -61,11 +392,25 @@ pub fn use_window_size() -> WindowSize {
 /// `set_level` asks the renderer to draw at a level; it rides out on the window record in
 /// the batch the handler produces, and the answer is a new report. Nothing is enlarged
 /// before the renderer answers, so reading right after a set still gives the old value.
-pub fn use_zoom() -> compose_rust::ZoomHandle {
-    dioxus_core::use_hook(|| {
-        Rc::new(compose_rust::zoom::subscribe(dioxus_core::schedule_update()))
-    });
-    compose_rust::ZoomHandle::default()
+pub fn use_zoom() -> ZoomHandle {
+    let window = resolve_current_window();
+    let sub: Rc<RefCell<(u32, Option<EitherZoomSub>)>> =
+        dioxus_core::use_hook(|| Rc::new(RefCell::new((u32::MAX, None))));
+    let schedule = dioxus_core::schedule_update();
+    {
+        let mut state = sub.borrow_mut();
+        if state.0 != window || state.1.is_none() {
+            let new_sub = if window == 0 {
+                EitherZoomSub::Single(Rc::new(compose_rust::zoom::subscribe(schedule)))
+            } else {
+                EitherZoomSub::Multi(Rc::new(compose_rust::zoom::subscribe_window(
+                    window, schedule,
+                )))
+            };
+            *state = (window, Some(new_sub));
+        }
+    }
+    ZoomHandle::for_window(window)
 }
 
 /// Follows one node's size, and re-renders this component when its class changes.
