@@ -2194,6 +2194,32 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 5. 핸들의 편집이 `EditCode` 명령 하나로 나가고, 붙어 있지 않은 핸들의 편집은 나가지 않는다.
 6. 창에 그려 한글 조합, 큰 파일, 장식을 확인하는 것은 compose-rust 38.7의 몫이고 PR #111이 병합되고 배포된 뒤에 확인한다. 그 전에는 확인하지 않았다.
 
+### FR-53 한 프로세스의 여러 창, rsx 표면 (`Draft`)
+
+추적: 이슈 #152. 렌더러와 와이어와 OS 창 다중화는 compose-rust FR-53의 것이고(compose-rust #355, #370, 위젯 태그 45, 속성 150-168, 명령 23-24, 이벤트 39-47), 이 항목은 그 위에 얹는 Dioxus `rsx!`와 훅 표면만 다룬다.
+
+#### 53.1 `window` 요소와 속성
+
+- `rsx!`에서 루트의 직접 자식으로만 둘 수 있는 `window` 요소가 있고 `WidgetKind::Window`(태그 45)로 매핑된다. 루트가 아닌 부모 아래에 `window`를 두거나 한 창의 노드를 다른 창으로 옮기는 `Move`는 `ProtocolError::MisplacedWindow`로 거부한다(NFR-7).
+- `window` 요소의 속성은 `title`(`window_title`), `size`(`window_size`, `(f32, f32)` 또는 8바이트), `min_size`(`window_min_size`, `(f32, f32)` 또는 8바이트), `resizable`(`window_resizable`), `chrome`(`window_chrome`), `title_bar`(`window_title_bar`), `icon`(`window_icon`), `position`(`window_position`, `(f32, f32)` 또는 8바이트), `restore_key`(`window_restore_key`), `zoom_level`(`window_zoom_level`, `-8..=8`로 맞춤), `drag_from_pointer`(`DragFromPointer` 또는 12바이트), 그리고 창별 테마를 덮어쓰는 `theme`(`SetWindowTheme` 명령)이다.
+- 닫기 요청 핸들러(`onclosing` / `onclose_request` / `onwindowclose`, `OnWindowCloseRequested`)는 필수이다. 닫기 요청 핸들러가 없는 `window` 요소는 배치를 실패시켜 만들지 않는다.
+- 그 밖의 창 이벤트 핸들러는 `onfocuschange`(`onwindowfocus`, `Event<bool>`), `onmoved`(`onwindowmoved`, `Event<WindowFrame>`), `onwindowdrag`(`Event<WindowDragEvent>`), `onunavailable`(`onwindowunavailable`, `Event<()>`), `onclosed`(`onwindowclosed`, `Event<()>`), 그리고 루트 요청을 구독하는 `onrequested`(`use_window_requested`, `WindowRequest`)와 `use_application_reopen`이다.
+- 일반 요소와 컨테이너(`Column`, `Row`, `ComposeBox` 등)에는 탭 떼어 내기와 합치기를 위한 `tear_off_key`(`TearOffKey`) 속성과 `onwindowdragover`(`on_window_drag_over`, `Event<WindowDragOver>`) 핸들러가 붙는다.
+
+#### 53.2 실행 빌더와 창 문맥 훅
+
+- `LaunchBuilder::windows(self)`와 `LaunchBuilder::on_last_window_closed(self, LastWindowClosed)`를 그대로 전달한다.
+- `current_window() -> WindowHandle`은 호출한 컴포넌트나 이벤트 핸들러가 속한 창의 핸들을 돌려준다(한 창 방식에서는 노드 id 0). `WindowHandle`은 `id()`, `focus()`(`FocusWindow` 명령), `set_theme(Theme)`(`SetWindowTheme` 명령), `set_zoom_level(i32)`를 제공한다.
+- `use_window_size()`와 `use_zoom()`은 호출한 컴포넌트가 들어 있는 창의 크기와 배율을 읽고 구독한다. 둘째 창의 크기나 배율이 바뀌면 둘째 창의 컴포넌트만 다시 실행되고 첫째 창의 컴포넌트는 다시 실행되지 않는다.
+- `launch(app)`으로 띄우는 한 창짜리 앱이 내보내는 배치는 이 변경 전과 바이트 단위로 같다.
+
+#### 53.3 수용 기준
+
+1. `window` 요소가 `WidgetKind::Window` 노드를 루트 아래에 열고, 두 `window` 요소가 같은 `Signal`을 읽을 때 한 창의 핸들러가 바꾼 상태가 한 배치로 두 창 모두에 반영되며, 창 속성과 창 이벤트(`onclosing`, `onfocuschange`, `onmoved`, `onwindowdrag`, `onunavailable`, `onclosed`, `onwindowdragover`, `tear_off_key`)가 와이어로 나가고 호출된다(`fr53_window_element_opens_a_window`, `fr15_every_widget_in_the_schema_has_an_rsx_element`, `fr15_every_property_in_the_schema_is_reachable_from_rsx`, `fr15_every_event_handler_written_in_rsx_is_called`).
+2. 닫기 요청 핸들러(`onclosing` / `onclose_request`)가 없는 `window` 요소는 리빌드에서 거부된다(`fr53_close_request_is_required`). 루트가 아닌 자리에 놓인 `window`와 창 사이의 노드 이동도 `ProtocolError::MisplacedWindow`로 거부된다(`nfr7_misplaced_window_is_a_protocol_error`).
+3. 한 창 방식의 앱이 내보내는 배치는 이전과 바이트 단위로 같다(`fr53_single_window_app_unchanged`).
+4. 창 번호가 실린 `WindowSizeChanged`와 `ZoomChanged` 이벤트는 해당 창의 `use_window_size()`와 `use_zoom()`만 깨운다(`fr53_window_events_name_their_window`). 루트 이벤트 `WindowRequested`와 `ApplicationReopen`은 `use_window_requested`(`onrequested`)와 `use_application_reopen` 핸들러에 도달한다(`fr53_root_events_reach_their_registrations`).
+
 ### FR-54 rsx 화면의 미리보기와 빌드 없는 템플릿 반영 (`Draft`)
 
 추적: 이슈 #148. 도구, 화면 밖 그리기, PNG 내보내기, 목업 비교, CI는 compose-rust FR-54의 것이고(compose-rust #357, INTENT D24) 이 항목은 그 위에 얹는 rsx 쪽만 다룬다. 결정은 INTENT D21이다.
