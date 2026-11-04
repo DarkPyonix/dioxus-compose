@@ -178,7 +178,7 @@ impl MotionState {
         self.refresh_keyframes(doc);
         let mut scan = Scan::default();
         for (id, node) in doc.tree().iter() {
-            if !node.is_element() {
+            if !node.flags.is_in_document() || !node.is_element() {
                 continue;
             }
             let Some(style) = node.primary_styles() else {
@@ -328,7 +328,7 @@ impl MotionState {
         let style = local("style");
         let mut source = String::new();
         for (_, node) in doc.tree().iter() {
-            if node.data.is_element_with_tag_name(&style) {
+            if node.flags.is_in_document() && node.data.is_element_with_tag_name(&style) {
                 source.push_str(&node.text_content());
                 source.push('\n');
             }

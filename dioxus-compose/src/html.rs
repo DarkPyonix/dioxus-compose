@@ -76,8 +76,8 @@ mod runtime;
 pub type NodeId = usize;
 
 pub use crate::dom::{
-    Cursor, HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerSubscription, PointerType,
-    TransitionEventData, UserSelect, WheelMode, element_by_id,
+    Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind, PointerSubscription,
+    PointerType, TransitionEventData, UserSelect, WheelMode, element_by_id,
 };
 pub use crate::html_widget::WidgetView;
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
@@ -156,9 +156,9 @@ pub fn layout_document_with(
 /// takes one or the other.
 pub mod prelude {
     pub use super::{
-        AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, TransitionEventData, WidgetView,
-        launch, onanimationcancel, ontransitioncancel, ontransitionrun, ontransitionstart,
-        transition,
+        AssetId, HtmlConfig, HtmlDom, ImageResolver, ImageSize, KeyInput, TransitionEventData,
+        WidgetView, launch, onanimationcancel, ontransitioncancel, ontransitionrun,
+        ontransitionstart, transition,
     };
     pub use crate::hooks::use_zoom;
     pub use compose_rust::{Zoom, ZoomHandle};

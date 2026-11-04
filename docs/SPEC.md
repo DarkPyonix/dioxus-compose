@@ -1887,6 +1887,8 @@ if design.is_apple() {
 3. `<input>` 안에서 한글을 조합하는 동안 Host로 가는 이벤트가 없고, 조합이 끝난 값만 도착합니다. IME 확인은 §6의 수동 체크리스트를 native-image 빌드에서 돕니다.
 4. 상자 하나의 배경색만 바꾸는 갱신에서, 그 상자 말고 다른 노드의 레코드가 나가지 않습니다.
 5. `<script>`가 있는 화면을 그려도 스크립트가 실행되지 않고, 프로세스가 중단되지 않습니다.
+6. **증분 스타일·레이아웃·계획(#153).** DOM 변이나 애니메이션, 뷰포트·테마 변경이 없는 프레임에서는 스타일 재계산, 레이아웃, 표시 목록 및 계획 구성을 건너뛰고 새 레코드를 내보내지 않습니다. 한 부트리의 텍스트나 스타일만 바뀐 프레임에서는 손상(damage)되지 않은 형제 부트리의 Taffy 레이아웃 캐시와 측정된 텍스트(`MeasuredTexts`)를 재사용해, 바뀌지 않은 텍스트 노드에 대해 `TextMeasurer::measure`를 다시 부르지 않습니다. 자식 텍스트를 담은 컨테이너의 `top`이나 `transform`만 바뀐 프레임에서도 자식 텍스트를 다시 측정하지 않고 컨테이너의 오프셋·변환 수정자만 갱신합니다. 테스트 `fr34_6_unchanged_frame_skips_layout_and_emits_no_records`, `fr34_6_sibling_subtree_change_does_not_remeasure_clean_text`, `fr34_6_container_offset_or_transform_change_does_not_remeasure_children`.
+7. **`font-family` 전달(#153).** CSS `font-family` 목록은 `RendererMeasurer`의 측정 요청(`MeasureTextStyle::font`)과 `PlanBridge`가 `Text` 위젯에 내보내는 `PropertyKind::Font`(`FontRefs`) 양쪽에 같은 순서로 실립니다. 글꼴 목록이 비어 있지 않은 두 텍스트 노드가 글꼴 목록만 다를 때 측정 캐시 키가 구분됩니다. 테스트 `fr34_7_font_family_reaches_renderer_measurer_and_plan_bridge`.
 
 #### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
 
@@ -1991,8 +1993,10 @@ Code-OSS 워크벤치가 쓰는 CSS와 입력 중 dioxus-compose에 없는 것�
 7. `position: sticky`. 고정 탭 같은 요소가 스크롤 가장자리에 붙고 포함 블록 안에 머뭅니다. 테스트 `fr34_5_sticky_pins_at_scroll_edge` (예정), `fr34_5_sticky_stays_in_containing_block` (예정). **설계 제약**: 스크롤 위치는 렌더러가 소유하므로(D5) 붙는 위치를 Host가 계산할 수 없고, Taffy에도 sticky가 없습니다. 어느 쪽이 무엇을 맡을지는 구현할 때 정하며, 지금 이 항목에서 설계를 정하지 않습니다. 정해지면 이 기준에 기록하되 그것이 SPEC 변경이면 소유자의 승인을 받습니다.
 8. `::-webkit-scrollbar`, `-webkit-app-region`, `env()`. `::-webkit-scrollbar`(와 `scrollbar-width`)는 렌더러의 스크롤바 그리기에 반영되고, `-webkit-app-region: drag`인 영역은 창 이동 영역이 되며, `env(titlebar-area-*)`는 값을 가집니다. 테스트 `fr34_5_webkit_scrollbar_hides_bar` (예정), `fr34_5_app_region_drag_moves_window` (예정), `fr34_5_env_titlebar_area_resolves`. `::-webkit-scrollbar`와 `-webkit-app-region`은 **compose-rust 의존**(렌더러와 창 계층)이고, `env()`는 Host만입니다.
 9. 허용치 구역의 확장. FR-34의 허용치 표 방식(줄바꿈, 글자 위치, 한 줄의 폭, 상자)을 패널, 상태 바, 퀵 입력, 컨텍스트 메뉴, hover 위젯에도 같은 수치로 적용하고, 구역마다 측정 방법과 수치를 기록합니다. 테스트 `fr34_5_box_tolerance_panel` (예정), `fr34_5_box_tolerance_status_bar` (예정), `fr34_5_box_tolerance_quick_input` (예정), `fr34_5_box_tolerance_context_menu` (예정), `fr34_5_box_tolerance_hover_widget` (예정). Host만이지만 텍스트 크기가 맞는 상자 경로에서 재는 FR-34의 측정 조건을 따릅니다.
+10. 프로그래밍 방식 포커스와 `autofocus`(#153). 새로 마운트된 HTML 요소의 `onmounted` 핸들러가 도착하고, 핸들러 안에서 `MountedData::set_focus(true)`를 부르거나 요소에 `autofocus` 속성을 달거나 `HtmlDom::focus`를 부르면 그 요소가 포커스를 얻어 `:focus`·`:focus-visible`·`:focus-within` 선택자와 `focus`·`blur`·`focusin`·`focusout` 이벤트가 반영됩니다(렌더러 위젯 포커스 요청 명령은 compose-rust #410 의존). 테스트 `fr34_5_onmounted_set_focus_and_autofocus_focus_element`.
+11. 키보드·조합(IME) 이벤트 전달과 `Tab` 포커스 이동(#153). 포커스된 요소(포커스가 없으면 루트)로 `keydown`, `keypress`, `keyup`이 `key`, `code`, `location`, `modifiers`, `repeat`, `is_composing`과 함께 버블링되고, `Tab`과 `Shift+Tab`은 문서 순서(및 `tabindex`)대로 포커스 가능한 요소를 순회하며 핸들러가 `prevent_default`를 부르면 이동하지 않습니다. 조합 시작·갱신·종료 시 `compositionstart`, `compositionupdate`, `compositionend`가 조합 문자열과 함께 포커스된 요소 경로로 전달됩니다(렌더러 경계 확장은 compose-rust #100, #98, #410 의존). 테스트 `fr34_5_key_events_carry_metadata_and_tab_traverses_focus`, `fr34_5_composition_events_reach_focused_element`.
 
-기준 1에서 3, 5의 `pointer-events`, 9는 compose-rust 병합을 기다리지 않고 시작할 수 있습니다. 기준 1과 2는 같은 입력 경로라 이어서 구현합니다.
+기준 1에서 3, 5의 `pointer-events`, 9에서 11은 compose-rust 병합을 기다리지 않고 Host 경로를 먼저 시작할 수 있습니다. 기준 1과 2는 같은 입력 경로라 이어서 구현합니다.
 
 ### FR-37 마크다운 크레이트 (`Agreed`)
 

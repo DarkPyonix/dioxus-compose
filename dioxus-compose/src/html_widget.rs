@@ -261,9 +261,10 @@ pub(crate) fn render_islands(owner: u32, batch: &mut Batch) {
 }
 
 /// Asks the renderer how big every attached widget is, in one call, with at most `width`
-/// dp of room. A widget that was written in an earlier call is applied by now; one that
-/// was written in this call is not measured, because the renderer does not know it yet.
-pub(crate) fn refresh(owner: u32, width: f32) {
+/// dp of room, and returns the page nodes whose measured size changed. A widget that was
+/// written in an earlier call is applied by now; one that was written in this call is not
+/// measured, because the renderer does not know it yet.
+pub(crate) fn refresh(owner: u32, width: f32) -> Vec<NodeId> {
     REGISTRY.with_borrow_mut(|registry| {
         let mut requests = MeasureRequests::new();
         let mut tokens = Vec::new();
@@ -283,25 +284,33 @@ pub(crate) fn refresh(owner: u32, width: f32) {
             }
         }
         if tokens.is_empty() {
-            return;
+            return Vec::new();
         }
         // Outside a Host call there is no renderer standing still to answer.
         let Ok(mut asker) = measurer() else {
-            return;
+            return Vec::new();
         };
         let mut results = Vec::new();
         if asker.measure(&mut requests, &mut results).is_err() {
-            return;
+            return Vec::new();
         }
+        let mut changed = Vec::new();
         for (token, result) in tokens.iter().zip(results.iter()) {
             if result.status() != MeasureStatus::Ok {
                 continue;
             }
             if let Some(island) = registry.islands.get_mut(token) {
-                island.size = Some((result.width, result.height));
+                let new_size = Some((result.width, result.height));
+                if island.size != new_size {
+                    island.size = new_size;
+                    if let Some(place) = island.place {
+                        changed.push(place);
+                    }
+                }
             }
         }
-    });
+        changed
+    })
 }
 
 /// Inserts every widget tree that is built and not yet in place under the renderer node
