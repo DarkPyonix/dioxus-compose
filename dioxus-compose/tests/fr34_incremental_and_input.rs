@@ -266,6 +266,338 @@ fn fr34_6_container_offset_or_transform_change_does_not_remeasure_children() {
 }
 
 #[test]
+fn fr34_6_transform_only_frame_skips_subtree_restyle_and_preserves_single_window_output() {
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    fn app() -> Element {
+        let mut scrolled = use_signal(|| 0);
+        let transform = if scrolled() > 0 {
+            "translateY(-12px)"
+        } else {
+            "translateY(0px)"
+        };
+        rsx! {
+            div {
+                id: "viewport",
+                style: "position: relative; width: 600px; height: 400px; overflow: hidden",
+                onclick: move |_| scrolled += 1,
+                div {
+                    id: "lines",
+                    style: "position: absolute; left: 0px; top: 0px; width: 600px; height: 800px; transform: {transform}",
+                    div {
+                        id: "line0",
+                        style: "position: absolute; top: 0px; left: 0px; height: 20px",
+                        span { style: "color: #569cd6", "pub fn " }
+                        span { style: "color: #dcdcaa", "alpha" }
+                        span { style: "color: #d4d4d4", "()" }
+                    }
+                    div {
+                        id: "line1",
+                        style: "position: absolute; top: 20px; left: 0px; height: 20px",
+                        span { style: "color: #c586c0", "return " }
+                        span { style: "color: #b5cea8", "42" }
+                    }
+                }
+            }
+        }
+    }
+
+    fn scrolled_from_scratch() -> Element {
+        rsx! {
+            div {
+                id: "viewport",
+                style: "position: relative; width: 600px; height: 400px; overflow: hidden",
+                div {
+                    id: "lines",
+                    style: "position: absolute; left: 0px; top: 0px; width: 600px; height: 800px; transform: translateY(-12px)",
+                    div {
+                        id: "line0",
+                        style: "position: absolute; top: 0px; left: 0px; height: 20px",
+                        span { style: "color: #569cd6", "pub fn " }
+                        span { style: "color: #dcdcaa", "alpha" }
+                        span { style: "color: #d4d4d4", "()" }
+                    }
+                    div {
+                        id: "line1",
+                        style: "position: absolute; top: 20px; left: 0px; height: 20px",
+                        span { style: "color: #c586c0", "return " }
+                        span { style: "color: #b5cea8", "42" }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut dom = HtmlDom::with_config(
+        app,
+        HtmlConfig {
+            stylesheets: vec!["html, body { margin: 0; padding: 0; }".to_string()],
+            measurer: Some(Box::new(CountingMeasurer::new(calls.clone()))),
+            ..HtmlConfig::default()
+        },
+    );
+    dom.layout(600.0, 400.0, 1.0);
+
+    let line0 = dom.element_by_id("line0").unwrap();
+    let line1 = dom.element_by_id("line1").unwrap();
+    let ptr0_before = dom
+        .document()
+        .get_node(line0)
+        .and_then(|n| n.primary_styles())
+        .map(|s| (&*s as *const _) as usize)
+        .unwrap();
+    let ptr1_before = dom
+        .document()
+        .get_node(line1)
+        .and_then(|n| n.primary_styles())
+        .map(|s| (&*s as *const _) as usize)
+        .unwrap();
+
+    calls.borrow_mut().clear();
+    let viewport = dom.element_by_id("viewport").unwrap();
+    dom.click_node(viewport);
+    dom.render();
+    let incremental_list = dom.layout(600.0, 400.0, 1.0).clone();
+    let incremental_plan = dom.plan(&mut LiteralColours).unwrap().clone();
+
+    assert!(
+        calls.borrow().is_empty(),
+        "transform-only frame must skip layout and text measurement: {:?}",
+        *calls.borrow()
+    );
+
+    let ptr0_after = dom
+        .document()
+        .get_node(line0)
+        .and_then(|n| n.primary_styles())
+        .map(|s| (&*s as *const _) as usize)
+        .unwrap();
+    let ptr1_after = dom
+        .document()
+        .get_node(line1)
+        .and_then(|n| n.primary_styles())
+        .map(|s| (&*s as *const _) as usize)
+        .unwrap();
+    assert_eq!(
+        ptr0_before, ptr0_after,
+        "child line0 computed style must not be restyled when only container inline style changed"
+    );
+    assert_eq!(
+        ptr1_before, ptr1_after,
+        "child line1 computed style must not be restyled when only container inline style changed"
+    );
+
+    let mut fresh_dom = HtmlDom::with_config(
+        scrolled_from_scratch,
+        HtmlConfig {
+            stylesheets: vec!["html, body { margin: 0; padding: 0; }".to_string()],
+            measurer: Some(Box::new(CountingMeasurer::new(Rc::new(RefCell::new(
+                Vec::new(),
+            ))))),
+            ..HtmlConfig::default()
+        },
+    );
+    let fresh_list = fresh_dom.layout(600.0, 400.0, 1.0).clone();
+    let fresh_plan = fresh_dom.plan(&mut LiteralColours).unwrap().clone();
+
+    assert_eq!(
+        incremental_list.entries, fresh_list.entries,
+        "transform-only incremental DisplayList must match fresh single-window output"
+    );
+    assert_eq!(
+        incremental_plan, fresh_plan,
+        "transform-only incremental Plan must match fresh single-window output"
+    );
+}
+
+#[test]
+fn fr34_6_child_insert_remove_preserves_clean_sibling_line_caches_and_output() {
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    fn app() -> Element {
+        let mut offset = use_signal(|| 0usize);
+        let start = offset();
+        let top_px = -(start as i32 * 20);
+        rsx! {
+            div {
+                id: "viewport",
+                style: "position: relative; width: 600px; height: 400px; overflow: hidden",
+                onclick: move |_| offset += 1,
+                div {
+                    id: "lines",
+                    style: "position: absolute; left: 0px; top: {top_px}px; width: 600px; height: 800px",
+                    for idx in start..(start + 4) {
+                        div {
+                            key: "{idx}",
+                            id: "line-{idx}",
+                            style: "position: absolute; top: {idx * 20}px; left: 0px; height: 20px",
+                            span {
+                                span { style: "color: #569cd6", "fn " }
+                                span { style: "color: #dcdcaa", "item_{idx}" }
+                                span { style: "color: #d4d4d4", "()" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn scrolled_from_scratch() -> Element {
+        let start = 1usize;
+        let top_px = -(start as i32 * 20);
+        rsx! {
+            div {
+                id: "viewport",
+                style: "position: relative; width: 600px; height: 400px; overflow: hidden",
+                div {
+                    id: "lines",
+                    style: "position: absolute; left: 0px; top: {top_px}px; width: 600px; height: 800px",
+                    for idx in start..(start + 4) {
+                        div {
+                            key: "{idx}",
+                            id: "line-{idx}",
+                            style: "position: absolute; top: {idx * 20}px; left: 0px; height: 20px",
+                            span {
+                                span { style: "color: #569cd6", "fn " }
+                                span { style: "color: #dcdcaa", "item_{idx}" }
+                                span { style: "color: #d4d4d4", "()" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut dom = HtmlDom::with_config(
+        app,
+        HtmlConfig {
+            stylesheets: vec!["html, body { margin: 0; padding: 0; }".to_string()],
+            measurer: Some(Box::new(CountingMeasurer::new(calls.clone()))),
+            ..HtmlConfig::default()
+        },
+    );
+    dom.layout(600.0, 400.0, 1.0);
+
+    let line1 = dom.element_by_id("line-1").unwrap();
+    let line2 = dom.element_by_id("line-2").unwrap();
+    let line3 = dom.element_by_id("line-3").unwrap();
+    let inline_ptr_of = |dom: &HtmlDom, id: usize| -> usize {
+        dom.document()
+            .get_node(id)
+            .and_then(|n| n.element_data())
+            .and_then(|el| el.inline_layout_data.as_deref())
+            .map(|layout| (layout as *const _) as usize)
+            .unwrap()
+    };
+    let style_ptr_of = |dom: &HtmlDom, id: usize| -> usize {
+        dom.document()
+            .get_node(id)
+            .and_then(|n| n.primary_styles())
+            .map(|s| (&*s as *const _) as usize)
+            .unwrap()
+    };
+
+    let inline1_before = inline_ptr_of(&dom, line1);
+    let inline2_before = inline_ptr_of(&dom, line2);
+    let inline3_before = inline_ptr_of(&dom, line3);
+    let style1_before = style_ptr_of(&dom, line1);
+    let style2_before = style_ptr_of(&dom, line2);
+    let style3_before = style_ptr_of(&dom, line3);
+
+    calls.borrow_mut().clear();
+    let viewport = dom.element_by_id("viewport").unwrap();
+    dom.click_node(viewport);
+    dom.render();
+    let incremental_list = dom.layout(600.0, 400.0, 1.0).clone();
+    let incremental_plan = dom.plan(&mut LiteralColours).unwrap().clone();
+
+    let remeasured = calls.borrow().clone();
+    for clean_item in ["item_1", "item_2", "item_3"] {
+        assert!(
+            !remeasured.iter().any(|t| t.contains(clean_item)),
+            "clean sibling line {clean_item} must not be remeasured when a sibling line is inserted/removed: {remeasured:?}"
+        );
+    }
+    assert!(
+        remeasured.iter().any(|t| t.contains("item_4")),
+        "newly inserted line-4 must be measured: {remeasured:?}"
+    );
+
+    assert_eq!(
+        inline1_before,
+        inline_ptr_of(&dom, line1),
+        "clean sibling line-1 inline_layout_data cache must be preserved across child insert/remove"
+    );
+    assert_eq!(
+        inline2_before,
+        inline_ptr_of(&dom, line2),
+        "clean sibling line-2 inline_layout_data cache must be preserved across child insert/remove"
+    );
+    assert_eq!(
+        inline3_before,
+        inline_ptr_of(&dom, line3),
+        "clean sibling line-3 inline_layout_data cache must be preserved across child insert/remove"
+    );
+    assert_eq!(
+        style1_before,
+        style_ptr_of(&dom, line1),
+        "clean sibling line-1 computed style must not be restyled across child insert/remove"
+    );
+    assert_eq!(
+        style2_before,
+        style_ptr_of(&dom, line2),
+        "clean sibling line-2 computed style must not be restyled across child insert/remove"
+    );
+    assert_eq!(
+        style3_before,
+        style_ptr_of(&dom, line3),
+        "clean sibling line-3 computed style must not be restyled across child insert/remove"
+    );
+
+    let mut fresh_dom = HtmlDom::with_config(
+        scrolled_from_scratch,
+        HtmlConfig {
+            stylesheets: vec!["html, body { margin: 0; padding: 0; }".to_string()],
+            measurer: Some(Box::new(CountingMeasurer::new(Rc::new(RefCell::new(
+                Vec::new(),
+            ))))),
+            ..HtmlConfig::default()
+        },
+    );
+    let fresh_list = fresh_dom.layout(600.0, 400.0, 1.0).clone();
+    let fresh_plan = fresh_dom.plan(&mut LiteralColours).unwrap().clone();
+
+    let strip_nodes = |entries: &[dioxus_compose::html::NodeEntry]| {
+        entries
+            .iter()
+            .map(|e| {
+                (
+                    e.tag.clone(),
+                    e.rect,
+                    e.transform.clone(),
+                    e.texts
+                        .iter()
+                        .map(|t| (t.text.clone(), t.rect, t.color))
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        strip_nodes(&incremental_list.entries),
+        strip_nodes(&fresh_list.entries),
+        "incremental DisplayList after child insert/remove must match fresh single-window output"
+    );
+    assert_eq!(
+        incremental_plan.root.children.len(),
+        fresh_plan.root.children.len(),
+        "incremental Plan root children after child insert/remove must match fresh single-window output"
+    );
+}
+
+#[test]
 fn fr34_7_font_family_reaches_renderer_measurer_and_plan_bridge() {
     thread_local! {
         static RECORDED_FONTS: RefCell<Vec<(String, Vec<u8>)>> = const { RefCell::new(Vec::new()) };
