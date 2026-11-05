@@ -1040,7 +1040,15 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
+/// - `MatchParentSize`, `WindowDrag`, `PressFeedback`: arrived with compose-rust 0.0.6 and
+///   have no rsx attribute yet (tracked in DarkPyonix/dioxus-compose#166).
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &[
+    "Size",
+    "PaddingEach",
+    "MatchParentSize",
+    "WindowDrag",
+    "PressFeedback",
+];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {

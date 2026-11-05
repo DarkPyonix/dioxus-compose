@@ -174,6 +174,9 @@ fn report_width(host: &mut Host, node_id: u32, width_dp: f32) -> Vec<Record> {
             height_dp: 800.0,
             class: WindowSizeClass::from_width_dp(width_dp),
             height_class: WindowHeightClass::from_height_dp(800.0),
+            safe_area_leading: 0.0,
+            safe_area_top: 0.0,
+            safe_area_trailing: 0.0,
         },
     )
 }
