@@ -162,3 +162,72 @@ fn fr34_3_island_nodes_hang_from_the_box_and_share_no_id_with_widgets() {
     );
     reset_window_size();
 }
+
+/// The scroll an island's page sits in.
+fn scroll_node(mutations: &[Mutation<'_>]) -> u32 {
+    mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: WidgetKind::ScrollColumn,
+            } => Some(*node_id),
+            _ => None,
+        })
+        .expect("the island's page has no scroll")
+}
+
+fn modifiers_of(mutations: &[Mutation<'_>], node: u32) -> Vec<Modifier> {
+    mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                node_id, modifier, ..
+            } if *node_id == node => Some(modifier.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn fr34_3_island_scroll_gets_a_size_not_a_fill() {
+    // The box an island hangs from measures its children without bounds, so a scroll that
+    // only fills would be measured with an infinite height and abort the renderer.
+    reset_window_size();
+    let mut host = Host::new(screen);
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+    let node = observed_node(&first);
+    let scroll = scroll_node(&first);
+    // Copied out now: the next dispatch borrows the host and the batch cannot outlive that.
+    let mut modifiers = modifiers_of(&first, scroll);
+    let (batch, _) = host
+        .dispatch(HostEvent {
+            node_id: node,
+            handler_id: 0,
+            payload: EventPayload::WindowSizeChanged {
+                width_dp: 420.0,
+                height_dp: 200.0,
+                class: WindowSizeClass::from_width_dp(420.0),
+                height_class: WindowHeightClass::from_height_dp(200.0),
+                safe_area_leading: 0.0,
+                safe_area_top: 0.0,
+                safe_area_trailing: 0.0,
+            },
+        })
+        .unwrap();
+    modifiers.extend(modifiers_of(&decode_batch(batch).unwrap(), scroll));
+    assert!(
+        modifiers
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::RequiredSize { .. })),
+        "the scroll was not given a size: {modifiers:?}",
+    );
+    assert!(
+        !modifiers.iter().any(|modifier| matches!(
+            modifier,
+            Modifier::FillMaxWidth | Modifier::FillMaxHeight
+        )),
+        "the scroll only fills, which an unbounded box cannot satisfy: {modifiers:?}",
+    );
+    reset_window_size();
+}
