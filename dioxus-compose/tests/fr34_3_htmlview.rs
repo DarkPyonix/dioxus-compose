@@ -223,10 +223,9 @@ fn fr34_3_island_scroll_gets_a_size_not_a_fill() {
         "the scroll was not given a size: {modifiers:?}",
     );
     assert!(
-        !modifiers.iter().any(|modifier| matches!(
-            modifier,
-            Modifier::FillMaxWidth | Modifier::FillMaxHeight
-        )),
+        !modifiers
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::FillMaxWidth | Modifier::FillMaxHeight)),
         "the scroll only fills, which an unbounded box cannot satisfy: {modifiers:?}",
     );
     reset_window_size();
