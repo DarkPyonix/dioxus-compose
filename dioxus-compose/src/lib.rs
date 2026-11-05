@@ -119,6 +119,7 @@ pub use hooks::{
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use hover::{HoverHandle, use_hover};
 pub use html_view::HtmlView;
+pub use html_widget::use_widget_box;
 pub use list_detail::ListDetail;
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
