@@ -1951,6 +1951,7 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 2. `div` 안의 `TextField`와 `DatePicker`가 렌더러가 잰 고유 크기로 줄에 놓이고, 같은 줄의 텍스트가 그 크기를 비켜 흐릅니다.
 3. HTML 안의 위젯을 누르면 그 위젯의 핸들러가 불리고, 감싼 `div`의 `onclick`은 CSS 이벤트 흐름대로 그 뒤에 불립니다.
 4. 테마를 바꾸면 `var(--dxc-primary)`를 쓴 `div`의 배경과 Primary 색 위젯이 같은 프레임에 같은 색으로 바뀝니다. `--dxc-*` 변수의 이름 집합이 schema의 `ColorRole` 변형 전부와 일대일로 맞는지도 시험합니다(생성 목록이므로 역할이 늘면 시험도 따라갑니다). 테스트 `fr34_3_theme_variables_follow_colour_roles`, `fr34_3_theme_switch_same_frame`.
+5. 위젯 트리는 `use_widget_box()`로 페이지가 그 상자에 준 크기(dp)를 읽고, 상자 크기가 바뀌면 트리가 다시 그려집니다. 렌더러는 위젯 트리를 제한 없이 재므로, 스타일시트가 크기를 정한 상자(`flex: 1`, `height: 100%`)를 채우려는 위젯은 이 값을 루트에 줍니다. 테스트 `fr34_3_widget_reads_the_box_the_page_gave_it`.
 
 #### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
 
