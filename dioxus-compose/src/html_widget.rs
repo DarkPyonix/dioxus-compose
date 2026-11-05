@@ -38,9 +38,10 @@ use std::task::Context;
 use compose_rust::Batch;
 use compose_rust::measure::{MeasureRequests, MeasureStatus, NodeConstraints, measurer};
 use compose_rust::protocol::{HostEvent, Mutation, ProtocolError};
-use dioxus_core::{Element, VirtualDom};
+use dioxus_core::{Element, ScopeId, VirtualDom};
 use dioxus_core_macro::{Props, component, rsx};
 use dioxus_html as dioxus_elements;
+use dioxus_signals::{ReadableExt, Signal, WritableExt};
 
 use crate::host::deliver_event;
 use crate::html::NodeId;
@@ -78,6 +79,9 @@ struct Island {
     size: Option<(f32, f32)>,
     /// The tree's app has work of its own to run.
     dirty: bool,
+    /// The size the page's layout gave the widget's box, as the tree reads it with
+    /// [`use_widget_box`].
+    box_size: Signal<(f32, f32)>,
 }
 
 #[derive(Default)]
@@ -152,11 +156,16 @@ impl IslandHandle {
             let token = registry.next_token;
             if let Some(slot) = registry.take_slot() {
                 let owner = CURRENT_OWNER.with(Cell::get);
+                let dom = VirtualDom::new(app);
+                let box_size = dom.in_scope(ScopeId::ROOT, || {
+                    Signal::new_in_scope((0.0, 0.0), ScopeId::ROOT)
+                });
+                dom.provide_root_context(WidgetBox(box_size));
                 registry.islands.insert(
                     token,
                     Island {
                         owner,
-                        dom: VirtualDom::new(app),
+                        dom,
                         renderer: ComposeRenderer::with_id_bases(
                             WIDGET_NODE_BASE + slot * WIDGET_NODE_SPAN,
                             WIDGET_HANDLER_BASE + u64::from(slot) * WIDGET_HANDLER_SPAN,
@@ -168,6 +177,7 @@ impl IslandHandle {
                         place: None,
                         size: None,
                         dirty: false,
+                        box_size,
                     },
                 );
             }
@@ -374,4 +384,45 @@ pub(crate) fn route_event(event: &HostEvent<'_>) -> Option<Result<i64, ProtocolE
             .find(|island| island.renderer.handler(event.handler_id).is_some())?;
         Some(deliver_event(&mut island.dom, &island.renderer, event))
     })
+}
+
+/// The widget's box as the page's layout placed it, handed to the tree through its root
+/// context.
+#[derive(Clone, Copy)]
+struct WidgetBox(Signal<(f32, f32)>);
+
+/// The size, in dp, that the page's layout gave the box this widget tree is in: `(0, 0)`
+/// until the page has been laid out once. A widget that should fill a box a stylesheet
+/// sizes (`flex: 1`, `height: 100%`) gives that size to its own root, because the renderer
+/// measures a tree without any limit, so a `fill_max_*` root has nothing to fill. The tree
+/// is drawn again when the box changes size.
+///
+/// Call it from inside a [`WidgetView`] tree only.
+pub fn use_widget_box() -> (f32, f32) {
+    let WidgetBox(size) = dioxus_core::consume_context::<WidgetBox>();
+    size()
+}
+
+/// Gives every widget tree of `owner` the size `box_of` says its page element has, and asks
+/// for a frame when any tree's size changed.
+pub(crate) fn set_boxes(owner: u32, box_of: &dyn Fn(NodeId) -> Option<(f32, f32)>) {
+    REGISTRY.with_borrow_mut(|registry| {
+        let mut changed = false;
+        for island in registry.islands.values_mut() {
+            if island.owner != owner {
+                continue;
+            }
+            let Some(size) = island.place.and_then(box_of) else {
+                continue;
+            };
+            let mut signal = island.box_size;
+            if *signal.peek() != size {
+                island.dom.in_scope(ScopeId::ROOT, || signal.set(size));
+                changed = true;
+            }
+        }
+        if changed {
+            registry.pending.insert(owner);
+        }
+    });
 }
