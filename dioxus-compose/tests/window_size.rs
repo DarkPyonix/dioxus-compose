@@ -69,6 +69,9 @@ fn resize_to(host: &mut Host, width_dp: f32, height_dp: f32) -> Vec<String> {
             height_dp,
             class: WindowSizeClass::from_width_dp(width_dp),
             height_class: WindowHeightClass::from_height_dp(height_dp),
+            safe_area_leading: 0.0,
+            safe_area_top: 0.0,
+            safe_area_trailing: 0.0,
         },
     };
     let (batch, _) = host.dispatch(event).unwrap();
