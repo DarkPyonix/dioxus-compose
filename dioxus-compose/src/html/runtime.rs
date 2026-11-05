@@ -196,6 +196,13 @@ impl HtmlRuntime {
             self.bridge
                 .apply(plan, viewport, &self.dom, &mut self.batch);
         }
+        {
+            let dom = &self.dom;
+            crate::html_widget::set_boxes(self.owner, &|node| {
+                let rect = dom.display_list()?.get(node)?.rect;
+                Some((rect.width, rect.height))
+            });
+        }
         let bridge = &self.bridge;
         crate::html_widget::attach(
             self.owner,
