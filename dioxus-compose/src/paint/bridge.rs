@@ -295,6 +295,9 @@ pub struct PlanBridge {
     /// that names the factor it is drawn at. A page inside a widget tree hangs from a box
     /// the tree already has, and that box names the factor.
     wraps_island: bool,
+    /// The scroll is given the viewport's size instead of filling what it is in, for a page
+    /// whose box measures its children without bounds.
+    sizes_scroll: bool,
     /// The box that names the factor a whole-screen page is drawn at.
     island_node: Option<u32>,
     /// The factor the page is drawn at, and the one the island root last named.
@@ -353,6 +356,7 @@ impl PlanBridge {
             next_handler_id: first_handler,
             viewport_node: None,
             wraps_island: false,
+            sizes_scroll: false,
             island_node: None,
             zoom: 1.0,
             zoom_sent: None,
@@ -454,6 +458,13 @@ impl PlanBridge {
         self.wraps_island = true;
     }
 
+    /// Gives the scroll the viewport's size rather than a fill, for a page that is one island
+    /// in a tree: the box it hangs from measures its children without bounds, and a scroll
+    /// that only fills would be measured with an infinite height. Call before the first plan.
+    pub(crate) fn size_scroll_to_viewport(&mut self) {
+        self.sizes_scroll = true;
+    }
+
     /// The factor the page is drawn at, written on the island root with the next plan.
     pub(crate) fn set_zoom(&mut self, zoom: f32) {
         self.zoom = zoom;
@@ -462,10 +473,8 @@ impl PlanBridge {
     /// Names the factor on the island root when it differs from the one it last named, and
     /// gives the scroll the viewport's size when that changed.
     fn sync_zoom(&mut self, viewport: (f32, f32), batch: &mut Batch) {
-        let Some(island) = self.island_node else {
-            return;
-        };
         if let Some(scroll) = self.viewport_node
+            && (self.wraps_island || self.sizes_scroll)
             && self.viewport_sent != Some(viewport)
         {
             self.viewport_sent = Some(viewport);
@@ -478,6 +487,9 @@ impl PlanBridge {
                 },
             });
         }
+        let Some(island) = self.island_node else {
+            return;
+        };
         if self
             .zoom_sent
             .is_some_and(|sent| sent.to_bits() == self.zoom.to_bits())
@@ -520,7 +532,7 @@ impl PlanBridge {
         match self.previous.take() {
             None => {
                 let viewport_node = self.create(batch, WidgetKind::ScrollColumn);
-                if self.wraps_island {
+                if self.wraps_island || self.sizes_scroll {
                     // An island box measures its children without bounds, so the scroll
                     // cannot fill what it is in. It is given the window's size instead,
                     // in the page's own pixels.

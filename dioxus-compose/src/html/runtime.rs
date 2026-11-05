@@ -140,11 +140,9 @@ impl HtmlRuntime {
         first_node: u32,
         first_handler: u64,
     ) -> Self {
-        Self::with_bridge(
-            app,
-            config,
-            PlanBridge::with_id_bases(first_node, first_handler),
-        )
+        let mut bridge = PlanBridge::with_id_bases(first_node, first_handler);
+        bridge.size_scroll_to_viewport();
+        Self::with_bridge(app, config, bridge)
     }
 
     fn with_bridge(app: fn() -> Element, config: HtmlConfig, bridge: PlanBridge) -> Self {
