@@ -570,6 +570,18 @@ pub(crate) enum EditorRequest {
     },
 }
 
+impl EditorRequest {
+    /// The handle the request is addressed to.
+    pub(crate) fn token(&self) -> u32 {
+        match self {
+            Self::Edit(edit) => edit.token,
+            Self::Select { token, .. } | Self::Reveal { token, .. } | Self::Fold { token, .. } => {
+                *token
+            }
+        }
+    }
+}
+
 thread_local! {
     static EDITS: std::cell::RefCell<Vec<EditorRequest>> = const { std::cell::RefCell::new(Vec::new()) };
     static NEXT_EDITOR_TOKEN: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
