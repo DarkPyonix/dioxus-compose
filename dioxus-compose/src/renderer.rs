@@ -432,6 +432,41 @@ impl ComposeRenderer {
         self.editors.get(&token).copied()
     }
 
+    /// Writes a request asked of a code editor handle to the editor that carries it. A handle no
+    /// editor of this renderer carries names nothing here: the request is not written.
+    pub(crate) fn apply_editor_request(&mut self, request: &crate::hooks::EditorRequest) {
+        use crate::hooks::EditorRequest;
+        let Some(node_id) = self.editor_node(request.token()) else {
+            return;
+        };
+        match request {
+            EditorRequest::Edit(edit) => self.edit_code(
+                node_id,
+                edit.request_id,
+                edit.base_version,
+                edit.range,
+                &edit.text,
+            ),
+            EditorRequest::Select {
+                base_version,
+                anchor,
+                active,
+                ..
+            } => self.select_code(node_id, *base_version, *anchor, *active),
+            EditorRequest::Reveal {
+                base_version,
+                range,
+                align,
+                ..
+            } => self.reveal_code(node_id, *base_version, *range, *align),
+            EditorRequest::Fold {
+                start_line,
+                collapsed,
+                ..
+            } => self.fold_code(node_id, *start_line, *collapsed),
+        }
+    }
+
     /// Writes one edit the application asked of a code editor.
     pub(crate) fn edit_code(
         &mut self,
