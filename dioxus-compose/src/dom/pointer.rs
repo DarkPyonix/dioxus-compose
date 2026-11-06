@@ -263,6 +263,18 @@ pub enum UserSelect {
     All = 3,
 }
 
+/// The CSS `app-region` keywords (`-webkit-app-region` in Chromium): whether an element is
+/// part of the window's drag region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppRegion {
+    /// The page says nothing: the element is neither added to nor cut from the drag region.
+    Auto,
+    /// A press on the element moves the window.
+    Drag,
+    /// A press on the element does not move the window, inside a drag region.
+    NoDrag,
+}
+
 /// The pointer state a document keeps between reports.
 #[derive(Default)]
 pub(crate) struct PointerState {
@@ -281,7 +293,7 @@ pub(crate) struct PointerState {
     /// Cached answer for whether any `<style>` in the document mentions `:hover` or `:active`.
     pub(crate) uses_pointer_state: RefCell<Option<bool>>,
     /// The author stylesheets' `user-select`, worked out on first use after a layout.
-    author: RefCell<Option<AuthorSelect>>,
+    author: RefCell<Option<Author>>,
     /// Cached flag for whether any `<style>` in the document declares `user-select`.
     pub(crate) has_author_user_select: RefCell<Option<bool>>,
     /// The kinds each subscribed node takes, worked out on first use after a change.
@@ -290,6 +302,16 @@ pub(crate) struct PointerState {
 
 /// For each node a `user-select` rule reaches: importance, specificity, position, value.
 type AuthorSelect = HashMap<NodeId, (bool, u32, usize, UserSelect)>;
+
+/// The same for `app-region`.
+type AuthorRegion = HashMap<NodeId, (bool, u32, usize, AppRegion)>;
+
+/// What the author stylesheets say about the properties this crate reads itself.
+#[derive(Default)]
+struct Author {
+    select: AuthorSelect,
+    region: AuthorRegion,
+}
 
 /// The kinds of report a listener for `event` needs.
 fn kinds_for(event: &str) -> u32 {
@@ -575,7 +597,7 @@ impl HtmlDom {
     /// evaluated here.
     pub fn user_select(&self, node: NodeId) -> UserSelect {
         let author = self.author_user_select();
-        let author = &*author;
+        let author = &author.select;
         for id in self.ancestors(node) {
             let inline = self
                 .doc
@@ -601,9 +623,33 @@ impl HtmlDom {
         UserSelect::Auto
     }
 
+    /// The `app-region` the page gives `node` itself, from its `style` attribute and the
+    /// rules of the `<style>` elements, read the way `user-select` is. Not inherited: a
+    /// `no-drag` child cuts itself out of a `drag` parent's region.
+    pub fn app_region(&self, node: NodeId) -> AppRegion {
+        let inline = self
+            .doc
+            .get_node(node)
+            .and_then(|node| node.attr(local("style")))
+            .and_then(declared_app_region);
+        let author = self.author_user_select();
+        match (inline, author.region.get(&node)) {
+            (Some((value, important)), Some((author_important, _, _, author_value))) => {
+                if important || !author_important {
+                    value
+                } else {
+                    *author_value
+                }
+            }
+            (Some((value, _)), None) => value,
+            (None, Some((_, _, _, value))) => *value,
+            (None, None) => AppRegion::Auto,
+        }
+    }
+
     /// The author stylesheets' `user-select` for each node a rule reaches, with the key the
     /// cascade orders by: importance, specificity, position.
-    fn author_user_select(&self) -> Ref<'_, AuthorSelect> {
+    fn author_user_select(&self) -> Ref<'_, Author> {
         if self.pointer.author.borrow().is_none() {
             let computed = self.compute_author_user_select();
             *self.pointer.author.borrow_mut() = Some(computed);
@@ -647,9 +693,9 @@ impl HtmlDom {
             .unwrap_or(0)
     }
 
-    fn compute_author_user_select(&self) -> AuthorSelect {
+    fn compute_author_user_select(&self) -> Author {
         if *self.pointer.has_author_user_select.borrow() == Some(false) {
-            return HashMap::new();
+            return Author::default();
         }
         let viewport = self.doc.viewport();
         let scale = viewport.hidpi_scale.max(f32::MIN_POSITIVE);
@@ -659,6 +705,7 @@ impl HtmlDom {
             dark: matches!(self.color_scheme, crate::html::ColorScheme::Dark),
         };
         let mut winners: AuthorSelect = HashMap::new();
+        let mut regions: AuthorRegion = HashMap::new();
         let mut position = 0;
         let mut any_rule = false;
         for (_, node) in self.doc.tree().iter() {
@@ -675,14 +722,17 @@ impl HtmlDom {
             if !in_style {
                 continue;
             }
-            if !text.content.to_ascii_lowercase().contains("user-select") {
+            let lowered = text.content.to_ascii_lowercase();
+            if !lowered.contains("user-select") && !lowered.contains("app-region") {
                 continue;
             }
             for (selectors, body) in style_rules(&text.content, &env) {
                 position += 1;
-                let Some((value, important)) = declared_user_select(&body) else {
+                let selected = declared_user_select(&body);
+                let region = declared_app_region(&body);
+                if selected.is_none() && region.is_none() {
                     continue;
-                };
+                }
                 any_rule = true;
                 for part in split_selectors(&selectors) {
                     if part.is_empty() || part.contains("::") {
@@ -691,20 +741,35 @@ impl HtmlDom {
                     let Ok(matched) = self.doc.query_selector_all(&part) else {
                         continue;
                     };
-                    let key = (important, specificity(&part), position);
+                    let spec = specificity(&part);
                     for id in matched {
-                        let better = winners
-                            .get(&id)
-                            .is_none_or(|(i, s, p, _)| key > (*i, *s, *p));
-                        if better {
-                            winners.insert(id, (key.0, key.1, key.2, value));
+                        if let Some((value, important)) = selected {
+                            let key = (important, spec, position);
+                            let better = winners
+                                .get(&id)
+                                .is_none_or(|(i, s, p, _)| key > (*i, *s, *p));
+                            if better {
+                                winners.insert(id, (key.0, key.1, key.2, value));
+                            }
+                        }
+                        if let Some((value, important)) = region {
+                            let key = (important, spec, position);
+                            let better = regions
+                                .get(&id)
+                                .is_none_or(|(i, s, p, _)| key > (*i, *s, *p));
+                            if better {
+                                regions.insert(id, (key.0, key.1, key.2, value));
+                            }
                         }
                     }
                 }
             }
         }
         *self.pointer.has_author_user_select.borrow_mut() = Some(any_rule);
-        winners
+        Author {
+            select: winners,
+            region: regions,
+        }
     }
 }
 
@@ -729,6 +794,33 @@ fn declared_user_select(block: &str) -> Option<(UserSelect, bool)> {
             "text" => UserSelect::Text,
             "all" => UserSelect::All,
             "auto" => UserSelect::Auto,
+            _ => continue,
+        };
+        found = Some((parsed, important));
+    }
+    found
+}
+
+/// The last `app-region` a declaration block sets, and whether it is `!important`.
+fn declared_app_region(block: &str) -> Option<(AppRegion, bool)> {
+    let mut found = None;
+    for declaration in block.split(';') {
+        let Some((name, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        if !matches!(
+            name.trim().to_ascii_lowercase().as_str(),
+            "app-region" | "-webkit-app-region"
+        ) {
+            continue;
+        }
+        let value = value.trim().to_ascii_lowercase();
+        let important = value.contains("!important");
+        let keyword = value.replace("!important", "");
+        let parsed = match keyword.trim() {
+            "drag" => AppRegion::Drag,
+            "no-drag" => AppRegion::NoDrag,
+            "none" => AppRegion::Auto,
             _ => continue,
         };
         found = Some((parsed, important));

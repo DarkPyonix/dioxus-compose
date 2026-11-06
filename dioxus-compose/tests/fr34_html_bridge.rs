@@ -1199,3 +1199,40 @@ fn fr34_1_transform_is_sent_as_a_matrix_about_the_top_left() {
         "{modifiers:?}"
     );
 }
+
+fn title_bar() -> Element {
+    rsx! {
+        style { ".bar {{ -webkit-app-region: drag; height: 40px; }} .bar .tool {{ app-region: no-drag; width: 30px; height: 20px; }}" }
+        div { class: "bar",
+            span { "title" }
+            button { class: "tool", "x" }
+        }
+        div { id: "plain", style: "height: 10px", "page" }
+    }
+}
+
+#[test]
+fn fr34_app_region_drag_and_no_drag_reach_the_renderer_as_window_drag() {
+    let mut host = Host::html(title_bar, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let dragged = node_with(&first, &Modifier::WindowDrag(true));
+    let cut_out = node_with(&first, &Modifier::WindowDrag(false));
+    assert_ne!(dragged, cut_out);
+    assert!(
+        modifiers_of(&first, dragged).contains(&Modifier::WindowDrag(true)),
+        "the drag region carries WindowDrag(true): {first:#?}"
+    );
+    // Only the two elements the page marked carry the modifier.
+    let marked = first
+        .iter()
+        .filter(|record| matches!(record, Record::Modifier(_, _, Modifier::WindowDrag(_))))
+        .count();
+    assert_eq!(marked, 2, "{first:#?}");
+}
+
+#[test]
+fn fr34_app_region_unchanged_frame_sends_nothing() {
+    let mut host = Host::html(title_bar, config);
+    host.rebuild().unwrap();
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+}

@@ -112,6 +112,13 @@ pub trait ClickTargets {
         let _ = node;
         0
     }
+
+    /// The `app-region` of `node` itself: 0 when the page says nothing, 1 for `drag` (a press
+    /// moves the window), 2 for `no-drag` (cut out of the drag region around it).
+    fn pointer_app_region(&self, node: NodeId) -> u8 {
+        let _ = node;
+        0
+    }
 }
 
 /// What an animation event from the renderer is for in the page.
@@ -1606,6 +1613,13 @@ impl PlanBridge {
         }
         if let Some(handler_id) = click {
             modifiers.push(Modifier::Clickable { handler_id });
+        }
+        if let PlanKey::Node(dom) = key {
+            match clicks.pointer_app_region(dom) {
+                1 => modifiers.push(Modifier::WindowDrag(true)),
+                2 => modifiers.push(Modifier::WindowDrag(false)),
+                _ => {}
+            }
         }
         let node_id = placed.id;
         for (index, modifier) in modifiers.iter().enumerate() {
