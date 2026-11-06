@@ -6,6 +6,7 @@ use std::cell::RefCell;
 use dioxus_compose::code::SYNTAX_SPAN_LEN;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
+use dioxus_compose::schema::RevealAlign;
 use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
 
 /// One decoded record with its borrowed parts made owned, so the batch can be dropped.
@@ -19,6 +20,23 @@ enum Record {
         base_version: u32,
         range: CodeRange,
         text: String,
+    },
+    SetSelection {
+        node_id: u32,
+        base_version: u32,
+        anchor: (u32, u32),
+        active: (u32, u32),
+    },
+    RevealRange {
+        node_id: u32,
+        base_version: u32,
+        range: CodeRange,
+        align: RevealAlign,
+    },
+    SetFolded {
+        node_id: u32,
+        start_line: u32,
+        collapsed: bool,
     },
     Other,
 }
@@ -70,6 +88,42 @@ fn records(batch: &[u8]) -> Vec<Record> {
                 base_version,
                 range: CodeRange::of(start_line, start_column, end_line, end_column),
                 text: text.to_string(),
+            },
+            Mutation::SetSelection {
+                node_id,
+                base_version,
+                anchor_line,
+                anchor_column,
+                active_line,
+                active_column,
+            } => Record::SetSelection {
+                node_id,
+                base_version,
+                anchor: (anchor_line, anchor_column),
+                active: (active_line, active_column),
+            },
+            Mutation::RevealRange {
+                node_id,
+                base_version,
+                start_line,
+                start_column,
+                end_line,
+                end_column,
+                align,
+            } => Record::RevealRange {
+                node_id,
+                base_version,
+                range: CodeRange::of(start_line, start_column, end_line, end_column),
+                align,
+            },
+            Mutation::SetFolded {
+                node_id,
+                start_line,
+                collapsed,
+            } => Record::SetFolded {
+                node_id,
+                start_line,
+                collapsed,
             },
             _ => Record::Other,
         })
@@ -459,5 +513,129 @@ fn fr38_an_edit_for_a_handle_no_editor_carries_is_dropped() {
         !after
             .iter()
             .any(|record| matches!(record, Record::EditCode { .. }))
+    );
+}
+
+fn navigating_app() -> Element {
+    let handle = use_code_editor();
+    rsx! {
+        Column {
+            CodeEditor { text: "let a = 1;\nlet b = 2;\n", handle }
+            Button {
+                text: "Select",
+                on_click: move |_| handle.select(3, Position::new(1, 4), Position::new(1, 5)),
+            }
+            Button {
+                text: "Reveal",
+                on_click: move |_| handle.reveal(3, CodeRange::of(1, 4, 1, 5), RevealAlign::Center),
+            }
+            Button {
+                text: "Fold",
+                on_click: move |_| handle.fold(0, true),
+            }
+        }
+    }
+}
+
+fn button_named(batch: &[Record], host: &mut Host, nth: usize) -> Vec<Record> {
+    let buttons: Vec<u32> = batch
+        .iter()
+        .filter_map(|record| match record {
+            Record::Create(node_id, WidgetKind::Button) => Some(*node_id),
+            _ => None,
+        })
+        .collect();
+    let button = buttons[nth];
+    send(
+        host,
+        button,
+        handler_of(batch, button, PropertyKind::OnClick),
+        EventPayload::Clicked,
+    )
+}
+
+/// A selection, a reveal and a fold asked of a handle each go out as one record addressed to the
+/// editor that carries the handle, in the batch of the call that asked, with the version they are
+/// written against. The application takes the reader to a match or a problem this way.
+#[test]
+fn fr38_select_reveal_and_fold_asked_of_a_handle_go_out_to_its_editor() {
+    let mut host = Host::new(navigating_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    assert!(!batch.iter().any(|r| matches!(
+        r,
+        Record::SetSelection { .. } | Record::RevealRange { .. } | Record::SetFolded { .. }
+    )));
+
+    let after = button_named(&batch, &mut host, 0);
+    assert_eq!(
+        after
+            .iter()
+            .filter(|r| matches!(r, Record::SetSelection { .. }))
+            .collect::<Vec<_>>(),
+        vec![&Record::SetSelection {
+            node_id: editor,
+            base_version: 3,
+            anchor: (1, 4),
+            active: (1, 5)
+        }]
+    );
+    let after = button_named(&batch, &mut host, 1);
+    assert_eq!(
+        after
+            .iter()
+            .filter(|r| matches!(r, Record::RevealRange { .. }))
+            .collect::<Vec<_>>(),
+        vec![&Record::RevealRange {
+            node_id: editor,
+            base_version: 3,
+            range: CodeRange::of(1, 4, 1, 5),
+            align: RevealAlign::Center
+        }]
+    );
+    let after = button_named(&batch, &mut host, 2);
+    assert_eq!(
+        after
+            .iter()
+            .filter(|r| matches!(r, Record::SetFolded { .. }))
+            .collect::<Vec<_>>(),
+        vec![&Record::SetFolded {
+            node_id: editor,
+            start_line: 0,
+            collapsed: true
+        }]
+    );
+}
+
+fn unattached_app() -> Element {
+    // A handle no editor carries.
+    let handle = CodeEditorHandle::new();
+    rsx! {
+        Column {
+            Button {
+                text: "Select",
+                on_click: move |_| {
+                    handle.select(0, Position::new(0, 0), Position::new(0, 1));
+                    handle.reveal(0, CodeRange::of(0, 0, 0, 1), RevealAlign::Nearest);
+                    handle.fold(0, true);
+                },
+            }
+        }
+    }
+}
+
+/// A handle no editor carries names nothing: its requests are dropped before the boundary rather
+/// than sent to a node the Renderer would have to report as unknown.
+#[test]
+fn fr38_requests_of_a_handle_no_editor_carries_are_dropped() {
+    let mut host = Host::new(unattached_app);
+    let batch = records(host.rebuild().unwrap());
+    let after = button_named(&batch, &mut host, 0);
+    assert!(
+        !after.iter().any(|r| matches!(
+            r,
+            Record::SetSelection { .. } | Record::RevealRange { .. } | Record::SetFolded { .. }
+        )),
+        "{after:?}"
     );
 }

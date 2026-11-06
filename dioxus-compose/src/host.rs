@@ -43,15 +43,49 @@ impl DioxusRuntime {
     /// Renderer would have to report as unknown.
     fn flush_code_edits(&mut self) {
         let renderer = &mut self.renderer;
-        crate::hooks::drain_edits(|edit| {
-            if let Some(node_id) = renderer.editor_node(edit.token) {
-                renderer.edit_code(
-                    node_id,
-                    edit.request_id,
-                    edit.base_version,
-                    edit.range,
-                    &edit.text,
-                );
+        crate::hooks::drain_edits(|request| {
+            use crate::hooks::EditorRequest;
+            match request {
+                EditorRequest::Edit(edit) => {
+                    if let Some(node_id) = renderer.editor_node(edit.token) {
+                        renderer.edit_code(
+                            node_id,
+                            edit.request_id,
+                            edit.base_version,
+                            edit.range,
+                            &edit.text,
+                        );
+                    }
+                }
+                EditorRequest::Select {
+                    token,
+                    base_version,
+                    anchor,
+                    active,
+                } => {
+                    if let Some(node_id) = renderer.editor_node(*token) {
+                        renderer.select_code(node_id, *base_version, *anchor, *active);
+                    }
+                }
+                EditorRequest::Reveal {
+                    token,
+                    base_version,
+                    range,
+                    align,
+                } => {
+                    if let Some(node_id) = renderer.editor_node(*token) {
+                        renderer.reveal_code(node_id, *base_version, *range, *align);
+                    }
+                }
+                EditorRequest::Fold {
+                    token,
+                    start_line,
+                    collapsed,
+                } => {
+                    if let Some(node_id) = renderer.editor_node(*token) {
+                        renderer.fold_code(node_id, *start_line, *collapsed);
+                    }
+                }
             }
         });
     }

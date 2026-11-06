@@ -445,6 +445,34 @@ impl ComposeRenderer {
             .edit_code(node_id, request_id, base_version, range, text);
     }
 
+    /// Writes one request to put a code editor's selection between two places.
+    pub(crate) fn select_code(
+        &mut self,
+        node_id: u32,
+        base_version: u32,
+        anchor: compose_rust::code::Position,
+        active: compose_rust::code::Position,
+    ) {
+        self.batch
+            .set_selection(node_id, base_version, anchor, active);
+    }
+
+    /// Writes one request to scroll a code editor until a range is on screen.
+    pub(crate) fn reveal_code(
+        &mut self,
+        node_id: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        align: compose_rust::schema::RevealAlign,
+    ) {
+        self.batch.reveal_range(node_id, base_version, range, align);
+    }
+
+    /// Writes one request to fold or unfold the stretch of a code editor from `start_line`.
+    pub(crate) fn fold_code(&mut self, node_id: u32, start_line: u32, collapsed: bool) {
+        self.batch.set_folded(node_id, start_line, collapsed);
+    }
+
     /// Turns a Modifier attribute written in `rsx!` into one slot of the node's chain.
     ///
     /// The Renderer applies the chain in list order, exactly as hand-written Compose does,
