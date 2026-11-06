@@ -548,8 +548,30 @@ pub(crate) struct PendingEdit {
     pub(crate) text: String,
 }
 
+/// One request asked of a code editor, waiting for the batch it goes out in.
+pub(crate) enum EditorRequest {
+    Edit(PendingEdit),
+    Select {
+        token: u32,
+        base_version: u32,
+        anchor: compose_rust::code::Position,
+        active: compose_rust::code::Position,
+    },
+    Reveal {
+        token: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        align: compose_rust::schema::RevealAlign,
+    },
+    Fold {
+        token: u32,
+        start_line: u32,
+        collapsed: bool,
+    },
+}
+
 thread_local! {
-    static EDITS: std::cell::RefCell<Vec<PendingEdit>> = const { std::cell::RefCell::new(Vec::new()) };
+    static EDITS: std::cell::RefCell<Vec<EditorRequest>> = const { std::cell::RefCell::new(Vec::new()) };
     static NEXT_EDITOR_TOKEN: std::cell::Cell<u32> = const { std::cell::Cell::new(1) };
 }
 
@@ -605,7 +627,57 @@ impl CodeEditorHandle {
             range,
             text: text.into(),
         };
-        EDITS.with_borrow_mut(|edits| edits.push(edit));
+        EDITS.with_borrow_mut(|edits| edits.push(EditorRequest::Edit(edit)));
+    }
+
+    /// Puts the selection between `anchor` and `active`, places in the document as it stood at
+    /// `base_version`. The Renderer moves both ends past what the reader typed since, and refuses
+    /// the request, with a protocol error, where an end is not a place in the document. An
+    /// application uses it to take the reader to a match or a problem. Like [`edit`](Self::edit)
+    /// it goes out with the batch the current call produces.
+    pub fn select(
+        &self,
+        base_version: u32,
+        anchor: compose_rust::code::Position,
+        active: compose_rust::code::Position,
+    ) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::Select {
+                token: self.token,
+                base_version,
+                anchor,
+                active,
+            });
+        });
+    }
+
+    /// Scrolls the editor until `range`, as the document stood at `base_version`, is on screen,
+    /// placed as `align` says. A range inside a folded stretch unfolds it.
+    pub fn reveal(
+        &self,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        align: compose_rust::schema::RevealAlign,
+    ) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::Reveal {
+                token: self.token,
+                base_version,
+                range,
+                align,
+            });
+        });
+    }
+
+    /// Folds or unfolds the stretch of the editor that starts on `start_line`.
+    pub fn fold(&self, start_line: u32, collapsed: bool) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::Fold {
+                token: self.token,
+                start_line,
+                collapsed,
+            });
+        });
     }
 }
 
@@ -615,7 +687,7 @@ pub fn use_code_editor() -> CodeEditorHandle {
 }
 
 /// Hands every queued edit to `emit` and empties the queue.
-pub(crate) fn drain_edits(mut emit: impl FnMut(&PendingEdit)) {
+pub(crate) fn drain_edits(mut emit: impl FnMut(&EditorRequest)) {
     let mut taken = EDITS.with_borrow_mut(std::mem::take);
     if taken.is_empty() {
         return;
