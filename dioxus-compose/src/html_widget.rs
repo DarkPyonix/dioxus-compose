@@ -264,6 +264,19 @@ pub(crate) fn render_islands(owner: u32, batch: &mut Batch) {
                 island.root = island.renderer.root_node();
             }
         }
+        // What the application asked of its code editor handles goes to the editor that carries
+        // each handle: a handle in a widget tree names a node of that tree's renderer, which the
+        // page's own flush does not know. A handle no tree carries is dropped here.
+        crate::hooks::drain_edits(|request| {
+            let token = request.token();
+            if let Some(island) = registry.islands.values_mut().find(|island| {
+                island.owner == owner && island.renderer.editor_node(token).is_some()
+            }) {
+                std::mem::swap(island.renderer.batch_mut(), batch);
+                island.renderer.apply_editor_request(request);
+                std::mem::swap(island.renderer.batch_mut(), batch);
+            }
+        });
         if changed_after_layout {
             registry.pending.insert(owner);
         }

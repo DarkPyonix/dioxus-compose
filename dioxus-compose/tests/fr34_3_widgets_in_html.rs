@@ -313,3 +313,94 @@ fn fr34_3_widget_inside_an_htmlview_island_hangs_from_the_islands_box() {
         "the island's box was not created by the island",
     );
 }
+
+mod editor_widgets {
+    use dioxus_compose::prelude::*;
+    use dioxus_compose::schema::RevealAlign;
+
+    /// A code editor in a widget tree, with a button that asks its handle for an edit, a selection
+    /// and a reveal.
+    pub fn editor() -> Element {
+        let handle = use_code_editor();
+        rsx! {
+            Column {
+                CodeEditor { text: "let a = 1;\n", handle }
+                Button {
+                    text: "go",
+                    on_click: move |_| {
+                        handle.edit(7, 0, CodeRange::of(0, 4, 0, 5), "b");
+                        handle.select(0, Position::new(0, 4), Position::new(0, 5));
+                        handle.reveal(0, CodeRange::of(0, 4, 0, 5), RevealAlign::Center);
+                    },
+                }
+            }
+        }
+    }
+}
+
+mod editor_page {
+    use super::editor_widgets;
+    use dioxus_compose::html::prelude::*;
+
+    pub fn app() -> Element {
+        rsx! {
+            div { style: "width: 400px",
+                WidgetView { app: editor_widgets::editor, style: "display: block" }
+            }
+        }
+    }
+}
+
+/// What a code editor handle in a widget tree asks goes to the editor that carries it. The page's
+/// own flush does not know a node of the tree, so without the tree's own flush the request was
+/// dropped and a find bar's selection, reveal and replace never reached the editor.
+#[test]
+fn fr38_a_code_editor_handle_in_a_widget_tree_reaches_its_editor() {
+    install();
+    reset_window_size();
+    let mut host = Host::html(editor_page::app, HtmlConfig::default);
+    let (button, handler, editor) = {
+        let first = decode_batch(host.rebuild().unwrap()).unwrap();
+        let (button, handler) = widget_click(&first).expect("the widget's button");
+        let editor = first
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::Create {
+                    node_id,
+                    widget: dioxus_compose::schema::WidgetKind::CodeEditor,
+                } => Some(*node_id),
+                _ => None,
+            })
+            .expect("the editor was created");
+        (button, handler, editor)
+    };
+    let (batch, _) = host
+        .dispatch(HostEvent {
+            node_id: button,
+            handler_id: handler,
+            payload: EventPayload::Clicked,
+        })
+        .unwrap();
+    let after = decode_batch(batch).unwrap();
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::EditCode { node_id, request_id: 7, base_version: 0, .. } if *node_id == editor
+        )),
+        "the edit did not reach the editor: {after:#?}"
+    );
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetSelection { node_id, base_version: 0, anchor_line: 0, anchor_column: 4, active_line: 0, active_column: 5 } if *node_id == editor
+        )),
+        "the selection did not reach the editor: {after:#?}"
+    );
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::RevealRange { node_id, .. } if *node_id == editor
+        )),
+        "the reveal did not reach the editor: {after:#?}"
+    );
+}
