@@ -51,7 +51,8 @@ use crate::paint::motion::{
 };
 use crate::paint::plan::{ColourResolver, Plan, plan_from_images};
 pub use pointer::{
-    Cursor, PointerInput, PointerKind, PointerSubscription, PointerType, UserSelect, WheelMode,
+    AppRegion, Cursor, PointerInput, PointerKind, PointerSubscription, PointerType, UserSelect,
+    WheelMode,
 };
 use writer::{DomWriter, WriterState, attribute_name, element_name};
 
@@ -1394,6 +1395,14 @@ impl ClickTargets for HtmlDom {
 
     fn pointer_cursor(&self, node: NodeId) -> u32 {
         self.cursor(node) as u32
+    }
+
+    fn pointer_app_region(&self, node: NodeId) -> u8 {
+        match self.app_region(node) {
+            AppRegion::Auto => 0,
+            AppRegion::Drag => 1,
+            AppRegion::NoDrag => 2,
+        }
     }
 
     fn pointer_user_select(&self, node: NodeId) -> u32 {

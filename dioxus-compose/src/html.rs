@@ -76,8 +76,8 @@ mod runtime;
 pub type NodeId = usize;
 
 pub use crate::dom::{
-    Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind, PointerSubscription,
-    PointerType, TransitionEventData, UserSelect, WheelMode, element_by_id,
+    AppRegion, Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind,
+    PointerSubscription, PointerType, TransitionEventData, UserSelect, WheelMode, element_by_id,
 };
 pub use crate::html_widget::WidgetView;
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
