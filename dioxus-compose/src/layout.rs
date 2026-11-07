@@ -965,10 +965,15 @@ impl MeasuredTree<'_> {
             return;
         }
         let mut child_space = None;
-        compute_leaf_layout(inputs, &style, resolve_calc_value, |_known, available_space| {
-            child_space = Some(available_space);
-            Size::ZERO
-        });
+        compute_leaf_layout(
+            inputs,
+            &style,
+            resolve_calc_value,
+            |_known, available_space| {
+                child_space = Some(available_space);
+                Size::ZERO
+            },
+        );
         let Some(available_space) = child_space else {
             return;
         };
@@ -983,7 +988,9 @@ impl MeasuredTree<'_> {
                 .doc
                 .get_node(box_id)
                 .and_then(|n| n.primary_styles())
-                .is_some_and(|s| matches!(s.clone_position(), Position::Absolute | Position::Fixed));
+                .is_some_and(|s| {
+                    matches!(s.clone_position(), Position::Absolute | Position::Fixed)
+                });
             if is_abs {
                 continue;
             }

@@ -12,8 +12,8 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose::html::{
     BaseDocument, DisplayList, NodeEntry, OverflowWrap, ParleyMeasurer, Plan, PlanChange, PlanKey,
     PlanKind, Rect, RunMarker, TextAlign, TextLineHeight, TextMeasureRequest, TextMeasurer,
-    TextMetrics, TextRun, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak, diff, element_by_id,
-    layout_document, plan_from,
+    TextMetrics, TextRun, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak, diff,
+    element_by_id, layout_document, plan_from,
 };
 
 /// Every character is 10px wide and every line 20px tall.
@@ -609,9 +609,17 @@ fn fr34_button_under_block_measures_its_text_run() {
         .flat_map(|entry| &entry.texts)
         .filter(|run| run.text.contains("다시"))
         .collect();
-    assert_eq!(text_runs.len(), 1, "the button label is preserved as one run: {list:#?}");
+    assert_eq!(
+        text_runs.len(),
+        1,
+        "the button label is preserved as one run: {list:#?}"
+    );
     assert_eq!(text_runs[0].text, "다시 연결");
-    assert_close(text_runs[0].rect.width, 50.0, "measured width from FakeMeasurer (5 chars * 10px)");
+    assert_close(
+        text_runs[0].rect.width,
+        50.0,
+        "measured width from FakeMeasurer (5 chars * 10px)",
+    );
     assert_eq!(text_runs[0].line_count, 1);
     let plan = plan_from(&list);
     let text_entry = list

@@ -1250,7 +1250,10 @@ fn fr34_button_under_block_sends_label_and_soft_wrap_false() {
     let mut host = Host::html(button_under_block, config);
     let first = tree(records(host.rebuild().unwrap()));
     let text_nodes = created(&first, WidgetKind::Text);
-    assert!(!text_nodes.is_empty(), "a text widget was created: {first:#?}");
+    assert!(
+        !text_nodes.is_empty(),
+        "a text widget was created: {first:#?}"
+    );
     let text_node = text_nodes[0];
     let props: Vec<(PropertyKind, Value)> = first
         .iter()
@@ -1274,5 +1277,9 @@ fn fr34_button_under_block_sends_label_and_soft_wrap_false() {
             Value::Bool(b) => Some(*b),
             _ => None,
         });
-    assert_eq!(soft_wrap, Some(false), "soft wrap is false for unconstrained label: {props:#?}");
+    assert_eq!(
+        soft_wrap,
+        Some(false),
+        "soft wrap is false for unconstrained label: {props:#?}"
+    );
 }
