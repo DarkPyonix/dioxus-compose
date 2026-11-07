@@ -1236,3 +1236,50 @@ fn fr34_app_region_unchanged_frame_sends_nothing() {
     host.rebuild().unwrap();
     assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
 }
+
+fn button_under_block() -> Element {
+    rsx! {
+        div { style: "display: block;",
+            button { style: "display: inline-flex;", "다시 연결" }
+        }
+    }
+}
+
+#[test]
+fn fr34_button_under_block_sends_label_and_soft_wrap_false() {
+    let mut host = Host::html(button_under_block, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let text_nodes = created(&first, WidgetKind::Text);
+    assert!(
+        !text_nodes.is_empty(),
+        "a text widget was created: {first:#?}"
+    );
+    let text_node = text_nodes[0];
+    let props: Vec<(PropertyKind, Value)> = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(id, prop, val) if *id == text_node => Some((*prop, val.clone())),
+            _ => None,
+        })
+        .collect();
+    let text = props
+        .iter()
+        .find(|(prop, _)| *prop == PropertyKind::Text)
+        .and_then(|(_, val)| match val {
+            Value::Str(s) => Some(s.as_str()),
+            _ => None,
+        });
+    assert_eq!(text, Some("다시 연결"), "button label text: {props:#?}");
+    let soft_wrap = props
+        .iter()
+        .find(|(prop, _)| *prop == PropertyKind::SoftWrap)
+        .and_then(|(_, val)| match val {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        });
+    assert_eq!(
+        soft_wrap,
+        Some(false),
+        "soft wrap is false for unconstrained label: {props:#?}"
+    );
+}
