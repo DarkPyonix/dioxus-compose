@@ -296,20 +296,25 @@ fn fr15_compose_rust_006_modifiers_reach_the_wire() {
     let mods: Vec<(u16, dioxus_compose::Modifier)> = mutations
         .iter()
         .filter_map(|m| match m {
-            Mutation::SetModifier { index, modifier, .. } => Some((*index, modifier.clone())),
+            Mutation::SetModifier {
+                index, modifier, ..
+            } => Some((*index, modifier.clone())),
             _ => None,
         })
         .collect();
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
+        mods.iter()
+            .any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
         "match parent size missing in slot 22: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
+        mods.iter()
+            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
         "window drag true missing in slot 23: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
+        mods.iter()
+            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
         "window drag false missing in slot 23: {mods:?}"
     );
     assert!(
@@ -336,20 +341,25 @@ fn fr15_compose_rust_006_modifiers_reach_the_wire() {
     let mods: Vec<(u16, dioxus_compose::Modifier)> = mutations
         .iter()
         .filter_map(|m| match m {
-            Mutation::SetModifier { index, modifier, .. } => Some((*index, modifier.clone())),
+            Mutation::SetModifier {
+                index, modifier, ..
+            } => Some((*index, modifier.clone())),
             _ => None,
         })
         .collect();
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
+        mods.iter()
+            .any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
         "raw match parent size missing in slot 22: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
+        mods.iter()
+            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
         "raw window drag true missing in slot 23: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
+        mods.iter()
+            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
         "raw window drag false missing in slot 23: {mods:?}"
     );
     assert!(

@@ -590,8 +590,14 @@ impl ComposeRenderer {
                 let a = any.as_any();
                 a.downcast_ref::<(f32, f32)>()
                     .copied()
-                    .or_else(|| a.downcast_ref::<(f64, f64)>().map(|&(x, y)| (x as f32, y as f32)))
-                    .or_else(|| a.downcast_ref::<(i32, i32)>().map(|&(x, y)| (x as f32, y as f32)))
+                    .or_else(|| {
+                        a.downcast_ref::<(f64, f64)>()
+                            .map(|&(x, y)| (x as f32, y as f32))
+                    })
+                    .or_else(|| {
+                        a.downcast_ref::<(i32, i32)>()
+                            .map(|&(x, y)| (x as f32, y as f32))
+                    })
             }
             _ => None,
         };
