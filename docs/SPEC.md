@@ -134,6 +134,13 @@ Modifier는 값 리스트로 직렬화합니다. 예: `[Padding(16), FillMaxWidt
 - 수용 기준: 스키마의 모든 Modifier 변형이 인코딩 후 디코딩해도 같습니다(`fr10_every_modifier_variant_in_the_vector_round_trips`). **(통과)**
 - 수용 기준: 값 리스트가 순서대로 Compose 체인으로 다시 서고, 순서가 결과에 반영됩니다(`fr10_modifier_list_rebuilds_the_compose_chain`). **(통과)**
 
+#### 10.1 compose-rust 0.0.6 추가 Modifier
+compose-rust 0.0.6에서 추가된 `Modifier::MatchParentSize`, `Modifier::WindowDrag`, `Modifier::PressFeedback`은 rsx 속성으로 작성합니다.
+- `match_parent_size: bool`: 부모 Box 크기에 맞추며 부모 크기 측정에는 기여하지 않습니다.
+- `window_drag: Option<bool>`: `true`는 창 드래그 영역으로 지정하고, `false`는 드래그 스트립 내부의 상호작용 요소를 드래그에서 제외합니다. `None`은 슬롯을 비웁니다.
+- `press_feedback: Option<(f32, f32)>`: 눌림 피드백의 축척(scale)과 틴트 투명도(tint_alpha)를 지정합니다. 커스텀 `Modifier::PressFeedback` 값도 직접 전달할 수 있습니다.
+- 수용 기준: `match_parent_size`, `window_drag`, `press_feedback`을 rsx로 작성했을 때 올바른 Modifier 변형으로 인코딩되어 와이어에 도달합니다(`fr15_every_modifier_in_the_schema_is_reachable_from_rsx`).
+
 기준을 2026-09-22에 적었습니다. 그 전까지 이 항목에는 수용 기준이 하나도 없었고, 기준 없는 요구사항은 검증할 것이 없어서 영원히 `Agreed`에 머무릅니다. 두 테스트는 그 전부터 있었습니다.
 
 ### FR-13 디자인 프리미티브 (`Done`)
@@ -2487,7 +2494,7 @@ pr6 forwarder cost: 12.15 ns/call across the boundary, 0.44 ns/call in this modu
 | Rust 공개 API | Dioxus 관례를 따릅니다: `launch`, `LaunchBuilder`, `use_*` 훅, PascalCase 컴포넌트 | `dioxus_compose::launch(app)`, `use_text_field()` |
 | Rust 타입 | PascalCase, `#[repr(C)]` 경계 타입은 역할 이름 | `MutationBatch`, `LoopMode`, `HostEvent` |
 | rsx 위젯 | Compose 이름을 그대로 씁니다 | `Column`, `Row`, `LazyColumn`, `TextField` |
-| rsx 속성과 Modifier | snake_case, Compose 이름을 옮긴 것 | `fill_max_width`, `padding`, `on_click`, `on_value_change` |
+| rsx 속성과 Modifier | snake_case, Compose 이름을 옮긴 것 | `fill_max_width`, `padding`, `on_click`, `on_value_change`, `match_parent_size`, `window_drag`, `press_feedback` |
 | Kotlin 선언 | camelCase 함수, PascalCase 타입, 컴포저블은 PascalCase 명사 | `DioxusContent(host)`, `rememberDioxusHost()`, `HostBridge.dispatchEvent()` |
 | Kotlin 생성 코드 | `generated` 패키지, 파일 이름 접미사 `.gen.kt` | `dioxus.compose.protocol` |
 | 이벤트/Mutation 태그 | Rust `enum` 변형은 PascalCase, Kotlin `sealed interface` 하위 타입은 같은 이름 | `SetText`, `TextSubmitted` |

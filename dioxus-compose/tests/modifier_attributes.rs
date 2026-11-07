@@ -273,3 +273,91 @@ fn fr13_every_widget_takes_the_modifier_chain() {
         "the canvas, the image and the icon should each carry a height: {sized:?}"
     );
 }
+
+#[test]
+fn fr15_compose_rust_006_modifiers_reach_the_wire() {
+    fn app() -> Element {
+        rsx! {
+            dioxus_compose::Box {
+                match_parent_size: true,
+                window_drag: true,
+                press_feedback: (0.95, 0.1),
+                Button {
+                    text: "click",
+                    window_drag: false,
+                    press_feedback: (1.0, 0.0),
+                }
+            }
+        }
+    }
+
+    let mut host = Host::new(app);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let mods: Vec<(u16, dioxus_compose::Modifier)> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            Mutation::SetModifier { index, modifier, .. } => Some((*index, modifier.clone())),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
+        "match parent size missing in slot 22: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
+        "window drag true missing in slot 23: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
+        "window drag false missing in slot 23: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 24 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.95).abs() < 1e-4 && (*tint_alpha - 0.1).abs() < 1e-4)),
+        "press feedback missing in slot 24: {mods:?}"
+    );
+
+    fn raw_app() -> Element {
+        rsx! {
+            composebox {
+                match_parent_size: true,
+                window_drag: true,
+                press_feedback: (0.95_f32, 0.1_f32),
+            }
+            button {
+                window_drag: false,
+                press_feedback: Modifier::PressFeedback { scale: 0.90, tint_alpha: 0.20 },
+            }
+        }
+    }
+
+    let mut host = Host::new(raw_app);
+    let mutations = decode_batch(host.rebuild().unwrap()).unwrap();
+    let mods: Vec<(u16, dioxus_compose::Modifier)> = mutations
+        .iter()
+        .filter_map(|m| match m {
+            Mutation::SetModifier { index, modifier, .. } => Some((*index, modifier.clone())),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
+        "raw match parent size missing in slot 22: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
+        "raw window drag true missing in slot 23: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
+        "raw window drag false missing in slot 23: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 24 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.95).abs() < 1e-4 && (*tint_alpha - 0.1).abs() < 1e-4)),
+        "raw press feedback missing in slot 24: {mods:?}"
+    );
+    assert!(
+        mods.iter().any(|(idx, m)| *idx == 24 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.90).abs() < 1e-4 && (*tint_alpha - 0.20).abs() < 1e-4)),
+        "raw press feedback enum missing in slot 24: {mods:?}"
+    );
+}

@@ -106,9 +106,43 @@ struct StackNode {
     paths: HashMap<Vec<u8>, PathTarget>,
 }
 
+/// Slot assignments, which are chain positions. Every write in one process uses
+/// this table, so a node never holds a value under a meaning it no longer has, but
+/// the relative order of the slots is the order the Renderer applies them in and
+/// has to stay what CSS and Compose both expect: where the box is and how big, then
+/// what it is drawn through, then what fills and outlines it, then what responds
+/// to a press, then how far its content sits inside.
+pub mod slot {
+    pub const WEIGHT: u16 = 0;
+    pub const OFFSET: u16 = 1;
+    pub const REQUIRED_SIZE: u16 = 2;
+    pub const FILL_MAX_WIDTH: u16 = 3;
+    pub const FILL_MAX_HEIGHT: u16 = 4;
+    pub const WIDTH: u16 = 5;
+    pub const HEIGHT: u16 = 6;
+    pub const TRANSFORM: u16 = 7;
+    pub const ALPHA: u16 = 8;
+    pub const SHADOW: u16 = 9;
+    pub const CORNER_EACH: u16 = 10;
+    pub const SHAPE: u16 = 11;
+    pub const BACKGROUND: u16 = 12;
+    pub const BORDER: u16 = 13;
+    pub const BORDER_EACH: u16 = 14;
+    pub const ELEVATION: u16 = 15;
+    pub const CLIP: u16 = 16;
+    pub const CLICKABLE: u16 = 17;
+    pub const PADDING: u16 = 18;
+    pub const OBSERVE_SIZE: u16 = 19;
+    pub const MOTION: u16 = 20;
+    pub const MATERIAL: u16 = 21;
+    pub const MATCH_PARENT_SIZE: u16 = 22;
+    pub const WINDOW_DRAG: u16 = 23;
+    pub const PRESS_FEEDBACK: u16 = 24;
+}
+
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 22;
+const MODIFIER_SLOTS: usize = 25;
 
 /// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
 /// takes no slot in the Compose tree.
@@ -531,36 +565,7 @@ impl ComposeRenderer {
         value: &AttributeValue,
     ) -> Option<Option<(u16, compose_rust::Modifier)>> {
         use compose_rust::Modifier;
-
-        // Slot assignments, which are chain positions. Every write in one process uses
-        // this table, so a node never holds a value under a meaning it no longer has, but
-        // the relative order of the slots is the order the Renderer applies them in and
-        // has to stay what CSS and Compose both expect: where the box is and how big, then
-        // what it is drawn through, then what fills and outlines it, then what responds
-        // to a press, then how far its content sits inside.
-        const WEIGHT: u16 = 0;
-        const OFFSET: u16 = 1;
-        const REQUIRED_SIZE: u16 = 2;
-        const FILL_MAX_WIDTH: u16 = 3;
-        const FILL_MAX_HEIGHT: u16 = 4;
-        const WIDTH: u16 = 5;
-        const HEIGHT: u16 = 6;
-        // The transform sits outside the opacity and the decoration, so all of them turn
-        // with the box, and inside the offset, so it turns about the box where it is.
-        const TRANSFORM: u16 = 7;
-        const ALPHA: u16 = 8;
-        const SHADOW: u16 = 9;
-        const CORNER_EACH: u16 = 10;
-        const SHAPE: u16 = 11;
-        const BACKGROUND: u16 = 12;
-        const BORDER: u16 = 13;
-        const BORDER_EACH: u16 = 14;
-        const ELEVATION: u16 = 15;
-        const CLIP: u16 = 16;
-        const PADDING: u16 = 18;
-        const OBSERVE_SIZE: u16 = 19;
-        const MOTION: u16 = 20;
-        const MATERIAL: u16 = 21;
+        use slot::*;
 
         let float = |value: &AttributeValue| match value {
             AttributeValue::Float(number) => Some(*number as f32),
@@ -570,6 +575,24 @@ impl ComposeRenderer {
         let integer = |value: &AttributeValue| match value {
             AttributeValue::Int(number) => Some(*number),
             AttributeValue::Float(number) => Some(*number as i64),
+            _ => None,
+        };
+        let as_bool = |value: &AttributeValue| match value {
+            AttributeValue::Bool(b) => Some(*b),
+            _ => None,
+        };
+        let as_modifier = |value: &AttributeValue| match value {
+            AttributeValue::Any(any) => any.as_any().downcast_ref::<Modifier>().cloned(),
+            _ => None,
+        };
+        let as_f32_pair = |value: &AttributeValue| match value {
+            AttributeValue::Any(any) => {
+                let a = any.as_any();
+                a.downcast_ref::<(f32, f32)>()
+                    .copied()
+                    .or_else(|| a.downcast_ref::<(f64, f64)>().map(|&(x, y)| (x as f32, y as f32)))
+                    .or_else(|| a.downcast_ref::<(i32, i32)>().map(|&(x, y)| (x as f32, y as f32)))
+            }
             _ => None,
         };
 
@@ -598,6 +621,9 @@ impl ComposeRenderer {
             "border_each" => Some(BORDER_EACH),
             "clip" => Some(CLIP),
             "transform" => Some(TRANSFORM),
+            "match_parent_size" => Some(MATCH_PARENT_SIZE),
+            "window_drag" => Some(WINDOW_DRAG),
+            "press_feedback" => Some(PRESS_FEEDBACK),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -823,6 +849,52 @@ impl ComposeRenderer {
                 Some(Some((CLIP, Modifier::Clip(*enabled))))
             }
             "alpha" => Some(Some((ALPHA, Modifier::Alpha(float(value)?)))),
+            "match_parent_size" => {
+                if let Some(enabled) = as_bool(value) {
+                    Some(Some((
+                        slot::MATCH_PARENT_SIZE,
+                        if enabled {
+                            Modifier::MatchParentSize
+                        } else {
+                            Modifier::Empty
+                        },
+                    )))
+                } else {
+                    match as_modifier(value)? {
+                        m @ Modifier::MatchParentSize | m @ Modifier::Empty => {
+                            Some(Some((slot::MATCH_PARENT_SIZE, m)))
+                        }
+                        _ => None,
+                    }
+                }
+            }
+            "window_drag" => {
+                if let Some(enabled) = as_bool(value) {
+                    Some(Some((slot::WINDOW_DRAG, Modifier::WindowDrag(enabled))))
+                } else {
+                    match as_modifier(value)? {
+                        m @ Modifier::WindowDrag(_) | m @ Modifier::Empty => {
+                            Some(Some((slot::WINDOW_DRAG, m)))
+                        }
+                        _ => None,
+                    }
+                }
+            }
+            "press_feedback" => {
+                if let Some((scale, tint_alpha)) = as_f32_pair(value) {
+                    Some(Some((
+                        slot::PRESS_FEEDBACK,
+                        Modifier::PressFeedback { scale, tint_alpha },
+                    )))
+                } else {
+                    match as_modifier(value)? {
+                        m @ Modifier::PressFeedback { .. } | m @ Modifier::Empty => {
+                            Some(Some((slot::PRESS_FEEDBACK, m)))
+                        }
+                        _ => None,
+                    }
+                }
+            }
             _ => None,
         }
     }
@@ -1824,7 +1896,7 @@ fn window_property_kind(name: &str) -> Option<PropertyKind> {
 }
 
 /// The chain position of the press modifier, which `modifier_for` also uses.
-const CLICKABLE_SLOT: u16 = 17;
+const CLICKABLE_SLOT: u16 = slot::CLICKABLE;
 
 fn is_clickable_event(name: &str) -> bool {
     matches!(name, "clickable" | "onclickable")
