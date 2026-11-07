@@ -39,6 +39,10 @@ fn dp(value: Option<f32>) -> f64 {
     f64::from(value.unwrap_or(0.0))
 }
 
+fn opt_press_feedback(value: Option<(f32, f32)>) -> Option<AttributeValue> {
+    value.map(AttributeValue::any_value)
+}
+
 /// A box that places each child where the Host already put it, for a screen whose layout
 /// was computed before it got here, such as an HTML page laid out by a CSS engine.
 ///
@@ -51,6 +55,9 @@ fn dp(value: Option<f32>) -> f64 {
 /// and shape records.
 #[component]
 pub fn AbsoluteBox(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] offset: Option<(f32, f32)>,
     #[props(default)] required_size: Option<(f32, f32)>,
     #[props(default)] background: Option<Paint>,
@@ -146,6 +153,9 @@ pub fn AbsoluteBox(
     };
     rsx! {
         absolutebox {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             island_zoom: island_zoom.map(f64::from),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
@@ -177,6 +187,9 @@ pub fn AbsoluteBox(
 
 #[component]
 pub fn Column(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -236,6 +249,9 @@ pub fn Column(
 ) -> Element {
     rsx! {
         column {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -276,6 +292,9 @@ pub fn Column(
 
 #[component]
 pub fn Row(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -335,6 +354,9 @@ pub fn Row(
 ) -> Element {
     rsx! {
         row {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -375,6 +397,9 @@ pub fn Row(
 
 #[component]
 pub fn ComposeBox(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -431,6 +456,9 @@ pub fn ComposeBox(
 ) -> Element {
     rsx! {
         composebox {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -470,6 +498,9 @@ pub fn ComposeBox(
 /// Renderer's, like focus and animation state, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollColumn(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -502,6 +533,9 @@ pub fn ScrollColumn(
 ) -> Element {
     rsx! {
         scrollcolumn {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -529,6 +563,9 @@ pub fn ScrollColumn(
 /// scroll position is the Renderer's, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollRow(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -561,6 +598,9 @@ pub fn ScrollRow(
 ) -> Element {
     rsx! {
         scrollrow {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -588,6 +628,9 @@ pub fn ScrollRow(
 /// size does not resend the rest of the text's styling.
 #[component]
 pub fn Text(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -677,6 +720,9 @@ pub fn Text(
         ($($listener:tt)*) => {
             rsx! {
                 text {
+                    match_parent_size: match_parent_size.then_some(true),
+                    window_drag,
+                    press_feedback: opt_press_feedback(press_feedback),
                     cursor: opt_role(cursor),
                     user_select: opt_role(user_select),
                     pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -791,6 +837,9 @@ pub fn TextField(
 /// The same rsx draws differently per system, and that is correct behaviour.
 #[component]
 pub fn Button(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -835,6 +884,9 @@ pub fn Button(
 ) -> Element {
     rsx! {
         button {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             button_kind: opt_role(button_kind),
             weight: opt_dp(weight),
             width: opt_dp(width),
@@ -1000,6 +1052,9 @@ pub fn LazyColumn(
 /// own. `Modifier::Elevation` overrides the resting height when the Host has a reason to.
 #[component]
 pub fn Card(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -1055,6 +1110,9 @@ pub fn Card(
 ) -> Element {
     rsx! {
         card {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
@@ -1093,6 +1151,9 @@ pub fn Card(
 /// would be wrong and only the surface is wanted.
 #[component]
 pub fn Surface(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -1148,6 +1209,9 @@ pub fn Surface(
 ) -> Element {
     rsx! {
         surface {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),

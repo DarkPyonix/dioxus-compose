@@ -207,7 +207,11 @@ fn surface() -> Element {
                     }
                     dioxus_compose::Box {
                         alignment: Alignment::BottomEnd,
+                        match_parent_size: true,
+                        window_drag: true,
+                        press_feedback: (0.95, 0.1),
                         Text {
+                            window_drag: false,
                             text: text.clone(),
                             spans: spans.clone(),
                             type_role: TypeRole::Title,
@@ -1040,15 +1044,7 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-/// - `MatchParentSize`, `WindowDrag`, `PressFeedback`: arrived with compose-rust 0.0.6 and
-///   have no rsx attribute yet (tracked in DarkPyonix/dioxus-compose#166).
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &[
-    "Size",
-    "PaddingEach",
-    "MatchParentSize",
-    "WindowDrag",
-    "PressFeedback",
-];
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {

@@ -108,6 +108,10 @@ pub mod window_attr_markers {
     impl_attr!(ThemeAttr, compose_rust::schema::Theme, |v| {
         AttributeValue::any_value(v)
     });
+    pub struct ModifierAttr;
+    impl_attr!(ModifierAttr, compose_rust::Modifier, |v| {
+        AttributeValue::any_value(v)
+    });
 }
 pub use hooks::{
     Animated, CodeEditorHandle, WindowHandle, ZoomHandle, animate_color_as_state,
@@ -331,6 +335,9 @@ pub mod elements {
             pub const tear_off_key: AttributeDescription = ("tear_off_key", None, false);
             pub const onwindowdragover: AttributeDescription = ("onwindowdragover", None, false);
             pub const on_window_drag_over: AttributeDescription = ("onwindowdragover", None, false);
+            pub const match_parent_size: AttributeDescription = ("match_parent_size", None, false);
+            pub const window_drag: AttributeDescription = ("window_drag", None, false);
+            pub const press_feedback: AttributeDescription = ("press_feedback", None, false);
         };
     }
 
