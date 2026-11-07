@@ -122,27 +122,37 @@ pub mod slot {
     pub const HEIGHT: u16 = 6;
     pub const TRANSFORM: u16 = 7;
     pub const ALPHA: u16 = 8;
+    // The shadows take SHADOW and the MAX_SHADOWS positions after it.
     pub const SHADOW: u16 = 9;
-    pub const CORNER_EACH: u16 = 10;
-    pub const SHAPE: u16 = 11;
-    pub const BACKGROUND: u16 = 12;
-    pub const BORDER: u16 = 13;
-    pub const BORDER_EACH: u16 = 14;
-    pub const ELEVATION: u16 = 15;
-    pub const CLIP: u16 = 16;
-    pub const CLICKABLE: u16 = 17;
-    pub const PADDING: u16 = 18;
-    pub const OBSERVE_SIZE: u16 = 19;
-    pub const MOTION: u16 = 20;
-    pub const MATERIAL: u16 = 21;
-    pub const MATCH_PARENT_SIZE: u16 = 22;
-    pub const WINDOW_DRAG: u16 = 23;
-    pub const PRESS_FEEDBACK: u16 = 24;
+    pub const CORNER_EACH: u16 = SHADOW + super::MAX_SHADOWS as u16;
+    pub const SHAPE: u16 = CORNER_EACH + 1;
+    pub const BACKGROUND: u16 = CORNER_EACH + 2;
+    pub const BORDER: u16 = CORNER_EACH + 3;
+    pub const BORDER_EACH: u16 = CORNER_EACH + 4;
+    pub const ELEVATION: u16 = CORNER_EACH + 5;
+    pub const CLIP: u16 = CORNER_EACH + 6;
+    pub const CLICKABLE: u16 = CORNER_EACH + 7;
+    pub const PADDING: u16 = CORNER_EACH + 8;
+    pub const OBSERVE_SIZE: u16 = CORNER_EACH + 9;
+    pub const MOTION: u16 = CORNER_EACH + 10;
+    pub const MATERIAL: u16 = CORNER_EACH + 11;
+    pub const MATCH_PARENT_SIZE: u16 = CORNER_EACH + 12;
+    pub const WINDOW_DRAG: u16 = CORNER_EACH + 13;
+    pub const PRESS_FEEDBACK: u16 = CORNER_EACH + 14;
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 25;
+const MODIFIER_SLOTS: usize = 32;
+
+/// How many shadows one node can carry. Each takes a chain position of its own, because a
+/// shadow is a `Shadow` modifier and the wire holds one modifier per position.
+pub const MAX_SHADOWS: usize = 8;
+
+/// The first of the node's shadow positions. They sit in a row, ahead of the corners, the
+/// shape and the fill, so every shadow is drawn behind the node and the shape's clip does
+/// not cut it. A later position is drawn over an earlier one.
+const SHADOW_SLOT: u16 = slot::SHADOW;
 
 /// Node id 0 is the "no node" sentinel: a Dioxus placeholder, which draws nothing and
 /// takes no slot in the Compose tree.
@@ -622,7 +632,6 @@ impl ComposeRenderer {
             "animated_offset" => Some(TRANSFORM),
             "required_size" => Some(REQUIRED_SIZE),
             "alpha" => Some(ALPHA),
-            "shadow" => Some(SHADOW),
             "corner_each" => Some(CORNER_EACH),
             "border_each" => Some(BORDER_EACH),
             "clip" => Some(CLIP),
@@ -751,7 +760,7 @@ impl ComposeRenderer {
             // A whole modifier, carried as itself so its numbers arrive as one record. Only
             // the kind the attribute names is accepted, so a value meant for one slot can
             // never land in another.
-            "offset" | "required_size" | "corner_each" | "border_each" | "shadow" | "transform" => {
+            "offset" | "required_size" | "corner_each" | "border_each" | "transform" => {
                 let AttributeValue::Any(any) = value else {
                     return None;
                 };
@@ -759,7 +768,6 @@ impl ComposeRenderer {
                 let fits = match (&modifier, name) {
                     (Modifier::Offset { .. }, "offset")
                     | (Modifier::RequiredSize { .. }, "required_size")
-                    | (Modifier::Shadow { .. }, "shadow")
                     | (Modifier::Transform { .. }, "transform") => true,
                     // One radius or one border for every side is the record an ordinary
                     // node already sends, which is what `Modifier::corner_radii` and
@@ -907,6 +915,58 @@ impl ComposeRenderer {
 
     fn write(&mut self, mutation: Mutation<'_>) {
         self.batch.write(mutation);
+    }
+
+    /// Writes a node's shadow list: one `Shadow` modifier in each of the positions from
+    /// `SHADOW_SLOT`, in the order of the chain, and `Empty` in a position a shorter list
+    /// no longer fills.
+    ///
+    /// A single `Modifier::Shadow` is a list of one, which is what `AbsoluteBox` writes.
+    /// A position is cleared only when this attribute wrote it, and only the first time,
+    /// so a node that never had a shadow costs no mutation.
+    fn write_shadows(&mut self, node_id: u32, value: &AttributeValue) {
+        use compose_rust::Modifier;
+        let shadows: Vec<Modifier> = match value {
+            AttributeValue::Any(any) => {
+                let any = any.as_any();
+                if let Some(chain) = any.downcast_ref::<crate::widgets::ShadowChain>() {
+                    chain.0.clone()
+                } else if let Some(shadow @ Modifier::Shadow { .. }) =
+                    any.downcast_ref::<Modifier>()
+                {
+                    vec![shadow.clone()]
+                } else {
+                    Vec::new()
+                }
+            }
+            _ => Vec::new(),
+        };
+        let owners = self
+            .modifier_slots
+            .entry(node_id)
+            .or_insert([""; MODIFIER_SLOTS]);
+        let mut writes = Vec::new();
+        for position in 0..MAX_SHADOWS {
+            let slot = SHADOW_SLOT as usize + position;
+            match shadows.get(position) {
+                Some(shadow @ Modifier::Shadow { .. }) => {
+                    owners[slot] = "shadow";
+                    writes.push((slot as u16, shadow.clone()));
+                }
+                _ if owners[slot] == "shadow" => {
+                    owners[slot] = "";
+                    writes.push((slot as u16, Modifier::Empty));
+                }
+                _ => {}
+            }
+        }
+        for (index, modifier) in writes {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index,
+                modifier,
+            });
+        }
     }
 
     fn allocate_node(&mut self, widget: WidgetKind) -> u32 {
@@ -1754,6 +1814,11 @@ impl WriteMutations for ComposeRenderer {
                 name,
                 "onclickable" | "onwindowdragover" | "on_window_drag_over"
             ) {
+                return;
+            }
+            // A node's shadows are a list, so one attribute writes several positions.
+            if name == "shadow" {
+                self.write_shadows(node_id, value);
                 return;
             }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {

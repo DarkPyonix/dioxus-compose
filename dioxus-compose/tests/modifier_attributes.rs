@@ -304,22 +304,22 @@ fn fr15_compose_rust_006_modifiers_reach_the_wire() {
         .collect();
     assert!(
         mods.iter()
-            .any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
-        "match parent size missing in slot 22: {mods:?}"
+            .any(|(idx, m)| *idx == 29 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
+        "match parent size missing in slot 29: {mods:?}"
     );
     assert!(
         mods.iter()
-            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
-        "window drag true missing in slot 23: {mods:?}"
+            .any(|(idx, m)| *idx == 30 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
+        "window drag true missing in slot 30: {mods:?}"
     );
     assert!(
         mods.iter()
-            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
-        "window drag false missing in slot 23: {mods:?}"
+            .any(|(idx, m)| *idx == 30 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
+        "window drag false missing in slot 30: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 24 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.95).abs() < 1e-4 && (*tint_alpha - 0.1).abs() < 1e-4)),
-        "press feedback missing in slot 24: {mods:?}"
+        mods.iter().any(|(idx, m)| *idx == 31 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.95).abs() < 1e-4 && (*tint_alpha - 0.1).abs() < 1e-4)),
+        "press feedback missing in slot 31: {mods:?}"
     );
 
     fn raw_app() -> Element {
@@ -349,25 +349,25 @@ fn fr15_compose_rust_006_modifiers_reach_the_wire() {
         .collect();
     assert!(
         mods.iter()
-            .any(|(idx, m)| *idx == 22 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
-        "raw match parent size missing in slot 22: {mods:?}"
+            .any(|(idx, m)| *idx == 29 && matches!(m, dioxus_compose::Modifier::MatchParentSize)),
+        "raw match parent size missing in slot 29: {mods:?}"
     );
     assert!(
         mods.iter()
-            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
-        "raw window drag true missing in slot 23: {mods:?}"
+            .any(|(idx, m)| *idx == 30 && matches!(m, dioxus_compose::Modifier::WindowDrag(true))),
+        "raw window drag true missing in slot 30: {mods:?}"
     );
     assert!(
         mods.iter()
-            .any(|(idx, m)| *idx == 23 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
-        "raw window drag false missing in slot 23: {mods:?}"
+            .any(|(idx, m)| *idx == 30 && matches!(m, dioxus_compose::Modifier::WindowDrag(false))),
+        "raw window drag false missing in slot 30: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 24 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.95).abs() < 1e-4 && (*tint_alpha - 0.1).abs() < 1e-4)),
-        "raw press feedback missing in slot 24: {mods:?}"
+        mods.iter().any(|(idx, m)| *idx == 31 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.95).abs() < 1e-4 && (*tint_alpha - 0.1).abs() < 1e-4)),
+        "raw press feedback missing in slot 31: {mods:?}"
     );
     assert!(
-        mods.iter().any(|(idx, m)| *idx == 24 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.90).abs() < 1e-4 && (*tint_alpha - 0.20).abs() < 1e-4)),
-        "raw press feedback enum missing in slot 24: {mods:?}"
+        mods.iter().any(|(idx, m)| *idx == 31 && matches!(m, dioxus_compose::Modifier::PressFeedback { scale, tint_alpha } if (*scale - 0.90).abs() < 1e-4 && (*tint_alpha - 0.20).abs() < 1e-4)),
+        "raw press feedback enum missing in slot 31: {mods:?}"
     );
 }
