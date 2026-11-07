@@ -1,6 +1,6 @@
 # Samples
 
-Eleven Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
+Seventeen Dioxus apps written the way one is written for the web: HTML elements, CSS, hooks and
 signals, with `use dioxus_compose::html::prelude::*` and nothing else from this crate. Each is
 a crate of its own, and each exposes the same two things:
 
@@ -21,20 +21,40 @@ so a window can show it and a test can lay it out without one.
 | `table` | Invoices in an HTML table, wider than the page on a narrow screen so it scrolls sideways inside its wrapper. The amount header sorts |
 | `chat` | A conversation that scrolls above a composer pinned to the bottom, and an assistant reply that grows as its text arrives, appended through a context any worker can reach |
 | `todo` | Add, tick off, delete and reorder items. Rows are keyed by id, so moving an item moves its row rather than rewriting every row's text |
+| `layout` | Flexbox (wrap, grow and shrink, alignment, `order`), CSS grid (named areas, `auto-fill`, spans, explicit lines) and positioning (a sticky header, `z-index`, absolute boxes in a relative parent), with a button that flips a flex direction |
 | `overlay` | A dropdown menu positioned against its button, a confirmation dialog over a dimmed `position: fixed` backdrop, and a preview that clips its banner to rounded corners |
 | `theme` | Every colour a CSS custom property: a light set, a dark set under `prefers-color-scheme: dark`, and a button that overrides the system's choice |
+| `typography` | A type specimen page, one section per text feature: sizes, weights, line height, letter spacing, alignment, white space, long words, an ellipsis box, generated content, list markers and decorations. A button cycles the specimen's font size |
 | `workbench` | A small code editor: an activity bar, a file tree whose folders open and close, tabs that grow to fit their names, and a status bar |
+| `landing` | A responsive product page: a hero painted with a gradient, a card grid of features, three pricing plans (the middle one highlighted) and a footer of link columns, centred with `margin: 0 auto`. `@media` queries on the width change it at phone, tablet and desktop widths, and a toggle switches the prices between monthly and yearly |
+| `motion` | Boxes rotated, scaled and skewed with `transform-origin` (a click lands on the drawn shape), a transition a button starts, `@keyframes` loops, and a width transition the Host ticks |
+| `kanban` | A board of three flex columns. Cards move one column left or right and land after the cards already there, each column counts its cards and shows a placeholder when empty, and a form adds a card to the first column |
+| `helpcenter` | A search field and four topics whose headings open and close them. A long name is cut with an ellipsis, a chevron turns a quarter turn by a transition, and an answer mixes bold, italic, `code`, coloured and link-styled words in one paragraph. One answer is a numbered list. Typing filters the topics by name |
 
 ## Where they are drawn
 
-Today these are laid out by the Host and nowhere else. `HtmlDom` runs the app, stylo resolves
+The Host lays them out. `HtmlDom` runs the app, stylo resolves
 the CSS, Taffy lays out blocks, flex and grid, and the result is a display list and a plan of
 drawing elements: absolute rectangles, colours, borders, text runs, form fields, scroll
 containers and images. Each sample's tests check that layout against numbers worked out by
 hand, and click, type and submit through the same events a renderer would send.
 
-Drawing them waits for the bridge from that plan to the renderer. Once it lands, the same
-`app()` and `STYLE` are what a window shows, and nothing in the samples changes.
+The HTML bridge writes that plan into the renderer's batch, the whole tree on the first frame
+and then only what changed, and the renderer's clicks, typing and choices come back to the
+same handlers. `hello` has a binary that opens it in a window through the bridge:
+
+```
+cargo run -p sample-html-hello
+```
+
+Its library has `config()`, which hands `STYLE` to an `HtmlConfig`, and `launch()`, which calls
+`LaunchBuilder::new().with_html(config).launch(app)`. The same builder goes to `android_main!`,
+`web_main!` and, through `launch()`, `ios_main!`, so `hello` is a cdylib for an Android Activity
+and a browser page and a staticlib for iOS, like the native-widget samples, with the same
+`Dioxus.toml` and `ios/main.c`. The other samples expose the same `app()` and `STYLE` and are
+launched the same way with `LaunchBuilder::with_html`; they have no binary of their own yet. The bridge is tested on the Host against the records the renderer receives
+(`samples/hello/tests/hello.rs`). What a window shows has not been confirmed by running the
+renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
 
 ## Running the tests
 

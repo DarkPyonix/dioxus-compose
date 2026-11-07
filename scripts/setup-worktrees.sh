@@ -108,6 +108,18 @@ handle() {
         ok "$tree: builds into its own target/"
     fi
 
+    # The workspace patches blitz-dom with a directory this script builds inside the
+    # worktree, and cargo cannot load the workspace without it. A branch cut before the
+    # patch existed has no script, and is left alone.
+    if [[ $check -eq 0 && -x "$tree/scripts/apply-patches.sh" ]]; then
+        if "$tree/scripts/apply-patches.sh" >/dev/null; then
+            ok "$tree: blitz-dom is patched"
+        else
+            fail "$tree: scripts/apply-patches.sh failed" \
+                 "cargo cannot load the workspace until it succeeds; run it there to see why."
+        fi
+    fi
+
     if [[ $check -eq 0 && -d "$tree/target" ]]; then
         note "$(du -sh "$tree/target" 2>/dev/null | cut -f1) in $tree/target"
     fi

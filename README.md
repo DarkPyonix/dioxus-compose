@@ -39,17 +39,18 @@ pub fn app() -> Element {
 ```
 
 This is [`samples/hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello),
-trimmed. **It is laid out today and drawn once the renderer bridge lands**
-([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)): the HTML path computes the layout
-and a drawing plan in Rust, and does not put pixels on screen yet.
+trimmed. **It is laid out in Rust and sent to the renderer through the HTML bridge**
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). The records the renderer receives
+are tested on the Host; drawing them in a window has not been confirmed by running the renderer
+yet, so the bridge is still marked partial.
 
 You write a Dioxus app the way you would for the web: `rsx!` with `div`, `span` and CSS, hooks
 and signals. `blitz-dom` computes styles and layout inside the Host, and
 [compose-rust](https://github.com/DarkPyonix/compose-rust)'s AOT-compiled Compose renderer is what
 draws the boxes and the text, with Compose's text layout and its platform IME.
 
-The same crate also takes Compose widget names in `rsx!` (`Column`, `Text`, `Button`). That path
-draws through the renderer today.
+The same crate also takes Compose widget names in `rsx!` (`Column`, `Text`, `Button`) as the second
+way to write a screen. That path draws through the renderer today.
 
 ---
 
@@ -57,8 +58,10 @@ draws through the renderer today.
 
 - [Why this exists](#why-this-exists)
 - [Status](#status)
+- [What HTML screens do not draw on screen yet](#what-html-screens-do-not-draw-on-screen-yet)
 - [Two ways to write a screen](#two-ways-to-write-a-screen)
 - [Getting started](#getting-started)
+- [Samples](#samples)
 - [How it works](#how-it-works)
 - [Performance](#performance)
 - [Repository layout](#repository-layout)
@@ -118,18 +121,21 @@ measurements of this project.
 
 **0.0.x is an early release stage.** dioxus-compose 0.0.1 on crates.io has both paths and depends
 on compose-rust 0.0.1. HTML screens are laid out and planned but not yet drawn (the renderer bridge
-is in review). The API will change.
+is not in that release, see below). The API will change.
 
 | State | Item |
 |---|---|
 | implemented | HTML and CSS layout in the Host with blitz-dom: block, inline, flexbox, grid, tables, positioning including `fixed`, overflow and scroll containers, borders, radii, shadows, opacity, backgrounds including gradients, images through an app-supplied resolver |
 | implemented | HTML events and forms: clicks, `input`, `change` and `submit`, `select`, checkboxes and radio groups, uncontrolled fields, keyed lists, `text-transform` and `white-space` |
 | implemented | Box layout within 1px of VS Code for 324 of 326 boxes in three workbench regions, with VS Code's text sizes (measured 2026-10-03, macOS) |
-| implemented | Eleven HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
+| implemented | Seventeen HTML and CSS examples in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), each tested on the Host |
 | implemented | Compose widgets in `rsx!`, drawn by the renderer: macOS, Android and the web end to end; Windows, Linux and iOS build and start |
-| partial | Drawing HTML screens on screen: the plan exists, the bridge to compose-rust's renderer (`AbsoluteBox`) is not built ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43); written in [#67](https://github.com/DarkPyonix/dioxus-compose/pull/67), awaiting review) |
+| partial | Drawing HTML screens on screen: the bridge writes the plan into compose-rust's batch (`AbsoluteBox`, `Box`, `Text`, `Image`, fields), first the whole tree and then only what changed, and renderer events reach the Dioxus handlers. Tested on the Host against the records the renderer receives; not yet confirmed on screen ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
 | partial | Text measured by Compose: the measure call is being implemented in compose-rust; Parley measures text until then ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
-| planned | CSS transforms beyond `translate`, CSS transitions and animations ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
+| partial | Keys and focus as DOM events on HTML screens: `keydown` and `keypress` for Enter, the one key compose-rust carries, and `focus`, `blur`, `focusin` and `focusout` on fields. Tested on the Host. compose-rust reports a field losing the focus but not gaining it, so `focus` arrives with the first keystroke, and it carries no key release, so `keyup` is never sent ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| partial | `prefers-color-scheme` on HTML screens follows the theme when the application switches it to light or dark while running. A system change is applied by the renderer and not reported to the Host, so a theme that follows the system keeps the configured scheme ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)) |
+| implemented | CSS 2D transforms (`translate`, `rotate`, `scale`, `skew`, `matrix()`, `transform-origin`) and CSS transitions and animations on the Host: a transformed box keeps its layout place and carries a matrix, a pointer lands on the shape that is drawn, a motion of `opacity`, `transform` or `background-color` is described for the renderer to play, and one that changes layout is ticked by the Host each frame ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
+| partial | Drawing transforms on screen: a 2D transform reaches compose-rust 0.0.2 as a `Transform` modifier. Transitions and animations are not written to the renderer yet, although compose-rust 0.0.2 carries animation records; 3D transforms are skipped with a warning ([#46](https://github.com/DarkPyonix/dioxus-compose/issues/46), [#47](https://github.com/DarkPyonix/dioxus-compose/issues/47)) |
 | planned | Zooming HTML screens the way VS Code does |
 | planned | HTML and widgets on one screen |
 | planned | The Markdown crate `dioxus-compose-markdown` ([#24](https://github.com/DarkPyonix/dioxus-compose/issues/24); draft [#68](https://github.com/DarkPyonix/dioxus-compose/pull/68)) |
@@ -137,13 +143,23 @@ is in review). The API will change.
 The [status page](http://darkpyonix.dev/dioxus-compose/en/status.html) of the guide has the full
 list.
 
+### What HTML screens do not draw on screen yet
+
+The bridge writes the plan into compose-rust's batch, and the records are tested on the Host. Drawing
+in a window has not been confirmed by running the renderer.
+
+- Transitions and animations. compose-rust 0.0.2 carries animation records; the bridge does not write
+  them yet. The Host already describes the motions. 2D transforms are written as a `Transform` modifier.
+- Animating layout properties such as width ([#47](https://github.com/DarkPyonix/dioxus-compose/issues/47))
+  is advanced by the Host each frame and needs nothing more from compose-rust.
+
 ---
 
 ## Two ways to write a screen
 
 | You write | Import | Today |
 |---|---|---|
-| HTML elements and CSS: `div`, `span`, `input`, a stylesheet | `dioxus_compose::html::prelude::*` | Laid out and planned in the Host, not drawn yet |
+| HTML elements and CSS: `div`, `span`, `input`, a stylesheet | `dioxus_compose::html::prelude::*` | Laid out in the Host and sent to the renderer; not yet confirmed on screen |
 | Compose widget names: `Column`, `Text`, `Button` | `dioxus_compose::prelude::*` | Drawn by the renderer |
 
 Both are always in the crate; no feature flag turns either off. An `rsx!` block uses one vocabulary
@@ -223,21 +239,70 @@ fn main() {
 }
 ```
 
-`cargo run` prints the boxes. No window opens yet, because nothing draws HTML screens until the
-renderer bridge lands. A widget-path app calls `dioxus_compose::launch(app)` instead and opens a
-window. The renderer is a prebuilt native library that
+`cargo run` prints the boxes. To open the page in a window instead, launch it the way a widget app
+is launched:
+
+```rust
+fn config() -> HtmlConfig {
+    HtmlConfig { stylesheets: vec![STYLE.to_string()], ..HtmlConfig::default() }
+}
+
+fn main() {
+    dioxus_compose::LaunchBuilder::new().with_html(config).launch(app);
+}
+```
+
+`dioxus_compose::html::launch(app)` does the same with the default configuration.
+`cargo run -p sample-html-hello` opens `samples/hello` this way. The bridge's records are tested on
+the Host, and the window itself has not been checked by running the renderer yet
+([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)). A widget-path app calls
+`dioxus_compose::launch(app)`. The renderer is a prebuilt native library that
 [compose-rust](https://github.com/DarkPyonix/compose-rust)'s build script downloads for your target;
 building it yourself is covered there.
 
-The examples' tests run with cargo in a checkout:
+The examples' tests run with cargo in a checkout. Run `./scripts/apply-patches.sh` once first: the
+workspace builds a patched copy of blitz-dom, and until it exists cargo stops with
+`failed to load source for dependency `blitz-dom` ... .scratch/patched/blitz-dom-0.2.4`.
 
 ```bash
+./scripts/apply-patches.sh
 cargo test -p sample-html-hello
 cargo test --workspace
 ```
 
 The [getting started page](http://darkpyonix.dev/dioxus-compose/en/getting-started.html) walks
 through the same steps with clicks and forms.
+
+---
+
+## Samples
+
+Seventeen Dioxus apps in [`samples/`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples), written the way one is written for the
+web: HTML elements, CSS, hooks and signals. Each is one crate, and each is tested on the Host against
+hand-worked layout. The guide quotes them chapter by chapter. The last six (`layout`, `landing`,
+`typography`, `motion`, `kanban` and `helpcenter`) are on `develop`, so their links point there.
+
+| Sample | What it shows |
+|---|---|
+| [`hello`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/hello) | A heading, inline bold and italic, a link that counts its clicks |
+| [`article`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/article) | Headings, wrapping paragraphs, lists, a quotation, a code block |
+| [`dashboard`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/dashboard) | A top bar, a sidebar and wrapping metric cards, all flexbox |
+| [`gallery`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/gallery) | A CSS grid of photos under a gradient header |
+| [`settings`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/settings) | A form: text field, text area, select, checkbox, radio group |
+| [`table`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/table) | An HTML table that scrolls sideways; the amount header sorts |
+| [`chat`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/chat) | A scrolling conversation above a composer pinned to the bottom |
+| [`todo`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/todo) | Add, tick, delete and reorder keyed rows |
+| [`overlay`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/overlay) | A dropdown menu, a dialog over a fixed backdrop, a clipped preview |
+| [`theme`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/theme) | Colours as CSS custom properties, a dark set, an override button |
+| [`workbench`](https://github.com/DarkPyonix/dioxus-compose/tree/main/samples/workbench) | A small code editor: activity bar, file tree, tabs, status bar |
+| [`layout`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/layout) | Flexbox (wrap, gap, grow, shrink, basis, alignment, order), grid (areas, `auto-fill`, spans, line placement), `sticky`, `z-index`, absolute in relative |
+| [`landing`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/landing) | A responsive page: `@media` at phone, tablet and desktop widths, a centred container, a card grid, pricing, a footer, a gradient background, shadows and radii |
+| [`typography`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/typography) | Font size, weight and style, line height, letter spacing, alignment, case, white space, word breaking, ellipsis, generated content, list markers, decoration |
+| [`motion`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/motion) | Transforms with `transform-origin`, transitions, `@keyframes`, a width transition |
+| [`kanban`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/kanban) | A board of three flex columns with cards that move between them, a count per column, an empty-column placeholder and a form that adds a card |
+| [`helpcenter`](https://github.com/DarkPyonix/dioxus-compose/tree/develop/samples/helpcenter) | Topics that open and close, a search field that filters them, long names cut with an ellipsis, a chevron turned by a transition, answers of mixed bold, italic, code, coloured and link text, and a numbered list |
+
+Samples are laid out and sent to the renderer; drawing them in a window is not confirmed yet. See [what is missing](#what-html-screens-do-not-draw-on-screen-yet).
 
 ---
 
@@ -249,7 +314,7 @@ your component (rsx! with div, span, CSS)
   -> blitz-dom document                Stylo resolves CSS, Taffy lays out
   -> DisplayList                       boxes, colours, text runs, fields, images
   -> Plan, and its diff                drawing elements; only what changed is sent
-  -> Compose renderer (compose-rust)   draws (the bridge is not built yet)
+  -> Compose renderer (compose-rust)   draws (bridge built; on screen not yet confirmed)
 ```
 
 **The renderer never sees CSS.** It gets rectangles, colours and runs of text. That keeps the
@@ -301,7 +366,7 @@ dioxus-compose/
 │  ├─ src/dom, layout, paint  # blitz-dom document and events, layout pass, display list and plan
 │  ├─ examples/           #   desktop_demo, the widget-path demo
 │  └─ tests/              #   the crate's tests
-├─ samples/               # eleven apps written with HTML and CSS, one crate each
+├─ samples/               # seventeen apps written with HTML and CSS, one crate each
 ├─ experiments/           # probes worth keeping (on develop only, not on main)
 ├─ scripts/               # the quality gate and repository tooling
 └─ docs/

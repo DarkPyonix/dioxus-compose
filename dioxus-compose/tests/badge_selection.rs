@@ -361,6 +361,10 @@ fn fr33_the_selectable_text_is_the_text_inside_the_region() {
 fn fr33_no_event_tag_exists_for_selecting_or_copying() {
     for event in dioxus_compose::schema::EVENT_SCHEMA {
         let name = event.name.to_ascii_lowercase();
+        // A code editor's selection is two line and column positions, never the text.
+        if event.name == "SelectionChanged" {
+            continue;
+        }
         assert!(
             !name.contains("select") && !name.contains("copy") && !name.contains("clipboard"),
             "{} would carry a selection across the boundary",

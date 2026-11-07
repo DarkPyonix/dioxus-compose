@@ -38,7 +38,15 @@ else
     export DXC_BENCH_QUICK=1
 fi
 
-mock=(--features dioxus-compose/mock-renderer)
+# The workspace patches blitz-dom with a directory this script builds. Cargo stops at
+# "failed to load source for dependency `blitz-dom`" when it is missing.
+"$repo_root/scripts/apply-patches.sh" || {
+    echo "check.sh: scripts/apply-patches.sh failed, so cargo cannot load the workspace" >&2
+    echo "check.sh: it downloads blitz-dom 0.2.4 from crates.io into .scratch/patched/" >&2
+    exit 1
+}
+
+mock=(--features dioxus-compose/mock-renderer,dioxus-compose/patched-blitz)
 
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets "${mock[@]}" -- -D warnings
