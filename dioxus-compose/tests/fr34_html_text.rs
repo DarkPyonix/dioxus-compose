@@ -595,10 +595,11 @@ fn fr34_justified_lines_fill_the_width() {
 // inline boxes inside block container
 
 /// A button with inline-flex or inline-block directly under a block container has its label text
-/// measured by the caller's text measurer rather than bypassing it into Parley.
+/// measured by the caller's text measurer rather than bypassing it into Parley, and the plan
+/// draws the single-line label with `soft_wrap: false`.
 #[test]
 fn fr34_button_under_block_measures_its_text_run() {
-    let (doc, list) = laid_out(
+    let (_doc, list) = laid_out(
         r#"<div id="term" style="display: block;"><button id="btn" style="display: inline-flex;">다시 연결</button></div>"#,
         "",
     );
@@ -611,5 +612,21 @@ fn fr34_button_under_block_measures_its_text_run() {
     assert_eq!(text_runs.len(), 1, "the button label is preserved as one run: {list:#?}");
     assert_eq!(text_runs[0].text, "다시 연결");
     assert_close(text_runs[0].rect.width, 50.0, "measured width from FakeMeasurer (5 chars * 10px)");
-    assert_eq!(text_runs[0].wrap_width, None);
+    assert_eq!(text_runs[0].line_count, 1);
+    let plan = plan_from(&list);
+    let text_entry = list
+        .entries
+        .iter()
+        .find(|entry| entry.texts.iter().any(|run| run.text == "다시 연결"))
+        .expect("entry holding button label");
+    let text_node = plan
+        .find(PlanKey::Text {
+            node: text_entry.node,
+            index: 0,
+        })
+        .expect("plan text node for button label");
+    let PlanKind::Text(plan_text) = &text_node.kind else {
+        panic!("expected PlanKind::Text: {text_node:#?}");
+    };
+    assert!(!plan_text.soft_wrap);
 }

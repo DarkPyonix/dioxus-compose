@@ -954,6 +954,7 @@ impl MeasuredTree<'_> {
         let Some(layout) = element.inline_layout_data.as_ref() else {
             return;
         };
+        let style = node.style.clone();
         let boxes: Vec<usize> = layout
             .layout
             .inline_boxes()
@@ -963,10 +964,18 @@ impl MeasuredTree<'_> {
         if boxes.is_empty() {
             return;
         }
+        let mut child_space = None;
+        compute_leaf_layout(inputs, &style, resolve_calc_value, |_known, available_space| {
+            child_space = Some(available_space);
+            Size::ZERO
+        });
+        let Some(available_space) = child_space else {
+            return;
+        };
         let child_inputs = LayoutInput {
             known_dimensions: Size::NONE,
-            available_space: inputs.available_space,
-            parent_size: inputs.available_space.into_options(),
+            available_space,
+            parent_size: available_space.into_options(),
             ..inputs
         };
         for box_id in boxes {
