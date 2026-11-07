@@ -12,7 +12,7 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose::html::{
     BaseDocument, DisplayList, NodeEntry, OverflowWrap, ParleyMeasurer, Plan, PlanChange, PlanKey,
     PlanKind, Rect, RunMarker, TextAlign, TextLineHeight, TextMeasureRequest, TextMeasurer,
-    TextMetrics, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak, diff, element_by_id,
+    TextMetrics, TextRun, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak, diff, element_by_id,
     layout_document, plan_from,
 };
 
@@ -589,4 +589,27 @@ fn fr34_justified_lines_fill_the_width() {
     };
     assert_eq!(plan_text.align, TextAlign::Justify);
     assert!(plan_text.soft_wrap);
+}
+
+// ------------------------------------------------------------------------------------------
+// inline boxes inside block container
+
+/// A button with inline-flex or inline-block directly under a block container has its label text
+/// measured by the caller's text measurer rather than bypassing it into Parley.
+#[test]
+fn fr34_button_under_block_measures_its_text_run() {
+    let (doc, list) = laid_out(
+        r#"<div id="term" style="display: block;"><button id="btn" style="display: inline-flex;">다시 연결</button></div>"#,
+        "",
+    );
+    let text_runs: Vec<&TextRun> = list
+        .entries
+        .iter()
+        .flat_map(|entry| &entry.texts)
+        .filter(|run| run.text.contains("다시"))
+        .collect();
+    assert_eq!(text_runs.len(), 1, "the button label is preserved as one run: {list:#?}");
+    assert_eq!(text_runs[0].text, "다시 연결");
+    assert_close(text_runs[0].rect.width, 50.0, "measured width from FakeMeasurer (5 chars * 10px)");
+    assert_eq!(text_runs[0].wrap_width, None);
 }
