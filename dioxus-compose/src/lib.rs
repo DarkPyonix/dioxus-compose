@@ -129,9 +129,9 @@ pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
     ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon,
     Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator,
-    RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator, Sheet,
-    Slider, Spacer, SplitPane, Surface, Switch, Tabs, Text, TextField, TimePicker, Tooltip,
-    TopAppBar,
+    RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator,
+    ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Tabs, Text, TextField,
+    TimePicker, Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -222,14 +222,14 @@ pub mod prelude {
         MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
         PointerEvent, PointerKind, PointerKinds, PointerType, ProgressIndicator, Props,
         RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
-        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
-        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, TitleBar,
-        Tooltip, TopAppBar, TypeRole, UserSelect, WheelDeltaMode, WindowDragEvent, WindowDragOver,
-        WindowDragOverKind, WindowDragPhase, WindowEvent, WindowFrame, WindowHandle,
-        WindowHeightClass, WindowMode, WindowRequest, WindowSize, WindowSizeClass, Zoom,
-        ZoomHandle, asset, brush, component, current_window, launch, rsx, show_message,
-        use_application_reopen, use_design_system, use_hover, use_node_size, use_theme,
-        use_window_requested, use_window_size, use_zoom,
+        Separator, ShadowLayer, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop,
+        Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode,
+        TimePicker, TitleBar, Tooltip, TopAppBar, TypeRole, UserSelect, WheelDeltaMode,
+        WindowDragEvent, WindowDragOver, WindowDragOverKind, WindowDragPhase, WindowEvent,
+        WindowFrame, WindowHandle, WindowHeightClass, WindowMode, WindowRequest, WindowSize,
+        WindowSizeClass, Zoom, ZoomHandle, asset, brush, component, current_window, launch, rsx,
+        show_message, use_application_reopen, use_design_system, use_hover, use_node_size,
+        use_theme, use_window_requested, use_window_size, use_zoom,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
