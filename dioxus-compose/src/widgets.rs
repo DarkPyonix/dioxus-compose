@@ -40,7 +40,7 @@ fn dp(value: Option<f32>) -> f64 {
 }
 
 fn opt_press_feedback(value: Option<(f32, f32)>) -> Option<AttributeValue> {
-    value.map(|pair| AttributeValue::any_value(pair))
+    value.map(AttributeValue::any_value)
 }
 
 /// A box that places each child where the Host already put it, for a screen whose layout
