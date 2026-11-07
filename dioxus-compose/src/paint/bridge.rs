@@ -1293,6 +1293,12 @@ impl PlanBridge {
                     PropertyKind::TextAlign,
                     Prop::Int(wire_align(text.align) as i64),
                 );
+                self.set_prop(
+                    batch,
+                    key,
+                    PropertyKind::SoftWrap,
+                    Prop::Bool(text.soft_wrap),
+                );
                 // A run laid out as unconstrained lines is drawn without wrapping: as many
                 // lines as it has forced breaks, overflowing its width rather than wrapping
                 // where the renderer's own measurement comes out a little wider.

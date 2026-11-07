@@ -937,6 +937,67 @@ impl MeasuredTree<'_> {
         compute_leaf_layout(inputs, &style, resolve_calc_value, |_, _| content)
     }
 
+    /// Sizes embedded inline boxes (buttons, images, inline-blocks) inside an inline formatting
+    /// context before blitz-dom lays out the line, so their children and text runs are measured
+    /// by this tree and recorded in measured texts.
+    fn pre_measure_inline_boxes(&mut self, node_id: NodeId, inputs: LayoutInput) {
+        let id = usize::from(node_id);
+        let Some(node) = self.doc.get_node(id) else {
+            return;
+        };
+        if !node.flags.is_inline_root() {
+            return;
+        }
+        let Some(element) = node.element_data() else {
+            return;
+        };
+        let Some(layout) = element.inline_layout_data.as_ref() else {
+            return;
+        };
+        let style = node.style.clone();
+        let boxes: Vec<usize> = layout
+            .layout
+            .inline_boxes()
+            .iter()
+            .map(|ibox| ibox.id as usize)
+            .collect();
+        if boxes.is_empty() {
+            return;
+        }
+        let mut child_space = None;
+        compute_leaf_layout(
+            inputs,
+            &style,
+            resolve_calc_value,
+            |_known, available_space| {
+                child_space = Some(available_space);
+                Size::ZERO
+            },
+        );
+        let Some(available_space) = child_space else {
+            return;
+        };
+        let child_inputs = LayoutInput {
+            known_dimensions: Size::NONE,
+            available_space,
+            parent_size: available_space.into_options(),
+            ..inputs
+        };
+        for box_id in boxes {
+            let is_abs = self
+                .doc
+                .get_node(box_id)
+                .and_then(|n| n.primary_styles())
+                .is_some_and(|s| {
+                    matches!(s.clone_position(), Position::Absolute | Position::Fixed)
+                });
+            if is_abs {
+                continue;
+            }
+            self.compute_child_layout(NodeId::from(box_id), child_inputs);
+        }
+    }
+
     /// Sizes and places every `position: fixed` box under `root` against the viewport,
     /// outer boxes before the boxes inside them. A fixed box's location is written in
     /// viewport coordinates.
@@ -1993,11 +2054,14 @@ impl LayoutPartialTree for MeasuredTree<'_> {
             match tree.route(id) {
                 Route::Hidden => LayoutOutput::HIDDEN,
                 Route::Select => tree.compute_select(id, inputs),
-                Route::Blitz => <BaseDocument as LayoutPartialTree>::compute_child_layout(
-                    &mut *tree.doc,
-                    node_id,
-                    inputs,
-                ),
+                Route::Blitz => {
+                    tree.pre_measure_inline_boxes(node_id, inputs);
+                    <BaseDocument as LayoutPartialTree>::compute_child_layout(
+                        &mut *tree.doc,
+                        node_id,
+                        inputs,
+                    )
+                }
                 Route::Measured(prepared) => tree.compute_measured(id, prepared, inputs),
                 Route::Block => {
                     tree.resolve_intrinsic_widths(node_id, inputs);

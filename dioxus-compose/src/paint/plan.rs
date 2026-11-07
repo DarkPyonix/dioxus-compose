@@ -1305,7 +1305,8 @@ impl<'a> Builder<'a> {
                         color,
                         decoration: run.decoration,
                         align: run.align,
-                        soft_wrap: run.wrap_width.is_some(),
+                        soft_wrap: run.wrap_width.is_some()
+                            && (run.line_count > 1 || run.align == TextAlign::Justify),
                         ellipsis: run.ellipsis,
                         marker: run.marker,
                         spans,
