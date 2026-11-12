@@ -15,6 +15,7 @@ use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
 };
+use dioxus_compose::prelude::WritableExt;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
     Color, EventPayload, Modifier, Paint, PropertyKind, TextOverflow, WidgetKind,
