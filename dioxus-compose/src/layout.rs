@@ -24,6 +24,10 @@
 //! A `<select>` is sized here as a control of its own: as wide as its widest option plus
 //! room for the dropdown's indicator, one line tall. Its options are not laid out.
 //!
+//! A `<button>` that is not a flex or grid container has its content centred top to bottom
+//! in its content box, where Chromium centres the anonymous box it lays a button's content
+//! out in (see [`centres_content`]).
+//!
 //! stylo_taffy reads `position: fixed` as `absolute`, and Taffy places an absolutely
 //! positioned box against its parent. A fixed box belongs to the viewport, so once the tree
 //! is laid out each fixed box is sized and placed again against the viewport, and its
@@ -62,12 +66,13 @@ use taffy::{
 };
 
 use crate::dom::form;
+use crate::layout::image::{BROKEN_IMAGE_ICON, fallback_alt, img_src};
 use crate::paint::display_list::{
-    MeasuredMarker, MeasuredText, MeasuredTexts, Rgba, TextAlign, TextDecoration,
+    MeasuredAlt, MeasuredMarker, MeasuredText, MeasuredTexts, Rgba, TextAlign, TextDecoration,
 };
 use measure::{
-    SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace,
-    WidthConstraint,
+    SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
+    TextWhiteSpace, WidthConstraint,
 };
 
 /// The room a `<select>` keeps beside its widest option for the dropdown's indicator, in
@@ -79,6 +84,31 @@ pub(crate) const SELECT_INDICATOR_WIDTH: f32 = 24.0;
 pub(crate) fn is_fixed(node: &Node) -> bool {
     node.primary_styles()
         .is_some_and(|style| style.clone_position() == Position::Fixed)
+}
+
+/// Whether `node` is a `<button>` whose content is centred top to bottom in its content
+/// box, as Chromium centres the anonymous box it lays a button's content out in. A button
+/// that is a flex or grid container lays its children out as one, with no such box, so it
+/// is not.
+pub(crate) fn centres_content(node: &Node) -> bool {
+    matches!(&node.data, NodeData::Element(element) if &*element.name.local == "button")
+        && node.style.display == Display::Block
+}
+
+/// How far a centring button's content moves down: half the room its content box has
+/// beyond the content, and nothing when the content fills it or overflows it.
+pub(crate) fn button_content_offset(inner_height: f32, content_height: f32) -> f32 {
+    ((inner_height - content_height) / 2.0).max(0.0)
+}
+
+/// The height of the lines of an inline formatting context blitz-dom laid out with
+/// Parley, in CSS pixels, or `None` when `node` holds none.
+pub(crate) fn inline_content_height(node: &Node) -> Option<f32> {
+    if !node.flags.is_inline_root() {
+        return None;
+    }
+    let layout = &node.element_data()?.inline_layout_data.as_ref()?.layout;
+    Some(layout.height() / layout.scale())
 }
 
 /// Resolves a CSS `calc()` that Taffy carries as an opaque pointer to stylo's value.
@@ -108,6 +138,7 @@ impl LayoutState {
         self.initialized = false;
         self.texts.texts.clear();
         self.texts.markers.clear();
+        self.texts.alts.clear();
         self.styles.clear();
         self.computed_ptrs.clear();
         self.text_styles.clear();
@@ -119,6 +150,7 @@ impl LayoutState {
     pub(crate) fn forget(&mut self, id: usize) {
         self.texts.texts.remove(&id);
         self.texts.markers.remove(&id);
+        self.texts.alts.remove(&id);
         self.styles.remove(&id);
         self.computed_ptrs.remove(&id);
         self.text_styles.remove(&id);
@@ -159,6 +191,11 @@ pub(crate) fn resolve_styles_incremental(
     non_inherited_style_nodes: &HashSet<usize>,
     state: &mut LayoutState,
 ) -> HashSet<usize> {
+    // A control whose disabled state changes takes a snapshot here, before the children
+    // are parked, so it is kept for the restyle. `resolve_stylist` runs the same update
+    // again, but by then a parked control is not in the tree it walks.
+    #[cfg(feature = "patched-blitz")]
+    doc.update_form_control_states();
     let mut parked_restyle_children: Vec<(usize, Vec<usize>, Option<usize>)> = Vec::new();
     if state.initialized {
         for &id in non_inherited_style_nodes {
@@ -648,6 +685,7 @@ pub(crate) fn run_layout_incremental(
         state.texts.texts.insert(id, measured);
     }
     state.texts.markers = laid_out.markers;
+    state.texts.alts = laid_out.alts;
     // Prune any text entries for nodes that are no longer in the document.
     state
         .texts
@@ -701,6 +739,7 @@ fn run_layout_pass(
     let root = NodeId::from(doc.root_element().id);
     size_selects_in_lines(doc, measurer);
     size_widgets(doc);
+    size_image_fallbacks(doc, measurer);
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
@@ -719,7 +758,12 @@ fn run_layout_pass(
     tree.place_fixed_boxes(root, Size { width, height });
     round_layout(&mut tree, root);
     let markers = measure_markers(doc, measurer, &texts);
-    MeasuredTexts { texts, markers }
+    let alts = measure_alts(doc, measurer);
+    MeasuredTexts {
+        texts,
+        markers,
+        alts,
+    }
 }
 
 /// The attribute that marks an element as the place of a Compose widget.
@@ -779,10 +823,260 @@ fn size_widgets(doc: &mut BaseDocument) {
     }
 }
 
-/// Measures the list markers that are drawn as runs of their own: the marker of every item
-/// whose `list-style-position` is `outside`, and an inside marker of an item that has no
-/// inline text to put it in front of. An inside marker of an item with text is the start
-/// of that text (see [`prepare_inline`]).
+/// How far past the room beside the icon the alt text may reach and still be laid out on
+/// the icon's line. Layout rounds box edges to whole pixels, so a box sized to the icon and
+/// the text can come out a fraction narrower than the two.
+const ALT_FIT_SLOP: f32 = 1.0;
+
+/// A size the stylesheet gives an `<img>`, as the Taffy dimension blitz-dom writes for it.
+/// `None` for one this cannot write back (`calc()`, the intrinsic keywords), which is left
+/// as whatever is in the Taffy style already.
+fn css_dimension(size: &StyloSize) -> Option<Dimension> {
+    match size {
+        StyloSize::Auto => Some(Dimension::auto()),
+        StyloSize::LengthPercentage(length) => {
+            let length = &length.0;
+            if let Some(px) = length.to_length() {
+                Some(Dimension::length(px.px()))
+            } else {
+                length
+                    .to_percentage()
+                    .map(|percentage| Dimension::percent(percentage.0))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The size a `width` or `height` attribute gives an `<img>`, read as HTML reads a
+/// dimension attribute: a number, then `%` for a percentage, and anything after that
+/// ignored (`40`, `40px`, `50%`). `None` when the value does not start with a number.
+fn attribute_dimension(value: &str) -> Option<Dimension> {
+    let value = value.trim_start_matches(|c: char| c.is_ascii_whitespace());
+    let digits = value
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(value.len());
+    let mut end = digits;
+    if let Some(fraction) = value[digits..].strip_prefix('.') {
+        let places = fraction
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(fraction.len());
+        if places > 0 {
+            end = digits + 1 + places;
+        }
+    }
+    if digits == 0 {
+        return None;
+    }
+    let number: f32 = value[..end].parse().ok()?;
+    Some(if value[end..].starts_with('%') {
+        Dimension::percent(number / 100.0)
+    } else {
+        Dimension::length(number)
+    })
+}
+
+/// How the alt text of a broken image sits in a content box `width` wide: on the icon's
+/// line when it fits beside the icon, below the icon wrapped at `width` when it does not.
+/// Returns the text's offset from the content box, its metrics and the width it was wrapped
+/// at.
+fn place_alt(
+    measurer: &mut dyn TextMeasurer,
+    text: &str,
+    style: &TextStyle,
+    width: Option<f32>,
+) -> ((f32, f32), TextMetrics, Option<f32>) {
+    let line = measurer.measure(&TextMeasureRequest {
+        text,
+        style,
+        width: WidthConstraint::MaxContent,
+        white_space: TextWhiteSpace::NOWRAP,
+    });
+    match width {
+        Some(width) if BROKEN_IMAGE_ICON + line.width > width + ALT_FIT_SLOP => {
+            let wrapped = measurer.measure(&TextMeasureRequest {
+                text,
+                style,
+                width: WidthConstraint::AtMost(width.max(0.0)),
+                white_space: TextWhiteSpace::NORMAL,
+            });
+            ((0.0, BROKEN_IMAGE_ICON), wrapped, Some(width.max(0.0)))
+        }
+        _ => ((BROKEN_IMAGE_ICON, 0.0), line, None),
+    }
+}
+
+/// Sizes every `<img>` that is drawn as a broken image by the icon and alt text it shows,
+/// as Chromium does, and gives every other `<img>` back the size its stylesheet says.
+///
+/// An image with no natural size and a non-empty `alt` is not a picture but a box of text:
+/// on each axis its CSS leaves `auto` it is as wide as the icon and the text beside it and
+/// as tall as the line, or as the icon and the lines below it when the text does not fit
+/// beside the icon. An image that stays `display: inline` is a run of text, which CSS gives
+/// no width or height, so Chromium sets both back to `auto` and so does this. The size goes
+/// into the Taffy style as a length, as [`size_widgets`] does, and is taken off again once
+/// the image has a natural size or stands for nothing.
+fn size_image_fallbacks(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) {
+    let images: Vec<usize> = doc
+        .tree()
+        .iter()
+        .filter(|(_, node)| node.flags.is_in_document() && img_src(node).is_some())
+        .map(|(id, _)| id)
+        .collect();
+    for id in images {
+        let Some(node) = doc.get_node(id) else {
+            continue;
+        };
+        let Some(computed) = node.primary_styles() else {
+            continue;
+        };
+        let position = computed.get_position();
+        let css = Size {
+            width: css_dimension(&position.width),
+            height: css_dimension(&position.height),
+        };
+        let inline = computed.clone_display() == StyloDisplay::Inline;
+        let text_style = convert::text_style(&computed);
+        drop(computed);
+
+        let target = match fallback_alt(node) {
+            None => css,
+            Some(alt) => {
+                let style = &node.style;
+                let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+                let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                let (extra_x, extra_y) = match style.box_sizing {
+                    BoxSizing::BorderBox => (
+                        padding.left + padding.right + border.left + border.right,
+                        padding.top + padding.bottom + border.top + border.bottom,
+                    ),
+                    BoxSizing::ContentBox => (0.0, 0.0),
+                };
+                // The axes the stylesheet sizes, as Taffy dimensions; `None` for `auto`. The
+                // `width` and `height` attributes size an axis the stylesheet leaves `auto`:
+                // blitz-dom reads them when it sizes a replaced element rather than mapping
+                // them to CSS, and a size written here would override them.
+                let given = |dimension: Option<Dimension>, attribute: &str| match dimension {
+                    _ if inline => None,
+                    Some(dimension) if dimension.is_auto() => node
+                        .element_data()
+                        .and_then(|element| element.attr(local(attribute)))
+                        .and_then(attribute_dimension)
+                        .map(Some),
+                    Some(dimension) => Some(Some(dimension)),
+                    None => Some(None),
+                };
+                let given_width = given(css.width, "width");
+                let given_height = given(css.height, "height");
+                // The content width the text is laid out in, when it is known before layout.
+                let content_width = match given_width {
+                    Some(Some(dimension)) => dimension
+                        .into_option()
+                        .map(|width| (width - extra_x).max(0.0)),
+                    Some(None) => None,
+                    None => {
+                        let line = measurer.measure(&TextMeasureRequest {
+                            text: &alt,
+                            style: &text_style,
+                            width: WidthConstraint::MaxContent,
+                            white_space: TextWhiteSpace::NOWRAP,
+                        });
+                        Some(BROKEN_IMAGE_ICON + line.width)
+                    }
+                };
+                let ((_, y), metrics, _) = place_alt(measurer, &alt, &text_style, content_width);
+                let content_height = (y + metrics.height).max(BROKEN_IMAGE_ICON);
+                Size {
+                    width: match given_width {
+                        Some(dimension) => dimension,
+                        None => content_width.map(|width| Dimension::length(width + extra_x)),
+                    },
+                    height: match given_height {
+                        Some(dimension) => dimension,
+                        None => Some(Dimension::length(content_height + extra_y)),
+                    },
+                }
+            }
+        };
+
+        let Some(node) = doc.get_node_mut(id) else {
+            continue;
+        };
+        let mut changed = false;
+        if let Some(width) = target.width
+            && node.style.size.width != width
+        {
+            node.style.size.width = width;
+            changed = true;
+        }
+        if let Some(height) = target.height
+            && node.style.size.height != height
+        {
+            node.style.size.height = height;
+            changed = true;
+        }
+        if changed {
+            node.cache.clear();
+        }
+    }
+}
+
+/// Lays out the alt text of every `<img>` drawn as a broken image in the content box layout
+/// gave it.
+fn measure_alts(
+    doc: &BaseDocument,
+    measurer: &mut dyn TextMeasurer,
+) -> HashMap<usize, MeasuredAlt> {
+    let mut alts = HashMap::new();
+    for (id, node) in doc.tree().iter() {
+        if !node.flags.is_in_document() || node.style.display == Display::None {
+            continue;
+        }
+        let Some(alt) = fallback_alt(node) else {
+            continue;
+        };
+        let Some((style, color)) = node
+            .primary_styles()
+            .map(|style| (convert::text_style(&style), convert::text_color(&style)))
+        else {
+            continue;
+        };
+        let layout = &node.final_layout;
+        let content_width = (layout.size.width
+            - layout.padding.left
+            - layout.padding.right
+            - layout.border.left
+            - layout.border.right)
+            .max(0.0);
+        let ((x, y), metrics, wrap_width) = place_alt(measurer, &alt, &style, Some(content_width));
+        alts.insert(
+            id,
+            MeasuredAlt {
+                text: MeasuredText {
+                    owner: id,
+                    text: alt,
+                    style,
+                    color,
+                    align: TextAlign::Start,
+                    decoration: TextDecoration::default(),
+                    metrics,
+                    wrap_width,
+                    marker_prefix: 0,
+                    spans: Vec::new(),
+                },
+                x,
+                y,
+            },
+        );
+    }
+    alts
+}
+
+/// Measures the list markers that are drawn on their own: the marker of every item whose
+/// `list-style-position` is `outside`, and an inside marker of an item that has no inline
+/// text to put it in front of. An inside marker of an item with text is the start of that
+/// text (see [`prepare_inline`]); it is kept here only when it is a shape, which is drawn
+/// over the place its character keeps in the text.
 fn measure_markers(
     doc: &BaseDocument,
     measurer: &mut dyn TextMeasurer,
@@ -799,7 +1093,9 @@ fn measure_markers(
         let Some(marker) = list::marker(doc, id) else {
             continue;
         };
-        if marker.inside && (texts.contains_key(&id) || node.flags.is_inline_root()) {
+        let in_text = marker.inside && (texts.contains_key(&id) || node.flags.is_inline_root());
+        // Only a text the measurer sized carries the marker the shape stands in for.
+        if in_text && (marker.symbol.is_none() || !texts.contains_key(&id)) {
             continue;
         }
         let Some((style, color)) = node
@@ -819,6 +1115,25 @@ fn measure_markers(
         let metrics = measure(&marker.text);
         // The width of a space, as the difference one makes between two words.
         let gap = (measure("a b").width - measure("ab").width).max(0.0);
+        // The font's ascent: where the first baseline falls in a line of the font's own
+        // height, with no leading around it.
+        let ascent = if marker.symbol.is_some() {
+            let normal = TextStyle {
+                line_height: TextLineHeight::Normal,
+                ..style.clone()
+            };
+            measurer
+                .measure(&TextMeasureRequest {
+                    text: &marker.text,
+                    style: &normal,
+                    width: WidthConstraint::MaxContent,
+                    white_space: TextWhiteSpace::NOWRAP,
+                })
+                .first_baseline
+                .round()
+        } else {
+            0.0
+        };
         markers.insert(
             id,
             MeasuredMarker {
@@ -836,6 +1151,9 @@ fn measure_markers(
                 },
                 gap,
                 inside: marker.inside,
+                symbol: marker.symbol,
+                ascent,
+                in_text,
             },
         );
     }
@@ -1317,6 +1635,80 @@ impl MeasuredTree<'_> {
         output
     }
 
+    /// Moves the content of a `<button>` down to the middle of its content box.
+    ///
+    /// Chromium lays a button's content out in an anonymous box and centres that box top to
+    /// bottom in the button's content box; `text-align: center` from the user-agent sheet
+    /// centres it across. Here the content stays where the button's own layout put it, at
+    /// the top, and its in-flow children move down by half the room left over. Text the
+    /// button holds directly is not a child: it is drawn from the content box, and the
+    /// display list moves it by the same amount ([`button_content_offset`]). Content
+    /// taller than the box stays at the top, as Chromium keeps it.
+    ///
+    /// Absolutely positioned children are placed against the button's padding box, not the
+    /// anonymous box, so they do not move.
+    fn centre_button_content(
+        &mut self,
+        node_id: NodeId,
+        inputs: LayoutInput,
+        output: &LayoutOutput,
+    ) {
+        let id = usize::from(node_id);
+        let node = self.node(node_id);
+        if !centres_content(node) {
+            return;
+        }
+        let padding = node
+            .style
+            .padding
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        let border = node
+            .style
+            .border
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        let top = padding.top + border.top;
+        let inner = output.size.height - top - padding.bottom - border.bottom;
+
+        let in_flow: Vec<usize> = self
+            .child_ids(node_id)
+            .map(usize::from)
+            .filter(|&child| {
+                self.doc
+                    .get_node(child)
+                    .is_some_and(|child| child.style.position != taffy::Position::Absolute)
+            })
+            .collect();
+        let content = if let Some(text) = self.texts.get(&id) {
+            text.metrics.height
+        } else if let Some(height) = inline_content_height(node) {
+            height
+        } else {
+            let bottom = in_flow
+                .iter()
+                .filter_map(|&child| self.doc.get_node(child))
+                .map(|child| {
+                    let layout = &child.unrounded_layout;
+                    layout.location.y + layout.size.height + layout.margin.bottom
+                })
+                .fold(None, |bottom: Option<f32>, edge| {
+                    Some(bottom.map_or(edge, |bottom| bottom.max(edge)))
+                });
+            match bottom {
+                Some(bottom) => bottom - top,
+                None => return,
+            }
+        };
+        let offset = button_content_offset(inner, content);
+        if offset <= 0.0 {
+            return;
+        }
+        for child in in_flow {
+            if let Some(child) = self.doc.get_node_mut(child) {
+                child.unrounded_layout.location.y += offset;
+            }
+        }
+    }
+
     /// Writes the intrinsic width keywords of `parent`'s children into their Taffy styles.
     ///
     /// stylo_taffy reads `width`, `min-width` and `max-width` of `min-content`,
@@ -1661,10 +2053,10 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         return Some(None);
     }
     // The marker is not transformed with the text, so it is put in front afterwards.
-    let marker_prefix = match list::marker(doc, root) {
-        Some(marker) if marker.inside => format!("{} ", marker.text),
-        _ => String::new(),
-    };
+    let inside_marker = list::marker(doc, root).filter(|marker| marker.inside);
+    let marker_prefix = inside_marker
+        .as_ref()
+        .map_or_else(String::new, |marker| format!("{} ", marker.text));
 
     let (body, spans) = if uniform {
         (convert::transform_text(&text, transform), Vec::new())
@@ -1710,6 +2102,27 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
                 return None;
             }
         }
+    };
+
+    // A `disc`, `circle` or `square` marker is drawn as a shape (see `paint::build`), over
+    // the place its character keeps at the start of the line. The character keeps that
+    // place, as Chromium keeps the marker's box, but is not drawn.
+    let spans = match inside_marker {
+        Some(marker) if marker.symbol.is_some() => {
+            let mut hidden = vec![SpanRun {
+                start: 0,
+                end: marker.text.len(),
+                bold: false,
+                italic: false,
+                underline: false,
+                line_through: false,
+                color: Some(Rgba::new(0, 0, 0, 0)),
+                font_family: None,
+            }];
+            hidden.extend(spans);
+            hidden
+        }
+        _ => spans,
     };
 
     Some(Some(PreparedText {
@@ -2051,7 +2464,7 @@ impl LayoutPartialTree for MeasuredTree<'_> {
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let id = usize::from(node_id);
-            match tree.route(id) {
+            let output = match tree.route(id) {
                 Route::Hidden => LayoutOutput::HIDDEN,
                 Route::Select => tree.compute_select(id, inputs),
                 Route::Blitz => {
@@ -2088,7 +2501,12 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                     tree.resolve_intrinsic_widths(node_id, inputs);
                     compute_grid_layout(tree, node_id, inputs)
                 }
+            };
+            // Only the final pass places children; the sizing passes before it do not.
+            if inputs.run_mode == RunMode::PerformLayout {
+                tree.centre_button_content(node_id, inputs, &output);
             }
+            output
         })
     }
 }

@@ -139,8 +139,8 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
         it too, so a diff reports it. The Host does not shape the ellipsis: the renderer cuts the
         lines that reach past <code>width</code> and draws it.</li>
       <li><strong>List markers.</strong> Every <code>display: list-item</code> element draws its
-        marker as a run of its own, before the item's text, with <code>marker</code> set to
-        <code>RunMarker::Marker</code>. An outside marker ends one space before the item's box
+        marker before the item's text. A text marker is a run of its own, with
+        <code>marker</code> set to <code>RunMarker::Marker</code>; a bullet is a shape (below). An outside marker ends one space before the item's box
         and sits on the first line's baseline. An inside marker is the start of the first line,
         so the run's text begins with it and <code>RunMarker::Prefix { len }</code> says how many
         bytes. Markers are <code>disc</code>, <code>circle</code>, <code>square</code>,
@@ -150,6 +150,15 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
         <code>reversed</code> on <code>ol</code>, and <code>value</code> on <code>li</code>.
         Markers are measured by the same measurer as the text, and they take no room in the
         layout.</li>
+      <li><strong>Bullet shapes.</strong> <code>disc</code>, <code>circle</code> and
+        <code>square</code> are drawn as shapes, as Chromium draws them, not as a character of
+        the font. The entry's <code>marker</code> is a <code>MarkerShape</code> with its
+        <code>MarkerSymbol</code>, rectangle and colour (the item's <code>color</code>), and the
+        plan draws it as a box keyed <code>PlanKey::Marker</code>: a filled circle, a 1px ring
+        or a filled square. Its size and place come from the font's ascent: 5px across for a
+        16px font, level with the middle of the lowercase letters, and, outside the item, its
+        left edge 16px before the item's box. An inside bullet keeps its character's place at
+        the start of the text, in a transparent span, and the shape is drawn over it.</li>
       <li><strong><code>text-align: justify</code>.</strong> A run that wraps to more than one
         line is as wide as the box, because every line but the last is stretched to it. The run
         says <code>Justify</code> and the plan's text node is the width to stretch to; the

@@ -26,11 +26,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use compose_rust::Batch;
 use compose_rust::brush::{Brush as WireBrush, Stop, brush as register_brush};
+use compose_rust::drawing::DrawList;
 use compose_rust::fonts::FontRefs;
 use compose_rust::protocol::{Mutation, PropertyValue};
 use compose_rust::schema::{
     AnimationControl, AnimationEvents, Color, Modifier, Paint, PropertyKind,
-    TextAlign as WireAlign, TextOverflow, TileMode, WidgetKind,
+    TextAlign as WireAlign, TextOverflow, TileMode, TypeRole, WidgetKind,
 };
 use compose_rust::spans::{TextSpan, TextSpans};
 
@@ -39,7 +40,8 @@ use crate::layout::measure::{TextLineHeight, TextStyle};
 use crate::layout::renderer_measure::{SpanBase, font_refs, wire_spans};
 use crate::paint::animate;
 use crate::paint::display_list::{
-    AnimatedProperty, Animation as CssAnimation, GradientStop, Rect, Rgba, TextAlign, TileRepeat,
+    AnimatedProperty, AnimatedValue, Animation as CssAnimation, GradientStop, Rect, Rgba,
+    TextAlign, TileRepeat,
 };
 use crate::paint::plan::{
     Brush, BrushId, Plan, PlanChange, PlanDropdown, PlanImage, PlanKey, PlanKind, PlanModifier,
@@ -227,6 +229,8 @@ enum Prop {
     Spans(TextSpans),
     /// The font table of a list of runs, which travels as a property of its own.
     SpanFonts(TextSpans),
+    /// A `Canvas` drawing.
+    Drawing(DrawList),
 }
 
 impl Prop {
@@ -240,6 +244,7 @@ impl Prop {
             Prop::Fonts(value) => PropertyValue::Bytes(value.as_bytes()),
             Prop::Spans(value) => PropertyValue::Bytes(value.as_bytes()),
             Prop::SpanFonts(value) => PropertyValue::Bytes(value.font_table()),
+            Prop::Drawing(value) => PropertyValue::Bytes(value.as_bytes()),
         }
     }
 }
@@ -307,6 +312,10 @@ pub struct PlanBridge {
     sizes_scroll: bool,
     /// The box that names the factor a whole-screen page is drawn at.
     island_node: Option<u32>,
+    /// The name the island box is measured under, for a page that has to know the size of
+    /// the area it is drawn in. The renderer reports that box's size as soon as it has
+    /// laid it out.
+    island_token: Option<u32>,
     /// The factor the page is drawn at, and the one the island root last named.
     zoom: f32,
     zoom_sent: Option<f32>,
@@ -341,6 +350,14 @@ pub struct PlanBridge {
     /// property gets the modifier that changes nothing instead, for as long as the node
     /// lives.
     pins: HashMap<PlanKey, Vec<AnimatedProperty>>,
+    /// The element the canvas background came from, whose background-colour animations
+    /// play on the page and are reported as that element's.
+    canvas_source: Option<NodeId>,
+    /// The `transform-origin`, in pixels from the box's top-left corner, of the last
+    /// transform animation or transition of each node. A node animated from no transform
+    /// has a pinned identity modifier, and compose-rust turns the animated matrix about
+    /// that modifier's origin, so it is given this one.
+    pin_origins: HashMap<PlanKey, (f32, f32)>,
 }
 
 impl Default for PlanBridge {
@@ -365,6 +382,7 @@ impl PlanBridge {
             wraps_island: false,
             sizes_scroll: false,
             island_node: None,
+            island_token: None,
             zoom: 1.0,
             zoom_sent: None,
             viewport_sent: None,
@@ -380,6 +398,18 @@ impl PlanBridge {
             finished: HashSet::new(),
             host_moments: Vec::new(),
             pins: HashMap::new(),
+            canvas_source: None,
+            pin_origins: HashMap::new(),
+        }
+    }
+
+    /// The DOM node the animations a plan node plays belong to: its own for a box, and
+    /// the element the canvas background came from for the page.
+    fn animated_element(&self, key: PlanKey) -> Option<NodeId> {
+        match key {
+            PlanKey::Node(node) => Some(node),
+            PlanKey::Page => self.canvas_source,
+            _ => None,
         }
     }
 
@@ -393,8 +423,11 @@ impl PlanBridge {
         ended: bool,
     ) -> Option<AnimationTarget> {
         let target = self.targets.get(&animation_id)?.clone();
-        let key = PlanKey::Node(target.node);
-        if self.nodes.get(&key).map(|placed| placed.id) != Some(node_id) {
+        let on = |key: PlanKey| self.nodes.get(&key).map(|placed| placed.id) == Some(node_id);
+        let on_canvas = self.canvas_source == Some(target.node)
+            && target.property == AnimatedProperty::BackgroundColor
+            && on(PlanKey::Page);
+        if !on(PlanKey::Node(target.node)) && !on_canvas {
             return None;
         }
         if ended {
@@ -418,7 +451,7 @@ impl PlanBridge {
     fn cancelled(&mut self, key: PlanKey, running: &Running, removed: bool) {
         let listened = self.targets.remove(&running.id).is_some();
         let ended = self.finished.remove(&running.id);
-        if let PlanKey::Node(node) = key
+        if let Some(node) = self.animated_element(key)
             && listened
             && !ended
         {
@@ -463,6 +496,18 @@ impl PlanBridge {
     /// page is drawn at, for a page that is the whole screen. Call before the first plan.
     pub(crate) fn wrap_in_island(&mut self) {
         self.wraps_island = true;
+    }
+
+    /// Asks the renderer to measure the island box under `token`. The box fills the area the
+    /// window gives its content, below the window's title band where it has one, so its
+    /// size is the viewport the page has to be laid out in. Call before the first plan.
+    pub(crate) fn observe_island(&mut self, token: u32) {
+        self.island_token = Some(token);
+    }
+
+    /// The island box, once the first plan has been applied.
+    pub(crate) fn island_node(&self) -> Option<u32> {
+        self.island_node
     }
 
     /// Gives the scroll the viewport's size rather than a fill, for a page that is one island
@@ -534,6 +579,7 @@ impl PlanBridge {
             return;
         }
         self.page_size = (viewport.0, viewport.1.max(page_extent(&plan.root)));
+        self.canvas_source = plan.canvas;
         self.brushes.clone_from(&plan.brushes);
         let pinned = self.pin(&plan);
         match self.previous.take() {
@@ -584,6 +630,13 @@ impl PlanBridge {
                         index: 1,
                         modifier: Modifier::FillMaxHeight,
                     });
+                    if let Some(token) = self.island_token {
+                        batch.write(Mutation::SetModifier {
+                            node_id: island,
+                            index: 2,
+                            modifier: Modifier::ObserveSize { token },
+                        });
+                    }
                     batch.write(Mutation::Insert {
                         parent_id: island,
                         node_id: viewport_node,
@@ -697,13 +750,26 @@ impl PlanBridge {
                 }
             }
         };
+        let mut origins: Vec<(PlanKey, (f32, f32))> = Vec::new();
         for node in plan.nodes() {
             for animation in &node.animations {
                 add(&mut self.pins, node.key, animation.property);
+                if let Some(origin) = transform_origin(animation) {
+                    origins.push((node.key, origin));
+                }
             }
         }
         for (key, animation) in &plan.transitions {
             add(&mut self.pins, *key, animation.property);
+            if let Some(origin) = transform_origin(animation) {
+                origins.push((*key, origin));
+            }
+        }
+        // A pinned modifier whose origin moved is written again.
+        for (key, origin) in origins {
+            if self.pin_origins.insert(key, origin) != Some(origin) && !gained.contains(&key) {
+                gained.push(key);
+            }
         }
         gained
     }
@@ -767,8 +833,12 @@ impl PlanBridge {
     }
 
     /// The moments of an animation the page listens to.
-    fn events_for(clicks: &dyn ClickTargets, key: PlanKey, transition: bool) -> AnimationEvents {
-        let PlanKey::Node(node) = key else {
+    fn events_for(
+        clicks: &dyn ClickTargets,
+        element: Option<NodeId>,
+        transition: bool,
+    ) -> AnimationEvents {
+        let Some(node) = element else {
             return AnimationEvents::NONE;
         };
         let mut events = AnimationEvents::NONE;
@@ -806,11 +876,12 @@ impl PlanBridge {
         let transition = animation.name.is_none();
         let id = self.next_animation_id;
         self.next_animation_id = self.next_animation_id.checked_add(1).unwrap_or(1);
-        let events = Self::events_for(clicks, key, transition);
+        let element = self.animated_element(key);
+        let events = Self::events_for(clicks, element, transition);
         let wire = animate::to_wire(node_id, id, slot, animation, size, events)?;
         batch.write(Mutation::StartAnimation(wire));
         if events != AnimationEvents::NONE
-            && let PlanKey::Node(node) = key
+            && let Some(node) = element
         {
             self.targets.insert(
                 id,
@@ -878,7 +949,7 @@ impl PlanBridge {
         for old in replaced {
             self.cancelled(key, &old, false);
         }
-        if let PlanKey::Node(node) = key
+        if let Some(node) = self.animated_element(key)
             && clicks.listens(node, "transitionrun")
         {
             self.host_moments.push(HostMoment {
@@ -1074,6 +1145,7 @@ impl PlanBridge {
             return;
         };
         self.pins.remove(&key);
+        self.pin_origins.remove(&key);
         for running in self.playing.remove(&key).unwrap_or_default() {
             // The cancel is addressed to the removed node itself and to nothing above it: a
             // browser does not bubble an event from a detached element. The page has
@@ -1334,6 +1406,12 @@ impl PlanBridge {
                 self.set_dropdown(batch, key, dropdown, &previous, created)
             }
             PlanKind::Image(image) => self.set_image(batch, key, image, &previous, created),
+            PlanKind::BrokenImageIcon => self.set_prop(
+                batch,
+                key,
+                PropertyKind::Commands,
+                Prop::Drawing(broken_image_icon()),
+            ),
         }
         if let Some(placed) = self.nodes.get_mut(&key) {
             placed.kind = kind.clone();
@@ -1418,7 +1496,7 @@ impl PlanBridge {
             Prop::Bool(field.multiline),
         );
         self.set_text_style(batch, key, &field.style, field.color);
-        // TODO(DarkPyonix/compose-rust#349): send PropertyKind::Font on TextField once the renderer allows Font on TextField.
+        self.set_prop(batch, key, PropertyKind::Font, font_prop(&field.style));
     }
 
     fn set_dropdown(
@@ -1436,6 +1514,9 @@ impl PlanBridge {
             .selected
             .map_or(Prop::None, |index| Prop::Int(index as i64));
         self.set_prop(batch, key, PropertyKind::SelectedIndex, selected);
+        // A `<select>` rests as a closed field on every design system, as a browser draws
+        // it, and never as a wheel that shows every option at once.
+        self.set_prop(batch, key, PropertyKind::Collapsible, Prop::Bool(true));
 
         let same_options = matches!(previous, PlanKind::Dropdown(before)
             if before.options == dropdown.options
@@ -1555,6 +1636,7 @@ impl PlanBridge {
         let key = node.key;
         let target = click_target(node, clicks);
         let pins = self.pins.get(&key).cloned().unwrap_or_default();
+        let pin_origin = self.pin_origins.get(&key).copied();
         let Some(placed) = self.nodes.get_mut(&key) else {
             return;
         };
@@ -1615,7 +1697,7 @@ impl PlanBridge {
             });
         }
 
-        let mut modifiers = wire_modifiers(node, &pins);
+        let mut modifiers = wire_modifiers(node, &pins, pin_origin);
         if key == PlanKey::Page {
             modifiers.insert(
                 0,
@@ -1685,7 +1767,14 @@ impl PlanBridge {
     /// The background layers of a node, back to front, with each brush registered.
     fn layer_specs(&mut self, node: &PlanNode) -> Vec<LayerSpec> {
         let mut specs = Vec::new();
-        let size = node_size(node);
+        // The page draws the canvas background, which covers all of the page however far
+        // the plan thought the canvas reached.
+        let page = node.key == PlanKey::Page;
+        let size = if page {
+            Some(self.page_size)
+        } else {
+            node_size(node)
+        };
         let corners = node_corners(node);
         for modifier in &node.modifiers {
             let PlanModifier::BackgroundBrush {
@@ -1697,6 +1786,11 @@ impl PlanBridge {
             } = modifier
             else {
                 continue;
+            };
+            let area = &if page {
+                Rect::new(0.0, 0.0, self.page_size.0, self.page_size.1)
+            } else {
+                *area
             };
             let Some(source) = self.brushes.get(brush) else {
                 continue;
@@ -1830,6 +1924,7 @@ pub fn widget_for(kind: &PlanKind) -> WidgetKind {
         PlanKind::Text(_) => WidgetKind::Text,
         // The box the picture is clipped to. The picture is an `Image` inside it.
         PlanKind::Image(_) => WidgetKind::AbsoluteBox,
+        PlanKind::BrokenImageIcon => WidgetKind::Canvas,
         PlanKind::ScrollColumn => WidgetKind::ScrollColumn,
         PlanKind::ScrollRow => WidgetKind::ScrollRow,
         PlanKind::TextField(_) => WidgetKind::TextField,
@@ -1837,6 +1932,21 @@ pub fn widget_for(kind: &PlanKind) -> WidgetKind {
         PlanKind::RadioButton { .. } => WidgetKind::RadioButton,
         PlanKind::Dropdown(_) => WidgetKind::Dropdown,
     }
+}
+
+/// The broken-image icon, 16 by 16 dp: a picture of sky over a green hill in a grey frame,
+/// torn across, after the icon Chromium draws for an image it could not load. The same
+/// list every time, so an icon already sent compares equal and costs no record.
+fn broken_image_icon() -> DrawList {
+    let paint = |argb: u32| Paint::Literal(Color::argb(argb));
+    DrawList::builder()
+        .rect(paint(0xfff4_f7fb), 1.0, 1.0, 14.0, 14.0, 0.0)
+        .rect(paint(0xffb9_d4f2), 2.0, 2.0, 12.0, 8.0, 0.0)
+        .circle(paint(0xff5f_a84f), 6.0, 11.0, 3.0, 0.0)
+        .rect(paint(0xff5f_a84f), 2.0, 10.0, 12.0, 4.0, 0.0)
+        .rect(paint(0xff8c_8c8c), 1.5, 1.5, 13.0, 13.0, 1.0)
+        .line(paint(0xffff_ffff), 11.0, 1.0, 5.0, 15.0, 2.0)
+        .build()
 }
 
 /// A colour as compose-rust's `0xAARRGGBB`.
@@ -1859,8 +1969,16 @@ fn literal(color: Rgba) -> Paint {
 /// shadows, its background, its border, and its clip.
 ///
 /// Background images and gradients are not here: they are boxes inside the node.
-fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
+///
+/// `pin_origin` is the `transform-origin` in pixels of the transform the node animates,
+/// for the identity modifier a pinned transform gets.
+fn wire_modifiers(
+    node: &PlanNode,
+    pins: &[AnimatedProperty],
+    pin_origin: Option<(f32, f32)>,
+) -> Vec<Modifier> {
     let mut out = Vec::with_capacity(node.modifiers.len() + 1);
+    let size = node_size(node);
     for modifier in &node.modifiers {
         let wire = match modifier {
             PlanModifier::Offset { x, y } => Modifier::Offset { x: *x, y: *y },
@@ -1868,11 +1986,18 @@ fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
                 width: *width,
                 height: *height,
             },
-            // compose-rust takes the matrix about the node's own top-left corner, so a
-            // `transform-origin` in pixels is folded into it and the origin sent is (0, 0).
+            // compose-rust takes the origin as a fraction of the node's size and turns the
+            // matrix about it. It also turns an animation of the transform about that same
+            // origin, so the origin goes as itself rather than folded into the matrix: a
+            // keyframe rotation then turns about `transform-origin` as the static one does.
+            // A box with no area has no fraction for a pixel origin, so its origin is
+            // folded in and the origin sent is (0, 0).
             // A value that is not finite is a protocol error on the wire, so it is left out.
             PlanModifier::Transform(transform) => {
-                let m = transform.about_origin();
+                let (m, (origin_x, origin_y)) = match origin_fraction(transform.origin, size) {
+                    Some(fraction) => (transform.matrix, fraction),
+                    None => (transform.about_origin(), (0.0, 0.0)),
+                };
                 if ![m.a, m.b, m.c, m.d, m.e, m.f].iter().all(|v| v.is_finite()) {
                     continue;
                 }
@@ -1883,8 +2008,8 @@ fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
                     d: m.d,
                     e: m.e,
                     f: m.f,
-                    origin_x: 0.0,
-                    origin_y: 0.0,
+                    origin_x,
+                    origin_y,
                 }
             }
             PlanModifier::Width(width) => Modifier::Width(*width),
@@ -1938,7 +2063,12 @@ fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
         };
         out.push(wire);
     }
-    pin_modifiers(&mut out, pins);
+    // An identity changes nothing about any origin, so one the node cannot place goes
+    // about the centre, the initial `transform-origin`.
+    let pin_origin = pin_origin
+        .and_then(|origin| origin_fraction(origin, size))
+        .unwrap_or((0.5, 0.5));
+    pin_modifiers(&mut out, pins, pin_origin);
     // The plan lists a box's shadows in CSS order, where the first is drawn on top. A
     // modifier list draws in its own order, so they go last to first.
     let shadows: Vec<usize> = out
@@ -1955,12 +2085,43 @@ fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
     for (&index, modifier) in shadows.iter().zip(reversed) {
         out[index] = modifier;
     }
+    if matches!(node.kind, PlanKind::TextField(_) | PlanKind::Dropdown(_)) {
+        out.extend(bare_field());
+    }
     out
 }
 
+/// What a form field names for itself so that the renderer draws no frame around its text.
+///
+/// The CSS border and background of an `<input>`, `<textarea>` or `<select>` are the
+/// Host's own boxes, and the renderer's field sits in the content box. Left to itself the
+/// renderer's `TextField` or `Dropdown` draws the design system's field there: a fill, a
+/// line, a pill or rounded shape, and padding that cuts a line of text in half in a box one
+/// line tall. A field that names its own fill, line, shape and padding is drawn as it asked,
+/// so it names ones that draw nothing.
+// TODO(DarkPyonix/compose-rust#519): ask for a bare field instead once the renderer has one.
+fn bare_field() -> [Modifier; 4] {
+    let clear = Paint::Literal(Color::argb(0));
+    [
+        Modifier::Background(clear),
+        Modifier::Border {
+            width: 0.0,
+            paint: clear,
+        },
+        Modifier::Shape {
+            top_start: 0.0,
+            top_end: 0.0,
+            bottom_end: 0.0,
+            bottom_start: 0.0,
+        },
+        Modifier::Padding(0.0),
+    ]
+}
+
 /// Gives the node the modifier of each property in `pins` it lacks, with the value that
-/// changes nothing, in the place the plan would have put it.
-fn pin_modifiers(out: &mut Vec<Modifier>, pins: &[AnimatedProperty]) {
+/// changes nothing, in the place the plan would have put it. A pinned transform turns about
+/// `origin`, a fraction of the node's size, because an animation of it turns about that.
+fn pin_modifiers(out: &mut Vec<Modifier>, pins: &[AnimatedProperty], origin: (f32, f32)) {
     let ends_placement = |modifier: &Modifier| {
         !matches!(
             modifier,
@@ -1993,8 +2154,8 @@ fn pin_modifiers(out: &mut Vec<Modifier>, pins: &[AnimatedProperty]) {
                 d: 1.0,
                 e: 0.0,
                 f: 0.0,
-                origin_x: 0.0,
-                origin_y: 0.0,
+                origin_x: origin.0,
+                origin_y: origin.1,
             },
         );
     }
@@ -2030,6 +2191,31 @@ fn pin_modifiers(out: &mut Vec<Modifier>, pins: &[AnimatedProperty]) {
             })),
         );
     }
+}
+
+/// `origin`, in pixels from the top-left corner of a box of `size`, as the fraction of the
+/// box compose-rust takes, or `None` when the box has no area to be a fraction of.
+fn origin_fraction(origin: (f32, f32), size: Option<(f32, f32)>) -> Option<(f32, f32)> {
+    let (width, height) = size?;
+    if !(width > 0.0 && height > 0.0) {
+        return None;
+    }
+    let fraction = (origin.0 / width, origin.1 / height);
+    (fraction.0.is_finite() && fraction.1.is_finite()).then_some(fraction)
+}
+
+/// The `transform-origin` in pixels of a transform animation, from its first keyframe.
+fn transform_origin(animation: &CssAnimation) -> Option<(f32, f32)> {
+    if animation.property != AnimatedProperty::Transform {
+        return None;
+    }
+    animation
+        .keyframes
+        .iter()
+        .find_map(|keyframe| match &keyframe.value {
+            AnimatedValue::Transform(transform) => Some(transform.origin),
+            _ => None,
+        })
 }
 
 /// A node's `RequiredSize`, if it has one.
@@ -2069,10 +2255,11 @@ fn page_extent(page: &PlanNode) -> f32 {
 ///
 /// Every one is sent, because the renderer fills an unsent one from its design system,
 /// and text drawn in the design system's size, height or spacing would not fit the box
-/// the page laid out for it. The family and the slant are not among them: compose-rust's
-/// text style takes neither, so the renderer draws the design system's face. A run of
-/// text sends its slant as a span instead ([`slant_and_lines`]).
-fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
+/// the page laid out for it. The type role is `TypeRole::None`: text with any rung of the
+/// type ladder, or with no role sent, is drawn in the theme's family and ignores the
+/// `Font` list ([`font_prop`]) the page's `font-family` travels as. The slant is not among
+/// them: a run of text sends it as a span instead ([`slant_and_lines`]).
+fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 6] {
     let line_height = match style.line_height {
         TextLineHeight::Px(px) => px,
         TextLineHeight::Normal => style.font_size * NORMAL_LINE_HEIGHT,
@@ -2083,6 +2270,7 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
         style.letter_spacing
     };
     [
+        (PropertyKind::TypeRole, Prop::Int(TypeRole::None as i64)),
         (PropertyKind::FontSize, Prop::Float(style.font_size)),
         (
             PropertyKind::FontWeight,

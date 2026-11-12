@@ -136,8 +136,8 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
         나타납니다. 말줄임표 글리프는 Host 가 만들지 않습니다. 렌더러가 <code>width</code> 를 넘는
         줄을 자르고 말줄임표를 그립니다.</li>
       <li><strong>목록 표지.</strong> <code>display: list-item</code> 인 요소는 모두 표지를 항목 글자
-        앞에 따로 된 조각으로 그리며, 그 조각의 <code>marker</code> 는
-        <code>RunMarker::Marker</code> 입니다. 바깥 표지는 항목 상자에서 공백 하나만큼 앞에서
+        앞에 그립니다. 글자 표지는 따로 된 조각이며, 그 조각의 <code>marker</code> 는
+        <code>RunMarker::Marker</code> 입니다. 글머리는 도형입니다(아래). 바깥 표지는 항목 상자에서 공백 하나만큼 앞에서
         끝나고 첫 줄의 기준선에 놓입니다. 안쪽 표지는 첫 줄의 시작이어서 조각의 텍스트가 표지로
         시작하고, <code>RunMarker::Prefix { len }</code> 이 그 바이트 수를 알려 줍니다. 표지는
         <code>disc</code>, <code>circle</code>, <code>square</code>, <code>decimal</code>,
@@ -146,6 +146,14 @@ pre { <span class="at">id</span>: <span class="s">"sample"</span>, code { <span 
         대신합니다. 번호는 HTML 을 따릅니다. <code>ol</code> 의 <code>start</code> 와
         <code>reversed</code>, <code>li</code> 의 <code>value</code> 입니다. 표지는 글자와 같은
         측정기로 재며, 배치에서 자리를 차지하지 않습니다.</li>
+      <li><strong>글머리 도형.</strong> <code>disc</code>, <code>circle</code>, <code>square</code>
+        는 Chromium 처럼 글꼴의 문자가 아니라 도형으로 그립니다. 항목의 <code>marker</code> 는
+        <code>MarkerShape</code> 이고, <code>MarkerSymbol</code> 과 사각형, 색(항목의
+        <code>color</code>)을 담습니다. plan 은 이것을 <code>PlanKey::Marker</code> 키의 상자로
+        그립니다. 채운 원, 1px 고리, 채운 사각형입니다. 크기와 자리는 글꼴의 ascent 에서 나옵니다.
+        16px 글꼴이면 지름 5px 이고, 소문자 높이의 가운데에 놓이며, 바깥 표지는 왼쪽 끝이 항목
+        상자보다 16px 앞입니다. 안쪽 글머리는 글자 시작에서 그 문자의 자리를 투명한 span 으로
+        지키고, 도형을 그 위에 그립니다.</li>
       <li><strong><code>text-align: justify</code>.</strong> 두 줄 이상으로 접히는 조각은 상자와
         같은 너비입니다. 마지막 줄을 뺀 모든 줄이 그 너비까지 늘어나기 때문입니다. 조각은
         <code>Justify</code> 라고 말하고 plan 의 텍스트 노드 너비가 늘일 너비이며, 낱말 사이를

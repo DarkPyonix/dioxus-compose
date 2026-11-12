@@ -13,8 +13,8 @@
 
 use dioxus_compose::html::{
     DisplayList, HtmlConfig, HtmlDom, InputKind, ModifierSlot, NodeEntry, NodeId, Plan, PlanChange,
-    PlanKey, PlanModifier, Rect, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
-    diff, plan_from,
+    PlanKey, PlanModifier, Rect, Rgba, TextMeasureRequest, TextMeasurer, TextMetrics,
+    WidthConstraint, diff, plan_from,
 };
 use dioxus_core::ScopeId;
 use dioxus_signals::ReadableExt;
@@ -422,4 +422,38 @@ fn fr34_todo_typing_and_enter_add_an_item() {
     dom.render();
     layout(&mut dom);
     assert!(dom.element_by_id("todo-5").is_none());
+}
+
+/// The colour of the text `id` owns, as drawn.
+#[track_caller]
+fn text_colour(dom: &HtmlDom, list: &DisplayList, id: &str) -> Rgba {
+    let owner = node(dom, id);
+    list.entries
+        .iter()
+        .flat_map(|entry| entry.texts.iter())
+        .find(|run| run.owner == owner)
+        .unwrap_or_else(|| panic!("#{id} draws no text"))
+        .color
+}
+
+/// The first row cannot move up and the last cannot move down, so those buttons are
+/// disabled and take `.todo button:disabled` (#d1d5db), as in Chromium; the rest keep
+/// #374151. Moving a row moves the disabled state with the position.
+#[test]
+fn fr34_todo_disabled_buttons_take_their_disabled_colour() {
+    const ENABLED: Rgba = Rgba::new(0x37, 0x41, 0x51, 255);
+    const DISABLED: Rgba = Rgba::new(0xd1, 0xd5, 0xdb, 255);
+    let mut dom = open();
+    let list = layout(&mut dom);
+
+    assert_eq!(text_colour(&dom, &list, "up-1"), DISABLED);
+    assert_eq!(text_colour(&dom, &list, "down-1"), ENABLED);
+    assert_eq!(text_colour(&dom, &list, "up-2"), ENABLED);
+    assert_eq!(text_colour(&dom, &list, "down-3"), DISABLED);
+    assert_eq!(text_colour(&dom, &list, "delete-1"), ENABLED);
+
+    click(&mut dom, "up-2");
+    let list = layout(&mut dom);
+    assert_eq!(text_colour(&dom, &list, "up-2"), DISABLED);
+    assert_eq!(text_colour(&dom, &list, "up-1"), ENABLED);
 }
