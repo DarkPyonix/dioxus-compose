@@ -30,7 +30,7 @@ use compose_rust::fonts::FontRefs;
 use compose_rust::protocol::{Mutation, PropertyValue};
 use compose_rust::schema::{
     AnimationControl, AnimationEvents, Color, Modifier, Paint, PropertyKind,
-    TextAlign as WireAlign, TextOverflow, TileMode, WidgetKind,
+    TextAlign as WireAlign, TextOverflow, TileMode, TypeRole, WidgetKind,
 };
 use compose_rust::spans::{TextSpan, TextSpans};
 
@@ -1410,7 +1410,15 @@ impl PlanBridge {
             Prop::Bool(field.multiline),
         );
         self.set_text_style(batch, key, &field.style, field.color);
-        // TODO(DarkPyonix/compose-rust#349): send PropertyKind::Font on TextField once the renderer allows Font on TextField.
+        // No type role, so the renderer sets the text in the fonts CSS names rather than in
+        // the design system's font for a role.
+        self.set_prop(
+            batch,
+            key,
+            PropertyKind::TypeRole,
+            Prop::Int(TypeRole::None as i64),
+        );
+        self.set_prop(batch, key, PropertyKind::Font, font_prop(&field.style));
     }
 
     fn set_dropdown(
@@ -1428,6 +1436,9 @@ impl PlanBridge {
             .selected
             .map_or(Prop::None, |index| Prop::Int(index as i64));
         self.set_prop(batch, key, PropertyKind::SelectedIndex, selected);
+        // A `<select>` rests as a closed field on every design system, as a browser draws
+        // it, and never as a wheel that shows every option at once.
+        self.set_prop(batch, key, PropertyKind::Collapsible, Prop::Bool(true));
 
         let same_options = matches!(previous, PlanKind::Dropdown(before)
             if before.options == dropdown.options
@@ -1947,7 +1958,37 @@ fn wire_modifiers(node: &PlanNode, pins: &[AnimatedProperty]) -> Vec<Modifier> {
     for (&index, modifier) in shadows.iter().zip(reversed) {
         out[index] = modifier;
     }
+    if matches!(node.kind, PlanKind::TextField(_) | PlanKind::Dropdown(_)) {
+        out.extend(bare_field());
+    }
     out
+}
+
+/// What a form field names for itself so that the renderer draws no frame around its text.
+///
+/// The CSS border and background of an `<input>`, `<textarea>` or `<select>` are the
+/// Host's own boxes, and the renderer's field sits in the content box. Left to itself the
+/// renderer's `TextField` or `Dropdown` draws the design system's field there: a fill, a
+/// line, a pill or rounded shape, and padding that cuts a line of text in half in a box one
+/// line tall. A field that names its own fill, line, shape and padding is drawn as it asked,
+/// so it names ones that draw nothing.
+// TODO(DarkPyonix/compose-rust#519): ask for a bare field instead once the renderer has one.
+fn bare_field() -> [Modifier; 4] {
+    let clear = Paint::Literal(Color::argb(0));
+    [
+        Modifier::Background(clear),
+        Modifier::Border {
+            width: 0.0,
+            paint: clear,
+        },
+        Modifier::Shape {
+            top_start: 0.0,
+            top_end: 0.0,
+            bottom_end: 0.0,
+            bottom_start: 0.0,
+        },
+        Modifier::Padding(0.0),
+    ]
 }
 
 /// Gives the node the modifier of each property in `pins` it lacks, with the value that
