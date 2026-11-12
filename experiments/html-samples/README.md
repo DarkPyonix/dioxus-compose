@@ -23,3 +23,31 @@ The differences between the two are tracked from issue #179.
    path (with the workspace's blitz-dom patch); run it with an output directory.
 4. `chrome-headless-shell --screenshot=<png> --window-size=<w>,<h-66>
    --force-device-scale-factor=1 --hide-scrollbars file://<html>`.
+
+## The other targets
+
+Captured 2026-11-13 against compose-rust v0.0.6, from the samples as they are on develop
+after #181, before any of the fixes tracked from #179.
+
+- `linux/<sample>.png`: the whole 1440x900 Xvfb screen of a Docker container (the
+  `ember-linux-gui` image, arm64, openbox, Mesa software GL), release build linked
+  against the published `linux-arm64` static renderer. Openbox draws no title bar, so the
+  window is exactly the size the sample asks for.
+- `windows/<sample>.png`: the UTM window of a Windows 11 arm VM. The sample is an x64
+  release build, cross-compiled on the Mac with `cargo xwin` against the published
+  `windows-x64` renderer, running under x64 emulation with WARP (`DXC_D3D12_WARP=1`),
+  started through a scheduled task `/IT /RU ember` so it opens on the desktop. Windows
+  taller than the VM's screen run off its top.
+- `android/<sample>.png`: a Galaxy Z Flip 4 (SM-F721N), main display, `dx build
+  --platform android --release` with NDK 27.1. Only hello, dashboard and settings.
+- `web/hello.png`: headless Chromium (chrome-headless-shell 1248) at 800x600. The page is
+  the v0.0.6 `samples-web` bundle from compose-rust's Samples test run 43264492969, with
+  its `compose_rust_host.wasm` replaced by `sample_html_hello.wasm` (built for
+  `wasm32-unknown-unknown` with `--import-memory`, `--global-base=4194304`,
+  `--initial-memory=8388608`, `--no-stack-first`). It only starts with
+  `--enable-features=WebAssemblyUnlimitedSyncCompilation`, because the Host module is
+  13.5MB and the loader instantiates it synchronously (compose-rust#565).
+
+What differs between targets is tracked from #179: on Windows weight 600 at 28px
+(compose-rust#551), on the web bold drawn regular (compose-rust#566), and the form fields
+drawn in each platform's design system (#197, compose-rust#519).
