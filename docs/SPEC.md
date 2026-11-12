@@ -1184,6 +1184,23 @@ Window::new().with_title_bar(TitleBar::Normal)
 - 캡션 띠의 버튼 자리는 클라이언트 영역으로 남기고 나머지는 `HTCAPTION`을 돌려줍니다. 그래서 끌기, 두 번 눌러 최대화, 오른쪽 눌러 시스템 메뉴가 전부 시스템 것으로 돌아옵니다.
 - **Snap Layouts의 최대화 버튼 호버 플라이아웃은 아직 없습니다.** 그것은 `HTMAXBUTTON`을 최대화 버튼의 사각형에서만 돌려줘야 하는데, 그 사각형은 디자인 시스템이 정하고 Kotlin이 압니다. 네이티브가 그것을 알려면 Kotlin에서 네이티브로 값을 보내는 경로가 필요하고 지금은 없습니다. 끌어서 스냅하는 것과 키보드 스냅은 프레임이 그대로이므로 동작합니다.
 
+#### 19.8 콘텐츠를 창 맨 위부터 그리는 창과 창 안전 영역 ([리더, 잠정 2026-11-13])
+
+추적: 이슈 #142. compose-rust v0.0.6(dioxus-compose가 고정한 태그)이 `Chrome::FullSize`와 `WindowSafeArea`를 담고 있다. Ember가 macOS에서 사이드바와 상단 막대를 창 맨 위부터 그리고 신호등 버튼을 그 위에 띄우려고 이것을 쓴다.
+
+- **`Chrome::FullSize`는 19.3의 `Chrome`에 붙는 세 번째 값이다.** 캡션 띠를 두지 않고 19.2의 바 찾기와 인셋을 적용하지 않으므로, 콘텐츠가 창 맨 위에서 시작한다. 창 버튼은 그 위에 그대로 그려진다. 어디를 비킬지는 앱이 정한다. compose-rust에서 macOS가 먼저이고, Windows와 Linux의 끌기는 compose-rust의 다음 릴리스를 따른다.
+- **앱은 `Window::new().chrome(Chrome::FullSize)`로 고른다.** `dioxus_compose::prelude`의 `Chrome`이 compose-rust의 그 enum이고, dioxus-compose는 새 타입을 만들지 않고 다시 내보낸다.
+- **비켜야 할 자리는 `use_window_safe_area()`가 돌려준다.** 값은 `WindowSafeArea { top, leading, trailing }`이고 단위는 dp다. Renderer가 창 크기 이벤트에 실어 보내고 Host는 고치지 않고 전한다. macOS에서는 `leading`이 신호등 버튼이 차지하는 폭이고, Windows에서는 `trailing`이 캡션 버튼이 차지하는 폭이며, 비킬 버튼이 없는 창과 창이 우리 것이 아닌 플랫폼(iOS, Android, 브라우저)에서는 셋 다 0이다. 플랫폼마다 다른 API를 두지 않는다.
+- **훅은 그 컴포넌트가 속한 창의 값을 읽는다.** 창이 여럿이면 `use_window_size()`와 같은 규칙으로 창을 고른다.
+- **안전 영역이 바뀌면 그 훅을 부른 컴포넌트가 다시 그려진다.** `use_window_size()`는 크기 클래스가 바뀔 때만 깨우지만(FR-20.4), 이 훅은 같은 크기 클래스 안에서 안전 영역만 바뀐 경우(전체 화면에 들어가고 나올 때 등)에도 깨운다.
+
+수용 기준:
+
+1. [리더, 잠정 2026-11-13] 가짜 렌더러가 창 크기 이벤트에 안전 영역 `{ top: 28, leading: 78, trailing: 0 }`을 실어 보내면, `use_window_safe_area()`가 그 세 값을 dp 그대로 돌려준다. 이벤트가 오기 전에는 셋 다 0이다. 테스트 `fr19_8_safe_area_hook_returns_the_renderer_insets` (예정).
+2. [리더, 잠정 2026-11-13] 크기 클래스는 그대로이고 안전 영역만 바뀐 창 크기 이벤트가 오면, 훅을 부른 컴포넌트가 다시 그려져 새 값을 읽고, 훅을 부르지 않은 컴포넌트는 다시 그려지지 않는다. 창이 둘이면 한 창의 값이 바뀌어도 다른 창의 컴포넌트는 깨지 않는다. 테스트 `fr19_8_safe_area_change_redraws_only_its_readers` (예정).
+3. [리더, 잠정 2026-11-13] `prelude`만 가져온 앱이 `Window::new().chrome(Chrome::FullSize)`로 시작하면, 첫 배치의 `SetWindow` 레코드에 `chrome`이 `FullSize`로 실린다. 테스트 `fr19_8_full_size_chrome_reaches_set_window` (예정).
+4. [리더, 잠정 2026-11-13] 수동: macOS에서 `FullSize`로 연 창의 콘텐츠가 창 맨 위부터 그려지고 신호등 버튼이 그 위에 남으며, `leading`만큼 비킨 내용이 버튼과 겹치지 않는다. Windows와 Linux는 compose-rust가 그 플랫폼의 `FullSize`를 낸 뒤 같은 방법으로 확인하고 그렇게 적는다.
+
 ### FR-20 반응형 레이아웃 기반 (창 크기 클래스) (`Done`)
 
 UI는 Rust가 저작하지만 측정은 Kotlin이 합니다. 그래서 지금은 Host 컴포넌트가 "폰에서는 한 열, 태블릿에서는 두 열, 데스크톱에서는 사이드바"라고 말할 방법이 전혀 없습니다. 브레이크포인트도, 크기 클래스도, 폭을 알아낼 경로도 없습니다. 폰/태블릿/데스크톱 적응은 그 위에 얹는 것이고, 이 요구사항은 그 바닥을 만듭니다.
@@ -1896,6 +1913,14 @@ if design.is_apple() {
 5. `<script>`가 있는 화면을 그려도 스크립트가 실행되지 않고, 프로세스가 중단되지 않습니다.
 6. **증분 스타일·레이아웃·계획(#153, #156).** DOM 변이나 애니메이션, 뷰포트·테마 변경이 없는 프레임에서는 스타일 재계산, 레이아웃, 표시 목록 및 계획 구성을 건너뛰고 새 레코드를 내보내지 않습니다. 한 부트리의 텍스트나 스타일만 바뀐 프레임에서는 손상(damage)되지 않은 형제 부트리의 Taffy 레이아웃 캐시와 측정된 텍스트(`MeasuredTexts`)를 재사용해, 바뀌지 않은 텍스트 노드에 대해 `TextMeasurer::measure`를 다시 부르지 않습니다. 자식 텍스트를 담은 컨테이너의 `top`이나 `transform`만 바뀐 프레임에서도 자식 텍스트를 다시 측정하지 않고 컨테이너의 오프셋·변환 수정자만 갱신하며, 인라인 `style` 속성 변경이 `[style]` 선택자 의존성이 없을 때는 부모·자손 부트리의 스타일을 다시 계산하지 않고, `transform`만 바뀐 프레임에서는 Taffy 레이아웃 패스(`run_layout_incremental`)를 생략한 채 새 문서에 처음부터 배치한 것과 같은 표시 목록과 계획을 내놓습니다. 가상 스크롤처럼 컨테이너에서 자식 줄이 추가·제거된 프레임에서도 바뀌지 않은 기존 형제 줄 부트리는 상자 재구성과 인라인 레이아웃(`inline_layout_data`), `MeasuredTexts`, Taffy 캐시를 그대로 유지하며, 새 문서에 처음부터 배치한 것과 같은 표시 목록과 계획을 내놓습니다. 측정(2026-11-05, `.scratch/editor-spike` `headless`, 100,000줄 생성 파일, 960x600 뷰포트, 화면 안팎 43줄·활성 DOM 약 500노드): `smooth wheel 12px/frame`(n=300) `top`+Parley 전체 p50 1.41ms / p95 1.61ms / max 1.80ms(`layout` p50 0.63ms / p95 0.78ms, `render` 0.24ms, `plan` 0.18ms, `apply` 0.35ms, 레코드 p50 155 / 2,848B; #156 이전 전체 p50 4.64ms / p95 5.29ms, `layout` p50 3.74ms / p95 4.28ms), `transform`+Parley 전체 p50 1.45ms / p95 2.01ms(`layout` p50 0.66ms / p95 1.02ms), `top`+fixed advance 전체 p50 1.37ms / p95 1.65ms(`layout` p50 0.60ms / p95 0.78ms); `frame, nothing changed`(n=60) 전체 p50 0.08ms / p95 0.09ms(레코드 0); `keystroke (500)` `top`+Parley 전체 p50 1.38ms / p95 1.93ms(레코드 p50 6). 테스트 `fr34_6_unchanged_frame_skips_layout_and_emits_no_records`, `fr34_6_sibling_subtree_change_does_not_remeasure_clean_text`, `fr34_6_container_offset_or_transform_change_does_not_remeasure_children`, `fr34_6_transform_only_frame_skips_subtree_restyle_and_preserves_single_window_output`, `fr34_6_child_insert_remove_preserves_clean_sibling_line_caches_and_output`.
 7. **`font-family` 전달(#153).** CSS `font-family` 목록은 `RendererMeasurer`의 측정 요청(`MeasureTextStyle::font`)과 `PlanBridge`가 `Text` 위젯에 내보내는 `PropertyKind::Font`(`FontRefs`) 양쪽에 같은 순서로 실립니다. 글꼴 목록이 비어 있지 않은 두 텍스트 노드가 글꼴 목록만 다를 때 측정 캐시 키가 구분됩니다. 테스트 `fr34_7_font_family_reaches_renderer_measurer_and_plan_bridge`.
+8. [리더, 잠정 2026-11-13] **접근성 의미(#170).** HTML 요소의 역할, 이름, 상태가 그 요소가 된 노드의 `Semantics` 수정자(역할과 상태)와 `AccessibleName` 속성으로 렌더러에 간다.
+   - 역할은 `role`의 첫 번째 아는 낱말(`button`, `tab`, `tablist`, `tree`, `treeitem`, `menu`, `menuitem`, `textbox`, `heading`, `navigation`, `list`, `listitem`, `checkbox`, `radio`, `switch`, `img`, `group` 계열)이고, `role`이 없으면 태그가 뜻하는 역할이다(`button`, `nav`, `ul`과 `ol`, `li`, `h1`에서 `h6`, `textarea`, `img`, `input`은 `type`에 따라).
+   - 이름은 `aria-label`, 없으면 `title`이다. 둘 다 없고 역할이 내용에서 이름을 얻는 것(`button`, `tab`, `treeitem`, `menuitem`, `heading`, `listitem` 등)이면, 그 요소의 텍스트 내용(자손 텍스트를 이어 붙이고 공백을 하나로 접은 것)이 이름이다. 그래서 글자가 있는 버튼과 탭은 따로 레이블을 달지 않아도 그 글자로 읽히고, 아이콘만 있는 버튼은 `aria-label`이나 `title`로 이름을 얻는다.
+   - 상태는 `aria-selected`, `aria-expanded`, `aria-checked`(없으면 네이티브 `checked`), `aria-disabled`(없으면 네이티브 `disabled`), `aria-hidden`이다. 켜짐, 꺼짐, 말하지 않음을 구분한다(`aria-selected="false"`는 말하지 않음이 아니다). `aria-hidden="true"`인 요소는 접근성 트리에서 빠진다.
+   - 클릭 핸들러가 있는 요소는 클릭 동작을 드러내고, 보조 기술이 그 동작을 부르면(macOS의 AXPress) 그 요소의 `onclick`이 불린다.
+   - 역할도 이름도 상태도 말하지 않는 요소에는 아무것도 붙지 않는다. 속성이 바뀌면 바뀐 노드의 의미 레코드만 나가고, 바뀌지 않은 프레임에는 나가지 않는다.
+   - compose-rust의 `Modifier::Semantics`와 `AccessibleName`(compose-rust #473)이 든 버전으로 고정을 올려야 한다. 구현은 `feat/html-semantics`(da5c8dea)에 있고, 그 브랜치는 텍스트 내용에서 이름을 얻는 일을 플랫폼에 맡기므로 그 부분을 더해야 한다.
+   - 테스트 `fr34_aria_role_label_and_state_reach_the_renderer_as_semantics` (예정), `fr34_semantics_name_comes_from_text_without_a_label` (예정), `fr34_semantics_click_action_dispatches_onclick` (예정), `fr34_semantics_unchanged_frame_sends_nothing` (예정). VoiceOver로 읽히는 이름과 AXPress는 native-image 빌드에서 §7의 수동 체크리스트로 확인한다.
 
 #### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
 
@@ -1909,11 +1934,26 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 - **구현 경로(정해짐).** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
 - 변환은 레이아웃에 영향을 주지 않습니다(CSS와 같음). 적중 판정(FR-34의 이벤트 전달)은 변환된 모양 기준입니다.
 
+**3D 변환의 결정(소유자 결정 2026-10-25, Q1에서 Q6까지 모두 "추천대로").** 질문과 추천은 compose-rust #105(FR-41.3)의 구현 세션이 올렸고, 그 FR-41.3은 compose-rust PR #274로 `Agreed`가 되어 병합되었다(2026-11-07). dioxus-compose 쪽은 그 rev로 고정을 올린 뒤 Host가 보내는 일이다.
+
+- **Q1, 수정자 번호.** "추천대로": `Transform3D`는 compose-rust 수정자 목록의 다음 빈 번호 27이다. 3D 전용 번호 블록은 잡지 않는다.
+- **Q2, 레코드 하나.** "추천대로": `Transform3D` 하나에 4x4 행렬과 원점(노드 크기에 대한 비율, 2D `Transform`과 같은 뜻)을 싣는다. 회전, 원근, 임의 행렬로 레코드를 나누지 않는다. CSS의 계산값이 원래 행렬이므로 Host가 그대로 보낸다.
+- **Q3, CSS 함수의 범위.** "추천대로": `rotateX`, `rotateY`, `rotateZ`, `rotate3d`, `translateZ`, `translate3d`, `scaleZ`, `scale3d`, `perspective()`, `matrix3d` 전부를 다룬다. Host가 2D 함수와 함께 행렬 하나로 접으므로 함수가 늘어도 렌더러 쪽 비용은 같다.
+- **Q4, `graphicsLayer`로 분해되지 않는 행렬.** "추천대로": 분해되는 행렬은 `graphicsLayer`로 정확히 그리고, 분해되지 않는 행렬은 어댑터 한 파일의 행렬 경로로 그리며 그 경로가 묶인 Compose 버전을 기록한다(compose-rust FR-41.3). 근사하지 않는다.
+- **Q5, `perspective`.** "추천대로": 원근은 행렬에 접어 넣고 렌더러가 분해할 때 꺼낸다. Host가 `cameraDistance`를 따로 계산해 보내지 않는다.
+- **Q6, 적중 판정, `backface-visibility`, `preserve-3d`.** "추천대로": 적중 판정은 변환된 모양을 따른다. `backface-visibility: hidden`은 이번 단계에서 지원한다. `transform-style: preserve-3d`(자식끼리 3D 공간을 나누는 것)는 Compose 레이어가 평면으로 합성되어 안정 API로 할 수 없으므로 이번 단계에서는 평면으로 그리고 경고한다. "지원하지 않음"이 아니고 compose-rust FR-41.5(`Draft`)로 추적한다.
+
 수용 기준:
 1. `rotate(15deg)`, `scale(1.5)`, `skewX(10deg)`, `transform-origin: top left`를 쓴 상자 각각이 Chromium과 같은 자리와 모양으로 그려집니다. 상자 꼭짓점 기준으로 FR-34의 상자 허용치를 지킵니다.
 2. 회전된 상자 안의 글자와 자식도 함께 회전합니다.
 3. 회전된 상자의 모서리 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불립니다.
 4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
+5. Q3의 3D 함수가 든 `transform`이 Host에서 행렬 하나와 원점으로 접혀 그 노드의 `Transform3D` 수정자 하나로 나간다. 2D 함수가 섞여도 같은 행렬 하나다. 지금의 "3D 변환을 건너뛰었다"는 경고는 더 나오지 않고, 그것을 고정하던 테스트 `fr34_1_every_3d_function_is_skipped_with_a_warning`은 이 전송 테스트로 바뀐다. 테스트 `fr34_1_3d_functions_fold_into_one_transform3d` (예정).
+6. `rotateX(60deg)`, `rotateY(45deg)`, `perspective(400px)`의 조합과 `perspective(400px) rotateY(45deg)`를 쓴 상자 각각의 네 모서리가 CSS가 계산한 자리와 1px 안에서 맞는다. 원근은 행렬 안에 있고 따로 실리지 않는다. 테스트 `fr34_1_3d_corners_match_css_within_1px` (예정).
+7. `graphicsLayer`로 분해되지 않는 행렬(기울임과 원근의 조합 등)도 Host는 고치지 않고 그대로 보내고, 렌더러의 어댑터 경로로 그려 기준 6의 허용치를 지킨다. 렌더러 쪽 확인과 Compose 버전 기록은 compose-rust FR-41.3의 것이다. 테스트 `fr34_1_undecomposable_3d_matrix_is_sent_unchanged` (예정).
+8. 3D 변환된 상자의 그려진 모양 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불린다(기준 3의 3D판). 테스트 `fr34_1_3d_hit_test_follows_the_drawn_shape` (예정).
+9. `backface-visibility: hidden`인 상자가 뒷면을 보일 때(`rotateY(180deg)`) 그려지지 않는다. 앞면을 보일 때는 그려진다. 테스트 `fr34_1_backface_hidden_box_is_not_drawn_from_behind` (예정).
+10. `transform-style: preserve-3d`인 요소의 자식은 평면으로 합성되어 그려지고, Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다. 프로세스는 중단되지 않는다. 테스트 `fr34_1_preserve_3d_warns_and_flattens` (예정).
 
 #### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
 
@@ -1959,6 +1999,7 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 3. HTML 안의 위젯을 누르면 그 위젯의 핸들러가 불리고, 감싼 `div`의 `onclick`은 CSS 이벤트 흐름대로 그 뒤에 불립니다.
 4. 테마를 바꾸면 `var(--dxc-primary)`를 쓴 `div`의 배경과 Primary 색 위젯이 같은 프레임에 같은 색으로 바뀝니다. `--dxc-*` 변수의 이름 집합이 schema의 `ColorRole` 변형 전부와 일대일로 맞는지도 시험합니다(생성 목록이므로 역할이 늘면 시험도 따라갑니다). 테스트 `fr34_3_theme_variables_follow_colour_roles`, `fr34_3_theme_switch_same_frame`.
 5. 위젯 트리는 `use_widget_box()`로 페이지가 그 상자에 준 크기(dp)를 읽고, 상자 크기가 바뀌면 트리가 다시 그려집니다. 렌더러는 위젯 트리를 제한 없이 재므로, 스타일시트가 크기를 정한 상자(`flex: 1`, `height: 100%`)를 채우려는 위젯은 이 값을 루트에 줍니다. 테스트 `fr34_3_widget_reads_the_box_the_page_gave_it`.
+6. [리더, 잠정 2026-11-13] **위젯 트리에 값 넘기기(#160).** `WidgetView`는 `app`과 함께 그 트리의 루트 컴포넌트가 받을 props를 받는다(`WidgetView { app: Editor, props: EditorProps { path } }`, `Editor`는 `fn(EditorProps) -> Element`). 위젯 트리의 루트는 그 값으로 그려진다. 페이지가 다시 그려져 props가 바뀌면(`PartialEq`로 다를 때) 그 위젯 트리가 같은 섬 그대로 새 값으로 다시 그려지고, 트리 안의 훅 상태와 노드는 다시 만들어지지 않는다. props가 같으면 위젯 트리는 다시 그려지지 않는다. props 없이 `app: fn() -> Element`만 쓰는 지금의 코드는 그대로 컴파일되고 같게 동작한다. 테스트 `fr34_3_widget_view_passes_props_to_the_tree` (예정), `fr34_3_changed_props_redraw_the_tree_and_keep_its_state` (예정), `fr34_3_equal_props_do_not_redraw_the_tree` (예정).
 
 #### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
 
@@ -2003,6 +2044,8 @@ Code-OSS 워크벤치가 쓰는 CSS와 입력 중 dioxus-compose에 없는 것�
 9. 허용치 구역의 확장. FR-34의 허용치 표 방식(줄바꿈, 글자 위치, 한 줄의 폭, 상자)을 패널, 상태 바, 퀵 입력, 컨텍스트 메뉴, hover 위젯에도 같은 수치로 적용하고, 구역마다 측정 방법과 수치를 기록합니다. 테스트 `fr34_5_box_tolerance_panel` (예정), `fr34_5_box_tolerance_status_bar` (예정), `fr34_5_box_tolerance_quick_input` (예정), `fr34_5_box_tolerance_context_menu` (예정), `fr34_5_box_tolerance_hover_widget` (예정). Host만이지만 텍스트 크기가 맞는 상자 경로에서 재는 FR-34의 측정 조건을 따릅니다.
 10. 프로그래밍 방식 포커스와 `autofocus`(#153). 새로 마운트된 HTML 요소의 `onmounted` 핸들러가 도착하고, 핸들러 안에서 `MountedData::set_focus(true)`를 부르거나 요소에 `autofocus` 속성을 달거나 `HtmlDom::focus`를 부르면 그 요소가 포커스를 얻어 `:focus`·`:focus-visible`·`:focus-within` 선택자와 `focus`·`blur`·`focusin`·`focusout` 이벤트가 반영됩니다(렌더러 위젯 포커스 요청 명령은 compose-rust #410 의존). 테스트 `fr34_5_onmounted_set_focus_and_autofocus_focus_element`.
 11. 키보드·조합(IME) 이벤트 전달과 `Tab` 포커스 이동(#153). 포커스된 요소(포커스가 없으면 루트)로 `keydown`, `keypress`, `keyup`이 `key`, `code`, `location`, `modifiers`, `repeat`, `is_composing`과 함께 버블링되고, `Tab`과 `Shift+Tab`은 문서 순서(및 `tabindex`)대로 포커스 가능한 요소를 순회하며 핸들러가 `prevent_default`를 부르면 이동하지 않습니다. 조합 시작·갱신·종료 시 `compositionstart`, `compositionupdate`, `compositionend`가 조합 문자열과 함께 포커스된 요소 경로로 전달됩니다(렌더러 경계 확장은 compose-rust #100, #98, #410 의존). 테스트 `fr34_5_key_events_carry_metadata_and_tab_traverses_focus`, `fr34_5_composition_events_reach_focused_element`.
+12. [리더, 잠정 2026-11-13] **HTML 드래그 앤 드롭(#192).** `draggable="true"`인 요소를 누른 채 누른 자리에서 4 CSS px 넘게 움직이면 그 요소에 `dragstart`가 가고, 핸들러는 `data_transfer().set_data("text/plain", ..)`로 텍스트를 싣는다. 끄는 동안 Host가 포인터 자리를 적중 판정해(기준 2와 같은 변환된 모양 기준, `pointer-events: none`은 건너뜀) 새로 들어간 요소에 `dragenter`, 떠난 요소에 `dragleave`, 포인터 아래 요소에 이동마다 `dragover`를 보낸다. 이 이벤트는 버블링하고 좌표는 CSS px다. 놓았을 때 포인터 아래 요소가 마지막 `dragover`에서 `prevent_default`를 불렀으면 그 요소에 `drop`이 가고, 그 `data_transfer().get_data("text/plain")`은 `dragstart`에서 실은 값이다. 그 뒤 놓은 자리와 상관없이 끌기 시작한 요소에 `dragend`가 간다. `prevent_default`가 없던 자리에 놓거나 Escape로 취소하면 `drop` 없이 `dragleave`와 `dragend`만 간다. 드래그로 끝난 누름은 `click`을 내지 않는다. 데이터는 Host 안에만 있고 OS의 드래그 앤 드롭이나 다른 창과 오가지 않으므로(창에 파일을 떨어뜨리는 것은 FR-27이다) 세 OS에서 같게 동작한다. 렌더러가 보내는 포인터 누름, 이동, 캡처(기준 2) 위에서 Host만으로 충족하고 compose-rust 변경이 없다. 테스트 `fr34_5_drag_start_carries_text_to_drop` (예정), `fr34_5_drag_enter_over_leave_follow_the_pointer` (예정), `fr34_5_drop_needs_prevent_default_on_dragover` (예정), `fr34_5_drag_end_reaches_the_source_after_drop_or_cancel` (예정), `fr34_5_finished_drag_does_not_click` (예정).
+13. [리더, 잠정 2026-11-13] **크기 바뀜 이벤트(#207).** `onresize` 핸들러가 있는 요소는 레이아웃 패스가 끝난 뒤 콘텐츠 상자의 크기가 그 요소에 마지막으로 전한 값과 다르면 `onresize`를 받는다. `ResizeData`의 `get_content_box_size()`와 `get_border_box_size()`는 CSS px이고, FR-34.4의 확대 배율 k를 곱하기 전 값이다. 요소가 처음 배치된 레이아웃 패스에서도 한 번 받는다(ResizeObserver가 관찰을 시작할 때와 같다). 크기가 바뀐 원인은 가리지 않는다. DOM 변경, 스타일 변경, 그리고 다른 것은 아무것도 바뀌지 않은 창 크기 변경도 같다. 위치만 바뀌었거나 크기가 같으면 보내지 않고, 레이아웃을 건너뛴 프레임(FR-34 기준 6)에서도 보내지 않는다. 한 패스에서 여러 요소가 바뀌면 각 요소에 한 번씩 보내고 버블링하지 않는다. 핸들러가 바꾼 상태는 다음 프레임에 반영되고, 그 뒤 크기가 더 바뀌지 않으면 이벤트도 더 나오지 않는다. Host만으로 충족하고 세 OS에서 같다. 테스트 `fr34_5_resize_fires_after_layout_when_content_box_changes` (예정), `fr34_5_resize_fires_on_window_resize_alone` (예정), `fr34_5_resize_not_sent_when_size_is_unchanged` (예정).
 
 기준 1에서 3, 5의 `pointer-events`, 9에서 11은 compose-rust 병합을 기다리지 않고 Host 경로를 먼저 시작할 수 있습니다. 기준 1과 2는 같은 입력 경로라 이어서 구현합니다.
 
