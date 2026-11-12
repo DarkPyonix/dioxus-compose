@@ -3,7 +3,7 @@
 What each HTML sample in `samples/` looks like in a dioxus-compose window on macOS, and what
 the same HTML and CSS look like in Chromium, which is the reference for an HTML page.
 
-- `macos/<sample>.png`: the sample's window (`cargo run -p sample-html-<sample>`), debug
+- `macos/<sample>.png`: the sample's window after the 2026-11-13 HTML fixes (integration of #194-#212), and `macos-before/<sample>.png` the same window before them (#181). Both are (`cargo run -p sample-html-<sample>`), debug
   build, Apple Silicon, scale 1, compose-rust v0.0.6. The top 66 pixels are the window's
   title band, so the page starts at y = 66.
 - `chromium/<sample>.html`: the sample's first render serialised as HTML, with its
