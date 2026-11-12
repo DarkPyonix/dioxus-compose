@@ -16,8 +16,8 @@
 //!   x = card + 9, then every 32px.
 
 use dioxus_compose::html::{
-    DisplayList, HtmlConfig, HtmlDom, NodeEntry, NodeId, Rect, TextMeasureRequest, TextMeasurer,
-    TextMetrics, WidthConstraint,
+    DisplayList, HtmlConfig, HtmlDom, NodeEntry, NodeId, Rect, Rgba, TextMeasureRequest,
+    TextMeasurer, TextMetrics, WidthConstraint,
 };
 use dioxus_core::ScopeId;
 use dioxus_signals::ReadableExt;
@@ -412,4 +412,37 @@ fn fr34_kanban_typing_and_enter_add_a_card_to_the_first_column() {
     dom.render();
     layout(&mut dom);
     assert!(dom.element_by_id("card-6").is_none());
+}
+
+/// The colour of the text `id` owns, as drawn.
+#[track_caller]
+fn text_colour(dom: &HtmlDom, list: &DisplayList, id: &str) -> Rgba {
+    let owner = node(dom, id);
+    list.entries
+        .iter()
+        .flat_map(|entry| entry.texts.iter())
+        .find(|run| run.owner == owner)
+        .unwrap_or_else(|| panic!("#{id} draws no text"))
+        .color
+}
+
+/// The edge buttons are disabled, so they take `.card button:disabled` and draw their
+/// arrow in #d1d5db, as Chromium does; the others keep #374151. After a card moves, its
+/// buttons follow the column it is in.
+#[test]
+fn fr34_kanban_disabled_edge_buttons_take_their_disabled_colour() {
+    const ENABLED: Rgba = Rgba::new(0x37, 0x41, 0x51, 255);
+    const DISABLED: Rgba = Rgba::new(0xd1, 0xd5, 0xdb, 255);
+    let mut dom = open();
+    let list = layout(&mut dom);
+
+    assert_eq!(text_colour(&dom, &list, "left-1"), DISABLED);
+    assert_eq!(text_colour(&dom, &list, "right-1"), ENABLED);
+    assert_eq!(text_colour(&dom, &list, "right-4"), DISABLED);
+    assert_eq!(text_colour(&dom, &list, "left-4"), ENABLED);
+
+    click(&mut dom, "right-1");
+    let list = layout(&mut dom);
+    assert_eq!(text_colour(&dom, &list, "left-1"), ENABLED);
+    assert_eq!(text_colour(&dom, &list, "right-1"), ENABLED);
 }
