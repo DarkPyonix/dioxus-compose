@@ -1,0 +1,13 @@
+# dx project configuration for the Article sample, laid out the way `dx new` lays one out.
+
+[application]
+name = "Article"
+asset_dir = "assets"
+
+[bundle]
+identifier = "dev.darkpyonix.dioxuscompose.samples.article"
+publisher = "DarkPyonix"
+short_description = "A reading page written with HTML and CSS."
+
+[macos]
+bundle_name = "Article"

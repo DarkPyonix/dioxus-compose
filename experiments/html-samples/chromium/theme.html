@@ -1,0 +1,68 @@
+<!doctype html>
+<html><head><style>
+:root, .app.light {
+    --bg: #ffffff;
+    --surface: #f3f4f6;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #d1d5db;
+    --accent: #2563eb;
+    --on-accent: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #111827;
+        --surface: #1f2937;
+        --text: #f9fafb;
+        --muted: #9ca3af;
+        --border: #374151;
+        --accent: #60a5fa;
+        --on-accent: #111827;
+    }
+}
+
+.app.dark {
+    --bg: #111827;
+    --surface: #1f2937;
+    --text: #f9fafb;
+    --muted: #9ca3af;
+    --border: #374151;
+    --accent: #60a5fa;
+    --on-accent: #111827;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: system-ui, sans-serif; font-size: 14px; }
+
+.app { height: 100%; padding: 24px; background-color: var(--bg); color: var(--text); }
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 40px;
+    margin-bottom: 16px;
+}
+.header h1 { margin: 0; font-size: 20px; }
+
+.toggle {
+    width: 120px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--accent);
+    color: var(--on-accent);
+}
+
+.card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background-color: var(--surface);
+}
+.card p { margin: 0; }
+.card .muted { margin-top: 8px; color: var(--muted); }
+</style></head><body><div id="app" class="app"><div class="header"><h1 id="title">Appearance</h1><button id="theme-toggle" class="toggle">Toggle theme</button></div><div id="card" class="card"><p id="body-text">Colours follow the theme.</p><p id="muted-text" class="muted">Set by a class or the system.</p></div></div></body></html>
