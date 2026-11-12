@@ -9,12 +9,15 @@ use dioxus_elements::ResizeEvent;
 use dioxus_hooks::use_signal;
 use dioxus_signals::WritableExt;
 
+/// A resize event's content box and border box sizes.
+type Sizes = ((f64, f64), (f64, f64));
+
 thread_local! {
     /// Each resize event's content and border box sizes, in order.
-    static SEEN: RefCell<Vec<((f64, f64), (f64, f64))>> = const { RefCell::new(Vec::new()) };
+    static SEEN: RefCell<Vec<Sizes>> = const { RefCell::new(Vec::new()) };
 }
 
-fn take() -> Vec<((f64, f64), (f64, f64))> {
+fn take() -> Vec<Sizes> {
     SEEN.with(|seen| std::mem::take(&mut *seen.borrow_mut()))
 }
 
