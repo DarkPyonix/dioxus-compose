@@ -1934,11 +1934,26 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 - **구현 경로(정해짐).** 렌더러가 Compose의 `graphicsLayer`(회전, 확대, 원점)로 그리고, 변환 행렬을 수정자 하나로 넘깁니다. 위젯 스키마(compose-rust)에 수정자가 하나 늘어나므로 compose-rust SPEC을 먼저 고칩니다. 대안은 Host가 변환된 상자의 꼭짓점을 계산해 넘기는 것인데, 회전된 글자와 클리핑을 그릴 수 없어서 후보에서 뺍니다.
 - 변환은 레이아웃에 영향을 주지 않습니다(CSS와 같음). 적중 판정(FR-34의 이벤트 전달)은 변환된 모양 기준입니다.
 
+**3D 변환의 결정(소유자 결정 2026-10-25, Q1에서 Q6까지 모두 "추천대로").** 질문과 추천은 compose-rust #105(FR-41.3)의 구현 세션이 올렸고, 그 FR-41.3은 compose-rust PR #274로 `Agreed`가 되어 병합되었다(2026-11-07). dioxus-compose 쪽은 그 rev로 고정을 올린 뒤 Host가 보내는 일이다.
+
+- **Q1, 수정자 번호.** "추천대로": `Transform3D`는 compose-rust 수정자 목록의 다음 빈 번호 27이다. 3D 전용 번호 블록은 잡지 않는다.
+- **Q2, 레코드 하나.** "추천대로": `Transform3D` 하나에 4x4 행렬과 원점(노드 크기에 대한 비율, 2D `Transform`과 같은 뜻)을 싣는다. 회전, 원근, 임의 행렬로 레코드를 나누지 않는다. CSS의 계산값이 원래 행렬이므로 Host가 그대로 보낸다.
+- **Q3, CSS 함수의 범위.** "추천대로": `rotateX`, `rotateY`, `rotateZ`, `rotate3d`, `translateZ`, `translate3d`, `scaleZ`, `scale3d`, `perspective()`, `matrix3d` 전부를 다룬다. Host가 2D 함수와 함께 행렬 하나로 접으므로 함수가 늘어도 렌더러 쪽 비용은 같다.
+- **Q4, `graphicsLayer`로 분해되지 않는 행렬.** "추천대로": 분해되는 행렬은 `graphicsLayer`로 정확히 그리고, 분해되지 않는 행렬은 어댑터 한 파일의 행렬 경로로 그리며 그 경로가 묶인 Compose 버전을 기록한다(compose-rust FR-41.3). 근사하지 않는다.
+- **Q5, `perspective`.** "추천대로": 원근은 행렬에 접어 넣고 렌더러가 분해할 때 꺼낸다. Host가 `cameraDistance`를 따로 계산해 보내지 않는다.
+- **Q6, 적중 판정, `backface-visibility`, `preserve-3d`.** "추천대로": 적중 판정은 변환된 모양을 따른다. `backface-visibility: hidden`은 이번 단계에서 지원한다. `transform-style: preserve-3d`(자식끼리 3D 공간을 나누는 것)는 Compose 레이어가 평면으로 합성되어 안정 API로 할 수 없으므로 이번 단계에서는 평면으로 그리고 경고한다. "지원하지 않음"이 아니고 compose-rust FR-41.5(`Draft`)로 추적한다.
+
 수용 기준:
 1. `rotate(15deg)`, `scale(1.5)`, `skewX(10deg)`, `transform-origin: top left`를 쓴 상자 각각이 Chromium과 같은 자리와 모양으로 그려집니다. 상자 꼭짓점 기준으로 FR-34의 상자 허용치를 지킵니다.
 2. 회전된 상자 안의 글자와 자식도 함께 회전합니다.
 3. 회전된 상자의 모서리 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불립니다.
 4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
+5. Q3의 3D 함수가 든 `transform`이 Host에서 행렬 하나와 원점으로 접혀 그 노드의 `Transform3D` 수정자 하나로 나간다. 2D 함수가 섞여도 같은 행렬 하나다. 지금의 "3D 변환을 건너뛰었다"는 경고는 더 나오지 않고, 그것을 고정하던 테스트 `fr34_1_every_3d_function_is_skipped_with_a_warning`은 이 전송 테스트로 바뀐다. 테스트 `fr34_1_3d_functions_fold_into_one_transform3d` (예정).
+6. `rotateX(60deg)`, `rotateY(45deg)`, `perspective(400px)`의 조합과 `perspective(400px) rotateY(45deg)`를 쓴 상자 각각의 네 모서리가 CSS가 계산한 자리와 1px 안에서 맞는다. 원근은 행렬 안에 있고 따로 실리지 않는다. 테스트 `fr34_1_3d_corners_match_css_within_1px` (예정).
+7. `graphicsLayer`로 분해되지 않는 행렬(기울임과 원근의 조합 등)도 Host는 고치지 않고 그대로 보내고, 렌더러의 어댑터 경로로 그려 기준 6의 허용치를 지킨다. 렌더러 쪽 확인과 Compose 버전 기록은 compose-rust FR-41.3의 것이다. 테스트 `fr34_1_undecomposable_3d_matrix_is_sent_unchanged` (예정).
+8. 3D 변환된 상자의 그려진 모양 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불린다(기준 3의 3D판). 테스트 `fr34_1_3d_hit_test_follows_the_drawn_shape` (예정).
+9. `backface-visibility: hidden`인 상자가 뒷면을 보일 때(`rotateY(180deg)`) 그려지지 않는다. 앞면을 보일 때는 그려진다. 테스트 `fr34_1_backface_hidden_box_is_not_drawn_from_behind` (예정).
+10. `transform-style: preserve-3d`인 요소의 자식은 평면으로 합성되어 그려지고, Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다. 프로세스는 중단되지 않는다. 테스트 `fr34_1_preserve_3d_warns_and_flattens` (예정).
 
 #### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
 
