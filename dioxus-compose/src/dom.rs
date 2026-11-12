@@ -7,6 +7,7 @@
 
 pub(crate) mod form;
 mod pointer;
+mod resize;
 mod writer;
 
 use std::any::Any;
@@ -289,6 +290,8 @@ pub struct HtmlDom {
     focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
     /// Shared snapshot of node client rectangles for `MountedData::get_client_rect`.
     mounted_rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
+    /// The content box sizes `onresize` handlers were last told about.
+    resize: resize::ResizeObservers,
 }
 
 impl HtmlDom {
@@ -363,6 +366,7 @@ impl HtmlDom {
             cached_plan: None,
             focus_requests: Rc::default(),
             mounted_rects: Rc::default(),
+            resize: resize::ResizeObservers::default(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
@@ -633,9 +637,21 @@ impl HtmlDom {
         self.report_skipped(&list);
         self.previous = self.current.replace(list);
         self.layout_revision += 1;
+        self.send_resizes();
         self.current
             .as_ref()
             .expect("the display list was stored on the line above")
+    }
+
+    /// Delivers `resize` to each element whose content box size changed in the layout
+    /// pass that just ran. It does not bubble.
+    fn send_resizes(&mut self) {
+        let mut pending = std::mem::take(self.resize.collect(&self.doc, &self.state));
+        for (element, data) in pending.drain(..) {
+            self.send(element, "resize", Box::new(data), false);
+        }
+        // Hand the buffer back so the next pass reuses its capacity.
+        *self.resize.collect_buffer() = pending;
     }
 
     /// Says on stderr, once for each, which element's which 3D transform the layout left
@@ -1860,8 +1876,8 @@ fn register_event_converter() {
 }
 
 /// Turns the events this document sends into Dioxus event data: clicks, keys, focus, the
-/// `input`, `change` and `submit` events of form controls, and animation and transition
-/// events. Every other conversion is
+/// `input`, `change` and `submit` events of form controls, animation and transition
+/// events, and resize events. Every other conversion is
 /// unreachable from here.
 struct Converter;
 
@@ -1947,8 +1963,11 @@ impl HtmlEventConverter for Converter {
             .clone();
         dioxus_html::PointerData::new(data)
     }
-    fn convert_resize_data(&self, _: &PlatformEventData) -> dioxus_html::ResizeData {
-        not_sent("resize")
+    fn convert_resize_data(&self, event: &PlatformEventData) -> dioxus_html::ResizeData {
+        let data = *event
+            .downcast::<resize::ResizeEventData>()
+            .expect("every resize event this document sends carries ResizeEventData");
+        dioxus_html::ResizeData::new(data)
     }
     fn convert_scroll_data(&self, _: &PlatformEventData) -> dioxus_html::ScrollData {
         not_sent("scroll")
