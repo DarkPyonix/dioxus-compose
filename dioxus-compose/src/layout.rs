@@ -24,6 +24,10 @@
 //! A `<select>` is sized here as a control of its own: as wide as its widest option plus
 //! room for the dropdown's indicator, one line tall. Its options are not laid out.
 //!
+//! A `<button>` that is not a flex or grid container has its content centred top to bottom
+//! in its content box, where Chromium centres the anonymous box it lays a button's content
+//! out in (see [`centres_content`]).
+//!
 //! stylo_taffy reads `position: fixed` as `absolute`, and Taffy places an absolutely
 //! positioned box against its parent. A fixed box belongs to the viewport, so once the tree
 //! is laid out each fixed box is sized and placed again against the viewport, and its
@@ -79,6 +83,31 @@ pub(crate) const SELECT_INDICATOR_WIDTH: f32 = 24.0;
 pub(crate) fn is_fixed(node: &Node) -> bool {
     node.primary_styles()
         .is_some_and(|style| style.clone_position() == Position::Fixed)
+}
+
+/// Whether `node` is a `<button>` whose content is centred top to bottom in its content
+/// box, as Chromium centres the anonymous box it lays a button's content out in. A button
+/// that is a flex or grid container lays its children out as one, with no such box, so it
+/// is not.
+pub(crate) fn centres_content(node: &Node) -> bool {
+    matches!(&node.data, NodeData::Element(element) if &*element.name.local == "button")
+        && node.style.display == Display::Block
+}
+
+/// How far a centring button's content moves down: half the room its content box has
+/// beyond the content, and nothing when the content fills it or overflows it.
+pub(crate) fn button_content_offset(inner_height: f32, content_height: f32) -> f32 {
+    ((inner_height - content_height) / 2.0).max(0.0)
+}
+
+/// The height of the lines of an inline formatting context blitz-dom laid out with
+/// Parley, in CSS pixels, or `None` when `node` holds none.
+pub(crate) fn inline_content_height(node: &Node) -> Option<f32> {
+    if !node.flags.is_inline_root() {
+        return None;
+    }
+    let layout = &node.element_data()?.inline_layout_data.as_ref()?.layout;
+    Some(layout.height() / layout.scale())
 }
 
 /// Resolves a CSS `calc()` that Taffy carries as an opaque pointer to stylo's value.
@@ -1317,6 +1346,80 @@ impl MeasuredTree<'_> {
         output
     }
 
+    /// Moves the content of a `<button>` down to the middle of its content box.
+    ///
+    /// Chromium lays a button's content out in an anonymous box and centres that box top to
+    /// bottom in the button's content box; `text-align: center` from the user-agent sheet
+    /// centres it across. Here the content stays where the button's own layout put it, at
+    /// the top, and its in-flow children move down by half the room left over. Text the
+    /// button holds directly is not a child: it is drawn from the content box, and the
+    /// display list moves it by the same amount ([`button_content_offset`]). Content
+    /// taller than the box stays at the top, as Chromium keeps it.
+    ///
+    /// Absolutely positioned children are placed against the button's padding box, not the
+    /// anonymous box, so they do not move.
+    fn centre_button_content(
+        &mut self,
+        node_id: NodeId,
+        inputs: LayoutInput,
+        output: &LayoutOutput,
+    ) {
+        let id = usize::from(node_id);
+        let node = self.node(node_id);
+        if !centres_content(node) {
+            return;
+        }
+        let padding = node
+            .style
+            .padding
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        let border = node
+            .style
+            .border
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        let top = padding.top + border.top;
+        let inner = output.size.height - top - padding.bottom - border.bottom;
+
+        let in_flow: Vec<usize> = self
+            .child_ids(node_id)
+            .map(usize::from)
+            .filter(|&child| {
+                self.doc
+                    .get_node(child)
+                    .is_some_and(|child| child.style.position != taffy::Position::Absolute)
+            })
+            .collect();
+        let content = if let Some(text) = self.texts.get(&id) {
+            text.metrics.height
+        } else if let Some(height) = inline_content_height(node) {
+            height
+        } else {
+            let bottom = in_flow
+                .iter()
+                .filter_map(|&child| self.doc.get_node(child))
+                .map(|child| {
+                    let layout = &child.unrounded_layout;
+                    layout.location.y + layout.size.height + layout.margin.bottom
+                })
+                .fold(None, |bottom: Option<f32>, edge| {
+                    Some(bottom.map_or(edge, |bottom| bottom.max(edge)))
+                });
+            match bottom {
+                Some(bottom) => bottom - top,
+                None => return,
+            }
+        };
+        let offset = button_content_offset(inner, content);
+        if offset <= 0.0 {
+            return;
+        }
+        for child in in_flow {
+            if let Some(child) = self.doc.get_node_mut(child) {
+                child.unrounded_layout.location.y += offset;
+            }
+        }
+    }
+
     /// Writes the intrinsic width keywords of `parent`'s children into their Taffy styles.
     ///
     /// stylo_taffy reads `width`, `min-width` and `max-width` of `min-content`,
@@ -2051,7 +2154,7 @@ impl LayoutPartialTree for MeasuredTree<'_> {
     fn compute_child_layout(&mut self, node_id: NodeId, inputs: LayoutInput) -> LayoutOutput {
         compute_cached_layout(self, node_id, inputs, |tree, node_id, inputs| {
             let id = usize::from(node_id);
-            match tree.route(id) {
+            let output = match tree.route(id) {
                 Route::Hidden => LayoutOutput::HIDDEN,
                 Route::Select => tree.compute_select(id, inputs),
                 Route::Blitz => {
@@ -2088,7 +2191,12 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                     tree.resolve_intrinsic_widths(node_id, inputs);
                     compute_grid_layout(tree, node_id, inputs)
                 }
+            };
+            // Only the final pass places children; the sizing passes before it do not.
+            if inputs.run_mode == RunMode::PerformLayout {
+                tree.centre_button_content(node_id, inputs, &output);
             }
+            output
         })
     }
 }

@@ -22,7 +22,9 @@ use crate::html::NodeId;
 use crate::layout::background::{self, Boxes};
 use crate::layout::convert;
 use crate::layout::image::ImageLookup;
-use crate::layout::{is_fixed, local};
+use crate::layout::{
+    button_content_offset, centres_content, inline_content_height, is_fixed, local,
+};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, CanvasBackground,
     Corners, DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, Outline,
@@ -729,9 +731,17 @@ impl Painter<'_, '_> {
         layout: &taffy::Layout,
     ) -> Vec<TextRun> {
         let content = content_box(rect, layout);
+        // A button's content sits in the middle of its content box, top to bottom; its
+        // children were moved there by the layout, and its own text moves here.
+        let centred = centres_content(node);
         let mut runs = Vec::new();
         if let Some(measured) = self.texts.texts.get(&id) {
             let width = measured.metrics.width;
+            let drop = if centred {
+                button_content_offset(content.height, measured.metrics.height)
+            } else {
+                0.0
+            };
             let free = (content.width - width).max(0.0);
             let offset = match measured.align {
                 TextAlign::Center => free / 2.0,
@@ -742,7 +752,7 @@ impl Painter<'_, '_> {
                 owner: measured.owner,
                 rect: Rect::new(
                     content.x + offset,
-                    content.y,
+                    content.y + drop,
                     width,
                     measured.metrics.height,
                 ),
@@ -765,7 +775,12 @@ impl Painter<'_, '_> {
                 spans: measured.spans.clone(),
             });
         } else if node.flags.is_inline_root() {
-            runs = self.parley_runs(node, &content);
+            let drop = match inline_content_height(node) {
+                Some(height) if centred => button_content_offset(content.height, height),
+                _ => 0.0,
+            };
+            let lines = Rect::new(content.x, content.y + drop, content.width, content.height);
+            runs = self.parley_runs(node, &lines);
         }
         if let Some(marker) = self.texts.markers.get(&id) {
             let run = marker_run(marker, rect, &content, runs.first());
