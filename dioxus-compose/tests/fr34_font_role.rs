@@ -113,9 +113,14 @@ enum Sent {
     Other,
 }
 
+/// The nodes a frame creates, with their widget.
+type Created = Vec<(u32, WidgetKind)>;
+/// Every property a frame sets, as (node, property, value).
+type Props = Vec<(u32, PropertyKind, Sent)>;
+
 /// The first frame of the page, as (node, property, value) for every property it sets,
 /// and the nodes it creates with their widget.
-fn first_frame() -> (Vec<(u32, WidgetKind)>, Vec<(u32, PropertyKind, Sent)>) {
+fn first_frame() -> (Created, Props) {
     reset_window_size();
     let mut host = Host::html(page, config);
     let batch = host.rebuild().unwrap().to_vec();
