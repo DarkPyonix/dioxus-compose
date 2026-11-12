@@ -54,8 +54,8 @@ use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
     DisplayList, GradientStop, ImageFallback, InputKind, MarkerSymbol, Matrix2D, NodeEntry,
-    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun,
-    TileRepeat, Transform2D, bounds_of,
+    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun, TileRepeat,
+    Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -1439,7 +1439,6 @@ impl<'a> Builder<'a> {
             },
         );
     }
-
 
     /// The broken-image icon and alt text of an `<img>` the resolver names no asset for, in a
     /// box of the image's content box that clips them, as Chromium clips them to the image.

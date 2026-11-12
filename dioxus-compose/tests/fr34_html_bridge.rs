@@ -1386,6 +1386,7 @@ fn fr34_ellipsis_box_sends_an_ellipsis_at_the_box_width() {
         modifiers.contains(&Modifier::Width(160.0)),
         "the text keeps its whole line: {modifiers:?}"
     );
+}
 
 fn density() -> Element {
     let mut chosen = use_signal(|| 0usize);
@@ -1462,6 +1463,7 @@ fn fr34_checked_radio_is_sent_checked_and_controls_draw_no_input_box() {
             );
         }
     }
+}
 
 fn broken_avatar() -> Element {
     rsx! {
