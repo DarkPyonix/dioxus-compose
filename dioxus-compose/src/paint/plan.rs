@@ -1316,7 +1316,13 @@ impl<'a> Builder<'a> {
                             x: run.rect.x - ox,
                             y: run.rect.y - oy,
                         },
-                        PlanModifier::Width(run.rect.width),
+                        // Text cut with an ellipsis is as wide as the cut: the renderer
+                        // ends a line that does not fit the width it is given in an
+                        // ellipsis.
+                        PlanModifier::Width(
+                            run.ellipsis
+                                .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
+                        ),
                     ],
                     children: Vec::new(),
                     parent: None,

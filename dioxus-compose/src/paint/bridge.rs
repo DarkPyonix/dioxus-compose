@@ -1308,11 +1308,19 @@ impl PlanBridge {
                     Prop::Int(text.text.matches('\n').count() as i64 + 1)
                 };
                 self.set_prop(batch, key, PropertyKind::MaxLines, max_lines);
+                // `text-overflow: ellipsis` ends a line cut at the node's width in an
+                // ellipsis. Every other run is drawn whole and its box clips it, if the
+                // box clips at all.
+                let overflow = if text.ellipsis.is_some() {
+                    TextOverflow::Ellipsis
+                } else {
+                    TextOverflow::Visible
+                };
                 self.set_prop(
                     batch,
                     key,
                     PropertyKind::Overflow,
-                    Prop::Int(TextOverflow::Visible as i64),
+                    Prop::Int(overflow as i64),
                 );
             }
             PlanKind::TextField(field) => self.set_field(batch, key, field, &previous, created),

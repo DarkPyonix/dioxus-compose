@@ -16,7 +16,9 @@ use dioxus_compose::html::{
     HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
 };
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
-use dioxus_compose::schema::{Color, EventPayload, Modifier, Paint, PropertyKind, WidgetKind};
+use dioxus_compose::schema::{
+    Color, EventPayload, Modifier, Paint, PropertyKind, TextOverflow, WidgetKind,
+};
 use dioxus_compose::spans::{TextSpan, TextSpans};
 use dioxus_hooks::use_signal;
 
@@ -1281,5 +1283,81 @@ fn fr34_button_under_block_sends_label_and_soft_wrap_false() {
         soft_wrap,
         Some(false),
         "soft wrap is false for unconstrained label: {props:#?}"
+    );
+}
+
+fn ellipsis_boxes() -> Element {
+    rsx! {
+        div {
+            style: "width: 100px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis",
+            "abcdefghijklmnop"
+        }
+        div { style: "width: 100px; overflow: hidden; white-space: nowrap", "qrstuvwxyzabcdef" }
+    }
+}
+
+/// The value the last record for `property` on `node` gave it.
+#[track_caller]
+fn prop_of(records: &[Record], node: u32, property: PropertyKind) -> Value {
+    records
+        .iter()
+        .rev()
+        .find_map(|record| match record {
+            Record::Prop(id, given, value) if *id == node && *given == property => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("node {node} has no {property:?}: {records:#?}"))
+}
+
+/// The node whose text is `text`.
+#[track_caller]
+fn text_node(records: &[Record], text: &str) -> u32 {
+    records
+        .iter()
+        .find_map(|record| match record {
+            Record::Prop(id, PropertyKind::Text, Value::Str(given)) if given == text => Some(*id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no node draws {text:?}: {records:#?}"))
+}
+
+/// A one-line box with `overflow: hidden`, `white-space: nowrap` and
+/// `text-overflow: ellipsis` ends its text in an ellipsis, as Chromium does. The 16
+/// characters are 160px and the box is 100px, so the text node is sent as one line that
+/// does not wrap, cut with an ellipsis, and as wide as the box: the renderer places the
+/// ellipsis at the width it is given. The same box without `text-overflow: ellipsis` keeps
+/// the whole 160px line, which the box clips.
+#[test]
+fn fr34_ellipsis_box_sends_an_ellipsis_at_the_box_width() {
+    let mut host = Host::html(ellipsis_boxes, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let cut = text_node(&first, "abcdefghijklmnop");
+    assert_eq!(
+        prop_of(&first, cut, PropertyKind::Overflow),
+        Value::Int(TextOverflow::Ellipsis as i64)
+    );
+    assert_eq!(prop_of(&first, cut, PropertyKind::MaxLines), Value::Int(1));
+    assert_eq!(
+        prop_of(&first, cut, PropertyKind::SoftWrap),
+        Value::Bool(false)
+    );
+    let modifiers = modifiers_of(&first, cut);
+    assert!(
+        modifiers.contains(&Modifier::Width(100.0)),
+        "the text is as wide as the box: {modifiers:?}"
+    );
+
+    let clipped = text_node(&first, "qrstuvwxyzabcdef");
+    assert_eq!(
+        prop_of(&first, clipped, PropertyKind::Overflow),
+        Value::Int(TextOverflow::Visible as i64)
+    );
+    let modifiers = modifiers_of(&first, clipped);
+    assert!(
+        modifiers.contains(&Modifier::Width(160.0)),
+        "the text keeps its whole line: {modifiers:?}"
     );
 }
