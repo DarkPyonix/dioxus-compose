@@ -26,11 +26,9 @@
 //! widget's component first ran. A page embedded in a widget tree with `HtmlView` is such a
 //! page too, so its widgets are never mixed up with the outer page's.
 
-// The component macro compares its `fn` props for equality. See `html_view`.
-#![allow(unpredictable_function_pointer_comparisons)]
-
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::marker::PhantomData;
 use std::pin::pin;
 use std::rc::Rc;
 use std::task::Context;
@@ -38,8 +36,8 @@ use std::task::Context;
 use compose_rust::Batch;
 use compose_rust::measure::{MeasureRequests, MeasureStatus, NodeConstraints, measurer};
 use compose_rust::protocol::{HostEvent, Mutation, ProtocolError};
-use dioxus_core::{Element, ScopeId, VirtualDom};
-use dioxus_core_macro::{Props, component, rsx};
+use dioxus_core::{ComponentFunction, Element, Properties, ScopeId, SuperInto, VirtualDom};
+use dioxus_core_macro::rsx;
 use dioxus_html as dioxus_elements;
 use dioxus_signals::{ReadableExt, Signal, WritableExt};
 
@@ -82,6 +80,9 @@ struct Island {
     /// The size the page's layout gave the widget's box, as the tree reads it with
     /// [`use_widget_box`].
     box_size: Signal<(f32, f32)>,
+    /// Counts the props the tree's root was handed. The root reads it, so a new count draws
+    /// the root again.
+    props_drawn: Signal<u64>,
 }
 
 #[derive(Default)]
@@ -150,17 +151,21 @@ struct IslandHandle {
 }
 
 impl IslandHandle {
-    fn register(app: fn() -> Element) -> Self {
+    /// `root` draws the tree's root component with the props the widget holds now.
+    fn register(root: impl Fn() -> Element + Clone + 'static) -> Self {
         let token = REGISTRY.with_borrow_mut(|registry| {
             registry.next_token += 1;
             let token = registry.next_token;
             if let Some(slot) = registry.take_slot() {
                 let owner = CURRENT_OWNER.with(Cell::get);
-                let dom = VirtualDom::new(app);
+                let dom = VirtualDom::new_with_props(root, ());
                 let box_size = dom.in_scope(ScopeId::ROOT, || {
                     Signal::new_in_scope((0.0, 0.0), ScopeId::ROOT)
                 });
                 dom.provide_root_context(WidgetBox(box_size));
+                let props_drawn =
+                    dom.in_scope(ScopeId::ROOT, || Signal::new_in_scope(0, ScopeId::ROOT));
+                dom.provide_root_context(PropsDrawn(props_drawn));
                 registry.islands.insert(
                     token,
                     Island {
@@ -178,6 +183,7 @@ impl IslandHandle {
                         size: None,
                         dirty: false,
                         box_size,
+                        props_drawn,
                     },
                 );
             }
@@ -200,28 +206,217 @@ impl Drop for IslandHandle {
     }
 }
 
+/// Says that the props of the widget `token` changed, so its tree draws again with them on
+/// the next frame, in the same scope, keeping its hook state and its nodes.
+fn props_changed(token: u32) {
+    REGISTRY.with_borrow_mut(|registry| {
+        let Some(island) = registry.islands.get_mut(&token) else {
+            return;
+        };
+        let mut signal = island.props_drawn;
+        island.dom.in_scope(ScopeId::ROOT, || signal += 1);
+        island.dirty = true;
+        let owner = island.owner;
+        registry.pending.insert(owner);
+    });
+}
+
+/// The props of [`WidgetView`].
+///
+/// `P` is the props type of the widget tree's root component, `()` for a root that takes
+/// none. The props are compared with `PartialEq`: the tree draws again only when they
+/// differ from the last ones it drew with.
+pub struct WidgetViewProps<P: 'static = ()> {
+    app: Rc<dyn Fn(P) -> Element>,
+    props: P,
+    style: Option<String>,
+}
+
+impl<P: Clone> Clone for WidgetViewProps<P> {
+    fn clone(&self) -> Self {
+        Self {
+            app: self.app.clone(),
+            props: self.props.clone(),
+            style: self.style.clone(),
+        }
+    }
+}
+
+/// The tree's root component is read once, when the widget is first drawn, the way a
+/// `VirtualDom` keeps the root it was made with. Only the props and the style decide
+/// whether the widget changed.
+impl<P: PartialEq> PartialEq for WidgetViewProps<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.props == other.props && self.style == other.style
+    }
+}
+
+impl<P: Clone + PartialEq + 'static> Properties for WidgetViewProps<P> {
+    type Builder = WidgetViewPropsBuilder<P, NoApp, NoProps>;
+
+    fn builder() -> Self::Builder {
+        WidgetViewPropsBuilder {
+            app: None,
+            props: None,
+            style: None,
+            state: PhantomData,
+        }
+    }
+
+    fn memoize(&mut self, other: &Self) -> bool {
+        let equal = self == other;
+        if !equal {
+            *self = other.clone();
+        }
+        equal
+    }
+}
+
+#[doc(hidden)]
+pub struct NoApp;
+#[doc(hidden)]
+pub struct WithApp;
+#[doc(hidden)]
+pub struct NoProps;
+#[doc(hidden)]
+pub struct WithProps;
+
+/// Builds [`WidgetViewProps`]. `rsx!` uses it; `app` is required, and `props` is required
+/// unless the root component takes no props.
+pub struct WidgetViewPropsBuilder<P: 'static, A, Q> {
+    app: Option<Rc<dyn Fn(P) -> Element>>,
+    props: Option<P>,
+    style: Option<String>,
+    state: PhantomData<(A, Q)>,
+}
+
+impl<P: 'static, Q> WidgetViewPropsBuilder<P, NoApp, Q> {
+    /// The widget tree's root component: a `fn() -> Element`, or a component that takes
+    /// props `P`.
+    pub fn app<M: 'static>(
+        self,
+        app: impl ComponentFunction<P, M>,
+    ) -> WidgetViewPropsBuilder<P, WithApp, Q> {
+        WidgetViewPropsBuilder {
+            app: Some(Rc::new(move |props| app.rebuild(props))),
+            props: self.props,
+            style: self.style,
+            state: PhantomData,
+        }
+    }
+}
+
+impl<P: 'static, A> WidgetViewPropsBuilder<P, A, NoProps> {
+    /// The props the root component is drawn with.
+    pub fn props(self, props: P) -> WidgetViewPropsBuilder<P, A, WithProps> {
+        WidgetViewPropsBuilder {
+            app: self.app,
+            props: Some(props),
+            style: self.style,
+            state: PhantomData,
+        }
+    }
+}
+
+impl<P: 'static, A, Q> WidgetViewPropsBuilder<P, A, Q> {
+    /// The CSS of the element that stands for the widget in the page.
+    pub fn style<M>(mut self, style: impl SuperInto<Option<String>, M>) -> Self {
+        self.style = style.super_into();
+        self
+    }
+}
+
+impl WidgetViewPropsBuilder<(), WithApp, NoProps> {
+    /// The props of a widget whose root takes none.
+    pub fn build(self) -> WidgetViewProps<()> {
+        WidgetViewProps {
+            app: self.app.expect("the app was set"),
+            props: (),
+            style: self.style,
+        }
+    }
+}
+
+impl<P: 'static> WidgetViewPropsBuilder<P, WithApp, WithProps> {
+    /// The props of a widget whose root takes `props`.
+    pub fn build(self) -> WidgetViewProps<P> {
+        WidgetViewProps {
+            app: self.app.expect("the app was set"),
+            props: self.props.expect("the props were set"),
+            style: self.style,
+        }
+    }
+}
+
+/// The count of props a widget tree's root was handed, through its root context.
+#[derive(Clone, Copy)]
+struct PropsDrawn(Signal<u64>);
+
+/// What a [`WidgetView`] keeps across its renders.
+struct WidgetState<P> {
+    handle: IslandHandle,
+    /// The props the tree's root draws with, shared with the tree's root.
+    props: Rc<RefCell<P>>,
+}
+
 /// A Compose widget tree inside an HTML and CSS page.
 ///
 /// `app` is the widget tree: a Dioxus component written with the Compose widgets, the same
-/// kind of function [`launch`](crate::launch) takes. It is an element of the page like any
-/// other, so `style` can place it (`display: inline-block`, margins, `position`). Its size
-/// is the one the renderer measures for the tree, unless `style` gives a `width` or a
-/// `height`.
+/// kind of function [`launch`](crate::launch) takes, or a component that takes props, with
+/// the props given in `props`, the way `VirtualDom::new_with_props` takes them. It is an
+/// element of the page like any other, so `style` can place it (`display: inline-block`,
+/// margins, `position`). Its size is the one the renderer measures for the tree, unless
+/// `style` gives a `width` or a `height`.
 ///
 /// ```ignore
+/// #[component]
+/// fn Editor(path: String) -> Element {
+///     rsx! { Text { text: "{path}" } }
+/// }
+///
 /// rsx! {
 ///     div { onclick: move |_| clicks += 1,
 ///         "Name: "
 ///         WidgetView { app: name_field, style: "display: inline-block" }
+///         WidgetView { app: Editor, props: EditorProps { path: path() } }
 ///     }
 /// }
 /// ```
 ///
+/// When the page draws again with props that differ (`PartialEq`), the same tree draws
+/// again with them: its hook state and its nodes stay. Equal props do not draw it again.
+/// `app` is read once, when the widget is first drawn.
+///
 /// The CSS of the page does not reach inside the tree. The design system draws it.
-#[component]
-pub fn WidgetView(app: fn() -> Element, #[props(default)] style: Option<String>) -> Element {
-    let handle = dioxus_core::use_hook(|| Rc::new(IslandHandle::register(app)));
-    let token = handle.token;
+#[allow(non_snake_case)]
+pub fn WidgetView<P: Clone + PartialEq + 'static>(props: WidgetViewProps<P>) -> Element {
+    let WidgetViewProps {
+        app,
+        props: values,
+        style,
+    } = props;
+    let state = dioxus_core::use_hook(|| {
+        let shared = Rc::new(RefCell::new(values.clone()));
+        let root = {
+            let shared = shared.clone();
+            move || {
+                let PropsDrawn(drawn) = dioxus_core::consume_context::<PropsDrawn>();
+                // Read only to subscribe the root to new props.
+                drawn();
+                let values = shared.borrow().clone();
+                app(values)
+            }
+        };
+        Rc::new(WidgetState {
+            handle: IslandHandle::register(root),
+            props: shared,
+        })
+    });
+    let token = state.handle.token;
+    if *state.props.borrow() != values {
+        *state.props.borrow_mut() = values;
+        props_changed(token);
+    }
     let style = style.unwrap_or_default();
     rsx! {
         div {
