@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### HTML tables fill their width
+
+A table whose width is greater than its columns, such as `width: 100%` in a wider
+container, gives the extra width to its columns. When every column has a fixed width, each
+one grows in proportion to it, as in Chromium's auto table layout. Before, the columns kept
+their widths and the space past them stayed empty. Tables with `auto` or percentage columns
+are unchanged. The change is a blitz-dom patch, `scripts/patches/blitz-dom-0.2.4/0002-table-width-fills-columns.patch`.
+
 ### Several shadows on Column, Row, Box and Card
 
 These four take `shadow: Vec<ShadowLayer>`, a list in CSS order where the first layer is on
