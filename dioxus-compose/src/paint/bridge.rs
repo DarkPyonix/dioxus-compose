@@ -26,6 +26,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use compose_rust::Batch;
 use compose_rust::brush::{Brush as WireBrush, Stop, brush as register_brush};
+use compose_rust::drawing::DrawList;
 use compose_rust::fonts::FontRefs;
 use compose_rust::protocol::{Mutation, PropertyValue};
 use compose_rust::schema::{
@@ -227,6 +228,8 @@ enum Prop {
     Spans(TextSpans),
     /// The font table of a list of runs, which travels as a property of its own.
     SpanFonts(TextSpans),
+    /// A `Canvas` drawing.
+    Drawing(DrawList),
 }
 
 impl Prop {
@@ -240,6 +243,7 @@ impl Prop {
             Prop::Fonts(value) => PropertyValue::Bytes(value.as_bytes()),
             Prop::Spans(value) => PropertyValue::Bytes(value.as_bytes()),
             Prop::SpanFonts(value) => PropertyValue::Bytes(value.font_table()),
+            Prop::Drawing(value) => PropertyValue::Bytes(value.as_bytes()),
         }
     }
 }
@@ -1326,6 +1330,12 @@ impl PlanBridge {
                 self.set_dropdown(batch, key, dropdown, &previous, created)
             }
             PlanKind::Image(image) => self.set_image(batch, key, image, &previous, created),
+            PlanKind::BrokenImageIcon => self.set_prop(
+                batch,
+                key,
+                PropertyKind::Commands,
+                Prop::Drawing(broken_image_icon()),
+            ),
         }
         if let Some(placed) = self.nodes.get_mut(&key) {
             placed.kind = kind.clone();
@@ -1822,6 +1832,7 @@ pub fn widget_for(kind: &PlanKind) -> WidgetKind {
         PlanKind::Text(_) => WidgetKind::Text,
         // The box the picture is clipped to. The picture is an `Image` inside it.
         PlanKind::Image(_) => WidgetKind::AbsoluteBox,
+        PlanKind::BrokenImageIcon => WidgetKind::Canvas,
         PlanKind::ScrollColumn => WidgetKind::ScrollColumn,
         PlanKind::ScrollRow => WidgetKind::ScrollRow,
         PlanKind::TextField(_) => WidgetKind::TextField,
@@ -1829,6 +1840,21 @@ pub fn widget_for(kind: &PlanKind) -> WidgetKind {
         PlanKind::RadioButton { .. } => WidgetKind::RadioButton,
         PlanKind::Dropdown(_) => WidgetKind::Dropdown,
     }
+}
+
+/// The broken-image icon, 16 by 16 dp: a picture of sky over a green hill in a grey frame,
+/// torn across, after the icon Chromium draws for an image it could not load. The same
+/// list every time, so an icon already sent compares equal and costs no record.
+fn broken_image_icon() -> DrawList {
+    let paint = |argb: u32| Paint::Literal(Color::argb(argb));
+    DrawList::builder()
+        .rect(paint(0xfff4_f7fb), 1.0, 1.0, 14.0, 14.0, 0.0)
+        .rect(paint(0xffb9_d4f2), 2.0, 2.0, 12.0, 8.0, 0.0)
+        .circle(paint(0xff5f_a84f), 6.0, 11.0, 3.0, 0.0)
+        .rect(paint(0xff5f_a84f), 2.0, 10.0, 12.0, 4.0, 0.0)
+        .rect(paint(0xff8c_8c8c), 1.5, 1.5, 13.0, 13.0, 1.0)
+        .line(paint(0xffff_ffff), 11.0, 1.0, 5.0, 15.0, 2.0)
+        .build()
 }
 
 /// A colour as compose-rust's `0xAARRGGBB`.

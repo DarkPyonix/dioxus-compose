@@ -693,5 +693,7 @@ pub(crate) fn replaced_image(
         image_rect,
         fit,
         natural_size: natural,
+        // Filled in by the display list builder, which holds the alt text layout measured.
+        fallback: None,
     })
 }

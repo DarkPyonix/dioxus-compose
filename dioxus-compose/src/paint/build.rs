@@ -21,13 +21,13 @@ use crate::dom::form;
 use crate::html::NodeId;
 use crate::layout::background::{self, Boxes};
 use crate::layout::convert;
-use crate::layout::image::ImageLookup;
+use crate::layout::image::{BROKEN_IMAGE_ICON, ImageLookup};
 use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
-    DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, Outline,
-    PlayDirection, Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform,
-    TextAlign, TextDecoration, TextRun, Transform2D,
+    DisplayList, ImageFallback, InputField, InputKind, MeasuredAlt, MeasuredMarker, MeasuredTexts,
+    NodeEntry, Outline, PlayDirection, Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides,
+    SkippedTransform, TextAlign, TextDecoration, TextRun, Transform2D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved};
@@ -170,6 +170,35 @@ fn padding_box(rect: &Rect, layout: &taffy::Layout) -> Rect {
         bottom: layout.border.bottom,
         left: layout.border.left,
     })
+}
+
+/// The broken-image icon and alt text of an `<img>` with no picture, placed in its content
+/// box.
+fn image_fallback(alt: &MeasuredAlt, content: Rect) -> ImageFallback {
+    let text = &alt.text;
+    ImageFallback {
+        icon: Rect::new(content.x, content.y, BROKEN_IMAGE_ICON, BROKEN_IMAGE_ICON),
+        text: TextRun {
+            owner: text.owner,
+            rect: Rect::new(
+                content.x + alt.x,
+                content.y + alt.y,
+                text.metrics.width,
+                text.metrics.height,
+            ),
+            text: text.text.clone(),
+            style: text.style.clone(),
+            color: text.color,
+            decoration: text.decoration,
+            align: text.align,
+            wrap_width: text.wrap_width,
+            line_count: text.metrics.line_count,
+            baseline: text.metrics.first_baseline,
+            ellipsis: None,
+            marker: RunMarker::None,
+            spans: Vec::new(),
+        },
+    }
 }
 
 fn content_box(rect: &Rect, layout: &taffy::Layout) -> Rect {
@@ -556,6 +585,12 @@ impl Painter<'_, '_> {
                 let images = self.images.borrow();
                 entry.image =
                     background::replaced_image(node, style, content_box(&rect, layout), &images);
+                if let Some(image) = entry.image.as_mut()
+                    && image.natural_size.is_none()
+                    && let Some(alt) = self.texts.alts.get(&id)
+                {
+                    image.fallback = Some(image_fallback(alt, image.content_rect));
+                }
             }
         }
         drop(style);

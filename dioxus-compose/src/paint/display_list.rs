@@ -418,6 +418,21 @@ pub struct ReplacedImage {
     /// What the application's [`ImageResolver`](crate::html::ImageResolver) answered for the
     /// image's natural size during layout, if anything.
     pub natural_size: Option<(f32, f32)>,
+    /// What the element shows when the plan has no picture to draw for it: present for an
+    /// image with no natural size and a non-empty `alt`.
+    pub fallback: Option<ImageFallback>,
+}
+
+/// What an `<img>` shows in the place of an image it cannot draw, the way Chromium draws an
+/// image it could not load: the broken-image icon at the start of the content box and the
+/// alt text beside it. Text that does not fit beside the icon goes below it, wrapped at the
+/// content box's width, and the content box clips both.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageFallback {
+    /// Where the broken-image icon is drawn, 16 by 16.
+    pub icon: Rect,
+    /// The alt text and where it goes. Its owner is the `<img>`.
+    pub text: TextRun,
 }
 
 /// A 2D affine matrix in CSS's order: a point `(x, y)` goes to
@@ -1161,4 +1176,16 @@ pub(crate) struct MeasuredTexts {
     pub texts: HashMap<usize, MeasuredText>,
     /// The list markers drawn as runs of their own, keyed by the list item's node.
     pub markers: HashMap<usize, MeasuredMarker>,
+    /// The alt text of each `<img>` drawn as a broken image, keyed by the `<img>`.
+    pub alts: HashMap<usize, MeasuredAlt>,
+}
+
+/// The alt text of an `<img>` drawn as a broken image, measured during layout.
+#[derive(Clone, Debug)]
+pub(crate) struct MeasuredAlt {
+    pub text: MeasuredText,
+    /// Where the text starts, from the top left of the image's content box: after the icon
+    /// when it fits beside it, below the icon when it does not.
+    pub x: f32,
+    pub y: f32,
 }

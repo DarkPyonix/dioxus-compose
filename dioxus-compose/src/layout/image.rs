@@ -4,8 +4,10 @@
 //! This crate never loads an image. A `src` attribute or a CSS `url()` is recorded as
 //! written, resolved against the document's base URL when there is one, and the
 //! application decides what it draws through an [`ImageResolver`]: it may have the bytes
-//! already, fetch them itself, or refuse. Without a resolver an image draws nothing, and an
-//! `<img>` takes whatever size its attributes and CSS give it.
+//! already, fetch them itself, or refuse. Without a resolver no picture is drawn. An `<img>`
+//! with no picture is drawn the way Chromium draws an image it could not load: with alt text,
+//! as the broken-image icon and that text, sized by them on each axis its CSS leaves `auto`;
+//! with an empty `alt`, as nothing, at whatever size its attributes and CSS give it.
 //!
 //! blitz-dom sizes an `<img>` from the decoded image it keeps on the element
 //! (`SpecialElementData::Image`), which it fills in when its network provider delivers the
@@ -50,14 +52,17 @@ impl ImageSize {
 /// document's base URL when there is one.
 pub trait ImageResolver {
     /// The asset that draws the image at `url`, or `None` when the application has none
-    /// for it, in which case the image draws nothing. Asked while a plan is built, never
-    /// during layout.
+    /// for it, in which case no picture is drawn: an `<img>` with alt text shows the
+    /// broken-image icon and its alt text instead, and one without draws nothing. Asked
+    /// while a plan is built, never during layout.
     fn resolve(&mut self, url: &str) -> Option<AssetId>;
 
     /// The natural size of the image at `url`, when the application knows it without
     /// fetching anything. Asked during layout: an `<img>` with no `width` or `height` of its
     /// own is laid out at this size, and `background-size` resolves against it. `None`, the
-    /// default, leaves the image without a natural size.
+    /// default, leaves the image without a natural size, and an `<img>` without one is laid
+    /// out as Chromium lays out a broken image: by its alt text and the broken-image icon,
+    /// or at no size when its `alt` is empty.
     fn size(&mut self, _url: &str) -> Option<ImageSize> {
         None
     }
@@ -145,6 +150,41 @@ pub(crate) fn img_src(node: &blitz_dom::Node) -> Option<&str> {
         return None;
     }
     element.attr(local("src"))
+}
+
+/// The side of the broken-image icon an `<img>` shows beside its alt text, in CSS pixels:
+/// the size Chromium draws it at.
+pub(crate) const BROKEN_IMAGE_ICON: f32 = 16.0;
+
+/// The text an `<img>` shows in the place of an image it has nothing to draw with: its `alt`
+/// with white space collapsed.
+///
+/// An `<img>` that names a source and has no natural size (the resolver answered none, or
+/// there is no resolver) is drawn the way Chromium draws an image it could not load: the
+/// broken-image icon and the alt text, as a box of text rather than a picture. `None` for an
+/// image with a natural size, for one with no `src`, and for one whose `alt` is empty or
+/// missing, which stands for nothing and keeps the size its CSS gives it.
+pub(crate) fn fallback_alt(node: &blitz_dom::Node) -> Option<String> {
+    let src = img_src(node)?;
+    if src
+        .trim_matches(|c: char| c.is_ascii_whitespace())
+        .is_empty()
+    {
+        return None;
+    }
+    let element = node.element_data()?;
+    let sized = element
+        .raster_image_data()
+        .is_some_and(|image| image.width > 0 && image.height > 0);
+    if sized {
+        return None;
+    }
+    let alt = element
+        .attr(local("alt"))?
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    (!alt.is_empty()).then_some(alt)
 }
 
 /// Gives every `<img>` in the document the natural size the resolver answers for its
