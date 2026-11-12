@@ -1196,9 +1196,9 @@ Window::new().with_title_bar(TitleBar::Normal)
 
 수용 기준:
 
-1. [리더, 잠정 2026-11-13] 가짜 렌더러가 창 크기 이벤트에 안전 영역 `{ top: 28, leading: 78, trailing: 0 }`을 실어 보내면, `use_window_safe_area()`가 그 세 값을 dp 그대로 돌려준다. 이벤트가 오기 전에는 셋 다 0이다. 테스트 `fr19_8_safe_area_hook_returns_the_renderer_insets` (예정).
-2. [리더, 잠정 2026-11-13] 크기 클래스는 그대로이고 안전 영역만 바뀐 창 크기 이벤트가 오면, 훅을 부른 컴포넌트가 다시 그려져 새 값을 읽고, 훅을 부르지 않은 컴포넌트는 다시 그려지지 않는다. 창이 둘이면 한 창의 값이 바뀌어도 다른 창의 컴포넌트는 깨지 않는다. 테스트 `fr19_8_safe_area_change_redraws_only_its_readers` (예정).
-3. [리더, 잠정 2026-11-13] `prelude`만 가져온 앱이 `Window::new().chrome(Chrome::FullSize)`로 시작하면, 첫 배치의 `SetWindow` 레코드에 `chrome`이 `FullSize`로 실린다. 테스트 `fr19_8_full_size_chrome_reaches_set_window` (예정).
+1. [리더, 잠정 2026-11-13] 가짜 렌더러가 창 크기 이벤트에 안전 영역 `{ top: 28, leading: 78, trailing: 0 }`을 실어 보내면, `use_window_safe_area()`가 그 세 값을 dp 그대로 돌려준다. 이벤트가 오기 전에는 셋 다 0이다. 테스트 `fr19_8_safe_area_hook_returns_the_renderer_insets`.
+2. [리더, 잠정 2026-11-13] 크기 클래스는 그대로이고 안전 영역만 바뀐 창 크기 이벤트가 오면, 훅을 부른 컴포넌트가 다시 그려져 새 값을 읽고, 훅을 부르지 않은 컴포넌트는 다시 그려지지 않는다. 창이 둘이면 한 창의 값이 바뀌어도 다른 창의 컴포넌트는 깨지 않는다. 테스트 `fr19_8_safe_area_change_redraws_only_its_readers`.
+3. [리더, 잠정 2026-11-13] `prelude`만 가져온 앱이 `Window::new().chrome(Chrome::FullSize)`로 시작하면, 첫 배치의 `SetWindow` 레코드에 `chrome`이 `FullSize`로 실린다. 테스트 `fr19_8_full_size_chrome_reaches_set_window`.
 4. [리더, 잠정 2026-11-13] 수동: macOS에서 `FullSize`로 연 창의 콘텐츠가 창 맨 위부터 그려지고 신호등 버튼이 그 위에 남으며, `leading`만큼 비킨 내용이 버튼과 겹치지 않는다. Windows와 Linux는 compose-rust가 그 플랫폼의 `FullSize`를 낸 뒤 같은 방법으로 확인하고 그렇게 적는다.
 
 ### FR-20 반응형 레이아웃 기반 (창 크기 클래스) (`Done`)
