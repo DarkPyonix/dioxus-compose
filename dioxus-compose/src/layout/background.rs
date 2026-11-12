@@ -55,6 +55,39 @@ pub(crate) fn background_layers(
     boxes: &Boxes,
     lookup: &mut ImageLookup<'_>,
 ) -> Vec<BackgroundLayer> {
+    resolve_layers(style, boxes, None, lookup)
+}
+
+/// The `background-image` layers of the canvas background, read from `style` (the root
+/// element's, or `<body>`'s when the background came from it). Each is sized and placed
+/// against `root`, the root element's boxes, and painted over all of `canvas`, whatever
+/// its `background-clip` says: CSS extends the root's painting area to the whole canvas.
+pub(crate) fn canvas_layers(
+    style: &ComputedValues,
+    root: &Boxes,
+    canvas: Rect,
+    lookup: &mut ImageLookup<'_>,
+) -> Vec<BackgroundLayer> {
+    resolve_layers(style, root, Some(canvas), lookup)
+}
+
+/// Whether `style` declares a background image: any layer of `background-image` other
+/// than `none`. Whether the image loads does not matter here, as it does not to CSS when
+/// it decides where the canvas background comes from.
+pub(crate) fn has_background_image(style: &ComputedValues) -> bool {
+    style
+        .clone_background_image()
+        .0
+        .iter()
+        .any(|image| !matches!(image, Image::None))
+}
+
+fn resolve_layers(
+    style: &ComputedValues,
+    boxes: &Boxes,
+    painting: Option<Rect>,
+    lookup: &mut ImageLookup<'_>,
+) -> Vec<BackgroundLayer> {
     let images = style.clone_background_image();
     let clips = style.clone_background_clip();
     let origins = style.clone_background_origin();
@@ -73,13 +106,16 @@ pub(crate) fn background_layers(
         let Some(source) = source_of(image, 1.0, lookup) else {
             continue;
         };
-        let area = match nth(&clips.0, index)
-            .copied()
-            .unwrap_or(BackgroundClip::BorderBox)
-        {
-            BackgroundClip::BorderBox => boxes.border,
-            BackgroundClip::PaddingBox => boxes.padding,
-            BackgroundClip::ContentBox => boxes.content,
+        let area = match painting {
+            Some(painting) => painting,
+            None => match nth(&clips.0, index)
+                .copied()
+                .unwrap_or(BackgroundClip::BorderBox)
+            {
+                BackgroundClip::BorderBox => boxes.border,
+                BackgroundClip::PaddingBox => boxes.padding,
+                BackgroundClip::ContentBox => boxes.content,
+            },
         };
         let positioning = match nth(&origins.0, index)
             .copied()

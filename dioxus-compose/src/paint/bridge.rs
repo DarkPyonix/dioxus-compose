@@ -345,6 +345,9 @@ pub struct PlanBridge {
     /// property gets the modifier that changes nothing instead, for as long as the node
     /// lives.
     pins: HashMap<PlanKey, Vec<AnimatedProperty>>,
+    /// The element the canvas background came from, whose background-colour animations
+    /// play on the page and are reported as that element's.
+    canvas_source: Option<NodeId>,
 }
 
 impl Default for PlanBridge {
@@ -385,6 +388,17 @@ impl PlanBridge {
             finished: HashSet::new(),
             host_moments: Vec::new(),
             pins: HashMap::new(),
+            canvas_source: None,
+        }
+    }
+
+    /// The DOM node the animations a plan node plays belong to: its own for a box, and
+    /// the element the canvas background came from for the page.
+    fn animated_element(&self, key: PlanKey) -> Option<NodeId> {
+        match key {
+            PlanKey::Node(node) => Some(node),
+            PlanKey::Page => self.canvas_source,
+            _ => None,
         }
     }
 
@@ -398,8 +412,11 @@ impl PlanBridge {
         ended: bool,
     ) -> Option<AnimationTarget> {
         let target = self.targets.get(&animation_id)?.clone();
-        let key = PlanKey::Node(target.node);
-        if self.nodes.get(&key).map(|placed| placed.id) != Some(node_id) {
+        let on = |key: PlanKey| self.nodes.get(&key).map(|placed| placed.id) == Some(node_id);
+        let on_canvas = self.canvas_source == Some(target.node)
+            && target.property == AnimatedProperty::BackgroundColor
+            && on(PlanKey::Page);
+        if !on(PlanKey::Node(target.node)) && !on_canvas {
             return None;
         }
         if ended {
@@ -423,7 +440,7 @@ impl PlanBridge {
     fn cancelled(&mut self, key: PlanKey, running: &Running, removed: bool) {
         let listened = self.targets.remove(&running.id).is_some();
         let ended = self.finished.remove(&running.id);
-        if let PlanKey::Node(node) = key
+        if let Some(node) = self.animated_element(key)
             && listened
             && !ended
         {
@@ -551,6 +568,7 @@ impl PlanBridge {
             return;
         }
         self.page_size = (viewport.0, viewport.1.max(page_extent(&plan.root)));
+        self.canvas_source = plan.canvas;
         self.brushes.clone_from(&plan.brushes);
         let pinned = self.pin(&plan);
         match self.previous.take() {
@@ -791,8 +809,12 @@ impl PlanBridge {
     }
 
     /// The moments of an animation the page listens to.
-    fn events_for(clicks: &dyn ClickTargets, key: PlanKey, transition: bool) -> AnimationEvents {
-        let PlanKey::Node(node) = key else {
+    fn events_for(
+        clicks: &dyn ClickTargets,
+        element: Option<NodeId>,
+        transition: bool,
+    ) -> AnimationEvents {
+        let Some(node) = element else {
             return AnimationEvents::NONE;
         };
         let mut events = AnimationEvents::NONE;
@@ -830,11 +852,12 @@ impl PlanBridge {
         let transition = animation.name.is_none();
         let id = self.next_animation_id;
         self.next_animation_id = self.next_animation_id.checked_add(1).unwrap_or(1);
-        let events = Self::events_for(clicks, key, transition);
+        let element = self.animated_element(key);
+        let events = Self::events_for(clicks, element, transition);
         let wire = animate::to_wire(node_id, id, slot, animation, size, events)?;
         batch.write(Mutation::StartAnimation(wire));
         if events != AnimationEvents::NONE
-            && let PlanKey::Node(node) = key
+            && let Some(node) = element
         {
             self.targets.insert(
                 id,
@@ -902,7 +925,7 @@ impl PlanBridge {
         for old in replaced {
             self.cancelled(key, &old, false);
         }
-        if let PlanKey::Node(node) = key
+        if let Some(node) = self.animated_element(key)
             && clicks.listens(node, "transitionrun")
         {
             self.host_moments.push(HostMoment {
@@ -1709,7 +1732,14 @@ impl PlanBridge {
     /// The background layers of a node, back to front, with each brush registered.
     fn layer_specs(&mut self, node: &PlanNode) -> Vec<LayerSpec> {
         let mut specs = Vec::new();
-        let size = node_size(node);
+        // The page draws the canvas background, which covers all of the page however far
+        // the plan thought the canvas reached.
+        let page = node.key == PlanKey::Page;
+        let size = if page {
+            Some(self.page_size)
+        } else {
+            node_size(node)
+        };
         let corners = node_corners(node);
         for modifier in &node.modifiers {
             let PlanModifier::BackgroundBrush {
@@ -1721,6 +1751,11 @@ impl PlanBridge {
             } = modifier
             else {
                 continue;
+            };
+            let area = &if page {
+                Rect::new(0.0, 0.0, self.page_size.0, self.page_size.1)
+            } else {
+                *area
             };
             let Some(source) = self.brushes.get(brush) else {
                 continue;

@@ -50,9 +50,9 @@ use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
-    Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
-    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat,
-    Transform2D, bounds_of,
+    AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
+    DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry, Outline, Radius, Rect, Rgba,
+    RunMarker, Sides, TextAlign, TextDecoration, TileRepeat, Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -62,7 +62,9 @@ const EPSILON: f32 = 0.01;
 #[derive(Clone, Debug)]
 pub struct Plan {
     /// The page: a [`PlanKind::AbsoluteBox`] keyed [`PlanKey::Page`] holding every
-    /// top-level box.
+    /// top-level box. It draws the canvas background, which CSS paints over the whole
+    /// canvas rather than over the box of the element that declared it, and it plays the
+    /// animations of that element's background colour.
     pub root: PlanNode,
     /// Every brush a [`PlanModifier::BackgroundBrush`] in the tree names, once.
     pub brushes: BTreeMap<BrushId, Brush>,
@@ -71,6 +73,9 @@ pub struct Plan {
     /// after, and [`diff`] reports each as a [`PlanChange::AnimationStarted`] when the
     /// plan it compares to lacks it.
     pub transitions: Vec<(PlanKey, Animation)>,
+    /// The element the canvas background was taken from, whose background-colour
+    /// animations and transitions play on the page.
+    pub(crate) canvas: Option<NodeId>,
     /// Layout revision that built this plan, or `0` when built standalone via `plan_from`.
     pub(crate) revision: u64,
     /// True when [`HtmlDom::plan`] reused the plan from the previous layout because
@@ -83,6 +88,7 @@ impl PartialEq for Plan {
         self.root == other.root
             && self.brushes == other.brushes
             && self.transitions == other.transitions
+            && self.canvas == other.canvas
     }
 }
 
@@ -614,6 +620,7 @@ struct Slot {
 
 struct Builder<'a> {
     entries: &'a [NodeEntry],
+    canvas: Option<&'a CanvasBackground>,
     colours: &'a mut dyn ColourResolver,
     images: Option<&'a mut dyn ImageResolver>,
     brushes: BTreeMap<BrushId, Brush>,
@@ -696,6 +703,7 @@ impl<'a> Builder<'a> {
         };
         Builder {
             entries,
+            canvas: list.canvas.as_ref(),
             colours,
             images,
             brushes: BTreeMap::new(),
@@ -711,6 +719,17 @@ impl<'a> Builder<'a> {
     }
 
     fn build(mut self) -> Plan {
+        if let Some(canvas) = self.canvas {
+            let mut modifiers = Vec::new();
+            self.paint_background(
+                canvas.source,
+                (0.0, 0.0),
+                canvas.background,
+                &canvas.backgrounds,
+                &mut modifiers,
+            );
+            self.slots[0].modifiers = modifiers;
+        }
         for index in 0..self.entries.len() {
             self.place(index);
         }
@@ -718,12 +737,18 @@ impl<'a> Builder<'a> {
         let transitions = self
             .transitions
             .iter()
-            .map(|start| (PlanKey::Node(start.node), start.animation.clone()))
+            .map(|start| {
+                (
+                    self.animated_on(start.node, &start.animation),
+                    start.animation.clone(),
+                )
+            })
             .collect();
         Plan {
             root,
             brushes: std::mem::take(&mut self.brushes),
             transitions,
+            canvas: self.canvas.map(|canvas| canvas.source),
             revision: 0,
             unchanged: false,
         }
@@ -924,9 +949,12 @@ impl<'a> Builder<'a> {
         if entry.widget {
             self.widget_places.insert(PlanKey::Node(entry.node));
         }
-        if !entry.animations.is_empty() {
+        for animation in &entry.animations {
+            let key = self.animated_on(entry.node, animation);
             self.animated
-                .insert(PlanKey::Node(entry.node), entry.animations.clone());
+                .entry(key)
+                .or_default()
+                .push(animation.clone());
         }
 
         if let (Some(outline), Some(area)) = (entry.outline, outline_area(entry)) {
@@ -1104,6 +1132,21 @@ impl<'a> Builder<'a> {
         self.content.insert(entry.node, content);
     }
 
+    /// The plan node an animation of `node` plays on: the node's own, except for the
+    /// background colour of the element the canvas background came from, which the page
+    /// draws.
+    fn animated_on(&self, node: NodeId, animation: &Animation) -> PlanKey {
+        match self.canvas {
+            Some(canvas)
+                if canvas.source == node
+                    && animation.property == AnimatedProperty::BackgroundColor =>
+            {
+                PlanKey::Page
+            }
+            _ => PlanKey::Node(node),
+        }
+    }
+
     fn decorate(&mut self, entry: &NodeEntry, modifiers: &mut Vec<PlanModifier>) {
         let node = entry.node;
         if let Some(radii) = entry.radii {
@@ -1126,54 +1169,13 @@ impl<'a> Builder<'a> {
                 color: self.colours.resolve(node, ColourUse::Shadow, shadow.color),
             });
         }
-        if let Some(background) = entry.background {
-            modifiers.push(PlanModifier::Background(self.colours.resolve(
-                node,
-                ColourUse::Background,
-                background,
-            )));
-        }
-        // CSS lists the top layer first; a renderer draws modifiers back to front.
-        for layer in entry.backgrounds.iter().rev() {
-            let brush = match &layer.image {
-                BackgroundImage::Url(url) => {
-                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
-                        Some(asset) => Brush::Image(asset),
-                        None => continue,
-                    }
-                }
-                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
-                    start: gradient.start,
-                    end: gradient.end,
-                    stops: self.stops(node, &gradient.stops),
-                    repeating: gradient.repeating,
-                },
-                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
-                    center: gradient.center,
-                    radius_x: gradient.radius_x,
-                    radius_y: gradient.radius_y,
-                    stops: self.stops(node, &gradient.stops),
-                    repeating: gradient.repeating,
-                },
-            };
-            let id = brush.id();
-            self.brushes.entry(id).or_insert(brush);
-            let relative = |rect: Rect| {
-                Rect::new(
-                    rect.x - entry.rect.x,
-                    rect.y - entry.rect.y,
-                    rect.width,
-                    rect.height,
-                )
-            };
-            modifiers.push(PlanModifier::BackgroundBrush {
-                brush: id,
-                area: relative(layer.area),
-                tile: relative(layer.tile),
-                repeat_x: layer.repeat_x,
-                repeat_y: layer.repeat_y,
-            });
-        }
+        self.paint_background(
+            node,
+            (entry.rect.x, entry.rect.y),
+            entry.background,
+            &entry.backgrounds,
+            modifiers,
+        );
         if let Some(border) = entry.border {
             let mut side = |width: f32, color: Rgba| BorderSide {
                 width,
@@ -1199,6 +1201,67 @@ impl<'a> Builder<'a> {
             } else {
                 modifiers.push(PlanModifier::BorderEach(sides));
             }
+        }
+    }
+
+    /// The background colour and the background layers of a box, as modifiers: the colour,
+    /// then each layer from the bottom up, measured from `origin`, the top-left corner of
+    /// the node that draws them. `node` is the element whose colours they are.
+    fn paint_background(
+        &mut self,
+        node: NodeId,
+        origin: (f32, f32),
+        background: Option<Rgba>,
+        layers: &[BackgroundLayer],
+        modifiers: &mut Vec<PlanModifier>,
+    ) {
+        if let Some(background) = background {
+            modifiers.push(PlanModifier::Background(self.colours.resolve(
+                node,
+                ColourUse::Background,
+                background,
+            )));
+        }
+        let relative = |rect: Rect| {
+            Rect::new(
+                rect.x - origin.0,
+                rect.y - origin.1,
+                rect.width,
+                rect.height,
+            )
+        };
+        // CSS lists the top layer first; a renderer draws modifiers back to front.
+        for layer in layers.iter().rev() {
+            let brush = match &layer.image {
+                BackgroundImage::Url(url) => {
+                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
+                        Some(asset) => Brush::Image(asset),
+                        None => continue,
+                    }
+                }
+                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
+                    start: gradient.start,
+                    end: gradient.end,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
+                    center: gradient.center,
+                    radius_x: gradient.radius_x,
+                    radius_y: gradient.radius_y,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+            };
+            let id = brush.id();
+            self.brushes.entry(id).or_insert(brush);
+            modifiers.push(PlanModifier::BackgroundBrush {
+                brush: id,
+                area: relative(layer.area),
+                tile: relative(layer.tile),
+                repeat_x: layer.repeat_x,
+                repeat_y: layer.repeat_y,
+            });
         }
     }
 
