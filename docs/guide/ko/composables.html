@@ -1042,6 +1042,19 @@
       한 번의 렌더는 망가지지 않고 다만 필요보다 좁을 뿐입니다.
     </p>
 
+    <h3>창 안전 영역</h3>
+    <p>
+      <code>Window::new().chrome(Chrome::FullSize)</code>는 콘텐츠를 창 맨 위부터 그리고 창
+      버튼을 그 위에 띄웁니다. <code>use_window_safe_area()</code>는 그 버튼이 차지하는 자리를
+      훅을 부른 컴포넌트가 속한 창에 대해 <code>WindowSafeArea { top, leading, trailing }</code>로,
+      dp 단위로 알려 줍니다. <code>leading</code>은 macOS 신호등 버튼의 폭이고,
+      <code>trailing</code>은 Windows 캡션 버튼의 폭입니다. 렌더러가 보고하기 전, 비킬 버튼이 없는
+      창, 그리고 iOS, Android, 웹에서는 셋 다 0입니다. 전체 화면에 들어가고 나올 때처럼 안전
+      영역만 바뀌어도 훅을 부른 컴포넌트가 다시 그려지고 다른 것은 그려지지 않습니다. macOS가
+      먼저 지원되고, Windows와 Linux에서 전체 크기 창을 끄는 일은 compose-rust의 다음 릴리스를
+      따릅니다.
+    </p>
+
     <div class="note">
       <span class="label">훅은 마지막에 꺼내세요</span>
       <p>
