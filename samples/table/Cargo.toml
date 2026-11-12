@@ -8,6 +8,12 @@ description = "An invoice table that scrolls sideways inside its wrapper and sor
 publish = false
 
 [lib]
+name = "sample_html_table"
+path = "src/lib.rs"
+# The rlib is what the binary and the tests use; the cdylib is what an Android Activity
+# loads and what a browser page fetches; the staticlib is linked into an iOS executable
+# beside the renderer, as in `hello`.
+crate-type = ["rlib", "cdylib", "staticlib"]
 # The sample is an application and its tests, not a benchmark. Without this `cargo bench`
 # runs the lib's test harness with Criterion's flags, which it rejects.
 bench = false
@@ -19,3 +25,10 @@ dioxus-signals.workspace = true
 
 [dev-dependencies]
 sample-html-support = { path = "../support" }
+
+# The window. Not a benchmark: without this `cargo bench` runs the binary with
+# Criterion's flags, which its plain test harness rejects.
+[[bin]]
+name = "sample-html-table"
+path = "src/main.rs"
+bench = false

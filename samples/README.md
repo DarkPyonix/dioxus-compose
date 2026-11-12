@@ -41,20 +41,24 @@ hand, and click, type and submit through the same events a renderer would send.
 
 The HTML bridge writes that plan into the renderer's batch, the whole tree on the first frame
 and then only what changed, and the renderer's clicks, typing and choices come back to the
-same handlers. `hello` has a binary that opens it in a window through the bridge:
+same handlers. Every sample has a binary that opens it in a window through the bridge:
 
 ```
 cargo run -p sample-html-hello
+cargo run -p sample-html-dashboard
 ```
 
-Its library has `config()`, which hands `STYLE` to an `HtmlConfig`, and `launch()`, which calls
-`LaunchBuilder::new().with_html(config).launch(app)`. The same builder goes to `android_main!`,
-`web_main!` and, through `launch()`, `ios_main!`, so `hello` is a cdylib for an Android Activity
-and a browser page and a staticlib for iOS, like the native-widget samples, with the same
-`Dioxus.toml` and `ios/main.c`. The other samples expose the same `app()` and `STYLE` and are
-launched the same way with `LaunchBuilder::with_html`; they have no binary of their own yet. The bridge is tested on the Host against the records the renderer receives
-(`samples/hello/tests/hello.rs`). What a window shows has not been confirmed by running the
-renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
+Each library has `config()`, which hands `STYLE` to an `HtmlConfig`, and `launch()`, which
+calls `LaunchBuilder::new().with_html(config).launch(app)` with a window sized for that page.
+The same builder goes to `android_main!`, `web_main!` and, through `launch()`, `ios_main!`, so
+each sample is also a cdylib for an Android Activity and a browser page and a staticlib for
+iOS, like the native-widget samples, with the same `Dioxus.toml` and `ios/main.c`. Each
+sample's `tests/window.rs` checks that the window's page carries the stylesheet and that its
+first frame reaches the renderer through the bridge.
+
+The windows have been run on macOS and compared with the same HTML and CSS in Chromium
+([#179](https://github.com/DarkPyonix/dioxus-compose/issues/179)). The differences found
+there are tracked as issues of their own and linked from #179.
 
 ## Running the tests
 

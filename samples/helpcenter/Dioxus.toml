@@ -1,0 +1,13 @@
+# dx project configuration for the Help Center sample, laid out the way `dx new` lays one out.
+
+[application]
+name = "Help Center"
+asset_dir = "assets"
+
+[bundle]
+identifier = "dev.darkpyonix.dioxuscompose.samples.helpcenter"
+publisher = "DarkPyonix"
+short_description = "A help centre written with HTML and CSS."
+
+[macos]
+bundle_name = "Help Center"

@@ -1,0 +1,13 @@
+# dx project configuration for the Typography sample, laid out the way `dx new` lays one out.
+
+[application]
+name = "Typography"
+asset_dir = "assets"
+
+[bundle]
+identifier = "dev.darkpyonix.dioxuscompose.samples.typography"
+publisher = "DarkPyonix"
+short_description = "A type specimen written with HTML and CSS."
+
+[macos]
+bundle_name = "Typography"
