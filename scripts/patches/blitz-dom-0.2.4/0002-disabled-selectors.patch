@@ -1,0 +1,154 @@
+--- a/src/document.rs
++++ b/src/document.rs
+@@ -25,7 +25,7 @@
+ use cursor_icon::CursorIcon;
+ use debug_timer::debug_timer;
+ use linebender_resource_handle::Blob;
+-use markup5ever::local_name;
++use markup5ever::{local_name, ns};
+ use parley::{FontContext, LayoutContext};
+ use selectors::{Element, matching::QuirksMode};
+ use slab::Slab;
+@@ -42,6 +42,7 @@
+ use style::animation::DocumentAnimationSet;
+ use style::attr::{AttrIdentifier, AttrValue};
+ use style::data::{ElementData as StyloElementData, ElementStyles};
++use style::invalidation::element::restyle_hints::RestyleHint;
+ use style::media_queries::MediaType;
+ use style::properties::ComputedValues;
+ use style::properties::style_structs::Font;
+@@ -138,6 +139,8 @@
+     /// Whether the next focus change comes from keyboard navigation, which is what
+     /// `:focus-visible` follows.
+     pub(crate) focus_from_keyboard: bool,
++    /// The walk `update_form_control_states` reuses, so it allocates nothing once warm.
++    form_control_walk: Vec<(usize, bool)>,
+     /// The node which is currently active (if any)
+     pub(crate) active_node_id: Option<usize>,
+     /// The node which recieved a mousedown event (if any)
+@@ -277,6 +280,7 @@
+             hover_node_id: None,
+             focus_node_id: None,
+             focus_from_keyboard: false,
++            form_control_walk: Vec::new(),
+             active_node_id: None,
+             mousedown_node_id: None,
+             has_active_animations: false,
+@@ -915,7 +919,94 @@
+             }
+         }
+     }
++
++    /// Set the `:disabled` and `:enabled` state of every form control from the document.
++    ///
++    /// A `button`, `input`, `select`, `textarea` or `fieldset` is disabled when it has the
++    /// `disabled` attribute, or when it is inside a `fieldset` that has it and not inside
++    /// that fieldset's first `legend` child. An `optgroup` is disabled by its own
++    /// attribute, and an `option` by its own or by its parent `optgroup`'s. Every other
++    /// such element is enabled, and an element that is none of these is neither.
++    ///
++    /// Stylo compares element state when it shares styles between siblings and when it
++    /// invalidates, so the state lives on the node rather than being read from the
++    /// attribute while matching. `resolve_stylist` runs this first; an element whose state
++    /// changes is snapshotted and restyled with its subtree.
++    pub fn update_form_control_states(&mut self) {
++        /// The element `node` is, when it is one in the HTML namespace.
++        fn html_element(node: &Node) -> Option<&ElementData> {
++            match &node.data {
++                NodeData::Element(element) if element.name.ns == ns!(html) => Some(element),
++                _ => None,
++            }
++        }
+ 
++        let both = ElementState::DISABLED_STATES;
++        let mut walk = std::mem::take(&mut self.form_control_walk);
++        walk.clear();
++        walk.push((0, false));
++        while let Some((id, in_disabled_fieldset)) = walk.pop() {
++            let node = &self.nodes[id];
++            let mut wanted = ElementState::empty();
++            let mut inner = in_disabled_fieldset;
++            let mut exempt_legend = None;
++            if let Some(element) = html_element(node) {
++                let local = &element.name.local;
++                let own = element.attr(local_name!("disabled")).is_some();
++                let disabled = if *local == local_name!("button")
++                    || *local == local_name!("input")
++                    || *local == local_name!("select")
++                    || *local == local_name!("textarea")
++                {
++                    Some(own || in_disabled_fieldset)
++                } else if *local == local_name!("fieldset") {
++                    if own {
++                        inner = true;
++                        exempt_legend = node.children.iter().copied().find(|&child| {
++                            html_element(&self.nodes[child])
++                                .is_some_and(|child| child.name.local == local_name!("legend"))
++                        });
++                    }
++                    Some(own || in_disabled_fieldset)
++                } else if *local == local_name!("optgroup") {
++                    Some(own)
++                } else if *local == local_name!("option") {
++                    let group_disabled = node
++                        .parent
++                        .and_then(|parent| html_element(&self.nodes[parent]))
++                        .is_some_and(|parent| {
++                            parent.name.local == local_name!("optgroup")
++                                && parent.attr(local_name!("disabled")).is_some()
++                        });
++                    Some(own || group_disabled)
++                } else {
++                    None
++                };
++                wanted = match disabled {
++                    Some(true) => ElementState::DISABLED,
++                    Some(false) => ElementState::ENABLED,
++                    None => ElementState::empty(),
++                };
++            }
++            for &child in node.children.iter() {
++                let flag = if Some(child) == exempt_legend {
++                    in_disabled_fieldset
++                } else {
++                    inner
++                };
++                walk.push((child, flag));
++            }
++            if node.element_state & both != wanted {
++                self.snapshot_node_and(id, |node| {
++                    node.element_state.remove(both);
++                    node.element_state.insert(wanted);
++                    node.set_restyle_hint(RestyleHint::restyle_subtree());
++                });
++            }
++        }
++        self.form_control_walk = walk;
++    }
++
+     /// Clear the focussed node
+     pub fn clear_focus(&mut self) {
+         if let Some(id) = self.focus_node_id {
+--- a/src/stylo.rs
++++ b/src/stylo.rs
+@@ -54,6 +54,9 @@
+ 
+ impl crate::document::BaseDocument {
+     pub fn resolve_stylist(&mut self, now: f64) {
++        // Before the stylist flushes: it reads the snapshots a state change takes.
++        self.update_form_control_states();
++
+         style::thread_state::enter(ThreadState::LAYOUT);
+ 
+         let guard = &self.guard;
+@@ -409,8 +412,8 @@
+             NonTSPseudoClass::Valid => false,
+             NonTSPseudoClass::Invalid => false,
+             NonTSPseudoClass::Defined => false,
+-            NonTSPseudoClass::Disabled => false,
+-            NonTSPseudoClass::Enabled => false,
++            NonTSPseudoClass::Disabled => self.element_state.contains(ElementState::DISABLED),
++            NonTSPseudoClass::Enabled => self.element_state.contains(ElementState::ENABLED),
+             NonTSPseudoClass::Focus => self.element_state.contains(ElementState::FOCUS),
+             NonTSPseudoClass::FocusWithin => self.element_state.contains(ElementState::FOCUS_WITHIN),
+             NonTSPseudoClass::FocusVisible => self.element_state.contains(ElementState::FOCUSRING),

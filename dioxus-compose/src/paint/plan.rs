@@ -18,8 +18,10 @@
 //! gets a new one, which is one change to the background slot of the node that draws it.
 //!
 //! Images are drawn with the assets an [`ImageResolver`] names for their URLs. A URL it has
-//! no asset for, or any URL when there is no resolver, draws nothing: no image node, no
-//! brush.
+//! no asset for, or any URL when there is no resolver, draws no picture and no brush. An
+//! `<img>` with no picture and with alt text draws what Chromium draws for an image it could
+//! not load: a [`PlanKind::BrokenImageIcon`] and its alt text as a [`PlanKind::Text`], in a
+//! box keyed [`PlanKey::Image`] that clips them to the image.
 //!
 //! [`diff`] compares two plans node by node and says what a renderer has to change: a
 //! modifier set or removed, a node inserted, removed or moved among its siblings.
@@ -50,8 +52,9 @@ use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
-    Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
-    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat,
+    AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
+    DisplayList, GradientStop, ImageFallback, InputKind, MarkerSymbol, Matrix2D, NodeEntry,
+    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun, TileRepeat,
     Transform2D, bounds_of,
 };
 
@@ -62,7 +65,9 @@ const EPSILON: f32 = 0.01;
 #[derive(Clone, Debug)]
 pub struct Plan {
     /// The page: a [`PlanKind::AbsoluteBox`] keyed [`PlanKey::Page`] holding every
-    /// top-level box.
+    /// top-level box. It draws the canvas background, which CSS paints over the whole
+    /// canvas rather than over the box of the element that declared it, and it plays the
+    /// animations of that element's background colour.
     pub root: PlanNode,
     /// Every brush a [`PlanModifier::BackgroundBrush`] in the tree names, once.
     pub brushes: BTreeMap<BrushId, Brush>,
@@ -71,6 +76,9 @@ pub struct Plan {
     /// after, and [`diff`] reports each as a [`PlanChange::AnimationStarted`] when the
     /// plan it compares to lacks it.
     pub transitions: Vec<(PlanKey, Animation)>,
+    /// The element the canvas background was taken from, whose background-colour
+    /// animations and transitions play on the page.
+    pub(crate) canvas: Option<NodeId>,
     /// Layout revision that built this plan, or `0` when built standalone via `plan_from`.
     pub(crate) revision: u64,
     /// True when [`HtmlDom::plan`] reused the plan from the previous layout because
@@ -83,6 +91,7 @@ impl PartialEq for Plan {
         self.root == other.root
             && self.brushes == other.brushes
             && self.transitions == other.transitions
+            && self.canvas == other.canvas
     }
 }
 
@@ -190,12 +199,19 @@ pub enum PlanKey {
     ScrollContent(NodeId),
     /// A clip a box inherits from an ancestor it could not be nested inside.
     InheritedClip(NodeId),
-    /// The image of an `<img>`.
+    /// The image of an `<img>`: the picture, or the box its broken-image icon and alt text
+    /// are clipped to when there is no picture to draw.
     Image(NodeId),
     /// The `outline` of a box: a border-only box around the border box, placed beside the
     /// box (or inside it, when the box is transformed) so that it can draw outside the
     /// box's bounds.
     Outline(NodeId),
+    /// The broken-image icon of an `<img>` with no picture, drawn beside its alt text.
+    BrokenImageIcon(NodeId),
+
+    /// The list marker of a list item when it is a shape (`disc`, `circle`, `square`): a
+    /// box rounded into a circle, or square, filled or outlined in the item's colour.
+    Marker(NodeId),
 }
 
 impl PlanKey {
@@ -212,7 +228,9 @@ impl PlanKey {
             | PlanKey::ScrollContent(node)
             | PlanKey::InheritedClip(node)
             | PlanKey::Image(node)
-            | PlanKey::Outline(node) => Some(node),
+            | PlanKey::BrokenImageIcon(node)
+            | PlanKey::Outline(node)
+            | PlanKey::Marker(node) => Some(node),
         }
     }
 }
@@ -246,6 +264,9 @@ pub enum PlanKind {
     Text(PlanText),
     /// An image.
     Image(PlanImage),
+    /// The icon Chromium draws for an image it could not load, 16 by 16: a picture with a
+    /// tear across it. The renderer draws it as a `Canvas`.
+    BrokenImageIcon,
     /// Scrolls its one child vertically. The renderer owns the scroll position.
     ScrollColumn,
     /// Scrolls its one child horizontally. The renderer owns the scroll position.
@@ -614,6 +635,7 @@ struct Slot {
 
 struct Builder<'a> {
     entries: &'a [NodeEntry],
+    canvas: Option<&'a CanvasBackground>,
     colours: &'a mut dyn ColourResolver,
     images: Option<&'a mut dyn ImageResolver>,
     brushes: BTreeMap<BrushId, Brush>,
@@ -696,6 +718,7 @@ impl<'a> Builder<'a> {
         };
         Builder {
             entries,
+            canvas: list.canvas.as_ref(),
             colours,
             images,
             brushes: BTreeMap::new(),
@@ -711,6 +734,17 @@ impl<'a> Builder<'a> {
     }
 
     fn build(mut self) -> Plan {
+        if let Some(canvas) = self.canvas {
+            let mut modifiers = Vec::new();
+            self.paint_background(
+                canvas.source,
+                (0.0, 0.0),
+                canvas.background,
+                &canvas.backgrounds,
+                &mut modifiers,
+            );
+            self.slots[0].modifiers = modifiers;
+        }
         for index in 0..self.entries.len() {
             self.place(index);
         }
@@ -718,12 +752,18 @@ impl<'a> Builder<'a> {
         let transitions = self
             .transitions
             .iter()
-            .map(|start| (PlanKey::Node(start.node), start.animation.clone()))
+            .map(|start| {
+                (
+                    self.animated_on(start.node, &start.animation),
+                    start.animation.clone(),
+                )
+            })
             .collect();
         Plan {
             root,
             brushes: std::mem::take(&mut self.brushes),
             transitions,
+            canvas: self.canvas.map(|canvas| canvas.source),
             revision: 0,
             unchanged: false,
         }
@@ -924,9 +964,12 @@ impl<'a> Builder<'a> {
         if entry.widget {
             self.widget_places.insert(PlanKey::Node(entry.node));
         }
-        if !entry.animations.is_empty() {
+        for animation in &entry.animations {
+            let key = self.animated_on(entry.node, animation);
             self.animated
-                .insert(PlanKey::Node(entry.node), entry.animations.clone());
+                .entry(key)
+                .or_default()
+                .push(animation.clone());
         }
 
         if let (Some(outline), Some(area)) = (entry.outline, outline_area(entry)) {
@@ -985,28 +1028,43 @@ impl<'a> Builder<'a> {
             let content_width = scroll.content_width.max(viewport.width);
             let content_height = scroll.content_height.max(viewport.height);
             let clip = Some(intersect(provided_clip, viewport));
-            let viewport_slot = |key: PlanKey, width: f32, height: f32, offset: (f32, f32)| Slot {
-                key,
-                kind: match key {
-                    PlanKey::ScrollRow(_) => PlanKind::ScrollRow,
-                    _ => PlanKind::ScrollColumn,
-                },
-                modifiers: vec![
-                    PlanModifier::Offset {
-                        x: offset.0,
-                        y: offset.1,
-                    },
-                    PlanModifier::RequiredSize { width, height },
-                    PlanModifier::Clip,
-                ],
-                children: Vec::new(),
-                parent: None,
-                origin: (viewport.x, viewport.y),
-                clip,
-                opacity: entry.opacity,
-                drawn: None,
-                ..Slot::default()
-            };
+            // The outermost viewport is the padding box, and CSS clips a scroll container's
+            // content to that box with its corners rounded: the border radii less the
+            // adjoining border widths, as `overflow: hidden` does. A row inside a column is
+            // as tall as the content and scrolls with it, so it is clipped by the column's
+            // rounded corners and has none of its own.
+            let rounded = entry
+                .radii
+                .map(|radii| inner_radii(&radii, &border.unwrap_or_default()));
+            let viewport_slot =
+                |key: PlanKey, width: f32, height: f32, offset: (f32, f32), outermost: bool| {
+                    let mut modifiers = vec![
+                        PlanModifier::Offset {
+                            x: offset.0,
+                            y: offset.1,
+                        },
+                        PlanModifier::RequiredSize { width, height },
+                    ];
+                    if let (true, Some(corners)) = (outermost, rounded) {
+                        push_shape(&mut modifiers, corners);
+                    }
+                    modifiers.push(PlanModifier::Clip);
+                    Slot {
+                        key,
+                        kind: match key {
+                            PlanKey::ScrollRow(_) => PlanKind::ScrollRow,
+                            _ => PlanKind::ScrollColumn,
+                        },
+                        modifiers,
+                        children: Vec::new(),
+                        parent: None,
+                        origin: (viewport.x, viewport.y),
+                        clip,
+                        opacity: entry.opacity,
+                        drawn: None,
+                        ..Slot::default()
+                    }
+                };
             let inset = (viewport.x - rect.x, viewport.y - rect.y);
             let mut outer = node;
             if scroll.vertical {
@@ -1017,6 +1075,7 @@ impl<'a> Builder<'a> {
                         viewport.width,
                         viewport.height,
                         inset,
+                        true,
                     ),
                 );
             }
@@ -1035,6 +1094,7 @@ impl<'a> Builder<'a> {
                         viewport.width,
                         height,
                         offset,
+                        !scroll.vertical,
                     ),
                 );
             }
@@ -1095,6 +1155,7 @@ impl<'a> Builder<'a> {
             node
         };
 
+        self.add_marker(entry, content);
         // A field draws its own text; text laid out inside it would be drawn twice.
         if entry.input.is_none() {
             self.add_texts(entry, content);
@@ -1102,6 +1163,21 @@ impl<'a> Builder<'a> {
         self.add_field(entry, content);
         self.add_image(entry, content);
         self.content.insert(entry.node, content);
+    }
+
+    /// The plan node an animation of `node` plays on: the node's own, except for the
+    /// background colour of the element the canvas background came from, which the page
+    /// draws.
+    fn animated_on(&self, node: NodeId, animation: &Animation) -> PlanKey {
+        match self.canvas {
+            Some(canvas)
+                if canvas.source == node
+                    && animation.property == AnimatedProperty::BackgroundColor =>
+            {
+                PlanKey::Page
+            }
+            _ => PlanKey::Node(node),
+        }
     }
 
     fn decorate(&mut self, entry: &NodeEntry, modifiers: &mut Vec<PlanModifier>) {
@@ -1126,54 +1202,13 @@ impl<'a> Builder<'a> {
                 color: self.colours.resolve(node, ColourUse::Shadow, shadow.color),
             });
         }
-        if let Some(background) = entry.background {
-            modifiers.push(PlanModifier::Background(self.colours.resolve(
-                node,
-                ColourUse::Background,
-                background,
-            )));
-        }
-        // CSS lists the top layer first; a renderer draws modifiers back to front.
-        for layer in entry.backgrounds.iter().rev() {
-            let brush = match &layer.image {
-                BackgroundImage::Url(url) => {
-                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
-                        Some(asset) => Brush::Image(asset),
-                        None => continue,
-                    }
-                }
-                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
-                    start: gradient.start,
-                    end: gradient.end,
-                    stops: self.stops(node, &gradient.stops),
-                    repeating: gradient.repeating,
-                },
-                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
-                    center: gradient.center,
-                    radius_x: gradient.radius_x,
-                    radius_y: gradient.radius_y,
-                    stops: self.stops(node, &gradient.stops),
-                    repeating: gradient.repeating,
-                },
-            };
-            let id = brush.id();
-            self.brushes.entry(id).or_insert(brush);
-            let relative = |rect: Rect| {
-                Rect::new(
-                    rect.x - entry.rect.x,
-                    rect.y - entry.rect.y,
-                    rect.width,
-                    rect.height,
-                )
-            };
-            modifiers.push(PlanModifier::BackgroundBrush {
-                brush: id,
-                area: relative(layer.area),
-                tile: relative(layer.tile),
-                repeat_x: layer.repeat_x,
-                repeat_y: layer.repeat_y,
-            });
-        }
+        self.paint_background(
+            node,
+            (entry.rect.x, entry.rect.y),
+            entry.background,
+            &entry.backgrounds,
+            modifiers,
+        );
         if let Some(border) = entry.border {
             let mut side = |width: f32, color: Rgba| BorderSide {
                 width,
@@ -1202,6 +1237,67 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// The background colour and the background layers of a box, as modifiers: the colour,
+    /// then each layer from the bottom up, measured from `origin`, the top-left corner of
+    /// the node that draws them. `node` is the element whose colours they are.
+    fn paint_background(
+        &mut self,
+        node: NodeId,
+        origin: (f32, f32),
+        background: Option<Rgba>,
+        layers: &[BackgroundLayer],
+        modifiers: &mut Vec<PlanModifier>,
+    ) {
+        if let Some(background) = background {
+            modifiers.push(PlanModifier::Background(self.colours.resolve(
+                node,
+                ColourUse::Background,
+                background,
+            )));
+        }
+        let relative = |rect: Rect| {
+            Rect::new(
+                rect.x - origin.0,
+                rect.y - origin.1,
+                rect.width,
+                rect.height,
+            )
+        };
+        // CSS lists the top layer first; a renderer draws modifiers back to front.
+        for layer in layers.iter().rev() {
+            let brush = match &layer.image {
+                BackgroundImage::Url(url) => {
+                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
+                        Some(asset) => Brush::Image(asset),
+                        None => continue,
+                    }
+                }
+                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
+                    start: gradient.start,
+                    end: gradient.end,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
+                    center: gradient.center,
+                    radius_x: gradient.radius_x,
+                    radius_y: gradient.radius_y,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+            };
+            let id = brush.id();
+            self.brushes.entry(id).or_insert(brush);
+            modifiers.push(PlanModifier::BackgroundBrush {
+                brush: id,
+                area: relative(layer.area),
+                tile: relative(layer.tile),
+                repeat_x: layer.repeat_x,
+                repeat_y: layer.repeat_y,
+            });
+        }
+    }
+
     /// Gradient stops with their colours expressed through the colour resolver.
     fn stops(&mut self, node: NodeId, stops: &[GradientStop]) -> Vec<GradientStop> {
         stops
@@ -1215,7 +1311,8 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
-    /// The image of an `<img>`, when the resolver names an asset for it.
+    /// The image of an `<img>`, when the resolver names an asset for it, and its broken-image
+    /// icon and alt text when it names none and the image has alt text to show.
     fn add_image(&mut self, entry: &NodeEntry, content: usize) {
         let Some(image) = entry.image.as_ref() else {
             return;
@@ -1225,6 +1322,9 @@ impl<'a> Builder<'a> {
             .as_mut()
             .and_then(|images| images.resolve(&image.source))
         else {
+            if let Some(fallback) = image.fallback.as_ref() {
+                self.add_image_fallback(entry.node, image.content_rect, fallback, content);
+            }
             return;
         };
         let (ox, oy) = self.slots[content].origin;
@@ -1275,65 +1375,196 @@ impl<'a> Builder<'a> {
         );
     }
 
-    fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
+    /// The marker of a list item drawn as a shape. A disc is a box rounded by half its size
+    /// and filled, a square a filled box. A circle is Chromium's 1px line centred on the
+    /// shape's edge: a box half a pixel larger on every side with a 1px border, which a
+    /// renderer draws inside the box's bounds.
+    fn add_marker(&mut self, entry: &NodeEntry, content: usize) {
+        let Some(marker) = entry.marker else {
+            return;
+        };
         let (ox, oy) = self.slots[content].origin;
         let clip = self.slots[content].clip;
         let opacity = self.slots[content].opacity;
-        for (index, run) in entry.texts.iter().enumerate() {
-            let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
-            let spans: Vec<SpanRun> = run
-                .spans
-                .iter()
-                .map(|span| SpanRun {
-                    color: span
-                        .color
-                        .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
-                    ..span.clone()
-                })
-                .collect();
-            self.push(
-                content,
-                Slot {
-                    key: PlanKey::Text {
-                        node: entry.node,
-                        index,
-                    },
-                    kind: PlanKind::Text(PlanText {
-                        owner: run.owner,
-                        text: run.text.clone(),
-                        style: run.style.clone(),
-                        color,
-                        decoration: run.decoration,
-                        align: run.align,
-                        soft_wrap: run.wrap_width.is_some()
-                            && (run.line_count > 1 || run.align == TextAlign::Justify),
-                        ellipsis: run.ellipsis,
-                        marker: run.marker,
-                        spans,
-                    }),
-                    modifiers: vec![
-                        PlanModifier::Offset {
-                            x: run.rect.x - ox,
-                            y: run.rect.y - oy,
-                        },
-                        // Text cut with an ellipsis is as wide as the cut: the renderer
-                        // ends a line that does not fit the width it is given in an
-                        // ellipsis.
-                        PlanModifier::Width(
-                            run.ellipsis
-                                .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
-                        ),
-                    ],
-                    children: Vec::new(),
-                    parent: None,
-                    origin: (run.rect.x, run.rect.y),
-                    clip,
-                    opacity,
-                    drawn: None,
-                    ..Slot::default()
-                },
-            );
+        let color = self
+            .colours
+            .resolve(marker.owner, ColourUse::Text, marker.color);
+        let bounds = match marker.symbol {
+            MarkerSymbol::Circle => Rect::new(
+                marker.rect.x - 0.5,
+                marker.rect.y - 0.5,
+                marker.rect.width + 1.0,
+                marker.rect.height + 1.0,
+            ),
+            MarkerSymbol::Disc | MarkerSymbol::Square => marker.rect,
+        };
+        let mut modifiers = vec![
+            PlanModifier::Offset {
+                x: bounds.x - ox,
+                y: bounds.y - oy,
+            },
+            PlanModifier::RequiredSize {
+                width: bounds.width,
+                height: bounds.height,
+            },
+        ];
+        match marker.symbol {
+            MarkerSymbol::Disc => {
+                modifiers.push(PlanModifier::Shape {
+                    radius: bounds.width.min(bounds.height) / 2.0,
+                });
+                modifiers.push(PlanModifier::Background(color));
+            }
+            MarkerSymbol::Circle => {
+                modifiers.push(PlanModifier::Shape {
+                    radius: bounds.width.min(bounds.height) / 2.0,
+                });
+                modifiers.push(PlanModifier::Border { width: 1.0, color });
+            }
+            MarkerSymbol::Square => modifiers.push(PlanModifier::Background(color)),
         }
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Marker(entry.node),
+                kind: PlanKind::Box,
+                modifiers,
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip,
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+    }
+
+    /// The broken-image icon and alt text of an `<img>` the resolver names no asset for, in a
+    /// box of the image's content box that clips them, as Chromium clips them to the image.
+    fn add_image_fallback(
+        &mut self,
+        node: NodeId,
+        bounds: Rect,
+        fallback: &ImageFallback,
+        content: usize,
+    ) {
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let holder = self.push(
+            content,
+            Slot {
+                key: PlanKey::Image(node),
+                kind: PlanKind::AbsoluteBox,
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: bounds.x - ox,
+                        y: bounds.y - oy,
+                    },
+                    PlanModifier::RequiredSize {
+                        width: bounds.width,
+                        height: bounds.height,
+                    },
+                    PlanModifier::Clip,
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip: Some(intersect(clip, bounds)),
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+        let icon = fallback.icon;
+        self.push(
+            holder,
+            Slot {
+                key: PlanKey::BrokenImageIcon(node),
+                kind: PlanKind::BrokenImageIcon,
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: icon.x - bounds.x,
+                        y: icon.y - bounds.y,
+                    },
+                    PlanModifier::RequiredSize {
+                        width: icon.width,
+                        height: icon.height,
+                    },
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (icon.x, icon.y),
+                clip: Some(intersect(clip, bounds)),
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+        self.add_text(node, 0, &fallback.text, holder);
+    }
+
+    fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
+        for (index, run) in entry.texts.iter().enumerate() {
+            self.add_text(entry.node, index, run, content);
+        }
+    }
+
+    /// The `index`th text run of `node`, placed in `content`.
+    fn add_text(&mut self, node: NodeId, index: usize, run: &TextRun, content: usize) {
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
+        let spans: Vec<SpanRun> = run
+            .spans
+            .iter()
+            .map(|span| SpanRun {
+                color: span
+                    .color
+                    .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
+                ..span.clone()
+            })
+            .collect();
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Text { node, index },
+                kind: PlanKind::Text(PlanText {
+                    owner: run.owner,
+                    text: run.text.clone(),
+                    style: run.style.clone(),
+                    color,
+                    decoration: run.decoration,
+                    align: run.align,
+                    soft_wrap: run.wrap_width.is_some()
+                        && (run.line_count > 1 || run.align == TextAlign::Justify),
+                    ellipsis: run.ellipsis,
+                    marker: run.marker,
+                    spans,
+                }),
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: run.rect.x - ox,
+                        y: run.rect.y - oy,
+                    },
+                    // Text cut with an ellipsis is as wide as the cut: the renderer ends a
+                    // line that does not fit the width it is given in an ellipsis.
+                    PlanModifier::Width(
+                        run.ellipsis
+                            .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
+                    ),
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (run.rect.x, run.rect.y),
+                clip,
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
     }
 
     fn add_field(&mut self, entry: &NodeEntry, content: usize) {
@@ -1533,6 +1764,19 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     }
     for run in &entry.texts {
         bounds = union(bounds, Some(run.rect));
+    }
+    if let Some(marker) = &entry.marker {
+        // A circle's line reaches half a pixel past the shape's rectangle.
+        let rect = marker.rect;
+        bounds = union(
+            bounds,
+            Some(Rect::new(
+                rect.x - 0.5,
+                rect.y - 0.5,
+                rect.width + 1.0,
+                rect.height + 1.0,
+            )),
+        );
     }
     if entry.input.is_some() {
         bounds = union(bounds, Some(entry.rect));

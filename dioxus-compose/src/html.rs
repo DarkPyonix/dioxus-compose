@@ -91,11 +91,12 @@ pub use crate::paint::bridge::{
 };
 pub use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
-    BorderLine, BoxShadow, Corners, DisplayList, DisplayListDiff, Easing, FillMode, GradientStop,
-    InputField, InputKind, Iterations, Keyframe, LinearGradient, Matrix2D, NodeEntry, ObjectFit,
-    Outline, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker,
-    ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun,
-    TileRepeat, Transform2D, TransformFunction, TransitionStart,
+    BorderLine, BoxShadow, CanvasBackground, Corners, DisplayList, DisplayListDiff, Easing,
+    FillMode, GradientStop, ImageFallback, InputField, InputKind, Iterations, Keyframe,
+    LinearGradient, MarkerShape, MarkerSymbol, Matrix2D, NodeEntry, ObjectFit, Outline,
+    PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker, ScrollContainer,
+    Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun, TileRepeat,
+    Transform2D, TransformFunction, TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,
@@ -112,8 +113,11 @@ pub(crate) use runtime::{css_extent, page_zoom};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
-/// listed by the renderer's dropdown rather than drawn in the page. Call it once, before
-/// the first layout. An [`HtmlDom`] does this for its own document.
+/// listed by the renderer's dropdown rather than drawn in the page; controls take the font
+/// Chromium gives them (13.333px of the system font) rather than the page's; a button's
+/// label is centred; a checkbox and a radio button are 13 by 13 with Chromium's margins and
+/// no `input` padding, border or background. Call it once, before the first layout. An
+/// [`HtmlDom`] does this for its own document.
 pub fn add_form_control_styles(doc: &mut BaseDocument) {
     doc.add_user_agent_stylesheet(dom::FORM_CONTROLS_CSS);
 }

@@ -10,10 +10,10 @@ use blitz_dom::DocumentConfig;
 use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose::html::{
-    BaseDocument, DisplayList, NodeEntry, OverflowWrap, ParleyMeasurer, Plan, PlanChange, PlanKey,
-    PlanKind, Rect, RunMarker, TextAlign, TextLineHeight, TextMeasureRequest, TextMeasurer,
-    TextMetrics, TextRun, TextStyle, TextWhiteSpace, WidthConstraint, WordBreak, diff,
-    element_by_id, layout_document, plan_from,
+    BaseDocument, DisplayList, MarkerSymbol, NodeEntry, OverflowWrap, ParleyMeasurer, Plan,
+    PlanChange, PlanKey, PlanKind, PlanModifier, Rect, Rgba, RunMarker, TextAlign, TextLineHeight,
+    TextMeasureRequest, TextMeasurer, TextMetrics, TextRun, TextStyle, TextWhiteSpace,
+    WidthConstraint, WordBreak, diff, element_by_id, layout_document, plan_from,
 };
 
 /// Every character is 10px wide and every line 20px tall.
@@ -439,10 +439,10 @@ fn fr34_reversed_list_markers_count_down() {
     );
 }
 
-/// Each `list-style-type` writes its own marker: the bullets as one character, `decimal`
-/// as "1.", the alphabetic types as letters. `lower-alpha` from `start="27"` goes past z
-/// to "aa." and "ab."; `upper-alpha` from 26 gives "Z." and "AA.". `none` has no marker,
-/// so the item draws only its text.
+/// Each `list-style-type` writes its own marker: the bullets as shapes, `decimal` as "1.",
+/// the alphabetic types as letters. `lower-alpha` from `start="27"` goes past z to "aa."
+/// and "ab."; `upper-alpha` from 26 gives "Z." and "AA.". `none` has no marker, so the
+/// item draws only its text.
 #[test]
 fn fr34_list_style_type_chooses_the_marker() {
     let (doc, list) = laid_out(
@@ -463,9 +463,16 @@ fn fr34_list_style_type_chooses_the_marker() {
 .none { list-style-type: none; }",
     );
     let marker = |id: &str| entry(&list, &doc, id).texts[0].text.clone();
-    assert_eq!(marker("disc"), "\u{2022}");
-    assert_eq!(marker("circle"), "\u{25e6}");
-    assert_eq!(marker("square"), "\u{25aa}");
+    let shape = |id: &str| entry(&list, &doc, id).marker.map(|marker| marker.symbol);
+    for (id, symbol) in [
+        ("disc", MarkerSymbol::Disc),
+        ("circle", MarkerSymbol::Circle),
+        ("square", MarkerSymbol::Square),
+    ] {
+        assert_eq!(shape(id), Some(symbol), "#{id}");
+        assert_eq!(marker(id), "x", "#{id}: the item's text is its only run");
+    }
+    assert_eq!(shape("decimal"), None);
     assert_eq!(marker("decimal"), "1.");
     assert_eq!(marker("lower-1"), "aa.");
     assert_eq!(marker("lower-2"), "ab.");
@@ -481,7 +488,8 @@ fn fr34_list_style_type_chooses_the_marker() {
 /// A marker inside the item is the start of its first line. "x" after the bullet and a
 /// space is "\u{2022} x", 3 characters, 30px, in one run whose first 4 bytes (the bullet is
 /// 3 bytes in UTF-8, then the space) are the marker. The item draws one run, at its own
-/// content origin. `list-style-position: outside` draws two.
+/// content origin. `list-style-position: outside` leaves the marker out of the text: the
+/// bullet is a shape before the item's box, and the item's one run is "x".
 #[test]
 fn fr34_inside_marker_starts_the_text() {
     let (doc, list) = laid_out(
@@ -496,7 +504,14 @@ fn fr34_inside_marker_starts_the_text() {
     assert_eq!(run.marker, RunMarker::Prefix { len: 4 });
     assert_rect(run.rect, 40.0, 0.0, 30.0, 20.0, "inside run");
 
-    assert_eq!(entry(&list, &doc, "out").texts.len(), 2);
+    let outside = entry(&list, &doc, "out");
+    assert_eq!(outside.texts.len(), 1, "{:?}", outside.texts);
+    assert_eq!(outside.texts[0].text, "x");
+    assert_eq!(outside.texts[0].marker, RunMarker::None);
+    let marker = outside.marker.expect("a disc before the item");
+    assert_eq!(marker.symbol, MarkerSymbol::Disc);
+    // The second list starts 20px down, and the disc is 7px below its line's top.
+    assert_rect(marker.rect, 24.0, 27.0, 5.0, 5.0, "outside marker");
 }
 
 /// A `display: list-item` element that is not in an `ol` or `ul` has a marker too, and the
@@ -517,13 +532,13 @@ fn fr34_display_list_item_gets_a_marker() {
     }
 }
 
-/// The marker is in the plan as a text node before the item's own text, and a plan text
-/// says whether it is a marker.
+/// A text marker is in the plan as a text node before the item's own text, and a plan
+/// text says whether it is a marker.
 #[test]
 fn fr34_marker_is_carried_to_the_plan() {
     let (doc, list) = laid_out(
-        r#"<ul id="list"><li id="a">x</li></ul>"#,
-        "ul { margin: 0; padding: 0 0 0 40px; }",
+        r#"<ol id="list"><li id="a">x</li></ol>"#,
+        "ol { margin: 0; padding: 0 0 0 40px; }",
     );
     let plan = plan_from(&list);
     let node = element_by_id(&doc, "a").unwrap();
@@ -536,9 +551,185 @@ fn fr34_marker_is_carried_to_the_plan() {
         other => panic!("a text run is a Text: {other:?}"),
     };
     assert_eq!(kind_of(0).marker, RunMarker::Marker);
-    assert_eq!(kind_of(0).text, "\u{2022}");
+    assert_eq!(kind_of(0).text, "1.");
     assert_eq!(kind_of(1).marker, RunMarker::None);
     assert_eq!(kind_of(1).text, "x");
+}
+
+/// `disc`, `circle` and `square` are drawn as shapes, as Chromium draws them, and not as a
+/// character of the font, whose bullet is often smaller. Everything comes from the font's
+/// ascent: the fake measurer puts the first baseline 15px down a line, so the ascent is
+/// 15, two thirds of it 10, and the shape (10 + 1) / 2 = 5px across. Its top is
+/// 3 * (15 - 10) / 2 = 7px below the top of the marker's text (the baseline less the
+/// ascent, here the top of the line), and it starts 10 + 6 = 16px before the item, which
+/// is at x = 40: x = 24. The items are one 20px line each, so the three shapes are at
+/// y = 7, 27 and 47.
+///
+/// The colour is the item's `color`. The marker is not a text run: the item's only run
+/// is its text, at x = 40.
+#[test]
+fn fr34_bullet_markers_are_shapes_sized_from_the_font() {
+    let (doc, list) = laid_out(
+        r#"<ul class="disc"><li id="disc">x</li></ul>
+<ul class="circle"><li id="circle">x</li></ul>
+<ul class="square"><li id="square">x</li></ul>"#,
+        "ul { margin: 0; padding: 0 0 0 40px; color: rgb(200, 10, 20); }
+.disc { list-style-type: disc; }
+.circle { list-style-type: circle; }
+.square { list-style-type: square; }",
+    );
+    for (id, symbol, y) in [
+        ("disc", MarkerSymbol::Disc, 7.0),
+        ("circle", MarkerSymbol::Circle, 27.0),
+        ("square", MarkerSymbol::Square, 47.0),
+    ] {
+        let item = entry(&list, &doc, id);
+        let marker = item
+            .marker
+            .unwrap_or_else(|| panic!("#{id} has a shape marker"));
+        assert_eq!(marker.symbol, symbol, "#{id}");
+        assert_eq!(marker.owner, element_by_id(&doc, id).unwrap(), "#{id}");
+        assert_eq!(marker.color, Rgba::new(200, 10, 20, 255), "#{id}");
+        assert_rect(marker.rect, 24.0, y, 5.0, 5.0, &format!("#{id} marker"));
+        assert_eq!(item.texts.len(), 1, "#{id}: {:?}", item.texts);
+        assert_eq!(item.texts[0].text, "x", "#{id}");
+        assert_eq!(item.texts[0].marker, RunMarker::None, "#{id}");
+        assert_close(item.texts[0].rect.x, 40.0, &format!("#{id} text x"));
+    }
+}
+
+/// The shape is placed from the item's first baseline, wherever its line puts that: in a
+/// 40px line too, its top is the ascent (15) less 7px, 8px, above the baseline.
+#[test]
+fn fr34_bullet_marker_sits_on_the_first_baseline() {
+    let (doc, list) = laid_out(
+        r#"<ul><li id="a">x</li></ul>"#,
+        "ul { margin: 0; padding: 0 0 0 40px; } li { line-height: 40px; }",
+    );
+    let item = entry(&list, &doc, "a");
+    let marker = item.marker.expect("a disc");
+    let run = &item.texts[0];
+    assert_rect(
+        marker.rect,
+        24.0,
+        run.rect.y + run.baseline - 15.0 + 7.0,
+        5.0,
+        5.0,
+        "marker",
+    );
+}
+
+/// A shape marker inside the item keeps its place at the start of the text: the text is
+/// still "\u{2022} x", with the bullet's 3 bytes in a span whose colour is transparent, so
+/// the character is not drawn, and the shape is drawn 1px into that place (x = 41) at the
+/// same height as an outside one (y = 7).
+#[test]
+fn fr34_inside_bullet_marker_is_a_shape_in_the_text() {
+    let (doc, list) = laid_out(
+        r#"<ul id="inside"><li id="in">x</li></ul>"#,
+        "ul { margin: 0; padding: 0 0 0 40px; list-style-position: inside; }",
+    );
+    let item = entry(&list, &doc, "in");
+    assert_eq!(item.texts.len(), 1, "{:?}", item.texts);
+    let run = &item.texts[0];
+    assert_eq!(run.text, "\u{2022} x");
+    assert_eq!(run.marker, RunMarker::Prefix { len: 4 });
+    let hidden = run
+        .spans
+        .iter()
+        .find(|span| span.start == 0)
+        .expect("a span over the bullet");
+    assert_eq!(hidden.end, 3);
+    assert_eq!(hidden.color, Some(Rgba::new(0, 0, 0, 0)));
+    let marker = item.marker.expect("a disc");
+    assert_eq!(marker.symbol, MarkerSymbol::Disc);
+    assert_rect(marker.rect, 41.0, 7.0, 5.0, 5.0, "inside marker");
+}
+
+/// In the plan a shape marker is a box of its own, keyed by the item, in the item's box
+/// before its text and placed from the item's origin: the disc at (24 - 40, 7 - 0). A disc
+/// is 5px across, rounded by half of it and filled with the item's colour; a square is
+/// filled and square. A circle is a 1px line centred on the 5px shape's edge, which a
+/// border inside a box half a pixel larger on every side draws: 6px across, at
+/// (23.5 - 40, 26.5 - 20), rounded by 3.
+#[test]
+fn fr34_bullet_marker_is_a_box_in_the_plan() {
+    let (doc, list) = laid_out(
+        r#"<ul class="disc"><li id="disc">x</li></ul>
+<ul class="circle"><li id="circle">x</li></ul>
+<ul class="square"><li id="square">x</li></ul>"#,
+        "ul { margin: 0; padding: 0 0 0 40px; color: rgb(200, 10, 20); }
+.disc { list-style-type: disc; }
+.circle { list-style-type: circle; }
+.square { list-style-type: square; }",
+    );
+    let plan = plan_from(&list);
+    let colour = Rgba::new(200, 10, 20, 255);
+    let marker = |id: &str| {
+        let node = element_by_id(&doc, id).unwrap();
+        let shape = plan
+            .find(PlanKey::Marker(node))
+            .unwrap_or_else(|| panic!("#{id} has a marker box"));
+        let parent = plan
+            .parent_of(PlanKey::Marker(node))
+            .unwrap_or_else(|| panic!("#{id}: the marker box has a parent"));
+        assert_eq!(
+            parent.key,
+            PlanKey::Node(node),
+            "#{id}: inside the item's box"
+        );
+        let position = |key: PlanKey| {
+            parent
+                .children
+                .iter()
+                .position(|child| child.key == key)
+                .unwrap_or_else(|| panic!("#{id}: {key:?} is in the item's box"))
+        };
+        assert!(
+            position(PlanKey::Marker(node)) < position(PlanKey::Text { node, index: 0 }),
+            "#{id}: the marker comes before the text"
+        );
+        assert_eq!(shape.kind, PlanKind::Box, "#{id}");
+        shape.modifiers.clone()
+    };
+    assert_eq!(
+        marker("disc"),
+        vec![
+            PlanModifier::Offset { x: -16.0, y: 7.0 },
+            PlanModifier::RequiredSize {
+                width: 5.0,
+                height: 5.0
+            },
+            PlanModifier::Shape { radius: 2.5 },
+            PlanModifier::Background(colour),
+        ]
+    );
+    assert_eq!(
+        marker("circle"),
+        vec![
+            PlanModifier::Offset { x: -16.5, y: 6.5 },
+            PlanModifier::RequiredSize {
+                width: 6.0,
+                height: 6.0
+            },
+            PlanModifier::Shape { radius: 3.0 },
+            PlanModifier::Border {
+                width: 1.0,
+                color: colour
+            },
+        ]
+    );
+    assert_eq!(
+        marker("square"),
+        vec![
+            PlanModifier::Offset { x: -16.0, y: 7.0 },
+            PlanModifier::RequiredSize {
+                width: 5.0,
+                height: 5.0
+            },
+            PlanModifier::Background(colour),
+        ]
+    );
 }
 
 // ------------------------------------------------------------------------------------------
