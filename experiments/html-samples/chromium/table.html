@@ -1,0 +1,73 @@
+<!doctype html>
+<html><head><style>
+body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 20px;
+    color: #1f2328;
+    background: #ffffff;
+}
+
+.page {
+    padding: 24px;
+}
+
+h1 {
+    margin: 0 0 16px;
+    font-size: 24px;
+    line-height: 32px;
+}
+
+.table-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.invoices {
+    width: 100%;
+    min-width: 640px;
+    border-collapse: collapse;
+    border-spacing: 0;
+}
+
+th, td {
+    height: 20px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #d0d7de;
+    text-align: left;
+    vertical-align: middle;
+}
+
+th {
+    background: #f6f8fa;
+    color: #57606a;
+    font-weight: 600;
+}
+
+th.sortable {
+    cursor: pointer;
+}
+
+.num {
+    text-align: right;
+}
+
+.col-number {
+    width: 96px;
+}
+
+.col-client {
+    width: 212px;
+}
+
+.col-due {
+    width: 116px;
+}
+
+.col-amount {
+    width: 120px;
+}
+</style></head><body><div class="page"><h1>Invoices</h1><div id="wrap" class="table-wrap"><table id="invoices" class="invoices"><thead><tr><th class="col-number">Invoice</th><th class="col-client">Client</th><th class="col-due">Due</th><th id="amount-header" class="col-amount num sortable">Amount</th></tr></thead><tbody><tr><td>INV-1001</td><td>Analytical Engines Ltd</td><td>2026-10-12</td><td class="num">$1,250.00</td></tr><tr><td>INV-1002</td><td>Difference &amp; Sons</td><td>2026-10-19</td><td class="num">$98.40</td></tr><tr><td>INV-1003</td><td>Jacquard Looms</td><td>2026-10-26</td><td class="num">$4,310.75</td></tr><tr><td>INV-1004</td><td>Babbage Supplies</td><td>2026-11-02</td><td class="num">$640.00</td></tr></tbody></table></div></div></body></html>

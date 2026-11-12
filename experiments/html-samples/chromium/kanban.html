@@ -1,0 +1,69 @@
+<!doctype html>
+<html><head><style>
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: system-ui, sans-serif; font-size: 14px; color: #1f2937; background-color: #ffffff; }
+
+.board-app { padding: 16px; }
+.board-app h1 { margin: 0 0 12px; font-size: 20px; }
+
+.new-card { display: flex; gap: 8px; margin-bottom: 12px; }
+.new-card input {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 0 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+.new-card button {
+    width: 64px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+.board { display: flex; gap: 12px; }
+.column {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    border-radius: 8px;
+    background-color: #f3f4f6;
+}
+/* The heading's label and count are flex items, so each is a block with its own entry
+   and the heading is measured as two lines of text, not as inline content. */
+.column h2 { display: flex; gap: 6px; margin: 0 0 8px; font-size: 14px; color: #374151; }
+.column .count { color: #6b7280; }
+.column.doing { background-color: #fef3c7; }
+.column.done { background-color: #dcfce7; }
+
+.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 76px;
+    padding: 8px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background-color: #ffffff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+.card .actions { display: flex; gap: 4px; }
+.card button {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    background-color: #ffffff;
+    color: #374151;
+}
+.card button:disabled { color: #d1d5db; }
+
+.empty { margin: 0; color: #6b7280; }
+</style></head><body><div class="board-app"><h1>Board</h1><form id="new-card-form" class="new-card"><input id="new-card" placeholder="New card" value=""><button id="add" type="submit">Add</button></form><div id="board" class="board"><div id="column-todo" class="column todo"><h2><span class="label">To do</span><span class="count" id="count-todo">2</span></h2><ul class="cards" id="cards-todo"><li class="card" id="card-1"><span class="title">Write docs</span><div class="actions"><button id="left-1" disabled="true">&lt;</button><button id="right-1">&gt;</button><button id="delete-1">x</button></div></li><li class="card" id="card-2"><span class="title">Fix layout</span><div class="actions"><button id="left-2" disabled="true">&lt;</button><button id="right-2">&gt;</button><button id="delete-2">x</button></div></li></ul></div><div id="column-doing" class="column doing"><h2><span class="label">Doing</span><span class="count" id="count-doing">1</span></h2><ul class="cards" id="cards-doing"><li class="card" id="card-3"><span class="title">Add tests</span><div class="actions"><button id="left-3">&lt;</button><button id="right-3">&gt;</button><button id="delete-3">x</button></div></li></ul></div><div id="column-done" class="column done"><h2><span class="label">Done</span><span class="count" id="count-done">1</span></h2><ul class="cards" id="cards-done"><li class="card" id="card-4"><span class="title">Design</span><div class="actions"><button id="left-4">&lt;</button><button id="right-4" disabled="true">&gt;</button><button id="delete-4">x</button></div></li></ul></div></div></div></body></html>

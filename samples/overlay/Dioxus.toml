@@ -1,0 +1,13 @@
+# dx project configuration for the Overlay sample, laid out the way `dx new` lays one out.
+
+[application]
+name = "Overlay"
+asset_dir = "assets"
+
+[bundle]
+identifier = "dev.darkpyonix.dioxuscompose.samples.overlay"
+publisher = "DarkPyonix"
+short_description = "A dropdown, a dialog and a clipped preview written with HTML and CSS."
+
+[macos]
+bundle_name = "Overlay"
