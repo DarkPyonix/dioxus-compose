@@ -1,0 +1,66 @@
+<!doctype html>
+<html><head><style>
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 20px;
+    color: #1f2937;
+    background-color: #ffffff;
+}
+
+.help { padding: 16px; }
+/* The heading is plain text only, so it is one block with one line. */
+.help h1 { margin: 0 0 12px; font-size: 20px; line-height: 24px; }
+
+.search {
+    display: block;
+    width: 100%;
+    height: 32px;
+    margin: 0 0 8px;
+    padding: 0 8px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+}
+.summary, .empty { margin: 0 0 12px; color: #6b7280; }
+
+.topics { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.topic { border: 1px solid #e5e7eb; border-radius: 8px; background-color: #ffffff; }
+.topic.open { border-color: #93c5fd; }
+
+/* The name and the chevron are flex items, so each is a block with its own entry and the
+   name can be cut to the room the chevron leaves it. */
+.head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 12px;
+    cursor: pointer;
+}
+.name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-weight: 600;
+}
+.chevron {
+    flex: none;
+    color: #6b7280;
+    transition: transform 0.2s ease;
+}
+.open .chevron { transform: rotate(90deg); }
+
+.body { padding: 0 12px 12px; }
+.body p { margin: 0; }
+.body ol { margin: 0; padding-left: 20px; list-style-type: decimal; }
+.body li { margin: 0; }
+/* Inline code keeps the paragraph's size: a span only carries a family, a weight, a style,
+   a colour and a decoration, so a size set here would not change the text around it. */
+.body code { font-family: ui-monospace, Menlo, monospace; color: #7c3aed; }
+.warn { color: #b91c1c; }
+.link { color: #0969da; text-decoration: underline; }
+</style></head><body><div class="help"><h1>Help centre</h1><input id="search" class="search" placeholder="Search topics" value=""><p id="summary" class="summary">4 of 4 topics</p><ul id="topics" class="topics"><li id="topic-reset" class="topic"><div class="head" id="head-reset"><span class="name" id="name-reset">Reset your password</span><span class="chevron" id="chevron-reset">&gt;</span></div></li><li id="topic-export" class="topic"><div class="head" id="head-export"><span class="name" id="name-export">Export everything you have stored in your account as a CSV or JSON file, including archived items and old drafts</span><span class="chevron" id="chevron-export">&gt;</span></div></li><li id="topic-billing" class="topic"><div class="head" id="head-billing"><span class="name" id="name-billing">Billing and invoices</span><span class="chevron" id="chevron-billing">&gt;</span></div></li><li id="topic-shortcuts" class="topic"><div class="head" id="head-shortcuts"><span class="name" id="name-shortcuts">Keyboard shortcuts</span><span class="chevron" id="chevron-shortcuts">&gt;</span></div></li></ul></div></body></html>

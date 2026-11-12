@@ -1,0 +1,136 @@
+<!doctype html>
+<html><head><style>
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 20px;
+    color: #1f2328;
+    background: #f6f8fa;
+}
+
+.app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    height: 56px;
+    padding: 0 24px;
+    background: #24292f;
+    color: #ffffff;
+}
+
+.brand {
+    font-size: 18px;
+    line-height: 28px;
+    font-weight: 600;
+}
+
+.refresh {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #57606a;
+    border-radius: 6px;
+    background: transparent;
+    color: #ffffff;
+    font: inherit;
+    cursor: pointer;
+}
+
+.body {
+    display: flex;
+    flex: 1;
+    align-items: stretch;
+    min-height: 0;
+}
+
+.sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 200px;
+    flex-shrink: 0;
+    padding: 16px;
+    background: #ffffff;
+    border-right: 1px solid #d0d7de;
+}
+
+.nav-item {
+    display: block;
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: #1f2328;
+    text-decoration: none;
+}
+
+.nav-item.active {
+    background: #ddf4ff;
+    color: #0969da;
+}
+
+.content {
+    flex: 1;
+    padding: 24px;
+}
+
+.page-title {
+    margin: 0 0 16px;
+    font-size: 24px;
+    line-height: 32px;
+}
+
+.cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: flex-start;
+    align-items: flex-start;
+}
+
+.card {
+    width: 200px;
+    height: 120px;
+    padding: 16px;
+    background: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(31, 35, 40, 0.2);
+}
+
+.card.alert {
+    border-left: 4px solid #cf222e;
+}
+
+.card.stale {
+    opacity: 0.6;
+}
+
+.card-label {
+    margin: 0 0 8px;
+    color: #57606a;
+}
+
+.card-value {
+    margin: 0;
+    font-size: 28px;
+    line-height: 36px;
+    font-weight: 600;
+}
+
+.card-note {
+    margin: 4px 0 0;
+    font-size: 12px;
+    line-height: 16px;
+    color: #57606a;
+}
+</style></head><body><div class="app"><header class="topbar"><span id="brand" class="brand">Acme Analytics</span><button id="refresh" class="refresh" type="button">Refresh</button></header><div class="body"><nav id="sidebar" class="sidebar"><a href="#" id="nav-0" class="nav-item active">Overview</a><a href="#" id="nav-1" class="nav-item">Orders</a><a href="#" id="nav-2" class="nav-item">Customers</a><a href="#" id="nav-3" class="nav-item">Reports</a></nav><main class="content"><h1 id="page-title" class="page-title">Overview</h1><div id="cards" class="cards"><div id="card-revenue" class="card"><p class="card-label">Revenue</p><p class="card-value">$48,210</p><p class="card-note">+12% this week</p></div><div id="card-orders" class="card"><p class="card-label">Orders</p><p class="card-value">1,284</p><p class="card-note">+3% this week</p></div><div id="card-refunds" class="card alert"><p class="card-label">Refunds</p><p class="card-value">37</p><p class="card-note">Above the usual 20</p></div><div id="card-visitors" class="card"><p class="card-label">Visitors</p><p class="card-value">19,402</p><p class="card-note">+8% this week</p></div><div id="card-uptime" class="card stale"><p class="card-label">Uptime</p><p class="card-value">99.2%</p><p class="card-note">Checked 2 hours ago</p></div></div></main></div></div></body></html>

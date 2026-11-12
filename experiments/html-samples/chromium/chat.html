@@ -1,0 +1,42 @@
+<!doctype html>
+<html><head><style>
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font-family: system-ui, sans-serif; font-size: 14px; color: #0f172a; background-color: #ffffff; }
+
+.chat { display: flex; flex-direction: column; height: 100%; }
+
+.messages {
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+}
+
+.message { max-width: 70%; padding: 8px 12px; border-radius: 12px; }
+.message.user { align-self: flex-end; background-color: #2563eb; color: #ffffff; }
+.message.assistant { align-self: flex-start; background-color: #f1f5f9; }
+
+.composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid #e2e8f0; }
+.composer input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+}
+.composer button {
+    width: 72px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background-color: #2563eb;
+    color: #ffffff;
+}
+</style></head><body><div class="chat"><div id="messages" class="messages"><div id="message-1" class="message assistant">Hello! How can I help?</div><div id="message-2" class="message user">Plan a trip</div><div id="message-3" class="message assistant">Sure</div></div><form id="composer" class="composer"><input id="draft" placeholder="Message" value=""><button id="send" type="submit">Send</button></form></div></body></html>

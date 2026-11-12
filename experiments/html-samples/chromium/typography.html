@@ -1,0 +1,140 @@
+<!doctype html>
+<html><head><style>
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 20px;
+    color: #1f2328;
+    background: #ffffff;
+}
+
+.page {
+    padding: 32px;
+}
+
+h1 {
+    margin: 0 0 16px;
+    font-size: 32px;
+    line-height: 40px;
+}
+
+h2 {
+    margin: 32px 0 8px;
+    font-size: 20px;
+    line-height: 28px;
+}
+
+.cap {
+    margin: 12px 0 4px;
+    font-size: 12px;
+    line-height: 16px;
+    color: #57606a;
+}
+
+.demo {
+    margin: 0;
+    background: #f6f8fa;
+}
+
+.w120 { width: 120px; }
+.w160 { width: 160px; }
+.w200 { width: 200px; }
+.w240 { width: 240px; }
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.cycle {
+    padding: 8px 16px;
+    font-size: 14px;
+    line-height: 20px;
+    color: #ffffff;
+    background: #0969da;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.specimen {
+    margin: 12px 0 0;
+    line-height: 1.5;
+    background: #ddf4ff;
+}
+.size-small { font-size: 14px; }
+.size-medium { font-size: 16px; }
+.size-large { font-size: 20px; }
+
+.scale { line-height: normal; background: #f6f8fa; margin: 0; }
+.fs-12 { font-size: 12px; }
+.fs-16 { font-size: 16px; }
+.fs-20 { font-size: 20px; }
+.fs-24 { font-size: 24px; }
+.fs-32 { font-size: 32px; }
+.fs-40 { font-size: 40px; }
+
+.regular { font-weight: 400; }
+.bold { font-weight: 700; }
+.light { font-weight: 300; }
+.italic { font-style: italic; }
+
+.lh-unitless { line-height: 1.5; }
+.lh-px { line-height: 30px; }
+.lh-normal { line-height: normal; }
+
+.ls-px { letter-spacing: 2px; }
+.ls-em { letter-spacing: 0.25em; }
+
+.align-left { text-align: left; }
+.align-center { text-align: center; }
+.align-right { text-align: right; }
+.align-justify { text-align: justify; }
+
+.upper { text-transform: uppercase; }
+.capitalize { text-transform: capitalize; }
+
+.ws-normal { white-space: normal; }
+.ws-nowrap { white-space: nowrap; }
+.ws-pre { white-space: pre; }
+.ws-pre-wrap { white-space: pre-wrap; }
+
+.wb-break-all { word-break: break-all; }
+.wb-anywhere { overflow-wrap: anywhere; }
+.wb-break-word { overflow-wrap: break-word; }
+
+.ellipsis {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.tag::before { content: "["; }
+.tag::after { content: "]"; }
+
+.list {
+    margin: 0 0 12px;
+    padding-left: 40px;
+    background: #f6f8fa;
+}
+.list li {
+    margin: 0;
+    line-height: 20px;
+}
+.square { list-style-type: square; }
+.decimal { list-style-type: decimal; }
+.alpha { list-style-type: lower-alpha; }
+.roman { list-style-type: upper-roman; }
+
+.underline { text-decoration: underline; }
+.strike { text-decoration: line-through; }
+</style></head><body><main class="page"><h1 id="title">Type specimen</h1><div class="controls"><button id="size-button" class="cycle">Size: medium</button></div><p id="specimen" class="specimen w200 size-medium">Pack my box with five dozen liquor jugs</p><section id="sizes"><h2>Font size</h2><div id="scale-12" class="scale fs-12">Hamburgefonstiv</div><div id="scale-16" class="scale fs-16">Hamburgefonstiv</div><div id="scale-20" class="scale fs-20">Hamburgefonstiv</div><div id="scale-24" class="scale fs-24">Hamburgefonstiv</div><div id="scale-32" class="scale fs-32">Hamburgefonstiv</div><div id="scale-40" class="scale fs-40">Hamburgefonstiv</div></section><section id="faces"><h2>Weight and style</h2><div id="weight-300" class="demo light">Light 300</div><div id="weight-400" class="demo regular">Regular 400</div><div id="weight-700" class="demo bold">Bold 700</div><div id="italic" class="demo italic">Italic</div></section><section id="spacing"><h2>Line height</h2><div class="cap">unitless 1.5</div><div id="lh-unitless" class="demo w120 lh-unitless">aaa bbb ccc ddd eee fff</div><div class="cap">30px</div><div id="lh-px" class="demo w120 lh-px">aaa bbb ccc ddd eee fff</div><div class="cap">normal</div><div id="lh-normal" class="demo w120 lh-normal">aaa bbb ccc ddd eee fff</div><h2>Letter spacing</h2><div class="cap">0</div><div id="ls-zero" class="demo w120">aaa bbb ccc ddd eee fff</div><div class="cap">2px</div><div id="ls-px" class="demo w120 ls-px">aaa bbb ccc ddd eee fff</div><div class="cap">0.25em</div><div id="ls-em" class="demo w120 ls-em">aaa bbb ccc ddd eee fff</div></section><section id="alignment"><h2>Alignment</h2><div id="align-left" class="demo w240 align-left">Align me</div><div id="align-center" class="demo w240 align-center">Align me</div><div id="align-right" class="demo w240 align-right">Align me</div><div id="align-justify" class="demo w240 align-justify">Justify spreads the words of every line across the full width</div></section><section id="transform"><h2>Text transform</h2><div id="tt-upper" class="demo upper">type specimen</div><div id="tt-capitalize" class="demo capitalize">type specimen</div></section><section id="whitespace"><h2>White space</h2><div class="cap">normal</div><div id="ws-normal" class="demo w160 ws-normal">alpha beta gamma delta epsilon zeta</div><div class="cap">nowrap</div><div id="ws-nowrap" class="demo w160 ws-nowrap">alpha beta gamma delta epsilon zeta</div><div class="cap">pre</div><div id="ws-pre" class="demo w160 ws-pre">first line
+    indented line
+last</div><div class="cap">pre-wrap</div><div id="ws-pre-wrap" class="demo w160 ws-pre-wrap">alpha beta gamma delta epsilon
+zeta</div></section><section id="breaking"><h2>Word break and overflow wrap</h2><div class="cap">default</div><div id="wb-default" class="demo w120 wb-default">Supercalifragilisticexpialidocious</div><div class="cap">word-break: break-all</div><div id="wb-break-all" class="demo w120 wb-break-all">Supercalifragilisticexpialidocious</div><div class="cap">overflow-wrap: anywhere</div><div id="wb-anywhere" class="demo w120 wb-anywhere">Supercalifragilisticexpialidocious</div><div class="cap">overflow-wrap: break-word</div><div id="wb-break-word" class="demo w120 wb-break-word">Supercalifragilisticexpialidocious</div></section><section id="overflow"><h2>Text overflow</h2><div id="ellipsis" class="demo w160 ellipsis">A title that is far too long for its box</div></section><section id="generated"><h2>Generated content</h2><div id="tag" class="demo tag">note</div></section><section id="lists"><h2>List markers</h2><ul id="list-square" class="list square w240"><li id="square-1">Square marker</li><li id="square-2">Second item</li><li id="square-3">Third item</li></ul><ol id="list-decimal" class="list decimal w240"><li id="decimal-1">Decimal marker</li><li id="decimal-2">Second item</li><li id="decimal-3">Third item</li></ol><ol id="list-alpha" class="list alpha w240"><li id="alpha-1">Lower alpha marker</li><li id="alpha-2">Second item</li></ol><ol id="list-roman" class="list roman w240"><li id="roman-1">Upper roman marker</li><li id="roman-2">Second item</li></ol></section><section id="decoration"><h2>Text decoration</h2><div id="deco-underline" class="demo underline">Underlined text</div><div id="deco-strike" class="demo strike">Struck text</div></section></main></body></html>
