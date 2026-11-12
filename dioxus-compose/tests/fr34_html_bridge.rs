@@ -669,7 +669,9 @@ fn rounded_scroller() -> Element {
 
 /// A scroll container with rounded corners clips its content to them, as `overflow: hidden`
 /// does: its scroll viewport is sent with the corners and then `Clip`, so the content's
-/// corners are cut where the box's are.
+/// corners are cut where the box's are. `overflow-x: auto` makes `overflow-y` compute to
+/// `auto` as well, so the box scrolls on both axes: the column is its viewport and has the
+/// corners, and the row inside it, as tall as the content, has none.
 #[test]
 fn fr34_scroll_container_clips_to_its_rounded_corners() {
     let mut host = Host::html(rounded_scroller, config);
@@ -677,7 +679,18 @@ fn fr34_scroll_container_clips_to_its_rounded_corners() {
 
     let rows = created(&first, WidgetKind::ScrollRow);
     assert_eq!(rows.len(), 1, "{first:#?}");
-    let modifiers = modifiers_of(&first, rows[0]);
+    let viewport = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Insert { parent, node, .. } if *node == rows[0] => Some(*parent),
+            _ => None,
+        })
+        .expect("the row is inside its viewport");
+    assert!(
+        created(&first, WidgetKind::ScrollColumn).contains(&viewport),
+        "the row is inside the box's scroll column: {first:#?}"
+    );
+    let modifiers = modifiers_of(&first, viewport);
     let corners = modifiers
         .iter()
         .position(|modifier| {
@@ -695,6 +708,14 @@ fn fr34_scroll_container_clips_to_its_rounded_corners() {
         .position(|modifier| *modifier == Modifier::Clip(true))
         .unwrap_or_else(|| panic!("the scroll viewport clips: {modifiers:?}"));
     assert!(corners < clip, "{modifiers:?}");
+
+    let inner = modifiers_of(&first, rows[0]);
+    assert!(
+        inner
+            .iter()
+            .all(|modifier| !matches!(modifier, Modifier::CornerEach { .. })),
+        "{inner:?}"
+    );
 }
 
 fn reordering() -> Element {
