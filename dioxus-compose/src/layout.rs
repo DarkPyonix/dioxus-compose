@@ -848,6 +848,34 @@ fn css_dimension(size: &StyloSize) -> Option<Dimension> {
     }
 }
 
+/// The size a `width` or `height` attribute gives an `<img>`, read as HTML reads a
+/// dimension attribute: a number, then `%` for a percentage, and anything after that
+/// ignored (`40`, `40px`, `50%`). `None` when the value does not start with a number.
+fn attribute_dimension(value: &str) -> Option<Dimension> {
+    let value = value.trim_start_matches(|c: char| c.is_ascii_whitespace());
+    let digits = value
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(value.len());
+    let mut end = digits;
+    if let Some(fraction) = value[digits..].strip_prefix('.') {
+        let places = fraction
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(fraction.len());
+        if places > 0 {
+            end = digits + 1 + places;
+        }
+    }
+    if digits == 0 {
+        return None;
+    }
+    let number: f32 = value[..end].parse().ok()?;
+    Some(if value[end..].starts_with('%') {
+        Dimension::percent(number / 100.0)
+    } else {
+        Dimension::length(number)
+    })
+}
+
 /// How the alt text of a broken image sits in a content box `width` wide: on the icon's
 /// line when it fits beside the icon, below the icon wrapped at `width` when it does not.
 /// Returns the text's offset from the content box, its metrics and the width it was wrapped
@@ -924,15 +952,22 @@ fn size_image_fallbacks(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer)
                     ),
                     BoxSizing::ContentBox => (0.0, 0.0),
                 };
-                // The axes the stylesheet sizes, as Taffy dimensions; `None` for `auto`.
-                let given = |dimension: Option<Dimension>| match dimension {
+                // The axes the stylesheet sizes, as Taffy dimensions; `None` for `auto`. The
+                // `width` and `height` attributes size an axis the stylesheet leaves `auto`:
+                // blitz-dom reads them when it sizes a replaced element rather than mapping
+                // them to CSS, and a size written here would override them.
+                let given = |dimension: Option<Dimension>, attribute: &str| match dimension {
                     _ if inline => None,
-                    Some(dimension) if dimension.is_auto() => None,
+                    Some(dimension) if dimension.is_auto() => node
+                        .element_data()
+                        .and_then(|element| element.attr(local(attribute)))
+                        .and_then(attribute_dimension)
+                        .map(Some),
                     Some(dimension) => Some(Some(dimension)),
                     None => Some(None),
                 };
-                let given_width = given(css.width);
-                let given_height = given(css.height);
+                let given_width = given(css.width, "width");
+                let given_height = given(css.height, "height");
                 // The content width the text is laid out in, when it is known before layout.
                 let content_width = match given_width {
                     Some(Some(dimension)) => dimension
