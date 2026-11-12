@@ -488,7 +488,8 @@ fn fr34_list_style_type_chooses_the_marker() {
 /// A marker inside the item is the start of its first line. "x" after the bullet and a
 /// space is "\u{2022} x", 3 characters, 30px, in one run whose first 4 bytes (the bullet is
 /// 3 bytes in UTF-8, then the space) are the marker. The item draws one run, at its own
-/// content origin. `list-style-position: outside` draws two.
+/// content origin. `list-style-position: outside` leaves the marker out of the text: the
+/// bullet is a shape before the item's box, and the item's one run is "x".
 #[test]
 fn fr34_inside_marker_starts_the_text() {
     let (doc, list) = laid_out(
@@ -503,7 +504,14 @@ fn fr34_inside_marker_starts_the_text() {
     assert_eq!(run.marker, RunMarker::Prefix { len: 4 });
     assert_rect(run.rect, 40.0, 0.0, 30.0, 20.0, "inside run");
 
-    assert_eq!(entry(&list, &doc, "out").texts.len(), 2);
+    let outside = entry(&list, &doc, "out");
+    assert_eq!(outside.texts.len(), 1, "{:?}", outside.texts);
+    assert_eq!(outside.texts[0].text, "x");
+    assert_eq!(outside.texts[0].marker, RunMarker::None);
+    let marker = outside.marker.expect("a disc before the item");
+    assert_eq!(marker.symbol, MarkerSymbol::Disc);
+    // The second list starts 20px down, and the disc is 7px below its line's top.
+    assert_rect(marker.rect, 24.0, 27.0, 5.0, 5.0, "outside marker");
 }
 
 /// A `display: list-item` element that is not in an `ol` or `ul` has a marker too, and the
