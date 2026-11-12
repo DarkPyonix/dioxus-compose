@@ -159,6 +159,11 @@ pub(crate) fn resolve_styles_incremental(
     non_inherited_style_nodes: &HashSet<usize>,
     state: &mut LayoutState,
 ) -> HashSet<usize> {
+    // A control whose disabled state changes takes a snapshot here, before the children
+    // are parked, so it is kept for the restyle. `resolve_stylist` runs the same update
+    // again, but by then a parked control is not in the tree it walks.
+    #[cfg(feature = "patched-blitz")]
+    doc.update_form_control_states();
     let mut parked_restyle_children: Vec<(usize, Vec<usize>, Option<usize>)> = Vec::new();
     if state.initialized {
         for &id in non_inherited_style_nodes {
