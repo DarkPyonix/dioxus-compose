@@ -1979,9 +1979,9 @@ M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme
 
 기준 1, 3과 `opacity`/`transform`에 대한 기준 2, 5는 M14(10-18)에서, 레이아웃 속성에 대한 기준 2, 4, 5는 M15에서 확인합니다.
 
-#### FR-34.3 HTML/CSS와 Compose 위젯을 한 앱에서 섞기 (`Agreed`, 목표 M12 이후)
+#### FR-34.3 HTML/CSS와 Compose 위젯을 한 앱에서 섞기 (`Done`, 목표 M12 이후)
 
-추적: 이슈 #59. 구현 전이다. 렌더러 다리(PR #67, compose-rust 0.0.2 계획은 FR-34 참고)가 먼저 들어와야 한다. 지금의 예제 열일곱 개는 모두 HTML 경로만 쓰고 섞은 예제는 없다.
+추적: 이슈 #59, #160. 구현되어 있다. 위젯 안의 HTML 섬은 `HtmlView`, HTML 안의 위젯은 `WidgetView`(렌더러가 잰 크기, `use_widget_box()`, 루트 컴포넌트에 넘기는 props)이고, 테마 색은 `--dxc-*` 변수로 두 세계가 같다. 기준 1-6은 위에 적은 테스트가 확인한다(기준 1-5는 PR #217).
 
 dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하나는 `div`, `h1`과 CSS이고(FR-34), 다른 하나는 `Column`, `Text` 같은 Compose 위젯 이름입니다(소유자 결정 2026-10-03: "그냥 dioxus-compose에서 둘다 구현하면 되잖아"). 기능 플래그로 어느 쪽도 끄지 않습니다. 이 항목은 둘을 한 화면에서 섞는 규칙입니다.
 
@@ -1999,7 +1999,7 @@ dioxus-compose는 두 작성 방식을 모두 기본으로 지원합니다. 하�
 3. HTML 안의 위젯을 누르면 그 위젯의 핸들러가 불리고, 감싼 `div`의 `onclick`은 CSS 이벤트 흐름대로 그 뒤에 불립니다.
 4. 테마를 바꾸면 `var(--dxc-primary)`를 쓴 `div`의 배경과 Primary 색 위젯이 같은 프레임에 같은 색으로 바뀝니다. `--dxc-*` 변수의 이름 집합이 schema의 `ColorRole` 변형 전부와 일대일로 맞는지도 시험합니다(생성 목록이므로 역할이 늘면 시험도 따라갑니다). 테스트 `fr34_3_theme_variables_follow_colour_roles`, `fr34_3_theme_switch_same_frame`.
 5. 위젯 트리는 `use_widget_box()`로 페이지가 그 상자에 준 크기(dp)를 읽고, 상자 크기가 바뀌면 트리가 다시 그려집니다. 렌더러는 위젯 트리를 제한 없이 재므로, 스타일시트가 크기를 정한 상자(`flex: 1`, `height: 100%`)를 채우려는 위젯은 이 값을 루트에 줍니다. 테스트 `fr34_3_widget_reads_the_box_the_page_gave_it`.
-6. [리더, 잠정 2026-11-13] **위젯 트리에 값 넘기기(#160).** `WidgetView`는 `app`과 함께 그 트리의 루트 컴포넌트가 받을 props를 받는다(`WidgetView { app: Editor, props: EditorProps { path } }`, `Editor`는 `fn(EditorProps) -> Element`). 위젯 트리의 루트는 그 값으로 그려진다. 페이지가 다시 그려져 props가 바뀌면(`PartialEq`로 다를 때) 그 위젯 트리가 같은 섬 그대로 새 값으로 다시 그려지고, 트리 안의 훅 상태와 노드는 다시 만들어지지 않는다. props가 같으면 위젯 트리는 다시 그려지지 않는다. props 없이 `app: fn() -> Element`만 쓰는 지금의 코드는 그대로 컴파일되고 같게 동작한다. 테스트 `fr34_3_widget_view_passes_props_to_the_tree` (예정), `fr34_3_changed_props_redraw_the_tree_and_keep_its_state` (예정), `fr34_3_equal_props_do_not_redraw_the_tree` (예정).
+6. [리더, 잠정 2026-11-13] **위젯 트리에 값 넘기기(#160).** `WidgetView`는 `app`과 함께 그 트리의 루트 컴포넌트가 받을 props를 받는다(`WidgetView { app: Editor, props: EditorProps { path } }`, `Editor`는 `fn(EditorProps) -> Element`). 위젯 트리의 루트는 그 값으로 그려진다. 페이지가 다시 그려져 props가 바뀌면(`PartialEq`로 다를 때) 그 위젯 트리가 같은 섬 그대로 새 값으로 다시 그려지고, 트리 안의 훅 상태와 노드는 다시 만들어지지 않는다. props가 같으면 위젯 트리는 다시 그려지지 않는다. props 없이 `app: fn() -> Element`만 쓰는 지금의 코드는 그대로 컴파일되고 같게 동작한다. 테스트 `fr34_3_widget_view_passes_props_to_the_tree`, `fr34_3_changed_props_redraw_the_tree_and_keep_its_state`, `fr34_3_equal_props_do_not_redraw_the_tree`.
 
 #### FR-34.4 HTML 화면의 확대와 시스템 글자 크기 (`Agreed`, 목표 M14)
 
