@@ -81,7 +81,7 @@ fn controls() -> Element {
         select { id: "select-on" }
         select { id: "select-off", disabled: true }
         fieldset { id: "fieldset-on" }
-        div { id: "plain", class: "holder", disabled: true }
+        div { id: "plain", class: "holder", "disabled": "true" }
         div { class: "holder",
             optgroup { id: "group-on",
                 option { id: "option-on" }
