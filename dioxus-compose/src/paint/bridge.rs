@@ -307,6 +307,10 @@ pub struct PlanBridge {
     sizes_scroll: bool,
     /// The box that names the factor a whole-screen page is drawn at.
     island_node: Option<u32>,
+    /// The name the island box is measured under, for a page that has to know the size of
+    /// the area it is drawn in. The renderer reports that box's size as soon as it has
+    /// laid it out.
+    island_token: Option<u32>,
     /// The factor the page is drawn at, and the one the island root last named.
     zoom: f32,
     zoom_sent: Option<f32>,
@@ -365,6 +369,7 @@ impl PlanBridge {
             wraps_island: false,
             sizes_scroll: false,
             island_node: None,
+            island_token: None,
             zoom: 1.0,
             zoom_sent: None,
             viewport_sent: None,
@@ -463,6 +468,18 @@ impl PlanBridge {
     /// page is drawn at, for a page that is the whole screen. Call before the first plan.
     pub(crate) fn wrap_in_island(&mut self) {
         self.wraps_island = true;
+    }
+
+    /// Asks the renderer to measure the island box under `token`. The box fills the area the
+    /// window gives its content, below the window's title band where it has one, so its
+    /// size is the viewport the page has to be laid out in. Call before the first plan.
+    pub(crate) fn observe_island(&mut self, token: u32) {
+        self.island_token = Some(token);
+    }
+
+    /// The island box, once the first plan has been applied.
+    pub(crate) fn island_node(&self) -> Option<u32> {
+        self.island_node
     }
 
     /// Gives the scroll the viewport's size rather than a fill, for a page that is one island
@@ -584,6 +601,13 @@ impl PlanBridge {
                         index: 1,
                         modifier: Modifier::FillMaxHeight,
                     });
+                    if let Some(token) = self.island_token {
+                        batch.write(Mutation::SetModifier {
+                            node_id: island,
+                            index: 2,
+                            modifier: Modifier::ObserveSize { token },
+                        });
+                    }
                     batch.write(Mutation::Insert {
                         parent_id: island,
                         node_id: viewport_node,

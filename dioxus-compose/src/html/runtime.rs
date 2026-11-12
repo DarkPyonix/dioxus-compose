@@ -45,7 +45,7 @@ use compose_rust::schema::{
     PointerKind as WirePointerKind, PointerType as WirePointerType,
     WheelDeltaMode as WireWheelMode,
 };
-use compose_rust::{AnimationMoment, Batch, Runtime};
+use compose_rust::{AnimationMoment, Batch, Runtime, WindowSize};
 use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Modifiers};
 
@@ -56,8 +56,8 @@ use crate::paint::bridge::{BridgeEvent, HostMomentKind, PlanBridge};
 use crate::paint::plan::LiteralColours;
 
 /// The viewport a page is laid out in before the renderer has said how large the window
-/// is. The renderer reports the window's size as soon as it has one, and the page is laid
-/// out again at that size.
+/// is. The renderer reports the size of the page's box when it first lays it out, and the
+/// page is laid out again at that size.
 const FALLBACK_VIEWPORT: (f32, f32) = (800.0, 600.0);
 
 /// The factor the page is drawn at: what the renderer reported, kept to a number a page can
@@ -116,6 +116,17 @@ pub struct HtmlRuntime {
     /// The `(layout_revision, viewport_w_bits, viewport_h_bits, zoom_bits)` last applied to
     /// `self.bridge`, so an unchanged frame skips `dom.plan` and `bridge.apply`.
     applied_revision: Option<(u64, u32, u32, u32)>,
+    /// The registration under which the renderer reports the size of the box a
+    /// whole-screen page is drawn in. `None` for a page that is one island in a tree, whose
+    /// viewport the tree hands it.
+    island_size: Option<compose_rust::window::NodeSizeSubscription>,
+    /// The two reports the viewport is taken from, as they were last read, so the one that
+    /// changed most recently is the one that counts.
+    seen_island: WindowSize,
+    seen_window: WindowSize,
+    /// The size of the area the page is drawn in, in zoomed dp, from whichever report said
+    /// so last. `None` until the renderer has reported anything.
+    content_size: Option<(f32, f32)>,
 }
 
 impl HtmlRuntime {
@@ -127,7 +138,18 @@ impl HtmlRuntime {
         // The page is the whole screen, so it names its own factor on a root of its own.
         let mut bridge = PlanBridge::new();
         bridge.wrap_in_island();
-        Self::with_bridge(app, config, bridge)
+        // The renderer is asked to measure the island box, which fills the area the window
+        // gives its content. That report comes with the first layout of the box, whatever
+        // the window's size class is, so the page is laid out at its real size from the
+        // first frame the renderer draws.
+        let token = compose_rust::window::next_node_token();
+        bridge.observe_island(token);
+        let mut runtime = Self::with_bridge(app, config, bridge);
+        runtime.island_size = Some(compose_rust::window::subscribe_node(
+            token,
+            std::sync::Arc::new(|| {}),
+        ));
+        runtime
     }
 
     /// A runtime whose page is one island inside a tree some other writer owns: its
@@ -169,6 +191,10 @@ impl HtmlRuntime {
             typed: HashMap::new(),
             edited: HashSet::new(),
             applied_revision: None,
+            island_size: None,
+            seen_island: WindowSize::default(),
+            seen_window: WindowSize::default(),
+            content_size: None,
         }
     }
 
@@ -177,14 +203,46 @@ impl HtmlRuntime {
         &self.dom
     }
 
+    /// The viewport the page is laid out in, in CSS pixels: the area the window draws it in.
+    ///
+    /// Two reports say how large that is. The island box's own is exact: the box fills the
+    /// window's content area, which starts below the window's title band when the window
+    /// has one. The window's report measures the whole window, title band included, and
+    /// carries the band's height as `safe_area.top`, which the renderer pads the page down
+    /// by. Whichever of the two changed last is the one the page follows, because the
+    /// renderer sends each only when its size class changes and a resize can move one
+    /// across a boundary without the other.
+    fn viewport(&mut self) -> (f32, f32) {
+        let window = compose_rust::window_size();
+        let island = self
+            .island_size
+            .as_ref()
+            .map(|subscription| compose_rust::window::node_size(subscription.token()))
+            .unwrap_or_default();
+        let island_changed = island != self.seen_island;
+        let window_changed = window != self.seen_window;
+        self.seen_island = island;
+        self.seen_window = window;
+        if island_changed && island.width_dp > 0.0 && island.height_dp > 0.0 {
+            self.content_size = Some((island.width_dp, island.height_dp));
+        } else if window_changed && window.width_dp > 0.0 && window.height_dp > 0.0 {
+            let band = window.safe_area.top.max(0.0);
+            let height = if window.height_dp > band {
+                window.height_dp - band
+            } else {
+                window.height_dp
+            };
+            self.content_size = Some((window.width_dp, height));
+        }
+        match self.content_size {
+            Some((width, height)) => (css_extent(width), css_extent(height)),
+            None => FALLBACK_VIEWPORT,
+        }
+    }
+
     /// Lays the document out at the window's size and writes what changed on screen.
     fn draw(&mut self) {
-        let size = compose_rust::window_size();
-        let viewport = if size.width_dp > 0.0 && size.height_dp > 0.0 {
-            (css_extent(size.width_dp), css_extent(size.height_dp))
-        } else {
-            FALLBACK_VIEWPORT
-        };
+        let viewport = self.viewport();
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         crate::html_widget::render_islands(self.owner, &mut self.batch);
         for place in crate::html_widget::refresh(self.owner, viewport.0) {
@@ -435,6 +493,13 @@ impl Runtime for HtmlRuntime {
 
     fn batch_mut(&mut self) -> &mut Batch {
         &mut self.batch
+    }
+
+    /// The island box is the one node a whole-screen page asks to have measured, so its
+    /// size reaches [`compose_rust::window::node_size`] and the page is laid out again.
+    fn size_token(&self, node_id: u32) -> Option<u32> {
+        let subscription = self.island_size.as_ref()?;
+        (self.bridge.island_node() == Some(node_id)).then_some(subscription.token())
     }
 
     fn rebuild(&mut self) {
