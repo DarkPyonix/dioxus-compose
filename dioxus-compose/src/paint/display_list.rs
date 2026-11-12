@@ -860,9 +860,33 @@ pub struct NodeEntry {
     pub image: Option<ReplacedImage>,
 }
 
+/// The background of the canvas the document is drawn on.
+///
+/// CSS takes it from the root element, or from `<body>` when the root's background colour
+/// is transparent and it has no image, and paints it over the whole canvas rather than over
+/// the box it was declared on. The element it came from does not paint it again: its
+/// entry's `background` and `backgrounds` are empty.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasBackground {
+    /// The element the background was declared on, `<html>` or `<body>`, under the id its
+    /// entry has. An animation of its background colour plays on the canvas.
+    pub source: NodeId,
+    /// What the canvas covers: the viewport, and the whole document where it reaches
+    /// further. A renderer whose page is larger still paints the background over all of it.
+    pub area: Rect,
+    pub background: Option<Rgba>,
+    /// The `background-image` layers, top first. Each is sized and placed against the
+    /// root element's box, as CSS places them even when they came from `<body>`, and its
+    /// painting area is the canvas.
+    pub backgrounds: Vec<BackgroundLayer>,
+}
+
 /// A laid-out document, back to front.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
+    /// The canvas background, `None` when neither the root nor `<body>` has one and the
+    /// canvas is transparent.
+    pub canvas: Option<CanvasBackground>,
     pub entries: Vec<NodeEntry>,
     /// The transitions this layout started, for a renderer to play.
     pub transitions: Vec<TransitionStart>,
@@ -883,6 +907,9 @@ pub struct DisplayListDiff {
     /// The transitions the new layout started. These are events, so they are listed
     /// whether or not an entry changed with them.
     pub transitions: Vec<TransitionStart>,
+    /// Present only when the canvas background changed: the new one, which is `None` when
+    /// the canvas is now transparent.
+    pub canvas: Option<Option<CanvasBackground>>,
 }
 
 impl DisplayListDiff {
@@ -891,12 +918,22 @@ impl DisplayListDiff {
             && self.removed.is_empty()
             && self.order.is_none()
             && self.transitions.is_empty()
+            && self.canvas.is_none()
     }
 }
 
 impl DisplayList {
     pub fn get(&self, node: NodeId) -> Option<&NodeEntry> {
         self.entries.iter().find(|entry| entry.node == node)
+    }
+
+    /// The background colour drawn for a box: its entry's, or the canvas's when the box is
+    /// the element the canvas background was taken from.
+    pub fn background_of(&self, entry: &NodeEntry) -> Option<Rgba> {
+        match &self.canvas {
+            Some(canvas) if canvas.source == entry.node => canvas.background,
+            _ => entry.background,
+        }
     }
 
     /// The `opacity` of the box itself: [`NodeEntry::opacity`] with its ancestors' taken
@@ -946,6 +983,7 @@ impl DisplayList {
             removed,
             order,
             transitions: self.transitions.clone(),
+            canvas: (self.canvas != previous.canvas).then(|| self.canvas.clone()),
         }
     }
 

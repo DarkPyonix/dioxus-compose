@@ -24,8 +24,8 @@ use crate::layout::convert;
 use crate::layout::image::ImageLookup;
 use crate::layout::{is_fixed, local};
 use crate::paint::display_list::{
-    AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, Corners,
-    DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, Outline,
+    AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, CanvasBackground,
+    Corners, DisplayList, InputField, InputKind, MeasuredMarker, MeasuredTexts, NodeEntry, Outline,
     PlayDirection, Radius, Rect, Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform,
     TextAlign, TextDecoration, TextRun, Transform2D,
 };
@@ -122,7 +122,9 @@ pub(crate) fn build_display_list<'a>(
             scroll.content_height = height;
         }
     }
+    let canvas = painter.canvas_background(&mut entries, &index_of);
     DisplayList {
+        canvas,
         entries,
         transitions: Vec::new(),
         skipped_transforms: painter.skipped,
@@ -568,6 +570,98 @@ impl Painter<'_, '_> {
             entry.input = input_field(self.doc, node, &rect, layout);
         }
         Some(entry)
+    }
+
+    /// Takes the canvas background off the element CSS takes it from: the root element,
+    /// or the root's `<body>` child when the root's background colour is transparent and
+    /// it has no image (CSS Backgrounds 3, section 2.11.2). That element's entry no longer
+    /// paints it; the canvas paints it over the viewport and the whole document instead,
+    /// with its images sized and placed against the root element's box. `None` when
+    /// neither element has a background, which leaves the canvas transparent.
+    fn canvas_background(
+        &self,
+        entries: &mut [NodeEntry],
+        index_of: &HashMap<NodeId, usize>,
+    ) -> Option<CanvasBackground> {
+        let doc = self.doc;
+        let root = doc.root_element();
+        let &root_index = index_of.get(&root.id)?;
+        let declares = |id: NodeId| -> Option<usize> {
+            let &index = index_of.get(&id)?;
+            let entry = &entries[index];
+            if !entry.visible {
+                return None;
+            }
+            let has_image = doc
+                .get_node(id)
+                .and_then(|node| node.primary_styles())
+                .is_some_and(|style| background::has_background_image(&style));
+            // A colour animation counts even while it is at a transparent keyframe: the
+            // canvas is where it plays.
+            let animates = entry
+                .animations
+                .iter()
+                .any(|animation| animation.property == AnimatedProperty::BackgroundColor);
+            (entry.background.is_some() || has_image || animates).then_some(index)
+        };
+        let (source, index) = match declares(root.id) {
+            Some(index) => (root.id, index),
+            None => {
+                let body = root.children.iter().copied().find(|&child| {
+                    doc.get_node(child)
+                        .and_then(|node| node.element_data())
+                        .is_some_and(|element| &*element.name.local == "body")
+                })?;
+                (body, declares(body)?)
+            }
+        };
+
+        let area = self.canvas_area(entries);
+        let root_rect = entries[root_index].rect;
+        let root_layout = &root.unrounded_layout;
+        let boxes = Boxes {
+            border: root_rect,
+            padding: padding_box(&root_rect, root_layout),
+            content: content_box(&root_rect, root_layout),
+        };
+        let backgrounds = match doc.get_node(source).and_then(|node| node.primary_styles()) {
+            Some(style) => {
+                let mut images = self.images.borrow_mut();
+                background::canvas_layers(&style, &boxes, area, &mut images)
+            }
+            None => Vec::new(),
+        };
+        let entry = &mut entries[index];
+        let background = entry.background.take();
+        entry.backgrounds.clear();
+        Some(CanvasBackground {
+            source: entry.node,
+            area,
+            background,
+            backgrounds,
+        })
+    }
+
+    /// What the canvas covers: the viewport, stretched to every box the document draws
+    /// outside it (as far as the boxes' clips let them reach).
+    fn canvas_area(&self, entries: &[NodeEntry]) -> Rect {
+        let viewport = self.doc.viewport();
+        let scale = viewport.scale();
+        let (mut right, mut bottom) = (
+            viewport.window_size.0 as f32 / scale,
+            viewport.window_size.1 as f32 / scale,
+        );
+        for entry in entries {
+            let drawn = match entry.clip {
+                Some(clip) => entry.rect.intersect(&clip),
+                None => entry.rect,
+            };
+            if drawn.width > 0.0 && drawn.height > 0.0 {
+                right = right.max(drawn.right());
+                bottom = bottom.max(drawn.bottom());
+            }
+        }
+        Rect::new(0.0, 0.0, right, bottom)
     }
 
     fn decorate(&self, entry: &mut NodeEntry, style: &ComputedValues, layout: &taffy::Layout) {
