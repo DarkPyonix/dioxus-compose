@@ -193,6 +193,14 @@ input {
       와 <code>textarea</code>, <code>select</code> 는 각각 종류, 시작 값, placeholder, 글자가 들어갈
       상자를 담은 입력란으로 그리기 목록에 들어갑니다.
     </p>
+    <p>
+      체크박스와 라디오 버튼은 Chromium이 자기 컨트롤을 그리듯 렌더러의 컨트롤이 요소의 상자를 채워
+      그립니다. 작성자 CSS가 없으면 크기는 13 x 13 픽셀이고 여백은 Chromium과 같습니다. 상자의
+      테두리, 배경, 둥근 모서리는 사용자 에이전트 스타일시트의 것이든 작성자의 것이든 컨트롤 둘레에
+      그리지 않습니다. <code>appearance: none</code>(또는 <code>-webkit-appearance: none</code>)이면
+      요소는 작성자의 상자가 됩니다. 테두리와 배경을 그리고 컨트롤은 그리지 않으며, 클릭하면 여전히
+      체크됩니다.
+    </p>
 
     <h2 id="driving">렌더러가 부르는 것</h2>
     <p>
