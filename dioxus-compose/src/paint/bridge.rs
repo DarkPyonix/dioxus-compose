@@ -30,7 +30,7 @@ use compose_rust::fonts::FontRefs;
 use compose_rust::protocol::{Mutation, PropertyValue};
 use compose_rust::schema::{
     AnimationControl, AnimationEvents, Color, Modifier, Paint, PropertyKind,
-    TextAlign as WireAlign, TextOverflow, TileMode, WidgetKind,
+    TextAlign as WireAlign, TextOverflow, TileMode, TypeRole, WidgetKind,
 };
 use compose_rust::spans::{TextSpan, TextSpans};
 
@@ -1410,7 +1410,7 @@ impl PlanBridge {
             Prop::Bool(field.multiline),
         );
         self.set_text_style(batch, key, &field.style, field.color);
-        // TODO(DarkPyonix/compose-rust#349): send PropertyKind::Font on TextField once the renderer allows Font on TextField.
+        self.set_prop(batch, key, PropertyKind::Font, font_prop(&field.style));
     }
 
     fn set_dropdown(
@@ -2061,10 +2061,11 @@ fn page_extent(page: &PlanNode) -> f32 {
 ///
 /// Every one is sent, because the renderer fills an unsent one from its design system,
 /// and text drawn in the design system's size, height or spacing would not fit the box
-/// the page laid out for it. The family and the slant are not among them: compose-rust's
-/// text style takes neither, so the renderer draws the design system's face. A run of
-/// text sends its slant as a span instead ([`slant_and_lines`]).
-fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
+/// the page laid out for it. The type role is `TypeRole::None`: text with any rung of the
+/// type ladder, or with no role sent, is drawn in the theme's family and ignores the
+/// `Font` list ([`font_prop`]) the page's `font-family` travels as. The slant is not among
+/// them: a run of text sends it as a span instead ([`slant_and_lines`]).
+fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 6] {
     let line_height = match style.line_height {
         TextLineHeight::Px(px) => px,
         TextLineHeight::Normal => style.font_size * NORMAL_LINE_HEIGHT,
@@ -2075,6 +2076,7 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 5] {
         style.letter_spacing
     };
     [
+        (PropertyKind::TypeRole, Prop::Int(TypeRole::None as i64)),
         (PropertyKind::FontSize, Prop::Float(style.font_size)),
         (
             PropertyKind::FontWeight,
