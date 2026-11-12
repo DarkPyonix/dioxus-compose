@@ -211,11 +211,12 @@ fn boxes() -> Element {
     rsx! {
         div {
             style: "display: flex; flex-direction: column; align-items: flex-start;",
-            // An icon-only button: one inline box and no text.
+            // An icon-only button: one inline box (an inline-block holding a glyph) and no
+            // text of its own.
             button {
                 id: "icon",
                 style: "width: 48px; height: 48px; padding: 0; border: 0;",
-                span { id: "glyph", style: "display: inline-block; width: 16px; height: 16px;" }
+                span { id: "glyph", style: "display: inline-block;", "x" }
             }
             // A block inside: the anonymous box holding it is centred top to bottom.
             button {
@@ -233,15 +234,21 @@ fn boxes() -> Element {
     }
 }
 
-/// An icon-only button centres the icon both ways: 16px in a 48px square is 16px in from
-/// each side. The line around the icon may be a little taller than it, so the vertical
-/// position is allowed a pixel either way.
+/// An icon-only button centres the icon both ways: its middle is at the middle of the 48px
+/// square. The icon box is one 13.333px glyph, 6.667 by 16.667. The line around it is laid
+/// out by Parley and the box is placed on whole pixels, so each position is allowed half a
+/// pixel across and a pixel down.
 #[test]
 fn fr34_button_centres_an_inline_box() {
     let dom = open(boxes);
     let button = entry(&dom, "icon").rect;
     let glyph = entry(&dom, "glyph").rect;
-    close(glyph.x - button.x, 16.0, "the icon's left inset");
+    assert!(glyph.width > 0.0, "the icon box has a size: {glyph:?}");
+    let across = glyph.x + glyph.width / 2.0 - button.x;
+    assert!(
+        (across - 24.0).abs() <= 0.5,
+        "the icon's middle is 24px across the button, got {across}: {glyph:?} in {button:?}"
+    );
     let middle = glyph.y + glyph.height / 2.0 - button.y;
     assert!(
         (middle - 24.0).abs() <= 1.0,

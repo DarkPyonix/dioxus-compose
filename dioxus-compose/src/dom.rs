@@ -66,7 +66,8 @@ use writer::{DomWriter, WriterState, attribute_name, element_name};
 ///   of their text. A page that wants its own font on a control says so (`font: inherit`),
 ///   and its rule wins over these.
 /// - A button's label is centred across (`text-align: center`); the layout centres it top
-///   to bottom.
+///   to bottom. A button's `width` and `height` are its border box (`box-sizing:
+///   border-box`), as in Chromium.
 pub(crate) const FORM_CONTROLS_CSS: &str = "\
 select { display: inline-block; }
 select option, select optgroup { display: none; }
@@ -82,6 +83,7 @@ input, textarea, select, button {
 }
 button, input[type=\"button\"], input[type=\"submit\"], input[type=\"reset\"] {
     text-align: center;
+    box-sizing: border-box;
 }
 ";
 
