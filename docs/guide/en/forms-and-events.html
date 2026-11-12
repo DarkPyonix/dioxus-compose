@@ -198,6 +198,15 @@ input {
       <code>select</code>, each arrive in the display list as a field with its kind, its starting
       value, its placeholder and the box its text goes in.
     </p>
+    <p>
+      A checkbox or radio button is drawn by the renderer's own control, which fills the
+      element's box, the way Chromium draws its native one. Without author CSS it is 13 by 13
+      pixels with Chromium's margins. The box's border, background and rounded corners are not
+      drawn around the control, from the user-agent sheet or from yours. With
+      <code>appearance: none</code> (or <code>-webkit-appearance: none</code>) the element is your
+      box instead: its border and background are drawn, no control is, and a click still checks
+      it.
+    </p>
 
     <h2 id="driving">What the renderer calls</h2>
     <p>

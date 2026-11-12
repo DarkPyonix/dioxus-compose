@@ -45,7 +45,9 @@ use crate::layout::{
 };
 use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
-use crate::paint::display_list::{DisplayList, DisplayListDiff, Rect, Sides, SkippedTransform};
+use crate::paint::display_list::{
+    AnimatedProperty, DisplayList, DisplayListDiff, InputKind, Rect, Sides, SkippedTransform,
+};
 use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
 };
@@ -68,6 +70,9 @@ use writer::{DomWriter, WriterState, attribute_name, element_name};
 /// - A button's label is centred across (`text-align: center`); the layout centres it top
 ///   to bottom. A button's `width` and `height` are its border box (`box-sizing:
 ///   border-box`), as in Chromium.
+/// - A checkbox and a radio button are Chromium's: 13 by 13, `border-box`, with Chromium's
+///   margins, and without the padding, border and background blitz-dom's `input` rule gives
+///   every input. The renderer's control fills the box, so neither is drawn around it.
 pub(crate) const FORM_CONTROLS_CSS: &str = "\
 select { display: inline-block; }
 select option, select optgroup { display: none; }
@@ -85,6 +90,12 @@ button, input[type=\"button\"], input[type=\"submit\"], input[type=\"reset\"] {
     text-align: center;
     box-sizing: border-box;
 }
+input[type=\"checkbox\"], input[type=\"radio\"] {
+    box-sizing: border-box; width: 13px; height: 13px;
+    padding: initial; border: initial; border-radius: initial; background-color: initial;
+}
+input[type=\"checkbox\"] { margin: 3px 3px 3px 4px; }
+input[type=\"radio\"] { margin: 3px 3px 0 5px; }
 ";
 
 /// Replaces each `env()` that names a window variable the Host knows with its value in
@@ -146,6 +157,40 @@ pub(crate) fn rewrite_env(css: &str, insets: Option<Sides<f32>>, titlebar: Optio
     }
     out.push_str(&css[at..]);
     out
+}
+
+/// Draws checkboxes and radio buttons the way their `appearance` says, which the style
+/// engine this document uses does not read.
+///
+/// With `appearance: auto` the renderer's control is the whole picture, as a browser's
+/// native control is: the border, background and corner rounding of the box (the
+/// user-agent `input` rule's or an author's) are not drawn, and the control fills the
+/// border box. With `appearance: none` the element is the author's box and no control is
+/// drawn in it; a click on the box still checks it.
+fn apply_appearance(list: &mut DisplayList, appearance_is_none: impl Fn(NodeId) -> bool) {
+    for entry in &mut list.entries {
+        let Some(input) = entry.input.as_mut() else {
+            continue;
+        };
+        if !matches!(
+            input.kind,
+            InputKind::Checkbox { .. } | InputKind::Radio { .. }
+        ) {
+            continue;
+        }
+        if appearance_is_none(entry.node) {
+            entry.input = None;
+            continue;
+        }
+        input.content_rect = entry.rect;
+        entry.background = None;
+        entry.backgrounds.clear();
+        entry.border = None;
+        entry.radii = None;
+        entry
+            .animations
+            .retain(|animation| animation.property != AnimatedProperty::BackgroundColor);
+    }
 }
 
 /// How an [`HtmlDom`] is set up.
@@ -566,13 +611,17 @@ impl HtmlDom {
             };
             let mut list = build_display_list(&self.doc, texts, &mut lookup, Some(&mut playing));
             list.skipped_transforms.append(&mut playing.skipped);
+            // After the last use of `playing`, which holds the motion state mutably.
+            apply_appearance(&mut list, |node| self.appearance_is_none(node));
             if animating {
                 list.transitions = transitions(&scan, self.current.as_ref(), &list);
             }
             self.motion.end_frame();
             list
         } else {
-            build_display_list(&self.doc, texts, &mut lookup, None)
+            let mut list = build_display_list(&self.doc, texts, &mut lookup, None);
+            apply_appearance(&mut list, |node| self.appearance_is_none(node));
+            list
         };
         {
             let mut rects = self.mounted_rects.borrow_mut();
@@ -771,10 +820,15 @@ impl HtmlDom {
         };
         match form::tag(element) {
             Some("label" | "button") => true,
-            Some("input") => matches!(
-                form::activation_target(&self.doc, node),
-                Some(form::Activation::Submit { .. })
-            ),
+            Some("input") => match form::activation_target(&self.doc, node) {
+                Some(form::Activation::Submit { .. }) => true,
+                // With `appearance: none` there is no renderer control to report the
+                // click, only the author's box.
+                Some(form::Activation::Checkbox(_) | form::Activation::Radio(_)) => {
+                    self.appearance_is_none(node)
+                }
+                _ => false,
+            },
             _ => false,
         }
     }

@@ -114,8 +114,9 @@ pub(crate) use runtime::{css_extent, page_zoom};
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
 /// listed by the renderer's dropdown rather than drawn in the page; controls take the font
 /// Chromium gives them (13.333px of the system font) rather than the page's; a button's
-/// label is centred. Call it once, before the first layout. An [`HtmlDom`] does this for
-/// its own document.
+/// label is centred; a checkbox and a radio button are 13 by 13 with Chromium's margins and
+/// no `input` padding, border or background. Call it once, before the first layout. An
+/// [`HtmlDom`] does this for its own document.
 pub fn add_form_control_styles(doc: &mut BaseDocument) {
     doc.add_user_agent_stylesheet(dom::FORM_CONTROLS_CSS);
 }
