@@ -449,6 +449,7 @@ fn placement(modifiers: impl IntoIterator<Item = Modifier>) -> (f32, f32, f32, f
                     width: w,
                     height: h,
                 } => (width, height) = (*w, *h),
+                Modifier::Width(w) => width = *w,
                 _ => {}
             }
         }
@@ -536,7 +537,7 @@ fn fr34_3_textfield_and_datepicker_sit_in_the_line_at_their_measured_size() {
     // before it ends: the text after a widget moved over by the widget's measured width.
     let (ab_x, ab_y, _, _) = at(ab);
     let (field_x, field_y, _, _) = at(field_box);
-    let (cd_x, cd_y, _, _) = at(cd);
+    let (cd_x, cd_y, cd_width, _) = at(cd);
     let (picker_x, picker_y, _, _) = at(picker_box);
     let (ef_x, ef_y, _, _) = at(ef);
     assert_eq!(ab_x, 0.0);
@@ -547,8 +548,9 @@ fn fr34_3_textfield_and_datepicker_sit_in_the_line_at_their_measured_size() {
         field_x + WIDGET_WIDTH
     );
     assert!(
-        (picker_x - (field_x + WIDGET_WIDTH + (field_x - ab_x))).abs() < 0.01,
-        "the picker does not follow cd: {picker_x}"
+        (picker_x - (cd_x + cd_width)).abs() < 0.01,
+        "the picker at {picker_x}, cd ends at {}",
+        cd_x + cd_width
     );
     assert!(
         (ef_x - (picker_x + WIDGET_WIDTH)).abs() < 0.01,
