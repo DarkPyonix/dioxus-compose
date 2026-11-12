@@ -126,12 +126,12 @@ pub use html_view::HtmlView;
 pub use html_widget::use_widget_box;
 pub use list_detail::ListDetail;
 pub use widgets::{
-    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
-    ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget, FloatingAction, Icon,
-    Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem, ProgressIndicator,
-    RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer, Separator,
-    ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Tabs, Text, TextField,
-    TimePicker, Tooltip, TopAppBar,
+    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column, ColumnSpec,
+    ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget,
+    FloatingAction, Icon, Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
+    ProgressIndicator, RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
+    Separator, ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text,
+    TextField, TimePicker, Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -215,15 +215,15 @@ pub mod prelude {
     pub use crate::{
         AbsoluteBox, Alignment, AnimatedVisibility, Arrangement, AssetKind, Badge, Brush, Button,
         ButtonKind, ButtonVariant, Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme,
-        Column, Cursor, DatePicker, DesignSystem, Dialog, Divider, DrawCommand, DrawList, Dropdown,
-        Element, Enter, Exit, FileDrop, FileDropTarget, FloatingAction, HoverHandle, HtmlView,
-        Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid, LazyRow,
-        LinearProgressIndicator, ListDetail, LoopMode, MaterialRole, Menu, Message,
-        MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette,
-        PointerEvent, PointerKind, PointerKinds, PointerType, ProgressIndicator, Props,
+        Column, ColumnSpec, ColumnWidth, Cursor, DatePicker, DesignSystem, Dialog, Divider,
+        DrawCommand, DrawList, Dropdown, Element, Enter, Exit, FileDrop, FileDropTarget,
+        FloatingAction, HoverHandle, HtmlView, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, ListDetail, LoopMode, MaterialRole,
+        Menu, Message, MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint,
+        Palette, PointerEvent, PointerKind, PointerKinds, PointerType, ProgressIndicator, Props,
         RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
         Separator, ShadowLayer, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop,
-        Surface, Switch, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode,
+        Surface, Switch, Table, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode,
         TimePicker, TitleBar, Tooltip, TopAppBar, TypeRole, UserSelect, WheelDeltaMode,
         WindowDragEvent, WindowDragOver, WindowDragOverKind, WindowDragPhase, WindowEvent,
         WindowFrame, WindowHandle, WindowHeightClass, WindowMode, WindowRequest, WindowSize,
