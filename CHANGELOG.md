@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Content from the top of the window, and its safe area
+
+`Window::new().chrome(Chrome::FullSize)` (the `Chrome` in the prelude is compose-rust's)
+draws the content from the very top of the window, with the window buttons over it.
+`use_window_safe_area()` returns `WindowSafeArea { top, leading, trailing }` in dp for the
+calling component's window, as the renderer reports it, and redraws only the components
+that called it when only the safe area changes. All three are zero on platforms whose
+window is not ours. macOS comes first; checking it by eye on a real Mac is manual.
+
 ### Several shadows on Column, Row, Box and Card
 
 These four take `shadow: Vec<ShadowLayer>`, a list in CSS order where the first layer is on
