@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### List bullets are drawn as shapes
+
+`list-style-type: disc`, `circle` and `square` are drawn as a filled circle, a 1px ring and
+a filled square, as Chromium draws them, instead of the font's bullet character, which was
+smaller. A display list entry carries the shape in `marker` (`MarkerShape`, with its
+`MarkerSymbol`, rectangle and the item's colour), and the plan draws it as a box keyed
+`PlanKey::Marker`. Its size and place come from the font's ascent: 5px across for a 16px
+font, its left edge 16px before the item, level with the middle of the lowercase letters.
+An inside bullet keeps its character's place in the text, drawn transparent, under the
+shape. Numbered and lettered markers are still text.
+
 ### Several shadows on Column, Row, Box and Card
 
 These four take `shadow: Vec<ShadowLayer>`, a list in CSS order where the first layer is on

@@ -264,6 +264,35 @@ pub enum RunMarker {
     Prefix { len: usize },
 }
 
+/// A list marker drawn as a shape: what `list-style-type: disc`, `circle` and `square`
+/// draw.
+///
+/// Chromium paints these three as shapes sized from the item's font, not as characters of
+/// it. The shape is a third of the font's ascent across (5px for a 16px font), placed in
+/// the marker box before the item and level with the middle of its lowercase letters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MarkerShape {
+    /// The list item the marker belongs to.
+    pub owner: NodeId,
+    pub symbol: MarkerSymbol,
+    /// The shape's bounds. The line of a [`MarkerSymbol::Circle`] is 1px wide and centred
+    /// on this rectangle's edge, as Chromium strokes it.
+    pub rect: Rect,
+    /// The item's `color`, which the marker takes.
+    pub color: Rgba,
+}
+
+/// Which shape a [`MarkerShape`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkerSymbol {
+    /// A filled circle.
+    Disc,
+    /// The outline of a circle, 1px wide.
+    Circle,
+    /// A filled square.
+    Square,
+}
+
 /// What kind of form field an `<input>`, `<textarea>` or `<select>` is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputKind {
@@ -855,6 +884,9 @@ pub struct NodeEntry {
     /// boxes that are not its ancestors), and a renderer that nests boxes needs to know.
     pub parent: Option<NodeId>,
     pub texts: Vec<TextRun>,
+    /// The list marker, when it is drawn as a shape (`disc`, `circle`, `square`). A marker
+    /// of any other type is one of [`NodeEntry::texts`].
+    pub marker: Option<MarkerShape>,
     pub input: Option<InputField>,
     /// Present for an `<img>` with a `src`.
     pub image: Option<ReplacedImage>,
@@ -1152,6 +1184,15 @@ pub(crate) struct MeasuredMarker {
     pub gap: f32,
     /// Whether the marker is inside the item's box rather than before it.
     pub inside: bool,
+    /// The shape drawn in the place of the text, for `disc`, `circle` and `square`.
+    pub symbol: Option<MarkerSymbol>,
+    /// The ascent of the item's font, rounded to a whole pixel as Chromium rounds it. The
+    /// size and place of a shape come from it.
+    pub ascent: f32,
+    /// The marker is the start of the item's own text (an inside marker of an item with
+    /// text), so it draws no run of its own. Only a shape marker is kept in that case: the
+    /// shape is drawn over the place its character keeps in the text.
+    pub in_text: bool,
 }
 
 /// Everything the layout pass measured, for the display list to place.

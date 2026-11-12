@@ -50,9 +50,9 @@ use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
-    Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry,
-    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TileRepeat,
-    Transform2D, bounds_of,
+    Animation, BackgroundImage, Corners, DisplayList, GradientStop, InputKind, MarkerSymbol,
+    Matrix2D, NodeEntry, Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration,
+    TileRepeat, Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -196,6 +196,9 @@ pub enum PlanKey {
     /// box (or inside it, when the box is transformed) so that it can draw outside the
     /// box's bounds.
     Outline(NodeId),
+    /// The list marker of a list item when it is a shape (`disc`, `circle`, `square`): a
+    /// box rounded into a circle, or square, filled or outlined in the item's colour.
+    Marker(NodeId),
 }
 
 impl PlanKey {
@@ -212,7 +215,8 @@ impl PlanKey {
             | PlanKey::ScrollContent(node)
             | PlanKey::InheritedClip(node)
             | PlanKey::Image(node)
-            | PlanKey::Outline(node) => Some(node),
+            | PlanKey::Outline(node)
+            | PlanKey::Marker(node) => Some(node),
         }
     }
 }
@@ -1095,6 +1099,7 @@ impl<'a> Builder<'a> {
             node
         };
 
+        self.add_marker(entry, content);
         // A field draws its own text; text laid out inside it would be drawn twice.
         if entry.input.is_none() {
             self.add_texts(entry, content);
@@ -1263,6 +1268,71 @@ impl<'a> Builder<'a> {
                     asset,
                     draw,
                 }),
+                modifiers,
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip,
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+    }
+
+    /// The marker of a list item drawn as a shape. A disc is a box rounded by half its size
+    /// and filled, a square a filled box. A circle is Chromium's 1px line centred on the
+    /// shape's edge: a box half a pixel larger on every side with a 1px border, which a
+    /// renderer draws inside the box's bounds.
+    fn add_marker(&mut self, entry: &NodeEntry, content: usize) {
+        let Some(marker) = entry.marker else {
+            return;
+        };
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let color = self
+            .colours
+            .resolve(marker.owner, ColourUse::Text, marker.color);
+        let bounds = match marker.symbol {
+            MarkerSymbol::Circle => Rect::new(
+                marker.rect.x - 0.5,
+                marker.rect.y - 0.5,
+                marker.rect.width + 1.0,
+                marker.rect.height + 1.0,
+            ),
+            MarkerSymbol::Disc | MarkerSymbol::Square => marker.rect,
+        };
+        let mut modifiers = vec![
+            PlanModifier::Offset {
+                x: bounds.x - ox,
+                y: bounds.y - oy,
+            },
+            PlanModifier::RequiredSize {
+                width: bounds.width,
+                height: bounds.height,
+            },
+        ];
+        match marker.symbol {
+            MarkerSymbol::Disc => {
+                modifiers.push(PlanModifier::Shape {
+                    radius: bounds.width.min(bounds.height) / 2.0,
+                });
+                modifiers.push(PlanModifier::Background(color));
+            }
+            MarkerSymbol::Circle => {
+                modifiers.push(PlanModifier::Shape {
+                    radius: bounds.width.min(bounds.height) / 2.0,
+                });
+                modifiers.push(PlanModifier::Border { width: 1.0, color });
+            }
+            MarkerSymbol::Square => modifiers.push(PlanModifier::Background(color)),
+        }
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Marker(entry.node),
+                kind: PlanKind::Box,
                 modifiers,
                 children: Vec::new(),
                 parent: None,
@@ -1527,6 +1597,19 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     }
     for run in &entry.texts {
         bounds = union(bounds, Some(run.rect));
+    }
+    if let Some(marker) = &entry.marker {
+        // A circle's line reaches half a pixel past the shape's rectangle.
+        let rect = marker.rect;
+        bounds = union(
+            bounds,
+            Some(Rect::new(
+                rect.x - 0.5,
+                rect.y - 0.5,
+                rect.width + 1.0,
+                rect.height + 1.0,
+            )),
+        );
     }
     if entry.input.is_some() {
         bounds = union(bounds, Some(entry.rect));
