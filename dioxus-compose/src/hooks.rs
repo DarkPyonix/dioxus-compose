@@ -291,6 +291,28 @@ pub fn use_window_size() -> WindowSize {
     }
 }
 
+/// The insets, in dp, that content drawn from the top of this component's window has to
+/// leave free for the window's own buttons.
+///
+/// Under `Chrome::FullSize` the content starts at the very top of the window and the
+/// window buttons are drawn over it, so the application decides where to make room.
+/// `leading` is the width the macOS traffic lights take, `trailing` the width the
+/// Windows caption buttons take, and `top` the height of that band. All three are zero
+/// for a window with no buttons to avoid and on platforms whose window is not ours
+/// (iOS, Android, the browser), and they are zero until the renderer first reports.
+///
+/// The window is chosen the way [`use_window_size`] chooses it. Unlike that hook's
+/// size class, a change of the safe area alone (entering or leaving full screen, say)
+/// redraws every component that called this, and only those.
+///
+/// ```ignore
+/// let safe = use_window_safe_area();
+/// rsx! { Row { padding: (0.0, safe.leading, 0.0, 0.0), Toolbar {} } }
+/// ```
+pub fn use_window_safe_area() -> compose_rust::window::WindowSafeArea {
+    use_window_size().safe_area
+}
+
 #[derive(Clone)]
 enum EitherWindowSub {
     Single(#[allow(dead_code)] Rc<compose_rust::window::WindowSizeSubscription>),

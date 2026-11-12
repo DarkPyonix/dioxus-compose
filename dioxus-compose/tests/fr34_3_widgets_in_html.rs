@@ -404,3 +404,171 @@ fn fr38_a_code_editor_handle_in_a_widget_tree_reaches_its_editor() {
         "the reveal did not reach the editor: {after:#?}"
     );
 }
+
+mod line_widgets {
+    use dioxus_compose::prelude::*;
+
+    pub fn name() -> Element {
+        rsx! {
+            TextField { placeholder: "name" }
+        }
+    }
+
+    pub fn day() -> Element {
+        rsx! {
+            DatePicker { value: 20_000 }
+        }
+    }
+}
+
+mod line_page {
+    use super::line_widgets;
+    use dioxus_compose::html::prelude::*;
+
+    pub fn app() -> Element {
+        rsx! {
+            div { style: "width: 600px",
+                "ab"
+                WidgetView { app: line_widgets::name, style: "display: inline-block" }
+                "cd"
+                WidgetView { app: line_widgets::day, style: "display: inline-block" }
+                "ef"
+            }
+        }
+    }
+}
+
+/// The last offset and size a node was given, from its modifiers in order.
+fn placement(modifiers: impl IntoIterator<Item = Modifier>) -> (f32, f32, f32, f32) {
+    let (mut x, mut y, mut width, mut height) = (f32::NAN, f32::NAN, f32::NAN, f32::NAN);
+    for modifier in modifiers {
+        {
+            match &modifier {
+                Modifier::Offset { x: ox, y: oy } => (x, y) = (*ox, *oy),
+                Modifier::RequiredSize {
+                    width: w,
+                    height: h,
+                } => (width, height) = (*w, *h),
+                Modifier::Width(w) => width = *w,
+                _ => {}
+            }
+        }
+    }
+    (x, y, width, height)
+}
+
+fn text_node(mutations: &[Mutation<'_>], text: &str) -> u32 {
+    mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::Text,
+                value: PropertyValue::String(value),
+            } if *value == text => Some(*node_id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no text node holds {text:?}"))
+}
+
+fn parent_of(mutations: &[Mutation<'_>], node: u32) -> u32 {
+    mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Insert {
+                parent_id, node_id, ..
+            } if *node_id == node => Some(*parent_id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("node {node} was never inserted"))
+}
+
+fn root_of(mutations: &[Mutation<'_>], widget: dioxus_compose::schema::WidgetKind) -> u32 {
+    mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: kind,
+            } if *kind == widget => Some(*node_id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {widget:?} was created"))
+}
+
+#[test]
+fn fr34_3_textfield_and_datepicker_sit_in_the_line_at_their_measured_size() {
+    use dioxus_compose::schema::WidgetKind;
+    install();
+    reset_window_size();
+    let mut host = Host::html(line_page::app, HtmlConfig::default);
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+    let field_box = parent_of(&first, root_of(&first, WidgetKind::TextField));
+    let picker_box = parent_of(&first, root_of(&first, WidgetKind::DatePicker));
+    let [ab, cd, ef] = ["ab", "cd", "ef"].map(|text| text_node(&first, text));
+    let line = parent_of(&first, ab);
+    for node in [cd, ef, field_box, picker_box] {
+        assert_eq!(
+            parent_of(&first, node),
+            line,
+            "node {node} is not in the line's box"
+        );
+    }
+    // Copied out of the first batch, which cannot outlive the next frame's borrow.
+    let nodes = [ab, cd, ef, field_box, picker_box, line];
+    let before: Vec<Vec<Modifier>> = nodes.iter().map(|n| modifiers_of(&first, *n)).collect();
+    let second = decode_batch(host.render_frame(0).unwrap()).unwrap();
+    let at = |node: u32| {
+        let index = nodes.iter().position(|n| *n == node).unwrap();
+        placement(
+            before[index]
+                .iter()
+                .cloned()
+                .chain(modifiers_of(&second, node)),
+        )
+    };
+
+    // Each widget's box is the size the renderer measured it at.
+    for node in [field_box, picker_box] {
+        let (_, _, width, height) = at(node);
+        assert_eq!((width, height), (WIDGET_WIDTH, WIDGET_HEIGHT), "box {node}");
+    }
+    // Text, field, text, picker, text, left to right, each one starting where the one
+    // before it ends: the text after a widget moved over by the widget's measured width.
+    let (ab_x, ab_y, _, _) = at(ab);
+    let (field_x, field_y, _, _) = at(field_box);
+    let (cd_x, cd_y, cd_width, _) = at(cd);
+    let (picker_x, picker_y, _, _) = at(picker_box);
+    let (ef_x, ef_y, _, _) = at(ef);
+    assert_eq!(ab_x, 0.0);
+    assert!(field_x > ab_x, "the field is not after the first text");
+    assert!(
+        (cd_x - (field_x + WIDGET_WIDTH)).abs() < 0.01,
+        "cd at {cd_x}, field ends at {}",
+        field_x + WIDGET_WIDTH
+    );
+    assert!(
+        (picker_x - (cd_x + cd_width)).abs() < 0.01,
+        "the picker at {picker_x}, cd ends at {}",
+        cd_x + cd_width
+    );
+    assert!(
+        (ef_x - (picker_x + WIDGET_WIDTH)).abs() < 0.01,
+        "ef at {ef_x}, picker ends at {}",
+        picker_x + WIDGET_WIDTH
+    );
+    // One line: the texts share a baseline, the widgets share a top, and the line is as
+    // tall as the widgets, so each text sits within the widgets' height.
+    assert_eq!(ab_y, cd_y);
+    assert_eq!(cd_y, ef_y);
+    assert_eq!(field_y, picker_y);
+    assert!(
+        ab_y > field_y && ab_y < field_y + WIDGET_HEIGHT,
+        "text at {ab_y}, widgets at {field_y}"
+    );
+    let (_, _, _, line_height) = at(line);
+    assert!(
+        line_height >= WIDGET_HEIGHT,
+        "the line is {line_height} tall"
+    );
+}

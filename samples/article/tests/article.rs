@@ -14,7 +14,9 @@
 //! is at 32 + 16 + 8 + 80 + 8 + 20 + 32 = 196. It is one 32px line with a 12px margin, so
 //! the first paragraph starts at y = 240.
 
-use dioxus_compose::html::{HtmlDom, TextWhiteSpace, WidthConstraint};
+use dioxus_compose::html::{
+    HtmlDom, MarkerSymbol, Rgba, RunMarker, TextWhiteSpace, WidthConstraint,
+};
 use sample_html_article as article;
 use sample_html_support::{Measurer, Request, assert_rect, config, entry, node};
 
@@ -147,6 +149,42 @@ fn fr34_article_list_items_stack() {
 
     // The ordered list follows the unordered one.
     assert!(entry(&dom, "stays").rect.y > entry(&dom, "crosses").rect.bottom());
+}
+
+/// The unordered list's markers are discs, as Chromium draws them, not the font's bullet
+/// character. The 16px font's ascent is 15 (the measurer's first baseline in a line of the
+/// font's own 20px height), two thirds of it 10, so a disc is (10 + 1) / 2 = 5px across and
+/// starts 10 + 6 = 16px before the item: x = 48 - 16 = 32. Its top is
+/// 15 - 3 * (15 - 10) / 2 = 8px above the item's first baseline, and it takes the item's
+/// colour, #24292f. The ordered list keeps text markers.
+#[test]
+fn fr34_article_bullets_are_discs() {
+    let (dom, _) = laid_out(480.0);
+
+    for index in 1..=3 {
+        let id = format!("crosses-{index}");
+        let item = entry(&dom, &id);
+        let disc = item.marker.unwrap_or_else(|| panic!("#{id} has a disc"));
+        assert_eq!(disc.symbol, MarkerSymbol::Disc, "#{id}");
+        assert_eq!(disc.color, Rgba::new(0x24, 0x29, 0x2f, 255), "#{id}");
+        assert_eq!(item.texts.len(), 1, "#{id}: only the item's text");
+        let run = &item.texts[0];
+        assert_rect(
+            disc.rect,
+            32.0,
+            run.rect.y + run.baseline - 8.0,
+            5.0,
+            5.0,
+            &format!("#{id} disc"),
+        );
+    }
+    for index in 1..=3 {
+        let id = format!("stays-{index}");
+        let item = entry(&dom, &id);
+        assert_eq!(item.marker, None, "#{id}");
+        assert_eq!(item.texts[0].marker, RunMarker::Marker, "#{id}");
+        assert_eq!(item.texts[0].text, format!("{index}."), "#{id}");
+    }
 }
 
 /// `pre` keeps its line breaks and never wraps: the measurer is asked about the sample as

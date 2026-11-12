@@ -13,6 +13,10 @@
 //!   37px. The header row is at y = 72 and the four body rows follow every 37px.
 //! - The wrapper is as tall as the table, 5 x 37 = 185px, and scrolls sideways only
 //!   (`overflow-x: auto; overflow-y: hidden`) through the table's full 640px.
+//! - Where the wrapper is wider than 640px the table fills it, and every column has a
+//!   fixed width, so the auto table layout algorithm gives the extra width to the columns
+//!   in proportion to those widths, as Chromium does: in a 720px viewport the wrapper is
+//!   672px and each column is 672 / 640 = 1.05 times its width.
 //!
 //! Cell text is laid out by the table's own text layout, not by the test measurer, so its
 //! width depends on the fonts on the machine. Only where the text starts or ends is
@@ -32,6 +36,17 @@ const COLUMNS: [(f32, f32); 4] = [
     (380.0, 140.0),
     (520.0, 144.0),
 ];
+
+/// The columns of a table `table_width` wide: each one's share of the extra width is its
+/// share of the 640px the columns ask for.
+fn columns_filling(table_width: f32) -> [(f32, f32); 4] {
+    let mut x = 24.0;
+    COLUMNS.map(|(_, width)| {
+        let column = (x, width * table_width / 640.0);
+        x += column.1;
+        column
+    })
+}
 
 fn laid_out(width: f32) -> HtmlDom {
     let mut dom = HtmlDom::with_config(table::app, config(table::STYLE, Measurer::new()));
@@ -96,6 +111,82 @@ fn fr34_table_cells_lay_out_in_rows_and_columns() {
     assert_eq!(numbers, ["INV-1001", "INV-1002", "INV-1003", "INV-1004"]);
     assert_eq!(text_of(rows[0][3]), "$1,250.00");
     assert_eq!(text_of(rows[1][3]), "$98.40");
+}
+
+/// `width: 100%` fills the 672px wrapper of a 720px viewport, and the fixed-width columns
+/// share the 32px over their 640px in proportion to their widths, as in Chromium: the
+/// Client column starts at x = 24 + 126 = 150, so its text starts at 162.
+#[test]
+fn fr34_table_width_100_percent_fills_the_wrapper_and_widens_its_columns() {
+    let dom = laid_out(720.0);
+    let list = dom.display_list().unwrap();
+
+    assert_rect(
+        entry(&dom, "wrap").rect,
+        24.0,
+        72.0,
+        672.0,
+        185.0,
+        "the wrapper",
+    );
+    assert_rect(
+        entry(&dom, "invoices").rect,
+        24.0,
+        72.0,
+        672.0,
+        185.0,
+        "the table",
+    );
+
+    let columns = columns_filling(672.0);
+    let header = entries_with_tag(list, "th");
+    for (cell, (x, width)) in header.iter().zip(columns) {
+        assert_rect(
+            cell.rect,
+            x,
+            72.0,
+            width,
+            37.0,
+            &format!("header cell at x = {x}"),
+        );
+    }
+    assert_rect(
+        header[1].rect,
+        150.0,
+        72.0,
+        247.8,
+        37.0,
+        "the Client header, where Chromium puts it",
+    );
+    let last = header.last().unwrap().rect;
+    assert!(
+        (last.right() - 696.0).abs() < 0.01,
+        "the last column ends at the table's right edge: {last:?}"
+    );
+    for (index, row) in body_rows(list).iter().enumerate() {
+        let y = 72.0 + 37.0 * (index as f32 + 1.0);
+        for (cell, (x, width)) in row.iter().zip(columns) {
+            assert_rect(
+                cell.rect,
+                x,
+                y,
+                width,
+                37.0,
+                &format!("row {index}, x = {x}"),
+            );
+        }
+    }
+
+    let client = header[1];
+    let run = client
+        .texts
+        .first()
+        .expect("the Client header draws its text");
+    assert!(
+        (run.rect.x - 162.0).abs() <= 1.0,
+        "the Client text starts at its 12px padding: {:?}",
+        run.rect
+    );
 }
 
 /// The header row sits directly above the first body row: every header cell ends where
@@ -219,7 +310,8 @@ fn fr34_table_wrapper_is_a_horizontal_scroll_container() {
 }
 
 /// Clicking the amount header sorts the rows, largest amount first. At 800px the whole
-/// table is in view, so the header can be clicked where it is drawn.
+/// table is in view, so the header can be clicked where it is drawn, and it fills the
+/// 752px wrapper.
 #[test]
 fn fr34_table_clicking_the_amount_header_sorts_the_rows() {
     let mut dom = laid_out(800.0);
@@ -240,8 +332,24 @@ fn fr34_table_clicking_the_amount_header_sorts_the_rows() {
     // The rows moved; the columns did not.
     for (index, row) in rows.iter().enumerate() {
         let y = 72.0 + 37.0 * (index as f32 + 1.0);
-        for (cell, (x, width)) in row.iter().zip(COLUMNS) {
+        for (cell, (x, width)) in row.iter().zip(columns_filling(752.0)) {
             assert_rect(cell.rect, x, y, width, 37.0, &format!("sorted row {index}"));
         }
     }
+}
+
+/// The wrapper's `border-radius: 8px` rounds its scroll viewport and the viewport clips to
+/// it, so the header row's corners are cut the way Chromium cuts them.
+#[test]
+fn fr34_table_wrapper_clips_to_its_rounded_corners() {
+    let mut dom = laid_out(480.0);
+    let wrap_id = node(&dom, "wrap");
+    let plan = dom.plan(&mut LiteralColours).expect("laid out above");
+    let row = plan_node(&plan, PlanKey::ScrollRow(wrap_id));
+    assert_eq!(
+        row.modifier(ModifierSlot::Shape),
+        Some(&PlanModifier::Shape { radius: 8.0 }),
+        "{row:#?}"
+    );
+    assert_eq!(row.modifier(ModifierSlot::Clip), Some(&PlanModifier::Clip));
 }

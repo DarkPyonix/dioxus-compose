@@ -529,7 +529,7 @@ impl Playing<'_> {
             ),
             AnimatedProperty::BackgroundColor => AnimatedValue::Colour(
                 entry
-                    .and_then(|(_, entry)| entry.background)
+                    .and_then(|(list, entry)| list.background_of(entry))
                     .unwrap_or(Rgba::new(0, 0, 0, 0)),
             ),
         }
@@ -547,7 +547,7 @@ fn value_of(list: &DisplayList, entry: &NodeEntry, property: AnimatedProperty) -
                 .unwrap_or_else(|| Transform2D::identity((0.0, 0.0))),
         ),
         AnimatedProperty::BackgroundColor => {
-            AnimatedValue::Colour(entry.background.unwrap_or(Rgba::new(0, 0, 0, 0)))
+            AnimatedValue::Colour(list.background_of(entry).unwrap_or(Rgba::new(0, 0, 0, 0)))
         }
     }
 }

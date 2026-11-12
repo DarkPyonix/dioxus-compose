@@ -118,7 +118,7 @@ pub use hooks::{
     animate_float_as_state, animate_offset_as_state, current_window, use_animation_event,
     use_application_reopen, use_code_editor, use_design_system, use_node_size,
     use_notification_activated, use_notification_permission, use_reduced_motion, use_theme,
-    use_window_requested, use_window_size, use_zoom,
+    use_window_requested, use_window_safe_area, use_window_size, use_zoom,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use hover::{HoverHandle, use_hover};
@@ -226,10 +226,11 @@ pub mod prelude {
         Surface, Switch, Table, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode,
         TimePicker, TitleBar, Tooltip, TopAppBar, TypeRole, UserSelect, WheelDeltaMode,
         WindowDragEvent, WindowDragOver, WindowDragOverKind, WindowDragPhase, WindowEvent,
-        WindowFrame, WindowHandle, WindowHeightClass, WindowMode, WindowRequest, WindowSize,
-        WindowSizeClass, Zoom, ZoomHandle, asset, brush, component, current_window, launch, rsx,
-        show_message, use_application_reopen, use_design_system, use_hover, use_node_size,
-        use_theme, use_window_requested, use_window_size, use_zoom,
+        WindowFrame, WindowHandle, WindowHeightClass, WindowMode, WindowRequest, WindowSafeArea,
+        WindowSize, WindowSizeClass, Zoom, ZoomHandle, asset, brush, component, current_window,
+        launch, rsx, show_message, use_application_reopen, use_design_system, use_hover,
+        use_node_size, use_theme, use_window_requested, use_window_safe_area, use_window_size,
+        use_zoom,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find

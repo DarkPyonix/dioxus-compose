@@ -19,6 +19,7 @@ use style::computed_values::list_style_position::T as ListStylePosition;
 use style::computed_values::list_style_type::T as ListStyleType;
 
 use crate::layout::local;
+use crate::paint::display_list::MarkerSymbol;
 
 /// The marker of one list item.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,6 +28,10 @@ pub(crate) struct ListMarker {
     pub text: String,
     /// `list-style-position: inside`.
     pub inside: bool,
+    /// The shape drawn in the place of `text` when the type is `disc`, `circle` or
+    /// `square`. Chromium paints those three as shapes sized from the font rather than as
+    /// characters of it, so a font's own bullet (often smaller) is not what appears.
+    pub symbol: Option<MarkerSymbol>,
 }
 
 /// The marker of the element `id`, if it is a list item and its `list-style-type` is not
@@ -44,8 +49,18 @@ pub(crate) fn marker(doc: &BaseDocument, id: usize) -> Option<ListMarker> {
             matches!(style.clone_list_style_position(), ListStylePosition::Inside),
         )
     };
+    let symbol = match list_style_type {
+        ListStyleType::Disc => Some(MarkerSymbol::Disc),
+        ListStyleType::Circle => Some(MarkerSymbol::Circle),
+        ListStyleType::Square => Some(MarkerSymbol::Square),
+        _ => None,
+    };
     let text = marker_text(list_style_type, ordinal(doc, id))?;
-    Some(ListMarker { text, inside })
+    Some(ListMarker {
+        text,
+        inside,
+        symbol,
+    })
 }
 
 fn is_list_item(doc: &BaseDocument, id: usize) -> bool {
