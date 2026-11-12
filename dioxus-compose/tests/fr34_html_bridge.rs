@@ -1311,18 +1311,6 @@ fn prop_of(records: &[Record], node: u32, property: PropertyKind) -> Value {
         .unwrap_or_else(|| panic!("node {node} has no {property:?}: {records:#?}"))
 }
 
-/// The node whose text is `text`.
-#[track_caller]
-fn text_node(records: &[Record], text: &str) -> u32 {
-    records
-        .iter()
-        .find_map(|record| match record {
-            Record::Prop(id, PropertyKind::Text, Value::Str(given)) if given == text => Some(*id),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("no node draws {text:?}: {records:#?}"))
-}
-
 /// A one-line box with `overflow: hidden`, `white-space: nowrap` and
 /// `text-overflow: ellipsis` ends its text in an ellipsis, as Chromium does. The 16
 /// characters are 160px and the box is 100px, so the text node is sent as one line that
