@@ -18,8 +18,10 @@
 //! gets a new one, which is one change to the background slot of the node that draws it.
 //!
 //! Images are drawn with the assets an [`ImageResolver`] names for their URLs. A URL it has
-//! no asset for, or any URL when there is no resolver, draws nothing: no image node, no
-//! brush.
+//! no asset for, or any URL when there is no resolver, draws no picture and no brush. An
+//! `<img>` with no picture and with alt text draws what Chromium draws for an image it could
+//! not load: a [`PlanKind::BrokenImageIcon`] and its alt text as a [`PlanKind::Text`], in a
+//! box keyed [`PlanKey::Image`] that clips them to the image.
 //!
 //! [`diff`] compares two plans node by node and says what a renderer has to change: a
 //! modifier set or removed, a node inserted, removed or moved among its siblings.
@@ -51,8 +53,9 @@ use crate::layout::image::{AssetId, ImageResolver};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
-    DisplayList, GradientStop, InputKind, Matrix2D, NodeEntry, Outline, Radius, Rect, Rgba,
-    RunMarker, Sides, TextAlign, TextDecoration, TileRepeat, Transform2D, bounds_of,
+    DisplayList, GradientStop, ImageFallback, InputKind, Matrix2D, NodeEntry, Outline, Radius,
+    Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun, TileRepeat, Transform2D,
+    bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -196,12 +199,15 @@ pub enum PlanKey {
     ScrollContent(NodeId),
     /// A clip a box inherits from an ancestor it could not be nested inside.
     InheritedClip(NodeId),
-    /// The image of an `<img>`.
+    /// The image of an `<img>`: the picture, or the box its broken-image icon and alt text
+    /// are clipped to when there is no picture to draw.
     Image(NodeId),
     /// The `outline` of a box: a border-only box around the border box, placed beside the
     /// box (or inside it, when the box is transformed) so that it can draw outside the
     /// box's bounds.
     Outline(NodeId),
+    /// The broken-image icon of an `<img>` with no picture, drawn beside its alt text.
+    BrokenImageIcon(NodeId),
 }
 
 impl PlanKey {
@@ -218,6 +224,7 @@ impl PlanKey {
             | PlanKey::ScrollContent(node)
             | PlanKey::InheritedClip(node)
             | PlanKey::Image(node)
+            | PlanKey::BrokenImageIcon(node)
             | PlanKey::Outline(node) => Some(node),
         }
     }
@@ -252,6 +259,9 @@ pub enum PlanKind {
     Text(PlanText),
     /// An image.
     Image(PlanImage),
+    /// The icon Chromium draws for an image it could not load, 16 by 16: a picture with a
+    /// tear across it. The renderer draws it as a `Canvas`.
+    BrokenImageIcon,
     /// Scrolls its one child vertically. The renderer owns the scroll position.
     ScrollColumn,
     /// Scrolls its one child horizontally. The renderer owns the scroll position.
@@ -1295,7 +1305,8 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
-    /// The image of an `<img>`, when the resolver names an asset for it.
+    /// The image of an `<img>`, when the resolver names an asset for it, and its broken-image
+    /// icon and alt text when it names none and the image has alt text to show.
     fn add_image(&mut self, entry: &NodeEntry, content: usize) {
         let Some(image) = entry.image.as_ref() else {
             return;
@@ -1305,6 +1316,9 @@ impl<'a> Builder<'a> {
             .as_mut()
             .and_then(|images| images.resolve(&image.source))
         else {
+            if let Some(fallback) = image.fallback.as_ref() {
+                self.add_image_fallback(entry.node, image.content_rect, fallback, content);
+            }
             return;
         };
         let (ox, oy) = self.slots[content].origin;
@@ -1355,65 +1369,131 @@ impl<'a> Builder<'a> {
         );
     }
 
-    fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
+    /// The broken-image icon and alt text of an `<img>` the resolver names no asset for, in a
+    /// box of the image's content box that clips them, as Chromium clips them to the image.
+    fn add_image_fallback(
+        &mut self,
+        node: NodeId,
+        bounds: Rect,
+        fallback: &ImageFallback,
+        content: usize,
+    ) {
         let (ox, oy) = self.slots[content].origin;
         let clip = self.slots[content].clip;
         let opacity = self.slots[content].opacity;
-        for (index, run) in entry.texts.iter().enumerate() {
-            let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
-            let spans: Vec<SpanRun> = run
-                .spans
-                .iter()
-                .map(|span| SpanRun {
-                    color: span
-                        .color
-                        .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
-                    ..span.clone()
-                })
-                .collect();
-            self.push(
-                content,
-                Slot {
-                    key: PlanKey::Text {
-                        node: entry.node,
-                        index,
+        let holder = self.push(
+            content,
+            Slot {
+                key: PlanKey::Image(node),
+                kind: PlanKind::AbsoluteBox,
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: bounds.x - ox,
+                        y: bounds.y - oy,
                     },
-                    kind: PlanKind::Text(PlanText {
-                        owner: run.owner,
-                        text: run.text.clone(),
-                        style: run.style.clone(),
-                        color,
-                        decoration: run.decoration,
-                        align: run.align,
-                        soft_wrap: run.wrap_width.is_some()
-                            && (run.line_count > 1 || run.align == TextAlign::Justify),
-                        ellipsis: run.ellipsis,
-                        marker: run.marker,
-                        spans,
-                    }),
-                    modifiers: vec![
-                        PlanModifier::Offset {
-                            x: run.rect.x - ox,
-                            y: run.rect.y - oy,
-                        },
-                        // Text cut with an ellipsis is as wide as the cut: the renderer
-                        // ends a line that does not fit the width it is given in an
-                        // ellipsis.
-                        PlanModifier::Width(
-                            run.ellipsis
-                                .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
-                        ),
-                    ],
-                    children: Vec::new(),
-                    parent: None,
-                    origin: (run.rect.x, run.rect.y),
-                    clip,
-                    opacity,
-                    drawn: None,
-                    ..Slot::default()
-                },
-            );
+                    PlanModifier::RequiredSize {
+                        width: bounds.width,
+                        height: bounds.height,
+                    },
+                    PlanModifier::Clip,
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip: Some(intersect(clip, bounds)),
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+        let icon = fallback.icon;
+        self.push(
+            holder,
+            Slot {
+                key: PlanKey::BrokenImageIcon(node),
+                kind: PlanKind::BrokenImageIcon,
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: icon.x - bounds.x,
+                        y: icon.y - bounds.y,
+                    },
+                    PlanModifier::RequiredSize {
+                        width: icon.width,
+                        height: icon.height,
+                    },
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (icon.x, icon.y),
+                clip: Some(intersect(clip, bounds)),
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+        self.add_text(node, 0, &fallback.text, holder);
+    }
+
+    fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
+        for (index, run) in entry.texts.iter().enumerate() {
+            self.add_text(entry.node, index, run, content);
         }
+    }
+
+    /// The `index`th text run of `node`, placed in `content`.
+    fn add_text(&mut self, node: NodeId, index: usize, run: &TextRun, content: usize) {
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
+        let spans: Vec<SpanRun> = run
+            .spans
+            .iter()
+            .map(|span| SpanRun {
+                color: span
+                    .color
+                    .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
+                ..span.clone()
+            })
+            .collect();
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Text { node, index },
+                kind: PlanKind::Text(PlanText {
+                    owner: run.owner,
+                    text: run.text.clone(),
+                    style: run.style.clone(),
+                    color,
+                    decoration: run.decoration,
+                    align: run.align,
+                    soft_wrap: run.wrap_width.is_some()
+                        && (run.line_count > 1 || run.align == TextAlign::Justify),
+                    ellipsis: run.ellipsis,
+                    marker: run.marker,
+                    spans,
+                }),
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: run.rect.x - ox,
+                        y: run.rect.y - oy,
+                    },
+                    // Text cut with an ellipsis is as wide as the cut: the renderer ends a
+                    // line that does not fit the width it is given in an ellipsis.
+                    PlanModifier::Width(
+                        run.ellipsis
+                            .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
+                    ),
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (run.rect.x, run.rect.y),
+                clip,
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
     }
 
     fn add_field(&mut self, entry: &NodeEntry, content: usize) {

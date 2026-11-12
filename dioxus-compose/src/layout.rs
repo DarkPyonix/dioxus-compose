@@ -66,12 +66,13 @@ use taffy::{
 };
 
 use crate::dom::form;
+use crate::layout::image::{BROKEN_IMAGE_ICON, fallback_alt, img_src};
 use crate::paint::display_list::{
-    MeasuredMarker, MeasuredText, MeasuredTexts, Rgba, TextAlign, TextDecoration,
+    MeasuredAlt, MeasuredMarker, MeasuredText, MeasuredTexts, Rgba, TextAlign, TextDecoration,
 };
 use measure::{
-    SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer, TextStyle, TextWhiteSpace,
-    WidthConstraint,
+    SpanRun, TextLineHeight, TextMeasureRequest, TextMeasurer, TextMetrics, TextStyle,
+    TextWhiteSpace, WidthConstraint,
 };
 
 /// The room a `<select>` keeps beside its widest option for the dropdown's indicator, in
@@ -137,6 +138,7 @@ impl LayoutState {
         self.initialized = false;
         self.texts.texts.clear();
         self.texts.markers.clear();
+        self.texts.alts.clear();
         self.styles.clear();
         self.computed_ptrs.clear();
         self.text_styles.clear();
@@ -148,6 +150,7 @@ impl LayoutState {
     pub(crate) fn forget(&mut self, id: usize) {
         self.texts.texts.remove(&id);
         self.texts.markers.remove(&id);
+        self.texts.alts.remove(&id);
         self.styles.remove(&id);
         self.computed_ptrs.remove(&id);
         self.text_styles.remove(&id);
@@ -682,6 +685,7 @@ pub(crate) fn run_layout_incremental(
         state.texts.texts.insert(id, measured);
     }
     state.texts.markers = laid_out.markers;
+    state.texts.alts = laid_out.alts;
     // Prune any text entries for nodes that are no longer in the document.
     state
         .texts
@@ -735,6 +739,7 @@ fn run_layout_pass(
     let root = NodeId::from(doc.root_element().id);
     size_selects_in_lines(doc, measurer);
     size_widgets(doc);
+    size_image_fallbacks(doc, measurer);
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
@@ -753,7 +758,12 @@ fn run_layout_pass(
     tree.place_fixed_boxes(root, Size { width, height });
     round_layout(&mut tree, root);
     let markers = measure_markers(doc, measurer, &texts);
-    MeasuredTexts { texts, markers }
+    let alts = measure_alts(doc, measurer);
+    MeasuredTexts {
+        texts,
+        markers,
+        alts,
+    }
 }
 
 /// The attribute that marks an element as the place of a Compose widget.
@@ -811,6 +821,220 @@ fn size_widgets(doc: &mut BaseDocument) {
         }
         node.cache.clear();
     }
+}
+
+/// How far past the room beside the icon the alt text may reach and still be laid out on
+/// the icon's line. Layout rounds box edges to whole pixels, so a box sized to the icon and
+/// the text can come out a fraction narrower than the two.
+const ALT_FIT_SLOP: f32 = 1.0;
+
+/// A size the stylesheet gives an `<img>`, as the Taffy dimension blitz-dom writes for it.
+/// `None` for one this cannot write back (`calc()`, the intrinsic keywords), which is left
+/// as whatever is in the Taffy style already.
+fn css_dimension(size: &StyloSize) -> Option<Dimension> {
+    match size {
+        StyloSize::Auto => Some(Dimension::auto()),
+        StyloSize::LengthPercentage(length) => {
+            let length = &length.0;
+            if let Some(px) = length.to_length() {
+                Some(Dimension::length(px.px()))
+            } else {
+                length
+                    .to_percentage()
+                    .map(|percentage| Dimension::percent(percentage.0))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// How the alt text of a broken image sits in a content box `width` wide: on the icon's
+/// line when it fits beside the icon, below the icon wrapped at `width` when it does not.
+/// Returns the text's offset from the content box, its metrics and the width it was wrapped
+/// at.
+fn place_alt(
+    measurer: &mut dyn TextMeasurer,
+    text: &str,
+    style: &TextStyle,
+    width: Option<f32>,
+) -> ((f32, f32), TextMetrics, Option<f32>) {
+    let line = measurer.measure(&TextMeasureRequest {
+        text,
+        style,
+        width: WidthConstraint::MaxContent,
+        white_space: TextWhiteSpace::NOWRAP,
+    });
+    match width {
+        Some(width) if BROKEN_IMAGE_ICON + line.width > width + ALT_FIT_SLOP => {
+            let wrapped = measurer.measure(&TextMeasureRequest {
+                text,
+                style,
+                width: WidthConstraint::AtMost(width.max(0.0)),
+                white_space: TextWhiteSpace::NORMAL,
+            });
+            ((0.0, BROKEN_IMAGE_ICON), wrapped, Some(width.max(0.0)))
+        }
+        _ => ((BROKEN_IMAGE_ICON, 0.0), line, None),
+    }
+}
+
+/// Sizes every `<img>` that is drawn as a broken image by the icon and alt text it shows,
+/// as Chromium does, and gives every other `<img>` back the size its stylesheet says.
+///
+/// An image with no natural size and a non-empty `alt` is not a picture but a box of text:
+/// on each axis its CSS leaves `auto` it is as wide as the icon and the text beside it and
+/// as tall as the line, or as the icon and the lines below it when the text does not fit
+/// beside the icon. An image that stays `display: inline` is a run of text, which CSS gives
+/// no width or height, so Chromium sets both back to `auto` and so does this. The size goes
+/// into the Taffy style as a length, as [`size_widgets`] does, and is taken off again once
+/// the image has a natural size or stands for nothing.
+fn size_image_fallbacks(doc: &mut BaseDocument, measurer: &mut dyn TextMeasurer) {
+    let images: Vec<usize> = doc
+        .tree()
+        .iter()
+        .filter(|(_, node)| node.flags.is_in_document() && img_src(node).is_some())
+        .map(|(id, _)| id)
+        .collect();
+    for id in images {
+        let Some(node) = doc.get_node(id) else {
+            continue;
+        };
+        let Some(computed) = node.primary_styles() else {
+            continue;
+        };
+        let position = computed.get_position();
+        let css = Size {
+            width: css_dimension(&position.width),
+            height: css_dimension(&position.height),
+        };
+        let inline = computed.clone_display() == StyloDisplay::Inline;
+        let text_style = convert::text_style(&computed);
+        drop(computed);
+
+        let target = match fallback_alt(node) {
+            None => css,
+            Some(alt) => {
+                let style = &node.style;
+                let padding = style.padding.resolve_or_zero(None, resolve_calc_value);
+                let border = style.border.resolve_or_zero(None, resolve_calc_value);
+                let (extra_x, extra_y) = match style.box_sizing {
+                    BoxSizing::BorderBox => (
+                        padding.left + padding.right + border.left + border.right,
+                        padding.top + padding.bottom + border.top + border.bottom,
+                    ),
+                    BoxSizing::ContentBox => (0.0, 0.0),
+                };
+                // The axes the stylesheet sizes, as Taffy dimensions; `None` for `auto`.
+                let given = |dimension: Option<Dimension>| match dimension {
+                    _ if inline => None,
+                    Some(dimension) if dimension.is_auto() => None,
+                    Some(dimension) => Some(Some(dimension)),
+                    None => Some(None),
+                };
+                let given_width = given(css.width);
+                let given_height = given(css.height);
+                // The content width the text is laid out in, when it is known before layout.
+                let content_width = match given_width {
+                    Some(Some(dimension)) => dimension
+                        .into_option()
+                        .map(|width| (width - extra_x).max(0.0)),
+                    Some(None) => None,
+                    None => {
+                        let line = measurer.measure(&TextMeasureRequest {
+                            text: &alt,
+                            style: &text_style,
+                            width: WidthConstraint::MaxContent,
+                            white_space: TextWhiteSpace::NOWRAP,
+                        });
+                        Some(BROKEN_IMAGE_ICON + line.width)
+                    }
+                };
+                let ((_, y), metrics, _) = place_alt(measurer, &alt, &text_style, content_width);
+                let content_height = (y + metrics.height).max(BROKEN_IMAGE_ICON);
+                Size {
+                    width: match given_width {
+                        Some(dimension) => dimension,
+                        None => content_width.map(|width| Dimension::length(width + extra_x)),
+                    },
+                    height: match given_height {
+                        Some(dimension) => dimension,
+                        None => Some(Dimension::length(content_height + extra_y)),
+                    },
+                }
+            }
+        };
+
+        let Some(node) = doc.get_node_mut(id) else {
+            continue;
+        };
+        let mut changed = false;
+        if let Some(width) = target.width
+            && node.style.size.width != width
+        {
+            node.style.size.width = width;
+            changed = true;
+        }
+        if let Some(height) = target.height
+            && node.style.size.height != height
+        {
+            node.style.size.height = height;
+            changed = true;
+        }
+        if changed {
+            node.cache.clear();
+        }
+    }
+}
+
+/// Lays out the alt text of every `<img>` drawn as a broken image in the content box layout
+/// gave it.
+fn measure_alts(
+    doc: &BaseDocument,
+    measurer: &mut dyn TextMeasurer,
+) -> HashMap<usize, MeasuredAlt> {
+    let mut alts = HashMap::new();
+    for (id, node) in doc.tree().iter() {
+        if !node.flags.is_in_document() || node.style.display == Display::None {
+            continue;
+        }
+        let Some(alt) = fallback_alt(node) else {
+            continue;
+        };
+        let Some((style, color)) = node
+            .primary_styles()
+            .map(|style| (convert::text_style(&style), convert::text_color(&style)))
+        else {
+            continue;
+        };
+        let layout = &node.final_layout;
+        let content_width = (layout.size.width
+            - layout.padding.left
+            - layout.padding.right
+            - layout.border.left
+            - layout.border.right)
+            .max(0.0);
+        let ((x, y), metrics, wrap_width) = place_alt(measurer, &alt, &style, Some(content_width));
+        alts.insert(
+            id,
+            MeasuredAlt {
+                text: MeasuredText {
+                    owner: id,
+                    text: alt,
+                    style,
+                    color,
+                    align: TextAlign::Start,
+                    decoration: TextDecoration::default(),
+                    metrics,
+                    wrap_width,
+                    marker_prefix: 0,
+                    spans: Vec::new(),
+                },
+                x,
+                y,
+            },
+        );
+    }
+    alts
 }
 
 /// Measures the list markers that are drawn as runs of their own: the marker of every item

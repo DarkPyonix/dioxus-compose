@@ -1462,4 +1462,86 @@ fn fr34_checked_radio_is_sent_checked_and_controls_draw_no_input_box() {
             );
         }
     }
+
+fn broken_avatar() -> Element {
+    rsx! {
+        div { style: "display: flex; align-items: flex-start",
+            img { src: "avatars/me.png", alt: "Me" }
+            img { src: "cat.png", alt: "Cat" }
+        }
+    }
+}
+
+/// An image the resolver cannot draw reaches the renderer as Chromium draws a broken
+/// image: a `Canvas` drawing the 16px broken-image icon, and its alt text as a `Text` beside
+/// it, inside a clipping box the size of the image. An image the resolver draws sends its
+/// picture and not its alt text.
+#[test]
+fn fr34_unresolved_img_sends_the_broken_image_icon_and_its_alt_text() {
+    let mut host = Host::html(broken_avatar, config_with_cat);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let canvases = created(&first, WidgetKind::Canvas);
+    assert_eq!(
+        canvases.len(),
+        1,
+        "one icon, for the image with no asset: {first:#?}"
+    );
+    let icon = canvases[0];
+    let drawing = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Prop(node, PropertyKind::Commands, Value::Bytes(bytes)) if *node == icon => {
+                Some(bytes.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the icon is given its drawing: {first:#?}"));
+    let commands = dioxus_compose::drawing::decode_commands(&drawing).expect("the drawing decodes");
+    assert!(!commands.is_empty(), "the icon draws something");
+    assert_eq!(
+        modifiers_of(&first, icon),
+        vec![
+            Modifier::Offset { x: 0.0, y: 0.0 },
+            Modifier::RequiredSize {
+                width: 16.0,
+                height: 16.0
+            },
+        ]
+    );
+
+    let alt = text_node(&first, "Me");
+    assert!(
+        modifiers_of(&first, alt).contains(&Modifier::Offset { x: 16.0, y: 0.0 }),
+        "the alt text starts after the icon: {first:#?}"
+    );
+    assert!(
+        !texts(&first).iter().any(|text| text == "Cat"),
+        "the image the resolver draws shows no alt text"
+    );
+    assert_eq!(
+        created(&first, WidgetKind::Image).len(),
+        1,
+        "the cat is drawn"
+    );
+
+    // The box both sit in clips them to the image: "Me" is 20px, so 36 by 20.
+    let holder = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Insert { parent, node, .. } if *node == icon => Some(*parent),
+            _ => None,
+        })
+        .expect("the icon is inserted");
+    let holder_modifiers = modifiers_of(&first, holder);
+    assert!(
+        holder_modifiers.contains(&Modifier::RequiredSize {
+            width: 36.0,
+            height: 20.0
+        }) && holder_modifiers.contains(&Modifier::Clip(true)),
+        "{holder_modifiers:#?}"
+    );
+
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new(), "an unchanged frame sends nothing");
 }

@@ -17,9 +17,10 @@ use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     AssetId, BackgroundImage, BackgroundLayer, BaseDocument, DisplayList, GradientStop, HtmlConfig,
-    HtmlDom, ImageResolver, ImageSize, LiteralColours, ModifierSlot, NodeEntry, PlanChange,
-    PlanKey, PlanKind, PlanModifier, Rect, Rgba, TextMeasureRequest, TextMeasurer, TextMetrics,
-    TileRepeat, diff, element_by_id, layout_document_with, plan_from_images,
+    HtmlDom, ImageFallback, ImageResolver, ImageSize, LiteralColours, ModifierSlot, NodeEntry,
+    Plan, PlanChange, PlanKey, PlanKind, PlanModifier, Rect, Rgba, TextMeasureRequest,
+    TextMeasurer, TextMetrics, TileRepeat, diff, element_by_id, layout_document_with,
+    plan_from_images,
 };
 use dioxus_core::ScopeId;
 
@@ -198,6 +199,10 @@ fn fr34_img_with_resolver_size_is_laid_out_at_it_and_planned_as_that_asset() {
         "a relative src without a base is as written"
     );
     assert_eq!(image.natural_size, Some((40.0, 30.0)));
+    assert!(
+        image.fallback.is_none(),
+        "an image the resolver sizes draws the image, not its alt text"
+    );
     assert_rect(
         image.image_rect,
         Rect::new(0.0, 0.0, 40.0, 30.0),
@@ -661,5 +666,289 @@ fn fr34_gradient_stop_colour_change_is_one_plan_change() {
         before.brushes_not_in(&after).len(),
         1,
         "the old gradient can be released"
+    );
+}
+
+/// The gallery's header: an avatar the resolver cannot draw, then the title.
+fn unresolved_avatar() -> Element {
+    rsx! {
+        header {
+            id: "hero",
+            style: "display: flex; align-items: center; gap: 16px; height: 160px; padding: 0 32px",
+            img { id: "avatar", src: "avatars/me.png", alt: "Me" }
+            h1 { id: "title", style: "margin: 0", "Lisbon" }
+        }
+    }
+}
+
+#[track_caller]
+fn fallback_of(entry: &NodeEntry) -> &ImageFallback {
+    entry
+        .image
+        .as_ref()
+        .expect("the <img> has an image")
+        .fallback
+        .as_ref()
+        .unwrap_or_else(|| panic!("the <img> shows its alt text: {entry:#?}"))
+}
+
+/// The image of an `<img>` in the plan, with its children: the box the alt text is clipped
+/// to, the broken-image icon and the alt text.
+#[track_caller]
+fn assert_fallback_plan(plan: &Plan, img: usize, content: Rect, text: &str, at: (f32, f32)) {
+    let holder = plan
+        .find(PlanKey::Image(img))
+        .unwrap_or_else(|| panic!("the <img> draws its alt text:\n{plan:#?}"));
+    assert_eq!(holder.kind, PlanKind::AbsoluteBox, "{holder:#?}");
+    assert_eq!(
+        holder.modifier(ModifierSlot::RequiredSize),
+        Some(&PlanModifier::RequiredSize {
+            width: content.width,
+            height: content.height
+        })
+    );
+    assert_eq!(
+        holder.modifier(ModifierSlot::Clip),
+        Some(&PlanModifier::Clip),
+        "the alt text is clipped to the image's content box"
+    );
+
+    let icon = plan
+        .find(PlanKey::BrokenImageIcon(img))
+        .unwrap_or_else(|| panic!("the broken-image icon is drawn:\n{plan:#?}"));
+    assert_eq!(icon.kind, PlanKind::BrokenImageIcon);
+    assert_eq!(
+        icon.modifier(ModifierSlot::Offset),
+        Some(&PlanModifier::Offset { x: 0.0, y: 0.0 })
+    );
+    assert_eq!(
+        icon.modifier(ModifierSlot::RequiredSize),
+        Some(&PlanModifier::RequiredSize {
+            width: 16.0,
+            height: 16.0
+        })
+    );
+    assert_eq!(
+        plan.parent_of(PlanKey::BrokenImageIcon(img))
+            .map(|parent| parent.key),
+        Some(PlanKey::Image(img))
+    );
+
+    let key = PlanKey::Text {
+        node: img,
+        index: 0,
+    };
+    let run = plan
+        .find(key)
+        .unwrap_or_else(|| panic!("the alt text is a run:\n{plan:#?}"));
+    let PlanKind::Text(drawn) = &run.kind else {
+        panic!("the alt text is Text: {run:#?}");
+    };
+    assert_eq!(drawn.text, text);
+    assert_eq!(drawn.owner, img);
+    assert_eq!(
+        run.modifier(ModifierSlot::Offset),
+        Some(&PlanModifier::Offset { x: at.0, y: at.1 })
+    );
+    assert_eq!(
+        plan.parent_of(key).map(|parent| parent.key),
+        Some(PlanKey::Image(img))
+    );
+}
+
+/// An image the resolver cannot draw is laid out as Chromium lays out a broken image with
+/// alt text: the 16px broken-image icon and the alt text beside it, one line tall. "Me" is
+/// 20px wide here, so the avatar is 36 wide and 20 tall, centred in the 160px header, and
+/// the title starts 16px after it: 32 + 36 + 16 = 84. Without the fallback the avatar was
+/// zero wide and the title started at 48.
+#[test]
+fn fr34_unresolved_img_with_alt_takes_the_room_of_its_icon_and_alt_text() {
+    let questions = Rc::new(RefCell::new(Questions::default()));
+    let resolvers: [Option<Box<dyn ImageResolver>>; 2] = [
+        None,
+        Some(Box::new(NoImages {
+            questions: questions.clone(),
+        })),
+    ];
+    for images in resolvers {
+        let resolver = images.is_some();
+        let mut dom = HtmlDom::with_config(unresolved_avatar, margin_free(images));
+        dom.layout(800.0, 600.0, 1.0);
+        let avatar = dom.element_by_id("avatar").unwrap();
+        let title = dom.element_by_id("title").unwrap();
+
+        let list = dom.display_list().unwrap();
+        let entry = list.get(avatar).expect("the avatar is in the display list");
+        assert_rect(
+            entry.rect,
+            Rect::new(32.0, 70.0, 36.0, 20.0),
+            &format!("the avatar (resolver: {resolver})"),
+        );
+        assert_close(list.get(title).unwrap().rect.x, 84.0, "the title's x");
+
+        let fallback = fallback_of(entry);
+        assert_rect(
+            fallback.icon,
+            Rect::new(32.0, 70.0, 16.0, 16.0),
+            "the broken-image icon",
+        );
+        assert_eq!(fallback.text.text, "Me");
+        assert_eq!(fallback.text.owner, avatar);
+        assert_rect(
+            fallback.text.rect,
+            Rect::new(48.0, 70.0, 20.0, 20.0),
+            "the alt text, after the icon",
+        );
+        assert_close(fallback.text.baseline, 15.0, "the alt text's baseline");
+        assert_eq!(fallback.text.wrap_width, None, "one line, not wrapped");
+
+        let plan = dom.plan(&mut LiteralColours).unwrap();
+        assert_fallback_plan(
+            &plan,
+            avatar,
+            Rect::new(32.0, 70.0, 36.0, 20.0),
+            "Me",
+            (16.0, 0.0),
+        );
+    }
+    let asked = questions.borrow();
+    assert!(
+        !asked.assets.is_empty() && asked.assets.iter().all(|url| url == "avatars/me.png"),
+        "the plan asked the resolver for the avatar and drew the alt text when it named \
+         nothing: {asked:?}"
+    );
+}
+
+fn sized_logo() -> Element {
+    rsx! {
+        div { style: "display: flex; align-items: flex-start; gap: 8px",
+            img {
+                id: "logo",
+                src: "images/logo.png",
+                alt: "Lumen",
+                style: "width: 28px; height: 28px",
+            }
+            img {
+                id: "attributes",
+                src: "images/logo.png",
+                alt: "Lumen",
+                width: "40",
+                height: "30",
+            }
+            span { id: "name", "Lumen" }
+        }
+    }
+}
+
+/// An unresolved image with a size of its own keeps that box. "Lumen" (50px) does not fit
+/// beside the icon in 28px, so it goes below the icon, as a line that cannot sit beside a
+/// float does, wrapped at the box's width, and the box clips it. The `width` and `height`
+/// attributes size the box the same way.
+#[test]
+fn fr34_unresolved_img_with_a_size_keeps_its_box_and_clips_its_alt_text() {
+    let mut dom = HtmlDom::with_config(sized_logo, margin_free(None));
+    dom.layout(800.0, 600.0, 1.0);
+    let logo = dom.element_by_id("logo").unwrap();
+    let attributes = dom.element_by_id("attributes").unwrap();
+    let name = dom.element_by_id("name").unwrap();
+
+    let list = dom.display_list().unwrap();
+    let entry = list.get(logo).unwrap();
+    assert_rect(entry.rect, Rect::new(0.0, 0.0, 28.0, 28.0), "the logo");
+    let fallback = fallback_of(entry);
+    assert_rect(
+        fallback.icon,
+        Rect::new(0.0, 0.0, 16.0, 16.0),
+        "the icon at the top left",
+    );
+    assert_eq!(fallback.text.text, "Lumen");
+    assert_close(fallback.text.rect.x, 0.0, "the alt text's x");
+    assert_close(fallback.text.rect.y, 16.0, "the alt text, below the icon");
+    assert_eq!(fallback.text.wrap_width, Some(28.0));
+
+    let entry = list.get(attributes).unwrap();
+    assert_rect(
+        entry.rect,
+        Rect::new(36.0, 0.0, 40.0, 30.0),
+        "the attributes' box",
+    );
+    assert_close(list.get(name).unwrap().rect.x, 84.0, "the name's x");
+
+    let plan = dom.plan(&mut LiteralColours).unwrap();
+    assert_fallback_plan(
+        &plan,
+        logo,
+        Rect::new(0.0, 0.0, 28.0, 28.0),
+        "Lumen",
+        (0.0, 16.0),
+    );
+}
+
+fn inline_alt() -> Element {
+    rsx! {
+        div { style: "width: 400px",
+            img {
+                id: "map",
+                src: "maps/route.png",
+                alt: "Map",
+                style: "width: 100px; height: 100px",
+            }
+        }
+    }
+}
+
+/// An `<img>` that stays `display: inline` is drawn as the text it stands for, and CSS
+/// gives an inline box no size: Chromium sets its width and height back to `auto`. The box
+/// is the icon and "Map" (30px), 46 wide and one line tall.
+#[test]
+fn fr34_unresolved_inline_img_with_alt_ignores_its_width_and_height() {
+    let mut dom = HtmlDom::with_config(inline_alt, margin_free(None));
+    dom.layout(800.0, 600.0, 1.0);
+    let map = dom.element_by_id("map").unwrap();
+    let list = dom.display_list().unwrap();
+    let entry = list.get(map).unwrap();
+    assert_close(entry.rect.width, 46.0, "the inline image's width");
+    assert_close(entry.rect.height, 20.0, "the inline image's height");
+    assert_eq!(fallback_of(entry).text.text, "Map");
+}
+
+fn empty_alt() -> Element {
+    rsx! {
+        div { style: "display: flex; align-items: flex-start",
+            img { id: "decoration", src: "images/flourish.png", alt: "" }
+            div { id: "after", style: "width: 10px; height: 10px" }
+        }
+    }
+}
+
+/// An image with an empty `alt` stands for nothing: unresolved, it draws nothing and takes
+/// no room.
+#[test]
+fn fr34_unresolved_img_with_empty_alt_draws_nothing_and_takes_no_room() {
+    let mut dom = HtmlDom::with_config(empty_alt, margin_free(None));
+    dom.layout(800.0, 600.0, 1.0);
+    let decoration = dom.element_by_id("decoration").unwrap();
+    let after = dom.element_by_id("after").unwrap();
+    let list = dom.display_list().unwrap();
+    let entry = list.get(decoration).unwrap();
+    assert_rect(entry.rect, Rect::new(0.0, 0.0, 0.0, 0.0), "the decoration");
+    assert!(
+        entry
+            .image
+            .as_ref()
+            .is_some_and(|image| image.fallback.is_none()),
+        "{entry:#?}"
+    );
+    assert_close(list.get(after).unwrap().rect.x, 0.0, "the next box's x");
+
+    let plan = dom.plan(&mut LiteralColours).unwrap();
+    assert!(plan.find(PlanKey::Image(decoration)).is_none(), "{plan:#?}");
+    assert!(plan.find(PlanKey::BrokenImageIcon(decoration)).is_none());
+    assert!(
+        plan.find(PlanKey::Text {
+            node: decoration,
+            index: 0
+        })
+        .is_none()
     );
 }
