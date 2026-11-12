@@ -13,7 +13,7 @@
 //! which; a test of "nothing happens" would pin the gap in place).
 
 use dioxus_compose::html::{
-    HtmlDom, OverflowWrap, RunMarker, TextAlign, TextLineHeight, TextRun, WordBreak,
+    HtmlDom, MarkerSymbol, OverflowWrap, RunMarker, TextAlign, TextLineHeight, TextRun, WordBreak,
 };
 use sample_html_support::{
     Measurer, assert_close, assert_rect, centre, config, entry, node, text_of,
@@ -323,26 +323,50 @@ fn fr34_typography_list_items_stack() {
     }
 }
 
-/// Each item draws its marker before its text, as a run that ends one space (8px) before
-/// the item's box, which starts at x = 72, on the item's first baseline (the same y, 20px
-/// tall):
+/// Each item draws its marker before its text. A text marker is a run that ends one space
+/// (8px) before the item's box, which starts at x = 72, on the item's first baseline (the
+/// same y, 20px tall):
 ///
-/// - the square list has "\u{25aa}", one character (8px), so it starts at 72 - 8 - 8 = 56;
 /// - the decimal list has "1.", "2." and "3.", two characters (16px), so 72 - 8 - 16 = 48;
 /// - the lower-alpha list has "a." and "b.", also 16px wide, so 48.
 ///
-/// An item's text follows as the second run.
+/// The square list's marker is a filled square, as Chromium draws it, sized from the 16px
+/// font's ascent (15, two thirds of it 10): (10 + 1) / 2 = 5px across, starting 10 + 6 =
+/// 16px before the item (x = 56), its top 15 - 3 * (15 - 10) / 2 = 8px above the first
+/// baseline, which is 15px down the item's 20px line: 7px down the item.
+///
+/// An item's text follows, as its only run after a square and the second after a text
+/// marker.
 #[test]
 fn fr34_typography_list_markers_sit_before_the_items() {
     let dom = laid_out();
+    for index in 1..=3 {
+        let id = format!("square-{index}");
+        let item = entry(&dom, &id);
+        let marker = item
+            .marker
+            .unwrap_or_else(|| panic!("#{id} has a shape marker"));
+        assert_eq!(marker.symbol, MarkerSymbol::Square, "#{id}");
+        assert_rect(
+            marker.rect,
+            56.0,
+            item.rect.y + 7.0,
+            5.0,
+            5.0,
+            &format!("#{id} marker"),
+        );
+        assert_eq!(item.texts.len(), 1, "#{id}: only the text");
+        assert_eq!(item.texts[0].marker, RunMarker::None, "#{id}");
+        assert_close(item.texts[0].rect.x, 72.0, &format!("#{id} text x"));
+    }
     for (prefix, markers, x, width) in [
-        ("square", vec!["\u{25aa}"; 3], 56.0, 8.0),
         ("decimal", vec!["1.", "2.", "3."], 48.0, 16.0),
         ("alpha", vec!["a.", "b."], 48.0, 16.0),
     ] {
         for (index, marker) in markers.iter().enumerate() {
             let id = format!("{prefix}-{}", index + 1);
             let item = entry(&dom, &id);
+            assert_eq!(item.marker, None, "#{id}");
             assert_eq!(item.texts.len(), 2, "#{id}: the marker and the text");
             let run = &item.texts[0];
             assert_eq!(run.marker, RunMarker::Marker, "#{id}");

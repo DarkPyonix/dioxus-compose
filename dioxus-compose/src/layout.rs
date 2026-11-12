@@ -1037,10 +1037,11 @@ fn measure_alts(
     alts
 }
 
-/// Measures the list markers that are drawn as runs of their own: the marker of every item
-/// whose `list-style-position` is `outside`, and an inside marker of an item that has no
-/// inline text to put it in front of. An inside marker of an item with text is the start
-/// of that text (see [`prepare_inline`]).
+/// Measures the list markers that are drawn on their own: the marker of every item whose
+/// `list-style-position` is `outside`, and an inside marker of an item that has no inline
+/// text to put it in front of. An inside marker of an item with text is the start of that
+/// text (see [`prepare_inline`]); it is kept here only when it is a shape, which is drawn
+/// over the place its character keeps in the text.
 fn measure_markers(
     doc: &BaseDocument,
     measurer: &mut dyn TextMeasurer,
@@ -1057,7 +1058,9 @@ fn measure_markers(
         let Some(marker) = list::marker(doc, id) else {
             continue;
         };
-        if marker.inside && (texts.contains_key(&id) || node.flags.is_inline_root()) {
+        let in_text = marker.inside && (texts.contains_key(&id) || node.flags.is_inline_root());
+        // Only a text the measurer sized carries the marker the shape stands in for.
+        if in_text && (marker.symbol.is_none() || !texts.contains_key(&id)) {
             continue;
         }
         let Some((style, color)) = node
@@ -1077,6 +1080,25 @@ fn measure_markers(
         let metrics = measure(&marker.text);
         // The width of a space, as the difference one makes between two words.
         let gap = (measure("a b").width - measure("ab").width).max(0.0);
+        // The font's ascent: where the first baseline falls in a line of the font's own
+        // height, with no leading around it.
+        let ascent = if marker.symbol.is_some() {
+            let normal = TextStyle {
+                line_height: TextLineHeight::Normal,
+                ..style.clone()
+            };
+            measurer
+                .measure(&TextMeasureRequest {
+                    text: &marker.text,
+                    style: &normal,
+                    width: WidthConstraint::MaxContent,
+                    white_space: TextWhiteSpace::NOWRAP,
+                })
+                .first_baseline
+                .round()
+        } else {
+            0.0
+        };
         markers.insert(
             id,
             MeasuredMarker {
@@ -1094,6 +1116,9 @@ fn measure_markers(
                 },
                 gap,
                 inside: marker.inside,
+                symbol: marker.symbol,
+                ascent,
+                in_text,
             },
         );
     }
@@ -1993,10 +2018,10 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         return Some(None);
     }
     // The marker is not transformed with the text, so it is put in front afterwards.
-    let marker_prefix = match list::marker(doc, root) {
-        Some(marker) if marker.inside => format!("{} ", marker.text),
-        _ => String::new(),
-    };
+    let inside_marker = list::marker(doc, root).filter(|marker| marker.inside);
+    let marker_prefix = inside_marker
+        .as_ref()
+        .map_or_else(String::new, |marker| format!("{} ", marker.text));
 
     let (body, spans) = if uniform {
         (convert::transform_text(&text, transform), Vec::new())
@@ -2042,6 +2067,27 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
                 return None;
             }
         }
+    };
+
+    // A `disc`, `circle` or `square` marker is drawn as a shape (see `paint::build`), over
+    // the place its character keeps at the start of the line. The character keeps that
+    // place, as Chromium keeps the marker's box, but is not drawn.
+    let spans = match inside_marker {
+        Some(marker) if marker.symbol.is_some() => {
+            let mut hidden = vec![SpanRun {
+                start: 0,
+                end: marker.text.len(),
+                bold: false,
+                italic: false,
+                underline: false,
+                line_through: false,
+                color: Some(Rgba::new(0, 0, 0, 0)),
+                font_family: None,
+            }];
+            hidden.extend(spans);
+            hidden
+        }
+        _ => spans,
     };
 
     Some(Some(PreparedText {

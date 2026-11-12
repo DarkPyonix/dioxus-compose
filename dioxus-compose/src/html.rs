@@ -93,10 +93,10 @@ pub use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
     BorderLine, BoxShadow, CanvasBackground, Corners, DisplayList, DisplayListDiff, Easing,
     FillMode, GradientStop, ImageFallback, InputField, InputKind, Iterations, Keyframe,
-    LinearGradient, Matrix2D,
-    NodeEntry, ObjectFit, Outline, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage,
-    Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign,
-    TextDecoration, TextRun, TileRepeat, Transform2D, TransformFunction, TransitionStart,
+    LinearGradient, MarkerShape, MarkerSymbol, Matrix2D, NodeEntry, ObjectFit, Outline,
+    PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker,
+    ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun,
+    TileRepeat, Transform2D, TransformFunction, TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,

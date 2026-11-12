@@ -27,9 +27,10 @@ use crate::layout::{
 };
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, CanvasBackground,
-    Corners, DisplayList, ImageFallback, InputField, InputKind, MeasuredAlt, MeasuredMarker,
-    MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect, Rgba, RunMarker,
-    ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun, Transform2D,
+    Corners, DisplayList, ImageFallback, InputField, InputKind, MarkerShape, MeasuredAlt,
+    MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect, Rgba,
+    RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun,
+    Transform2D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved};
@@ -402,9 +403,11 @@ impl Painter<'_, '_> {
         let content = content_box(&placed.rect, layout);
         let mut reach = (content.x, content.y);
         if let Some(&index) = index_of.get(&id) {
-            for run in &entries[index].texts {
-                reach.0 = reach.0.max(run.rect.right());
-                reach.1 = reach.1.max(run.rect.bottom());
+            let entry = &entries[index];
+            let drawn = entry.texts.iter().map(|run| run.rect);
+            for rect in drawn.chain(entry.marker.map(|marker| marker.rect)) {
+                reach.0 = reach.0.max(rect.right());
+                reach.1 = reach.1.max(rect.bottom());
             }
         }
         self.extend_reach(id, true, entries, index_of, &mut reach);
@@ -449,9 +452,11 @@ impl Painter<'_, '_> {
                 continue;
             }
             if let Some(&index) = index_of.get(&child) {
-                for run in &entries[index].texts {
-                    reach.0 = reach.0.max(run.rect.right());
-                    reach.1 = reach.1.max(run.rect.bottom());
+                let entry = &entries[index];
+                let drawn = entry.texts.iter().map(|run| run.rect);
+                for rect in drawn.chain(entry.marker.map(|marker| marker.rect)) {
+                    reach.0 = reach.0.max(rect.right());
+                    reach.1 = reach.1.max(rect.bottom());
                 }
             }
             self.extend_reach(child, false, entries, index_of, reach);
@@ -550,6 +555,7 @@ impl Painter<'_, '_> {
                     .map(|parent| display_key(self.doc, parent))
             },
             texts: Vec::new(),
+            marker: None,
             input: None,
             image: None,
         };
@@ -603,6 +609,14 @@ impl Painter<'_, '_> {
             // A `<select>` shows its chosen option in the renderer's dropdown.
             if form::tag(node) != Some("select") {
                 entry.texts = self.text_runs(id, node, &rect, layout);
+                entry.marker = self.texts.markers.get(&id).and_then(|marker| {
+                    marker_shape(
+                        marker,
+                        &rect,
+                        &content_box(&rect, layout),
+                        entry.texts.first(),
+                    )
+                });
             }
             entry.input = input_field(self.doc, node, &rect, layout);
         }
@@ -817,7 +831,10 @@ impl Painter<'_, '_> {
             let lines = Rect::new(content.x, content.y + drop, content.width, content.height);
             runs = self.parley_runs(node, &lines);
         }
-        if let Some(marker) = self.texts.markers.get(&id) {
+        if let Some(marker) = self.texts.markers.get(&id)
+            && marker.symbol.is_none()
+            && !marker.in_text
+        {
             let run = marker_run(marker, rect, &content, runs.first());
             runs.insert(0, run);
         }
@@ -969,6 +986,50 @@ fn marker_run(
         marker: RunMarker::Marker,
         spans: Vec::new(),
     }
+}
+
+/// The shape a `disc`, `circle` or `square` marker is drawn as, sized and placed the way
+/// Chromium paints it.
+///
+/// Everything comes from the font's ascent `a`, rounded to a whole pixel, in whole-pixel
+/// steps: the shape is `s = (2a/3 + 1) / 2` across (5px for a 16px font, whose ascent is
+/// 15), and its top is `3(a - 2a/3) / 2` below the top of the marker's text, which is the
+/// first line's baseline less `a`. That puts its middle about a third of the ascent above
+/// the baseline, level with the middle of the lowercase letters.
+///
+/// An outside marker's shape starts `2a/3 + 6` pixels to the left of the item's border
+/// box, so a 16px item has its disc's left edge 16px before the item, as Chromium draws
+/// it (measured from a Chromium capture of `samples/article`). An inside marker's shape
+/// starts 1px into the marker's place at the start of the line: the place the marker's
+/// character and its space keep in the text.
+fn marker_shape(
+    marker: &MeasuredMarker,
+    rect: &Rect,
+    content: &Rect,
+    first: Option<&TextRun>,
+) -> Option<MarkerShape> {
+    let symbol = marker.symbol?;
+    let ascent = marker.ascent.max(0.0).round();
+    let offset = (ascent * 2.0 / 3.0).floor();
+    let size = ((offset + 1.0) / 2.0).floor();
+    let drop = (3.0 * (ascent - offset) / 2.0).floor();
+    let baseline = match first {
+        Some(run) => run.rect.y + run.baseline,
+        None => content.y + marker.text.metrics.first_baseline,
+    };
+    let x = if marker.in_text {
+        first.map_or(content.x, |run| run.rect.x) + 1.0
+    } else if marker.inside {
+        content.x + 1.0
+    } else {
+        rect.x - offset - 6.0
+    };
+    Some(MarkerShape {
+        owner: marker.text.owner,
+        symbol,
+        rect: Rect::new(x, baseline - ascent + drop, size, size),
+        color: marker.text.color,
+    })
 }
 
 /// The id an entry is listed under.
