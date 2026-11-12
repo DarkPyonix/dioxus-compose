@@ -56,11 +56,34 @@ pub use pointer::{
 };
 use writer::{DomWriter, WriterState, attribute_name, element_name};
 
-/// What a browser's own stylesheet says about `<select>` and blitz-dom's does not: the
-/// control is a box of its own, and its options are not drawn in the page, since the
-/// renderer's dropdown lists them.
-pub(crate) const FORM_CONTROLS_CSS: &str =
-    "select { display: inline-block; } select option, select optgroup { display: none; }";
+/// What a browser's own stylesheet says about form controls and blitz-dom's does not.
+///
+/// - A `<select>` is a box of its own, and its options are not drawn in the page, since
+///   the renderer's dropdown lists them.
+/// - Buttons, inputs, selects and text areas do not inherit the page's font or its text
+///   settings. Chromium gives them `font: -webkit-small-control`, which is 13.333px of the
+///   system font on a `normal` line, and resets the spacing, transform, indent and shadow
+///   of their text. A page that wants its own font on a control says so (`font: inherit`),
+///   and its rule wins over these.
+/// - A button's label is centred across (`text-align: center`); the layout centres it top
+///   to bottom.
+pub(crate) const FORM_CONTROLS_CSS: &str = "\
+select { display: inline-block; }
+select option, select optgroup { display: none; }
+input, textarea, select, button {
+    font: 13.333333px system-ui;
+    letter-spacing: normal;
+    word-spacing: normal;
+    line-height: normal;
+    text-transform: none;
+    text-indent: 0;
+    text-shadow: none;
+    text-align: start;
+}
+button, input[type=\"button\"], input[type=\"submit\"], input[type=\"reset\"] {
+    text-align: center;
+}
+";
 
 /// Replaces each `env()` that names a window variable the Host knows with its value in
 /// pixels: `safe-area-inset-*` when `insets` is set and `titlebar-area-*` when `titlebar` is
