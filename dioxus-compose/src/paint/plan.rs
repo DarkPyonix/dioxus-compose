@@ -985,28 +985,43 @@ impl<'a> Builder<'a> {
             let content_width = scroll.content_width.max(viewport.width);
             let content_height = scroll.content_height.max(viewport.height);
             let clip = Some(intersect(provided_clip, viewport));
-            let viewport_slot = |key: PlanKey, width: f32, height: f32, offset: (f32, f32)| Slot {
-                key,
-                kind: match key {
-                    PlanKey::ScrollRow(_) => PlanKind::ScrollRow,
-                    _ => PlanKind::ScrollColumn,
-                },
-                modifiers: vec![
-                    PlanModifier::Offset {
-                        x: offset.0,
-                        y: offset.1,
-                    },
-                    PlanModifier::RequiredSize { width, height },
-                    PlanModifier::Clip,
-                ],
-                children: Vec::new(),
-                parent: None,
-                origin: (viewport.x, viewport.y),
-                clip,
-                opacity: entry.opacity,
-                drawn: None,
-                ..Slot::default()
-            };
+            // The outermost viewport is the padding box, and CSS clips a scroll container's
+            // content to that box with its corners rounded: the border radii less the
+            // adjoining border widths, as `overflow: hidden` does. A row inside a column is
+            // as tall as the content and scrolls with it, so it is clipped by the column's
+            // rounded corners and has none of its own.
+            let rounded = entry
+                .radii
+                .map(|radii| inner_radii(&radii, &border.unwrap_or_default()));
+            let viewport_slot =
+                |key: PlanKey, width: f32, height: f32, offset: (f32, f32), outermost: bool| {
+                    let mut modifiers = vec![
+                        PlanModifier::Offset {
+                            x: offset.0,
+                            y: offset.1,
+                        },
+                        PlanModifier::RequiredSize { width, height },
+                    ];
+                    if let (true, Some(corners)) = (outermost, rounded) {
+                        push_shape(&mut modifiers, corners);
+                    }
+                    modifiers.push(PlanModifier::Clip);
+                    Slot {
+                        key,
+                        kind: match key {
+                            PlanKey::ScrollRow(_) => PlanKind::ScrollRow,
+                            _ => PlanKind::ScrollColumn,
+                        },
+                        modifiers,
+                        children: Vec::new(),
+                        parent: None,
+                        origin: (viewport.x, viewport.y),
+                        clip,
+                        opacity: entry.opacity,
+                        drawn: None,
+                        ..Slot::default()
+                    }
+                };
             let inset = (viewport.x - rect.x, viewport.y - rect.y);
             let mut outer = node;
             if scroll.vertical {
@@ -1017,6 +1032,7 @@ impl<'a> Builder<'a> {
                         viewport.width,
                         viewport.height,
                         inset,
+                        true,
                     ),
                 );
             }
@@ -1035,6 +1051,7 @@ impl<'a> Builder<'a> {
                         viewport.width,
                         height,
                         offset,
+                        !scroll.vertical,
                     ),
                 );
             }

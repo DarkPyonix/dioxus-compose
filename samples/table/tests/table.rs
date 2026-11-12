@@ -245,3 +245,19 @@ fn fr34_table_clicking_the_amount_header_sorts_the_rows() {
         }
     }
 }
+
+/// The wrapper's `border-radius: 8px` rounds its scroll viewport and the viewport clips to
+/// it, so the header row's corners are cut the way Chromium cuts them.
+#[test]
+fn fr34_table_wrapper_clips_to_its_rounded_corners() {
+    let mut dom = laid_out(480.0);
+    let wrap_id = node(&dom, "wrap");
+    let plan = dom.plan(&mut LiteralColours).expect("laid out above");
+    let row = plan_node(&plan, PlanKey::ScrollRow(wrap_id));
+    assert_eq!(
+        row.modifier(ModifierSlot::Shape),
+        Some(&PlanModifier::Shape { radius: 8.0 }),
+        "{row:#?}"
+    );
+    assert_eq!(row.modifier(ModifierSlot::Clip), Some(&PlanModifier::Clip));
+}
