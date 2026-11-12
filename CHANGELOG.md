@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### HTML tables fill their width
+
+A table whose width is greater than its columns, such as `width: 100%` in a wider
+container, gives the extra width to its columns. When every column has a fixed width, each
+one grows in proportion to it, as in Chromium's auto table layout. Before, the columns kept
+their widths and the space past them stayed empty. Tables with `auto` or percentage columns
+are unchanged. The change is a blitz-dom patch, `scripts/patches/blitz-dom-0.2.4/0003-table-width-fills-columns.patch`.
+
+### List bullets are drawn as shapes
+
+`list-style-type: disc`, `circle` and `square` are drawn as a filled circle, a 1px ring and
+a filled square, as Chromium draws them, instead of the font's bullet character, which was
+smaller. A display list entry carries the shape in `marker` (`MarkerShape`, with its
+`MarkerSymbol`, rectangle and the item's colour), and the plan draws it as a box keyed
+`PlanKey::Marker`. Its size and place come from the font's ascent: 5px across for a 16px
+font, its left edge 16px before the item, level with the middle of the lowercase letters.
+An inside bullet keeps its character's place in the text, drawn transparent, under the
+shape. Numbered and lettered markers are still text.
+
 ### Content from the top of the window, and its safe area
 
 `Window::new().chrome(Chrome::FullSize)` (the `Chrome` in the prelude is compose-rust's)

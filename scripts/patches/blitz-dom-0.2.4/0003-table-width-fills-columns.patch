@@ -1,0 +1,169 @@
+--- a/src/layout/mod.rs
++++ b/src/layout/mod.rs
+@@ -26,7 +26,6 @@
+ pub(crate) mod table;
+ 
+ use self::replaced::{ReplacedContext, replaced_measure_function};
+-use self::table::TableTreeWrapper;
+ 
+ pub(crate) fn resolve_calc_value(calc_ptr: *const (), parent_size: f32) -> f32 {
+     let calc = unsafe { &*(calc_ptr as *const CalcLengthPercentage) };
+@@ -288,12 +287,7 @@
+                             panic!("Node marked as table root but doesn't have TableContext");
+                         };
+                         let context = Arc::clone(context);
+-
+-                        let mut table_wrapper = TableTreeWrapper {
+-                            doc: tree,
+-                            ctx: context,
+-                        };
+-                        return compute_grid_layout(&mut table_wrapper, node_id, inputs);
++                        return table::compute_table_layout(tree, context, node_id, inputs);
+                     }
+ 
+                     if node.flags.is_inline_root() {
+--- a/src/layout/table.rs
++++ b/src/layout/table.rs
+@@ -4,8 +4,9 @@
+ use style::values::specified::box_::{DisplayInside, DisplayOutside};
+ use style::{Atom, computed_values::table_layout::T as TableLayout};
+ use taffy::{
+-    Dimension, LayoutPartialTree as _, ResolveOrZero, TrackSizingFunction, compute_leaf_layout,
+-    style_helpers,
++    BoxSizing, Dimension, LayoutInput, LayoutOutput, LayoutPartialTree as _, MaybeMath as _,
++    MaybeResolve as _, ResolveOrZero, SizingMode, TrackSizingFunction, compute_grid_layout,
++    compute_leaf_layout, style_helpers,
+ };
+ 
+ use crate::BaseDocument;
+@@ -16,12 +17,94 @@
+ pub struct TableTreeWrapper<'doc> {
+     pub(crate) doc: &'doc mut BaseDocument,
+     pub(crate) ctx: Arc<TableContext>,
++    /// The table's grid style for this layout when it differs from `ctx.style`: the
++    /// columns widened to fill a table wider than they are.
++    pub(crate) style: Option<taffy::Style<Atom>>,
+ }
+ 
+ #[derive(Debug, Clone)]
+ pub struct TableContext {
+     style: taffy::Style<Atom>,
+     items: Vec<TableItem>,
++    /// The width of every column when each one has a fixed length (its first-row cell's
++    /// border box), and `None` when any column is `auto` or a percentage.
++    fixed_column_widths: Option<Vec<f32>>,
++}
++
++/// Lays a table out as the grid built for it by [`build_table_context`].
++///
++/// A grid leaves the space beyond fixed-length tracks empty, but a table whose width is
++/// greater than its columns gives that width to them. With only fixed-width columns, the
++/// auto table layout algorithm (and Chromium) distributes it in proportion to their widths:
++/// a `width: 100%` table of 640px of columns in a 672px container has each column
++/// 672 / 640 times as wide. Tables with `auto` or percentage columns keep the grid's own
++/// behaviour, which stretches the `auto` tracks.
++pub(crate) fn compute_table_layout(
++    doc: &mut BaseDocument,
++    ctx: Arc<TableContext>,
++    node_id: taffy::NodeId,
++    inputs: LayoutInput,
++) -> LayoutOutput {
++    let style = widened_columns(&ctx, inputs);
++    let mut wrapper = TableTreeWrapper { doc, ctx, style };
++    compute_grid_layout(&mut wrapper, node_id, inputs)
++}
++
++/// The table's grid style with its fixed-width columns widened to fill its content box, or
++/// `None` when the table's width is not definite or the columns already fill it.
++fn widened_columns(ctx: &TableContext, inputs: LayoutInput) -> Option<taffy::Style<Atom>> {
++    let widths = ctx.fixed_column_widths.as_ref()?;
++    let columns: f32 = widths.iter().sum();
++    if widths.is_empty() || columns <= 0.0 {
++        return None;
++    }
++
++    let style = &ctx.style;
++    let parent_width = inputs.parent_size.width;
++    let padding = style.padding.resolve_or_zero(parent_width, resolve_calc_value);
++    let border = style.border.resolve_or_zero(parent_width, resolve_calc_value);
++    let padding_border = padding.left + padding.right + border.left + border.right;
++    let box_sizing_adjustment = match style.box_sizing {
++        BoxSizing::ContentBox => padding_border,
++        BoxSizing::BorderBox => 0.0,
++    };
++    let resolve = |dimension: Dimension| {
++        dimension
++            .maybe_resolve(parent_width, resolve_calc_value)
++            .map(|width| width + box_sizing_adjustment)
++    };
++
++    // The same width the grid gives the table: the size it was handed, or else its own
++    // `width` (an `auto` width shrinks to the columns, which then have nothing to share).
++    let preferred = match inputs.sizing_mode {
++        SizingMode::InherentSize => resolve(style.size.width),
++        SizingMode::ContentSize => None,
++    };
++    let border_box = inputs
++        .known_dimensions
++        .width
++        .or(preferred)?
++        .maybe_clamp(resolve(style.min_size.width), resolve(style.max_size.width))
++        .max(padding_border);
++    let content_box = border_box - padding_border;
++    let gaps = style
++        .gap
++        .width
++        .resolve_or_zero(Some(content_box), resolve_calc_value)
++        * (widths.len() - 1) as f32;
++    let available = content_box - gaps;
++    if available <= columns {
++        return None;
++    }
++
++    let mut widened = style.clone();
++    widened.grid_template_columns = widths
++        .iter()
++        .map(|width| {
++            TrackSizingFunction::from(Dimension::length(width * available / columns)).into()
++        })
++        .collect();
++    Some(widened)
+ }
+ 
+ #[derive(Debug, Clone, Eq, PartialEq)]
+@@ -77,6 +160,10 @@
+         );
+     }
+     column_sizes.resize(col as usize, style_helpers::auto());
++    let fixed_column_widths = column_sizes
++        .iter()
++        .map(|dim| (dim.tag() == taffy::CompactLength::LENGTH_TAG).then_some(dim.value()))
++        .collect();
+ 
+     style.grid_template_columns = column_sizes
+         .into_iter()
+@@ -92,7 +179,14 @@
+     let root_node = &mut doc.nodes[table_root_node_id];
+     root_node.children = children;
+ 
+-    (TableContext { style, items }, layout_children)
++    (
++        TableContext {
++            style,
++            items,
++            fixed_column_widths,
++        },
++        layout_children,
++    )
+ }
+ 
+ pub(crate) fn collect_table_cells(
+@@ -282,7 +376,7 @@
+     type CustomIdent = Atom;
+ 
+     fn get_core_container_style(&self, _node_id: taffy::NodeId) -> &taffy::Style<Atom> {
+-        &self.ctx.style
++        self.style.as_ref().unwrap_or(&self.ctx.style)
+     }
+ 
+     fn resolve_calc_value(&self, calc_ptr: *const (), parent_size: f32) -> f32 {

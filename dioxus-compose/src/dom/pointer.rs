@@ -306,11 +306,15 @@ type AuthorSelect = HashMap<NodeId, (bool, u32, usize, UserSelect)>;
 /// The same for `app-region`.
 type AuthorRegion = HashMap<NodeId, (bool, u32, usize, AppRegion)>;
 
+/// The same for `appearance`: whether the winning value is `none`.
+type AuthorAppearance = HashMap<NodeId, (bool, u32, usize, bool)>;
+
 /// What the author stylesheets say about the properties this crate reads itself.
 #[derive(Default)]
 struct Author {
     select: AuthorSelect,
     region: AuthorRegion,
+    appearance: AuthorAppearance,
 }
 
 /// The kinds of report a listener for `event` needs.
@@ -647,6 +651,31 @@ impl HtmlDom {
         }
     }
 
+    /// Whether the page gives `node` `appearance: none` (or `-webkit-appearance: none`),
+    /// from its `style` attribute and the rules of the `<style>` elements, read the way
+    /// `user-select` is. Not inherited. A form control with `appearance: none` is the
+    /// author's box and nothing else: the renderer's control is not drawn in it.
+    pub(crate) fn appearance_is_none(&self, node: NodeId) -> bool {
+        let inline = self
+            .doc
+            .get_node(node)
+            .and_then(|node| node.attr(local("style")))
+            .and_then(declared_appearance_none);
+        let author = self.author_user_select();
+        match (inline, author.appearance.get(&node)) {
+            (Some((none, important)), Some((author_important, _, _, author_none))) => {
+                if important || !author_important {
+                    none
+                } else {
+                    *author_none
+                }
+            }
+            (Some((none, _)), None) => none,
+            (None, Some((_, _, _, none))) => *none,
+            (None, None) => false,
+        }
+    }
+
     /// The author stylesheets' `user-select` for each node a rule reaches, with the key the
     /// cascade orders by: importance, specificity, position.
     fn author_user_select(&self) -> Ref<'_, Author> {
@@ -706,6 +735,7 @@ impl HtmlDom {
         };
         let mut winners: AuthorSelect = HashMap::new();
         let mut regions: AuthorRegion = HashMap::new();
+        let mut appearances: AuthorAppearance = HashMap::new();
         let mut position = 0;
         let mut any_rule = false;
         for (_, node) in self.doc.tree().iter() {
@@ -723,14 +753,18 @@ impl HtmlDom {
                 continue;
             }
             let lowered = text.content.to_ascii_lowercase();
-            if !lowered.contains("user-select") && !lowered.contains("app-region") {
+            if !lowered.contains("user-select")
+                && !lowered.contains("app-region")
+                && !lowered.contains("appearance")
+            {
                 continue;
             }
             for (selectors, body) in style_rules(&text.content, &env) {
                 position += 1;
                 let selected = declared_user_select(&body);
                 let region = declared_app_region(&body);
-                if selected.is_none() && region.is_none() {
+                let appearance = declared_appearance_none(&body);
+                if selected.is_none() && region.is_none() && appearance.is_none() {
                     continue;
                 }
                 any_rule = true;
@@ -761,6 +795,15 @@ impl HtmlDom {
                                 regions.insert(id, (key.0, key.1, key.2, value));
                             }
                         }
+                        if let Some((none, important)) = appearance {
+                            let key = (important, spec, position);
+                            let better = appearances
+                                .get(&id)
+                                .is_none_or(|(i, s, p, _)| key > (*i, *s, *p));
+                            if better {
+                                appearances.insert(id, (key.0, key.1, key.2, none));
+                            }
+                        }
                     }
                 }
             }
@@ -769,6 +812,7 @@ impl HtmlDom {
         Author {
             select: winners,
             region: regions,
+            appearance: appearances,
         }
     }
 }
@@ -824,6 +868,37 @@ fn declared_app_region(block: &str) -> Option<(AppRegion, bool)> {
             _ => continue,
         };
         found = Some((parsed, important));
+    }
+    found
+}
+
+/// The last `appearance` a declaration block sets, as whether it is `none`, and whether it
+/// is `!important`. The prefixed names are read too, since pages write
+/// `-webkit-appearance: none` for Safari. A value that is not one of the keywords leaves
+/// the declaration out, as an invalid declaration is.
+fn declared_appearance_none(block: &str) -> Option<(bool, bool)> {
+    let mut found = None;
+    for declaration in block.split(';') {
+        let Some((name, value)) = declaration.split_once(':') else {
+            continue;
+        };
+        if !matches!(
+            name.trim().to_ascii_lowercase().as_str(),
+            "appearance" | "-webkit-appearance" | "-moz-appearance"
+        ) {
+            continue;
+        }
+        let value = value.trim().to_ascii_lowercase();
+        let important = value.contains("!important");
+        let keyword = value.replace("!important", "");
+        let none = match keyword.trim() {
+            "none" => true,
+            "auto" | "menulist-button" | "textfield" | "searchfield" | "textarea"
+            | "push-button" | "slider-horizontal" | "checkbox" | "radio" | "square-button"
+            | "menulist" | "listbox" | "meter" | "progress-bar" | "button" => false,
+            _ => continue,
+        };
+        found = Some((none, important));
     }
     found
 }

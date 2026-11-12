@@ -23,7 +23,7 @@ use compose_rust::fonts::{FontRef, FontRefs};
 use compose_rust::measure::{
     MeasureRequests, MeasureResult, MeasureStatus, TextConstraint, TextStyle as WireStyle, measurer,
 };
-use compose_rust::schema::GenericFamily;
+use compose_rust::schema::{GenericFamily, TypeRole};
 use compose_rust::schema::{OverflowWrap as WireOverflowWrap, WordBreak as WireWordBreak};
 use compose_rust::spans::{TextSpan, TextSpans};
 
@@ -232,6 +232,9 @@ impl Default for RendererMeasurer {
 /// run, in the same units, so the measured size is the drawn size.
 fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
     WireStyle {
+        // Text from a page has no rung of the type ladder, and only text with none is
+        // measured in its own fonts rather than the theme's.
+        type_role: TypeRole::None,
         font: font_refs(&style.font_family),
         font_size: Some(style.font_size),
         font_weight: Some(style.font_weight.round().clamp(1.0, 1000.0) as u16),

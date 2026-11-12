@@ -484,3 +484,149 @@ fn fr34_select_pick_sends_input_then_change() {
     assert_eq!(dom.select(size, 3), None, "there is no fourth option");
     assert!(take_log().is_empty());
 }
+
+fn default_controls() -> Element {
+    rsx! {
+        div { style: "display: flex",
+            input { id: "box", r#type: "checkbox" }
+        }
+        div { style: "display: flex",
+            input { id: "dot", r#type: "radio" }
+        }
+    }
+}
+
+#[track_caller]
+fn entry(dom: &HtmlDom, id: &str) -> dioxus_compose::html::NodeEntry {
+    let node = node(dom, id);
+    dom.display_list()
+        .expect("laid out")
+        .get(node)
+        .unwrap_or_else(|| panic!("#{id} has no display list entry"))
+        .clone()
+}
+
+/// With nothing but the user-agent sheet, a checkbox and a radio button are Chromium's
+/// 13 by 13 controls with Chromium's margins (3px 3px 3px 4px for the checkbox, 3px 3px 0
+/// 5px for the radio button), and the control fills the whole box.
+#[test]
+fn fr34_checkbox_and_radio_take_chromium_size_and_margins() {
+    let dom = open(default_controls);
+
+    let checkbox = entry(&dom, "box");
+    assert_eq!(checkbox.rect, Rect::new(4.0, 3.0, 13.0, 13.0));
+    assert_eq!(
+        checkbox.input.as_ref().map(|field| field.content_rect),
+        Some(checkbox.rect),
+        "the checkbox control fills its box"
+    );
+
+    // The first row is the checkbox's margin box: 3 + 13 + 3 = 19px tall.
+    let radio = entry(&dom, "dot");
+    assert_eq!(radio.rect, Rect::new(5.0, 22.0, 13.0, 13.0));
+    assert_eq!(
+        radio.input.as_ref().map(|field| field.content_rect),
+        Some(radio.rect),
+        "the radio control fills its box"
+    );
+}
+
+/// A checkbox or radio button with `appearance: auto` is drawn by the renderer's control
+/// alone, as Chromium draws its own: the user-agent `input` border and background are not
+/// painted around it, and neither are an author's.
+#[test]
+fn fr34_checkbox_and_radio_draw_no_input_box() {
+    let dom = open(default_controls);
+    for id in ["box", "dot"] {
+        let entry = entry(&dom, id);
+        assert_eq!(entry.border, None, "#{id} draws no border");
+        assert_eq!(entry.background, None, "#{id} draws no background");
+        assert!(
+            entry.backgrounds.is_empty(),
+            "#{id} draws no background image"
+        );
+    }
+}
+
+fn styled_controls() -> Element {
+    rsx! {
+        input {
+            id: "auto",
+            r#type: "checkbox",
+            style: "width: 20px; height: 20px; border: 2px solid rgb(255, 0, 0); background-color: rgb(0, 255, 0); border-radius: 4px",
+        }
+        input {
+            id: "plain",
+            r#type: "checkbox",
+            style: "appearance: none; width: 20px; height: 20px; border: 2px solid rgb(255, 0, 0); background-color: rgb(0, 255, 0)",
+            onchange: move |event| log(format!("plain:{}", event.checked())),
+        }
+        input {
+            id: "webkit",
+            class: "flat",
+            r#type: "radio",
+            name: "flat",
+            onchange: move |event| log(format!("webkit:{}", event.checked())),
+        }
+    }
+}
+
+fn styled_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![
+            "html, body { margin: 0; padding: 0; }".to_string(),
+            ".flat { -webkit-appearance: none; width: 20px; height: 20px; border: 3px solid rgb(0, 0, 255); }"
+                .to_string(),
+        ],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+/// An author border and background on an `appearance: auto` checkbox are not drawn either;
+/// the control takes the border box. With `appearance: none` (or `-webkit-appearance:
+/// none`, from a stylesheet) the element is the author's box: its border and background
+/// are drawn, no renderer control is, and a click still checks it.
+#[test]
+fn fr34_appearance_none_checkbox_and_radio_draw_the_authors_box() {
+    take_log();
+    let mut dom = HtmlDom::with_config(styled_controls, styled_config());
+    dom.layout(400.0, 300.0, 1.0);
+
+    let auto = entry(&dom, "auto");
+    assert_eq!(
+        auto.rect.width, 20.0,
+        "the user-agent sheet makes it border-box"
+    );
+    assert_eq!(auto.border, None);
+    assert_eq!(auto.background, None);
+    assert_eq!(auto.radii, None);
+    assert_eq!(
+        auto.input.as_ref().map(|field| field.content_rect),
+        Some(auto.rect)
+    );
+
+    let plain = entry(&dom, "plain");
+    let border = plain.border.as_ref().expect("the author's border is drawn");
+    assert_eq!(border.widths.top, 2.0);
+    assert!(
+        plain.background.is_some(),
+        "the author's background is drawn"
+    );
+    assert_eq!(plain.input, None, "no renderer checkbox is drawn over it");
+    assert!(dom.is_click_target(node(&dom, "plain")));
+
+    let webkit = entry(&dom, "webkit");
+    let border = webkit
+        .border
+        .as_ref()
+        .expect("the stylesheet's border is drawn");
+    assert_eq!(border.widths.left, 3.0);
+    assert_eq!(webkit.input, None);
+    assert!(dom.is_click_target(node(&dom, "webkit")));
+
+    click(&mut dom, "plain");
+    assert_eq!(take_log(), ["plain:true"]);
+    click(&mut dom, "webkit");
+    assert_eq!(take_log(), ["webkit:true"]);
+}

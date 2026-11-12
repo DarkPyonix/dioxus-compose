@@ -15,6 +15,7 @@ use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
 };
+use dioxus_compose::prelude::WritableExt;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
     Color, EventPayload, Modifier, Paint, PropertyKind, TextOverflow, WidgetKind,
@@ -658,6 +659,65 @@ fn fr42_overflow_hidden_sends_clip_visible_does_not() {
     );
 }
 
+fn rounded_scroller() -> Element {
+    rsx! {
+        div { style: "width: 120px; overflow-x: auto; border-radius: 8px; background-color: rgb(0, 0, 255)",
+            div { style: "width: 300px; height: 40px; background-color: rgb(255, 0, 0)" }
+        }
+    }
+}
+
+/// A scroll container with rounded corners clips its content to them, as `overflow: hidden`
+/// does: its scroll viewport is sent with the corners and then `Clip`, so the content's
+/// corners are cut where the box's are. `overflow-x: auto` makes `overflow-y` compute to
+/// `auto` as well, so the box scrolls on both axes: the column is its viewport and has the
+/// corners, and the row inside it, as tall as the content, has none.
+#[test]
+fn fr34_scroll_container_clips_to_its_rounded_corners() {
+    let mut host = Host::html(rounded_scroller, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let rows = created(&first, WidgetKind::ScrollRow);
+    assert_eq!(rows.len(), 1, "{first:#?}");
+    let viewport = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Insert { parent, node, .. } if *node == rows[0] => Some(*parent),
+            _ => None,
+        })
+        .expect("the row is inside its viewport");
+    assert!(
+        created(&first, WidgetKind::ScrollColumn).contains(&viewport),
+        "the row is inside the box's scroll column: {first:#?}"
+    );
+    let modifiers = modifiers_of(&first, viewport);
+    let corners = modifiers
+        .iter()
+        .position(|modifier| {
+            *modifier
+                == Modifier::CornerEach {
+                    top_left: 8.0,
+                    top_right: 8.0,
+                    bottom_right: 8.0,
+                    bottom_left: 8.0,
+                }
+        })
+        .unwrap_or_else(|| panic!("the scroll viewport has 8px corners: {modifiers:?}"));
+    let clip = modifiers
+        .iter()
+        .position(|modifier| *modifier == Modifier::Clip(true))
+        .unwrap_or_else(|| panic!("the scroll viewport clips: {modifiers:?}"));
+    assert!(corners < clip, "{modifiers:?}");
+
+    let inner = modifiers_of(&first, rows[0]);
+    assert!(
+        inner
+            .iter()
+            .all(|modifier| !matches!(modifier, Modifier::CornerEach { .. })),
+        "{inner:?}"
+    );
+}
+
 fn reordering() -> Element {
     let mut presses = use_signal(|| 0u32);
     let items: Vec<u32> = if presses() > 0 {
@@ -1173,8 +1233,8 @@ fn transformed() -> Element {
     }
 }
 
-/// A 2D transform goes to compose-rust as one `Transform` modifier. The origin is
-/// folded into the matrix, so the origin sent is (0, 0).
+/// A 2D transform goes to compose-rust as one `Transform` modifier, with its
+/// `transform-origin` as a fraction of the box: `0 0` here, the top left.
 #[test]
 fn fr34_1_transform_is_sent_as_a_matrix_about_the_top_left() {
     let mut host = Host::html(transformed, config);
@@ -1348,4 +1408,164 @@ fn fr34_ellipsis_box_sends_an_ellipsis_at_the_box_width() {
         modifiers.contains(&Modifier::Width(160.0)),
         "the text keeps its whole line: {modifiers:?}"
     );
+}
+
+fn density() -> Element {
+    let mut chosen = use_signal(|| 0usize);
+    rsx! {
+        for (index, label) in ["Comfortable", "Compact"].into_iter().enumerate() {
+            label { key: "{label}",
+                input {
+                    r#type: "radio",
+                    name: "density",
+                    value: "{label}",
+                    checked: chosen() == index,
+                    onclick: move |_| chosen.set(index),
+                }
+                "{label}"
+            }
+        }
+        input { r#type: "checkbox", checked: true }
+    }
+}
+
+/// The checked radio button of a group is sent checked and the other unchecked, so the
+/// renderer draws the dot in the one the app chose. Neither it nor the checkbox sits in a
+/// box that draws the user-agent `input` border or background around the control.
+#[test]
+fn fr34_checked_radio_is_sent_checked_and_controls_draw_no_input_box() {
+    let mut host = Host::html(density, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let radios = created(&first, WidgetKind::RadioButton);
+    assert_eq!(radios.len(), 2, "two radio buttons: {first:#?}");
+    let checked: Vec<Option<bool>> = radios
+        .iter()
+        .map(|radio| {
+            first.iter().rev().find_map(|record| match record {
+                Record::Prop(id, PropertyKind::Checked, Value::Bool(on)) if id == radio => {
+                    Some(*on)
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    assert_eq!(
+        checked,
+        vec![Some(true), Some(false)],
+        "Comfortable is sent checked, Compact unchecked: {first:#?}"
+    );
+
+    let checkbox = created(&first, WidgetKind::Checkbox);
+    assert_eq!(checkbox.len(), 1);
+    assert!(first.contains(&Record::Prop(
+        checkbox[0],
+        PropertyKind::Checked,
+        Value::Bool(true)
+    )));
+
+    for control in radios.iter().chain(&checkbox) {
+        let holder = first
+            .iter()
+            .find_map(|record| match record {
+                Record::Insert { parent, node, .. } if node == control => Some(*parent),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("control {control} is inserted: {first:#?}"));
+        for modifier in modifiers_of(&first, holder)
+            .into_iter()
+            .chain(modifiers_of(&first, *control))
+        {
+            assert!(
+                !matches!(
+                    modifier,
+                    Modifier::Background(_) | Modifier::Border { .. } | Modifier::BorderEach { .. }
+                ),
+                "control {control} is drawn without the input box, but has {modifier:?}: {first:#?}"
+            );
+        }
+    }
+}
+
+fn broken_avatar() -> Element {
+    rsx! {
+        div { style: "display: flex; align-items: flex-start",
+            img { src: "avatars/me.png", alt: "Me" }
+            img { src: "cat.png", alt: "Cat" }
+        }
+    }
+}
+
+/// An image the resolver cannot draw reaches the renderer as Chromium draws a broken
+/// image: a `Canvas` drawing the 16px broken-image icon, and its alt text as a `Text` beside
+/// it, inside a clipping box the size of the image. An image the resolver draws sends its
+/// picture and not its alt text.
+#[test]
+fn fr34_unresolved_img_sends_the_broken_image_icon_and_its_alt_text() {
+    let mut host = Host::html(broken_avatar, config_with_cat);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let canvases = created(&first, WidgetKind::Canvas);
+    assert_eq!(
+        canvases.len(),
+        1,
+        "one icon, for the image with no asset: {first:#?}"
+    );
+    let icon = canvases[0];
+    let drawing = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Prop(node, PropertyKind::Commands, Value::Bytes(bytes)) if *node == icon => {
+                Some(bytes.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the icon is given its drawing: {first:#?}"));
+    let commands = dioxus_compose::drawing::decode_commands(&drawing).expect("the drawing decodes");
+    assert!(!commands.is_empty(), "the icon draws something");
+    assert_eq!(
+        modifiers_of(&first, icon),
+        vec![
+            Modifier::Offset { x: 0.0, y: 0.0 },
+            Modifier::RequiredSize {
+                width: 16.0,
+                height: 16.0
+            },
+        ]
+    );
+
+    let alt = text_node(&first, "Me");
+    assert!(
+        modifiers_of(&first, alt).contains(&Modifier::Offset { x: 16.0, y: 0.0 }),
+        "the alt text starts after the icon: {first:#?}"
+    );
+    assert!(
+        !texts(&first).iter().any(|text| text == "Cat"),
+        "the image the resolver draws shows no alt text"
+    );
+    assert_eq!(
+        created(&first, WidgetKind::Image).len(),
+        1,
+        "the cat is drawn"
+    );
+
+    // The box both sit in clips them to the image: "Me" is 20px, so 36 by 20.
+    let holder = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Insert { parent, node, .. } if *node == icon => Some(*parent),
+            _ => None,
+        })
+        .expect("the icon is inserted");
+    let holder_modifiers = modifiers_of(&first, holder);
+    assert!(
+        holder_modifiers.contains(&Modifier::RequiredSize {
+            width: 36.0,
+            height: 20.0
+        }) && holder_modifiers.contains(&Modifier::Clip(true)),
+        "{holder_modifiers:#?}"
+    );
+
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new(), "an unchanged frame sends nothing");
 }

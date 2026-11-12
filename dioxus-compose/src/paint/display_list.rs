@@ -264,6 +264,35 @@ pub enum RunMarker {
     Prefix { len: usize },
 }
 
+/// A list marker drawn as a shape: what `list-style-type: disc`, `circle` and `square`
+/// draw.
+///
+/// Chromium paints these three as shapes sized from the item's font, not as characters of
+/// it. The shape is a third of the font's ascent across (5px for a 16px font), placed in
+/// the marker box before the item and level with the middle of its lowercase letters.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MarkerShape {
+    /// The list item the marker belongs to.
+    pub owner: NodeId,
+    pub symbol: MarkerSymbol,
+    /// The shape's bounds. The line of a [`MarkerSymbol::Circle`] is 1px wide and centred
+    /// on this rectangle's edge, as Chromium strokes it.
+    pub rect: Rect,
+    /// The item's `color`, which the marker takes.
+    pub color: Rgba,
+}
+
+/// Which shape a [`MarkerShape`] is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MarkerSymbol {
+    /// A filled circle.
+    Disc,
+    /// The outline of a circle, 1px wide.
+    Circle,
+    /// A filled square.
+    Square,
+}
+
 /// What kind of form field an `<input>`, `<textarea>` or `<select>` is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InputKind {
@@ -418,6 +447,21 @@ pub struct ReplacedImage {
     /// What the application's [`ImageResolver`](crate::html::ImageResolver) answered for the
     /// image's natural size during layout, if anything.
     pub natural_size: Option<(f32, f32)>,
+    /// What the element shows when the plan has no picture to draw for it: present for an
+    /// image with no natural size and a non-empty `alt`.
+    pub fallback: Option<ImageFallback>,
+}
+
+/// What an `<img>` shows in the place of an image it cannot draw, the way Chromium draws an
+/// image it could not load: the broken-image icon at the start of the content box and the
+/// alt text beside it. Text that does not fit beside the icon goes below it, wrapped at the
+/// content box's width, and the content box clips both.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ImageFallback {
+    /// Where the broken-image icon is drawn, 16 by 16.
+    pub icon: Rect,
+    /// The alt text and where it goes. Its owner is the `<img>`.
+    pub text: TextRun,
 }
 
 /// A 2D affine matrix in CSS's order: a point `(x, y)` goes to
@@ -855,14 +899,41 @@ pub struct NodeEntry {
     /// boxes that are not its ancestors), and a renderer that nests boxes needs to know.
     pub parent: Option<NodeId>,
     pub texts: Vec<TextRun>,
+    /// The list marker, when it is drawn as a shape (`disc`, `circle`, `square`). A marker
+    /// of any other type is one of [`NodeEntry::texts`].
+    pub marker: Option<MarkerShape>,
     pub input: Option<InputField>,
     /// Present for an `<img>` with a `src`.
     pub image: Option<ReplacedImage>,
 }
 
+/// The background of the canvas the document is drawn on.
+///
+/// CSS takes it from the root element, or from `<body>` when the root's background colour
+/// is transparent and it has no image, and paints it over the whole canvas rather than over
+/// the box it was declared on. The element it came from does not paint it again: its
+/// entry's `background` and `backgrounds` are empty.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CanvasBackground {
+    /// The element the background was declared on, `<html>` or `<body>`, under the id its
+    /// entry has. An animation of its background colour plays on the canvas.
+    pub source: NodeId,
+    /// What the canvas covers: the viewport, and the whole document where it reaches
+    /// further. A renderer whose page is larger still paints the background over all of it.
+    pub area: Rect,
+    pub background: Option<Rgba>,
+    /// The `background-image` layers, top first. Each is sized and placed against the
+    /// root element's box, as CSS places them even when they came from `<body>`, and its
+    /// painting area is the canvas.
+    pub backgrounds: Vec<BackgroundLayer>,
+}
+
 /// A laid-out document, back to front.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DisplayList {
+    /// The canvas background, `None` when neither the root nor `<body>` has one and the
+    /// canvas is transparent.
+    pub canvas: Option<CanvasBackground>,
     pub entries: Vec<NodeEntry>,
     /// The transitions this layout started, for a renderer to play.
     pub transitions: Vec<TransitionStart>,
@@ -883,6 +954,9 @@ pub struct DisplayListDiff {
     /// The transitions the new layout started. These are events, so they are listed
     /// whether or not an entry changed with them.
     pub transitions: Vec<TransitionStart>,
+    /// Present only when the canvas background changed: the new one, which is `None` when
+    /// the canvas is now transparent.
+    pub canvas: Option<Option<CanvasBackground>>,
 }
 
 impl DisplayListDiff {
@@ -891,12 +965,22 @@ impl DisplayListDiff {
             && self.removed.is_empty()
             && self.order.is_none()
             && self.transitions.is_empty()
+            && self.canvas.is_none()
     }
 }
 
 impl DisplayList {
     pub fn get(&self, node: NodeId) -> Option<&NodeEntry> {
         self.entries.iter().find(|entry| entry.node == node)
+    }
+
+    /// The background colour drawn for a box: its entry's, or the canvas's when the box is
+    /// the element the canvas background was taken from.
+    pub fn background_of(&self, entry: &NodeEntry) -> Option<Rgba> {
+        match &self.canvas {
+            Some(canvas) if canvas.source == entry.node => canvas.background,
+            _ => entry.background,
+        }
     }
 
     /// The `opacity` of the box itself: [`NodeEntry::opacity`] with its ancestors' taken
@@ -946,6 +1030,7 @@ impl DisplayList {
             removed,
             order,
             transitions: self.transitions.clone(),
+            canvas: (self.canvas != previous.canvas).then(|| self.canvas.clone()),
         }
     }
 
@@ -1152,6 +1237,15 @@ pub(crate) struct MeasuredMarker {
     pub gap: f32,
     /// Whether the marker is inside the item's box rather than before it.
     pub inside: bool,
+    /// The shape drawn in the place of the text, for `disc`, `circle` and `square`.
+    pub symbol: Option<MarkerSymbol>,
+    /// The ascent of the item's font, rounded to a whole pixel as Chromium rounds it. The
+    /// size and place of a shape come from it.
+    pub ascent: f32,
+    /// The marker is the start of the item's own text (an inside marker of an item with
+    /// text), so it draws no run of its own. Only a shape marker is kept in that case: the
+    /// shape is drawn over the place its character keeps in the text.
+    pub in_text: bool,
 }
 
 /// Everything the layout pass measured, for the display list to place.
@@ -1161,4 +1255,16 @@ pub(crate) struct MeasuredTexts {
     pub texts: HashMap<usize, MeasuredText>,
     /// The list markers drawn as runs of their own, keyed by the list item's node.
     pub markers: HashMap<usize, MeasuredMarker>,
+    /// The alt text of each `<img>` drawn as a broken image, keyed by the `<img>`.
+    pub alts: HashMap<usize, MeasuredAlt>,
+}
+
+/// The alt text of an `<img>` drawn as a broken image, measured during layout.
+#[derive(Clone, Debug)]
+pub(crate) struct MeasuredAlt {
+    pub text: MeasuredText,
+    /// Where the text starts, from the top left of the image's content box: after the icon
+    /// when it fits beside it, below the icon when it does not.
+    pub x: f32,
+    pub y: f32,
 }
