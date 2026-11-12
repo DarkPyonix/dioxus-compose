@@ -1283,3 +1283,80 @@ fn fr34_button_under_block_sends_label_and_soft_wrap_false() {
         "soft wrap is false for unconstrained label: {props:#?}"
     );
 }
+
+fn density() -> Element {
+    let mut chosen = use_signal(|| 0usize);
+    rsx! {
+        for (index, label) in ["Comfortable", "Compact"].into_iter().enumerate() {
+            label { key: "{label}",
+                input {
+                    r#type: "radio",
+                    name: "density",
+                    value: "{label}",
+                    checked: chosen() == index,
+                    onclick: move |_| chosen.set(index),
+                }
+                "{label}"
+            }
+        }
+        input { r#type: "checkbox", checked: true }
+    }
+}
+
+/// The checked radio button of a group is sent checked and the other unchecked, so the
+/// renderer draws the dot in the one the app chose. Neither it nor the checkbox sits in a
+/// box that draws the user-agent `input` border or background around the control.
+#[test]
+fn fr34_checked_radio_is_sent_checked_and_controls_draw_no_input_box() {
+    let mut host = Host::html(density, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let radios = created(&first, WidgetKind::RadioButton);
+    assert_eq!(radios.len(), 2, "two radio buttons: {first:#?}");
+    let checked: Vec<Option<bool>> = radios
+        .iter()
+        .map(|radio| {
+            first.iter().rev().find_map(|record| match record {
+                Record::Prop(id, PropertyKind::Checked, Value::Bool(on)) if id == radio => {
+                    Some(*on)
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    assert_eq!(
+        checked,
+        vec![Some(true), Some(false)],
+        "Comfortable is sent checked, Compact unchecked: {first:#?}"
+    );
+
+    let checkbox = created(&first, WidgetKind::Checkbox);
+    assert_eq!(checkbox.len(), 1);
+    assert!(first.contains(&Record::Prop(
+        checkbox[0],
+        PropertyKind::Checked,
+        Value::Bool(true)
+    )));
+
+    for control in radios.iter().chain(&checkbox) {
+        let holder = first
+            .iter()
+            .find_map(|record| match record {
+                Record::Insert { parent, node, .. } if node == control => Some(*parent),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("control {control} is inserted: {first:#?}"));
+        for modifier in modifiers_of(&first, holder)
+            .into_iter()
+            .chain(modifiers_of(&first, *control))
+        {
+            assert!(
+                !matches!(
+                    modifier,
+                    Modifier::Background(_) | Modifier::Border { .. } | Modifier::BorderEach { .. }
+                ),
+                "control {control} is drawn without the input box, but has {modifier:?}: {first:#?}"
+            );
+        }
+    }
+}

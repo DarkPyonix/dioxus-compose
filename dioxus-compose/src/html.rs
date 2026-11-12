@@ -112,8 +112,10 @@ pub(crate) use runtime::{css_extent, page_zoom};
 
 /// Adds the user-agent rules this crate relies on for form controls to a document that
 /// did not come from an [`HtmlDom`]: a `<select>` is a box of its own, and its options are
-/// listed by the renderer's dropdown rather than drawn in the page. Call it once, before
-/// the first layout. An [`HtmlDom`] does this for its own document.
+/// listed by the renderer's dropdown rather than drawn in the page; a checkbox and a radio
+/// button are 13 by 13 with Chromium's margins and no `input` padding, border or
+/// background. Call it once, before the first layout. An [`HtmlDom`] does this for its own
+/// document.
 pub fn add_form_control_styles(doc: &mut BaseDocument) {
     doc.add_user_agent_stylesheet(dom::FORM_CONTROLS_CSS);
 }
