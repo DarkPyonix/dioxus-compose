@@ -658,6 +658,44 @@ fn fr42_overflow_hidden_sends_clip_visible_does_not() {
     );
 }
 
+fn rounded_scroller() -> Element {
+    rsx! {
+        div { style: "width: 120px; overflow-x: auto; border-radius: 8px; background-color: rgb(0, 0, 255)",
+            div { style: "width: 300px; height: 40px; background-color: rgb(255, 0, 0)" }
+        }
+    }
+}
+
+/// A scroll container with rounded corners clips its content to them, as `overflow: hidden`
+/// does: its scroll viewport is sent with the corners and then `Clip`, so the content's
+/// corners are cut where the box's are.
+#[test]
+fn fr34_scroll_container_clips_to_its_rounded_corners() {
+    let mut host = Host::html(rounded_scroller, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let rows = created(&first, WidgetKind::ScrollRow);
+    assert_eq!(rows.len(), 1, "{first:#?}");
+    let modifiers = modifiers_of(&first, rows[0]);
+    let corners = modifiers
+        .iter()
+        .position(|modifier| {
+            *modifier
+                == Modifier::CornerEach {
+                    top_left: 8.0,
+                    top_right: 8.0,
+                    bottom_right: 8.0,
+                    bottom_left: 8.0,
+                }
+        })
+        .unwrap_or_else(|| panic!("the scroll viewport has 8px corners: {modifiers:?}"));
+    let clip = modifiers
+        .iter()
+        .position(|modifier| *modifier == Modifier::Clip(true))
+        .unwrap_or_else(|| panic!("the scroll viewport clips: {modifiers:?}"));
+    assert!(corners < clip, "{modifiers:?}");
+}
+
 fn reordering() -> Element {
     let mut presses = use_signal(|| 0u32);
     let items: Vec<u32> = if presses() > 0 {

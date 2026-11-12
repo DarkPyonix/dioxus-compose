@@ -288,6 +288,76 @@ html, body { margin: 0; }
     );
 }
 
+/// A scroll container clips its content to its padding box with the corners rounded, the
+/// way `overflow: hidden` does: the border radii less the adjoining border widths. With both
+/// axes scrolling, the column is the viewport and carries the corners; the row inside it is
+/// as tall as the content and carries none.
+#[test]
+fn fr34_plan_scroll_container_clips_to_its_rounded_padding_box() {
+    let (doc, plan) = plan_html(
+        r#"<!DOCTYPE html><html><head><style>
+html, body { margin: 0; }
+#row { width: 60px; height: 60px; overflow-x: auto; overflow-y: hidden; border-radius: 8px; }
+#bordered { width: 60px; height: 60px; overflow-y: auto; overflow-x: hidden;
+  border: 2px solid rgb(0, 0, 0); border-radius: 8px 4px; }
+#both { width: 60px; height: 60px; overflow: auto; border-radius: 10px; }
+.big { width: 200px; height: 200px; background-color: rgb(0, 0, 255); }
+</style></head><body><div id="row"><div class="big"></div></div><div id="bordered"><div class="big"></div></div><div id="both"><div class="big"></div></div></body></html>"#,
+    );
+
+    // No border: the padding box is the border box, and its corners are the box's own.
+    let id = key(&doc, "row").node().unwrap();
+    let row = node(&plan, PlanKey::ScrollRow(id));
+    assert_eq!(
+        row.modifier(ModifierSlot::Shape),
+        Some(&PlanModifier::Shape { radius: 8.0 }),
+        "{row:#?}"
+    );
+    assert_eq!(row.modifier(ModifierSlot::Clip), Some(&PlanModifier::Clip));
+    // The corners come before the clip, so the clip follows them.
+    let shape = row
+        .modifiers
+        .iter()
+        .position(|m| matches!(m, PlanModifier::Shape { .. }))
+        .unwrap();
+    let clip = row
+        .modifiers
+        .iter()
+        .position(|m| matches!(m, PlanModifier::Clip))
+        .unwrap();
+    assert!(shape < clip, "{:?}", row.modifiers);
+
+    // A 2px border: 8px corners become 6px and 4px corners become 2px.
+    let id = key(&doc, "bordered").node().unwrap();
+    let column = node(&plan, PlanKey::ScrollColumn(id));
+    assert_eq!(
+        column.modifier(ModifierSlot::CornerEach),
+        Some(&PlanModifier::CornerEach(Corners {
+            top_left: 6.0,
+            top_right: 2.0,
+            bottom_right: 6.0,
+            bottom_left: 2.0,
+        })),
+        "{column:#?}"
+    );
+    assert_eq!(
+        column.modifier(ModifierSlot::Clip),
+        Some(&PlanModifier::Clip)
+    );
+
+    // Both axes: the column has the corners, the row inside it has none.
+    let id = key(&doc, "both").node().unwrap();
+    let column = node(&plan, PlanKey::ScrollColumn(id));
+    assert_eq!(
+        column.modifier(ModifierSlot::Shape),
+        Some(&PlanModifier::Shape { radius: 10.0 }),
+        "{column:#?}"
+    );
+    let row = node(&plan, PlanKey::ScrollRow(id));
+    assert_eq!(row.modifier(ModifierSlot::Shape), None, "{row:#?}");
+    assert_eq!(row.modifier(ModifierSlot::CornerEach), None, "{row:#?}");
+}
+
 /// `opacity` fades a box and what is inside it as one group, once. A child without its
 /// own opacity gets no Alpha; a child with `opacity: 0.5` inside a group at 0.5 gets its
 /// own 0.5, not the 0.25 the two make together.
