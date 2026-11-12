@@ -449,27 +449,31 @@ fn fr34_root_gradient_paints_the_canvas() {
     assert!(node_backgrounds(&mut dom, "html").is_empty());
 
     // The renderer gets one layer the page's size, inside the page, holding six 100px
-    // tiles down the window.
+    // tiles down the window. The window's scroll is that size too, but only a layer clips.
     let frame = FirstFrame::of(short_page, root_gradient);
     let window = Modifier::RequiredSize {
         width: 800.0,
         height: 600.0,
     };
     let sized = frame.nodes_with(&window);
-    let layer = sized
-        .iter()
-        .copied()
-        .find(|node| {
-            frame
-                .parent_of(*node)
-                .is_some_and(|parent| sized.contains(&parent))
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "a window-sized layer inside the page: {:#?}",
-                frame.modifiers
-            )
-        });
+    let layers: Vec<u32> = frame
+        .nodes_with(&Modifier::Clip(true))
+        .into_iter()
+        .filter(|node| sized.contains(node))
+        .collect();
+    assert_eq!(
+        layers.len(),
+        1,
+        "one window-sized layer: {:#?}",
+        frame.modifiers
+    );
+    let layer = layers[0];
+    let page = frame.parent_of(layer).expect("the layer is inserted");
+    assert!(
+        sized.contains(&page),
+        "the layer is inside the window-sized page: {:#?}",
+        frame.inserts
+    );
     let tiles: Vec<u32> = frame
         .inserts
         .iter()
@@ -545,10 +549,17 @@ fn fr34_body_background_animation_plays_on_the_canvas() {
     );
 
     let frame = FirstFrame::of(short_page, body_glow);
-    let page = frame.nodes_with(&Modifier::RequiredSize {
+    // The window's scroll is 800 by 600 as well; the page is the one of the two that
+    // paints the colour.
+    let sized = frame.nodes_with(&Modifier::RequiredSize {
         width: 800.0,
         height: 600.0,
     });
+    let page: Vec<u32> = frame
+        .nodes_with(&Modifier::Background(paint(RED)))
+        .into_iter()
+        .filter(|node| sized.contains(node))
+        .collect();
     assert_eq!(page.len(), 1, "{:#?}", frame.modifiers);
     assert_eq!(
         frame.animated, page,
