@@ -39,6 +39,7 @@
 
 pub(crate) mod background;
 pub(crate) mod convert;
+mod flex_intrinsic;
 pub(crate) mod image;
 pub(crate) mod inline_spans;
 pub(crate) mod list;
@@ -2586,6 +2587,11 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                     );
                     if column && inputs.available_space.height == AvailableSpace::MinContent {
                         inputs.available_space.height = AvailableSpace::MaxContent;
+                    }
+                    // Taffy loses some items' contributions when it sums a row's
+                    // content width; that sum is made here instead.
+                    if let Some(width) = tree.row_flex_intrinsic_width(node_id, inputs) {
+                        inputs.known_dimensions.width = Some(width);
                     }
                     compute_flexbox_layout(tree, node_id, inputs)
                 }
