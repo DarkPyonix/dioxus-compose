@@ -18,7 +18,9 @@ use dioxus_compose::html::{
 use dioxus_compose::prelude::WritableExt;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    Color, EventPayload, Modifier, Paint, PropertyKind, TextOverflow, WidgetKind,
+    Color, EventPayload, Modifier, Paint, PropertyKind, SEMANTICS_CLICK_ACTION_BIT,
+    SEMANTICS_DISABLED_SHIFT, SEMANTICS_EXPANDED_SHIFT, SEMANTICS_HIDDEN_BIT,
+    SEMANTICS_SELECTED_SHIFT, SemanticsRole, TextOverflow, WidgetKind,
 };
 use dioxus_compose::spans::{TextSpan, TextSpans};
 use dioxus_hooks::use_signal;
@@ -1574,4 +1576,293 @@ fn fr34_unresolved_img_sends_the_broken_image_icon_and_its_alt_text() {
 
     let next = tree(records(host.render_frame(0).unwrap()));
     assert_eq!(next, Vec::new(), "an unchanged frame sends nothing");
+}
+
+fn semantic_page() -> Element {
+    rsx! {
+        div { role: "tablist", "aria-label": "열린 파일",
+            div { role: "tab", "aria-selected": "true", "a.rs" }
+            div { role: "tab", "aria-selected": "false", "b.rs" }
+        }
+        nav { "aria-label": "도구 창", "tools" }
+        button { title: "닫기", onclick: move |_| {}, "x" }
+        div { role: "treeitem", "aria-expanded": "true", "aria-label": "src", "src" }
+        div { "aria-hidden": "true", "decoration" }
+        button { disabled: true, "nope" }
+        div { "plain" }
+    }
+}
+
+fn semantics_of(records: &[Record], role: SemanticsRole) -> Vec<(u32, u32)> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, Modifier::Semantics { role: r, state }) if *r == role => {
+                Some((*node, *state))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn accessible_name(records: &[Record], node: u32) -> Option<String> {
+    records.iter().rev().find_map(|record| match record {
+        Record::Prop(id, PropertyKind::AccessibleName, Value::Str(text)) if *id == node => {
+            Some(text.clone())
+        }
+        _ => None,
+    })
+}
+
+/// An element's `role`, its `aria-label` or `title`, and its `aria-*` state reach the renderer as a
+/// `Semantics` modifier and an `AccessibleName` property, so the accessibility tree names what an
+/// icon button or a tab is. An element that says nothing is left as it was.
+#[test]
+fn fr34_aria_role_label_and_state_reach_the_renderer_as_semantics() {
+    let mut host = Host::html(semantic_page, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let tablist = semantics_of(&first, SemanticsRole::TabList);
+    assert_eq!(tablist.len(), 1, "{first:#?}");
+    assert_eq!(tablist[0].1, 0, "no state, no click action");
+    assert_eq!(
+        accessible_name(&first, tablist[0].0).as_deref(),
+        Some("열린 파일")
+    );
+
+    let tabs = semantics_of(&first, SemanticsRole::Tab);
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(
+        tabs[0].1,
+        2 << SEMANTICS_SELECTED_SHIFT,
+        "aria-selected=true"
+    );
+    assert_eq!(
+        tabs[1].1,
+        1 << SEMANTICS_SELECTED_SHIFT,
+        "aria-selected=false is off, not unset"
+    );
+
+    let nav = semantics_of(&first, SemanticsRole::Navigation);
+    assert_eq!(nav.len(), 1, "a <nav> is a navigation");
+    assert_eq!(
+        accessible_name(&first, nav[0].0).as_deref(),
+        Some("도구 창")
+    );
+
+    let buttons = semantics_of(&first, SemanticsRole::Button);
+    assert_eq!(buttons.len(), 2, "both <button>s");
+    let closing = buttons
+        .iter()
+        .find(|(node, _)| accessible_name(&first, *node).as_deref() == Some("닫기"))
+        .expect("the title names the icon button");
+    assert_eq!(
+        closing.1 & SEMANTICS_CLICK_ACTION_BIT,
+        SEMANTICS_CLICK_ACTION_BIT,
+        "it takes a click"
+    );
+    let disabled = buttons.iter().find(|(node, _)| node != &closing.0).unwrap();
+    assert_eq!(
+        disabled.1 & (3 << SEMANTICS_DISABLED_SHIFT),
+        2 << SEMANTICS_DISABLED_SHIFT,
+        "the disabled attribute"
+    );
+
+    let item = semantics_of(&first, SemanticsRole::TreeItem);
+    assert_eq!(
+        item[0].1,
+        2 << SEMANTICS_EXPANDED_SHIFT,
+        "aria-expanded=true"
+    );
+    assert_eq!(accessible_name(&first, item[0].0).as_deref(), Some("src"));
+
+    let hidden: Vec<_> = first
+        .iter()
+        .filter(|record| matches!(record, Record::Modifier(_, _, Modifier::Semantics { state, .. }) if state & SEMANTICS_HIDDEN_BIT != 0))
+        .collect();
+    assert_eq!(
+        hidden.len(),
+        1,
+        "aria-hidden=true leaves the node out of the tree"
+    );
+
+    let semantic_nodes = first
+        .iter()
+        .filter(|record| matches!(record, Record::Modifier(_, _, Modifier::Semantics { .. })))
+        .count();
+    assert_eq!(
+        semantic_nodes, 8,
+        "the plain div carries no semantics: {first:#?}"
+    );
+}
+
+fn named_by_text() -> Element {
+    rsx! {
+        button { "  Save " span { "  all" } "  " }
+        div { role: "tab", "a.rs" }
+        h2 { "Settings" }
+        button { "aria-label": "Close", span { "x" } }
+        button { title: "Run", "▶" }
+        button { span { "aria-hidden": "true", "★" } "Star" }
+        div { role: "tablist", "a.rs b.rs" }
+        button { span {} }
+    }
+}
+
+/// Without `aria-label` or `title`, a button, a tab and a heading are named by their text:
+/// every descendant's text joined, white space folded to one space. A label wins over the
+/// text, a role that does not take its name from its content (a tab list) gets none from
+/// it, and a button with no text has no name.
+#[test]
+fn fr34_semantics_name_comes_from_text_without_a_label() {
+    let mut host = Host::html(named_by_text, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let names = |role| -> Vec<Option<String>> {
+        semantics_of(&first, role)
+            .iter()
+            .map(|(node, _)| accessible_name(&first, *node))
+            .collect()
+    };
+    assert_eq!(
+        names(SemanticsRole::Button),
+        vec![
+            Some("Save all".to_string()),
+            Some("Close".to_string()),
+            Some("Run".to_string()),
+            Some("Star".to_string()),
+            None,
+        ],
+        "{first:#?}"
+    );
+    assert_eq!(names(SemanticsRole::Tab), vec![Some("a.rs".to_string())]);
+    assert_eq!(
+        names(SemanticsRole::Heading),
+        vec![Some("Settings".to_string())]
+    );
+    assert_eq!(names(SemanticsRole::TabList), vec![None]);
+}
+
+fn menu_with_action() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let count = presses();
+    rsx! {
+        div { role: "menu",
+            div {
+                role: "menuitem",
+                style: "width: 100px; height: 20px",
+                onclick: move |_| presses += 1,
+                "Open {count}"
+            }
+        }
+    }
+}
+
+/// An element with a click handler exposes the click action, and the renderer's
+/// accessibility click (a `Clicked` event for the node's `Clickable` handler, which is what
+/// AXPress sends) runs that element's `onclick`. An element without one exposes no action.
+#[test]
+fn fr34_semantics_click_action_dispatches_onclick() {
+    let mut host = Host::html(menu_with_action, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let menu = semantics_of(&first, SemanticsRole::Menu);
+    assert_eq!(menu.len(), 1, "{first:#?}");
+    assert_eq!(
+        menu[0].1 & SEMANTICS_CLICK_ACTION_BIT,
+        0,
+        "the menu takes no click"
+    );
+
+    let item = semantics_of(&first, SemanticsRole::MenuItem);
+    assert_eq!(item.len(), 1, "{first:#?}");
+    let (node, state) = item[0];
+    assert_eq!(
+        state & SEMANTICS_CLICK_ACTION_BIT,
+        SEMANTICS_CLICK_ACTION_BIT
+    );
+    assert_eq!(accessible_name(&first, node).as_deref(), Some("Open 0"));
+    let handler = modifiers_of(&first, node)
+        .iter()
+        .find_map(|modifier| match modifier {
+            Modifier::Clickable { handler_id } => Some(*handler_id),
+            _ => None,
+        })
+        .expect("the item the action is on carries the handler the action calls");
+
+    let after = click(&mut host, (node, handler));
+    assert_eq!(texts(&after), vec!["Open 1".to_string()]);
+    assert_eq!(
+        accessible_name(&after, node).as_deref(),
+        Some("Open 1"),
+        "the name follows the text: {after:#?}"
+    );
+}
+
+fn toggled_tabs() -> Element {
+    let mut current = use_signal(|| 0u32);
+    let selected = |index: u32| if current() == index { "true" } else { "false" };
+    rsx! {
+        div { role: "tablist",
+            div { role: "tab", "aria-selected": selected(0), onclick: move |_| current.set(0), "a.rs" }
+            div { role: "tab", "aria-selected": selected(1), onclick: move |_| current.set(1), "b.rs" }
+        }
+        div { "plain" }
+    }
+}
+
+/// An unchanged frame sends no semantics. An `aria-selected` that changes sends the
+/// `Semantics` modifier of the two tabs it changed on, and nothing for the other nodes.
+#[test]
+fn fr34_semantics_unchanged_frame_sends_nothing() {
+    let mut host = Host::html(semantic_page, config);
+    host.rebuild().unwrap();
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+
+    let mut host = Host::html(toggled_tabs, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+    let tabs = semantics_of(&first, SemanticsRole::Tab);
+    assert_eq!(tabs.len(), 2, "{first:#?}");
+    let second = tabs[1].0;
+    let handler = modifiers_of(&first, second)
+        .iter()
+        .find_map(|modifier| match modifier {
+            Modifier::Clickable { handler_id } => Some(*handler_id),
+            _ => None,
+        })
+        .expect("the tab takes clicks");
+
+    let after = click(&mut host, (second, handler));
+    let sent: Vec<&Record> = after
+        .iter()
+        .filter(|record| {
+            matches!(record, Record::Modifier(_, _, Modifier::Semantics { .. }))
+                || matches!(record, Record::Prop(_, PropertyKind::AccessibleName, _))
+        })
+        .collect();
+    let click_action = SEMANTICS_CLICK_ACTION_BIT;
+    assert_eq!(
+        sent.len(),
+        2,
+        "the two tabs whose aria-selected changed, and no name: {after:#?}"
+    );
+    assert!(sent.iter().any(|record| matches!(record,
+        Record::Modifier(node, _, Modifier::Semantics { role: SemanticsRole::Tab, state })
+            if *node == tabs[0].0 && *state == (1 << SEMANTICS_SELECTED_SHIFT) | click_action)));
+    assert!(sent.iter().any(|record| matches!(record,
+        Record::Modifier(node, _, Modifier::Semantics { role: SemanticsRole::Tab, state })
+            if *node == second && *state == (2 << SEMANTICS_SELECTED_SHIFT) | click_action)));
+    let touched: Vec<u32> = after
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, _) | Record::Prop(node, _, _) => Some(*node),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        touched
+            .iter()
+            .all(|node| *node == tabs[0].0 || *node == second),
+        "only the two tabs are written to: {after:#?}"
+    );
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
 }
