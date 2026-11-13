@@ -196,6 +196,7 @@ fn surface() -> Element {
                         fired(format!("Column.on_window_drag_over({:?},{})", over.kind, over.window))
                     },
                     motion: MotionRole::Quick,
+                    radio_group: true,
                     on_motion_finished: move |size: MotionFinished| fired(format!(
                         "Column.on_motion_finished({},{})",
                         size.width_dp, size.height_dp
@@ -229,6 +230,7 @@ fn surface() -> Element {
                         spacing: 4.0,
                         space_role: SpaceRole::Xs,
                         alignment: Alignment::CenterStart,
+                        radio_group: true,
                         Spacer { width: 16.0, height: 16.0 }
                         Separator {}
                         Divider { vertical: true }
@@ -354,8 +356,28 @@ fn surface() -> Element {
                         gutter_padding: 6.0,
                         text_inset: 8.0,
                         colors: editor_colors(),
-                        on_code_metrics: move |height: f64| fired(format!("CodeEditor.on_code_metrics({height})")),
-                        on_code_scrolled: move |offset: f64| fired(format!("CodeEditor.on_code_scrolled({offset})")),
+                        on_code_metrics: move |metrics: CodeMetrics| fired(format!("CodeEditor.on_code_metrics({})", metrics.line_height_px)),
+                        on_code_scrolled: move |scroll: CodeScroll| fired(format!("CodeEditor.on_code_scrolled({})", scroll.offset_px)),
+                        on_caret_rect: move |caret: CaretRect| fired(format!(
+                            "CodeEditor.on_caret_rect({},{},{},{},{},{})",
+                            caret.position.line,
+                            caret.position.column,
+                            caret.rect.x,
+                            caret.rect.y,
+                            caret.rect.width,
+                            caret.rect.height
+                        )),
+                        on_key_preview: move |event: KeyEvent| fired(format!("CodeEditor.on_key_preview({:?})", event.key())),
+                        pointer_kinds: PointerKinds::DOWN | PointerKinds::MOVE,
+                        on_code_pointer: move |pointer: CodePointer| fired(format!(
+                            "CodeEditor.on_code_pointer({:?},{:?})",
+                            pointer.event.kind(),
+                            pointer.position.map(|at| (at.line, at.column))
+                        )),
+                        type_role: TypeRole::Mono,
+                        font_size: 13.0,
+                        line_height: 20.0,
+                        font: css_font(),
                         on_change: move |_| fired("CodeEditor.on_change"),
                         on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
                         on_hover: move |_| fired("CodeEditor.on_hover"),
@@ -403,6 +425,9 @@ fn surface() -> Element {
                         RadioButton {
                             selected: true,
                             enabled: true,
+                            ring_color: PRIMARY,
+                            dot_color: SURFACE,
+                            size: 20.0,
                             on_change: move |value: bool| fired(format!("RadioButton.on_change({value})")),
                         }
                         Switch {
@@ -757,6 +782,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnWindowDragOver, Handler),
                 (P::AccessibleName, text("Mail")),
                 (P::OnMotionFinished, Handler),
+                (P::RadioGroup, flag(true)),
             ],
         ),
         (
@@ -766,6 +792,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Spacing, float(4.0)),
                 (P::SpaceRole, role(SpaceRole::Xs)),
                 (P::Alignment, role(Alignment::CenterStart)),
+                (P::RadioGroup, flag(true)),
             ],
         ),
         (W::Box, vec![(P::Alignment, role(Alignment::BottomEnd))]),
@@ -887,6 +914,17 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 ),
                 (P::OnCodeMetrics, Handler),
                 (P::OnCodeScrolled, Handler),
+                (P::OnCaretRect, Handler),
+                (P::OnKeyPreview, Handler),
+                (
+                    P::PointerKinds,
+                    int(i64::from((PointerKinds::DOWN | PointerKinds::MOVE).bits())),
+                ),
+                (P::OnCodePointer, Handler),
+                (P::TypeRole, role(TypeRole::Mono)),
+                (P::FontSize, float(13.0)),
+                (P::LineHeight, float(20.0)),
+                (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
                 (P::OnValueChange, Handler),
                 (P::OnEditRejected, Handler),
                 (P::OnHover, Handler),
@@ -956,6 +994,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::ContainerColor, int(paint_bits(PRIMARY))),
+                (P::CheckColor, int(paint_bits(SURFACE))),
+                (P::ControlSize, pair_bytes(20.0, 20.0)),
             ],
         ),
         (
@@ -1387,6 +1428,52 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             "CodeEditor.on_code_scrolled(240)",
         ),
         (
+            W::CodeEditor,
+            P::OnCaretRect,
+            EventPayload::CaretRect {
+                line: 2,
+                column: 4,
+                rect: CodeRect::new(120.5, 64.25, 2.0, 20.0),
+            },
+            "CodeEditor.on_caret_rect(2,4,120.5,64.25,2,20)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnKeyPreview,
+            EventPayload::KeyDown {
+                key: Key::ArrowDown,
+                shift_key: false,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0x51,
+                text: "ArrowDown",
+            },
+            "CodeEditor.on_key_preview(ArrowDown)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCodePointer,
+            EventPayload::CodePointer {
+                kind: PointerKind::Down,
+                pointer_id: 1,
+                pointer_type: PointerType::Mouse,
+                x: 96.5,
+                y: 30.25,
+                buttons: 1,
+                button: 1,
+                modifiers: 8,
+                click_count: 1,
+                delta_x: 0.0,
+                delta_y: 0.0,
+                delta_mode: WheelDeltaMode::Pixel,
+                timestamp_nanos: 0,
+                position: Some(Position::new(1, 13)),
+            },
+            "CodeEditor.on_code_pointer(Down,Some((1, 13)))",
+        ),
+        (
             W::Popover,
             P::OnDismiss,
             EventPayload::Clicked,
@@ -1694,6 +1781,7 @@ fn nothing_asked() -> Element {
             Dropdown { Text { text: "one" } }
             Switch { checked: true }
             Checkbox { checked: true }
+            RadioButton { selected: true }
             Slider { value: 0.5 }
             ScrollColumn { Text { text: "a" } }
             LazyColumn { item_count: 1, item: move |_| rsx! { Text { text: "b" } } }
@@ -1754,6 +1842,10 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
         P::Snap,
         P::MaxHeightFraction,
         P::CollapseBelow,
+        P::OnCaretRect,
+        P::OnKeyPreview,
+        P::OnCodePointer,
+        P::RadioGroup,
     ];
     let sent: Vec<String> = mutations
         .iter()
