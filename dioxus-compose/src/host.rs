@@ -220,18 +220,36 @@ pub(crate) fn deliver_event(
         EventPayload::Clicked if link.is_some() => {
             Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
         }
-        EventPayload::Clicked | EventPayload::FocusLost => Event::new(Rc::new(()), true).into_any(),
+        EventPayload::Clicked | EventPayload::FocusLost | EventPayload::FocusGained => {
+            Event::new(Rc::new(()), true).into_any()
+        }
         EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
             Event::new(Rc::new(text.to_owned()), true).into_any()
         }
+        // A key going up carries the same fields as one going down, so a handler reads both
+        // the same way.
         EventPayload::KeyDown {
             key,
             shift_key,
             ctrl_key,
             alt_key,
             meta_key,
+            repeat,
+            code,
+            text,
+        }
+        | EventPayload::KeyUp {
+            key,
+            shift_key,
+            ctrl_key,
+            alt_key,
+            meta_key,
+            repeat,
+            code,
+            text,
         } => {
-            let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
+            let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key)
+                .with_details(repeat, code, text);
             key_event = Some(value.clone());
             Event::new(Rc::new(value), true).into_any()
         }
@@ -372,6 +390,37 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
+        EventPayload::CodeMetrics { line_height_px } => {
+            Event::new(Rc::new(line_height_px), true).into_any()
+        }
+        EventPayload::CodeScrolled { offset_px } => Event::new(Rc::new(offset_px), true).into_any(),
+        EventPayload::ScrollChanged {
+            item,
+            settled,
+            can_scroll_backward,
+            can_scroll_forward,
+            x_px,
+            y_px,
+            max_x_px,
+            max_y_px,
+            viewport_width_px,
+            viewport_height_px,
+        } => Event::new(
+            Rc::new(crate::ScrollChange {
+                item,
+                settled,
+                can_scroll_backward,
+                can_scroll_forward,
+                x_px,
+                y_px,
+                max_x_px,
+                max_y_px,
+                viewport_width_px,
+                viewport_height_px,
+            }),
+            true,
+        )
+        .into_any(),
         EventPayload::CompositionChanged { composing } => {
             Event::new(Rc::new(composing), true).into_any()
         }
@@ -463,7 +512,12 @@ pub(crate) fn deliver_event(
         | EventPayload::ReducedMotionChanged(_)
         | EventPayload::ZoomChanged { .. }
         | EventPayload::WindowRequested { .. }
-        | EventPayload::ApplicationReopen => {
+        | EventPayload::ApplicationReopen
+        | EventPayload::FileDialogResult { .. }
+        | EventPayload::ClipboardText { .. }
+        | EventPayload::IoAnswer { .. }
+        | EventPayload::FileHandles { .. }
+        | EventPayload::StorageLocation(_) => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };

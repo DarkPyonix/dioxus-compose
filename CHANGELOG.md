@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Everything compose-rust 0.0.7 added, written in rsx
+
+Two widgets: `FlowRow`, a row that wraps (`horizontal_spacing`, `vertical_spacing`,
+`horizontal_alignment`, `vertical_alignment`, `max_items_in_each_row`), and `Popover`, a box
+attached to its `anchor` (`open`, `placement`, `align`, `offset` in dp, `scrim` or
+`scrim_color`, `on_dismiss`). Every widget takes `semantics` (a `Semantics` role and
+`SemanticsState`), `accessible_name` and `corner_curve`, and `AbsoluteBox` takes
+`transform_3d`, CSS `matrix3d` with a backface flag. `Switch`, `Checkbox` and `Slider` take
+their track, thumb, container and check colours and a `size`; `TextField` and `Dropdown`
+take `bare`; `Dialog`, `Menu` and `Sheet` take `scrim`; `Navigation` takes `compact`; a
+`window` element takes `report_size`. `CodeEditor` takes `line_numbers`,
+`gutter_min_width`, `gutter_padding`, `text_inset`, `colors` (`CodeEditorColors`) and
+`on_code_metrics` and `on_code_scrolled`, each reporting physical pixels. `TextField` takes
+`on_focus_gained` and `on_key_up`, which brings the same `KeyEvent` as `on_key_down`, now
+with its `repeat`, `code` and `text` on both. The scroll containers and the lazy lists take
+`on_scroll_changed`, which brings a `ScrollChange` with every field of the report. A
+handler left out is never announced to the renderer, and one taken away is withdrawn.
+
 ### HTML tables fill their width
 
 A table whose width is greater than its columns, such as `width: 100%` in a wider

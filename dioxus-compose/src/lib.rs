@@ -44,6 +44,10 @@ pub use dioxus_core::{Element, VirtualDom};
 // second dependency, which defeats the promise that one dependency is enough.
 pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
 pub use compose_rust::schema::TitleBar;
+// A `FlowRow`'s two alignments. compose-rust keeps them in its schema only, and a screen
+// that writes a `FlowRow` needs them by name.
+pub use compose_rust::schema::{HorizontalAlignment, VerticalAlignment};
+pub use compose_rust::ui::SemanticsState;
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::window;
 pub use elements::*;
@@ -128,10 +132,11 @@ pub use list_detail::ListDetail;
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column, ColumnSpec,
     ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget,
-    FloatingAction, Icon, Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation, NavigationItem,
-    ProgressIndicator, RadioButton, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
-    Separator, ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text,
-    TextField, TimePicker, Tooltip, TopAppBar,
+    FloatingAction, FlowRow, Icon, Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation,
+    NavigationItem, Popover, ProgressIndicator, RadioButton, Row, Scaffold, ScrollChange,
+    ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator, ShadowLayer, Sheet, Slider,
+    Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField, TimePicker, Tooltip,
+    TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -238,6 +243,14 @@ pub mod prelude {
     // every `main`, and because `Chrome` beside it is meaningless on its own.
     pub use crate::schema::{Chrome, Window};
     pub use crate::windows::{DragFromPointer, LastWindowClosed};
+    // The widgets and values the schema gained with compose-rust 0.0.7: a wrapping row, a
+    // box attached to an anchor, what a node is to assistive technology, where a scroll
+    // container is, and what a navigation becomes in a compact window.
+    pub use crate::{
+        CodeEditorColors, CompactNavigation, FlowRow, HorizontalAlignment, Popover, PopoverAlign,
+        PopoverPlacement, ScrollChange, Semantics, SemanticsRole, SemanticsState,
+        VerticalAlignment,
+    };
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
@@ -339,6 +352,15 @@ pub mod elements {
             pub const match_parent_size: AttributeDescription = ("match_parent_size", None, false);
             pub const window_drag: AttributeDescription = ("window_drag", None, false);
             pub const press_feedback: AttributeDescription = ("press_feedback", None, false);
+            // A CSS 3D transform, carried as the whole `Modifier::Transform3D`. It takes the
+            // chain position a 2D `transform` takes, so a node has one or the other.
+            pub const transform_3d: AttributeDescription = ("transform_3d", None, false);
+            // What the node is to assistive technology, as a `Modifier::Semantics`, and the
+            // name it reads, which is a property because a string does not fit a modifier.
+            pub const semantics: AttributeDescription = ("semantics", None, false);
+            pub const accessible_name: AttributeDescription = ("accessible_name", None, false);
+            // How the node's rounded corners curve, from 0 to 1.
+            pub const corner_curve: AttributeDescription = ("corner_curve", None, false);
         };
     }
 
@@ -403,7 +425,7 @@ pub mod elements {
     element!(
         textfield,
         "TextField",
-        [placeholder, enabled, multiline, type_role, font]
+        [placeholder, enabled, multiline, type_role, font, bare]
     );
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
     // second place a role icon reaches the tree, because a toolbar is a row of icon
@@ -433,13 +455,37 @@ pub mod elements {
     element!(icon, "Icon", [asset, color]);
     // Widget tags 12 to 17. A toggle is controlled: `checked` is the whole of what it
     // draws, so the box on screen and the value the Host holds can never disagree.
-    element!(checkbox, "Checkbox", [checked, enabled]);
+    // A control's colours and size are each sent only when set, so one that sets none
+    // draws as the design system draws it.
+    element!(
+        checkbox,
+        "Checkbox",
+        [checked, enabled, container_color, check_color, control_size]
+    );
     element!(radiobutton, "RadioButton", [checked, enabled]);
-    element!(switch, "Switch", [checked, enabled]);
+    element!(
+        switch,
+        "Switch",
+        [checked, enabled, track_color, thumb_color, control_size]
+    );
     // The position a drag is passing through is the Renderer's, like scroll and focus, so
     // following a finger costs no boundary call. `value` seeds it and carries a change
     // that came from somewhere else.
-    element!(slider, "Slider", [value, min, max, steps, enabled, color]);
+    element!(
+        slider,
+        "Slider",
+        [
+            value,
+            min,
+            max,
+            steps,
+            enabled,
+            color,
+            track_color,
+            thumb_color,
+            active_track_color
+        ]
+    );
     // `determinate` says whether `value` means anything and `circular` picks the form. How
     // fast an indeterminate indicator travels is motion, and motion is the design system's.
     element!(
@@ -456,8 +502,8 @@ pub mod elements {
     element!(surface, "Surface", []);
     // `open` seeds the Renderer's own open state rather than driving it frame by frame: the
     // Renderer owns the enter and exit so neither crosses the boundary.
-    element!(dialog, "Dialog", [open]);
-    element!(menu, "Menu", [open]);
+    element!(dialog, "Dialog", [open, scrim]);
+    element!(menu, "Menu", [open, scrim]);
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
     element!(tabs, "Tabs", [selected_index, color]);
@@ -472,13 +518,17 @@ pub mod elements {
     // flyout is the design system's decision.
     element!(datepicker, "DatePicker", [value, min, max, enabled]);
     element!(timepicker, "TimePicker", [value, min, max, enabled]);
-    element!(dropdown, "Dropdown", [selected_index, enabled]);
+    element!(dropdown, "Dropdown", [selected_index, enabled, bare]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
     element!(scrollcolumn, "ScrollColumn", []);
     // Widget tags 30 to 32. `Navigation` carries the selection and nothing about whether
     // it is a bar, a rail or a drawer: the Renderer has measured the window and chooses.
     // The destinations are the `NavigationItem` children and the rest is the screen.
-    element!(navigation, "Navigation", [selected_index]);
+    element!(
+        navigation,
+        "Navigation",
+        [selected_index, compact_navigation]
+    );
     // A destination's label and icon are properties, not a child tree. A child tree would
     // fix the arrangement, and the three presentations exist because it differs: a bar
     // stacks the label under the icon, a drawer sets it beside.
@@ -490,7 +540,7 @@ pub mod elements {
     // Like a Dialog on the wire: `open` seeds the Renderer's own state and `on_dismiss`
     // says once that the user asked to close it. Which edge it enters from is the
     // Renderer's, because it is the side that knows how wide the window is.
-    element!(sheet, "Sheet", [open]);
+    element!(sheet, "Sheet", [open, scrim]);
     // The screen's frame. It carries nothing of its own: what it is made of arrives as
     // slots, and what each slot becomes is decided where the window's width is known.
     element!(scaffold, "Scaffold", []);
@@ -546,8 +596,34 @@ pub mod elements {
             decorations,
             folds,
             gutter_decorations,
-            tab_width
+            tab_width,
+            line_numbers,
+            gutter_min_width_dp,
+            gutter_padding_dp,
+            text_inset_dp,
+            code_editor_colors
         ]
+    );
+    // A row that wraps: the gaps on a line and between lines, where a line's children sit
+    // along it and inside its height, and the most one line may hold.
+    element!(
+        flowrow,
+        "FlowRow",
+        [
+            horizontal_spacing,
+            vertical_spacing,
+            horizontal_alignment,
+            vertical_alignment,
+            max_items_in_each_row
+        ]
+    );
+    // A box attached to its first child. `open` is the Host's, read every time; the side,
+    // the edge and the gap are said here and the Renderer keeps the box in the window.
+    // `scrim` is `true` for the design system's dimming or a paint for a colour of its own.
+    element!(
+        popover,
+        "Popover",
+        [open, placement, align, offset_dp, scrim]
     );
     // A platform window in a multi-window application, valid only directly under the root.
     pub mod window {
@@ -572,6 +648,8 @@ pub mod elements {
         pub const zoom_level: AttributeDescription = ("zoom_level", None, false);
         pub const drag_from_pointer: AttributeDescription = ("drag_from_pointer", None, false);
         pub const theme: AttributeDescription = ("theme", None, false);
+        // Ask for a size report on every whole-dp change, not only when the size class does.
+        pub const report_size: AttributeDescription = ("report_size", None, false);
         pub const window_title: AttributeDescription = ("window_title", None, false);
         pub const window_size: AttributeDescription = ("window_size", None, false);
         pub const window_min_size: AttributeDescription = ("window_min_size", None, false);
@@ -632,6 +710,8 @@ pub mod elements {
             splitpane {},
             absolutebox {},
             codeeditor {},
+            flowrow {},
+            popover {},
             window {},
         }
     }
@@ -660,6 +740,57 @@ pub mod events {
                     Attribute::new(
                         stringify!($name),
                         ListenerCallback::new(handler),
+                        None,
+                        false,
+                    )
+                }
+            }
+        };
+    }
+
+    /// What an optional listener accepts: a closure, like any event, or an `Option` of a
+    /// listener callback, so a widget can pass along a handler it may not have.
+    pub trait IntoOptionalListener<T, Marker> {
+        fn into_listener(self) -> dioxus_core::AttributeValue;
+    }
+
+    impl<T: 'static, Marker, F: SuperInto<ListenerCallback<T>, Marker>>
+        IntoOptionalListener<T, ClosureMarker<Marker>> for F
+    {
+        fn into_listener(self) -> dioxus_core::AttributeValue {
+            dioxus_core::AttributeValue::Listener(self.super_into().erase())
+        }
+    }
+
+    impl<T: 'static> IntoOptionalListener<T, OptionalMarker> for Option<ListenerCallback<T>> {
+        fn into_listener(self) -> dioxus_core::AttributeValue {
+            match self {
+                Some(callback) => dioxus_core::AttributeValue::Listener(callback.erase()),
+                None => dioxus_core::AttributeValue::None,
+            }
+        }
+    }
+
+    macro_rules! optional_event {
+        ($name:ident, $data:ty) => {
+            pub fn $name<Marker>(handler: impl IntoOptionalListener<$data, Marker>) -> Attribute {
+                Attribute::new(stringify!($name), handler.into_listener(), None, false)
+            }
+
+            pub mod $name {
+                use super::*;
+
+                pub fn call_with_explicit_closure<Marker, Return>(
+                    handler: impl FnMut(Event<$data>) -> Return + 'static,
+                ) -> Attribute
+                where
+                    Return: SpawnIfAsync<Marker> + 'static,
+                {
+                    Attribute::new(
+                        stringify!($name),
+                        dioxus_core::AttributeValue::Listener(
+                            ListenerCallback::new(handler).erase(),
+                        ),
                         None,
                         false,
                     )
@@ -729,6 +860,16 @@ pub mod events {
     event!(onsubmit, String);
     event!(onfocuslost, ());
     event!(onkeydown, crate::KeyEvent);
+    // Each of these is announced to the Renderer only when there is a handler, so a node
+    // whose screen did not ask is never sent the event: a closure, or an `Option` of a
+    // listener callback that writes nothing when it is `None`.
+    optional_event!(onfocusgained, ());
+    optional_event!(onkeyup, crate::KeyEvent);
+    // Where a scroll container is.
+    optional_event!(onscrollchanged, crate::ScrollChange);
+    // A code editor's row height and scroll offset, each in physical pixels.
+    optional_event!(oncodemetrics, f64);
+    optional_event!(oncodescrolled, f64);
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());

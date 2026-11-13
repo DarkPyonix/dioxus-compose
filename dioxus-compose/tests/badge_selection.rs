@@ -365,6 +365,11 @@ fn fr33_no_event_tag_exists_for_selecting_or_copying() {
         if event.name == "SelectionChanged" {
             continue;
         }
+        // The answer to a clipboard read the application asked for itself, addressed to
+        // the Host with no node: nothing the user selected or copied in a view.
+        if event.name == "ClipboardText" {
+            continue;
+        }
         assert!(
             !name.contains("select") && !name.contains("copy") && !name.contains("clipboard"),
             "{} would carry a selection across the boundary",

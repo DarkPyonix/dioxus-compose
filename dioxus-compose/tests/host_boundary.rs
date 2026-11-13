@@ -91,26 +91,8 @@ impl MockRenderer {
                     self.widgets.remove(node_id);
                     self.parents.remove(node_id);
                 }
-                Mutation::SetProp { .. }
-                | Mutation::SetModifier { .. }
-                | Mutation::SetText { .. }
-                | Mutation::AppendText { .. }
-                | Mutation::RegisterAsset { .. }
-                | Mutation::ReleaseAsset { .. }
-                | Mutation::ShowMessage { .. }
-                | Mutation::SetTheme(_)
-                | Mutation::SetWindow(_)
-                | Mutation::PostNotification { .. }
-                | Mutation::WithdrawNotification { .. }
-                | Mutation::RequestNotificationPermission
-                | Mutation::StartAnimation(_)
-                | Mutation::ControlAnimation { .. }
-                | Mutation::EditCode { .. }
-                | Mutation::SetSelection { .. }
-                | Mutation::RevealRange { .. }
-                | Mutation::SetFolded { .. }
-                | Mutation::SetWindowTheme { .. }
-                | Mutation::FocusWindow { .. } => {}
+                // Nothing else changes which widget a node is or where it sits.
+                _ => {}
             }
         }
     }
@@ -203,6 +185,9 @@ fn fr12_key_consumption_is_returned_and_does_not_leak() {
                 ctrl_key: false,
                 alt_key: false,
                 meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
             },
         };
         let mut bytes = Vec::new();
@@ -296,6 +281,7 @@ fn fr14_initial_batch_opens_with_the_launched_theme() {
             adaptive: false,
             fonts: [0; dioxus_compose::schema::TYPE_ROLE_COUNT],
             palette: None,
+            overlay: None,
         })
     );
     assert_eq!(
@@ -307,6 +293,7 @@ fn fr14_initial_batch_opens_with_the_launched_theme() {
             adaptive: true,
             fonts: [0; dioxus_compose::schema::TYPE_ROLE_COUNT],
             palette: None,
+            overlay: None,
         })
     );
 }

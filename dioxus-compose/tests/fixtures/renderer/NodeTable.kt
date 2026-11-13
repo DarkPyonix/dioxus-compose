@@ -7,7 +7,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.darkpyonix.composerust.foundation.ChromeInsets
 import dev.darkpyonix.composerust.foundation.MessageQueue
+import dev.darkpyonix.composerust.foundation.ScrollPort
+import dev.darkpyonix.composerust.foundation.ScrollReports
+import dev.darkpyonix.composerust.foundation.ScrollRequest
+import dev.darkpyonix.composerust.protocol.ScrollWire
 import dev.darkpyonix.composerust.protocol.Mutation
+import dev.darkpyonix.composerust.protocol.OverlayTokens
 import dev.darkpyonix.composerust.protocol.PropertyKind
 import dev.darkpyonix.composerust.protocol.PropertyValue
 import dev.darkpyonix.composerust.protocol.Theme
@@ -19,6 +24,7 @@ import dev.darkpyonix.composerust.foundation.code.CodePosition
 import dev.darkpyonix.composerust.foundation.codeEvents
 import dev.darkpyonix.composerust.protocol.CodeEditorRecords
 import dev.darkpyonix.composerust.protocol.HostEvent
+import dev.darkpyonix.composerust.ui.SEMANTICS_STATE_MASK
 
 /**
  * Text the Host pushed into a TextField with `SetText`.
@@ -46,6 +52,7 @@ class Node internal constructor(val id: Int, val widget: WidgetKind) {
     internal val children = mutableStateListOf<Int>()
     internal var parentId: Int = NodeTable.ROOT_ID
     internal var hostText by mutableStateOf<HostText?>(null)
+    internal var focusRequestRevision by mutableStateOf(0L)
 
     /**
      * A code editor's document and everything over it. Created with the node and kept for
@@ -54,6 +61,19 @@ class Node internal constructor(val id: Int, val widget: WidgetKind) {
      */
     internal val code: CodeEditorModel? =
         if (widget == WidgetKind.CodeEditor) CodeEditorModel() else null
+
+    /**
+     * What a scroll container holds for the Host's scroll requests and for its reports.
+     * Created with the node, because a request can arrive in the batch that creates it.
+     */
+    internal val scroll: ScrollPort? = if (widget in NodeTable.SCROLL_CONTAINERS) ScrollPort(id) else null
+
+    /**
+     * Set while a scroll request needs to know where this node is drawn. Nothing records
+     * that for a node nobody asked about.
+     */
+    internal var placementWanted by mutableStateOf(false)
+    internal var placement: androidx.compose.ui.layout.LayoutCoordinates? = null
 
     fun property(kind: PropertyKind): PropertyValue? = props[kind]
 
@@ -92,6 +112,18 @@ data class TableError(val code: Int, val message: String) {
         const val MISPLACED_WINDOW = 13
         /** A node moved from the content of one `Window` into another, or out of its window. */
         const val MOVE_BETWEEN_WINDOWS = 14
+        /** A file dialog request whose number is still waiting for its answer. The command is dropped. */
+        const val DUPLICATE_FILE_DIALOG = 15
+        /** A modifier whose value could not be honoured. The modifier is dropped. */
+        const val INVALID_MODIFIER = 16
+        /** An input or output request whose number is still waiting for its answer. The command is dropped. */
+        const val DUPLICATE_IO_REQUEST = 17
+        /** A file operation whose request number is still waiting for its answer. The command is dropped. */
+        const val DUPLICATE_FILE_CALL = 18
+        /** A scroll request for a node that is not a scroll container. The request is dropped. */
+        const val NOT_SCROLLABLE = 19
+        /** A scroll request whose values make no sense for the container. The request is dropped. */
+        const val INVALID_SCROLL = 20
     }
 }
 
@@ -162,13 +194,76 @@ class NodeTable {
      */
     val animations: AnimationTable = AnimationTable(this)
 
+    /**
+     * Pointer input for the nodes that subscribed to it: who holds a press, and the moves
+     * and wheel travel waiting for the next frame.
+     */
+    internal val pointers: dev.darkpyonix.composerust.foundation.PointerRouter =
+        dev.darkpyonix.composerust.foundation.PointerRouter { id -> nodes.containsKey(id) }
+
     val notifications: dev.darkpyonix.composerust.ui.platform.NotificationCenter =
         dev.darkpyonix.composerust.ui.platform.NotificationCenter()
 
+    /**
+     * The file dialogs the Host has asked for, and their answers on the way back.
+     *
+     * Not cleared with the tree, for the reason the notifications are not: a request the Host
+     * is waiting on is still owed its one answer after a resync.
+     */
+    val fileDialogs: dev.darkpyonix.composerust.ui.platform.FileDialogCenter =
+        dev.darkpyonix.composerust.ui.platform.FileDialogCenter()
+
+    /**
+     * The operations the Host asked of files this side holds handles for, and their answers.
+     * Not cleared with the tree, for the reason the dialogs are not: every request is owed its
+     * one answer after a resync too.
+     */
+    val fileCalls: dev.darkpyonix.composerust.ui.platform.FileCallCenter =
+        dev.darkpyonix.composerust.ui.platform.FileCallCenter()
+
+    /**
+     * Where the text the Host asks to copy goes. Not part of the tree and not cleared with
+     * it: the clipboard is the platform's.
+     */
+    val clipboard: dev.darkpyonix.composerust.ui.platform.ClipboardWriter =
+        dev.darkpyonix.composerust.ui.platform.ClipboardWriter()
+
+    /**
+     * The clipboard reads the Host asked for, each answered once with what the clipboard
+     * held. Not part of the tree either.
+     */
+    val clipboardReads: dev.darkpyonix.composerust.ui.platform.ClipboardReader =
+        dev.darkpyonix.composerust.ui.platform.ClipboardReader()
+
+    /**
+     * The storage operations the Host asked this side to carry out, each answered once.
+     * Not cleared with the tree: a request the Host waits on is owed its answer after a
+     * resync too.
+     */
+    val storage: dev.darkpyonix.composerust.ui.platform.StorageCenter =
+        dev.darkpyonix.composerust.ui.platform.StorageCenter()
+
+    /**
+     * Counts the batches applied, so a scroll container can tell whether its own stated
+     * move and a scroll request came in the same one.
+     */
+    private var batchSerial = 0L
+
+    /** The scroll reports waiting for the next frame, from the containers the Host listens to. */
+    internal val scrolls: ScrollReports = ScrollReports()
+
     private var revision = 0L
+
+    /** Increments on each `RequestFocus(0)` so the root composition clears active focus. */
+    var focusClearRevision by mutableStateOf(0L)
+        private set
 
     /** Null until the Host sends its first `SetTheme` record. */
     var theme: Theme? by mutableStateOf(null)
+        private set
+
+    /** Null until the Host sends an overlay tokens record. */
+    var overlayTokens: OverlayTokens? by mutableStateOf(null)
         private set
 
     /** Null until the Host sends its first `SetWindow` record. */
@@ -193,6 +288,16 @@ class NodeTable {
         if (windowId == ROOT_ID) return window?.zoomLevel
         val level = (nodes[windowId]?.props?.get(PropertyKind.WindowZoomLevel) as? PropertyValue.Integer)?.value
         return level?.toInt()?.coerceIn(-8, 8)
+    }
+
+    /**
+     * Whether the window [windowId] asked for every whole-dp change of its size. Node 0 is
+     * the single window of `SetWindow`, which asks through its settings; a `Window` node
+     * asks through its `report_size` property.
+     */
+    fun reportSizeFor(windowId: Int): Boolean {
+        if (windowId == ROOT_ID) return window?.reportSize == true
+        return node(windowId)?.flag(PropertyKind.ReportSize, false) == true
     }
 
     /**
@@ -239,6 +344,7 @@ class NodeTable {
         // Asked once the whole batch is in, because a batch may start an animation before
         // the record that gives it something to play on.
         animations.afterBatch { code, message -> fail(code, message) }
+        batchSerial++
         if (errors.isEmpty()) return emptyList()
         val drained = errors.toList()
         errors.clear()
@@ -253,7 +359,11 @@ class NodeTable {
      * start over and anything kept from before would collide with them.
      */
     fun clear() {
+        // The windows go with the nodes, and a dialog open on one of them ends with a cancel.
+        nodes.filterValues { it.widget == WidgetKind.Window }.keys.toList()
+            .forEach(fileDialogs::windowRemoved)
         animations.clear()
+        scrolls.clear()
         nodes.clear()
         codeNodes.clear()
         rootChildren.clear()
@@ -267,6 +377,7 @@ class NodeTable {
         window = null
         materials = 0
         revision = 0
+        focusClearRevision = 0
     }
 
     fun apply(mutation: Mutation) {
@@ -290,6 +401,7 @@ class NodeTable {
                     fail(TableError.INVALID_PALETTE, "theme palette: $problem")
                 }
             }
+            is Mutation.SetOverlayTokens -> overlayTokens = mutation.overlay
             // Read before there is a window to apply it to. The platform layer asks for
             // this out of the first batch and builds the window from it, so by the time
             // the batch is applied the window already looks the way it says. Keeping it
@@ -301,6 +413,7 @@ class NodeTable {
             // the batch.
             is Mutation.SetWindowTheme -> setWindowTheme(mutation)
             is Mutation.FocusWindow -> focusWindow(mutation)
+            is Mutation.RequestFocus -> requestFocus(mutation)
             // The bytes are read here, once, and never again: what a frame carries is the
             // id. A kind this Renderer cannot read, or a release of something that was
             // never registered, is reported and the rest of the batch still applies.
@@ -324,6 +437,27 @@ class NodeTable {
             is Mutation.PostNotification -> notifications.apply(mutation)
             is Mutation.WithdrawNotification -> notifications.withdraw(mutation.key)
             is Mutation.RequestNotificationPermission -> notifications.requestPermission()
+
+            // Not a node either. A request on a window that is not there is answered as
+            // unavailable, so the Host's one answer per request holds, and is reported too.
+            is Mutation.ShowFileDialog -> showFileDialog(mutation)
+
+            // Plain text for the platform clipboard. Nothing answers it, and where there is
+            // no clipboard it does nothing.
+            is Mutation.SetClipboardText -> clipboard.write(mutation.text)
+
+            // A read is answered later, outside the batch, by one event with its number.
+            is Mutation.ReadClipboard -> clipboardReads.request(mutation.request)
+
+            // An operation on a file this side holds a handle for, answered later, outside the
+            // batch, by one event with its number. Where nothing holds handles it is answered
+            // as unavailable, which is still its one answer.
+            is Mutation.FileCall -> fileCall(mutation)
+            // Nothing answers a release, and a handle nobody holds is no error.
+            is Mutation.ReleaseFileHandle -> fileCalls.release(mutation.handle)
+            // Started now, while the value to write can still be read where the Host put it,
+            // and answered later, outside the batch, by one event with its number.
+            is Mutation.StorageCall -> storageCall(mutation)
 
             // Played on this side's frame clock until it ends. Whether the node has
             // somewhere to play it is asked once the whole batch is in.
@@ -359,6 +493,18 @@ class NodeTable {
                 code.hostSetFolded(mutation.startLine, mutation.collapsed)
                 collectCode(node)
             }
+            // The offset waits in the model for the surface, which owns the scroll position
+            // and knows how far the document lets it go.
+            is Mutation.SetScrollOffset -> codeNode(mutation.nodeId, "SetScrollOffset")?.let { (node, code) ->
+                code.hostScrollTo(mutation.offsetPx)
+                collectCode(node)
+            }
+
+            // Requests too: the scroll position is this side's. Each is checked here and
+            // waits on the node for the container, which keeps it in range, may animate it,
+            // and drops it while the user is scrolling.
+            is Mutation.ScrollTo -> scrollTo(mutation)
+            is Mutation.ScrollIntoView -> scrollIntoView(mutation)
         }
     }
 
@@ -385,6 +531,159 @@ class NodeTable {
     private fun focusWindow(mutation: Mutation.FocusWindow) {
         windowNode(mutation.nodeId, "FocusWindow") ?: return
         focusRequests += mutation.nodeId
+    }
+
+    private fun showFileDialog(mutation: Mutation.ShowFileDialog) {
+        val windowKnown = mutation.window == ROOT_ID ||
+            nodes[mutation.window]?.widget == WidgetKind.Window
+        when (fileDialogs.request(mutation, windowKnown)) {
+            dev.darkpyonix.composerust.ui.platform.FileDialogCenter.Accepted.Accepted -> Unit
+            dev.darkpyonix.composerust.ui.platform.FileDialogCenter.Accepted.Duplicate -> fail(
+                TableError.DUPLICATE_FILE_DIALOG,
+                "ShowFileDialog request ${mutation.request} is already waiting for its answer",
+            )
+            dev.darkpyonix.composerust.ui.platform.FileDialogCenter.Accepted.UnknownWindow -> fail(
+                TableError.UNKNOWN_NODE,
+                "ShowFileDialog for unknown window ${mutation.window}",
+            )
+        }
+    }
+
+    private fun fileCall(mutation: Mutation.FileCall) {
+        if (fileCalls.request(mutation) == dev.darkpyonix.composerust.ui.platform.FileCallCenter.Accepted.Duplicate) {
+            fail(
+                TableError.DUPLICATE_FILE_CALL,
+                "FileCall request ${mutation.request} is already waiting for its answer",
+            )
+        }
+    }
+
+    private fun storageCall(mutation: Mutation.StorageCall) {
+        when (storage.request(mutation)) {
+            dev.darkpyonix.composerust.ui.platform.StorageCenter.Accepted.Accepted -> Unit
+            dev.darkpyonix.composerust.ui.platform.StorageCenter.Accepted.Duplicate -> fail(
+                TableError.DUPLICATE_IO_REQUEST,
+                "StorageCall request ${mutation.request} is already waiting for its answer",
+            )
+        }
+    }
+
+    private fun requestFocus(mutation: Mutation.RequestFocus) {
+        if (mutation.nodeId == ROOT_ID) {
+            revision += 1
+            focusClearRevision = revision
+            return
+        }
+        if (!requestNodeFocus(mutation.nodeId)) {
+            fail(TableError.UNKNOWN_NODE, "RequestFocus for unknown node ${mutation.nodeId}")
+        }
+    }
+
+    /**
+     * Asks for keyboard focus to move to the node [nodeId] names, and says whether there is
+     * such a node.
+     *
+     * A `RequestFocus` from the Host and the focus action of the accessibility tree both end
+     * here, so a screen reader moves focus the way the application does: the node's own
+     * composable sees the new revision and calls its focus requester.
+     */
+    internal fun requestNodeFocus(nodeId: Int): Boolean {
+        val node = nodes[nodeId] ?: return false
+        revision += 1
+        node.focusRequestRevision = revision
+        return true
+    }
+
+    /** The scroll container a command names, or null after reporting that it names none. */
+    private fun scrollNode(nodeId: Int, command: String): Pair<Node, ScrollPort>? {
+        val node = nodes[nodeId] ?: run {
+            fail(TableError.UNKNOWN_NODE, "$command for unknown node $nodeId")
+            return null
+        }
+        val port = node.scroll ?: run {
+            fail(TableError.NOT_SCROLLABLE, "$command on ${node.widget}, which does not scroll")
+            return null
+        }
+        return node to port
+    }
+
+    private fun scrollTo(mutation: Mutation.ScrollTo) {
+        val (node, port) = scrollNode(mutation.nodeId, "ScrollTo") ?: return
+        val invalid = { why: String ->
+            fail(TableError.INVALID_SCROLL, "ScrollTo on node ${node.id}: $why")
+        }
+        if (mutation.flags and ScrollWire.TO_KNOWN.inv() != 0) {
+            return invalid("flag bits this renderer does not know: 0x${(mutation.flags and ScrollWire.TO_KNOWN.inv()).toString(16)}")
+        }
+        val hasX = mutation.flags and ScrollWire.TO_X != 0
+        val hasY = mutation.flags and ScrollWire.TO_Y != 0
+        if (!hasX && !hasY) return invalid("it names neither axis")
+        if (!mutation.xPx.isFinite() || !mutation.yPx.isFinite()) {
+            return invalid("an offset of (${mutation.xPx}, ${mutation.yPx}) is not a distance")
+        }
+        if (mutation.item != 0 && node.widget !in LAZY_CONTAINERS) {
+            return invalid("item ${mutation.item.toUInt()} on ${node.widget}, which has no items")
+        }
+        port.beforeRequest(batchSerial)
+        port.request(
+            ScrollRequest.To(
+                // Unsigned on the wire. An index past what an Int holds is past any list.
+                item = if (mutation.item < 0) Int.MAX_VALUE else mutation.item,
+                x = if (hasX) mutation.xPx else null,
+                y = if (hasY) mutation.yPx else null,
+                animate = mutation.flags and ScrollWire.TO_ANIMATE != 0,
+            ),
+        )
+    }
+
+    private fun scrollIntoView(mutation: Mutation.ScrollIntoView) {
+        val (node, port) = scrollNode(mutation.nodeId, "ScrollIntoView") ?: return
+        val invalid = { why: String ->
+            fail(TableError.INVALID_SCROLL, "ScrollIntoView on node ${node.id}: $why")
+        }
+        if (mutation.flags and ScrollWire.INTO_VIEW_ANIMATE.inv() != 0) {
+            return invalid("flag bits this renderer does not know: 0x${(mutation.flags and ScrollWire.INTO_VIEW_ANIMATE.inv()).toString(16)}")
+        }
+        for (align in intArrayOf(mutation.alignX, mutation.alignY)) {
+            if (align !in ScrollWire.ALIGN_KEEP..ScrollWire.ALIGN_NEAREST) return invalid("unknown alignment $align")
+        }
+        val numbers = doubleArrayOf(mutation.rectXPx, mutation.rectYPx, mutation.rectWidthPx, mutation.rectHeightPx)
+        if (numbers.any { !it.isFinite() }) return invalid("a rectangle of ${numbers.joinToString()} is not a place")
+        if (mutation.rectWidthPx < 0.0 || mutation.rectHeightPx < 0.0) {
+            return invalid("a rectangle ${mutation.rectWidthPx} by ${mutation.rectHeightPx} has a negative size")
+        }
+        val lazy = node.widget in LAZY_CONTAINERS
+        var target = mutation.target
+        when (mutation.targetKind) {
+            ScrollWire.TARGET_CONTENT -> {
+                if (lazy) return invalid("${node.widget} has no content coordinates; name an item")
+                if (target != 0) return invalid("a content rectangle names no target, but $target was sent")
+            }
+            ScrollWire.TARGET_NODE -> {
+                if (target == node.id || !nodes.containsKey(target) || !isDescendant(target, node.id)) {
+                    return invalid("node $target is not inside the container")
+                }
+            }
+            ScrollWire.TARGET_ITEM -> {
+                if (!lazy) return invalid("item ${target.toUInt()} on ${node.widget}, which has no items")
+                if (target < 0) target = Int.MAX_VALUE
+            }
+            else -> return invalid("unknown target kind ${mutation.targetKind}")
+        }
+        port.beforeRequest(batchSerial)
+        port.request(
+            ScrollRequest.IntoView(
+                targetKind = mutation.targetKind,
+                target = target,
+                alignX = mutation.alignX,
+                alignY = mutation.alignY,
+                animate = mutation.flags and ScrollWire.INTO_VIEW_ANIMATE != 0,
+                x = mutation.rectXPx,
+                y = mutation.rectYPx,
+                width = mutation.rectWidthPx,
+                height = mutation.rectHeightPx,
+            ),
+        )
     }
 
     /** The code editor a command names, or null after reporting that it names none. */
@@ -458,6 +757,32 @@ class NodeTable {
                     }
                 } ?: emptyList(),
             )
+            // Read where the editor is drawn. Here it is only checked, so that a record
+            // that cannot be read is said once, when it arrives.
+            PropertyKind.CodeEditorColors -> {
+                (value as? PropertyValue.Bytes)?.value?.let { bytes ->
+                    val records = CodeEditorRecords.decodeCodeEditorColors(bytes) { message ->
+                        fail(TableError.INVALID_CODE_EDIT, "colours on node ${node.id}: $message")
+                    }
+                    if (records.size > 1) {
+                        fail(
+                            TableError.INVALID_CODE_EDIT,
+                            "colours on node ${node.id}: ${records.size} records where an editor has one",
+                        )
+                    }
+                }
+                return
+            }
+            // Whether there is anyone to tell. The model reports only what is heard, and
+            // the next frame's drain carries what a new listener has yet to hear.
+            PropertyKind.OnCodeMetrics -> {
+                code.hearsLineHeight = value is PropertyValue.Integer
+                return
+            }
+            PropertyKind.OnCodeScrolled -> {
+                code.hearsScroll = value is PropertyValue.Integer
+                return
+            }
             else -> return
         }
         collectCode(node)
@@ -503,6 +828,12 @@ class NodeTable {
             node.props[mutation.property] = mutation.value
         }
         if (node.code != null) feedCode(node, mutation.property, mutation.value)
+        // The revision of a scroll container's own stated move. Where a scroll request is
+        // already waiting from this batch, its place among them is kept, so the two are
+        // applied in the order the batch wrote them.
+        if (mutation.property == PropertyKind.Count && node.scroll != null) {
+            node.scroll.stated(batchSerial, (mutation.value as? PropertyValue.Integer)?.value ?: 0L)
+        }
     }
 
     private fun setModifier(mutation: Mutation.SetModifier) {
@@ -512,6 +843,19 @@ class NodeTable {
         )
         if (mutation.index < 0 || mutation.index > MAX_MODIFIERS) {
             fail(TableError.INVALID_INDEX, "modifier index ${mutation.index} out of range")
+            return
+        }
+        val modifier = mutation.modifier
+        if (modifier is ProtocolModifier.Semantics && modifier.state and SEMANTICS_STATE_MASK.inv() != 0) {
+            // A bit this renderer has no meaning for is a newer or a broken Host. Guessing
+            // would announce a control as something it is not, so the modifier is refused
+            // and the slot keeps what it held.
+            val unknown = modifier.state and SEMANTICS_STATE_MASK.inv()
+            fail(
+                TableError.INVALID_MODIFIER,
+                "Semantics modifier on node ${mutation.nodeId} sets state or action bits this renderer " +
+                    "does not know: 0x${unknown.toString(16)}",
+            )
             return
         }
         while (node.modifiers.size <= mutation.index) {
@@ -608,7 +952,11 @@ class NodeTable {
     private fun removeSubtree(nodeId: Int) {
         val node = nodes.remove(nodeId) ?: return
         codeNodes.remove(nodeId)
-        if (node.widget == WidgetKind.Window) windowThemes.remove(nodeId)
+        node.scroll?.let(scrolls::forget)
+        if (node.widget == WidgetKind.Window) {
+            windowThemes.remove(nodeId)
+            fileDialogs.windowRemoved(nodeId)
+        }
         animations.removeNode(nodeId)
         materials -= node.modifiers.count { it is ProtocolModifier.Material }
         node.children.toList().forEach(::removeSubtree)
@@ -687,27 +1035,64 @@ class NodeTable {
      */
     internal fun report(code: Int, message: String) = fail(code, message)
 
+    /**
+     * [report], unless the same error is already waiting to be reported. For a mistake a
+     * Host makes in every request of a kind, which is one thing to fix however many
+     * requests it was made in.
+     */
+    internal fun reportOnce(code: Int, message: String) {
+        if (errors.none { it.code == code && it.message == message }) fail(code, message)
+    }
+
     companion object {
         /** Node id 0 is the Host's "no node" sentinel, so it names the virtual root. */
         const val ROOT_ID: Int = 0
         private const val MAX_MODIFIERS = 64
 
+        /** The lazy containers, which scroll by item and have no content coordinates. */
+        internal val LAZY_CONTAINERS: Set<WidgetKind> =
+            setOf(WidgetKind.LazyColumn, WidgetKind.LazyRow, WidgetKind.LazyGrid)
+
+        /** Every widget that takes a scroll request and can report its position. */
+        internal val SCROLL_CONTAINERS: Set<WidgetKind> =
+            LAZY_CONTAINERS + setOf(WidgetKind.ScrollColumn, WidgetKind.ScrollRow, WidgetKind.CodeEditor)
+
         internal fun supportsProperty(widget: WidgetKind, property: PropertyKind): Boolean =
             when (property) {
+                // The name assistive technology reads can be given to any node.
+                PropertyKind.AccessibleName -> true
+
+                // Colours and size of the selection controls.
+                PropertyKind.TrackColor,
+                PropertyKind.ThumbColor,
+                -> widget == WidgetKind.Switch || widget == WidgetKind.Slider
+
+                PropertyKind.ActiveTrackColor -> widget == WidgetKind.Slider
+
+                PropertyKind.ContainerColor,
+                PropertyKind.CheckColor,
+                -> widget == WidgetKind.Checkbox
+
+                PropertyKind.ControlSize -> widget == WidgetKind.Switch || widget == WidgetKind.Checkbox
+
                 // Event properties carry handler ids and are valid on any widget.
                 PropertyKind.OnClick,
                 PropertyKind.OnValueChange,
                 PropertyKind.OnSubmit,
                 PropertyKind.OnFocusLost,
+                PropertyKind.OnFocusGained,
                 PropertyKind.OnKeyDown,
+                PropertyKind.OnKeyUp,
                 PropertyKind.OnRangeRequested,
                 PropertyKind.OnDismiss,
                 -> true
 
+                // The scroll report belongs to the widgets that scroll.
+                PropertyKind.OnScrollChanged -> widget in SCROLL_CONTAINERS
+
                 // Pointer subscription, cursor and selectability belong to the nodes a
                 // pointer can sit over as a region: the containers, text and the HTML
-                // region root. A picker takes only its value, range and events. The interpreter
-                // does not act on them yet.
+                // region root. A picker takes only its value, range and events.
                 PropertyKind.OnPointer,
                 PropertyKind.PointerKinds,
                 PropertyKind.Cursor,
@@ -783,6 +1168,17 @@ class NodeTable {
                 -> widget == WidgetKind.Text ||
                     widget == WidgetKind.Button ||
                     widget == WidgetKind.TextField ||
+                    // An editor takes the rung of the type ladder, the size and the row
+                    // height. Its ink is the design system's or a colour run's, and it
+                    // neither aligns nor cuts off its lines.
+                    (
+                        widget == WidgetKind.CodeEditor &&
+                            (
+                                property == PropertyKind.TypeRole ||
+                                    property == PropertyKind.FontSize ||
+                                    property == PropertyKind.LineHeight
+                                )
+                        ) ||
                     // A chip's label takes a line limit and an overflow, as a button's does.
                     (
                         widget == WidgetKind.Chip &&
@@ -887,7 +1283,34 @@ class NodeTable {
                 PropertyKind.Open -> widget == WidgetKind.Dialog ||
                     widget == WidgetKind.Menu ||
                     // A sheet is an overlay on the same terms as a dialog.
-                    widget == WidgetKind.Sheet
+                    widget == WidgetKind.Sheet ||
+                    // A popover's is read every time: the Host owns it.
+                    widget == WidgetKind.Popover
+
+                // A custom scrim colour for modal and popup overlays.
+                PropertyKind.Scrim -> widget == WidgetKind.Dialog ||
+                    widget == WidgetKind.Menu ||
+                    widget == WidgetKind.Sheet ||
+                    // On a popover it is also a boolean: whether to dim the window at all.
+                    widget == WidgetKind.Popover
+
+                // The side of its anchor a popover opens on, the edge it lines up with,
+                // and the gap between the two.
+                PropertyKind.Placement,
+                PropertyKind.Align,
+                PropertyKind.OffsetDp,
+                -> widget == WidgetKind.Popover
+                // A field drawn without the design system's frame.
+                PropertyKind.Bare -> widget == WidgetKind.TextField ||
+                    widget == WidgetKind.Dropdown
+                // A wrapping row's gaps, alignments and per-line limit. Only it lays out by
+                // lines, so no other widget has anything to read them for.
+                PropertyKind.HorizontalSpacing,
+                PropertyKind.VerticalSpacing,
+                PropertyKind.HorizontalAlignment,
+                PropertyKind.VerticalAlignment,
+                PropertyKind.MaxItemsInEachRow,
+                -> widget == WidgetKind.FlowRow
                 // A Dropdown's selection is a position in its own children, the same thing
                 // a tab strip's selection is.
                 PropertyKind.SelectedIndex ->
@@ -930,7 +1353,11 @@ class NodeTable {
                 // break, its tab stops, sizes the system's font scale leaves alone, and
                 // whether it wraps at all. A Text, and its own list of fonts on a TextField
                 // A control's label is set by the design system.
-                PropertyKind.Font -> widget == WidgetKind.Text || widget == WidgetKind.TextField
+                PropertyKind.Font ->
+                    widget == WidgetKind.Text ||
+                        widget == WidgetKind.TextField ||
+                        // An editor set in the application's own monospace list.
+                        widget == WidgetKind.CodeEditor
 
                 PropertyKind.SpanFonts,
                 PropertyKind.WordBreak,
@@ -977,8 +1404,19 @@ class NodeTable {
                 PropertyKind.OnVisibleRangeChange,
                 PropertyKind.OnEditorFocusChange,
                 PropertyKind.OnFoldChange,
-                PropertyKind.OnCompositionChange,
+                // Whether it draws line numbers, how its gutter is spaced, the colours of
+                // its own parts, and the handlers of its row height and scroll offset.
+                PropertyKind.LineNumbers,
+                PropertyKind.GutterMinWidthDp,
+                PropertyKind.GutterPaddingDp,
+                PropertyKind.TextInsetDp,
+                PropertyKind.CodeEditorColors,
+                PropertyKind.OnCodeMetrics,
+                PropertyKind.OnCodeScrolled,
                 -> widget == WidgetKind.CodeEditor
+
+                PropertyKind.OnCompositionChange ->
+                    widget == WidgetKind.CodeEditor || widget == WidgetKind.TextField
 
                 // Files over a node and files let go on it. Only the widget that exists
                 // to receive them, because a handler is attached whether or not a screen
@@ -999,6 +1437,7 @@ class NodeTable {
                 PropertyKind.WindowSize,
                 PropertyKind.WindowMinSize,
                 PropertyKind.WindowResizable,
+                PropertyKind.ReportSize,
                 PropertyKind.WindowChrome,
                 PropertyKind.WindowTitleBar,
                 PropertyKind.WindowIcon,
@@ -1013,6 +1452,10 @@ class NodeTable {
                 PropertyKind.OnWindowUnavailable,
                 PropertyKind.OnWindowClosed,
                 -> widget == WidgetKind.Window
+
+                // What a set of destinations becomes in a compact window, where the
+                // application chose. Only a navigation has destinations to place.
+                PropertyKind.CompactNavigation -> widget == WidgetKind.Navigation
 
                 // A property declared by an extension package belongs to the widget
                 // that package declared it for.
