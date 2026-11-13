@@ -9,6 +9,7 @@ mod drag;
 pub(crate) mod form;
 mod pointer;
 mod resize;
+mod scroll;
 mod writer;
 
 use std::any::Any;
@@ -24,8 +25,10 @@ use blitz_html::HtmlProvider;
 use blitz_traits::net::{DummyNetProvider, Url};
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_core::{Element, ElementId, Event, VirtualDom};
-use dioxus_html::geometry::euclid::{Point2D, Size2D};
-use dioxus_html::geometry::{ClientPoint, ElementPoint, PagePoint, PixelsRect, ScreenPoint};
+use dioxus_html::geometry::euclid::{Point2D, Size2D, Vector2D};
+use dioxus_html::geometry::{
+    ClientPoint, ElementPoint, PagePoint, PixelsRect, PixelsSize, PixelsVector2D, ScreenPoint,
+};
 use dioxus_html::input_data::{MouseButton, MouseButtonSet};
 use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
@@ -34,7 +37,7 @@ use dioxus_html::{
     AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasCompositionData,
     HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData, HtmlEventConverter, Key,
     KeyboardData, Location, Modifiers, MountedData, MountedError, MouseData, PlatformEventData,
-    RenderedElementBacking, TransitionData,
+    RenderedElementBacking, ScrollBehavior, ScrollToOptions, TransitionData,
 };
 
 use crate::html::NodeId;
@@ -58,6 +61,8 @@ pub use pointer::{
     AppRegion, Cursor, PointerInput, PointerKind, PointerSubscription, PointerType, UserSelect,
     WheelMode,
 };
+pub use scroll::ScrollPosition;
+pub(crate) use scroll::ScrollRequest;
 use writer::{DomWriter, WriterState, attribute_name, element_name};
 
 /// What a browser's own stylesheet says about form controls and blitz-dom's does not.
@@ -291,6 +296,8 @@ pub struct HtmlDom {
     focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
     /// Shared snapshot of node client rectangles for `MountedData::get_client_rect`.
     mounted_rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
+    /// The scroll moves `MountedData` asked for, and the positions it reads back.
+    scrolls: Rc<RefCell<scroll::Scrolls>>,
     /// The content box sizes `onresize` handlers were last told about.
     resize: resize::ResizeObservers,
     /// The drag a press on a draggable element has become, or may become.
@@ -369,6 +376,7 @@ impl HtmlDom {
             cached_plan: None,
             focus_requests: Rc::default(),
             mounted_rects: Rc::default(),
+            scrolls: Rc::default(),
             resize: resize::ResizeObservers::default(),
             drag: drag::DragState::default(),
         };
@@ -416,6 +424,7 @@ impl HtmlDom {
                     node,
                     focus_requests: self.focus_requests.clone(),
                     rects: self.mounted_rects.clone(),
+                    scrolls: self.scrolls.clone(),
                 };
                 self.send(element, "mounted", Box::new(backing), false);
             }
@@ -637,6 +646,32 @@ impl HtmlDom {
             for entry in &list.entries {
                 rects.insert(entry.node, entry.rect);
             }
+        }
+        {
+            // A container's size before the renderer has reported it, and nothing kept for
+            // a node that is no longer a scroll container.
+            let mut scrolls = self.scrolls.borrow_mut();
+            scrolls.laid_out.clear();
+            for entry in &list.entries {
+                if let Some(scroll) = &entry.scroll {
+                    let viewport = scroll.viewport;
+                    scrolls.laid_out.insert(
+                        entry.node,
+                        ScrollPosition {
+                            x: 0.0,
+                            y: 0.0,
+                            scroll_width: f64::from(scroll.content_width.max(viewport.width)),
+                            scroll_height: f64::from(scroll.content_height.max(viewport.height)),
+                            client_width: f64::from(viewport.width),
+                            client_height: f64::from(viewport.height),
+                        },
+                    );
+                }
+            }
+            let scroll::Scrolls {
+                reported, laid_out, ..
+            } = &mut *scrolls;
+            reported.retain(|node, _| laid_out.contains_key(node));
         }
         self.report_skipped(&list);
         self.previous = self.current.replace(list);
@@ -1131,6 +1166,66 @@ impl HtmlDom {
         #[cfg(feature = "patched-blitz")]
         self.doc.set_focus_from_keyboard(true);
         self.focus_node(node);
+    }
+
+    /// What a renderer calls when it reports where the scroll container `node` is, in the
+    /// page's CSS pixels: keeps the position for `MountedData::get_scroll_offset` and
+    /// `get_scroll_size`, and sends `scroll` to the element's own handler. Like a
+    /// browser's `scroll` on an element, it does not bubble.
+    pub fn scroll_changed(&mut self, node: NodeId, position: ScrollPosition) {
+        self.scrolls.borrow_mut().reported.insert(node, position);
+        if self.state.listeners(node).contains(&"scroll")
+            && let Some(element) = self.state.element_of(node)
+        {
+            self.send(
+                element,
+                "scroll",
+                Box::new(scroll::ScrollEventData(position)),
+                false,
+            );
+        }
+    }
+
+    /// Where the scroll container `node` is: the renderer's last report, or its laid-out
+    /// size at offset zero before the first one. `None` for an element that does not
+    /// scroll.
+    pub fn scroll_position(&self, node: NodeId) -> Option<ScrollPosition> {
+        self.scrolls.borrow().position(node)
+    }
+
+    /// Moves the scroll moves `MountedData` asked for since the last call into `into`, in
+    /// the order they were asked for.
+    pub(crate) fn take_scroll_requests(&mut self, into: &mut Vec<ScrollRequest>) {
+        into.append(&mut self.scrolls.borrow_mut().requests);
+    }
+
+    /// What making `node` visible moves, from the last layout: the boxes it can be found
+    /// by, its own and then each box around it out to the page (an element that has no
+    /// box of its own is found by the nearest one around it), and the scroll containers
+    /// that move it, innermost first.
+    pub(crate) fn scroll_chain(&self, node: NodeId) -> Option<(Vec<NodeId>, Vec<NodeId>)> {
+        let list = self.current.as_ref()?;
+        let mut current = Some(node);
+        let entry = loop {
+            let id = current?;
+            if let Some(entry) = list.get(id) {
+                break entry;
+            }
+            current = self.doc.get_node(id).and_then(|node| node.parent);
+        };
+        let mut boxes = vec![entry.node];
+        let mut parent = entry.parent;
+        while let Some(id) = parent {
+            boxes.push(id);
+            parent = list.get(id).and_then(|entry| entry.parent);
+        }
+        let mut containers = Vec::new();
+        let mut container = entry.scroll_parent;
+        while let Some(id) = container {
+            containers.push(id);
+            container = list.get(id).and_then(|entry| entry.scroll_parent);
+        }
+        Some((boxes, containers))
     }
 
     fn focus_node(&mut self, node: NodeId) {
@@ -1740,6 +1835,7 @@ struct MountedElement {
     node: NodeId,
     focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
     rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
+    scrolls: Rc<RefCell<scroll::Scrolls>>,
 }
 
 impl RenderedElementBacking for MountedElement {
@@ -1763,6 +1859,76 @@ impl RenderedElementBacking for MountedElement {
 
     fn set_focus(&self, focus: bool) -> Pin<Box<dyn Future<Output = Result<(), MountedError>>>> {
         self.focus_requests.borrow_mut().push((self.node, focus));
+        Box::pin(async { Ok(()) })
+    }
+
+    /// `scrollTop` and `scrollLeft`: the position the renderer last reported for this
+    /// container, zero before the first report and for an element that does not scroll.
+    fn get_scroll_offset(
+        &self,
+    ) -> Pin<Box<dyn Future<Output = Result<PixelsVector2D, MountedError>>>> {
+        let position = self.scrolls.borrow().reported.get(&self.node).copied();
+        let offset = position.map_or(Vector2D::new(0.0, 0.0), |position| {
+            Vector2D::new(position.x, position.y)
+        });
+        Box::pin(async move { Ok(offset) })
+    }
+
+    /// `scrollWidth` and `scrollHeight`: the size of the content of a scroll container,
+    /// and the element's own size for one that does not scroll.
+    fn get_scroll_size(&self) -> Pin<Box<dyn Future<Output = Result<PixelsSize, MountedError>>>> {
+        let size = match self.scrolls.borrow().position(self.node) {
+            Some(position) => Size2D::new(position.scroll_width, position.scroll_height),
+            None => {
+                let rect = self
+                    .rects
+                    .borrow()
+                    .get(&self.node)
+                    .copied()
+                    .unwrap_or_default();
+                Size2D::new(f64::from(rect.width), f64::from(rect.height))
+            }
+        };
+        Box::pin(async move { Ok(size) })
+    }
+
+    /// `scrollIntoView`: one request for each scroll container around the element,
+    /// written into the next batch.
+    fn scroll_to(
+        &self,
+        options: ScrollToOptions,
+    ) -> Pin<Box<dyn Future<Output = Result<(), MountedError>>>> {
+        let (align_x, align_y) = scroll::alignments(&options);
+        self.scrolls
+            .borrow_mut()
+            .requests
+            .push(scroll::ScrollRequest::IntoView {
+                node: self.node,
+                align_x,
+                align_y,
+                animate: scroll::animated(options.behavior),
+            });
+        Box::pin(async { Ok(()) })
+    }
+
+    /// `scrollTo` on a scroll container: moves it to `coordinates`, in CSS pixels. An
+    /// element that does not scroll is left alone.
+    fn scroll(
+        &self,
+        coordinates: PixelsVector2D,
+        behavior: ScrollBehavior,
+    ) -> Pin<Box<dyn Future<Output = Result<(), MountedError>>>> {
+        if coordinates.x.is_finite() && coordinates.y.is_finite() {
+            self.scrolls
+                .borrow_mut()
+                .requests
+                .push(scroll::ScrollRequest::To {
+                    node: self.node,
+                    x: coordinates.x,
+                    y: coordinates.y,
+                    animate: scroll::animated(behavior),
+                });
+        }
         Box::pin(async { Ok(()) })
     }
 }
@@ -1991,8 +2157,11 @@ impl HtmlEventConverter for Converter {
             .expect("every resize event this document sends carries ResizeEventData");
         dioxus_html::ResizeData::new(data)
     }
-    fn convert_scroll_data(&self, _: &PlatformEventData) -> dioxus_html::ScrollData {
-        not_sent("scroll")
+    fn convert_scroll_data(&self, event: &PlatformEventData) -> dioxus_html::ScrollData {
+        let data = *event
+            .downcast::<scroll::ScrollEventData>()
+            .expect("every scroll event this document sends carries ScrollEventData");
+        dioxus_html::ScrollData::new(data)
     }
     fn convert_selection_data(&self, _: &PlatformEventData) -> dioxus_html::SelectionData {
         not_sent("selection")
