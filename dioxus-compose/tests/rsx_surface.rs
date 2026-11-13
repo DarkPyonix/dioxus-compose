@@ -18,8 +18,8 @@ use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PointerKind, PointerType, PropertyKind,
-    WIDGET_SCHEMA, WheelDeltaMode, WidgetKind,
+    EventPayload, MODIFIER_SCHEMA, Modifier, PROPERTY_SCHEMA, PointerKind, PointerType,
+    PropertyKind, WIDGET_SCHEMA, WheelDeltaMode, WidgetKind,
 };
 use dioxus_compose::spans::{TextSpan, TextSpans};
 use dioxus_compose::{FontRef, FontRefs, GenericFamily, OverflowWrap, WordBreak};
@@ -92,6 +92,25 @@ const SECONDARY: Paint = Paint::Role(ColorRole::Secondary);
 const TERTIARY: Paint = Paint::Role(ColorRole::Tertiary);
 const ON_SURFACE: Paint = Paint::Role(ColorRole::OnSurface);
 const OUTLINE: Paint = Paint::Role(ColorRole::Outline);
+const SURFACE: Paint = Paint::Role(ColorRole::Surface);
+const SCRIM: Paint = Paint::Role(ColorRole::OnBackground);
+
+/// A 3D matrix that is not the identity, so a value that arrives is plainly this one.
+const MATRIX_3D: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.002, 0.0, 0.0, 1.0, 0.0, 4.0, 8.0, 0.0, 1.0,
+];
+
+/// What the first Column says to assistive technology.
+fn column_semantics() -> Semantics {
+    Semantics::new(SemanticsRole::Group).with_state(SemanticsState::expanded(true))
+}
+
+/// The colours the code editor in `surface()` names for its own parts.
+fn editor_colors() -> CodeEditorColors {
+    CodeEditorColors::new()
+        .container(ColorRole::Surface)
+        .gutter(ColorRole::SurfaceVariant)
+}
 
 /// Every element the prelude exports, once, with its main properties and handlers.
 fn surface() -> Element {
@@ -130,6 +149,7 @@ fn surface() -> Element {
             },
             onunavailable: move |_| fired("window.onunavailable"),
             onclosed: move |_| fired("window.onclosed"),
+            report_size: true,
             Scaffold {
                 background: Paint::Role(ColorRole::Background),
                 material: MaterialRole::Chrome,
@@ -139,6 +159,7 @@ fn surface() -> Element {
                 bottom_bar: rsx! {
                     Navigation {
                         selected_index: 1,
+                        compact: CompactNavigation::Sidebar,
                         head: rsx! { Text { text: "head" } },
                         foot: rsx! { Text { text: "foot" } },
                         NavigationItem {
@@ -168,6 +189,9 @@ fn surface() -> Element {
                 Column {
                     observe_size: 42,
                     tear_off_key: "tab:inbox",
+                    corner_curve: 0.6,
+                    semantics: column_semantics(),
+                    accessible_name: "Mail",
                     on_window_drag_over: move |over: WindowDragOver| {
                         fired(format!("Column.on_window_drag_over({:?},{})", over.kind, over.window))
                     },
@@ -248,9 +272,32 @@ fn surface() -> Element {
                         on_submit: move |value: String| fired(format!("TextField.on_submit({value})")),
                         on_focus_lost: move |_| fired("TextField.on_focus_lost"),
                         on_key_down: move |event: KeyEvent| fired(format!("TextField.on_key_down({:?})", event.key())),
+                        bare: true,
+                        on_focus_gained: move |_| fired("TextField.on_focus_gained"),
+                        on_key_up: move |event: KeyEvent| fired(format!(
+                            "TextField.on_key_up({:?},{},{},{},{})",
+                            event.key(),
+                            event.shift_key(),
+                            event.repeat(),
+                            event.code(),
+                            event.text()
+                        )),
                     }
                     ScrollColumn {
                         fill_max_width: true,
+                        on_scroll_changed: move |change: ScrollChange| fired(format!(
+                            "ScrollColumn.on_scroll_changed({},{},{},{},{},{},{},{},{},{})",
+                            change.item,
+                            change.settled,
+                            change.can_scroll_backward,
+                            change.can_scroll_forward,
+                            change.x_px,
+                            change.y_px,
+                            change.max_x_px,
+                            change.max_y_px,
+                            change.viewport_width_px,
+                            change.viewport_height_px
+                        )),
                         Image { asset_id: 7, width: 64.0, height: 64.0 }
                         Icon { asset_id: 8, color: TERTIARY }
                     }
@@ -279,6 +326,7 @@ fn surface() -> Element {
                         AbsoluteBox {
                             offset: (12.0, 24.0),
                             required_size: (100.0, 40.0),
+                            transform_3d: (MATRIX_3D, true),
                             Text { text: "placed" }
                         }
                     }
@@ -289,6 +337,13 @@ fn surface() -> Element {
                         folds: compose_rust::code::Folds::new([compose_rust::code::Fold::new(0, 0, 1)]),
                         gutter_decorations: compose_rust::code::GutterDecorations::new([compose_rust::code::GutterDecoration::dot(0, 0, 1)]),
                         tab_width: 4_u32,
+                        line_numbers: false,
+                        gutter_min_width: 40.0,
+                        gutter_padding: 6.0,
+                        text_inset: 8.0,
+                        colors: editor_colors(),
+                        on_code_metrics: move |height: f64| fired(format!("CodeEditor.on_code_metrics({height})")),
+                        on_code_scrolled: move |offset: f64| fired(format!("CodeEditor.on_code_scrolled({offset})")),
                         on_change: move |_| fired("CodeEditor.on_change"),
                         on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
                         on_hover: move |_| fired("CodeEditor.on_hover"),
@@ -327,6 +382,9 @@ fn surface() -> Element {
                         Checkbox {
                             checked: true,
                             enabled: true,
+                            container_color: PRIMARY,
+                            check_color: SURFACE,
+                            size: 18.0,
                             on_change: move |value: bool| fired(format!("Checkbox.on_change({value})")),
                         }
                         RadioButton {
@@ -337,6 +395,9 @@ fn surface() -> Element {
                         Switch {
                             checked: true,
                             enabled: true,
+                            track_color: SECONDARY,
+                            thumb_color: SURFACE,
+                            size: (52.0, 32.0),
                             on_change: move |value: bool| fired(format!("Switch.on_change({value})")),
                         }
                     }
@@ -350,6 +411,9 @@ fn surface() -> Element {
                             steps: 4,
                             enabled: true,
                             color: PRIMARY,
+                            track_color: OUTLINE,
+                            thumb_color: TERTIARY,
+                            active_track_color: SECONDARY,
                             on_change: move |value: f32| fired(format!("Slider.on_change({value})")),
                         }
                         ProgressIndicator { value: 0.75, determinate: true, circular: true }
@@ -383,6 +447,7 @@ fn surface() -> Element {
                     Dropdown {
                         selected_index: 1,
                         enabled: true,
+                        bare: true,
                         on_change: move |value: usize| fired(format!("Dropdown.on_change({value})")),
                         Text { text: "one" }
                         Text { text: "two" }
@@ -413,19 +478,41 @@ fn surface() -> Element {
                     }
                     Dialog {
                         open: true,
+                        scrim: SCRIM,
                         on_dismiss: move |_| fired("Dialog.on_dismiss"),
                         Text { text: "dialog body" }
                     }
                     Menu {
                         expanded: true,
+                        scrim: SCRIM,
                         on_dismiss: move |_| fired("Menu.on_dismiss"),
                         anchor: rsx! { Text { text: "menu anchor" } },
                         Text { text: "menu entry" }
                     }
                     Sheet {
                         open: true,
+                        scrim: SCRIM,
                         on_dismiss: move |_| fired("Sheet.on_dismiss"),
                         Text { text: "sheet body" }
+                    }
+                    FlowRow {
+                        horizontal_spacing: 6.0,
+                        vertical_spacing: 10.0,
+                        horizontal_alignment: HorizontalAlignment::Center,
+                        vertical_alignment: VerticalAlignment::Bottom,
+                        max_items_in_each_row: 3,
+                        Text { text: "tag one" }
+                        Text { text: "tag two" }
+                    }
+                    Popover {
+                        open: true,
+                        placement: PopoverPlacement::Top,
+                        align: PopoverAlign::End,
+                        offset: 6.0,
+                        scrim: true,
+                        on_dismiss: move |_| fired("Popover.on_dismiss"),
+                        anchor: rsx! { Text { text: "popover anchor" } },
+                        Text { text: "popover body" }
                     }
                 }
             }
@@ -638,6 +725,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnWindowDrag, Handler),
                 (P::OnWindowUnavailable, Handler),
                 (P::OnWindowClosed, Handler),
+                (P::ReportSize, flag(true)),
             ],
         ),
         (
@@ -653,6 +741,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnPointer, Handler),
                 (P::TearOffKey, text("tab:inbox")),
                 (P::OnWindowDragOver, Handler),
+                (P::AccessibleName, text("Mail")),
             ],
         ),
         (
@@ -717,6 +806,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnSubmit, Handler),
                 (P::OnFocusLost, Handler),
                 (P::OnKeyDown, Handler),
+                (P::Bare, flag(true)),
+                (P::OnFocusGained, Handler),
+                (P::OnKeyUp, Handler),
             ],
         ),
         (
@@ -738,7 +830,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             W::LazyColumn,
             vec![(P::ItemCount, int(3)), (P::OnRangeRequested, Handler)],
         ),
-        (W::ScrollColumn, vec![]),
+        (W::ScrollColumn, vec![(P::OnScrollChanged, Handler)]),
         (W::AbsoluteBox, vec![(P::IslandZoom, float(1.5))]),
         (W::AbsoluteBox, vec![]),
         (W::ScrollRow, vec![]),
@@ -755,6 +847,16 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                     is(Value::Bytes(code_lists().1.as_bytes().to_vec())),
                 ),
                 (P::TabWidth, int(4)),
+                (P::LineNumbers, flag(false)),
+                (P::GutterMinWidthDp, float(40.0)),
+                (P::GutterPaddingDp, float(6.0)),
+                (P::TextInsetDp, float(8.0)),
+                (
+                    P::CodeEditorColors,
+                    is(Value::Bytes(editor_colors().to_bytes().to_vec())),
+                ),
+                (P::OnCodeMetrics, Handler),
+                (P::OnCodeScrolled, Handler),
                 (P::OnValueChange, Handler),
                 (P::OnEditRejected, Handler),
                 (P::OnHover, Handler),
@@ -812,6 +914,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::ContainerColor, int(paint_bits(PRIMARY))),
+                (P::CheckColor, int(paint_bits(SURFACE))),
+                (P::ControlSize, pair_bytes(18.0, 18.0)),
             ],
         ),
         (
@@ -828,6 +933,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::TrackColor, int(paint_bits(SECONDARY))),
+                (P::ThumbColor, int(paint_bits(SURFACE))),
+                (P::ControlSize, pair_bytes(52.0, 32.0)),
             ],
         ),
         (
@@ -840,6 +948,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Enabled, flag(true)),
                 (P::Color, int(paint_bits(PRIMARY))),
                 (P::OnValueChange, Handler),
+                (P::TrackColor, int(paint_bits(OUTLINE))),
+                (P::ThumbColor, int(paint_bits(TERTIARY))),
+                (P::ActiveTrackColor, int(paint_bits(SECONDARY))),
             ],
         ),
         (
@@ -855,11 +966,19 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
         (W::Surface, vec![]),
         (
             W::Dialog,
-            vec![(P::Open, flag(true)), (P::OnDismiss, Handler)],
+            vec![
+                (P::Open, flag(true)),
+                (P::OnDismiss, Handler),
+                (P::Scrim, int(paint_bits(SCRIM))),
+            ],
         ),
         (
             W::Menu,
-            vec![(P::Open, flag(true)), (P::OnDismiss, Handler)],
+            vec![
+                (P::Open, flag(true)),
+                (P::OnDismiss, Handler),
+                (P::Scrim, int(paint_bits(SCRIM))),
+            ],
         ),
         (
             W::Tabs,
@@ -904,9 +1023,16 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::SelectedIndex, int(1)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::Bare, flag(true)),
             ],
         ),
-        (W::Navigation, vec![(P::SelectedIndex, int(1))]),
+        (
+            W::Navigation,
+            vec![
+                (P::SelectedIndex, int(1)),
+                (P::CompactNavigation, role(CompactNavigation::Sidebar)),
+            ],
+        ),
         (
             W::NavigationItem,
             vec![
@@ -921,7 +1047,11 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
         (W::NavigationItem, vec![(P::Text, text("Sent"))]),
         (
             W::Sheet,
-            vec![(P::Open, flag(true)), (P::OnDismiss, Handler)],
+            vec![
+                (P::Open, flag(true)),
+                (P::OnDismiss, Handler),
+                (P::Scrim, int(paint_bits(SCRIM))),
+            ],
         ),
         (W::Scaffold, vec![]),
         // One slot per part of the frame the screen filled, and the two a navigation's
@@ -948,6 +1078,27 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             ],
         ),
         (W::LinearProgressIndicator, vec![(P::Progress, float(0.5))]),
+        (
+            W::FlowRow,
+            vec![
+                (P::HorizontalSpacing, float(6.0)),
+                (P::VerticalSpacing, float(10.0)),
+                (P::HorizontalAlignment, role(HorizontalAlignment::Center)),
+                (P::VerticalAlignment, role(VerticalAlignment::Bottom)),
+                (P::MaxItemsInEachRow, int(3)),
+            ],
+        ),
+        (
+            W::Popover,
+            vec![
+                (P::Open, flag(true)),
+                (P::Placement, role(PopoverPlacement::Top)),
+                (P::Align, role(PopoverAlign::End)),
+                (P::OffsetDp, float(6.0)),
+                (P::Scrim, flag(true)),
+                (P::OnDismiss, Handler),
+            ],
+        ),
     ]
 }
 
@@ -1152,6 +1303,64 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             "TextField.on_key_down(Enter)",
         ),
         (
+            W::TextField,
+            P::OnFocusGained,
+            EventPayload::FocusGained,
+            "TextField.on_focus_gained",
+        ),
+        (
+            W::TextField,
+            P::OnKeyUp,
+            EventPayload::KeyUp {
+                key: Key::Enter,
+                shift_key: true,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
+            },
+            "TextField.on_key_up(Enter,true,false,40,Enter)",
+        ),
+        (
+            W::ScrollColumn,
+            P::OnScrollChanged,
+            EventPayload::ScrollChanged {
+                item: 0,
+                settled: true,
+                can_scroll_backward: true,
+                can_scroll_forward: false,
+                x_px: 0.0,
+                y_px: 700.5,
+                max_x_px: 0.0,
+                max_y_px: 700.5,
+                viewport_width_px: 320.0,
+                viewport_height_px: 300.0,
+            },
+            "ScrollColumn.on_scroll_changed(0,true,true,false,0,700.5,0,700.5,320,300)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCodeMetrics,
+            EventPayload::CodeMetrics {
+                line_height_px: 18.5,
+            },
+            "CodeEditor.on_code_metrics(18.5)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCodeScrolled,
+            EventPayload::CodeScrolled { offset_px: 240.0 },
+            "CodeEditor.on_code_scrolled(240)",
+        ),
+        (
+            W::Popover,
+            P::OnDismiss,
+            EventPayload::Clicked,
+            "Popover.on_dismiss",
+        ),
+        (
             W::Checkbox,
             P::OnValueChange,
             EventPayload::ValueChanged(0.0),
@@ -1315,4 +1524,330 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The batch the first frame of `app` writes.
+fn first_frame(app: fn() -> Element) -> (Host, Vec<u8>) {
+    let mut host = Host::new(app);
+    let batch = host
+        .rebuild()
+        .expect("the first frame should build")
+        .to_vec();
+    (host, batch)
+}
+
+fn decoded(batch: &[u8]) -> Vec<Mutation<'_>> {
+    decode_batch(batch).expect("the Host produced a batch it cannot decode")
+}
+
+/// The handler id each `property` was announced with, by node.
+fn announced(mutations: &[Mutation<'_>], property: PropertyKind) -> Vec<(u32, u64)> {
+    mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: sent,
+                value: PropertyValue::Integer(handler),
+            } if *sent == property && *handler > 0 => Some((*node_id, *handler as u64)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn key_logger() -> Element {
+    rsx! {
+        TextField {
+            on_key_down: move |event: KeyEvent| fired(format!(
+                "{:?},{},{},{},{},{},{},{}",
+                event.key(),
+                event.shift_key(),
+                event.ctrl_key(),
+                event.alt_key(),
+                event.meta_key(),
+                event.repeat(),
+                event.code(),
+                event.text()
+            )),
+            on_key_up: move |event: KeyEvent| fired(format!(
+                "{:?},{},{},{},{},{},{},{}",
+                event.key(),
+                event.shift_key(),
+                event.ctrl_key(),
+                event.alt_key(),
+                event.meta_key(),
+                event.repeat(),
+                event.code(),
+                event.text()
+            )),
+        }
+    }
+}
+
+/// A key going up reaches `on_key_up` as the same `KeyEvent` a key going down brings to
+/// `on_key_down`: the key, every modifier, the repeat flag, the physical code and the text.
+#[test]
+fn fr15_on_key_up_delivers_the_key_event_on_key_down_does() {
+    let (mut host, batch) = first_frame(key_logger);
+    let mutations = decoded(&batch);
+    take_fired();
+    let down = announced(&mutations, PropertyKind::OnKeyDown);
+    let up = announced(&mutations, PropertyKind::OnKeyUp);
+    assert_eq!((down.len(), up.len()), (1, 1), "{mutations:?}");
+    let fields = |down: bool| {
+        let (key, shift_key, ctrl_key, alt_key, meta_key) =
+            (Key::ArrowDown, false, true, true, false);
+        let (repeat, code, text) = (false, 0x51, "ArrowDown");
+        if down {
+            EventPayload::KeyDown {
+                key,
+                shift_key,
+                ctrl_key,
+                alt_key,
+                meta_key,
+                repeat,
+                code,
+                text,
+            }
+        } else {
+            EventPayload::KeyUp {
+                key,
+                shift_key,
+                ctrl_key,
+                alt_key,
+                meta_key,
+                repeat,
+                code,
+                text,
+            }
+        }
+    };
+    for ((node_id, handler_id), payload) in [(down[0], fields(true)), (up[0], fields(false))] {
+        host.dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload,
+        })
+        .expect("the key event is delivered");
+    }
+    let calls = take_fired();
+    assert_eq!(
+        calls, ["ArrowDown,false,true,true,false,false,81,ArrowDown"; 2],
+        "the key going down and the key going up should read the same"
+    );
+}
+
+fn nothing_asked() -> Element {
+    rsx! {
+        Column {
+            TextField { placeholder: "plain" }
+            Dropdown { Text { text: "one" } }
+            Switch { checked: true }
+            Checkbox { checked: true }
+            Slider { value: 0.5 }
+            ScrollColumn { Text { text: "a" } }
+            LazyColumn { item_count: 1, item: move |_| rsx! { Text { text: "b" } } }
+            CodeEditor { text: "x" }
+            Navigation { NavigationItem { text: "Inbox" } }
+            Dialog { Text { text: "c" } }
+            FlowRow { Text { text: "d" } }
+            Popover { anchor: rsx! { Text { text: "e" } }, Text { text: "f" } }
+        }
+    }
+}
+
+/// A widget that sets none of the new properties and handlers sends none of them: absent
+/// is each one's default, and a handler nobody wrote is never announced, so the Renderer
+/// is never asked to report what no screen listens for.
+#[test]
+fn fr15_what_a_screen_leaves_out_is_never_sent() {
+    use PropertyKind as P;
+    let (_host, batch) = first_frame(nothing_asked);
+    let mutations = decoded(&batch);
+    let left_out = [
+        P::OnFocusGained,
+        P::OnKeyUp,
+        P::AccessibleName,
+        P::TrackColor,
+        P::ThumbColor,
+        P::ActiveTrackColor,
+        P::ContainerColor,
+        P::CheckColor,
+        P::ControlSize,
+        P::Scrim,
+        P::Bare,
+        P::HorizontalSpacing,
+        P::VerticalSpacing,
+        P::HorizontalAlignment,
+        P::VerticalAlignment,
+        P::MaxItemsInEachRow,
+        P::Placement,
+        P::Align,
+        P::OffsetDp,
+        P::LineNumbers,
+        P::GutterMinWidthDp,
+        P::GutterPaddingDp,
+        P::TextInsetDp,
+        P::CodeEditorColors,
+        P::OnCodeMetrics,
+        P::OnCodeScrolled,
+        P::CompactNavigation,
+        P::OnScrollChanged,
+    ];
+    let sent: Vec<String> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp { property, .. } if left_out.contains(property) => {
+                Some(format!("{mutation:?}"))
+            }
+            Mutation::SetModifier {
+                modifier:
+                    Modifier::Semantics { .. }
+                    | Modifier::CornerCurve { .. }
+                    | Modifier::Transform3D { .. },
+                ..
+            } => Some(format!("{mutation:?}")),
+            _ => None,
+        })
+        .collect();
+    assert!(sent.is_empty(), "nothing asked for these: {sent:?}");
+}
+
+fn tinted_popover() -> Element {
+    rsx! {
+        Popover {
+            open: true,
+            scrim_color: SCRIM,
+            anchor: rsx! { Text { text: "anchor" } },
+            Text { text: "body" }
+        }
+    }
+}
+
+/// A popover's scrim is `true` for the design system's dimming, as `surface()` shows, and
+/// the paint itself when the screen names a colour.
+#[test]
+fn fr15_a_popover_scrim_colour_travels_as_a_paint() {
+    let (_host, batch) = first_frame(tinted_popover);
+    let mutations = decoded(&batch);
+    let scrims: Vec<&PropertyValue<'_>> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Scrim,
+                value,
+                ..
+            } => Some(value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        scrims,
+        [&PropertyValue::Integer(paint_bits(SCRIM))],
+        "{mutations:?}"
+    );
+}
+
+fn described() -> Element {
+    rsx! {
+        Column {
+            semantics: Semantics::new(SemanticsRole::Button).with_state(SemanticsState {
+                checked: Some(true),
+                selected: Some(false),
+                hidden: true,
+                click_action: true,
+                ..SemanticsState::default()
+            }),
+            corner_radius: 12.0,
+            corner_curve: 1.5,
+            AbsoluteBox {
+                transform_origin: (0.0, 1.0),
+                transform_3d: (MATRIX_3D, false),
+                Text { text: "x" }
+            }
+        }
+    }
+}
+
+/// The three modifiers arrive with the values written: the role and every state field of
+/// `Semantics` packed as the protocol defines them, a corner curve outside 0..=1 as the
+/// nearer end, and a 3D matrix with the origin it turns about.
+#[test]
+fn fr15_semantics_corner_curve_and_transform_3d_arrive_as_written() {
+    use dioxus_compose::schema::{
+        SEMANTICS_CHECKED_SHIFT, SEMANTICS_CLICK_ACTION_BIT, SEMANTICS_HIDDEN_BIT,
+        SEMANTICS_SELECTED_SHIFT,
+    };
+    let (_host, batch) = first_frame(described);
+    let mutations = decoded(&batch);
+    let modifiers: Vec<&Modifier> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier { modifier, .. } => Some(modifier),
+            _ => None,
+        })
+        .collect();
+    let state = (2 << SEMANTICS_CHECKED_SHIFT)
+        | (1 << SEMANTICS_SELECTED_SHIFT)
+        | SEMANTICS_HIDDEN_BIT
+        | SEMANTICS_CLICK_ACTION_BIT;
+    for wanted in [
+        Modifier::Semantics {
+            role: SemanticsRole::Button,
+            state,
+        },
+        Modifier::CornerCurve { smoothing: 1.0 },
+        Modifier::Transform3D {
+            m: MATRIX_3D,
+            origin_x: 0.0,
+            origin_y: 1.0,
+            backface_hidden: false,
+        },
+    ] {
+        assert!(
+            modifiers.contains(&&wanted),
+            "{wanted:?} did not arrive; the modifiers were {modifiers:?}"
+        );
+    }
+}
+
+fn withdrawn() -> Element {
+    let mut listening = use_signal(|| true);
+    let on_key_up = listening()
+        .then(|| dioxus_core::ListenerCallback::new(move |_: Event<KeyEvent>| fired("key up")));
+    rsx! {
+        Column {
+            textfield { onkeyup: on_key_up }
+            Button { text: "stop", on_click: move |_| listening.set(false) }
+        }
+    }
+}
+
+/// A handler that is taken away is withdrawn from the Renderer, so it stops reporting to a
+/// listener that is gone, rather than reporting to a handler id nothing answers.
+#[test]
+fn fr15_a_handler_taken_away_is_withdrawn() {
+    let (mut host, first) = first_frame(withdrawn);
+    let mutations = decoded(&first);
+    let up = announced(&mutations, PropertyKind::OnKeyUp);
+    assert_eq!(up.len(), 1, "{mutations:?}");
+    let (node_id, handler_id) = announced(&mutations, PropertyKind::OnClick)[0];
+    let batch = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        })
+        .expect("the press is dispatched")
+        .0
+        .to_vec();
+    let after = decoded(&batch);
+    assert!(
+        after.contains(&Mutation::SetProp {
+            node_id: up[0].0,
+            property: PropertyKind::OnKeyUp,
+            value: PropertyValue::None,
+        }),
+        "the key-up handler was not withdrawn: {after:?}"
+    );
 }

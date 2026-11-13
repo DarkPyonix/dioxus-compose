@@ -139,11 +139,47 @@ pub mod slot {
     pub const MATCH_PARENT_SIZE: u16 = CORNER_EACH + 12;
     pub const WINDOW_DRAG: u16 = CORNER_EACH + 13;
     pub const PRESS_FEEDBACK: u16 = CORNER_EACH + 14;
+    pub const SEMANTICS: u16 = CORNER_EACH + 15;
+    pub const CORNER_CURVE: u16 = CORNER_EACH + 16;
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 32;
+const MODIFIER_SLOTS: usize = 34;
+
+/// The properties a node sends only once it has been given a value. Absent is the
+/// Renderer's default for each of them, so the first frame of a widget that never set one
+/// costs no record, and a value that is taken away is cleared once.
+const SENT_WHEN_SET: &[PropertyKind] = &[
+    PropertyKind::PointerKinds,
+    PropertyKind::Cursor,
+    PropertyKind::UserSelect,
+    PropertyKind::TearOffKey,
+    PropertyKind::AccessibleName,
+    PropertyKind::TrackColor,
+    PropertyKind::ThumbColor,
+    PropertyKind::ActiveTrackColor,
+    PropertyKind::ContainerColor,
+    PropertyKind::CheckColor,
+    PropertyKind::ControlSize,
+    PropertyKind::ReportSize,
+    PropertyKind::Scrim,
+    PropertyKind::Bare,
+    PropertyKind::HorizontalSpacing,
+    PropertyKind::VerticalSpacing,
+    PropertyKind::HorizontalAlignment,
+    PropertyKind::VerticalAlignment,
+    PropertyKind::MaxItemsInEachRow,
+    PropertyKind::Placement,
+    PropertyKind::Align,
+    PropertyKind::OffsetDp,
+    PropertyKind::LineNumbers,
+    PropertyKind::GutterMinWidthDp,
+    PropertyKind::GutterPaddingDp,
+    PropertyKind::TextInsetDp,
+    PropertyKind::CodeEditorColors,
+    PropertyKind::CompactNavigation,
+];
 
 /// How many shadows one node can carry. Each takes a chain position of its own, because a
 /// shadow is a `Shadow` modifier and the wire holds one modifier per position.
@@ -227,9 +263,9 @@ pub struct ComposeRenderer {
     pointer_on: HashSet<usize>,
     /// The elements the Renderer was told a pointer handler for.
     pointer_announced: HashSet<usize>,
-    /// The pointer-related properties each node was given a value for, so one that was
+    /// The properties in `SENT_WHEN_SET` each node was given a value for, so one that was
     /// never set is never cleared and an unset one costs no record.
-    pointer_sent: HashSet<(u32, u16)>,
+    sent_when_set: HashSet<(u32, u16)>,
     /// The animated attributes each node has already been given a value for. The first
     /// value is where the node starts; every later one is a change to animate.
     animated: std::collections::HashSet<(u32, &'static str)>,
@@ -412,7 +448,7 @@ impl ComposeRenderer {
             editors: HashMap::new(),
             pointer_on: HashSet::new(),
             pointer_announced: HashSet::new(),
-            pointer_sent: HashSet::new(),
+            sent_when_set: HashSet::new(),
             animated: std::collections::HashSet::new(),
             next_animation_id: 1,
             windows: HashSet::new(),
@@ -635,7 +671,9 @@ impl ComposeRenderer {
             "corner_each" => Some(CORNER_EACH),
             "border_each" => Some(BORDER_EACH),
             "clip" => Some(CLIP),
-            "transform" => Some(TRANSFORM),
+            "transform" | "transform_3d" => Some(TRANSFORM),
+            "semantics" => Some(SEMANTICS),
+            "corner_curve" => Some(CORNER_CURVE),
             "match_parent_size" => Some(MATCH_PARENT_SIZE),
             "window_drag" => Some(WINDOW_DRAG),
             "press_feedback" => Some(PRESS_FEEDBACK),
@@ -766,7 +804,8 @@ impl ComposeRenderer {
             // A whole modifier, carried as itself so its numbers arrive as one record. Only
             // the kind the attribute names is accepted, so a value meant for one slot can
             // never land in another.
-            "offset" | "required_size" | "corner_each" | "border_each" | "transform" => {
+            "offset" | "required_size" | "corner_each" | "border_each" | "transform"
+            | "transform_3d" => {
                 let AttributeValue::Any(any) = value else {
                     return None;
                 };
@@ -774,7 +813,8 @@ impl ComposeRenderer {
                 let fits = match (&modifier, name) {
                     (Modifier::Offset { .. }, "offset")
                     | (Modifier::RequiredSize { .. }, "required_size")
-                    | (Modifier::Transform { .. }, "transform") => true,
+                    | (Modifier::Transform { .. }, "transform")
+                    | (Modifier::Transform3D { .. }, "transform_3d") => true,
                     // One radius or one border for every side is the record an ordinary
                     // node already sends, which is what `Modifier::corner_radii` and
                     // `Modifier::border_sides` give for equal values.
@@ -869,6 +909,37 @@ impl ComposeRenderer {
                 Some(Some((CLIP, Modifier::Clip(*enabled))))
             }
             "alpha" => Some(Some((ALPHA, Modifier::Alpha(float(value)?)))),
+            // A value outside 0..=1 is drawn as the nearer end and NaN as 0, which is what
+            // the Renderer does with it too; sending it already clamped keeps the two equal.
+            "corner_curve" => Some(Some((
+                CORNER_CURVE,
+                Modifier::CornerCurve {
+                    smoothing: compose_rust::schema::corner_smoothing(float(value)?),
+                },
+            ))),
+            // The whole modifier, or the role in the low 16 bits and the state above them as
+            // one integer. A state with a bit the protocol does not define is refused here
+            // rather than sent for the Renderer to report.
+            "semantics" => {
+                let (role, state) = match value {
+                    AttributeValue::Any(_) => match as_modifier(value)? {
+                        Modifier::Semantics { role, state } => (role, state),
+                        _ => return None,
+                    },
+                    _ => {
+                        let packed = u32::try_from(integer(value)?).ok()?;
+                        let role = compose_rust::SemanticsRole::try_from(
+                            u16::try_from(packed & 0xffff).ok()?,
+                        )
+                        .ok()?;
+                        (role, packed >> 16)
+                    }
+                };
+                if state & !compose_rust::schema::SEMANTICS_STATE_MASK != 0 {
+                    return None;
+                }
+                Some(Some((SEMANTICS, Modifier::Semantics { role, state })))
+            }
             "match_parent_size" => {
                 if let Some(enabled) = as_bool(value) {
                     Some(Some((
@@ -1131,25 +1202,40 @@ impl ComposeRenderer {
             self.batch.fail(ProtocolError::InvalidProperty(0));
             return;
         };
-        if matches!(
-            property,
-            PropertyKind::PointerKinds
-                | PropertyKind::Cursor
-                | PropertyKind::UserSelect
-                | PropertyKind::TearOffKey
-        ) {
+        if SENT_WHEN_SET.contains(&property) {
             let key = (node_id, property as u16);
             if matches!(value, AttributeValue::None) {
-                if !self.pointer_sent.remove(&key) {
+                if !self.sent_when_set.remove(&key) {
                     return;
                 }
             } else {
-                self.pointer_sent.insert(key);
+                self.sent_when_set.insert(key);
             }
         }
+        // The colours of a code editor's parts, as the one record the property carries.
+        if property == PropertyKind::CodeEditorColors
+            && let AttributeValue::Any(any) = value
+        {
+            if let Some(colors) = any
+                .as_any()
+                .downcast_ref::<compose_rust::code::CodeEditorColors>()
+            {
+                let bytes = colors.to_bytes();
+                self.write(Mutation::SetProp {
+                    node_id,
+                    property,
+                    value: PropertyValue::Bytes(&bytes),
+                });
+            }
+            return;
+        }
+        // A width and a height, or an x and a y, as two `f32` in 8 bytes.
         if matches!(
             property,
-            PropertyKind::WindowSize | PropertyKind::WindowMinSize | PropertyKind::WindowPosition
+            PropertyKind::WindowSize
+                | PropertyKind::WindowMinSize
+                | PropertyKind::WindowPosition
+                | PropertyKind::ControlSize
         ) {
             match value {
                 AttributeValue::None => {
@@ -1813,13 +1899,17 @@ impl WriteMutations for ComposeRenderer {
                 self.sync_pointer_handler(id, node_id);
                 return;
             }
-            // The press modifier is written from the listener (`create_event_listener`),
-            // so the attribute itself, which a container without a handler carries as
-            // `None`, writes nothing.
-            if matches!(
-                name,
-                "onclickable" | "onwindowdragover" | "on_window_drag_over"
-            ) {
+            // A listener attribute arrives here only without a handler, as `None`: one that
+            // has a handler reaches `create_event_listener` instead. A handler that was there
+            // and is now gone is taken away as Dioxus would remove it, so the Renderer stops
+            // reporting to it, and one that never was writes nothing.
+            if let Some(event) = name.strip_prefix("on")
+                && (event_property(event).is_some() || is_clickable_event(event))
+            {
+                self.remove_event_listener(event, id);
+                return;
+            }
+            if name == "on_window_drag_over" {
                 return;
             }
             // A node's shadows are a list, so one attribute writes several positions.
@@ -1925,7 +2015,7 @@ impl WriteMutations for ComposeRenderer {
         {
             self.detach(Slot::Node(node_id));
             self.write(Mutation::Remove { node_id });
-            self.pointer_sent.retain(|(sent, _)| *sent != node_id);
+            self.sent_when_set.retain(|(sent, _)| *sent != node_id);
             self.forget(node_id);
         }
         if let Some(slot) = self.nodes.get_mut(id.0) {
@@ -1990,6 +2080,11 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "submit" | "onsubmit" => Some(PropertyKind::OnSubmit),
         "focuslost" | "onfocuslost" => Some(PropertyKind::OnFocusLost),
         "keydown" | "onkeydown" => Some(PropertyKind::OnKeyDown),
+        "focusgained" | "onfocusgained" => Some(PropertyKind::OnFocusGained),
+        "keyup" | "onkeyup" => Some(PropertyKind::OnKeyUp),
+        "scrollchanged" | "onscrollchanged" => Some(PropertyKind::OnScrollChanged),
+        "codemetrics" | "oncodemetrics" => Some(PropertyKind::OnCodeMetrics),
+        "codescrolled" | "oncodescrolled" => Some(PropertyKind::OnCodeScrolled),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
         "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),
