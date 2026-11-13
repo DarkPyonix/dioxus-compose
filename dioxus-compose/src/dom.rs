@@ -5,6 +5,7 @@
 //! the values a form event carries) is in [`form`], and the writer that applies Dioxus
 //! mutations to the document in `writer`.
 
+mod drag;
 pub(crate) mod form;
 mod pointer;
 mod resize;
@@ -292,6 +293,8 @@ pub struct HtmlDom {
     mounted_rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
     /// The content box sizes `onresize` handlers were last told about.
     resize: resize::ResizeObservers,
+    /// The drag a press on a draggable element has become, or may become.
+    drag: drag::DragState,
 }
 
 impl HtmlDom {
@@ -367,6 +370,7 @@ impl HtmlDom {
             focus_requests: Rc::default(),
             mounted_rects: Rc::default(),
             resize: resize::ResizeObservers::default(),
+            drag: drag::DragState::default(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
@@ -812,6 +816,9 @@ impl HtmlDom {
     /// Handlers run immediately; call [`HtmlDom::render`] to apply what they changed.
     pub fn click(&mut self, x: f32, y: f32) -> Option<NodeId> {
         let hit = self.hit_test(x, y)?;
+        if self.drag_swallows_click(hit) {
+            return None;
+        }
         self.activate(hit, Some((x, y)))
     }
 
@@ -819,7 +826,13 @@ impl HtmlDom {
     /// what the click activates, as [`HtmlDom::click`] does for a point. What a renderer
     /// calls when the user clicked a box it drew for `node`: the renderer has already
     /// decided which box was under the pointer, so nothing is hit-tested again.
+    ///
+    /// A press that became a drag does not click: the click a renderer reports for the
+    /// dragged element at the end of that press is dropped, and `None` returned.
     pub fn click_node(&mut self, node: NodeId) -> Option<NodeId> {
+        if self.drag_swallows_click(node) {
+            return None;
+        }
         self.activate(node, None)
     }
 
@@ -944,7 +957,12 @@ impl HtmlDom {
     /// `<html>` root if no element is focused). When `key` is `Key::Tab` without Ctrl, Alt,
     /// or Meta and no handler prevents the default, advances keyboard focus to the next (or
     /// previous with Shift) focusable element in document order.
+    ///
+    /// Escape while a drag is on cancels the drag and goes no further, as in a browser.
     pub fn key_down_input(&mut self, node: Option<NodeId>, input: &KeyInput) -> bool {
+        if input.key == Key::Escape && self.cancel_drag() {
+            return true;
+        }
         let target = node
             .or_else(|| self.doc.get_focussed_node_id())
             .unwrap_or(self.root);
@@ -1877,7 +1895,7 @@ fn register_event_converter() {
 
 /// Turns the events this document sends into Dioxus event data: clicks, keys, focus, the
 /// `input`, `change` and `submit` events of form controls, animation and transition
-/// events, and resize events. Every other conversion is
+/// events, resize events, and drag events. Every other conversion is
 /// unreachable from here.
 struct Converter;
 
@@ -1919,8 +1937,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         CompositionData::new(data)
     }
-    fn convert_drag_data(&self, _: &PlatformEventData) -> dioxus_html::DragData {
-        not_sent("drag")
+    fn convert_drag_data(&self, event: &PlatformEventData) -> dioxus_html::DragData {
+        let data = event
+            .downcast::<drag::DragEventData>()
+            .expect("every drag event this document sends carries DragEventData")
+            .clone();
+        dioxus_html::DragData::new(data)
     }
     fn convert_focus_data(&self, event: &PlatformEventData) -> FocusData {
         let data = event
