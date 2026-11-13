@@ -236,7 +236,11 @@ pub struct HtmlConfig {
     /// The part of the window's title bar the page may use, in CSS pixels, which
     /// `env(titlebar-area-x)`, `-y`, `-width` and `-height` read. The style engine does not
     /// know these names, so author stylesheets are rewritten. When `None` the fallback of
-    /// each `env()` is used, as a browser without a title bar area does.
+    /// each `env()` is used, as a browser without a title bar area does, until
+    /// [`HtmlDom::set_titlebar_area`] names one. A page that fills the window and is given
+    /// `None` here follows the window instead: the area is the part of the window's title
+    /// band beside its buttons, as the renderer last reported it, and it changes with each
+    /// report. An area named here is kept whatever the window reports.
     pub titlebar_area: Option<Rect>,
 }
 
@@ -304,6 +308,12 @@ pub struct HtmlDom {
     resize: resize::ResizeObservers,
     /// The drag a press on a draggable element has become, or may become.
     drag: drag::DragState,
+    /// The text node of each author stylesheet and its CSS before `env()` is replaced, so
+    /// the sheets can be written again when a window variable changes.
+    author_sheets: Vec<(NodeId, String)>,
+    /// The values `env(safe-area-inset-*)` and `env(titlebar-area-*)` read.
+    safe_area_insets: Option<Sides<f32>>,
+    titlebar_area: Option<Rect>,
 }
 
 impl HtmlDom {
@@ -334,6 +344,7 @@ impl HtmlDom {
         });
         doc.add_user_agent_stylesheet(FORM_CONTROLS_CSS);
 
+        let mut author_sheets = Vec::with_capacity(config.stylesheets.len());
         let (body, root) = {
             let mut mutator = doc.mutate();
             let html = mutator.create_element(element_name("html", None), Vec::new());
@@ -343,10 +354,14 @@ impl HtmlDom {
             for css in &config.stylesheets {
                 let style = mutator.create_element(element_name("style", None), Vec::new());
                 let css = rewrite_reduced_motion(css, config.reduced_motion);
-                let css = rewrite_env(&css, config.safe_area_insets, config.titlebar_area);
-                let text = mutator.create_text_node(&css);
+                let text = mutator.create_text_node(&rewrite_env(
+                    &css,
+                    config.safe_area_insets,
+                    config.titlebar_area,
+                ));
                 mutator.append_children(style, &[text]);
                 mutator.append_children(head, &[style]);
+                author_sheets.push((text, css));
             }
             let document = doc_root_id();
             mutator.append_children(document, &[html]);
@@ -381,6 +396,9 @@ impl HtmlDom {
             scrolls: Rc::default(),
             resize: resize::ResizeObservers::default(),
             drag: drag::DragState::default(),
+            author_sheets,
+            safe_area_insets: config.safe_area_insets,
+            titlebar_area: config.titlebar_area,
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
@@ -1478,6 +1496,43 @@ impl HtmlDom {
     /// The scheme `prefers-color-scheme` media queries are answered with.
     pub fn color_scheme(&self) -> ColorScheme {
         self.color_scheme
+    }
+
+    /// The title bar area `env(titlebar-area-x)`, `-y`, `-width` and `-height` read, in CSS
+    /// pixels, or `None` when each such `env()` takes its fallback.
+    pub fn titlebar_area(&self) -> Option<Rect> {
+        self.titlebar_area
+    }
+
+    /// Sets the title bar area `env(titlebar-area-*)` reads, as a window reports a new one.
+    /// The author stylesheets are written again with the new values and every style is
+    /// resolved again at the next layout. An unchanged area touches nothing. Returns whether
+    /// the area changed.
+    pub fn set_titlebar_area(&mut self, area: Option<Rect>) -> bool {
+        if self.titlebar_area == area {
+            return false;
+        }
+        self.titlebar_area = area;
+        self.rewrite_author_sheets();
+        true
+    }
+
+    /// Writes each author stylesheet again with the current window variables in its
+    /// `env()`s. The style engine reads a changed `<style>` as a new sheet.
+    fn rewrite_author_sheets(&mut self) {
+        if self.author_sheets.is_empty() {
+            return;
+        }
+        {
+            let mut mutator = self.doc.mutate();
+            for (text, css) in &self.author_sheets {
+                let css = rewrite_env(css, self.safe_area_insets, self.titlebar_area);
+                // A text node that is unchanged is left alone, and its sheet with it.
+                mutator.set_node_text(*text, &css);
+            }
+        }
+        self.state.mark_style_dirty(self.root);
+        self.layout_state.invalidate_all();
     }
 
     /// Answers `prefers-color-scheme` media queries with `scheme` from the next layout on.
