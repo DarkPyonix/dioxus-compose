@@ -211,6 +211,12 @@ pub(crate) fn deliver_event(
     if pointer_handler != matches!(event.payload, EventPayload::Pointer { .. }) {
         return Err(ProtocolError::InvalidValueKind(0));
     }
+    // The same holds for a code editor's pointer handler and the pointer event that carries
+    // the place in the text under it.
+    let code_pointer_handler = matches!(name, "codepointer" | "oncodepointer");
+    if code_pointer_handler != matches!(event.payload, EventPayload::CodePointer { .. }) {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
     let mut key_event = None;
     let mut pointer_event = None;
     // A press on a link run arrives as a click on the handler the run was given, and
@@ -285,6 +291,23 @@ pub(crate) fn deliver_event(
             );
             pointer_event = Some(value.clone());
             Event::new(Rc::new(value), true).into_any()
+        }
+        // A pointer over a code editor, with the character under it. Consuming a press keeps
+        // the caret where it was, so the result goes back as a pointer handler's does.
+        EventPayload::CodePointer { .. } => {
+            let Some(value) = compose_rust::code::CodePointer::from_payload(&event.payload) else {
+                return Err(ProtocolError::InvalidValueKind(0));
+            };
+            pointer_event = Some(value.event.clone());
+            Event::new(Rc::new(value), false).into_any()
+        }
+        // Where a code editor draws its caret. It is that editor's own caret, so it does not
+        // bubble to an ancestor.
+        EventPayload::CaretRect { .. } => {
+            let Some(value) = compose_rust::code::CaretRect::from_payload(&event.payload) else {
+                return Err(ProtocolError::InvalidValueKind(0));
+            };
+            Event::new(Rc::new(value), false).into_any()
         }
         EventPayload::FilesEntered => Event::new(Rc::new(()), true).into_any(),
         EventPayload::FilesDropped(paths) => {
@@ -390,10 +413,18 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
-        EventPayload::CodeMetrics { line_height_px } => {
-            Event::new(Rc::new(line_height_px), true).into_any()
-        }
-        EventPayload::CodeScrolled { offset_px } => Event::new(Rc::new(offset_px), true).into_any(),
+        // A code editor's row height and how far it is scrolled, in physical pixels, as
+        // compose-rust's own records of them.
+        EventPayload::CodeMetrics { line_height_px } => Event::new(
+            Rc::new(compose_rust::code::CodeMetrics { line_height_px }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeScrolled { offset_px } => Event::new(
+            Rc::new(compose_rust::code::CodeScroll { offset_px }),
+            true,
+        )
+        .into_any(),
         EventPayload::ScrollChanged {
             item,
             settled,
@@ -530,7 +561,10 @@ pub(crate) fn deliver_event(
         | EventPayload::ClipboardText { .. }
         | EventPayload::IoAnswer { .. }
         | EventPayload::FileHandles { .. }
-        | EventPayload::StorageLocation(_) => {
+        | EventPayload::StorageLocation(_)
+        // The answer to a position query names a request and no handler. The Host hands it
+        // to the callback that asked before any runtime sees it.
+        | EventPayload::PositionRect { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };

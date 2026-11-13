@@ -183,6 +183,7 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::Snap,
     PropertyKind::MaxHeightFraction,
     PropertyKind::FontFeatureSettings,
+    PropertyKind::RadioGroup,
 ];
 
 /// How many shadows one node can carry. Each takes a chain position of its own, because a
@@ -548,6 +549,21 @@ impl ComposeRenderer {
                 collapsed,
                 ..
             } => self.fold_code(node_id, *start_line, *collapsed),
+            EditorRequest::QueryPosition {
+                position,
+                on_answer,
+                ..
+            } => {
+                // Numbered here, where the editor is known, so a query that is never asked
+                // leaves no callback waiting for an answer that cannot come.
+                if let Some(on_answer) = on_answer.borrow_mut().take() {
+                    let request = compose_rust::code::position_query(on_answer);
+                    self.batch.query_position_rect(node_id, request, *position);
+                }
+            }
+            EditorRequest::ScrollTo { offset_px, .. } => {
+                self.batch.set_scroll_offset(node_id, *offset_px);
+            }
         }
     }
 
@@ -2120,6 +2136,9 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "scrollchanged" | "onscrollchanged" => Some(PropertyKind::OnScrollChanged),
         "codemetrics" | "oncodemetrics" => Some(PropertyKind::OnCodeMetrics),
         "codescrolled" | "oncodescrolled" => Some(PropertyKind::OnCodeScrolled),
+        "caretrect" | "oncaretrect" => Some(PropertyKind::OnCaretRect),
+        "keypreview" | "onkeypreview" => Some(PropertyKind::OnKeyPreview),
+        "codepointer" | "oncodepointer" => Some(PropertyKind::OnCodePointer),
         "motionfinished" | "onmotionfinished" => Some(PropertyKind::OnMotionFinished),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),

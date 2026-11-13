@@ -590,16 +590,33 @@ pub(crate) enum EditorRequest {
         start_line: u32,
         collapsed: bool,
     },
+    /// Where a caret at `position` would be drawn. The callback is numbered only when the
+    /// query is written to an editor, so a handle no editor carries leaves nothing waiting.
+    QueryPosition {
+        token: u32,
+        position: compose_rust::code::Position,
+        on_answer: PositionCallback,
+    },
+    ScrollTo {
+        token: u32,
+        offset_px: f64,
+    },
 }
+
+/// The callback a position query waits with, taken out once when the query is written.
+pub(crate) type PositionCallback =
+    std::cell::RefCell<Option<Box<dyn FnOnce(Option<compose_rust::code::CodeRect>)>>>;
 
 impl EditorRequest {
     /// The handle the request is addressed to.
     pub(crate) fn token(&self) -> u32 {
         match self {
             Self::Edit(edit) => edit.token,
-            Self::Select { token, .. } | Self::Reveal { token, .. } | Self::Fold { token, .. } => {
-                *token
-            }
+            Self::Select { token, .. }
+            | Self::Reveal { token, .. }
+            | Self::Fold { token, .. }
+            | Self::QueryPosition { token, .. }
+            | Self::ScrollTo { token, .. } => *token,
         }
     }
 }
@@ -710,6 +727,46 @@ impl CodeEditorHandle {
                 token: self.token,
                 start_line,
                 collapsed,
+            });
+        });
+    }
+
+    /// Asks where a caret at `position` would be drawn, for a hover card, a rename box or a
+    /// parameter hint placed next to a word that is not where the caret is.
+    ///
+    /// The question goes out with the batch the current call produces, like
+    /// [`edit`](Self::edit). The Renderer answers it exactly once, and `on_answer` then runs
+    /// on the thread the application runs on, inside the call that carried the answer, with
+    /// the rectangle in the window's dp (the editor's scroll and the window's zoom already in
+    /// it), or with `None` where the position is not on screen: scrolled away, folded,
+    /// outside the document, or in an editor that is gone. Anything it changes is in the
+    /// batch that call returns.
+    ///
+    /// A handle no editor carries asks nothing, as its edits are dropped, and `on_answer` is
+    /// dropped with the question without being called.
+    pub fn query_position_rect(
+        &self,
+        position: compose_rust::code::Position,
+        on_answer: impl FnOnce(Option<compose_rust::code::CodeRect>) + 'static,
+    ) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::QueryPosition {
+                token: self.token,
+                position,
+                on_answer: std::cell::RefCell::new(Some(Box::new(on_answer))),
+            });
+        });
+    }
+
+    /// Scrolls the editor so that `offset_px` physical pixels of the document are above the
+    /// top of its view: the unit `on_code_scrolled` reports in and `on_code_metrics`
+    /// measures a row in. The Renderer keeps the offset inside the document. Like
+    /// [`edit`](Self::edit) it goes out with the batch the current call produces.
+    pub fn set_scroll_offset(&self, offset_px: f64) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::ScrollTo {
+                token: self.token,
+                offset_px,
             });
         });
     }

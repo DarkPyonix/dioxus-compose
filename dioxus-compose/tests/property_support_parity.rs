@@ -144,6 +144,7 @@ fn property_of(attribute: &str) -> Option<&'static str> {
         "snap" => "Snap",
         "max_height_fraction" => "MaxHeightFraction",
         "font_feature_settings" => "FontFeatureSettings",
+        "radio_group" => "RadioGroup",
         // Everything else is either a Modifier rather than a property, or a property this
         // comparison has not been taught. Returning None skips it rather than failing,
         // because a Modifier is not subject to the rule being checked here.

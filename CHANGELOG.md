@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Everything compose-rust 0.0.9 added, written in rsx
+
+`CodeEditor` takes `on_caret_rect`, which brings a `CaretRect` (the caret's place and its
+rectangle in the window's dp) when the caret moves or the view scrolls, and
+`CodeEditorHandle::query_position_rect(position, on_answer)` asks where any other position
+would be drawn, answering once with a `CodeRect` or `None` where the position is not on
+screen. `on_key_preview` hears each key press before the editor does, as the `KeyEvent` a
+key handler gets, and a key it consumes is not the editor's. `pointer_kinds` and
+`on_code_pointer` bring a `CodePointer`: the pointer event and the character under it, and a
+press it consumes leaves the caret where it was. `Decoration::line_background` and
+`Decoration::range_background` tint whole lines and the characters inside them, for a diff
+view. The editor takes `type_role`, `font_size`, `line_height` and `font`;
+`on_code_metrics` and `on_code_scrolled` now bring compose-rust's `CodeMetrics` and
+`CodeScroll` rather than a bare number, still in physical pixels; and
+`CodeEditorHandle::set_scroll_offset(offset_px)` scrolls the editor in the same unit.
+`RadioButton` takes `ring_color`, `dot_color` and `size`, and `Column` and `Row` take
+`radio_group`, which makes the layout one Tab stop whose arrow keys move along its radio
+buttons. A `Message` can name its place with `with_placement` and its distance from the
+edge with `with_offset`. Each of these is sent only when set, and a handler left out is
+never announced to the renderer.
+
 ### Everything compose-rust 0.0.8 added, written in rsx
 
 `ScrollColumn` and `ScrollRow` take `snap` (`Snap::ItemStart` stops a fling with a child at

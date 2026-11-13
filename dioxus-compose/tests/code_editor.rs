@@ -7,7 +7,10 @@ use dioxus_compose::code::SYNTAX_SPAN_LEN;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::schema::RevealAlign;
-use dioxus_compose::{EventPayload, Host, PropertyKind, WidgetKind};
+use dioxus_compose::schema::{PointerKind, PointerType, WheelDeltaMode};
+use dioxus_compose::{
+    EventPayload, FontRef, FontRefs, GenericFamily, Host, PropertyKind, WidgetKind,
+};
 
 /// One decoded record with its borrowed parts made owned, so the batch can be dropped.
 #[derive(Clone, Debug, PartialEq)]
@@ -37,6 +40,15 @@ enum Record {
         node_id: u32,
         start_line: u32,
         collapsed: bool,
+    },
+    QueryPositionRect {
+        node_id: u32,
+        request: u32,
+        position: Position,
+    },
+    SetScrollOffset {
+        node_id: u32,
+        offset_px: f64,
     },
     Other,
 }
@@ -125,6 +137,19 @@ fn records(batch: &[u8]) -> Vec<Record> {
                 start_line,
                 collapsed,
             },
+            Mutation::QueryPositionRect {
+                node_id,
+                request,
+                line,
+                column,
+            } => Record::QueryPositionRect {
+                node_id,
+                request,
+                position: Position::new(line, column),
+            },
+            Mutation::SetScrollOffset { node_id, offset_px } => {
+                Record::SetScrollOffset { node_id, offset_px }
+            }
             _ => Record::Other,
         })
         .collect()
@@ -157,6 +182,17 @@ fn handler_of(records: &[Record], node: u32, property: PropertyKind) -> u64 {
 }
 
 fn send(host: &mut Host, node: u32, handler: u64, payload: EventPayload<'_>) -> Vec<Record> {
+    send_for_result(host, node, handler, payload).0
+}
+
+/// What the call returned: its batch, and the handler's synchronous result, which is 1 when
+/// the handler consumed the event.
+fn send_for_result(
+    host: &mut Host,
+    node: u32,
+    handler: u64,
+    payload: EventPayload<'_>,
+) -> (Vec<Record>, i64) {
     let mut wire = Vec::new();
     encode_event(
         &HostEvent {
@@ -167,8 +203,8 @@ fn send(host: &mut Host, node: u32, handler: u64, payload: EventPayload<'_>) -> 
         &mut wire,
     )
     .unwrap();
-    let (batch, _) = host.dispatch_event(&wire).unwrap();
-    records(batch)
+    let (batch, result) = host.dispatch_event(&wire).unwrap();
+    (records(batch), result)
 }
 
 thread_local! {
@@ -637,5 +673,569 @@ fn fr38_requests_of_a_handle_no_editor_carries_are_dropped() {
             Record::SetSelection { .. } | Record::RevealRange { .. } | Record::SetFolded { .. }
         )),
         "{after:?}"
+    );
+}
+
+/// The fonts the editor in `styled_app` is set in.
+fn editor_fonts() -> FontRefs {
+    FontRefs::new([
+        FontRef::System("JetBrains Mono".to_owned()),
+        FontRef::Generic(GenericFamily::Monospace),
+    ])
+}
+
+thread_local! {
+    static METRICS: RefCell<Vec<CodeMetrics>> = const { RefCell::new(Vec::new()) };
+    static SCROLLS: RefCell<Vec<CodeScroll>> = const { RefCell::new(Vec::new()) };
+}
+
+fn styled_app() -> Element {
+    rsx! {
+        CodeEditor {
+            text: "let a = 1;\n",
+            type_role: TypeRole::Mono,
+            font_size: 13.0,
+            line_height: 20.0,
+            font: editor_fonts(),
+            on_code_metrics: move |metrics: CodeMetrics| METRICS.with_borrow_mut(|seen| seen.push(metrics)),
+            on_code_scrolled: move |scroll: CodeScroll| SCROLLS.with_borrow_mut(|seen| seen.push(scroll)),
+        }
+    }
+}
+
+/// An editor set at the size and row height of a mockup sends its type role, its size in
+/// sp, its row height in sp and its own monospace list, as written.
+#[test]
+fn fr38_an_editor_sends_the_type_size_row_height_and_fonts_it_was_given() {
+    let mut host = Host::new(styled_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::TypeRole),
+        Some(Value::Integer(i64::from(u16::from(TypeRole::Mono))))
+    );
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::FontSize),
+        Some(Value::Float(13.0))
+    );
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::LineHeight),
+        Some(Value::Float(20.0))
+    );
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::Font),
+        Some(Value::Bytes(editor_fonts().as_bytes().to_vec()))
+    );
+}
+
+/// An editor that names none of its look, its pointer kinds or its new handlers sends none
+/// of them, so the design system draws it as before and the Renderer reports nothing nobody
+/// listens for.
+#[test]
+fn fr38_an_editor_that_names_none_of_its_look_sends_none_of_it() {
+    fn plain() -> Element {
+        rsx! {
+            CodeEditor { text: "x", colors: CodeEditorColors::new() }
+        }
+    }
+    let mut host = Host::new(plain);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    for property in [
+        PropertyKind::TypeRole,
+        PropertyKind::FontSize,
+        PropertyKind::LineHeight,
+        PropertyKind::Font,
+        PropertyKind::CodeEditorColors,
+        PropertyKind::PointerKinds,
+        PropertyKind::OnCaretRect,
+        PropertyKind::OnKeyPreview,
+        PropertyKind::OnCodePointer,
+        PropertyKind::OnCodeMetrics,
+        PropertyKind::OnCodeScrolled,
+    ] {
+        assert_eq!(
+            prop_of(&batch, editor, property),
+            None,
+            "{property:?} was sent by an editor that did not name it"
+        );
+    }
+}
+
+/// The row height and the scroll offset arrive as compose-rust's own `CodeMetrics` and
+/// `CodeScroll`, in physical pixels, unrounded.
+#[test]
+fn fr38_row_height_and_scroll_arrive_as_code_metrics_and_code_scroll() {
+    let mut host = Host::new(styled_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    send(
+        &mut host,
+        editor,
+        handler_of(&batch, editor, PropertyKind::OnCodeMetrics),
+        EventPayload::CodeMetrics {
+            line_height_px: 40.0,
+        },
+    );
+    send(
+        &mut host,
+        editor,
+        handler_of(&batch, editor, PropertyKind::OnCodeScrolled),
+        EventPayload::CodeScrolled { offset_px: 1234.5 },
+    );
+    METRICS.with_borrow(|seen| {
+        assert_eq!(
+            seen.as_slice(),
+            &[CodeMetrics {
+                line_height_px: 40.0
+            }]
+        );
+    });
+    SCROLLS.with_borrow(|seen| assert_eq!(seen.as_slice(), &[CodeScroll { offset_px: 1234.5 }]));
+}
+
+fn scrolling_app() -> Element {
+    let handle = use_code_editor();
+    rsx! {
+        Column {
+            CodeEditor { text: "a\nb\nc\n", handle }
+            Button {
+                text: "Scroll",
+                on_click: move |_| handle.set_scroll_offset(1234.5),
+            }
+        }
+    }
+}
+
+/// A scroll offset asked of a handle goes out as one `SetScrollOffset` to the editor that
+/// carries the handle, in physical pixels, which is how two editors of a diff are kept at
+/// the same place.
+#[test]
+fn fr38_a_scroll_offset_asked_of_a_handle_goes_out_to_its_editor() {
+    let mut host = Host::new(scrolling_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    assert!(
+        !batch
+            .iter()
+            .any(|record| matches!(record, Record::SetScrollOffset { .. }))
+    );
+    let after = button_named(&batch, &mut host, 0);
+    assert_eq!(
+        after
+            .iter()
+            .filter(|record| matches!(record, Record::SetScrollOffset { .. }))
+            .collect::<Vec<_>>(),
+        vec![&Record::SetScrollOffset {
+            node_id: editor,
+            offset_px: 1234.5,
+        }]
+    );
+}
+
+fn recoloured_app() -> Element {
+    let mut coloured = use_signal(|| true);
+    rsx! {
+        Column {
+            CodeEditor {
+                text: "x",
+                colors: if coloured() {
+                    CodeEditorColors::new().container(ColorRole::Surface)
+                } else {
+                    CodeEditorColors::new()
+                },
+            }
+            Button {
+                text: "Plain",
+                on_click: move |_| coloured.set(false),
+            }
+        }
+    }
+}
+
+/// Colours that become empty are taken away once, with `None`, so the editor goes back to
+/// the design system's colours rather than keeping the last ones it was sent.
+#[test]
+fn fr38_colours_that_become_empty_are_withdrawn() {
+    let mut host = Host::new(recoloured_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    assert!(matches!(
+        prop_of(&batch, editor, PropertyKind::CodeEditorColors),
+        Some(Value::Bytes(_))
+    ));
+    let after = button_named(&batch, &mut host, 0);
+    assert_eq!(
+        after
+            .iter()
+            .filter(|record| matches!(record, Record::Prop(_, PropertyKind::CodeEditorColors, _)))
+            .collect::<Vec<_>>(),
+        vec![&Record::Prop(
+            editor,
+            PropertyKind::CodeEditorColors,
+            Value::None
+        )]
+    );
+}
+
+thread_local! {
+    static CARETS: RefCell<Vec<CaretRect>> = const { RefCell::new(Vec::new()) };
+}
+
+fn caret_app() -> Element {
+    rsx! {
+        CodeEditor {
+            text: "let a = 1;\n",
+            on_caret_rect: move |caret: CaretRect| CARETS.with_borrow_mut(|seen| seen.push(caret)),
+        }
+    }
+}
+
+/// The caret's place and its rectangle in the window's dp reach `on_caret_rect` as
+/// compose-rust's `CaretRect`, as the Renderer reported them.
+#[test]
+fn fr38_on_caret_rect_delivers_the_caret_place_and_rectangle() {
+    let mut host = Host::new(caret_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    let rect = CodeRect::new(120.5, 64.25, 2.0, 20.0);
+    send(
+        &mut host,
+        editor,
+        handler_of(&batch, editor, PropertyKind::OnCaretRect),
+        EventPayload::CaretRect {
+            line: 2,
+            column: 4,
+            rect,
+        },
+    );
+    CARETS.with_borrow(|seen| {
+        assert_eq!(
+            seen.as_slice(),
+            &[CaretRect {
+                position: Position::new(2, 4),
+                rect,
+            }]
+        );
+    });
+}
+
+thread_local! {
+    static ANSWERS: RefCell<Vec<Option<CodeRect>>> = const { RefCell::new(Vec::new()) };
+}
+
+fn hover_card_app() -> Element {
+    let handle = use_code_editor();
+    let mut card = use_signal(|| None::<CodeRect>);
+    rsx! {
+        Column {
+            CodeEditor { text: "let a = 1;\nlet b = 2;\n", handle }
+            Button {
+                text: "Where",
+                on_click: move |_| {
+                    handle.query_position_rect(Position::new(1, 4), move |answer| {
+                        ANSWERS.with_borrow_mut(|seen| seen.push(answer));
+                        card.set(answer);
+                    });
+                },
+            }
+            if let Some(rect) = card() {
+                Text { text: format!("card at {},{}", rect.x, rect.bottom()) }
+            }
+        }
+    }
+}
+
+/// A position asked of a handle goes out as one `QueryPositionRect` to the editor that
+/// carries the handle, numbered by compose-rust. The answer reaches the callback that
+/// asked, once, and what the callback changes is in the batch the answer's call returns.
+/// A second answer to the same request is nobody's and changes nothing.
+#[test]
+fn fr38_a_position_asked_of_a_handle_is_answered_through_its_callback() {
+    ANSWERS.with_borrow_mut(Vec::clear);
+    let mut host = Host::new(hover_card_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    let after = button_named(&batch, &mut host, 0);
+    let queries: Vec<&Record> = after
+        .iter()
+        .filter(|record| matches!(record, Record::QueryPositionRect { .. }))
+        .collect();
+    let [
+        Record::QueryPositionRect {
+            node_id,
+            request,
+            position,
+        },
+    ] = queries.as_slice()
+    else {
+        panic!("expected one position query, found {after:?}");
+    };
+    assert_eq!(*node_id, editor);
+    assert_eq!(*position, Position::new(1, 4));
+    assert_ne!(*request, 0);
+
+    let rect = CodeRect::new(88.75, 64.25, 2.0, 20.0);
+    let answered = send(
+        &mut host,
+        editor,
+        0,
+        EventPayload::PositionRect {
+            request: *request,
+            rect: Some(rect),
+        },
+    );
+    ANSWERS.with_borrow(|seen| assert_eq!(seen.as_slice(), &[Some(rect)]));
+    assert!(
+        answered.iter().any(|record| matches!(
+            record,
+            Record::Prop(_, PropertyKind::Text, Value::Text(text)) if text == "card at 88.75,84.25"
+        )),
+        "the callback's change was not in the answer's batch: {answered:?}"
+    );
+
+    send(
+        &mut host,
+        editor,
+        0,
+        EventPayload::PositionRect {
+            request: *request,
+            rect: None,
+        },
+    );
+    ANSWERS.with_borrow(|seen| assert_eq!(seen.as_slice(), &[Some(rect)]));
+}
+
+fn unattached_query_app() -> Element {
+    let handle = CodeEditorHandle::new();
+    rsx! {
+        Column {
+            Button {
+                text: "Where",
+                on_click: move |_| {
+                    handle.query_position_rect(Position::new(0, 0), |_| {});
+                    handle.set_scroll_offset(10.0);
+                },
+            }
+        }
+    }
+}
+
+/// A handle no editor carries asks nothing: neither a position query nor a scroll offset
+/// is sent to a node the Renderer would have to report as unknown.
+#[test]
+fn fr38_a_position_or_scroll_asked_of_a_handle_no_editor_carries_is_dropped() {
+    let mut host = Host::new(unattached_query_app);
+    let batch = records(host.rebuild().unwrap());
+    let after = button_named(&batch, &mut host, 0);
+    assert!(
+        !after.iter().any(|record| matches!(
+            record,
+            Record::QueryPositionRect { .. } | Record::SetScrollOffset { .. }
+        )),
+        "{after:?}"
+    );
+}
+
+thread_local! {
+    static PREVIEWED: RefCell<Vec<Key>> = const { RefCell::new(Vec::new()) };
+}
+
+fn suggesting_app() -> Element {
+    rsx! {
+        CodeEditor {
+            text: "let a = 1;\n",
+            // A suggestion list takes Down; every other key is the editor's.
+            on_key_preview: move |event: KeyEvent| {
+                PREVIEWED.with_borrow_mut(|seen| seen.push(event.key()));
+                if event.key() == Key::ArrowDown {
+                    event.consume();
+                }
+            },
+        }
+    }
+}
+
+fn key_down(key: Key, text: &'static str) -> EventPayload<'static> {
+    EventPayload::KeyDown {
+        key,
+        shift_key: false,
+        ctrl_key: false,
+        alt_key: false,
+        meta_key: false,
+        repeat: false,
+        code: 0,
+        text,
+    }
+}
+
+/// A key the editor offers reaches `on_key_preview` as the `KeyEvent` a key handler hears,
+/// and the handler consuming it is the call's result, as `on_key_down`'s is: 1 keeps the key
+/// from the editor, 0 leaves it the editor's.
+#[test]
+fn fr38_a_previewed_key_the_handler_consumes_is_returned_as_consumed() {
+    PREVIEWED.with_borrow_mut(Vec::clear);
+    let mut host = Host::new(suggesting_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    let handler = handler_of(&batch, editor, PropertyKind::OnKeyPreview);
+    let (_, consumed) = send_for_result(
+        &mut host,
+        editor,
+        handler,
+        key_down(Key::ArrowDown, "ArrowDown"),
+    );
+    assert_eq!(consumed, 1);
+    let (_, consumed) = send_for_result(&mut host, editor, handler, key_down(Key::Enter, "Enter"));
+    assert_eq!(consumed, 0);
+    PREVIEWED.with_borrow(|seen| assert_eq!(seen.as_slice(), &[Key::ArrowDown, Key::Enter]));
+}
+
+thread_local! {
+    static POINTED: RefCell<Vec<(PointerKind, Option<Position>)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+fn definition_app() -> Element {
+    rsx! {
+        CodeEditor {
+            text: "let a = 1;\nlet total = a;\n",
+            pointer_kinds: PointerKinds::DOWN | PointerKinds::MOVE,
+            // Cmd or Ctrl and a press goes to a definition and keeps the caret where it was.
+            on_code_pointer: move |pointer: CodePointer| {
+                POINTED.with_borrow_mut(|seen| seen.push((pointer.event.kind(), pointer.position)));
+                if pointer.event.kind() == PointerKind::Down && pointer.event.meta_key() {
+                    pointer.event.consume();
+                }
+            },
+        }
+    }
+}
+
+fn code_pointer(
+    kind: PointerKind,
+    modifiers: u32,
+    position: Option<Position>,
+) -> EventPayload<'static> {
+    EventPayload::CodePointer {
+        kind,
+        pointer_id: 1,
+        pointer_type: PointerType::Mouse,
+        x: 96.5,
+        y: 30.25,
+        buttons: 1,
+        button: 1,
+        modifiers,
+        click_count: 1,
+        delta_x: 0.0,
+        delta_y: 0.0,
+        delta_mode: WheelDeltaMode::Pixel,
+        timestamp_nanos: 0,
+        position,
+    }
+}
+
+/// An editor that names pointer kinds sends them with its `OnCodePointer` handler, each
+/// pointer event reaches `on_code_pointer` as compose-rust's `CodePointer` with the
+/// character under it or none, and consuming the event is the call's result, as a pointer
+/// handler's is. A plain pointer payload is refused at the code pointer handler.
+#[test]
+fn fr38_on_code_pointer_delivers_the_text_position_and_returns_consumption() {
+    POINTED.with_borrow_mut(Vec::clear);
+    let mut host = Host::new(definition_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::PointerKinds),
+        Some(Value::Integer(i64::from(
+            (PointerKinds::DOWN | PointerKinds::MOVE).bits()
+        )))
+    );
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::OnPointer),
+        None,
+        "the editor's pointer events go to its own handler, not a node's"
+    );
+    let handler = handler_of(&batch, editor, PropertyKind::OnCodePointer);
+    // Meta and a press over `total`.
+    let (_, consumed) = send_for_result(
+        &mut host,
+        editor,
+        handler,
+        code_pointer(PointerKind::Down, 8, Some(Position::new(1, 6))),
+    );
+    assert_eq!(consumed, 1);
+    let (_, consumed) = send_for_result(
+        &mut host,
+        editor,
+        handler,
+        code_pointer(PointerKind::Move, 0, None),
+    );
+    assert_eq!(consumed, 0);
+    POINTED.with_borrow(|seen| {
+        assert_eq!(
+            seen.as_slice(),
+            &[
+                (PointerKind::Down, Some(Position::new(1, 6))),
+                (PointerKind::Move, None),
+            ]
+        );
+    });
+
+    let mut wire = Vec::new();
+    encode_event(
+        &HostEvent {
+            node_id: editor,
+            handler_id: handler,
+            payload: EventPayload::Pointer {
+                kind: PointerKind::Down,
+                pointer_id: 1,
+                pointer_type: PointerType::Mouse,
+                x: 0.0,
+                y: 0.0,
+                buttons: 1,
+                button: 1,
+                modifiers: 0,
+                click_count: 1,
+                delta_x: 0.0,
+                delta_y: 0.0,
+                delta_mode: WheelDeltaMode::Pixel,
+                timestamp_nanos: 0,
+            },
+        },
+        &mut wire,
+    )
+    .unwrap();
+    assert!(host.dispatch_event(&wire).is_err());
+}
+
+fn diff_app() -> Element {
+    rsx! {
+        CodeEditor {
+            text: "let a = 1;\nlet b = 2;\n",
+            decorations: Decorations::new([
+                Decoration::line_background(0, 1, 1, ColorRole::DiffAdded),
+                Decoration::range_background(0, CodeRange::of(1, 4, 1, 5), ColorRole::DiffAdded),
+            ]),
+        }
+    }
+}
+
+/// A diff view's line and range backgrounds are decorations, so they reach the Renderer
+/// through the `decorations` list with their kind, lines, range and colour role intact.
+#[test]
+fn fr38_line_and_range_backgrounds_travel_in_the_decoration_list() {
+    let mut host = Host::new(diff_app);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    let Some(Value::Bytes(bytes)) = prop_of(&batch, editor, PropertyKind::Decorations) else {
+        panic!("the decorations did not travel as bytes");
+    };
+    assert_eq!(
+        Decorations::from_bytes(bytes).decorations(),
+        vec![
+            Decoration::line_background(0, 1, 1, ColorRole::DiffAdded),
+            Decoration::range_background(0, CodeRange::of(1, 4, 1, 5), ColorRole::DiffAdded),
+        ]
     );
 }

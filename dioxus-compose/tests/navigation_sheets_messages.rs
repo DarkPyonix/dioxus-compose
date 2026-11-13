@@ -9,8 +9,8 @@
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::{
-    EventPayload, Host, MessageDuration, PropertyKind, WidgetKind, WindowHeightClass,
-    WindowSizeClass,
+    EventPayload, Host, MessageDuration, MessageHorizontal, MessagePlacement, MessageVertical,
+    PropertyKind, WidgetKind, WindowHeightClass, WindowSizeClass,
 };
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -25,6 +25,8 @@ enum Record {
         text: String,
         action: String,
         duration: MessageDuration,
+        placement: Option<MessagePlacement>,
+        offset_dp: Option<f32>,
     },
 }
 
@@ -54,11 +56,15 @@ fn records(batch: &[u8]) -> Vec<Record> {
                 text,
                 action,
                 duration,
+                placement,
+                offset_dp,
             } => Some(Record::Message {
                 handler_id,
                 text: text.to_owned(),
                 action: action.to_owned(),
                 duration,
+                placement,
+                offset_dp,
             }),
             _ => None,
         })
@@ -245,6 +251,18 @@ fn message_app() -> Element {
                     show_message("second");
                 },
             }
+            Button {
+                text: "Placed",
+                on_click: move |_| {
+                    Message::new("Copied")
+                        .with_placement(MessagePlacement {
+                            vertical: MessageVertical::Top,
+                            horizontal: MessageHorizontal::End,
+                        })
+                        .with_offset(96.0)
+                        .show();
+                },
+            }
         }
     }
 }
@@ -292,6 +310,8 @@ fn fr21_a_message_rides_the_batch_and_creates_no_node() {
         text,
         action,
         duration,
+        placement,
+        offset_dp,
     } = posted[0].clone()
     else {
         unreachable!("filtered above")
@@ -299,6 +319,9 @@ fn fr21_a_message_rides_the_batch_and_creates_no_node() {
     assert_eq!(text, "Task deleted");
     assert_eq!(action, "Undo");
     assert_eq!(duration, MessageDuration::Long);
+    // A message that names no place is where the design system puts it.
+    assert_eq!(placement, None);
+    assert_eq!(offset_dp, None);
     assert_ne!(handler_id, 0);
     assert!(
         created(&after, WidgetKind::Text).is_empty(),
@@ -437,4 +460,33 @@ fn fr14_a_destination_carries_the_colour_it_was_given() {
         "the destination sent no colour, so the renderer has nothing to use in place of \
          the design system's accent and a unified sample cannot match its reference"
     );
+}
+
+/// A message that names its edge, its end of that edge and its distance from it carries
+/// all three in its record, as it was written.
+#[test]
+fn fr21_a_message_carries_the_placement_and_offset_it_was_given() {
+    let mut host = Host::new(message_app);
+    let initial = records(host.rebuild().unwrap());
+    let after = click_button(&mut host, &initial, 2);
+    let posted = messages(&after);
+    assert_eq!(posted.len(), 1, "{after:?}");
+    let Record::Message {
+        text,
+        placement,
+        offset_dp,
+        ..
+    } = posted[0].clone()
+    else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(text, "Copied");
+    assert_eq!(
+        placement,
+        Some(MessagePlacement {
+            vertical: MessageVertical::Top,
+            horizontal: MessageHorizontal::End,
+        })
+    );
+    assert_eq!(offset_dp, Some(96.0));
 }
