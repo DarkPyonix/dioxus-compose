@@ -312,3 +312,51 @@ fn fr14_set_theme_is_not_resent_every_frame() {
             .any(|mutation| matches!(mutation, Mutation::SetTheme(_)))
     );
 }
+
+/// The overlay tokens a launched theme carries reach the Renderer whole, the toast's
+/// elevation and corner radius with the rest, in the record that follows the theme.
+#[test]
+fn fr15_launched_overlay_tokens_carry_the_toast_values() {
+    use dioxus_compose::schema::OverlayTokens;
+    static TOKENS: OverlayTokens = OverlayTokens::new()
+        .sheet_corner_radius(24)
+        .dialog_elevation(6)
+        .toast_elevation(8)
+        .toast_corner_radius(12);
+    let _launch = launch_guard();
+    LaunchBuilder::new()
+        .with_theme(Theme::unified(DesignSystem::Fluent).with_overlay_tokens(&TOKENS))
+        .with_mode(LoopMode::Platform)
+        .launch(app);
+    let mut handshake = Vec::with_capacity(12);
+    handshake.extend_from_slice(&SCHEMA_HASH.to_le_bytes());
+    handshake.extend_from_slice(&PROTOCOL_VERSION.to_le_bytes());
+    handshake.extend_from_slice(&[LoopMode::Platform as u8, 0]);
+    let tokens = std::thread::spawn(move || {
+        let mut output = MutationBatch::default();
+        // SAFETY: Both buffers are live test-owned storage for this call.
+        let status = unsafe {
+            compose_rust_host_init(handshake.as_ptr(), handshake.len() as u32, &mut output)
+        };
+        assert_eq!(status, STATUS_OK);
+        // SAFETY: A successful init returned a readable batch owned by the Host.
+        let batch = unsafe { std::slice::from_raw_parts(output.ptr, output.len as usize) };
+        let tokens = decode_batch(batch)
+            .unwrap()
+            .into_iter()
+            .find_map(|mutation| match mutation {
+                Mutation::SetOverlayTokens(tokens) => Some(tokens),
+                _ => None,
+            });
+        compose_rust_host_shutdown();
+        tokens
+    })
+    .join()
+    .unwrap()
+    .expect("the initial batch carries the overlay tokens");
+    assert_eq!(tokens, TOKENS);
+    assert_eq!(
+        (tokens.toast_elevation, tokens.toast_corner_radius),
+        (8, 12)
+    );
+}

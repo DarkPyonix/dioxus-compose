@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Everything compose-rust 0.0.8 added, written in rsx
+
+`ScrollColumn` and `ScrollRow` take `snap` (`Snap::ItemStart` stops a fling with a child at
+the start of the visible area), `Sheet` takes `max_height_fraction`, the most of the
+window's height a bottom sheet may take, and `SplitPane` takes `collapse_below`, the width
+in dp below which it shows one pane at a time. `Text` and `TextField` take
+`font_feature_settings`, the OpenType features the text asks its font for, as a
+`FontFeatures` list built from `FontFeature`s or `(tag, value)` pairs such as
+`[(b"tnum", 1)]`. `Column`, `Row`, `Box`, `Card`, `Surface` and `TextField` take
+`on_motion_finished`, and every element takes `onmotionfinished`: it runs once when the
+node's size motion comes to rest, with a `MotionFinished` holding the size it settled at in
+dp. Overlay tokens carry `toast_elevation` and `toast_corner_radius`. Each of these is sent
+only when set, and a handler left out is never announced to the renderer.
+
 ### Everything compose-rust 0.0.7 added, written in rsx
 
 Two widgets: `FlowRow`, a row that wraps (`horizontal_spacing`, `vertical_spacing`,
