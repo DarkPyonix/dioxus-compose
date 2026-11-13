@@ -1866,3 +1866,63 @@ fn fr34_semantics_unchanged_frame_sends_nothing() {
     );
     assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
 }
+
+fn stripes() -> Element {
+    rsx! {
+        div { style: "width: 40px",
+            div { style: "margin: 0 6px; border-top: 1px solid #d9d7d0; padding-top: 6px", "x" }
+        }
+        // A column of tool buttons at the bottom of a rail, set off by a line above it: a
+        // flex column inside a flex column, clipped, with the line on its own top.
+        div { style: "display: flex; flex-direction: column; width: 40px; height: 200px; --line: #d9d7d0",
+            div { style: "flex: 1" }
+            nav {
+                style: "display: flex; flex-direction: column; align-items: center; gap: 2px; \
+                        padding: 6px 0; min-height: 0; overflow: hidden; \
+                        border-top: 1px solid var(--line); margin: 0 6px",
+                button { style: "width: 30px; height: 30px; padding: 0; border: 0" }
+                button { style: "width: 30px; height: 30px; padding: 0; border: 0" }
+            }
+        }
+    }
+}
+
+/// A top border on a block with side margins reaches the renderer: each of the two boxes
+/// is 28px wide, 6px in from its 40px parent, and is drawn with a 1px line on its top side
+/// and nothing on the others.
+#[test]
+fn fr34_border_top_draws_on_a_block_with_side_margins() {
+    let mut host = Host::html(stripes, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let line = rgb(0xd9, 0xd7, 0xd0);
+    let top_only = |modifier: &Modifier| {
+        matches!(
+            modifier,
+            Modifier::BorderEach { top, right, bottom, left, top_paint, .. }
+                if *top == 1.0 && *right == 0.0 && *bottom == 0.0 && *left == 0.0
+                    && *top_paint == line
+        )
+    };
+    let mut lined: Vec<u32> = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, modifier) if top_only(modifier) => Some(*node),
+            _ => None,
+        })
+        .collect();
+    lined.dedup();
+    assert_eq!(lined.len(), 2, "both boxes draw their top line: {first:#?}");
+    for node in lined {
+        let modifiers = modifiers_of(&first, node);
+        let offset_x = modifiers.iter().find_map(|modifier| match modifier {
+            Modifier::Offset { x, .. } => Some(*x),
+            _ => None,
+        });
+        assert_eq!(offset_x, Some(6.0), "6px in: {modifiers:?}");
+        let width = modifiers.iter().find_map(|modifier| match modifier {
+            Modifier::RequiredSize { width, .. } => Some(*width),
+            _ => None,
+        });
+        assert_eq!(width, Some(28.0), "28px wide: {modifiers:?}");
+    }
+}
