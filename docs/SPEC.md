@@ -1650,10 +1650,10 @@ rsx! {
 
 수용 기준:
 
-1. `Popover`가 `popover` 위젯 노드 하나로 나가고, 자식 0이 앵커이며 나머지가 내용입니다. 레코드의 속성에 `Placement`, `Align`, `OffsetDp`가 실립니다. 테스트 `fr21_9_popover_wire_shape` (예정).
-2. 열려 있을 때만 내용을 선언해도 내용이 앵커 뒤에 섭니다(삽입 인덱스 회귀, FR-1). 열고 닫기를 되풀이해도 같습니다. 테스트 `fr21_9_popover_content_stays_behind_anchor` (예정).
-3. 목 렌더러가 `OnDismiss`를 보내면 `on_dismiss`가 정확히 한 번 불립니다. 테스트 `fr21_9_dismiss_fires_once` (예정).
-4. 임의 자식(`TextField`, `LazyColumn` 포함)이 팝업 안에서 만들어지고, 이벤트가 각 핸들러로 갑니다. 테스트 `fr21_9_popover_hosts_arbitrary_children` (예정).
+1. `Popover`가 `popover` 위젯 노드 하나로 나가고, 자식 0이 앵커이며 나머지가 내용입니다. 레코드의 속성에 `Placement`, `Align`, `OffsetDp`가 실립니다. 테스트 `fr21_9_popover_wire_shape`.
+2. 열려 있을 때만 내용을 선언해도 내용이 앵커 뒤에 섭니다(삽입 인덱스 회귀, FR-1). 열고 닫기를 되풀이해도 같습니다. 테스트 `fr21_9_popover_content_stays_behind_anchor`.
+3. 목 렌더러가 `OnDismiss`를 보내면 `on_dismiss`가 정확히 한 번 불립니다. 테스트 `fr21_9_dismiss_fires_once`.
+4. 임의 자식(`TextField`, `LazyColumn` 포함)이 팝업 안에서 만들어지고, 이벤트가 각 핸들러로 갑니다. 테스트 `fr21_9_popover_hosts_arbitrary_children`.
 5. 수동: 창 위쪽 가장자리 근처의 앵커에서 `Top`이 `Bottom`으로 뒤집히고, 아래쪽에서는 그대로 `Top`입니다. 오른쪽 가장자리에서는 정렬 축이 창 안으로 밀립니다. 바깥 누름과 Esc가 닫습니다. 여섯 디자인 시스템에서 면과 화살표가 시스템마다 다릅니다.
 
 ### FR-24 모션 (`Draft`)
