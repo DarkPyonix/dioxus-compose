@@ -304,7 +304,17 @@ pub struct HtmlDom {
     resize: resize::ResizeObservers,
     /// The drag a press on a draggable element has become, or may become.
     drag: drag::DragState,
+    /// How many layouts in a row ended with text sized by an estimate the measurer could
+    /// not resolve yet ([`TextMeasurer::unsettled`]). While it is not zero, the next frame
+    /// lays the page out again from scratch, up to [`UNSETTLED_RELAYOUTS`] times.
+    unsettled: u32,
 }
+
+/// How many frames in a row a page whose text could not be measured yet is laid out
+/// again. A renderer answers from its first composed frame on, a frame or two after the
+/// page is first laid out; the limit stops a page that never gets an answer (a build with
+/// no renderer) from asking for frames forever.
+const UNSETTLED_RELAYOUTS: u32 = 120;
 
 impl HtmlDom {
     /// Builds the app's first render into a fresh document.
@@ -381,6 +391,7 @@ impl HtmlDom {
             scrolls: Rc::default(),
             resize: resize::ResizeObservers::default(),
             drag: drag::DragState::default(),
+            unsettled: 0,
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
@@ -495,8 +506,16 @@ impl HtmlDom {
         let non_inherited_style_nodes = std::mem::take(&mut self.state.non_inherited_style_nodes);
         let pointer_restyle = std::mem::take(&mut self.pointer.restyle);
         let time_changed = self.last_layout_now != Some(self.now);
+        // Text that was sized by a stand-in because the renderer could not answer yet is
+        // measured again, and with it every box it moved: the whole page is laid out from
+        // scratch, so no cached size made with an estimate survives.
+        let unsettled = self.wants_relayout();
+        if unsettled {
+            self.layout_state.invalidate_all();
+        }
         #[allow(clippy::unnecessary_unwrap)]
-        if !dirty
+        if !unsettled
+            && !dirty
             && !tree_dirty
             && dirty_nodes.is_empty()
             && dirty_children_nodes.is_empty()
@@ -618,6 +637,11 @@ impl HtmlDom {
                 &invalidated,
             );
         }
+        self.unsettled = if self.measurer.unsettled() {
+            self.unsettled.saturating_add(1)
+        } else {
+            0
+        };
         let texts = &self.layout_state.texts;
         let list = if described {
             self.motion.begin_frame();
@@ -737,6 +761,12 @@ impl HtmlDom {
     /// `opacity`, `transform` or `background-color` motion.
     pub fn needs_frames(&self) -> bool {
         self.motion.ticking
+    }
+
+    /// Whether the last layout sized text with an estimate the measurer could not resolve
+    /// then, so the next frame has to lay the page out again even if nothing changed.
+    pub(crate) fn wants_relayout(&self) -> bool {
+        self.unsettled > 0 && self.unsettled <= UNSETTLED_RELAYOUTS
     }
 
     /// One frame of a motion that changes layout: moves the clock to `seconds`, resolves

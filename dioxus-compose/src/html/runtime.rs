@@ -715,6 +715,8 @@ impl Runtime for HtmlRuntime {
         // A pointer that moved `:hover` or `:active` changed no signal, but the page has to
         // be restyled, so it asks for a frame as a handler's write does.
         let restyled = self.dom.take_pointer_restyle();
+        // Text measured before the renderer could answer is measured again next frame.
+        let relayout = self.dom.wants_relayout();
         let future = self.dom.virtual_dom_mut().wait_for_work();
         let mut future = pin!(future);
         let outer = future.as_mut().poll(context);
@@ -724,6 +726,9 @@ impl Runtime for HtmlRuntime {
             return Poll::Ready(());
         }
         if restyled {
+            return Poll::Ready(());
+        }
+        if relayout {
             return Poll::Ready(());
         }
         outer
