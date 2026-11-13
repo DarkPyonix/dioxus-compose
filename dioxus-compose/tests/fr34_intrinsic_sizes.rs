@@ -469,3 +469,172 @@ fn fr34_an_absolute_box_without_a_width_shrinks_to_fit() {
         LINE,
     );
 }
+
+/// For a block box, Chromium resolves `height: max-content`, `min-content` and
+/// `fit-content` to the height of its contents, exactly as `auto`. `aaa bb` in a 30px wide
+/// block wraps to two lines, 40px. The keyword is a definite request for that height, so a
+/// flex item with it is not stretched to its row, an absolutely positioned box with both
+/// `top` and `bottom` is not stretched between them, and a `min-height` or `max-height`
+/// keyword clamps to the same content height. Padding and a border go around it (the
+/// block still fills its 30px parent).
+#[test]
+fn fr34_intrinsic_height_keywords_are_the_content_height() {
+    let narrow = |css_height: &str| {
+        (
+            r#"<div style="width: 30px"><div id="h">aaa bb</div></div>"#.to_string(),
+            format!("#h {{ height: {css_height}; }}"),
+        )
+    };
+    let positioned = |inner: &str| {
+        format!(r#"<div style="position: relative; width: 200px; height: 100px">{inner}</div>"#)
+    };
+    let mut cases: Vec<(String, String, String, f32, f32)> = Vec::new();
+    for keyword in ["max-content", "min-content", "fit-content"] {
+        let (body, css) = narrow(keyword);
+        cases.push((format!("{keyword} in a block"), body, css, 30.0, 2.0 * LINE));
+        cases.push((
+            format!("{keyword} in a stretching flex row"),
+            r#"<div style="display: flex; height: 100px"><div id="h">aaa bb</div></div>"#
+                .to_string(),
+            format!("#h {{ height: {keyword}; }}"),
+            60.0,
+            LINE,
+        ));
+        cases.push((
+            format!("{keyword} absolute with top and bottom"),
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            format!(
+                "#h {{ position: absolute; left: 0; top: 10px; bottom: 10px; height: {keyword}; }}"
+            ),
+            60.0,
+            LINE,
+        ));
+        cases.push((
+            format!("{keyword} with padding and a border"),
+            r#"<div style="width: 30px"><div id="h">aaa bb</div></div>"#.to_string(),
+            format!("#h {{ height: {keyword}; padding: 3px 0; border: 1px solid black; }}"),
+            30.0,
+            2.0 * LINE + 8.0,
+        ));
+        cases.push((
+            format!("{keyword} under a fixed parent height"),
+            r#"<div style="height: 300px; width: 30px"><div id="h">aaa bb</div></div>"#.to_string(),
+            format!("#h {{ height: {keyword}; }}"),
+            30.0,
+            2.0 * LINE,
+        ));
+        cases.push((
+            format!("max-height: {keyword} caps a taller height"),
+            r#"<div style="width: 30px"><div id="h">aaa bb</div></div>"#.to_string(),
+            format!("#h {{ height: 200px; max-height: {keyword}; }}"),
+            30.0,
+            2.0 * LINE,
+        ));
+        cases.push((
+            format!("min-height: {keyword} raises a shorter height"),
+            r#"<div style="width: 30px"><div id="h">aaa bb</div></div>"#.to_string(),
+            format!("#h {{ height: 5px; min-height: {keyword}; }}"),
+            30.0,
+            2.0 * LINE,
+        ));
+    }
+    let mut failures = Vec::new();
+    for (case, body, css, width, height) in cases {
+        let (doc, list) = lay_out(&body, &css);
+        check_size(
+            &mut failures,
+            &case,
+            entry(&list, &doc, "h").rect,
+            width,
+            height,
+        );
+    }
+    assert_no_failures(failures);
+}
+
+/// An absolutely positioned box with `height: auto` and not both `top` and `bottom` is as
+/// tall as its contents, wherever it sits; with both, it fills the room between them.
+/// `aaa bb` at `left: 150px` in a 200px box wraps to two lines (40px). Block children stack
+/// (`aaa bb` and `cccc`, 40px). A fixed box does the same against the viewport.
+#[test]
+fn fr34_an_absolute_box_without_a_height_is_its_content_height() {
+    let positioned = |inner: &str| {
+        format!(r#"<div style="position: relative; width: 200px; height: 100px">{inner}</div>"#)
+    };
+    let cases = [
+        (
+            "top only",
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            "#h { position: absolute; left: 0; top: 10px; }",
+            60.0,
+            LINE,
+        ),
+        (
+            "bottom only",
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            "#h { position: absolute; left: 0; bottom: 10px; }",
+            60.0,
+            LINE,
+        ),
+        (
+            "no insets",
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            "#h { position: absolute; }",
+            60.0,
+            LINE,
+        ),
+        (
+            "wrapped near the right edge",
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            "#h { position: absolute; left: 150px; top: 0; }",
+            50.0,
+            2.0 * LINE,
+        ),
+        (
+            "block children",
+            positioned(r#"<div id="h"><div>aaa bb</div><div>cccc</div></div>"#),
+            "#h { position: absolute; left: 0; top: 0; }",
+            60.0,
+            2.0 * LINE,
+        ),
+        (
+            "with vertical padding",
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            "#h { position: absolute; left: 0; top: 0; padding: 4px 0; }",
+            60.0,
+            LINE + 8.0,
+        ),
+        (
+            "both top and bottom stretch",
+            positioned(r#"<div id="h">aaa bb</div>"#),
+            "#h { position: absolute; left: 0; top: 10px; bottom: 30px; }",
+            60.0,
+            60.0,
+        ),
+    ];
+    let mut failures = Vec::new();
+    for (case, body, css, width, height) in cases {
+        let (doc, list) = lay_out(&body, css);
+        check_size(
+            &mut failures,
+            case,
+            entry(&list, &doc, "h").rect,
+            width,
+            height,
+        );
+    }
+    assert_no_failures(failures);
+
+    let (doc, list) = lay_out(
+        r#"<div style="height: 10px"><div id="h">aaa bb</div></div>"#,
+        "#h { position: fixed; left: 0; bottom: 20px; }",
+    );
+    assert_rect(
+        "fixed from the bottom",
+        entry(&list, &doc, "h").rect,
+        0.0,
+        600.0 - 20.0 - LINE,
+        60.0,
+        LINE,
+    );
+}

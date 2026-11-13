@@ -2061,6 +2061,180 @@ impl MeasuredTree<'_> {
         }
     }
 
+    /// Gives the children of `parent` that use `min-content`, `max-content` or
+    /// `fit-content` in `height`, `min-height` or `max-height` the height of their
+    /// contents, as Chromium does for a block box.
+    ///
+    /// Taffy reads those keywords as `auto`. In `height` that is already the content
+    /// height, except where `auto` stretches: a flex row or grid stretches its item to the
+    /// line, and an absolutely positioned box with both `top` and `bottom` fills the room
+    /// between them. A keyword is a definite request for the content height, so such a box
+    /// is placed at the start instead of stretched. In `min-height` and `max-height`, `auto`
+    /// means no limit, so the content height is measured here and written as a length.
+    /// Runs after [`Self::resolve_intrinsic_widths`], so a keyword width is already known.
+    fn resolve_intrinsic_heights(&mut self, parent: NodeId, inputs: LayoutInput) {
+        let child_count = self.child_count(parent);
+        if child_count == 0 {
+            return;
+        }
+        let parent_style = &self.node(parent).style;
+        let parent_display = parent_style.display;
+        let row = matches!(
+            parent_style.flex_direction,
+            FlexDirection::Row | FlexDirection::RowReverse
+        );
+        let align_items = parent_style.align_items;
+        let padding = parent_style
+            .padding
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        let border = parent_style
+            .border
+            .resolve_or_zero(inputs.parent_size.width, resolve_calc_value);
+        let outer_width = inputs
+            .known_dimensions
+            .width
+            .or(match inputs.available_space.width {
+                AvailableSpace::Definite(width) => Some(width),
+                AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
+            });
+        let inner_width = outer_width.map(|width| {
+            (width - padding.left - padding.right - border.left - border.right).max(0.0)
+        });
+        let padding_box_width =
+            outer_width.map(|width| (width - border.left - border.right).max(0.0));
+        let viewport = self.doc.viewport();
+        let viewport_width = viewport.window_size.0 as f32 / viewport.scale();
+
+        for index in 0..child_count {
+            let child_id = self.get_child_id(parent, index);
+            let Some(keywords) = intrinsic_heights(&*self.doc, usize::from(child_id)) else {
+                continue;
+            };
+            let child = self.node(child_id);
+            if child.style.display == Display::None {
+                continue;
+            }
+            let absolute = child.style.position == taffy::Position::Absolute;
+            let containing_width = if absolute {
+                if is_fixed(child) {
+                    Some(viewport_width)
+                } else {
+                    padding_box_width
+                }
+            } else {
+                inner_width
+            };
+
+            if keywords.height {
+                let style = &mut self.node_mut(child_id).style;
+                if absolute {
+                    // Over-constrained: the box keeps its content height and sits at `top`.
+                    if !style.inset.top.is_auto() {
+                        style.inset.bottom = taffy::LengthPercentageAuto::auto();
+                    }
+                } else {
+                    let stretches = |align: Option<taffy::AlignItems>| {
+                        matches!(align, None | Some(taffy::AlignItems::Stretch))
+                    };
+                    let start = match parent_display {
+                        Display::Flex if row => Some(taffy::AlignItems::FlexStart),
+                        Display::Grid => Some(taffy::AlignItems::Start),
+                        _ => None,
+                    };
+                    if let Some(start) = start
+                        && style.align_self.map_or(stretches(align_items), |align| {
+                            align == taffy::AlignItems::Stretch
+                        })
+                    {
+                        style.align_self = Some(start);
+                    }
+                }
+            }
+
+            if !(keywords.min || keywords.max) {
+                continue;
+            }
+            // Measure the contents with every height property set aside, then put `height`
+            // back: only the keyword limits are replaced.
+            let height = {
+                let style = &mut self.node_mut(child_id).style;
+                let height = style.size.height;
+                style.size.height = Dimension::auto();
+                if keywords.min {
+                    style.min_size.height = Dimension::auto();
+                }
+                if keywords.max {
+                    style.max_size.height = Dimension::auto();
+                }
+                height
+            };
+            self.node_mut(child_id).cache.clear();
+            let content = self.content_height(
+                child_id,
+                Size {
+                    width: containing_width,
+                    height: None,
+                },
+                match containing_width {
+                    Some(width) => AvailableSpace::Definite(width),
+                    None => inputs.available_space.width,
+                },
+            );
+            self.node_mut(child_id).cache.clear();
+
+            let style = &self.node(child_id).style;
+            let content_box_adjustment = match style.box_sizing {
+                BoxSizing::BorderBox => 0.0,
+                BoxSizing::ContentBox => {
+                    let padding = style
+                        .padding
+                        .resolve_or_zero(containing_width, resolve_calc_value);
+                    let border = style
+                        .border
+                        .resolve_or_zero(containing_width, resolve_calc_value);
+                    padding.top + padding.bottom + border.top + border.bottom
+                }
+            };
+            let length = Dimension::length((content - content_box_adjustment).max(0.0));
+            let style = &mut self.node_mut(child_id).style;
+            style.size.height = height;
+            if keywords.min {
+                style.min_size.height = length;
+            }
+            if keywords.max {
+                style.max_size.height = length;
+            }
+        }
+    }
+
+    /// The border-box height of `child`'s contents at the width it would take in
+    /// `available_width`, its own `height`, `min-height` and `max-height` ignored by the
+    /// caller.
+    fn content_height(
+        &mut self,
+        child: NodeId,
+        parent_size: Size<Option<f32>>,
+        available_width: AvailableSpace,
+    ) -> f32 {
+        self.compute_child_layout(
+            child,
+            LayoutInput {
+                run_mode: RunMode::ComputeSize,
+                sizing_mode: SizingMode::InherentSize,
+                axis: RequestedAxis::Vertical,
+                known_dimensions: Size::NONE,
+                parent_size,
+                available_space: Size {
+                    width: available_width,
+                    height: AvailableSpace::MaxContent,
+                },
+                vertical_margins_are_collapsible: Line::FALSE,
+            },
+        )
+        .size
+        .height
+    }
+
     /// The border-box width of `child`'s contents under `space`, its own `width`,
     /// `min-width` and `max-width` ignored.
     fn content_width(
@@ -2108,6 +2282,48 @@ struct IntrinsicWidths {
     width: Option<IntrinsicWidth>,
     min: Option<IntrinsicWidth>,
     max: Option<IntrinsicWidth>,
+}
+
+/// Which of a box's height properties use an intrinsic size keyword.
+#[derive(Clone, Copy, Debug)]
+struct IntrinsicHeights {
+    height: bool,
+    min: bool,
+    max: bool,
+}
+
+/// Reads a box's intrinsic height keywords from its computed style. `None` when it uses
+/// none. For a block box every one of them, `fit-content()` included, is the content
+/// height, so which keyword it was does not matter. A replaced element's `auto` height is
+/// its own size, so its keywords are left as Taffy reads them.
+fn intrinsic_heights(doc: &BaseDocument, id: usize) -> Option<IntrinsicHeights> {
+    let style = doc.get_node(id)?.primary_styles()?;
+    let position = style.get_position();
+    let size = |value: &StyloSize| {
+        matches!(
+            value,
+            StyloSize::MinContent
+                | StyloSize::MaxContent
+                | StyloSize::FitContent
+                | StyloSize::FitContentFunction(_)
+        )
+    };
+    let max_size = |value: &StyloMaxSize| {
+        matches!(
+            value,
+            StyloMaxSize::MinContent
+                | StyloMaxSize::MaxContent
+                | StyloMaxSize::FitContent
+                | StyloMaxSize::FitContentFunction(_)
+        )
+    };
+    let heights = IntrinsicHeights {
+        height: size(&position.height),
+        min: size(&position.min_height),
+        max: max_size(&position.max_height),
+    };
+    drop(style);
+    ((heights.height || heights.min || heights.max) && !is_replaced(doc, id)).then_some(heights)
 }
 
 /// Reads a box's intrinsic width keywords from its computed style. `None` when it uses
@@ -2710,10 +2926,12 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                 Route::Measured(prepared) => tree.compute_measured(id, prepared, inputs),
                 Route::Block => {
                     tree.resolve_intrinsic_widths(node_id, inputs);
+                    tree.resolve_intrinsic_heights(node_id, inputs);
                     compute_block_layout(tree, node_id, inputs)
                 }
                 Route::Flex => {
                     tree.resolve_intrinsic_widths(node_id, inputs);
+                    tree.resolve_intrinsic_heights(node_id, inputs);
                     // Taffy's block layout offers every child `MinContent` as its available
                     // height. For a column flex container that is its main axis, and a
                     // wrapping one would break after every item. A box's block-axis
@@ -2740,6 +2958,7 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                 }
                 Route::Grid => {
                     tree.resolve_intrinsic_widths(node_id, inputs);
+                    tree.resolve_intrinsic_heights(node_id, inputs);
                     compute_grid_layout(tree, node_id, inputs)
                 }
             };
