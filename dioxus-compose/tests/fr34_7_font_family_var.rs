@@ -47,8 +47,11 @@ fn mono() -> Vec<String> {
         .to_vec()
 }
 
+/// Each text the measurer was asked about, with the family list it was asked with.
+type Asked = Rc<RefCell<Vec<(String, Vec<String>)>>>;
+
 /// Records the family list of every text it is asked about.
-struct Recording(Rc<RefCell<Vec<(String, Vec<String>)>>>);
+struct Recording(Asked);
 
 impl TextMeasurer for Recording {
     fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics {
@@ -71,7 +74,7 @@ impl TextMeasurer for Recording {
 
 #[test]
 fn fr34_7_font_family_from_var_is_inherited() {
-    let asked = Rc::new(RefCell::new(Vec::new()));
+    let asked: Asked = Rc::default();
     let config = HtmlConfig {
         stylesheets: vec![SHEET.to_string()],
         measurer: Some(Box::new(Recording(asked.clone()))),
