@@ -304,8 +304,71 @@ fn open_with(app: fn() -> Element, css: &str) -> HtmlDom {
         ..HtmlConfig::default()
     };
     let mut dom = HtmlDom::with_config(app, config);
-    dom.layout(800.0, 600.0, 1.0);
+    dom.layout(400.0, 600.0, 1.0);
     dom
+}
+
+/// A page sheet in the shape of a workbench's: buttons take the page's font, and the body
+/// sets a unitless line height, so a button's label is 13px on 19.5px lines.
+const WORKBENCH: &str = "html, body { margin: 0; padding: 0; } \
+     body { font: 400 13px/1.5 sans-serif; } \
+     button { font: inherit; color: inherit; } \
+     .tabs { display: flex; gap: 4px; } \
+     .tabs button { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; } \
+     .status { display: flex; align-items: center; height: 32px; padding: 0 12px; } \
+     .crumbs { display: block; height: 26px; padding: 0 8px; line-height: 26px; }";
+
+fn pills() -> Element {
+    rsx! {
+        button {
+            id: "lone",
+            style: "height: 30px; padding: 0 12px; border: 0; border-radius: 999px;",
+            "터미널"
+        }
+        div { class: "tabs",
+            button { id: "tab-a", "터미널" }
+            button { id: "tab-b", "문제 2" }
+        }
+        footer { id: "status", class: "status",
+            span { id: "crumbs", class: "crumbs", "src / main.rs" }
+        }
+    }
+}
+
+#[track_caller]
+fn assert_centred(dom: &HtmlDom, id: &str) {
+    let rect = entry(dom, id).rect;
+    let run = label(dom, id).rect;
+    let middle = run.y + run.height / 2.0;
+    let expected = rect.y + rect.height / 2.0;
+    assert!(
+        (middle - expected).abs() <= 0.5,
+        "#{id}: the label's middle is {middle}, the box's is {expected}: {run:?} in {rect:?}"
+    );
+}
+
+/// A button centres its label top to bottom by itself, with no flex: on its own, as a flex
+/// item in a row of tabs, and with the page's font and a unitless line height.
+#[test]
+fn fr34_a_button_label_is_centred_vertically() {
+    let dom = open_with(pills, WORKBENCH);
+    for id in ["lone", "tab-a", "tab-b"] {
+        assert_centred(&dom, id);
+    }
+}
+
+/// A block span with its own line height in a status bar: the span is centred in the bar
+/// by `align-items`, and its one line fills it, so the text is in the middle of the bar.
+#[test]
+fn fr34_a_block_label_with_its_line_height_is_centred_in_its_bar() {
+    let dom = open_with(pills, WORKBENCH);
+    let top = entry(&dom, "status").rect.y;
+    let crumbs = entry(&dom, "crumbs").rect;
+    close(crumbs.y - top, 3.0, "the crumbs' top in a 32px bar");
+    close(crumbs.height, 26.0, "the crumbs' height");
+    let run = label(&dom, "crumbs").rect;
+    close(run.y - top, 3.0, "the crumbs' line top");
+    close(run.height, 26.0, "the crumbs' line height");
 }
 
 /// A find pill in the shape of a workbench's: a flex button holding an icon, a label and a
