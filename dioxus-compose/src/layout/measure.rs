@@ -261,6 +261,15 @@ pub trait TextMeasurer {
         false
     }
 
+    /// Whether an answer given since the last [`settle`](TextMeasurer::settle) was an
+    /// estimate that `settle` could not resolve yet: a renderer that has not composed its
+    /// first frame has nothing to measure with. A layout that used such an answer is laid
+    /// out again, from scratch, on the next frame, so no box keeps an estimate once the
+    /// real answer can be had. The default never estimates.
+    fn unsettled(&self) -> bool {
+        false
+    }
+
     /// Called when what the measurer's answers depend on changed (the theme, the design
     /// system), so answers it kept are stale. The default keeps nothing.
     fn invalidate(&mut self) {}
