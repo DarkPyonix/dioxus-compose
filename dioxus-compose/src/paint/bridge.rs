@@ -636,7 +636,11 @@ impl PlanBridge {
                             index: 2,
                             modifier: Modifier::ObserveSize {
                                 token,
-                                every_dp: false,
+                                // Every dp change, not only a size class change: the box
+                                // is the area the page is drawn in, so the page follows it
+                                // through every resize, and the window's own report is
+                                // only a stand-in until the box has spoken.
+                                every_dp: true,
                             },
                         });
                     }

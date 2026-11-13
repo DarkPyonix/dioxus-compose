@@ -209,9 +209,10 @@ impl HtmlRuntime {
     /// window's content area, which starts below the window's title band when the window
     /// has one. The window's report measures the whole window, title band included, and
     /// carries the band's height as `safe_area.top`, which the renderer pads the page down
-    /// by. Whichever of the two changed last is the one the page follows, because the
-    /// renderer sends each only when its size class changes and a resize can move one
-    /// across a boundary without the other.
+    /// by, unless the window draws its content under the title bar, where nothing pads the
+    /// page and the band is not taken out of its height. The box is observed on every dp
+    /// change, so once it has reported it is the only one that counts. The window's report,
+    /// less the band, stands in only until then.
     fn viewport(&mut self) -> (f32, f32) {
         let window = compose_rust::window_size();
         let island = self
@@ -223,8 +224,11 @@ impl HtmlRuntime {
         let window_changed = window != self.seen_window;
         self.seen_island = island;
         self.seen_window = window;
-        if island_changed && island.width_dp > 0.0 && island.height_dp > 0.0 {
-            self.content_size = Some((island.width_dp, island.height_dp));
+        let island_known = island.width_dp > 0.0 && island.height_dp > 0.0;
+        if island_known {
+            if island_changed || self.content_size.is_none() {
+                self.content_size = Some((island.width_dp, island.height_dp));
+            }
         } else if window_changed && window.width_dp > 0.0 && window.height_dp > 0.0 {
             let band = window.safe_area.top.max(0.0);
             let height = if window.height_dp > band {
