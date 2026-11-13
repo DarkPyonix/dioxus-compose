@@ -10,6 +10,7 @@ pub(crate) mod form;
 mod pointer;
 mod resize;
 mod scroll;
+mod semantics;
 mod writer;
 
 use std::any::Any;
@@ -63,6 +64,7 @@ pub use pointer::{
 };
 pub use scroll::ScrollPosition;
 pub(crate) use scroll::ScrollRequest;
+pub(crate) use semantics::NodeSemantics;
 use writer::{DomWriter, WriterState, attribute_name, element_name};
 
 /// What a browser's own stylesheet says about form controls and blitz-dom's does not.
@@ -1603,6 +1605,10 @@ impl ClickTargets for HtmlDom {
 
     fn pointer_cursor(&self, node: NodeId) -> u32 {
         self.cursor(node) as u32
+    }
+
+    fn node_semantics(&self, node: NodeId, takes_clicks: bool) -> Option<NodeSemantics> {
+        HtmlDom::node_semantics(self, node, takes_clicks)
     }
 
     fn pointer_app_region(&self, node: NodeId) -> u8 {
