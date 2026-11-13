@@ -295,3 +295,216 @@ fn fr34_inputs_take_the_control_font() {
         assert_eq!(field.style.line_height, TextLineHeight::Normal, "#{id}");
     }
 }
+
+/// Lays `app` out under `css` instead of the sheet [`open`] uses.
+fn open_with(app: fn() -> Element, css: &str) -> HtmlDom {
+    let config = HtmlConfig {
+        stylesheets: vec![css.to_string()],
+        measurer: Some(Box::new(HalfEm)),
+        ..HtmlConfig::default()
+    };
+    let mut dom = HtmlDom::with_config(app, config);
+    dom.layout(400.0, 600.0, 1.0);
+    dom
+}
+
+/// A page sheet in the shape of a workbench's: buttons take the page's font, and the body
+/// sets a unitless line height, so a button's label is 13px on 19.5px lines.
+const WORKBENCH: &str = "html, body { margin: 0; padding: 0; } \
+     body { font: 400 13px/1.5 sans-serif; } \
+     button { font: inherit; color: inherit; } \
+     .tabs { display: flex; gap: 4px; } \
+     .tabs button { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; } \
+     .status { display: flex; align-items: center; height: 32px; padding: 0 12px; } \
+     .crumbs { display: block; height: 26px; padding: 0 8px; line-height: 26px; }";
+
+fn pills() -> Element {
+    rsx! {
+        button {
+            id: "lone",
+            style: "height: 30px; padding: 0 12px; border: 0; border-radius: 999px;",
+            "터미널"
+        }
+        div { class: "tabs",
+            button { id: "tab-a", "터미널" }
+            button { id: "tab-b", "문제 2" }
+        }
+        footer { id: "status", class: "status",
+            span { id: "crumbs", class: "crumbs", "src / main.rs" }
+        }
+    }
+}
+
+#[track_caller]
+fn assert_centred(dom: &HtmlDom, id: &str) {
+    let rect = entry(dom, id).rect;
+    let run = label(dom, id).rect;
+    let middle = run.y + run.height / 2.0;
+    let expected = rect.y + rect.height / 2.0;
+    assert!(
+        (middle - expected).abs() <= 0.5,
+        "#{id}: the label's middle is {middle}, the box's is {expected}: {run:?} in {rect:?}"
+    );
+}
+
+/// A button centres its label top to bottom by itself, with no flex: on its own, as a flex
+/// item in a row of tabs, and with the page's font and a unitless line height.
+#[test]
+fn fr34_a_button_label_is_centred_vertically() {
+    let dom = open_with(pills, WORKBENCH);
+    for id in ["lone", "tab-a", "tab-b"] {
+        assert_centred(&dom, id);
+    }
+}
+
+/// A block span with its own line height in a status bar: the span is centred in the bar
+/// by `align-items`, and its one line fills it, so the text is in the middle of the bar.
+#[test]
+fn fr34_a_block_label_with_its_line_height_is_centred_in_its_bar() {
+    let dom = open_with(pills, WORKBENCH);
+    let top = entry(&dom, "status").rect.y;
+    let crumbs = entry(&dom, "crumbs").rect;
+    close(crumbs.y - top, 3.0, "the crumbs' top in a 32px bar");
+    close(crumbs.height, 26.0, "the crumbs' height");
+    let run = label(&dom, "crumbs").rect;
+    close(run.y - top, 3.0, "the crumbs' line top");
+    close(run.height, 26.0, "the crumbs' line height");
+}
+
+/// A find pill in the shape of a workbench's: a flex button holding an icon, a label and a
+/// shortcut, spaced by a `gap` written as a length and as a custom property.
+const FIND_PILL: &str = "html, body { margin: 0; padding: 0; } \
+     :root { --sp2: 8px; --sp3: 12px; } \
+     body { font: 400 13px/1.5 sans-serif; } \
+     button { font: inherit; color: inherit; } \
+     .find { display: flex; align-items: center; gap: var(--sp2); height: 32px; \
+             padding: 0 var(--sp3); border: 1px solid #ccc; width: 300px; } \
+     .find .sc { margin-left: auto; }";
+
+fn finds() -> Element {
+    rsx! {
+        button {
+            id: "plain",
+            style: "display: flex; align-items: center; gap: 8px; width: 300px; padding: 0; border: 0;",
+            img { id: "plain-icon", src: "search.svg", width: "16", height: "16" }
+            span { id: "plain-label", "파일, 동작, 기호 찾기" }
+        }
+        button { id: "pill", class: "find",
+            img { id: "pill-icon", src: "icon:search", width: "16", height: "16" }
+            span { id: "pill-label", "찾기" }
+            kbd { id: "pill-sc", class: "sc", "⌘P" }
+        }
+    }
+}
+
+/// `gap` on a flex `<button>` separates its children as it does on any flex container: the
+/// label starts 8px after the 16px icon, also when the shortcut after it is pushed to the
+/// far end by `margin-left: auto`.
+#[test]
+fn fr34_gap_separates_a_flex_buttons_children() {
+    let dom = open_with(finds, FIND_PILL);
+    for (icon, label) in [("plain-icon", "plain-label"), ("pill-icon", "pill-label")] {
+        let icon = entry(&dom, icon).rect;
+        let label = entry(&dom, label).rect;
+        close(icon.width, 16.0, "the icon's width");
+        close(
+            label.x - (icon.x + icon.width),
+            8.0,
+            "the gap between icon and label",
+        );
+    }
+    let pill = entry(&dom, "pill").rect;
+    let icon = entry(&dom, "pill-icon").rect;
+    close(
+        icon.x - pill.x,
+        13.0,
+        "the icon starts inside the border and padding",
+    );
+    let shortcut = entry(&dom, "pill-sc").rect;
+    close(
+        pill.x + pill.width - (shortcut.x + shortcut.width),
+        13.0,
+        "the shortcut ends at the padding",
+    );
+}
+
+fn auto_margins() -> Element {
+    rsx! {
+        // Placed from the right: "ab" at 187, "cd" 8px before it at 166, and "x" pushed to
+        // the left edge by its right margin.
+        button {
+            id: "reversed",
+            style: "display: flex; flex-direction: row-reverse; gap: 8px; width: 200px; \
+                    padding: 0; border: 0;",
+            span { id: "rev-a", "ab" }
+            span { id: "rev-b", "cd" }
+            span { id: "rev-c", style: "margin-right: auto;", "x" }
+        }
+        // Top to bottom in 100px: 19.5px lines at 0 and 27.5, the last one at the bottom.
+        div {
+            id: "column",
+            style: "display: flex; flex-direction: column; gap: 8px; height: 100px;",
+            span { id: "col-a", "ab" }
+            span { id: "col-b", "cd" }
+            span { id: "col-c", style: "margin-top: auto;", "x" }
+        }
+        // Two 20px items to a 60px line. The first line has no auto margin; on the second
+        // the auto margin takes the 12px left over and the gap stays.
+        div {
+            id: "wrapped",
+            style: "display: flex; flex-wrap: wrap; gap: 8px; width: 60px;",
+            span { id: "wrap-a", style: "width: 20px;", "a" }
+            span { id: "wrap-b", style: "width: 20px;", "b" }
+            span { id: "wrap-c", style: "width: 20px; margin-left: auto;", "c" }
+            span { id: "wrap-d", style: "width: 20px;", "d" }
+        }
+    }
+}
+
+/// The gap stays between flex items when an auto margin takes a line's free space, in a
+/// reversed row, a column and each line of a wrapping row.
+#[test]
+fn fr34_gap_stays_beside_auto_margins_in_any_direction() {
+    let dom = open_with(auto_margins, FIND_PILL);
+    let left = |id: &str| entry(&dom, id).rect.x;
+    let reversed = entry(&dom, "reversed").rect.x;
+    close(
+        left("rev-a") - reversed,
+        187.0,
+        "the first item of a reversed row",
+    );
+    close(
+        left("rev-b") - reversed,
+        166.0,
+        "the second item of a reversed row",
+    );
+    close(
+        left("rev-c") - reversed,
+        0.0,
+        "the third item of a reversed row",
+    );
+
+    let top = |id: &str| entry(&dom, id).rect.y;
+    let column = top("column");
+    close(top("col-a") - column, 0.0, "the first item of a column");
+    close(top("col-b") - column, 27.5, "the second item of a column");
+    close(top("col-c") - column, 80.5, "the last item of a column");
+
+    let wrapped = left("wrapped");
+    close(left("wrap-a") - wrapped, 0.0, "the first line's first item");
+    close(
+        left("wrap-b") - wrapped,
+        28.0,
+        "the first line's second item",
+    );
+    close(
+        left("wrap-c") - wrapped,
+        12.0,
+        "the second line's first item",
+    );
+    close(
+        left("wrap-d") - wrapped,
+        40.0,
+        "the second line's second item",
+    );
+}
