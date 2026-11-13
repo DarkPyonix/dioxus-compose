@@ -35,6 +35,9 @@ pub(crate) struct WriterState {
     listeners: HashMap<NodeId, Vec<&'static str>>,
     /// Whether event listeners changed since the last pointer subscription check.
     pub(crate) listeners_dirty: bool,
+    /// Set once the page has had a `draggable` attribute, so that a page without one never
+    /// pays for looking for draggable elements.
+    pub(crate) seen_draggable: bool,
     /// The text the renderer last committed to a field, per node, kept until the app sets
     /// the field's `value` again. The renderer owns a field's text while the user edits it,
     /// so this, not the `value` attribute, is what the field holds now.
@@ -256,6 +259,11 @@ impl<'a> DomWriter<'a> {
         if let Some(n) = self.mutator.doc.get_node(node) {
             if n.attr(local("autofocus")).is_some() {
                 self.state.pending_autofocus = Some(node);
+            }
+            if n.attr(local("draggable")).is_some() {
+                // A draggable element subscribes to the pointer, as a listener does.
+                self.state.seen_draggable = true;
+                self.state.listeners_dirty = true;
             }
             if n.data.is_element_with_tag_name(&local("style")) {
                 self.state.stylesheet_dirty = true;
@@ -800,6 +808,11 @@ impl WriteMutations for DomWriter<'_> {
             // The app set the field's value: that is what it holds now, whatever was
             // typed before.
             self.state.committed.remove(&node);
+        }
+        if namespace.is_none() && name == "draggable" {
+            // A draggable element subscribes to the pointer, as a listener does.
+            self.state.seen_draggable = true;
+            self.state.listeners_dirty = true;
         }
         let style_only = namespace == Some("style")
             || (namespace.is_none() && matches!(name, "style" | "class"));
