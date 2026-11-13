@@ -617,14 +617,18 @@ impl HtmlDom {
                 viewport.window_size.1,
                 viewport.scale().to_bits(),
             ));
-            let texts = run_layout(&mut self.doc, &mut *self.measurer);
-            self.layout_state.texts = texts;
-            self.layout_state.initialized = true;
+            // The styles are kept as stylo gave them, before layout writes the sizes it
+            // works out (a widget's measured size, a `fit-content` width) into them. The
+            // next frame compares freshly converted styles against these, and a written
+            // size would read as a style change on every such box.
             for (id, node) in self.doc.tree().iter() {
                 if node.flags.is_in_document() || node.layout_parent.get().is_some() {
                     self.layout_state.styles.insert(id, node.style.clone());
                 }
             }
+            let texts = run_layout(&mut self.doc, &mut *self.measurer);
+            self.layout_state.texts = texts;
+            self.layout_state.initialized = true;
         } else {
             if ticked || layout_running {
                 invalidated.extend(scan.layout_nodes.iter().copied());
