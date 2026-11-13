@@ -254,6 +254,13 @@ pub mod prelude {
         VerticalAlignment,
     };
     pub use crate::{FontFeature, FontFeatures, MotionFinished, Snap};
+    // compose-rust 0.0.9: where a code editor's caret is and where any position of it is,
+    // its pointer events with the text under them, its row height and scroll offset, and
+    // where a transient message is drawn.
+    pub use crate::{
+        CaretRect, CodeMetrics, CodePointer, CodeRect, CodeScroll, MessageHorizontal,
+        MessagePlacement, MessageVertical,
+    };
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
@@ -392,12 +399,17 @@ pub mod elements {
     }
 
     // Layout containers carry arrangement, spacing and cross-axis alignment.
+    // A column or a row may gather the radio buttons inside it into one group.
     element!(
         column,
         "Column",
-        [arrangement, spacing, space_role, alignment]
+        [arrangement, spacing, space_role, alignment, radio_group]
     );
-    element!(row, "Row", [arrangement, spacing, space_role, alignment]);
+    element!(
+        row,
+        "Row",
+        [arrangement, spacing, space_role, alignment, radio_group]
+    );
     element!(composebox, "Box", [item_key, alignment]);
     // The type role plus one attribute per override axis, so changing one axis is one
     // SetProp and the rest of the text's styling is not resent.
@@ -474,7 +486,12 @@ pub mod elements {
         "Checkbox",
         [checked, enabled, container_color, check_color, control_size]
     );
-    element!(radiobutton, "RadioButton", [checked, enabled]);
+    // A radio button's ring is its container colour and its dot its check colour.
+    element!(
+        radiobutton,
+        "RadioButton",
+        [checked, enabled, container_color, check_color, control_size]
+    );
     element!(
         switch,
         "Switch",
@@ -624,7 +641,11 @@ pub mod elements {
             gutter_min_width_dp,
             gutter_padding_dp,
             text_inset_dp,
-            code_editor_colors
+            code_editor_colors,
+            type_role,
+            font_size,
+            line_height,
+            font
         ]
     );
     // A row that wraps: the gaps on a line and between lines, where a line's children sit
@@ -891,8 +912,16 @@ pub mod events {
     // Where a scroll container is.
     optional_event!(onscrollchanged, crate::ScrollChange);
     // A code editor's row height and scroll offset, each in physical pixels.
-    optional_event!(oncodemetrics, f64);
-    optional_event!(oncodescrolled, f64);
+    optional_event!(oncodemetrics, compose_rust::code::CodeMetrics);
+    optional_event!(oncodescrolled, compose_rust::code::CodeScroll);
+    // Where a code editor draws its caret, in the window's dp.
+    optional_event!(oncaretrect, compose_rust::code::CaretRect);
+    // Each key press a code editor offers before it handles the key itself. Consuming it
+    // keeps it from the editor.
+    optional_event!(onkeypreview, crate::KeyEvent);
+    // A code editor's pointer events of the kinds in `pointer_kinds`, with the place in the
+    // text under the pointer.
+    optional_event!(oncodepointer, compose_rust::code::CodePointer);
     // A node's size motion came to rest, with the size it settled at in dp. Any node can
     // take it; only one whose size moves, through a `motion` role, ever reports it.
     optional_event!(onmotionfinished, crate::MotionFinished);

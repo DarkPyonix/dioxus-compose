@@ -509,6 +509,14 @@ pub fn Column(
     #[props(default)] spacing: Option<f32>,
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
+    /// Makes this layout a group of the `RadioButton`s inside it. The group is one stop for
+    /// Tab, on the selected button or the first, the arrow keys move focus along its
+    /// buttons, wrapping at the ends, and each one they land on reports `on_change(true)`
+    /// once, as a click would. Which button is selected stays the application's to decide.
+    /// Assistive technology hears the layout as a radio group. Left out, it is no group and
+    /// nothing is sent.
+    #[props(default)]
+    radio_group: bool,
     children: Element,
     /// The shape of the pointer over this node. Left out, the widget under it decides.
     #[props(default)]
@@ -580,6 +588,7 @@ pub fn Column(
             spacing: dp(spacing),
             space_role: role(space_role),
             alignment: role(alignment),
+            radio_group: radio_group.then_some(true),
             {children}
         }
     }
@@ -631,6 +640,14 @@ pub fn Row(
     #[props(default)] spacing: Option<f32>,
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
+    /// Makes this layout a group of the `RadioButton`s inside it. The group is one stop for
+    /// Tab, on the selected button or the first, the arrow keys move focus along its
+    /// buttons, wrapping at the ends, and each one they land on reports `on_change(true)`
+    /// once, as a click would. Which button is selected stays the application's to decide.
+    /// Assistive technology hears the layout as a radio group. Left out, it is no group and
+    /// nothing is sent.
+    #[props(default)]
+    radio_group: bool,
     children: Element,
     /// The shape of the pointer over this node. Left out, the widget under it decides.
     #[props(default)]
@@ -702,6 +719,7 @@ pub fn Row(
             spacing: dp(spacing),
             space_role: role(space_role),
             alignment: role(alignment),
+            radio_group: radio_group.then_some(true),
             {children}
         }
     }
@@ -2601,6 +2619,17 @@ pub fn Checkbox(
 /// selected radio button and a switch that is on are one fact.
 #[component]
 pub fn RadioButton(
+    /// The ring around the button, selected or not. Where the design system fills a
+    /// selected button, the fill takes this colour as well. Left out, the design system's.
+    #[props(default)]
+    ring_color: Option<Paint>,
+    /// The dot inside a selected button. Left out, the design system's.
+    #[props(default)]
+    dot_color: Option<Paint>,
+    /// The diameter of the ring in dp; the dot scales with it. Left out, the design
+    /// system's.
+    #[props(default)]
+    size: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2623,6 +2652,9 @@ pub fn RadioButton(
 ) -> Element {
     rsx! {
         radiobutton {
+            container_color: opt_paint(ring_color),
+            check_color: opt_paint(dot_color),
+            control_size: size.map(|side| AttributeValue::any_value((side, side))),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -3723,9 +3755,10 @@ pub fn SplitPane(
 /// `handle` addresses the editor for edits the application makes itself: formatting,
 /// accepting a completion, reloading a file. See [`crate::CodeEditorHandle`].
 ///
-/// The gutter, the line numbers, the current line, the weight of an underline and how
-/// faint a suggestion is are the design system's, and the text is set in its monospace
-/// rung.
+/// The weight of an underline and how faint a suggestion is are the design system's. The
+/// gutter, the line numbers and the colours of the editor's parts are too, unless
+/// `line_numbers`, the gutter sizes and `colors` say otherwise, and the text is set in its
+/// monospace rung unless `type_role`, `font_size`, `line_height` or `font` do.
 #[component]
 pub fn CodeEditor(
     /// Called with where the container is, at most once a frame while it scrolls and once
@@ -3750,11 +3783,48 @@ pub fn CodeEditor(
     /// Called with the height of one row in physical pixels when the editor is first drawn
     /// and whenever it changes. Left out, the Renderer is not asked to report it.
     #[props(default)]
-    on_code_metrics: Option<EventHandler<f64>>,
+    on_code_metrics: Option<EventHandler<compose_rust::code::CodeMetrics>>,
     /// Called with how far the editor is scrolled down, in physical pixels, at most once a
-    /// frame. Left out, the Renderer is not asked to report it.
+    /// frame. The handle's `set_scroll_offset` takes the same unit. Left out, the Renderer
+    /// is not asked to report it.
     #[props(default)]
-    on_code_scrolled: Option<EventHandler<f64>>,
+    on_code_scrolled: Option<EventHandler<compose_rust::code::CodeScroll>>,
+    /// Called with where the caret is drawn, its place in the document and its rectangle in
+    /// the window's dp, when the caret moves or the view scrolls, at most once a frame. A
+    /// suggestion list is placed under it. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_caret_rect: Option<EventHandler<compose_rust::code::CaretRect>>,
+    /// Offered every key press before the editor handles it, except while an input method
+    /// is composing. Calling `consume` on the event keeps the key from the editor, as
+    /// `TextField`'s `on_key_down` does: Down does not move the caret and Enter inserts no
+    /// line. Left out, the editor hears every key itself.
+    #[props(default)]
+    on_key_preview: Option<EventHandler<KeyEvent>>,
+    /// The kinds of pointer input `on_code_pointer` is called for. Left out, or empty, none
+    /// is reported.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`, with the character
+    /// under the pointer, or none over the gutter, past the end of a line or below the last
+    /// one. Calling `consume` on its `event` keeps a press from moving the caret, which is
+    /// what Cmd or Ctrl and a click needs to go to a definition. Left out, nothing is
+    /// announced.
+    #[props(default)]
+    on_code_pointer: Option<EventHandler<compose_rust::code::CodePointer>>,
+    /// The rung of the type ladder the text is set in. Left out, the design system's
+    /// monospace rung.
+    #[props(default)]
+    type_role: Option<TypeRole>,
+    /// The size of the text in sp, over the rung's.
+    #[props(default)]
+    font_size: Option<f32>,
+    /// The height of a row in sp, over the rung's.
+    #[props(default)]
+    line_height: Option<f32>,
+    /// The fonts to try, in order, for an editor set in the application's own monospace
+    /// list. An empty list sends nothing.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -3832,8 +3902,16 @@ pub fn CodeEditor(
             gutter_padding_dp: opt_dp(gutter_padding),
             text_inset_dp: opt_dp(text_inset),
             code_editor_colors: (!colors.is_empty()).then(|| AttributeValue::any_value(colors)),
-            oncodemetrics: optional_listener(on_code_metrics, |height: &f64| *height),
-            oncodescrolled: optional_listener(on_code_scrolled, |offset: &f64| *offset),
+            oncodemetrics: optional_listener(on_code_metrics, |metrics: &compose_rust::code::CodeMetrics| *metrics),
+            oncodescrolled: optional_listener(on_code_scrolled, |scroll: &compose_rust::code::CodeScroll| *scroll),
+            oncaretrect: optional_listener(on_caret_rect, |caret: &compose_rust::code::CaretRect| *caret),
+            onkeypreview: optional_listener(on_key_preview, |key: &KeyEvent| key.clone()),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            oncodepointer: optional_listener(on_code_pointer, |pointer: &compose_rust::code::CodePointer| pointer.clone()),
+            type_role: opt_role(type_role),
+            font_size: opt_dp(font_size),
+            line_height: opt_dp(line_height),
+            font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),

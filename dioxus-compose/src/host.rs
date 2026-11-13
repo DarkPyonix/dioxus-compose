@@ -413,10 +413,18 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
-        EventPayload::CodeMetrics { line_height_px } => {
-            Event::new(Rc::new(line_height_px), true).into_any()
-        }
-        EventPayload::CodeScrolled { offset_px } => Event::new(Rc::new(offset_px), true).into_any(),
+        // A code editor's row height and how far it is scrolled, in physical pixels, as
+        // compose-rust's own records of them.
+        EventPayload::CodeMetrics { line_height_px } => Event::new(
+            Rc::new(compose_rust::code::CodeMetrics { line_height_px }),
+            true,
+        )
+        .into_any(),
+        EventPayload::CodeScrolled { offset_px } => Event::new(
+            Rc::new(compose_rust::code::CodeScroll { offset_px }),
+            true,
+        )
+        .into_any(),
         EventPayload::ScrollChanged {
             item,
             settled,
