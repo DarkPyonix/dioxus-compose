@@ -220,7 +220,9 @@ pub(crate) fn deliver_event(
         EventPayload::Clicked if link.is_some() => {
             Event::new(Rc::new(link.unwrap_or_default()), false).into_any()
         }
-        EventPayload::Clicked | EventPayload::FocusLost => Event::new(Rc::new(()), true).into_any(),
+        EventPayload::Clicked | EventPayload::FocusLost | EventPayload::FocusGained => {
+            Event::new(Rc::new(()), true).into_any()
+        }
         EventPayload::TextChanged(text) | EventPayload::TextSubmitted(text) => {
             Event::new(Rc::new(text.to_owned()), true).into_any()
         }
@@ -230,6 +232,15 @@ pub(crate) fn deliver_event(
             ctrl_key,
             alt_key,
             meta_key,
+            ..
+        }
+        | EventPayload::KeyUp {
+            key,
+            shift_key,
+            ctrl_key,
+            alt_key,
+            meta_key,
+            ..
         } => {
             let value = KeyEvent::new(key, shift_key, ctrl_key, alt_key, meta_key);
             key_event = Some(value.clone());
@@ -372,6 +383,10 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
+        EventPayload::CodeMetrics { line_height_px } => {
+            Event::new(Rc::new(line_height_px), true).into_any()
+        }
+        EventPayload::CodeScrolled { offset_px } => Event::new(Rc::new(offset_px), true).into_any(),
         EventPayload::CompositionChanged { composing } => {
             Event::new(Rc::new(composing), true).into_any()
         }
@@ -463,7 +478,13 @@ pub(crate) fn deliver_event(
         | EventPayload::ReducedMotionChanged(_)
         | EventPayload::ZoomChanged { .. }
         | EventPayload::WindowRequested { .. }
-        | EventPayload::ApplicationReopen => {
+        | EventPayload::ApplicationReopen
+        | EventPayload::FileDialogResult { .. }
+        | EventPayload::ClipboardText { .. }
+        | EventPayload::IoAnswer { .. }
+        | EventPayload::FileHandles { .. }
+        | EventPayload::StorageLocation(_)
+        | EventPayload::ScrollChanged { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };

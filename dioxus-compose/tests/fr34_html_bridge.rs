@@ -844,6 +844,9 @@ fn enter(host: &mut Host, (node_id, handler_id): (u32, u64), ctrl_key: bool) -> 
                 ctrl_key,
                 alt_key: false,
                 meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
             },
         })
         .expect("the key is dispatched");
@@ -933,6 +936,9 @@ fn fr34_key_reaches_the_focused_dom_handler() {
                 ctrl_key: false,
                 alt_key: false,
                 meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
             },
         })
         .is_err(),

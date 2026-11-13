@@ -634,7 +634,10 @@ impl PlanBridge {
                         batch.write(Mutation::SetModifier {
                             node_id: island,
                             index: 2,
-                            modifier: Modifier::ObserveSize { token },
+                            modifier: Modifier::ObserveSize {
+                                token,
+                                every_dp: false,
+                            },
                         });
                     }
                     batch.write(Mutation::Insert {

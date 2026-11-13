@@ -555,6 +555,8 @@ impl Runtime for HtmlRuntime {
                     ctrl_key,
                     alt_key,
                     meta_key,
+                    text,
+                    ..
                 },
             ) => {
                 // TODO(DarkPyonix/compose-rust#100): map the full W3C `Key`, `Code`,
@@ -567,6 +569,24 @@ impl Runtime for HtmlRuntime {
                 // payloads to `self.deliver_focus(node)`.
                 let (key, code) = match key {
                     WireKey::Enter => (Key::Enter, Code::Enter),
+                    WireKey::Escape => (Key::Escape, Code::Escape),
+                    WireKey::Tab => (Key::Tab, Code::Tab),
+                    WireKey::Backspace => (Key::Backspace, Code::Backspace),
+                    WireKey::Delete => (Key::Delete, Code::Delete),
+                    WireKey::ArrowUp => (Key::ArrowUp, Code::ArrowUp),
+                    WireKey::ArrowDown => (Key::ArrowDown, Code::ArrowDown),
+                    WireKey::ArrowLeft => (Key::ArrowLeft, Code::ArrowLeft),
+                    WireKey::ArrowRight => (Key::ArrowRight, Code::ArrowRight),
+                    WireKey::Home => (Key::Home, Code::Home),
+                    WireKey::End => (Key::End, Code::End),
+                    WireKey::PageUp => (Key::PageUp, Code::PageUp),
+                    WireKey::PageDown => (Key::PageDown, Code::PageDown),
+                    // A key the wire enum does not name: its DOM `key` string travels in
+                    // `text`, so a printable key reaches the page as that character.
+                    WireKey::Other if !text.is_empty() => {
+                        (Key::Character(text.to_string()), Code::Unidentified)
+                    }
+                    WireKey::Other => (Key::Unidentified, Code::Unidentified),
                 };
                 let mut modifiers = Modifiers::empty();
                 modifiers.set(Modifiers::SHIFT, *shift_key);

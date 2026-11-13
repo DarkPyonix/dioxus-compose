@@ -60,7 +60,7 @@ fn fr28_an_observed_node_carries_its_own_token() {
         .iter()
         .filter_map(|mutation| match mutation {
             Mutation::SetModifier {
-                modifier: Modifier::ObserveSize { token },
+                modifier: Modifier::ObserveSize { token, .. },
                 ..
             } => Some(*token),
             _ => None,

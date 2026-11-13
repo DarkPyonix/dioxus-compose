@@ -671,7 +671,13 @@ impl ComposeRenderer {
             "observe_size" => {
                 let token = u32::try_from(integer(value)?).ok()?;
                 self.size_tokens.insert(node_id, token);
-                Some(Some((slot, Modifier::ObserveSize { token })))
+                Some(Some((
+                    slot,
+                    Modifier::ObserveSize {
+                        token,
+                        every_dp: false,
+                    },
+                )))
             }
             "fill_max_width" | "fill_max_height" => {
                 let AttributeValue::Bool(enabled) = value else {
