@@ -115,6 +115,17 @@ pub trait ClickTargets {
         0
     }
 
+    /// What the element `node` is to assistive technology, when its role, name or state says
+    /// anything (`takes_clicks` is whether a click on it does something).
+    fn node_semantics(
+        &self,
+        node: NodeId,
+        takes_clicks: bool,
+    ) -> Option<crate::dom::NodeSemantics> {
+        let _ = (node, takes_clicks);
+        None
+    }
+
     /// The `app-region` of `node` itself: 0 when the page says nothing, 1 for `drag` (a press
     /// moves the window), 2 for `no-drag` (cut out of the drag region around it).
     fn pointer_app_region(&self, node: NodeId) -> u8 {
@@ -718,7 +729,8 @@ impl PlanBridge {
         for node in &nodes {
             if let Some(placed) = self.nodes.get(&node.key)
                 && (placed.click.map(|(_, target)| target) != click_target(node, clicks)
-                    || placed.keys.map(|(_, target)| target) != key_target(node, clicks))
+                    || placed.keys.map(|(_, target)| target) != key_target(node, clicks)
+                    || semantics_changed(placed, node, clicks))
             {
                 dirty.insert(node.key);
             }
@@ -1717,6 +1729,10 @@ impl PlanBridge {
         if let Some(handler_id) = click {
             modifiers.push(Modifier::Clickable { handler_id });
         }
+        let semantics = semantics_of(node, clicks);
+        if let Some(semantics) = &semantics {
+            modifiers.push(semantics.semantics.to_modifier());
+        }
         if let PlanKey::Node(dom) = key {
             match clicks.pointer_app_region(dom) {
                 1 => modifiers.push(Modifier::WindowDrag(true)),
@@ -1744,6 +1760,13 @@ impl PlanBridge {
             }
         }
         placed.modifiers = modifiers;
+
+        // The accessible name travels as a property of its own: a string does not fit in a
+        // modifier's words. An element that lost its name sends none.
+        let label = semantics
+            .and_then(|semantics| semantics.label)
+            .map_or(Prop::None, Prop::Str);
+        self.set_prop(batch, key, PropertyKind::AccessibleName, label);
 
         let specs = self.layer_specs(node);
         let Some(placed) = self.nodes.get_mut(&key) else {
@@ -1901,6 +1924,39 @@ fn click_target(node: &PlanNode, clicks: &dyn ClickTargets) -> Option<NodeId> {
             PlanKind::Text(text),
         ) => clicks.run_target(text.owner, container),
         _ => None,
+    }
+}
+
+/// What the element a plan node draws is to assistive technology. Only an element's own
+/// box carries it: a run of text, a field or a layer is part of the element's box.
+fn semantics_of(node: &PlanNode, clicks: &dyn ClickTargets) -> Option<crate::dom::NodeSemantics> {
+    match node.key {
+        PlanKey::Node(dom) => clicks.node_semantics(dom, clicks.takes_clicks(dom)),
+        _ => None,
+    }
+}
+
+/// Whether the role, state or name of the element `node` draws differs from what the
+/// renderer was sent. An attribute such as `aria-selected` changes nothing in the plan, so
+/// the plan's own diff does not see it.
+fn semantics_changed(placed: &Placed, node: &PlanNode, clicks: &dyn ClickTargets) -> bool {
+    let now = semantics_of(node, clicks);
+    let sent_modifier = placed
+        .modifiers
+        .iter()
+        .find(|modifier| matches!(modifier, Modifier::Semantics { .. }));
+    let sent_name = placed
+        .props
+        .iter()
+        .find_map(|(kind, value)| match (kind, value) {
+            (PropertyKind::AccessibleName, Prop::Str(name)) => Some(name.as_str()),
+            _ => None,
+        });
+    match now {
+        None => sent_modifier.is_some() || sent_name.is_some(),
+        Some(now) => {
+            sent_modifier != Some(&now.semantics.to_modifier()) || sent_name != now.label.as_deref()
+        }
     }
 }
 
