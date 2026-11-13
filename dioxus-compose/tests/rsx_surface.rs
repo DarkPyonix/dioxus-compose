@@ -196,6 +196,10 @@ fn surface() -> Element {
                         fired(format!("Column.on_window_drag_over({:?},{})", over.kind, over.window))
                     },
                     motion: MotionRole::Quick,
+                    on_motion_finished: move |size: MotionFinished| fired(format!(
+                        "Column.on_motion_finished({},{})",
+                        size.width_dp, size.height_dp
+                    )),
                     material: MaterialRole::Thin,
                     weight: 1.0,
                     fill_max_width: true,
@@ -260,6 +264,7 @@ fn surface() -> Element {
                             tab_size: 2,
                             absolute_size: true,
                             soft_wrap: false,
+                            font_feature_settings: [(b"tnum", 1), (b"liga", 0)],
                         }
                     }
                     TextField {
@@ -273,6 +278,11 @@ fn surface() -> Element {
                         on_focus_lost: move |_| fired("TextField.on_focus_lost"),
                         on_key_down: move |event: KeyEvent| fired(format!("TextField.on_key_down({:?})", event.key())),
                         bare: true,
+                        font_feature_settings: vec![FontFeature::SLASHED_ZERO],
+                        on_motion_finished: move |size: MotionFinished| fired(format!(
+                            "TextField.on_motion_finished({},{})",
+                            size.width_dp, size.height_dp
+                        )),
                         on_focus_gained: move |_| fired("TextField.on_focus_gained"),
                         on_key_up: move |event: KeyEvent| fired(format!(
                             "TextField.on_key_up({:?},{},{},{},{})",
@@ -285,6 +295,7 @@ fn surface() -> Element {
                     }
                     ScrollColumn {
                         fill_max_width: true,
+                        snap: Snap::ItemStart,
                         on_scroll_changed: move |change: ScrollChange| fired(format!(
                             "ScrollColumn.on_scroll_changed({},{},{},{},{},{},{},{},{},{})",
                             change.item,
@@ -306,6 +317,7 @@ fn surface() -> Element {
                         min: 200.0,
                         max: 400.0,
                         collapsible: true,
+                        collapse_below: 600.0,
                         selected_index: 1,
                         label: "Sessions",
                         on_change: move |value: f32| fired(format!("SplitPane.on_change({value})")),
@@ -364,6 +376,7 @@ fn surface() -> Element {
                     }
                     ScrollRow {
                         fill_max_width: true,
+                        snap: Snap::ItemStart,
                         Chip {
                             text: "Unread",
                             icon: IconRole::History,
@@ -492,6 +505,7 @@ fn surface() -> Element {
                     Sheet {
                         open: true,
                         scrim: SCRIM,
+                        max_height_fraction: 0.6,
                         on_dismiss: move |_| fired("Sheet.on_dismiss"),
                         Text { text: "sheet body" }
                     }
@@ -742,6 +756,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::TearOffKey, text("tab:inbox")),
                 (P::OnWindowDragOver, Handler),
                 (P::AccessibleName, text("Mail")),
+                (P::OnMotionFinished, Handler),
             ],
         ),
         (
@@ -789,6 +804,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::TabSize, int(2)),
                 (P::AbsoluteSize, int(1)),
                 (P::SoftWrap, flag(false)),
+                (
+                    P::FontFeatureSettings,
+                    is(Value::Bytes(b"tnum\x01\0\0\0liga\0\0\0\0".to_vec())),
+                ),
             ],
         ),
         (W::Text, vec![(P::Text, text("message 1"))]),
@@ -798,6 +817,11 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             W::TextField,
             vec![
                 (P::Placeholder, text("Search")),
+                (
+                    P::FontFeatureSettings,
+                    is(Value::Bytes(b"zero\x01\0\0\0".to_vec())),
+                ),
+                (P::OnMotionFinished, Handler),
                 (P::Enabled, flag(true)),
                 (P::Multiline, flag(true)),
                 (P::TypeRole, role(TypeRole::Mono)),
@@ -830,10 +854,16 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             W::LazyColumn,
             vec![(P::ItemCount, int(3)), (P::OnRangeRequested, Handler)],
         ),
-        (W::ScrollColumn, vec![(P::OnScrollChanged, Handler)]),
+        (
+            W::ScrollColumn,
+            vec![
+                (P::OnScrollChanged, Handler),
+                (P::Snap, role(Snap::ItemStart)),
+            ],
+        ),
         (W::AbsoluteBox, vec![(P::IslandZoom, float(1.5))]),
         (W::AbsoluteBox, vec![]),
-        (W::ScrollRow, vec![]),
+        (W::ScrollRow, vec![(P::Snap, role(Snap::ItemStart))]),
         (
             W::CodeEditor,
             vec![
@@ -871,6 +901,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Min, float(200.0)),
                 (P::Max, float(400.0)),
                 (P::Collapsible, flag(true)),
+                (P::CollapseBelow, float(600.0)),
                 (P::SelectedIndex, int(1)),
                 (P::Text, text("Sessions")),
                 (P::OnValueChange, Handler),
@@ -1051,6 +1082,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Open, flag(true)),
                 (P::OnDismiss, Handler),
                 (P::Scrim, int(paint_bits(SCRIM))),
+                (P::MaxHeightFraction, float(0.6)),
             ],
         ),
         (W::Scaffold, vec![]),
@@ -1501,6 +1533,24 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             },
             "Column.on_window_drag_over(Drop,7)",
         ),
+        (
+            W::Column,
+            P::OnMotionFinished,
+            EventPayload::MotionFinished {
+                width_dp: 120.0,
+                height_dp: 48.5,
+            },
+            "Column.on_motion_finished(120,48.5)",
+        ),
+        (
+            W::TextField,
+            P::OnMotionFinished,
+            EventPayload::MotionFinished {
+                width_dp: 240.0,
+                height_dp: 56.0,
+            },
+            "TextField.on_motion_finished(240,56)",
+        ),
     ];
     let mut failures = Vec::new();
     for (kind, property, payload, label) in events.iter().cloned() {
@@ -1651,6 +1701,12 @@ fn nothing_asked() -> Element {
             Navigation { NavigationItem { text: "Inbox" } }
             Dialog { Text { text: "c" } }
             FlowRow { Text { text: "d" } }
+            Text { text: "g", font_feature_settings: FontFeatures::new() }
+            ScrollRow { Text { text: "h" } }
+            Sheet { Text { text: "i" } }
+            SplitPane { Column {} Column {} }
+            Row { motion: MotionRole::Quick, Text { text: "j" } }
+            Sheet { max_height_fraction: 0.0, Text { text: "k" } }
             Popover { anchor: rsx! { Text { text: "e" } }, Text { text: "f" } }
         }
     }
@@ -1693,6 +1749,11 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
         P::OnCodeScrolled,
         P::CompactNavigation,
         P::OnScrollChanged,
+        P::OnMotionFinished,
+        P::FontFeatureSettings,
+        P::Snap,
+        P::MaxHeightFraction,
+        P::CollapseBelow,
     ];
     let sent: Vec<String> = mutations
         .iter()
@@ -1849,5 +1910,88 @@ fn fr15_a_handler_taken_away_is_withdrawn() {
             value: PropertyValue::None,
         }),
         "the key-up handler was not withdrawn: {after:?}"
+    );
+}
+
+fn settling() -> Element {
+    rsx! {
+        Column {
+            motion: MotionRole::Quick,
+            on_motion_finished: move |size: MotionFinished| fired(format!(
+                "{:?}",
+                (size.width_dp, size.height_dp)
+            )),
+            Text { text: "grows" }
+        }
+    }
+}
+
+/// A node's size motion coming to rest reaches `on_motion_finished` once, as a
+/// `MotionFinished` carrying the width and the height it settled at in dp, unrounded.
+#[test]
+fn fr15_on_motion_finished_delivers_the_settled_size_in_dp() {
+    let (mut host, batch) = first_frame(settling);
+    let mutations = decoded(&batch);
+    take_fired();
+    let finished = announced(&mutations, PropertyKind::OnMotionFinished);
+    assert_eq!(finished.len(), 1, "{mutations:?}");
+    let (node_id, handler_id) = finished[0];
+    host.dispatch(HostEvent {
+        node_id,
+        handler_id,
+        payload: EventPayload::MotionFinished {
+            width_dp: 312.25,
+            height_dp: 0.5,
+        },
+    })
+    .expect("the motion report is delivered");
+    assert_eq!(take_fired(), ["(312.25, 0.5)"]);
+}
+
+fn featured() -> Element {
+    rsx! {
+        Column {
+            Text {
+                text: "12:30",
+                type_role: TypeRole::Body,
+                font_feature_settings: [
+                    FontFeature::TABULAR_NUMS,
+                    FontFeature::new(b"ss02", 0x0102_0304),
+                ],
+            }
+            Text {
+                text: "pairs",
+                font_feature_settings: [(*b"cv11", 7_u32)],
+            }
+        }
+    }
+}
+
+/// Font features travel as one 8-byte record each, in the order written: the four tag
+/// bytes, then the value as a little-endian `u32`. A text with a type role takes them too.
+#[test]
+fn fr15_font_feature_settings_travel_as_tag_then_value_records() {
+    let (_host, batch) = first_frame(featured);
+    let mutations = decoded(&batch);
+    let blobs: Vec<&PropertyValue<'_>> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::FontFeatureSettings,
+                value,
+                ..
+            } => Some(value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        blobs,
+        [
+            &PropertyValue::Bytes(&[
+                b't', b'n', b'u', b'm', 1, 0, 0, 0, b's', b's', b'0', b'2', 4, 3, 2, 1
+            ]),
+            &PropertyValue::Bytes(&[b'c', b'v', b'1', b'1', 7, 0, 0, 0]),
+        ],
+        "{mutations:?}"
     );
 }
