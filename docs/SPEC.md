@@ -2052,7 +2052,7 @@ Code-OSS 워크벤치가 쓰는 CSS와 입력 중 dioxus-compose에 없는 것�
    - 스크롤 컨테이너의 `MountedData::scroll(coordinates, behavior)`는 그 컨테이너를 그 위치로 옮기는 `ScrollTo`를 쓴다. 좌표는 CSS px이고(FR-34.4의 확대 배율 k를 곱하기 전), 렌더러로 갈 때 렌더러의 물리 픽셀로 바뀐다. 스크롤 컨테이너가 아닌 요소에는 아무것도 쓰지 않는다.
    - 스크롤 컨테이너가 된 노드는 `OnScrollChanged`로 보고를 받는다. `get_scroll_offset()`은 그 컨테이너의 마지막 보고 위치를, `get_scroll_size()`는 내용의 크기(최대 위치에 뷰포트 크기를 더한 것)를 CSS px로 돌려준다. 보고가 아직 없으면 위치는 0이다. 보고가 오면 그 요소의 `onscroll` 핸들러가 불린다.
    - 사용자가 끌거나 튕기는 동안의 요청은 렌더러가 무시한다(compose-rust의 규칙). Host는 그 요청을 다시 보내지 않는다.
-   - 테스트 `fr34_5_scroll_into_view_writes_one_request_per_container` (예정), `fr34_5_scroll_into_view_uses_the_requested_alignment` (예정), `fr34_5_scroll_sets_the_container_offset_in_renderer_pixels` (예정), `fr34_5_scroll_offset_reads_the_last_report` (예정), `fr34_5_scroll_report_reaches_onscroll` (예정).
+   - 테스트 `fr34_5_scroll_into_view_writes_one_request_per_container`, `fr34_5_scroll_into_view_uses_the_requested_alignment`, `fr34_5_scroll_sets_the_container_offset_in_renderer_pixels`, `fr34_5_scroll_offset_reads_the_last_report`, `fr34_5_scroll_report_reaches_onscroll`.
 
 기준 1에서 3, 5의 `pointer-events`, 9에서 11은 compose-rust 병합을 기다리지 않고 Host 경로를 먼저 시작할 수 있습니다. 기준 1과 2는 같은 입력 경로라 이어서 구현합니다.
 
