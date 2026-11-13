@@ -120,15 +120,55 @@ fn delta(screen: &mut Screen) {
     std::hint::black_box(batch.len());
 }
 
-fn p99_ns(iterations: usize, mut operation: impl FnMut()) -> u128 {
-    let mut samples = Vec::with_capacity(iterations);
+/// How many times the timed comparisons may be measured before the bench fails.
+///
+/// Load on the machine only ever adds time, and a ratio of two p99s moves with whatever
+/// else the machine is doing: a saturated CI runner once measured a prefix ratio of 3.4 for
+/// code that measures about 1 when idle. Code that really looks at the settled prefix again
+/// is slow on every attempt, so passing on any one attempt still catches it. Allocation
+/// counts do not depend on load, so that assertion is checked once.
+const ATTEMPTS: usize = 3;
+
+fn p99(mut samples: Vec<u128>) -> u128 {
+    samples.sort_unstable();
+    samples[(samples.len() * 99).div_ceil(100) - 1]
+}
+
+/// The p99 of a delta on a screen with no prefix and on one with 100KB above it, measured
+/// in turn (one delta on each, then the next) so a burst of load falls on both alike.
+fn prefix_p99s(iterations: usize) -> (u128, u128) {
+    // Fresh screens, so both start from a one-kilobyte paragraph and grow alike.
+    let mut bare = screen(0);
+    let mut long = screen(100 * 1024);
+    let mut bare_samples = Vec::with_capacity(iterations);
+    let mut long_samples = Vec::with_capacity(iterations);
     for _ in 0..iterations {
         let started = Instant::now();
-        operation();
-        samples.push(started.elapsed().as_nanos());
+        delta(&mut bare);
+        bare_samples.push(started.elapsed().as_nanos());
+        let started = Instant::now();
+        delta(&mut long);
+        long_samples.push(started.elapsed().as_nanos());
     }
-    samples.sort_unstable();
-    samples[(iterations * 99).div_ceil(100) - 1]
+    (p99(bare_samples), p99(long_samples))
+}
+
+/// A five-thousand-line code block arrives open, then its closing fence: the frame that
+/// closes it is the one that must stay inside the budget, because that is where the
+/// highlighting would land if it ran on this thread.
+fn closing_frame_ns() -> u128 {
+    let mut host = Host::new(streamed);
+    let _ = host.rebuild().unwrap();
+    let mut code_stream = stream();
+    let code: String = (0..5000)
+        .map(|line| format!("let value_{line} = {line}; // line {line}\n"))
+        .collect();
+    code_stream.write().push_delta(&format!("```rust\n{code}"));
+    let _ = host.render_frame(0).unwrap();
+    code_stream.write().push_delta("```\n");
+    let started = Instant::now();
+    let _ = host.render_frame(0).unwrap();
+    started.elapsed().as_nanos()
 }
 
 fn allocations_per_delta(screen: &mut Screen, deltas: usize) -> usize {
@@ -161,59 +201,57 @@ fn benchmarks(criterion: &mut Criterion) {
         bencher.iter(|| delta(&mut long))
     });
 
-    // Fresh screens for the recorded numbers, so both start from a one-kilobyte paragraph.
-    let mut bare = screen(0);
-    let bare_p99 = p99_ns(samples, || delta(&mut bare));
-    let mut long = screen(100 * 1024);
-    let long_p99 = p99_ns(samples, || delta(&mut long));
-    let ratio = long_p99 as f64 / bare_p99.max(1) as f64;
-
     let mut half = screen(50 * 1024);
     let half_allocations = allocations_per_delta(&mut half, 200);
     let mut long = screen(100 * 1024);
     let long_allocations = allocations_per_delta(&mut long, 200);
-
-    // A five-thousand-line code block arrives open, then its closing fence: the frame that
-    // closes it is the one that must stay inside the budget, because that is where the
-    // highlighting would land if it ran on this thread.
-    let mut host = Host::new(streamed);
-    let _ = host.rebuild().unwrap();
-    let mut code_stream = stream();
-    let code: String = (0..5000)
-        .map(|line| format!("let value_{line} = {line}; // line {line}\n"))
-        .collect();
-    code_stream.write().push_delta(&format!("```rust\n{code}"));
-    let _ = host.render_frame(0).unwrap();
-    code_stream.write().push_delta("```\n");
-    let started = Instant::now();
-    let _ = host.render_frame(0).unwrap();
-    let closing_frame = started.elapsed().as_nanos();
-
-    eprintln!("p99 markdown_delta_without_prefix_ns={bare_p99}");
-    eprintln!("p99 markdown_delta_after_100kb_ns={long_p99}");
-    eprintln!("markdown_delta_prefix_ratio={ratio:.3}");
     eprintln!("markdown_delta_allocations_after_50kb={half_allocations}");
     eprintln!("markdown_delta_allocations_after_100kb={long_allocations}");
-    eprintln!("markdown_close_5000_line_code_block_frame_ns={closing_frame}");
-
-    assert!(
-        long_p99 <= STREAMING_FRAME_BUDGET_NS,
-        "a delta after 100KB took {long_p99}ns at p99, over the {STREAMING_FRAME_BUDGET_NS}ns \
-         streaming frame budget"
-    );
-    assert!(
-        ratio <= PREFIX_RATIO_CEILING,
-        "a delta after 100KB took {ratio:.2} times as long as one with nothing above it; the \
-         settled part is being looked at again"
-    );
     assert!(
         long_allocations <= half_allocations,
         "a delta allocated {long_allocations} times after 100KB and {half_allocations} after \
          50KB; allocations grow with the settled part"
     );
-    assert!(
-        closing_frame <= STREAMING_FRAME_BUDGET_NS,
-        "closing a 5000-line code block took {closing_frame}ns on the drawing thread"
+
+    // The timed budgets: pass if any attempt meets all of them (see `ATTEMPTS`).
+    let mut failures = Vec::new();
+    for attempt in 1..=ATTEMPTS {
+        let (bare_p99, long_p99) = prefix_p99s(samples);
+        let ratio = long_p99 as f64 / bare_p99.max(1) as f64;
+        let closing_frame = closing_frame_ns();
+
+        eprintln!("p99 markdown_delta_without_prefix_ns={bare_p99}");
+        eprintln!("p99 markdown_delta_after_100kb_ns={long_p99}");
+        eprintln!("markdown_delta_prefix_ratio={ratio:.3}");
+        eprintln!("markdown_close_5000_line_code_block_frame_ns={closing_frame}");
+
+        let mut problems = Vec::new();
+        if long_p99 > STREAMING_FRAME_BUDGET_NS {
+            problems.push(format!(
+                "a delta after 100KB took {long_p99}ns at p99, over the \
+                 {STREAMING_FRAME_BUDGET_NS}ns streaming frame budget"
+            ));
+        }
+        if ratio > PREFIX_RATIO_CEILING {
+            problems.push(format!(
+                "a delta after 100KB took {ratio:.2} times as long as one with nothing above \
+                 it ({long_p99}ns against {bare_p99}ns at p99); the settled part is being \
+                 looked at again"
+            ));
+        }
+        if closing_frame > STREAMING_FRAME_BUDGET_NS {
+            problems.push(format!(
+                "closing a 5000-line code block took {closing_frame}ns on the drawing thread"
+            ));
+        }
+        if problems.is_empty() {
+            return;
+        }
+        failures.push(format!("attempt {attempt}: {}", problems.join("; ")));
+    }
+    panic!(
+        "the streaming budgets failed on all {ATTEMPTS} attempts:\n{}",
+        failures.join("\n")
     );
 }
 

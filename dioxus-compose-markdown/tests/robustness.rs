@@ -230,16 +230,31 @@ const MIN_RUN: Duration = Duration::from_millis(20);
 /// it. The test compares three sizes, n, 2n and 4n, with 4n at most this large.
 const MAX_LARGEST: usize = 320_000;
 
-/// Runs the parse once to warm up, then records `SAMPLES` timed runs.
-fn samples(text: &str) -> Vec<Duration> {
-    std::hint::black_box(parse(text, DEFAULT_MAX_DEPTH));
-    (0..SAMPLES)
-        .map(|_| {
+/// How many times the whole comparison may be measured before the test fails.
+///
+/// Load on the machine only ever adds time, and a spike that lands on the large inputs and
+/// not the small one inflates the ratio with no change in the parser: a saturated CI runner
+/// once measured 2.55 per doubling for a parser that measures about 2 when idle. A parser
+/// that is really quadratic measures about 4 on every attempt, so passing on any one attempt
+/// still catches it, while one lucky quiet attempt is enough for a linear parser.
+const ATTEMPTS: usize = 3;
+
+/// Warms each text up once, then records `SAMPLES` timed runs of every text, taking them in
+/// turn (small, middle, large, small, ...) so a burst of load falls on all sizes alike
+/// rather than on whichever size happened to be measured at the time.
+fn interleaved_samples(texts: &[&str]) -> Vec<Vec<Duration>> {
+    for text in texts {
+        std::hint::black_box(parse(text, DEFAULT_MAX_DEPTH));
+    }
+    let mut samples = vec![Vec::with_capacity(SAMPLES); texts.len()];
+    for _ in 0..SAMPLES {
+        for (text, recorded) in texts.iter().zip(&mut samples) {
             let started = Instant::now();
             std::hint::black_box(parse(text, DEFAULT_MAX_DEPTH));
-            started.elapsed()
-        })
-        .collect()
+            recorded.push(started.elapsed());
+        }
+    }
+    samples
 }
 
 fn minimum(samples: &[Duration]) -> Duration {
@@ -251,30 +266,53 @@ fn minimum(samples: &[Duration]) -> Duration {
 /// doubling against the limit by its geometric mean, sqrt(t4n / tn). A linear parser gives
 /// about 2 per doubling and a quadratic one about 4, so the quadratic case fails clearly.
 /// The small input is grown until one run takes long enough to measure, within the cap.
+/// Each size's time is the minimum of several interleaved runs, and the comparison is
+/// repeated up to `ATTEMPTS` times, passing if any attempt is within the limit (see
+/// `ATTEMPTS` for why).
 #[test]
 fn fr37_pathological_nesting_costs_linear_time() {
     for unit in [">", "[", "- ", "*", "`", "<"] {
         let mut count = 20_000;
-        let mut small_samples = samples(&format!("{}x\n", unit.repeat(count)));
-        while minimum(&small_samples) < MIN_RUN && count * 4 * 2 <= MAX_LARGEST {
+        while count * 4 * 2 <= MAX_LARGEST {
+            let small = format!("{}x\n", unit.repeat(count));
+            if minimum(&interleaved_samples(&[&small])[0]) >= MIN_RUN {
+                break;
+            }
             count *= 2;
-            small_samples = samples(&format!("{}x\n", unit.repeat(count)));
         }
-        let middle_samples = samples(&format!("{}x\n", unit.repeat(count * 2)));
-        let large_samples = samples(&format!("{}x\n", unit.repeat(count * 4)));
-        let small = minimum(&small_samples).as_secs_f64().max(1e-9);
-        let middle = minimum(&middle_samples).as_secs_f64();
-        let large = minimum(&large_samples).as_secs_f64();
-        let per_doubling = (large / small).sqrt();
+        let texts = [
+            format!("{}x\n", unit.repeat(count)),
+            format!("{}x\n", unit.repeat(count * 2)),
+            format!("{}x\n", unit.repeat(count * 4)),
+        ];
+        let texts: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let mut failures = Vec::new();
+        for attempt in 1..=ATTEMPTS {
+            let samples = interleaved_samples(&texts);
+            let small = minimum(&samples[0]).as_secs_f64().max(1e-9);
+            let middle = minimum(&samples[1]).as_secs_f64();
+            let large = minimum(&samples[2]).as_secs_f64();
+            let per_doubling = (large / small).sqrt();
+            if per_doubling <= 2.5 {
+                failures.clear();
+                break;
+            }
+            failures.push(format!(
+                "attempt {attempt}: {per_doubling:.2} per doubling (minimums {small:.6}s, \
+                 {middle:.6}s, {large:.6}s)\n  {count}: {:?}\n  {}: {:?}\n  {}: {:?}",
+                samples[0],
+                count * 2,
+                samples[1],
+                count * 4,
+                samples[2]
+            ));
+        }
         assert!(
-            per_doubling <= 2.5,
-            "{unit:?}: doubling the input from {count} to {} repetitions took {per_doubling:.2} \
-             times as long per doubling (minimums {small:.6}s, {middle:.6}s, {large:.6}s).\n\
-             {count} repetitions: {small_samples:?}\n{} repetitions: {middle_samples:?}\n\
-             {} repetitions: {large_samples:?}",
+            failures.is_empty(),
+            "{unit:?}: doubling the input from {count} to {} repetitions took more than 2.5 \
+             times as long per doubling on all {ATTEMPTS} attempts:\n{}",
             count * 2,
-            count * 2,
-            count * 4
+            failures.join("\n")
         );
     }
 }
