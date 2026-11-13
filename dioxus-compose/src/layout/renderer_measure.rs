@@ -21,8 +21,10 @@ use std::collections::HashMap;
 
 use compose_rust::fonts::{FontRef, FontRefs};
 use compose_rust::measure::{
-    MeasureRequests, MeasureResult, MeasureStatus, TextConstraint, TextStyle as WireStyle, measurer,
+    MEASURE_UNAVAILABLE, MeasureError, MeasureRequests, MeasureResult, MeasureStatus,
+    TextConstraint, TextStyle as WireStyle, measurer,
 };
+use compose_rust::protocol::ProtocolError;
 use compose_rust::schema::{GenericFamily, TypeRole};
 use compose_rust::schema::{OverflowWrap as WireOverflowWrap, WordBreak as WireWordBreak};
 use compose_rust::spans::{TextSpan, TextSpans};
@@ -302,6 +304,10 @@ impl TextMeasurer for RendererMeasurer {
         self.clear();
     }
 
+    fn unsettled(&self) -> bool {
+        !self.asked.is_empty()
+    }
+
     fn set_zoom(&mut self, zoom: f32) {
         let zoom = if zoom.is_finite() && zoom > 0.0 {
             zoom
@@ -338,11 +344,16 @@ impl TextMeasurer for RendererMeasurer {
                 constraint,
             );
         }
-        if asker
-            .measure(&mut self.requests, &mut self.results)
-            .is_err()
-        {
-            return false;
+        match asker.measure(&mut self.requests, &mut self.results) {
+            Ok(()) => {}
+            // The renderer has not composed its first frame, so it has nothing to measure
+            // with yet. The questions are kept: the layout that used the stand-in answers
+            // is laid out again, and asks again, until the renderer can answer them.
+            Err(MeasureError::Refused(ProtocolError::MeasureRefused(MEASURE_UNAVAILABLE))) => {
+                self.asked = questions;
+                return false;
+            }
+            Err(_) => return false,
         }
         self.calls += 1;
         if self.answers.len() + questions.len() > CACHE_LIMIT {
