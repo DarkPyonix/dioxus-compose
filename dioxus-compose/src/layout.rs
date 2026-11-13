@@ -39,6 +39,7 @@
 
 pub(crate) mod background;
 pub(crate) mod convert;
+mod flex_intrinsic;
 pub(crate) mod image;
 pub(crate) mod inline_spans;
 pub(crate) mod list;
@@ -57,10 +58,10 @@ use style::values::computed::{
 };
 use style::values::specified::box_::DisplayOutside;
 use taffy::{
-    AvailableSpace, BoxSizing, Cache, CacheTree, Dimension, Display, FlexDirection, Layout,
-    LayoutBlockContainer, LayoutFlexboxContainer, LayoutGridContainer, LayoutInput, LayoutOutput,
-    LayoutPartialTree, Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis, ResolveOrZero,
-    RoundTree, RunMode, Size, SizingMode, Style, TraversePartialTree, TraverseTree,
+    AvailableSpace, BoxSizing, Cache, CacheTree, Dimension, Display, FlexDirection, FlexWrap,
+    Layout, LayoutBlockContainer, LayoutFlexboxContainer, LayoutGridContainer, LayoutInput,
+    LayoutOutput, LayoutPartialTree, Line, MaybeResolve, NodeId, Point, Rect, RequestedAxis,
+    ResolveOrZero, RoundTree, RunMode, Size, SizingMode, Style, TraversePartialTree, TraverseTree,
     compute_block_layout, compute_cached_layout, compute_flexbox_layout, compute_grid_layout,
     compute_leaf_layout, compute_root_layout, round_layout,
 };
@@ -84,6 +85,22 @@ pub(crate) const SELECT_INDICATOR_WIDTH: f32 = 24.0;
 pub(crate) fn is_fixed(node: &Node) -> bool {
     node.primary_styles()
         .is_some_and(|style| style.clone_position() == Position::Fixed)
+}
+
+/// Whether `id` is a replaced element or a form control, whose `auto` width is its own
+/// size (from its attributes, its image or the widget it stands for) rather than the
+/// width of anything it contains.
+fn is_replaced(doc: &BaseDocument, id: usize) -> bool {
+    let Some(node) = doc.get_node(id) else {
+        return false;
+    };
+    let Some(element) = node.element_data() else {
+        return false;
+    };
+    matches!(
+        &*element.name.local,
+        "img" | "input" | "textarea" | "select" | "canvas" | "svg" | "video" | "iframe"
+    ) || widget_token(node).is_some()
 }
 
 /// Whether `node` is a `<button>` whose content is centred top to bottom in its content
@@ -1709,6 +1726,129 @@ impl MeasuredTree<'_> {
         }
     }
 
+    /// Puts the main-axis `gap` back between the items of a flex line whose free space went
+    /// to `auto` margins.
+    ///
+    /// Taffy 0.9 subtracts the gaps from a line's free space and hands the rest to the auto
+    /// margins, but then places the items one after another with no gap between them, so a
+    /// row such as an icon, a label and a shortcut pushed to the end by `margin-left: auto`
+    /// draws its icon and label touching. Chromium keeps the gaps: the line fills the
+    /// container either way, so the only thing missing is each item's share of the gaps
+    /// before it, and that is what moves here. Lines without auto margins, or with no room
+    /// for them to take, Taffy places correctly and are left alone.
+    fn restore_gaps_beside_auto_margins(
+        &mut self,
+        node_id: NodeId,
+        inputs: LayoutInput,
+        output: &LayoutOutput,
+    ) {
+        let style = &self.node(node_id).style;
+        let row = matches!(
+            style.flex_direction,
+            FlexDirection::Row | FlexDirection::RowReverse
+        );
+        let reverse = matches!(
+            style.flex_direction,
+            FlexDirection::RowReverse | FlexDirection::ColumnReverse
+        );
+        let wraps = style.flex_wrap != FlexWrap::NoWrap;
+        let width = inputs.parent_size.width;
+        let padding = style.padding.resolve_or_zero(width, resolve_calc_value);
+        let border = style.border.resolve_or_zero(width, resolve_calc_value);
+        let inner = Size {
+            width: output.size.width - padding.left - padding.right - border.left - border.right,
+            height: output.size.height - padding.top - padding.bottom - border.top - border.bottom,
+        };
+        let gap = style
+            .gap
+            .resolve_or_zero(inner.map(Some), resolve_calc_value);
+        let gap = if row { gap.width } else { gap.height };
+        if gap <= 0.0 {
+            return;
+        }
+
+        // The flex items, in document order, with where each one starts and ends on the
+        // main axis.
+        let items: Vec<(usize, f32, f32)> = self
+            .child_ids(node_id)
+            .map(usize::from)
+            .filter_map(|child| {
+                let node = self.doc.get_node(child)?;
+                if node.style.display == Display::None
+                    || node.style.position == taffy::Position::Absolute
+                {
+                    return None;
+                }
+                let layout = &node.unrounded_layout;
+                let (start, size) = if row {
+                    (layout.location.x, layout.size.width)
+                } else {
+                    (layout.location.y, layout.size.height)
+                };
+                Some((child, start, start + size))
+            })
+            .collect();
+
+        // A wrapping container's lines: each line starts again at the main-axis start, so
+        // an item that does not follow the one before it (in placement order, which is the
+        // reverse of document order for a reversed direction) begins a new line.
+        let mut lines: Vec<&[(usize, f32, f32)]> = Vec::new();
+        let mut first = 0;
+        for index in 1..items.len() {
+            let (_, previous_start, previous_end) = items[index - 1];
+            let (_, start, end) = items[index];
+            let breaks = if reverse {
+                end > previous_start + 0.01
+            } else {
+                start < previous_end - 0.01
+            };
+            if wraps && breaks {
+                lines.push(&items[first..index]);
+                first = index;
+            }
+        }
+        if first < items.len() {
+            lines.push(&items[first..]);
+        }
+
+        for line in lines {
+            // Taffy gives the free space to the auto margins only when there is some; with
+            // none they are zero and the items are placed with their gaps.
+            let takes_free_space = line.iter().any(|&(child, _, _)| {
+                self.doc.get_node(child).is_some_and(|node| {
+                    let (style, used) = (&node.style.margin, &node.unrounded_layout.margin);
+                    let sides = if row {
+                        [(style.left, used.left), (style.right, used.right)]
+                    } else {
+                        [(style.top, used.top), (style.bottom, used.bottom)]
+                    };
+                    sides
+                        .iter()
+                        .any(|&(margin, used)| margin.is_auto() && used > 0.0)
+                })
+            });
+            if !takes_free_space {
+                continue;
+            }
+            let count = line.len();
+            for (index, &(child, _, _)) in line.iter().enumerate() {
+                let placed = if reverse { count - 1 - index } else { index };
+                let shift = placed as f32 * gap;
+                if shift == 0.0 {
+                    continue;
+                }
+                if let Some(node) = self.doc.get_node_mut(child) {
+                    let location = &mut node.unrounded_layout.location;
+                    if row {
+                        location.x += shift;
+                    } else {
+                        location.y += shift;
+                    }
+                }
+            }
+        }
+    }
+
     /// Writes the intrinsic width keywords of `parent`'s children into their Taffy styles.
     ///
     /// stylo_taffy reads `width`, `min-width` and `max-width` of `min-content`,
@@ -1751,9 +1891,38 @@ impl MeasuredTree<'_> {
             height: inner_height,
         };
 
+        // The padding box of `parent`, which Taffy places its absolutely positioned
+        // children in.
+        let padding_box_width = inputs
+            .known_dimensions
+            .width
+            .or(match inputs.available_space.width {
+                AvailableSpace::Definite(width) => Some(width),
+                AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
+            })
+            .map(|width| (width - border.left - border.right).max(0.0));
+        let viewport = self.doc.viewport();
+        let viewport_width = viewport.window_size.0 as f32 / viewport.scale();
+
         for index in 0..child_count {
             let child_id = self.get_child_id(parent, index);
-            let Some(keywords) = intrinsic_widths(&*self.doc, usize::from(child_id), inner_width)
+            let child = self.node(child_id);
+            // An absolutely positioned box is sized against its containing block, not the
+            // parent's content box: the parent's padding box, or the viewport for a fixed
+            // box.
+            let out_of_flow = (child.style.position == taffy::Position::Absolute).then(|| {
+                if is_fixed(child) {
+                    Some(viewport_width)
+                } else {
+                    padding_box_width
+                }
+            });
+            let containing_width = match out_of_flow {
+                Some(area) => area,
+                None => inner_width,
+            };
+            let Some(keywords) =
+                intrinsic_widths(&*self.doc, usize::from(child_id), containing_width)
             else {
                 continue;
             };
@@ -1761,6 +1930,15 @@ impl MeasuredTree<'_> {
                 continue;
             }
 
+            // A box whose only keyword is the shrink-to-fit width of an absolutely
+            // positioned box keeps its cache. Taffy asks such a box for its size only with
+            // a known width, so the min- and max-content sizes measured here are cached
+            // under keys nothing else writes, and the next pass reuses them instead of
+            // measuring every positioned box's text again. A box with a written `width`,
+            // `min-width` or `max-width` keyword is measured afresh, because an in-flow
+            // box is asked for its content sizes under those same keys.
+            let keep_cache =
+                keywords.shrink_to_fit && keywords.min.is_none() && keywords.max.is_none();
             // Forget what an earlier pass wrote, and any size cached under it, so the
             // measurement is of the contents alone.
             {
@@ -1775,7 +1953,9 @@ impl MeasuredTree<'_> {
                     style.max_size.width = Dimension::auto();
                 }
             }
-            self.node_mut(child_id).cache.clear();
+            if !keep_cache {
+                self.node_mut(child_id).cache.clear();
+            }
 
             let needs_min = [keywords.width, keywords.min, keywords.max]
                 .into_iter()
@@ -1789,16 +1969,36 @@ impl MeasuredTree<'_> {
             let max_content = self.content_width(child_id, inner, AvailableSpace::MaxContent);
             // The measurement above asked for the contents' size; the next request for this
             // child is for its own, which the cache must not answer with this one.
-            self.node_mut(child_id).cache.clear();
+            if !keep_cache {
+                self.node_mut(child_id).cache.clear();
+            }
 
             let style = &self.node(child_id).style;
             let margin = style
                 .margin
-                .resolve_or_zero(inner_width, resolve_calc_value);
+                .resolve_or_zero(containing_width, resolve_calc_value);
             // The room a `fit-content` box may stretch into: the containing block less the
-            // box's own margins. Under a min- or max-content constraint there is no such
-            // room, and fit-content is the size that constraint asks for.
-            let stretch = inner_width.map(|width| (width - margin.left - margin.right).max(0.0));
+            // box's own margins, and for an absolutely positioned box less its `left` and
+            // `right` too. Under a min- or max-content constraint there is no such room, and
+            // fit-content is the size that constraint asks for.
+            let stretch = containing_width.map(|width| {
+                let insets = match out_of_flow {
+                    Some(_) => {
+                        style
+                            .inset
+                            .left
+                            .resolve_to_option(width, resolve_calc_value)
+                            .unwrap_or(0.0)
+                            + style
+                                .inset
+                                .right
+                                .resolve_to_option(width, resolve_calc_value)
+                                .unwrap_or(0.0)
+                    }
+                    None => 0.0,
+                };
+                (width - margin.left - margin.right - insets).max(0.0)
+            });
             let fit = |limit: Option<f32>| match limit.or(stretch) {
                 Some(room) => max_content.min(room.max(min_content)),
                 None => match inputs.available_space.width {
@@ -1818,10 +2018,10 @@ impl MeasuredTree<'_> {
                 BoxSizing::ContentBox => {
                     let padding = style
                         .padding
-                        .resolve_or_zero(inner_width, resolve_calc_value);
+                        .resolve_or_zero(containing_width, resolve_calc_value);
                     let border = style
                         .border
-                        .resolve_or_zero(inner_width, resolve_calc_value);
+                        .resolve_or_zero(containing_width, resolve_calc_value);
                     padding.left + padding.right + border.left + border.right
                 }
             };
@@ -1887,6 +2087,8 @@ enum IntrinsicWidth {
 /// The intrinsic keywords one box uses for its width.
 #[derive(Clone, Copy, Debug)]
 struct IntrinsicWidths {
+    /// The width is `auto` on an absolutely positioned box, read as `fit-content`.
+    shrink_to_fit: bool,
     width: Option<IntrinsicWidth>,
     min: Option<IntrinsicWidth>,
     max: Option<IntrinsicWidth>,
@@ -1929,8 +2131,22 @@ fn intrinsic_widths(
         }
         _ => None,
     };
+    // An absolutely positioned box whose `width` is `auto` and whose `left` or `right`
+    // is too is shrink-to-fit: `fit-content` against the room its insets leave. A
+    // replaced element's auto width is its own size, which Taffy already gives it.
+    let shrink_to_fit = matches!(
+        style.get_box().position,
+        Position::Absolute | Position::Fixed
+    ) && matches!(position.width, StyloSize::Auto)
+        && (position.left.is_auto() || position.right.is_auto())
+        && !is_replaced(doc, id);
     let widths = IntrinsicWidths {
-        width: size(&position.width),
+        shrink_to_fit,
+        width: if shrink_to_fit {
+            Some(IntrinsicWidth::FitContent(None))
+        } else {
+            size(&position.width)
+        },
         min: size(&position.min_width),
         max: max_size(&position.max_width),
     };
@@ -2495,7 +2711,16 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                     if column && inputs.available_space.height == AvailableSpace::MinContent {
                         inputs.available_space.height = AvailableSpace::MaxContent;
                     }
-                    compute_flexbox_layout(tree, node_id, inputs)
+                    // Taffy loses some items' contributions when it sums a row's
+                    // content width; that sum is made here instead.
+                    if let Some(width) = tree.row_flex_intrinsic_width(node_id, inputs) {
+                        inputs.known_dimensions.width = Some(width);
+                    }
+                    let output = compute_flexbox_layout(tree, node_id, inputs);
+                    if inputs.run_mode == RunMode::PerformLayout {
+                        tree.restore_gaps_beside_auto_margins(node_id, inputs, &output);
+                    }
+                    output
                 }
                 Route::Grid => {
                     tree.resolve_intrinsic_widths(node_id, inputs);
