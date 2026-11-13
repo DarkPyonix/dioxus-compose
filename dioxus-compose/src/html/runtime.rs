@@ -51,7 +51,7 @@ use dioxus_html::{Code, Key, Modifiers};
 
 use crate::dom::{HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerType, WheelMode};
 use crate::html::scroll::{Report, ScrollSync};
-use crate::html::{ColorScheme, NodeId, PlanKey};
+use crate::html::{ColorScheme, NodeId, PlanKey, Rect};
 use crate::paint::animate;
 use crate::paint::bridge::{BridgeEvent, HostMomentKind, PlanBridge};
 use crate::paint::plan::LiteralColours;
@@ -81,6 +81,27 @@ pub(crate) fn css_extent(dp: f32) -> f32 {
     } else {
         dp
     }
+}
+
+/// The part of the window's title band beside its buttons, in CSS pixels, which
+/// `env(titlebar-area-*)` reads: from the window's leading edge past the buttons there to
+/// the buttons at its trailing edge, and the band's height from the window's top. `None`
+/// for a window with no band, where each `env()` takes its fallback as in a browser that
+/// draws no title bar overlay.
+pub(crate) fn titlebar_area(window: WindowSize) -> Option<Rect> {
+    let safe = window.safe_area;
+    if !(safe.top > 0.0 && window.width_dp > 0.0) {
+        return None;
+    }
+    let leading = safe.leading.max(0.0);
+    let trailing = safe.trailing.max(0.0);
+    let width = (window.width_dp - leading - trailing).max(0.0);
+    Some(Rect::new(
+        css_extent(leading),
+        0.0,
+        css_extent(width),
+        css_extent(safe.top),
+    ))
 }
 
 /// One HTML and CSS application, running as the Host's runtime.
@@ -130,6 +151,9 @@ pub struct HtmlRuntime {
     content_size: Option<(f32, f32)>,
     /// The page's scroll requests and what the renderer's scroll reports taught it.
     scroll: ScrollSync,
+    /// Whether `env(titlebar-area-*)` follows the window's reports. It does for a
+    /// whole-screen page whose configuration names no title bar area of its own.
+    titlebar_follows_window: bool,
 }
 
 impl HtmlRuntime {
@@ -147,7 +171,9 @@ impl HtmlRuntime {
         // first frame the renderer draws.
         let token = compose_rust::window::next_node_token();
         bridge.observe_island(token);
+        let follows = config.titlebar_area.is_none();
         let mut runtime = Self::with_bridge(app, config, bridge);
+        runtime.titlebar_follows_window = follows;
         runtime.island_size = Some(compose_rust::window::subscribe_node(
             token,
             std::sync::Arc::new(|| {}),
@@ -199,6 +225,7 @@ impl HtmlRuntime {
             seen_window: WindowSize::default(),
             content_size: None,
             scroll: ScrollSync::default(),
+            titlebar_follows_window: false,
         }
     }
 
@@ -251,6 +278,10 @@ impl HtmlRuntime {
     /// Lays the document out at the window's size and writes what changed on screen.
     fn draw(&mut self) {
         let viewport = self.viewport();
+        if self.titlebar_follows_window {
+            self.dom
+                .set_titlebar_area(titlebar_area(compose_rust::window_size()));
+        }
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         crate::html_widget::render_islands(self.owner, &mut self.batch);
         for place in crate::html_widget::refresh(self.owner, viewport.0) {
