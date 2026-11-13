@@ -530,22 +530,13 @@ fn fr36_notification_records_are_in_the_protocol_vectors() {
         let mut position = 0;
         while position < bytes.len() {
             let event = decode_event(&bytes[position..]).unwrap();
-            let record = usize::from(u16::from_le_bytes([
-                bytes[position + 2],
-                bytes[position + 3],
-            ]));
-            let text = match event.payload {
-                EventPayload::TextChanged(text)
-                | EventPayload::TextSubmitted(text)
-                | EventPayload::FilesDropped(text)
-                | EventPayload::ProtocolError { message: text, .. }
-                | EventPayload::NotificationActivated { key: text, .. }
-                | EventPayload::CodeChanged { text, .. }
-                | EventPayload::WindowRequested { key: text, .. } => text.len(),
-                _ => 0,
-            };
+            // A record's header gives only its fixed part; a string or a blob some events
+            // carry follows it. Writing the event again gives the whole length, whatever
+            // the event, so a payload added to the protocol later is stepped over too.
+            let mut record = Vec::new();
+            encode_event(&event, &mut record).unwrap();
             kinds.push(std::mem::discriminant(&event.payload));
-            position += record + text;
+            position += record.len();
         }
         assert!(kinds.contains(&std::mem::discriminant(
             &EventPayload::NotificationActivated { action: 0, key: "" }

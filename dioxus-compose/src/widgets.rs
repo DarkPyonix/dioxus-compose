@@ -9,11 +9,121 @@ use crate as dioxus_elements;
 use crate::hooks::use_node_size;
 use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
-    Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, Cursor, IconRole, MaterialRole,
-    MotionRole, OverflowWrap, Paint, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow,
-    TypeRole, UserSelect, WordBreak,
+    Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, CompactNavigation, Cursor,
+    HorizontalAlignment, IconRole, MaterialRole, MotionRole, OverflowWrap, Paint, PopoverAlign,
+    PopoverPlacement, SemanticsRole, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow,
+    TypeRole, UserSelect, VerticalAlignment, WordBreak,
 };
+use compose_rust::ui::SemanticsState;
 use compose_rust::{FileDrop, KeyEvent, PointerEvent, PointerKinds, RangeRequest};
+
+/// What a node is to assistive technology: the role it plays and the state a screen reader
+/// announces for it, such as checked, selected or expanded.
+///
+/// A role left out keeps the one the widget already has, and every state field left unset
+/// says nothing, so `Semantics::default()` changes nothing at all. The name that is read is
+/// a separate attribute, `accessible_name`, because a string does not fit in a modifier.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Semantics {
+    pub role: Option<SemanticsRole>,
+    pub state: SemanticsState,
+}
+
+impl Semantics {
+    /// A node that plays `role` and says nothing about its state.
+    pub const fn new(role: SemanticsRole) -> Self {
+        Self {
+            role: Some(role),
+            state: SemanticsState {
+                checked: None,
+                selected: None,
+                expanded: None,
+                disabled: None,
+                focused: None,
+                hidden: false,
+                click_action: false,
+                focus_action: false,
+            },
+        }
+    }
+
+    /// The same role, with this state.
+    pub const fn with_state(mut self, state: SemanticsState) -> Self {
+        self.state = state;
+        self
+    }
+
+    /// The state word the `Semantics` modifier carries: each tri-state field two bits wide,
+    /// 0 for unset, 1 for off and 2 for on, and the flags above them.
+    pub fn state_bits(&self) -> u32 {
+        use compose_rust::schema::{
+            SEMANTICS_CHECKED_SHIFT, SEMANTICS_CLICK_ACTION_BIT, SEMANTICS_DISABLED_SHIFT,
+            SEMANTICS_EXPANDED_SHIFT, SEMANTICS_FOCUS_ACTION_BIT, SEMANTICS_FOCUSED_SHIFT,
+            SEMANTICS_HIDDEN_BIT, SEMANTICS_SELECTED_SHIFT,
+        };
+        let tri = |value: Option<bool>| value.map_or(0_u32, |on| if on { 2 } else { 1 });
+        let flag = |on: bool, bit: u32| if on { bit } else { 0 };
+        let state = self.state;
+        (tri(state.checked) << SEMANTICS_CHECKED_SHIFT)
+            | (tri(state.selected) << SEMANTICS_SELECTED_SHIFT)
+            | (tri(state.expanded) << SEMANTICS_EXPANDED_SHIFT)
+            | (tri(state.disabled) << SEMANTICS_DISABLED_SHIFT)
+            | (tri(state.focused) << SEMANTICS_FOCUSED_SHIFT)
+            | flag(state.hidden, SEMANTICS_HIDDEN_BIT)
+            | flag(state.click_action, SEMANTICS_CLICK_ACTION_BIT)
+            | flag(state.focus_action, SEMANTICS_FOCUS_ACTION_BIT)
+    }
+
+    /// The modifier this travels as.
+    pub fn to_modifier(&self) -> compose_rust::Modifier {
+        compose_rust::Modifier::Semantics {
+            role: self.role.unwrap_or(SemanticsRole::None),
+            state: self.state_bits(),
+        }
+    }
+
+    /// The value of the `semantics` attribute.
+    pub(crate) fn attribute(self) -> AttributeValue {
+        AttributeValue::any_value(self.to_modifier())
+    }
+}
+
+/// Where a scroll container is, as the Renderer reports it to `on_scroll_changed`: at most
+/// once a frame while it moves, and once more with `settled` when it comes to rest.
+///
+/// Every length is in physical pixels, the unit the Renderer scrolls in, so a value read
+/// here and asked for again names the same place. In a lazy list `item` is the first
+/// visible item and the main-axis offset is the distance into it; such a list does not know
+/// its whole length, so its main-axis maximum is `-1.0`. Anywhere else `item` is 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollChange {
+    pub item: u32,
+    /// The movement ended: a drag, a fling or an animation came to rest.
+    pub settled: bool,
+    /// The container can still scroll towards the start of its main axis.
+    pub can_scroll_backward: bool,
+    /// The container can still scroll towards the end of its main axis.
+    pub can_scroll_forward: bool,
+    pub x_px: f64,
+    pub y_px: f64,
+    pub max_x_px: f64,
+    pub max_y_px: f64,
+    pub viewport_width_px: f64,
+    pub viewport_height_px: f64,
+}
+
+/// A handler that is announced to the Renderer only when there is one, so a widget whose
+/// screen did not ask for the event costs no record and is never sent it.
+fn optional_listener<T: 'static, U: 'static>(
+    handler: Option<EventHandler<U>>,
+    convert: impl Fn(&T) -> U + 'static,
+) -> Option<dioxus_core::ListenerCallback<T>> {
+    handler.map(|handler| {
+        dioxus_core::ListenerCallback::new(move |event: dioxus_core::Event<T>| {
+            handler.call(convert(&event.data()))
+        })
+    })
+}
 
 /// One layer of a container's shadow, as CSS `box-shadow` gives one: an offset, a blur
 /// radius and a spread in dp, and a paint whose alpha is the shadow's opacity.
@@ -127,6 +237,21 @@ pub fn AbsoluteBox(
     /// as in CSS, when it is not given.
     #[props(default)]
     transform_origin: Option<(f32, f32)>,
+    /// CSS `matrix3d(...)`: sixteen values in column-major order, translations in dp, with
+    /// any perspective already folded in, and whether the box is hidden while its back is
+    /// turned to the viewer (`backface-visibility: hidden`). It turns about
+    /// `transform_origin` and takes the place of `transform`.
+    #[props(default)]
+    transform_3d: Option<([f32; 16], bool)>,
+    /// How the rounded corners curve, from 0 (a circular arc) to 1 (the smoothest curve).
+    #[props(default)]
+    corner_curve: Option<f32>,
+    /// What the box is to assistive technology.
+    #[props(default)]
+    semantics: Option<Semantics>,
+    /// The name assistive technology reads for the box.
+    #[props(into, default)]
+    accessible_name: Option<String>,
     /// Compose's `graphicsLayer`: a rotation, a scale, a translation and an opacity, drawn
     /// as a `Transform` and an `Alpha`. It takes the place of `transform` and `alpha`.
     #[props(default)]
@@ -184,7 +309,15 @@ pub fn AbsoluteBox(
     } else {
         opt_dp(graphics_layer.map(|layer| layer.alpha).or(alpha))
     };
-    let transform = if animated_offset.is_some() {
+    let transform_3d = transform_3d.map(|(m, backface_hidden)| {
+        AttributeValue::any_value(Modifier::Transform3D {
+            m,
+            origin_x,
+            origin_y,
+            backface_hidden,
+        })
+    });
+    let transform = if animated_offset.is_some() || transform_3d.is_some() {
         None
     } else if let Some(layer) = graphics_layer {
         Some(AttributeValue::any_value(layer.transform()))
@@ -228,6 +361,10 @@ pub fn AbsoluteBox(
             clip: clip.then_some(true),
             alpha,
             transform,
+            transform_3d,
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             animated_alpha: animated_alpha.map(AttributeValue::any_value),
             animated_background: animated_background.map(AttributeValue::any_value),
             animated_offset: animated_offset.map(AttributeValue::any_value),
@@ -261,6 +398,9 @@ pub fn Column(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -331,6 +471,9 @@ pub fn Column(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -371,6 +514,9 @@ pub fn Row(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -441,6 +587,9 @@ pub fn Row(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -451,6 +600,76 @@ pub fn Row(
             spacing: dp(spacing),
             space_role: role(space_role),
             alignment: role(alignment),
+            {children}
+        }
+    }
+}
+
+/// A row that wraps, Compose's `FlowRow`. Each child is measured at its own width and
+/// placed after the one before it; a child that does not fit in what is left of the line
+/// starts the next one, and a child wider than the whole line has the line to itself.
+///
+/// Every property is left to the Renderer's default when it is not given: no gaps, lines
+/// that start at the start, children at the top of their line, and no limit on how many
+/// share one.
+#[component]
+pub fn FlowRow(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// The gap between two children on the same line, in dp.
+    #[props(default)]
+    horizontal_spacing: Option<f32>,
+    /// The gap between two lines, in dp.
+    #[props(default)]
+    vertical_spacing: Option<f32>,
+    /// Where the children of a line sit along it when they do not fill it.
+    #[props(default)]
+    horizontal_alignment: Option<HorizontalAlignment>,
+    /// Where a child sits inside the height of its line.
+    #[props(default)]
+    vertical_alignment: Option<VerticalAlignment>,
+    /// The most children one line holds, even when more would fit.
+    #[props(default)]
+    max_items_in_each_row: Option<u32>,
+    children: Element,
+) -> Element {
+    rsx! {
+        flowrow {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            horizontal_spacing: opt_dp(horizontal_spacing),
+            vertical_spacing: opt_dp(vertical_spacing),
+            horizontal_alignment: opt_role(horizontal_alignment),
+            vertical_alignment: opt_role(vertical_alignment),
+            max_items_in_each_row: max_items_in_each_row.map(i64::from),
             {children}
         }
     }
@@ -481,6 +700,9 @@ pub fn ComposeBox(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -548,6 +770,9 @@ pub fn ComposeBox(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -564,6 +789,10 @@ pub fn ComposeBox(
 /// Renderer's, like focus and animation state, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollColumn(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] match_parent_size: bool,
     #[props(default)] window_drag: Option<bool>,
     #[props(default)] press_feedback: Option<(f32, f32)>,
@@ -575,6 +804,9 @@ pub fn ScrollColumn(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -599,6 +831,7 @@ pub fn ScrollColumn(
 ) -> Element {
     rsx! {
         scrollcolumn {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -614,6 +847,9 @@ pub fn ScrollColumn(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -629,6 +865,10 @@ pub fn ScrollColumn(
 /// scroll position is the Renderer's, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollRow(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] match_parent_size: bool,
     #[props(default)] window_drag: Option<bool>,
     #[props(default)] press_feedback: Option<(f32, f32)>,
@@ -640,6 +880,9 @@ pub fn ScrollRow(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -664,6 +907,7 @@ pub fn ScrollRow(
 ) -> Element {
     rsx! {
         scrollrow {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -679,6 +923,9 @@ pub fn ScrollRow(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -705,6 +952,9 @@ pub fn Text(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -801,6 +1051,9 @@ pub fn Text(
                     background: opt_paint(background),
                     shape_role: opt_role(shape_role),
                     corner_radius: opt_dp(corner_radius),
+                    corner_curve: opt_dp(corner_curve),
+                    semantics: semantics.map(Semantics::attribute),
+                    accessible_name,
                     border_width: opt_dp(border_width),
                     border_color: opt_paint(border_color),
                     elevation: opt_dp(elevation),
@@ -850,6 +1103,9 @@ pub fn TextField(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -870,6 +1126,19 @@ pub fn TextField(
     #[props(default)] on_submit: EventHandler<String>,
     #[props(default)] on_focus_lost: EventHandler<()>,
     #[props(default)] on_key_down: EventHandler<KeyEvent>,
+    /// Drawn without the design system's frame: no fill, line, underline, corner clip,
+    /// inner padding, minimum height or focus line. A `background` or a border given here
+    /// is still drawn.
+    #[props(default)]
+    bare: bool,
+    /// Called when the field gains the keyboard focus. Left out, the Renderer is not asked
+    /// to report it.
+    #[props(default)]
+    on_focus_gained: Option<EventHandler<()>>,
+    /// Called when a key is let go in the field, with the same event a key going down
+    /// brings. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_key_up: Option<EventHandler<KeyEvent>>,
 ) -> Element {
     rsx! {
         textfield {
@@ -881,6 +1150,9 @@ pub fn TextField(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -895,6 +1167,9 @@ pub fn TextField(
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),
             onkeydown: move |event| on_key_down.call((*event.data()).clone()),
+            bare: bare.then_some(true),
+            onfocusgained: optional_listener(on_focus_gained, |_: &()| ()),
+            onkeyup: optional_listener(on_key_up, KeyEvent::clone),
         }
     }
 }
@@ -914,6 +1189,9 @@ pub fn Button(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -962,6 +1240,9 @@ pub fn Button(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1005,6 +1286,9 @@ pub fn Spacer(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1040,6 +1324,9 @@ pub fn Spacer(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1059,6 +1346,10 @@ pub fn Spacer(
 /// scrolling back re-materialises an identical subtree.
 #[component]
 pub fn LazyColumn(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1067,6 +1358,9 @@ pub fn LazyColumn(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1082,6 +1376,7 @@ pub fn LazyColumn(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazycolumn {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1090,6 +1385,9 @@ pub fn LazyColumn(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1139,6 +1437,9 @@ pub fn Card(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1205,6 +1506,9 @@ pub fn Card(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1243,6 +1547,9 @@ pub fn Surface(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1305,6 +1612,9 @@ pub fn Surface(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1321,6 +1631,9 @@ pub fn Surface(
 /// close it, and the Host decides whether to honour that by setting `open` to false.
 #[component]
 pub fn Dialog(
+    /// The colour that dims the window behind it. Left out, the design system's.
+    #[props(default)]
+    scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1329,6 +1642,9 @@ pub fn Dialog(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1340,6 +1656,7 @@ pub fn Dialog(
 ) -> Element {
     rsx! {
         dialog {
+            scrim: opt_paint(scrim),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1348,6 +1665,9 @@ pub fn Dialog(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1368,6 +1688,9 @@ pub fn Dialog(
 /// chosen. The Renderer closes the popup itself.
 #[component]
 pub fn Menu(
+    /// The colour that dims the window behind it. Left out, the design system's.
+    #[props(default)]
+    scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1376,6 +1699,9 @@ pub fn Menu(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1388,6 +1714,7 @@ pub fn Menu(
 ) -> Element {
     rsx! {
         menu {
+            scrim: opt_paint(scrim),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1396,12 +1723,103 @@ pub fn Menu(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
             open: expanded,
+            ondismiss: move |_| on_dismiss.call(()),
+            {anchor}
+            {children}
+        }
+    }
+}
+
+/// A floating box of any content attached to `anchor`, Compose's `Popup` with the place
+/// said rather than computed.
+///
+/// The anchor is always drawn and is the first child on the wire; the children are the
+/// content, drawn only while `open` is true. `open` is the application's: pressing outside
+/// the box or pressing Escape calls `on_dismiss` once and changes nothing, so the handler
+/// is where the screen closes it, or keeps it open to ask about unsaved work.
+///
+/// The Renderer places the box. It opens on the side `placement` names, lined up with the
+/// edge `align` names, `offset` dp away, and moves to the opposite side or slides along the
+/// edge when it would otherwise leave the window. The Modifier attributes here belong to
+/// the floating box, not to the anchor.
+#[component]
+pub fn Popover(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    #[props(default)] open: bool,
+    /// The side of the anchor the box opens on. Left out, `Bottom`.
+    #[props(default)]
+    placement: Option<PopoverPlacement>,
+    /// The edge of the anchor the box lines up with. Left out, `Start`.
+    #[props(default)]
+    align: Option<PopoverAlign>,
+    /// The gap between the anchor and the box, in dp. Left out, the design system's.
+    #[props(default)]
+    offset: Option<f32>,
+    /// Whether the window behind the box is dimmed while it is open. It is not, unless
+    /// asked.
+    #[props(default)]
+    scrim: bool,
+    /// Dims the window behind the box with this colour instead of the design system's.
+    #[props(default)]
+    scrim_color: Option<Paint>,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    anchor: Element,
+    children: Element,
+) -> Element {
+    // A colour says both that the window is dimmed and with what; `true` alone leaves the
+    // colour to the design system.
+    let scrim = match (scrim_color, scrim) {
+        (Some(paint), _) => Some(AttributeValue::Int(paint.to_bits() as i64)),
+        (None, true) => Some(AttributeValue::Bool(true)),
+        (None, false) => None,
+    };
+    rsx! {
+        popover {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            open,
+            placement: opt_role(placement),
+            align: opt_role(align),
+            offset_dp: opt_dp(offset),
+            scrim,
             ondismiss: move |_| on_dismiss.call(()),
             {anchor}
             {children}
@@ -1431,6 +1849,9 @@ pub fn Tabs(
     color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1450,6 +1871,9 @@ pub fn Tabs(
             color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1473,6 +1897,9 @@ pub fn TopAppBar(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1500,6 +1927,9 @@ pub fn TopAppBar(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1516,6 +1946,10 @@ pub fn TopAppBar(
 /// read-ahead buffer belongs to the Renderer because the scroll position does.
 #[component]
 pub fn LazyRow(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1524,6 +1958,9 @@ pub fn LazyRow(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1539,6 +1976,7 @@ pub fn LazyRow(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazyrow {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1547,6 +1985,9 @@ pub fn LazyRow(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1581,6 +2022,9 @@ pub fn Tooltip(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1599,6 +2043,9 @@ pub fn Tooltip(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1629,6 +2076,9 @@ pub fn Canvas(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1646,6 +2096,9 @@ pub fn Canvas(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1671,6 +2124,9 @@ pub fn Image(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1688,6 +2144,9 @@ pub fn Image(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1710,6 +2169,9 @@ pub fn Icon(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1728,6 +2190,9 @@ pub fn Icon(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1758,6 +2223,9 @@ pub fn DatePicker(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1780,6 +2248,9 @@ pub fn DatePicker(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1808,6 +2279,9 @@ pub fn TimePicker(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1830,6 +2304,9 @@ pub fn TimePicker(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1852,6 +2329,9 @@ const MINUTES_IN_A_DAY: u32 = 24 * 60;
 /// position the user landed on.
 #[component]
 pub fn Dropdown(
+    /// Drawn without the design system's frame, as a bare `TextField` is.
+    #[props(default)]
+    bare: bool,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1860,6 +2340,9 @@ pub fn Dropdown(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1872,6 +2355,7 @@ pub fn Dropdown(
 ) -> Element {
     rsx! {
         dropdown {
+            bare: bare.then_some(true),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1880,6 +2364,9 @@ pub fn Dropdown(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1903,6 +2390,15 @@ pub fn Dropdown(
 /// system's rule.
 #[component]
 pub fn Checkbox(
+    /// The box when it is checked. Left out, the design system's.
+    #[props(default)]
+    container_color: Option<Paint>,
+    /// The check mark. Left out, the design system's.
+    #[props(default)]
+    check_color: Option<Paint>,
+    /// The length of the box's side in dp. Left out, the design system's.
+    #[props(default)]
+    size: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1911,6 +2407,9 @@ pub fn Checkbox(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1922,6 +2421,9 @@ pub fn Checkbox(
 ) -> Element {
     rsx! {
         checkbox {
+            container_color: opt_paint(container_color),
+            check_color: opt_paint(check_color),
+            control_size: size.map(|side| AttributeValue::any_value((side, side))),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1930,6 +2432,9 @@ pub fn Checkbox(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1958,6 +2463,9 @@ pub fn RadioButton(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1977,6 +2485,9 @@ pub fn RadioButton(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1993,6 +2504,17 @@ pub fn RadioButton(
 /// track, the thumb and the way the change is animated belong to the design system.
 #[component]
 pub fn Switch(
+    /// The track, whichever state the switch is in. The Host owns the state, so it passes
+    /// the colour that goes with it. Left out, the design system's.
+    #[props(default)]
+    track_color: Option<Paint>,
+    /// The thumb that travels along the track. Left out, the design system's.
+    #[props(default)]
+    thumb_color: Option<Paint>,
+    /// The track's width and height in dp; the thumb scales with the height. Left out, the
+    /// design system's.
+    #[props(default)]
+    size: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2001,6 +2523,9 @@ pub fn Switch(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2012,6 +2537,9 @@ pub fn Switch(
 ) -> Element {
     rsx! {
         switch {
+            track_color: opt_paint(track_color),
+            thumb_color: opt_paint(thumb_color),
+            control_size: size.map(AttributeValue::any_value),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2020,6 +2548,9 @@ pub fn Switch(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2040,6 +2571,15 @@ pub fn Switch(
 /// the slider continuous.
 #[component]
 pub fn Slider(
+    /// The part of the track that is not filled. Left out, the design system's.
+    #[props(default)]
+    track_color: Option<Paint>,
+    /// The thumb. Left out, the design system's.
+    #[props(default)]
+    thumb_color: Option<Paint>,
+    /// The part of the track up to the thumb. Left out, the design system's.
+    #[props(default)]
+    active_track_color: Option<Paint>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2055,6 +2595,9 @@ pub fn Slider(
     color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2069,6 +2612,9 @@ pub fn Slider(
 ) -> Element {
     rsx! {
         slider {
+            track_color: opt_paint(track_color),
+            thumb_color: opt_paint(thumb_color),
+            active_track_color: opt_paint(active_track_color),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2078,6 +2624,9 @@ pub fn Slider(
             color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2108,6 +2657,9 @@ pub fn ProgressIndicator(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2127,6 +2679,9 @@ pub fn ProgressIndicator(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2151,6 +2706,9 @@ pub fn Divider(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2168,6 +2726,9 @@ pub fn Divider(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2205,6 +2766,11 @@ fn is_on(value: f64) -> bool {
 /// selection in the Renderer and reports it by firing that destination's own `on_click`.
 #[component]
 pub fn Navigation(
+    /// What the destinations become in a compact window: the put-away sidebar, or nothing
+    /// at all so the screen reaches them its own way. Left out, or `Default`, the design
+    /// system's answer.
+    #[props(default)]
+    compact: Option<CompactNavigation>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2213,6 +2779,9 @@ pub fn Navigation(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2232,6 +2801,9 @@ pub fn Navigation(
 ) -> Element {
     rsx! {
         navigation {
+            compact_navigation: compact
+                .filter(|compact| *compact != CompactNavigation::Default)
+                .map(|compact| i64::from(u16::from(compact))),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2240,6 +2812,9 @@ pub fn Navigation(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2279,6 +2854,9 @@ pub fn NavigationItem(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2314,6 +2892,9 @@ pub fn NavigationItem(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2343,6 +2924,9 @@ pub fn NavigationItem(
 /// a date picker for a wheel.
 #[component]
 pub fn Sheet(
+    /// The colour that dims the window behind it. Left out, the design system's.
+    #[props(default)]
+    scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2351,6 +2935,9 @@ pub fn Sheet(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2362,6 +2949,7 @@ pub fn Sheet(
 ) -> Element {
     rsx! {
         sheet {
+            scrim: opt_paint(scrim),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2370,6 +2958,9 @@ pub fn Sheet(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2475,6 +3066,10 @@ pub fn Scaffold(
 /// decide.
 #[component]
 pub fn LazyGrid(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2483,6 +3078,9 @@ pub fn LazyGrid(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2504,6 +3102,7 @@ pub fn LazyGrid(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazygrid {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2512,6 +3111,9 @@ pub fn LazyGrid(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2554,6 +3156,9 @@ pub fn FileDropTarget(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2580,6 +3185,9 @@ pub fn FileDropTarget(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2700,6 +3308,9 @@ pub fn Badge(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2727,6 +3338,9 @@ pub fn Badge(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2764,6 +3378,9 @@ pub fn SelectionContainer(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2800,6 +3417,9 @@ pub fn SelectionContainer(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2852,6 +3472,9 @@ pub fn SplitPane(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2894,6 +3517,9 @@ pub fn SplitPane(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2942,6 +3568,33 @@ pub fn SplitPane(
 /// rung.
 #[component]
 pub fn CodeEditor(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
+    /// Whether the line numbers are drawn. Left out, they are.
+    #[props(default)]
+    line_numbers: Option<bool>,
+    /// The least width of the line number column with its padding, in dp.
+    #[props(default)]
+    gutter_min_width: Option<f32>,
+    /// The padding on each side of a line number, in dp.
+    #[props(default)]
+    gutter_padding: Option<f32>,
+    /// The space between the gutter and the text, in dp.
+    #[props(default)]
+    text_inset: Option<f32>,
+    /// The colours of the editor's own parts. A part not named keeps the design system's.
+    #[props(default)]
+    colors: compose_rust::code::CodeEditorColors,
+    /// Called with the height of one row in physical pixels when the editor is first drawn
+    /// and whenever it changes. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_code_metrics: Option<EventHandler<f64>>,
+    /// Called with how far the editor is scrolled down, in physical pixels, at most once a
+    /// frame. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_code_scrolled: Option<EventHandler<f64>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2950,6 +3603,9 @@ pub fn CodeEditor(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -3010,6 +3666,14 @@ pub fn CodeEditor(
 ) -> Element {
     rsx! {
         codeeditor {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
+            line_numbers,
+            gutter_min_width_dp: opt_dp(gutter_min_width),
+            gutter_padding_dp: opt_dp(gutter_padding),
+            text_inset_dp: opt_dp(text_inset),
+            code_editor_colors: (!colors.is_empty()).then(|| AttributeValue::any_value(colors)),
+            oncodemetrics: optional_listener(on_code_metrics, |height: &f64| *height),
+            oncodescrolled: optional_listener(on_code_scrolled, |offset: &f64| *offset),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -3018,6 +3682,9 @@ pub fn CodeEditor(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
