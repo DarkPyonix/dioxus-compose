@@ -623,6 +623,7 @@ impl HtmlDom {
                 }
                 (Some((value, _)), None) => value,
                 (None, Some((_, _, _, value))) => *value,
+                (None, None) if self.ua_user_select_none(id) => return UserSelect::None,
                 (None, None) => continue,
             };
             if value != UserSelect::Auto {
@@ -630,6 +631,34 @@ impl HtmlDom {
             }
         }
         UserSelect::Auto
+    }
+
+    /// Whether a browser's user-agent stylesheet gives `node` `user-select: none`: the
+    /// controls whose label is not text to select, a `<button>`, a `<select>` and its
+    /// `<option>`s, and the `<input>` types drawn as a control rather than a text box.
+    /// The page's own `user-select` on the element, `auto` included, takes precedence.
+    fn ua_user_select_none(&self, node: NodeId) -> bool {
+        let Some(element) = self.doc.get_node(node).and_then(|node| node.element_data()) else {
+            return false;
+        };
+        match element.name.local.as_ref() {
+            "button" | "select" | "option" | "optgroup" => true,
+            "input" => element.attr(local("type")).is_some_and(|kind| {
+                matches!(
+                    kind.trim().to_ascii_lowercase().as_str(),
+                    "button"
+                        | "submit"
+                        | "reset"
+                        | "checkbox"
+                        | "radio"
+                        | "color"
+                        | "file"
+                        | "image"
+                        | "range"
+                )
+            }),
+            _ => false,
+        }
     }
 
     /// The `app-region` the page gives `node` itself, from its `style` attribute and the
