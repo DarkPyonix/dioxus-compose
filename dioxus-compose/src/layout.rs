@@ -141,7 +141,11 @@ pub(crate) struct LayoutState {
     pub(crate) initialized: bool,
     pub(crate) texts: MeasuredTexts,
     pub(crate) styles: HashMap<usize, Style<Atom>>,
-    pub(crate) computed_ptrs: HashMap<usize, usize>,
+    /// The computed values each node had at the last pass. They are compared by address,
+    /// so the values themselves are kept: an address alone could be handed to a new
+    /// value once the old one is freed, and a changed style would then read as unchanged.
+    pub(crate) computed_ptrs:
+        HashMap<usize, style::servo_arc::Arc<style::properties::ComputedValues>>,
     pub(crate) text_styles:
         HashMap<usize, (TextStyle, TextWhiteSpace, TextAlign, Rgba, TextDecoration)>,
     pub(crate) display_modes: HashMap<usize, StyloDisplay>,
@@ -307,11 +311,23 @@ pub(crate) fn resolve_styles_incremental(
         let Some(primary) = node.primary_styles() else {
             continue;
         };
-        let ptr = (&*primary as *const style::properties::ComputedValues) as usize;
-        if state.initialized && state.computed_ptrs.get(&id) == Some(&ptr) {
+        let Some(held) = node
+            .stylo_element_data
+            .borrow()
+            .as_ref()
+            .and_then(|data| data.styles.primary.clone())
+        else {
+            continue;
+        };
+        if state.initialized
+            && state
+                .computed_ptrs
+                .get(&id)
+                .is_some_and(|kept| style::servo_arc::Arc::ptr_eq(kept, &held))
+        {
             continue;
         }
-        state.computed_ptrs.insert(id, ptr);
+        state.computed_ptrs.insert(id, held);
         computed_changed_nodes.push(id);
 
         let disp = primary.clone_display();
