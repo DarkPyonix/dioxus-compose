@@ -365,6 +365,7 @@ impl HtmlDom {
         if self.stylesheets_use_pointer_state() {
             *kinds.entry(self.root).or_insert(0) |= HOVER_KINDS;
         }
+        self.drag_subscriptions(&mut kinds);
         let mut subscriptions: Vec<_> = kinds
             .into_iter()
             .map(|(node, kinds)| PointerSubscription { node, kinds })
@@ -480,12 +481,16 @@ impl HtmlDom {
         }
 
         let data = EventData::new(input, point, (input.x, input.y));
-        let mut consumed = false;
-        for name in events_for(kind) {
-            consumed |= self.send_own(node, name, &data);
-        }
-        if kind == PointerKind::Up && input.click_count == 2 && input.button == 1 {
-            consumed |= self.send_own(node, "dblclick", &data);
+        // A report that belongs to a drag has been delivered as drag events, and counts
+        // as used: no mouse or pointer event is made from it, as in a browser.
+        let mut consumed = self.drag_pointer(input, point, hit);
+        if !consumed {
+            for name in events_for(kind) {
+                consumed |= self.send_own(node, name, &data);
+            }
+            if kind == PointerKind::Up && input.click_count == 2 && input.button == 1 {
+                consumed |= self.send_own(node, "dblclick", &data);
+            }
         }
 
         if matches!(kind, PointerKind::Up | PointerKind::Cancel) {
