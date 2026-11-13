@@ -6,6 +6,7 @@ use dioxus_hooks::use_signal;
 use dioxus_signals::WritableExt as _;
 
 use crate as dioxus_elements;
+use crate::hooks::use_node_size;
 use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
     Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, Cursor, IconRole, MaterialRole,
@@ -1099,14 +1100,12 @@ pub fn LazyColumn(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -1558,14 +1557,12 @@ pub fn LazyRow(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -2527,14 +2524,12 @@ pub fn LazyGrid(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -3067,6 +3062,234 @@ pub fn CodeEditor(
             oncompositionchange: move |event: dioxus_core::Event<bool>| {
                 on_composition_change.call(*event.data());
             },
+        }
+    }
+}
+
+/// How wide one column of a [`Table`] is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColumnWidth {
+    /// A width in dp.
+    Fixed(f32),
+    /// A share of the width left over once the other columns are placed. These are the
+    /// columns that give way when the table is narrow.
+    Weight(f32),
+    /// As wide as the widest of the header and the cells drawn so far.
+    Content,
+}
+
+/// One column of a [`Table`]: what its header says and how wide it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColumnSpec {
+    label: String,
+    width: ColumnWidth,
+}
+
+impl ColumnSpec {
+    /// A column as wide as its widest drawn cell or its header, whichever is wider.
+    pub fn content(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            width: ColumnWidth::Content,
+        }
+    }
+
+    /// A column taking `weight` shares of the width the other columns leave.
+    pub fn weight(label: impl Into<String>, weight: f32) -> Self {
+        Self {
+            label: label.into(),
+            width: ColumnWidth::Weight(weight),
+        }
+    }
+
+    /// A column `width` dp wide.
+    pub fn fixed(label: impl Into<String>, width: f32) -> Self {
+        Self {
+            label: label.into(),
+            width: ColumnWidth::Fixed(width),
+        }
+    }
+
+    /// What the header says.
+    pub fn label(&self) -> String {
+        self.label.clone()
+    }
+
+    /// How wide the column is.
+    pub fn width(&self) -> ColumnWidth {
+        self.width
+    }
+}
+
+/// Rows with the same columns, over a windowed list, with a header that stays put.
+///
+/// The body is a [`LazyColumn`], so only the rows the Renderer asked for exist, and row
+/// `i` carries `row_key(i)` as its key: a row whose key moves is moved rather than rebuilt.
+/// Each row is one `Row` whose cell `j` is as wide as `columns[j]` says, and the header's
+/// cell `j` is given the same width, so the header and every row line up.
+///
+/// A `Content` column is measured. Each drawn cell in it and its header report their
+/// width, and the column keeps the largest it has seen, so it does not shrink when the
+/// widest row scrolls out. Changing `source` says the data was replaced, and the column
+/// is measured again from the rows drawn after that. A cell is measured inside the width
+/// the column already has, so a later cell wider than that is clipped to it.
+///
+/// With `sticky_header: false` the header is the list's first item and scrolls with the
+/// rows. There is no horizontal scrolling: when the width runs short, the `Weight`
+/// columns give way.
+///
+/// ```ignore
+/// Table {
+///     columns: vec![ColumnSpec::content("name"), ColumnSpec::weight("status", 1.0)],
+///     row_count: rows.len(),
+///     row_key: move |i| rows[i].id.to_string(),
+///     cell: move |(row, col): (usize, usize)| rsx! { Text { text: rows[row].cell(col) } },
+/// }
+/// ```
+#[component]
+pub fn Table(
+    columns: Vec<ColumnSpec>,
+    row_count: usize,
+    /// The key of row `i`, stable across reorders.
+    row_key: Callback<usize, String>,
+    /// The cell at `(row, column)`.
+    cell: Callback<(usize, usize), Element>,
+    /// The header cell of a column. Left out, the column's label as text.
+    #[props(default)]
+    header: Option<Callback<ColumnSpec, Element>>,
+    /// Called with the row's index when a row is pressed. Left out, rows take no press.
+    #[props(default)]
+    on_row_click: Option<EventHandler<usize>>,
+    /// Whether the header stays put above the scrolling rows.
+    #[props(default = true)]
+    sticky_header: bool,
+    /// Names the data the rows come from. A different value means the data was replaced,
+    /// and the `Content` columns are measured again.
+    #[props(default)]
+    source: u64,
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+) -> Element {
+    let mut widths = use_signal(|| vec![0.0_f32; columns.len()]);
+    let mut last_source = use_signal(|| source);
+    if *dioxus_signals::ReadableExt::peek(&last_source) != source {
+        last_source.set(source);
+        widths.set(vec![0.0; columns.len()]);
+    } else if dioxus_signals::ReadableExt::peek(&widths).len() != columns.len() {
+        widths.set(vec![0.0; columns.len()]);
+    }
+    let header_cells = {
+        let columns = columns.clone();
+        move || {
+            rsx! {
+                Row {
+                    fill_max_width: true,
+                    for (index, column) in columns.iter().enumerate() {
+                        TableCell {
+                            key: "{index}",
+                            width: column.width(),
+                            column: index,
+                            widths,
+                            match header {
+                                Some(header) => header.call(column.clone()),
+                                None => rsx! { Text { text: column.label() } },
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let offset = usize::from(!sticky_header);
+    let body_columns = columns.clone();
+    let body_header = header_cells.clone();
+    let item = Callback::new(move |index: usize| {
+        if index < offset {
+            return body_header();
+        }
+        let row = index - offset;
+        rsx! {
+            Row {
+                fill_max_width: true,
+                on_click: on_row_click.map(|handler| EventHandler::new(move |_: ()| handler.call(row))),
+                for (index, column) in body_columns.iter().enumerate() {
+                    TableCell {
+                        key: "{index}",
+                        width: column.width(),
+                        column: index,
+                        widths,
+                        {cell.call((row, index))}
+                    }
+                }
+            }
+        }
+    });
+    let key_of = Callback::new(move |index: usize| {
+        if index < offset {
+            // Row keys are the application's, so the header's must be one no row has.
+            "\u{0}header".to_string()
+        } else {
+            row_key.call(index - offset)
+        }
+    });
+    rsx! {
+        Column {
+            weight,
+            fill_max_width,
+            fill_max_height,
+            if sticky_header {
+                {header_cells()}
+            }
+            LazyColumn {
+                weight: 1.0,
+                fill_max_width: true,
+                item_count: row_count + offset,
+                key_of,
+                item,
+            }
+        }
+    }
+}
+
+/// One cell of a [`Table`], given its column's width. A `Content` cell also measures what
+/// it holds and raises the column's width when it is the widest seen.
+#[component]
+fn TableCell(
+    width: ColumnWidth,
+    column: usize,
+    widths: dioxus_signals::Signal<Vec<f32>>,
+    children: Element,
+) -> Element {
+    let size = use_node_size();
+    let content = width == ColumnWidth::Content;
+    let measured = size.measured().width_dp;
+    let mut widths = widths;
+    // Read with a subscription, so a reset of the column measures this cell again.
+    let seen = dioxus_signals::ReadableExt::read(&widths)
+        .get(column)
+        .copied()
+        .unwrap_or(0.0);
+    if content
+        && measured > seen
+        && let Some(slot) = widths.write().get_mut(column)
+    {
+        *slot = measured;
+    }
+    let (fixed, share) = match width {
+        ColumnWidth::Fixed(dp) => (Some(dp), None),
+        ColumnWidth::Weight(share) => (None, Some(share)),
+        ColumnWidth::Content => (Some(seen.max(measured)).filter(|dp| *dp > 0.0), None),
+    };
+    rsx! {
+        ComposeBox {
+            width: fixed,
+            weight: share,
+            if content {
+                ComposeBox { observe_size: size.token(), {children} }
+            } else {
+                {children}
+            }
         }
     }
 }
