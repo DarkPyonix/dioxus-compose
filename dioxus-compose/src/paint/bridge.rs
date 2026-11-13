@@ -206,6 +206,10 @@ pub enum BridgeEvent {
     /// The pointer did something in a box that has a pointer listener, or that `:hover`
     /// and `:active` need to follow.
     Pointer,
+    /// The renderer reported where the vertical scroll of a scroll container is.
+    VerticalScroll,
+    /// The renderer reported where the horizontal scroll of a scroll container is.
+    HorizontalScroll,
 }
 
 /// One handler the bridge gave the renderer.
@@ -491,6 +495,30 @@ impl PlanBridge {
     /// The renderer node drawn for a plan node.
     pub fn node_id(&self, key: PlanKey) -> Option<u32> {
         self.nodes.get(&key).map(|placed| placed.id)
+    }
+
+    /// Whether the renderer node drawn for `key` is inside the one drawn for `ancestor`.
+    pub(crate) fn is_inside(&self, key: PlanKey, ancestor: PlanKey) -> bool {
+        let mut current = self.nodes.get(&key).and_then(|placed| placed.parent);
+        while let Some(parent) = current {
+            if parent == ancestor {
+                return true;
+            }
+            current = self.nodes.get(&parent).and_then(|placed| placed.parent);
+        }
+        false
+    }
+
+    /// The size the renderer node drawn for `key` was given, in CSS pixels.
+    pub(crate) fn required_size(&self, key: PlanKey) -> Option<(f32, f32)> {
+        self.nodes
+            .get(&key)?
+            .modifiers
+            .iter()
+            .find_map(|modifier| match modifier {
+                Modifier::RequiredSize { width, height } => Some((*width, *height)),
+                _ => None,
+            })
     }
 
     /// Records the text the user typed into the field of `node`, so that the same text
@@ -1367,10 +1395,20 @@ impl PlanBridge {
         };
         let previous = placed.kind.clone();
         match kind {
-            PlanKind::AbsoluteBox
-            | PlanKind::Box
-            | PlanKind::ScrollColumn
-            | PlanKind::ScrollRow => {}
+            PlanKind::AbsoluteBox | PlanKind::Box => {}
+            // Every scroll container reports where it is, so the page can read its offset
+            // whether or not it listens for `scroll`. The renderer reports at most once a
+            // frame, and only when something moved.
+            PlanKind::ScrollColumn | PlanKind::ScrollRow => {
+                if created {
+                    let event = if matches!(kind, PlanKind::ScrollRow) {
+                        BridgeEvent::HorizontalScroll
+                    } else {
+                        BridgeEvent::VerticalScroll
+                    };
+                    self.add_handler(batch, key, PropertyKind::OnScrollChanged, event);
+                }
+            }
             PlanKind::Text(text) => {
                 self.set_prop(batch, key, PropertyKind::Text, Prop::Str(text.text.clone()));
                 self.set_text_style(batch, key, &text.style, text.color);

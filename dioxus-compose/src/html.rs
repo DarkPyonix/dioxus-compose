@@ -71,13 +71,15 @@ use crate::paint::build;
 
 mod motion_events;
 mod runtime;
+mod scroll;
 
 /// A node in the blitz-dom document. Stable for as long as the node is in the document.
 pub type NodeId = usize;
 
 pub use crate::dom::{
     AppRegion, Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind,
-    PointerSubscription, PointerType, TransitionEventData, UserSelect, WheelMode, element_by_id,
+    PointerSubscription, PointerType, ScrollPosition, TransitionEventData, UserSelect, WheelMode,
+    element_by_id,
 };
 pub use crate::html_widget::{WidgetView, WidgetViewProps};
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};

@@ -50,6 +50,7 @@ use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Modifiers};
 
 use crate::dom::{HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerType, WheelMode};
+use crate::html::scroll::{Report, ScrollSync};
 use crate::html::{ColorScheme, NodeId, PlanKey};
 use crate::paint::animate;
 use crate::paint::bridge::{BridgeEvent, HostMomentKind, PlanBridge};
@@ -127,6 +128,8 @@ pub struct HtmlRuntime {
     /// The size of the area the page is drawn in, in zoomed dp, from whichever report said
     /// so last. `None` until the renderer has reported anything.
     content_size: Option<(f32, f32)>,
+    /// The page's scroll requests and what the renderer's scroll reports taught it.
+    scroll: ScrollSync,
 }
 
 impl HtmlRuntime {
@@ -195,6 +198,7 @@ impl HtmlRuntime {
             seen_island: WindowSize::default(),
             seen_window: WindowSize::default(),
             content_size: None,
+            scroll: ScrollSync::default(),
         }
     }
 
@@ -256,6 +260,8 @@ impl HtmlRuntime {
             self.bridge
                 .apply(plan, viewport, &self.dom, &mut self.batch);
         }
+        self.scroll
+            .write(&mut self.dom, &self.bridge, &mut self.batch);
         {
             let dom = &self.dom;
             crate::html_widget::set_boxes(self.owner, &|node| {
@@ -346,6 +352,7 @@ impl HtmlRuntime {
         if let Some(plan) = self.plan_at(viewport) {
             self.bridge.apply(plan, viewport, &self.dom, batch);
         }
+        self.scroll.write(&mut self.dom, &self.bridge, batch);
         self.deliver_host_moments();
         let bridge = &self.bridge;
         crate::html_widget::attach(
@@ -661,6 +668,33 @@ impl Runtime for HtmlRuntime {
                 // from the boxes around this one. The frame that restyles `:hover` and
                 // `:active` is asked for by `poll_work`, as a handler's write is.
                 return Ok(i64::from(self.dom.pointer_event(node, &input)));
+            }
+            (
+                kind @ (BridgeEvent::VerticalScroll | BridgeEvent::HorizontalScroll),
+                EventPayload::ScrollChanged {
+                    x_px,
+                    y_px,
+                    max_x_px,
+                    max_y_px,
+                    viewport_width_px,
+                    viewport_height_px,
+                    ..
+                },
+            ) => {
+                self.scroll.report(
+                    &mut self.dom,
+                    &self.bridge,
+                    node,
+                    kind == BridgeEvent::HorizontalScroll,
+                    Report {
+                        x: *x_px,
+                        y: *y_px,
+                        max_x: *max_x_px,
+                        max_y: *max_y_px,
+                        width: *viewport_width_px,
+                        height: *viewport_height_px,
+                    },
+                );
             }
             (BridgeEvent::Toggle, EventPayload::ValueChanged(value)) => {
                 self.dom.check(node, *value != 0.0);
