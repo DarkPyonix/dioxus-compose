@@ -132,11 +132,11 @@ pub use list_detail::ListDetail;
 pub use widgets::{
     AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column, ColumnSpec,
     ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget,
-    FloatingAction, FlowRow, Icon, Image, LazyColumn, LazyGrid, LazyRow, Menu, Navigation,
-    NavigationItem, Popover, ProgressIndicator, RadioButton, Row, Scaffold, ScrollChange,
-    ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator, ShadowLayer, Sheet, Slider,
-    Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField, TimePicker, Tooltip,
-    TopAppBar,
+    FloatingAction, FlowRow, FontFeatures, Icon, Image, LazyColumn, LazyGrid, LazyRow, Menu,
+    Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton, Row, Scaffold,
+    ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator, ShadowLayer,
+    Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField, TimePicker,
+    Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -246,11 +246,14 @@ pub mod prelude {
     // The widgets and values the schema gained with compose-rust 0.0.7: a wrapping row, a
     // box attached to an anchor, what a node is to assistive technology, where a scroll
     // container is, and what a navigation becomes in a compact window.
+    // compose-rust 0.0.8: the size a motion settled at, how a scroll container stops,
+    // and the OpenType features a text asks its font for.
     pub use crate::{
         CodeEditorColors, CompactNavigation, FlowRow, HorizontalAlignment, Popover, PopoverAlign,
         PopoverPlacement, ScrollChange, Semantics, SemanticsRole, SemanticsState,
         VerticalAlignment,
     };
+    pub use crate::{FontFeature, FontFeatures, MotionFinished, Snap};
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
@@ -419,13 +422,22 @@ pub mod elements {
             overflow_wrap,
             tab_size,
             absolute_size,
-            soft_wrap
+            soft_wrap,
+            font_feature_settings
         ]
     );
     element!(
         textfield,
         "TextField",
-        [placeholder, enabled, multiline, type_role, font, bare]
+        [
+            placeholder,
+            enabled,
+            multiline,
+            type_role,
+            font,
+            bare,
+            font_feature_settings
+        ]
     );
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
     // second place a role icon reaches the tree, because a toolbar is a row of icon
@@ -520,7 +532,9 @@ pub mod elements {
     element!(timepicker, "TimePicker", [value, min, max, enabled]);
     element!(dropdown, "Dropdown", [selected_index, enabled, bare]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
-    element!(scrollcolumn, "ScrollColumn", []);
+    // `snap` stops a fling with a child at the start of the visible area. Sent only when
+    // set, so a container that says nothing scrolls freely.
+    element!(scrollcolumn, "ScrollColumn", [snap]);
     // Widget tags 30 to 32. `Navigation` carries the selection and nothing about whether
     // it is a bar, a rail or a drawer: the Renderer has measured the window and chooses.
     // The destinations are the `NavigationItem` children and the rest is the screen.
@@ -540,7 +554,8 @@ pub mod elements {
     // Like a Dialog on the wire: `open` seeds the Renderer's own state and `on_dismiss`
     // says once that the user asked to close it. Which edge it enters from is the
     // Renderer's, because it is the side that knows how wide the window is.
-    element!(sheet, "Sheet", [open, scrim]);
+    // `max_height_fraction` caps a bottom sheet at that share of the window's height.
+    element!(sheet, "Sheet", [open, scrim, max_height_fraction]);
     // The screen's frame. It carries nothing of its own: what it is made of arrives as
     // slots, and what each slot becomes is decided where the window's width is known.
     element!(scaffold, "Scaffold", []);
@@ -556,7 +571,7 @@ pub mod elements {
     element!(filedroptarget, "FileDropTarget", [alignment]);
     // Whole content plus a horizontal scroll, the same contract as the vertical one: every
     // child is sent and the position stays in the Renderer.
-    element!(scrollrow, "ScrollRow", []);
+    element!(scrollrow, "ScrollRow", [snap]);
     // Widget tags 38 and 39. A chip is a label, an optional icon and whether it is chosen,
     // on the same boolean the toggles use: a chosen chip and a ticked box are one fact.
     // The chosen state is the Host's, so the chip draws exactly what `checked` says.
@@ -579,7 +594,15 @@ pub mod elements {
     element!(
         splitpane,
         "SplitPane",
-        [value, min, max, collapsible, selected_index, text]
+        [
+            value,
+            min,
+            max,
+            collapsible,
+            selected_index,
+            text,
+            collapse_below
+        ]
     );
     // Children laid where the Host put them, each at its own `offset`. Nothing of its own:
     // where a child goes is the child's modifier, not the box's property.
@@ -870,6 +893,9 @@ pub mod events {
     // A code editor's row height and scroll offset, each in physical pixels.
     optional_event!(oncodemetrics, f64);
     optional_event!(oncodescrolled, f64);
+    // A node's size motion came to rest, with the size it settled at in dp. Any node can
+    // take it; only one whose size moves, through a `motion` role, ever reports it.
+    optional_event!(onmotionfinished, crate::MotionFinished);
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());

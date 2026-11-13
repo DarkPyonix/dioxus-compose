@@ -179,6 +179,10 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::TextInsetDp,
     PropertyKind::CodeEditorColors,
     PropertyKind::CompactNavigation,
+    PropertyKind::CollapseBelow,
+    PropertyKind::Snap,
+    PropertyKind::MaxHeightFraction,
+    PropertyKind::FontFeatureSettings,
 ];
 
 /// How many shadows one node can carry. Each takes a chain position of its own, because a
@@ -1229,6 +1233,37 @@ impl ComposeRenderer {
             }
             return;
         }
+        // OpenType features, as one 8-byte record each: the four tag bytes, then the value
+        // as a little-endian `u32`. Up to the most a node may carry, the records are built
+        // on the stack, so a text that keeps its features costs no allocation.
+        if property == PropertyKind::FontFeatureSettings
+            && let AttributeValue::Any(any) = value
+        {
+            if let Some(features) = any.as_any().downcast_ref::<crate::FontFeatures>() {
+                use compose_rust::font_features::{FONT_FEATURE_LEN, MAX_FONT_FEATURES};
+                let features = features.as_slice();
+                let mut stack = [0_u8; MAX_FONT_FEATURES * FONT_FEATURE_LEN];
+                let heap;
+                let bytes: &[u8] = if features.len() <= MAX_FONT_FEATURES {
+                    for (index, feature) in features.iter().enumerate() {
+                        let at = index * FONT_FEATURE_LEN;
+                        stack[at..at + FONT_FEATURE_LEN].copy_from_slice(&feature.to_bytes());
+                    }
+                    &stack[..features.len() * FONT_FEATURE_LEN]
+                } else {
+                    // More than a node may carry: sent whole, and the Renderer reports it
+                    // as a protocol error and draws the text without any of them.
+                    heap = compose_rust::font_features::font_feature_bytes(features);
+                    &heap
+                };
+                self.write(Mutation::SetProp {
+                    node_id,
+                    property,
+                    value: PropertyValue::Bytes(bytes),
+                });
+            }
+            return;
+        }
         // A width and a height, or an x and a y, as two `f32` in 8 bytes.
         if matches!(
             property,
@@ -2085,6 +2120,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "scrollchanged" | "onscrollchanged" => Some(PropertyKind::OnScrollChanged),
         "codemetrics" | "oncodemetrics" => Some(PropertyKind::OnCodeMetrics),
         "codescrolled" | "oncodescrolled" => Some(PropertyKind::OnCodeScrolled),
+        "motionfinished" | "onmotionfinished" => Some(PropertyKind::OnMotionFinished),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
         "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),

@@ -421,6 +421,19 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
+        // The size a node's size motion settled at, in dp. It is that node's own
+        // motion, so it does not bubble to an ancestor that has a motion handler too.
+        EventPayload::MotionFinished {
+            width_dp,
+            height_dp,
+        } => Event::new(
+            Rc::new(crate::MotionFinished {
+                width_dp,
+                height_dp,
+            }),
+            false,
+        )
+        .into_any(),
         EventPayload::CompositionChanged { composing } => {
             Event::new(Rc::new(composing), true).into_any()
         }

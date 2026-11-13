@@ -11,11 +11,13 @@ use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
     Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, CompactNavigation, Cursor,
     HorizontalAlignment, IconRole, MaterialRole, MotionRole, OverflowWrap, Paint, PopoverAlign,
-    PopoverPlacement, SemanticsRole, ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow,
+    PopoverPlacement, SemanticsRole, ShapeRole, SlotRole, Snap, SpaceRole, TextAlign, TextOverflow,
     TypeRole, UserSelect, VerticalAlignment, WordBreak,
 };
 use compose_rust::ui::SemanticsState;
-use compose_rust::{FileDrop, KeyEvent, PointerEvent, PointerKinds, RangeRequest};
+use compose_rust::{
+    FileDrop, FontFeature, KeyEvent, MotionFinished, PointerEvent, PointerKinds, RangeRequest,
+};
 
 /// What a node is to assistive technology: the role it plays and the state a screen reader
 /// announces for it, such as checked, selected or expanded.
@@ -110,6 +112,94 @@ pub struct ScrollChange {
     pub max_y_px: f64,
     pub viewport_width_px: f64,
     pub viewport_height_px: f64,
+}
+
+/// The OpenType features a text asks its font for, in order: tabular figures, a ligature
+/// left apart, a stylistic set. A feature never changes which font the text is set in; it
+/// picks one of the forms the font already has, so text with a type role takes them too.
+///
+/// Built from [`FontFeature`]s or from `(tag, value)` pairs, such as
+/// `[(b"tnum", 1), (b"liga", 0)]`. A node carries at most 16; a longer list is sent as it
+/// is, and the Renderer reports it as a protocol error and draws the text without any.
+/// An empty list sends nothing.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FontFeatures(Vec<FontFeature>);
+
+impl FontFeatures {
+    /// No features: the font's defaults.
+    pub const fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// The features, in the order they were given.
+    pub fn as_slice(&self) -> &[FontFeature] {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The value of the `font_feature_settings` attribute, or nothing for an empty list.
+    pub(crate) fn attribute(self) -> Option<AttributeValue> {
+        (!self.0.is_empty()).then(|| AttributeValue::any_value(self))
+    }
+}
+
+impl From<Vec<FontFeature>> for FontFeatures {
+    fn from(features: Vec<FontFeature>) -> Self {
+        Self(features)
+    }
+}
+
+impl From<&[FontFeature]> for FontFeatures {
+    fn from(features: &[FontFeature]) -> Self {
+        Self(features.to_vec())
+    }
+}
+
+impl<const N: usize> From<[FontFeature; N]> for FontFeatures {
+    fn from(features: [FontFeature; N]) -> Self {
+        Self(features.to_vec())
+    }
+}
+
+impl From<Vec<([u8; 4], u32)>> for FontFeatures {
+    fn from(features: Vec<([u8; 4], u32)>) -> Self {
+        features.into_iter().collect()
+    }
+}
+
+impl<const N: usize> From<[([u8; 4], u32); N]> for FontFeatures {
+    fn from(features: [([u8; 4], u32); N]) -> Self {
+        features.into_iter().collect()
+    }
+}
+
+impl<const N: usize> From<[(&[u8; 4], u32); N]> for FontFeatures {
+    fn from(features: [(&[u8; 4], u32); N]) -> Self {
+        features
+            .into_iter()
+            .map(|(tag, value)| FontFeature::new(tag, value))
+            .collect()
+    }
+}
+
+impl FromIterator<FontFeature> for FontFeatures {
+    fn from_iter<I: IntoIterator<Item = FontFeature>>(features: I) -> Self {
+        Self(features.into_iter().collect())
+    }
+}
+
+impl FromIterator<([u8; 4], u32)> for FontFeatures {
+    fn from_iter<I: IntoIterator<Item = ([u8; 4], u32)>>(features: I) -> Self {
+        Self(
+            features
+                .into_iter()
+                .map(|(tag, value)| FontFeature::new(&tag, value))
+                .collect(),
+        )
+    }
 }
 
 /// A handler that is announced to the Renderer only when there is one, so a widget whose
@@ -390,6 +480,11 @@ pub fn Column(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -444,6 +539,7 @@ pub fn Column(
 ) -> Element {
     rsx! {
         column {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -506,6 +602,11 @@ pub fn Row(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -560,6 +661,7 @@ pub fn Row(
 ) -> Element {
     rsx! {
         row {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -692,6 +794,11 @@ pub fn ComposeBox(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -743,6 +850,7 @@ pub fn ComposeBox(
 ) -> Element {
     rsx! {
         composebox {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -796,6 +904,10 @@ pub fn ScrollColumn(
     #[props(default)] match_parent_size: bool,
     #[props(default)] window_drag: Option<bool>,
     #[props(default)] press_feedback: Option<(f32, f32)>,
+    /// Where a fling comes to rest: `Snap::ItemStart` stops it with a child at the start of
+    /// the visible area, like CSS `scroll-snap-align: start`. Left out, it scrolls freely.
+    #[props(default)]
+    snap: Option<Snap>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -831,6 +943,7 @@ pub fn ScrollColumn(
 ) -> Element {
     rsx! {
         scrollcolumn {
+            snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
@@ -872,6 +985,10 @@ pub fn ScrollRow(
     #[props(default)] match_parent_size: bool,
     #[props(default)] window_drag: Option<bool>,
     #[props(default)] press_feedback: Option<(f32, f32)>,
+    /// Where a fling comes to rest: `Snap::ItemStart` stops it with a child at the start of
+    /// the visible area, like CSS `scroll-snap-align: start`. Left out, it scrolls freely.
+    #[props(default)]
+    snap: Option<Snap>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -907,6 +1024,7 @@ pub fn ScrollRow(
 ) -> Element {
     rsx! {
         scrollrow {
+            snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
@@ -944,6 +1062,10 @@ pub fn Text(
     #[props(default)] match_parent_size: bool,
     #[props(default)] window_drag: Option<bool>,
     #[props(default)] press_feedback: Option<(f32, f32)>,
+    /// The OpenType features the text asks its font for, such as tabular figures. Taken
+    /// with or without a type role. Left out, or empty, nothing is sent.
+    #[props(into, default)]
+    font_feature_settings: FontFeatures,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1069,6 +1191,7 @@ pub fn Text(
                     // absent is the default rung.
                     type_role: type_role.map(|role| i64::from(u16::from(role))),
                     font,
+                    font_feature_settings: font_feature_settings.attribute(),
                     word_break: role(word_break),
                     overflow_wrap: role(overflow_wrap),
                     tab_size: i64::from(tab_size.unwrap_or(0)),
@@ -1095,6 +1218,15 @@ pub fn Text(
 
 #[component]
 pub fn TextField(
+    /// The OpenType features the text asks its font for, such as tabular figures. Taken
+    /// with or without a type role. Left out, or empty, nothing is sent.
+    #[props(into, default)]
+    font_feature_settings: FontFeatures,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1142,6 +1274,7 @@ pub fn TextField(
 ) -> Element {
     rsx! {
         textfield {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1163,6 +1296,7 @@ pub fn TextField(
             multiline,
             type_role: type_role.map(|role| i64::from(u16::from(role))),
             font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
+            font_feature_settings: font_feature_settings.attribute(),
             onvaluechange: move |event| on_value_change.call((*event.data()).clone()),
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),
@@ -1429,6 +1563,11 @@ pub fn Card(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1479,6 +1618,7 @@ pub fn Card(
 ) -> Element {
     rsx! {
         card {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -1539,6 +1679,11 @@ pub fn Surface(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1585,6 +1730,7 @@ pub fn Surface(
 ) -> Element {
     rsx! {
         surface {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
@@ -2927,6 +3073,10 @@ pub fn Sheet(
     /// The colour that dims the window behind it. Left out, the design system's.
     #[props(default)]
     scrim: Option<Paint>,
+    /// The most of the window's height a bottom sheet may take, from 0 to 1. A value above
+    /// 1 is taken as 1, and one of 0 or less as not given. Left out, the design system's.
+    #[props(default)]
+    max_height_fraction: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2950,6 +3100,11 @@ pub fn Sheet(
     rsx! {
         sheet {
             scrim: opt_paint(scrim),
+            max_height_fraction: opt_dp(
+                max_height_fraction
+                    .filter(|fraction| *fraction > 0.0)
+                    .map(|fraction| fraction.min(1.0)),
+            ),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -3490,6 +3645,10 @@ pub fn SplitPane(
     /// The widest the side pane may be dragged, in dp.
     #[props(default)]
     max: Option<f32>,
+    /// The width in dp below which the split pane shows one pane at a time instead of two.
+    /// Left out, the design system's breakpoint.
+    #[props(default)]
+    collapse_below: Option<f32>,
     /// Whether the side pane may be folded away.
     #[props(default)]
     collapsible: bool,
@@ -3529,6 +3688,7 @@ pub fn SplitPane(
             min: min.map(f64::from),
             max: max.map(f64::from),
             collapsible,
+            collapse_below: opt_dp(collapse_below),
             selected_index: selected_index as i64,
             text: label,
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as f32),

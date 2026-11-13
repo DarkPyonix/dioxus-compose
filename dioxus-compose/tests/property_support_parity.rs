@@ -140,6 +140,10 @@ fn property_of(attribute: &str) -> Option<&'static str> {
         "text_inset_dp" => "TextInsetDp",
         "code_editor_colors" => "CodeEditorColors",
         "compact_navigation" => "CompactNavigation",
+        "collapse_below" => "CollapseBelow",
+        "snap" => "Snap",
+        "max_height_fraction" => "MaxHeightFraction",
+        "font_feature_settings" => "FontFeatureSettings",
         // Everything else is either a Modifier rather than a property, or a property this
         // comparison has not been taught. Returning None skips it rather than failing,
         // because a Modifier is not subject to the rule being checked here.
