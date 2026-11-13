@@ -211,35 +211,61 @@ fn fr34_the_page_is_laid_out_below_the_title_band() {
     );
 }
 
-/// Both reports come and go as the window is resized; the page follows whichever said
-/// something new last.
+/// The box is measured on every dp change, not only when its size class changes, since it
+/// is the area the page is drawn in.
 #[test]
-fn fr34_the_page_follows_the_latest_report() {
+fn fr34_the_page_box_is_measured_on_every_dp_change() {
+    install();
+    let mut host = Host::html(page, config);
+    let first = decode_batch(host.rebuild().unwrap()).expect("the batch decodes");
+    let every_dp: Vec<bool> = first
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                modifier: Modifier::ObserveSize { every_dp, .. },
+                ..
+            } => Some(*every_dp),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(every_dp, vec![true], "one box, observed at every dp");
+}
+
+/// Once the box has reported, the window's report no longer moves the page. A window whose
+/// content runs under its title bar (a full-size content view) gives the box the whole
+/// window, and its report still carries the title band as `safe_area_top`: taking the band
+/// out of the box's height left an empty strip at the bottom of the window.
+#[test]
+fn fr34_the_box_report_outranks_the_window_report() {
     install();
     let mut host = Host::html(page, config);
     let first = seen(host.rebuild().unwrap());
     let island = page_box(&first);
 
-    report(&mut host, size_event(0, 520.0, 640.0, 66.0));
-    let boxed = report(&mut host, size_event(island, 520.0, 574.0, 0.0));
-    // The box says what the window already implied, so the page stays as it was.
+    let boxed = report(&mut host, size_event(island, 1440.0, 900.0, 0.0));
     assert!(
-        !boxed.has_width(800.0),
-        "the page stays at the window's width: {:?}",
+        boxed.has_size(1440.0, 900.0),
+        "the page fills the box, 1440 by 900: {:?}",
         boxed.sizes
     );
 
-    let wider = report(&mut host, size_event(0, 900.0, 640.0, 66.0));
+    let window = report(&mut host, size_event(0, 1440.0, 900.0, 66.0));
     assert!(
-        wider.has_size(900.0, 574.0),
-        "a wider window lays the page out at its width: {:?}",
-        wider.sizes
+        !window.has_size(1440.0, 834.0),
+        "the band is not taken out of a box that already reported: {:?}",
+        window.sizes
     );
 
-    let taller = report(&mut host, size_event(island, 900.0, 920.0, 0.0));
+    let narrower = report(&mut host, size_event(island, 1000.0, 900.0, 0.0));
     assert!(
-        taller.has_size(900.0, 920.0),
-        "a taller box lays the page out at its height: {:?}",
-        taller.sizes
+        narrower.has_size(1000.0, 900.0),
+        "a resize reaches the page through the box: {:?}",
+        narrower.sizes
+    );
+    let stale = report(&mut host, size_event(0, 1200.0, 900.0, 66.0));
+    assert!(
+        !stale.has_width(1200.0),
+        "a window report after the box's does not move the page: {:?}",
+        stale.sizes
     );
 }
