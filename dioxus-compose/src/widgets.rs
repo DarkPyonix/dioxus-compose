@@ -1100,14 +1100,12 @@ pub fn LazyColumn(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -1559,14 +1557,12 @@ pub fn LazyRow(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -2528,14 +2524,12 @@ pub fn LazyGrid(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -3276,10 +3270,11 @@ fn TableCell(
         .get(column)
         .copied()
         .unwrap_or(0.0);
-    if content && measured > seen {
-        if let Some(slot) = widths.write().get_mut(column) {
-            *slot = measured;
-        }
+    if content
+        && measured > seen
+        && let Some(slot) = widths.write().get_mut(column)
+    {
+        *slot = measured;
     }
     let (fixed, share) = match width {
         ColumnWidth::Fixed(dp) => (Some(dp), None),
