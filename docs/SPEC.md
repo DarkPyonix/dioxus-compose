@@ -1920,7 +1920,7 @@ if design.is_apple() {
    - 클릭 핸들러가 있는 요소는 클릭 동작을 드러내고, 보조 기술이 그 동작을 부르면(macOS의 AXPress) 그 요소의 `onclick`이 불린다.
    - 역할도 이름도 상태도 말하지 않는 요소에는 아무것도 붙지 않는다. 속성이 바뀌면 바뀐 노드의 의미 레코드만 나가고, 바뀌지 않은 프레임에는 나가지 않는다.
    - compose-rust의 `Modifier::Semantics`와 `AccessibleName`(compose-rust #473)이 든 버전으로 고정을 올려야 한다. 구현은 `feat/html-semantics`(da5c8dea)에 있고, 그 브랜치는 텍스트 내용에서 이름을 얻는 일을 플랫폼에 맡기므로 그 부분을 더해야 한다.
-   - 테스트 `fr34_aria_role_label_and_state_reach_the_renderer_as_semantics` (예정), `fr34_semantics_name_comes_from_text_without_a_label` (예정), `fr34_semantics_click_action_dispatches_onclick` (예정), `fr34_semantics_unchanged_frame_sends_nothing` (예정). VoiceOver로 읽히는 이름과 AXPress는 native-image 빌드에서 §7의 수동 체크리스트로 확인한다.
+   - 테스트 `fr34_aria_role_label_and_state_reach_the_renderer_as_semantics`, `fr34_semantics_name_comes_from_text_without_a_label`, `fr34_semantics_click_action_dispatches_onclick`, `fr34_semantics_unchanged_frame_sends_nothing`. VoiceOver로 읽히는 이름과 AXPress는 native-image 빌드에서 §7의 수동 체크리스트로 확인한다.
 
 #### FR-34.1 CSS transform 전부 (`Agreed`, 목표 M14, 10-18)
 
