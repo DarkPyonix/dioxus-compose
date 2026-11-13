@@ -86,6 +86,22 @@ pub(crate) fn is_fixed(node: &Node) -> bool {
         .is_some_and(|style| style.clone_position() == Position::Fixed)
 }
 
+/// Whether `id` is a replaced element or a form control, whose `auto` width is its own
+/// size (from its attributes, its image or the widget it stands for) rather than the
+/// width of anything it contains.
+fn is_replaced(doc: &BaseDocument, id: usize) -> bool {
+    let Some(node) = doc.get_node(id) else {
+        return false;
+    };
+    let Some(element) = node.element_data() else {
+        return false;
+    };
+    matches!(
+        &*element.name.local,
+        "img" | "input" | "textarea" | "select" | "canvas" | "svg" | "video" | "iframe"
+    ) || widget_token(node).is_some()
+}
+
 /// Whether `node` is a `<button>` whose content is centred top to bottom in its content
 /// box, as Chromium centres the anonymous box it lays a button's content out in. A button
 /// that is a flex or grid container lays its children out as one, with no such box, so it
@@ -1874,9 +1890,38 @@ impl MeasuredTree<'_> {
             height: inner_height,
         };
 
+        // The padding box of `parent`, which Taffy places its absolutely positioned
+        // children in.
+        let padding_box_width = inputs
+            .known_dimensions
+            .width
+            .or(match inputs.available_space.width {
+                AvailableSpace::Definite(width) => Some(width),
+                AvailableSpace::MinContent | AvailableSpace::MaxContent => None,
+            })
+            .map(|width| (width - border.left - border.right).max(0.0));
+        let viewport = self.doc.viewport();
+        let viewport_width = viewport.window_size.0 as f32 / viewport.scale();
+
         for index in 0..child_count {
             let child_id = self.get_child_id(parent, index);
-            let Some(keywords) = intrinsic_widths(&*self.doc, usize::from(child_id), inner_width)
+            let child = self.node(child_id);
+            // An absolutely positioned box is sized against its containing block, not the
+            // parent's content box: the parent's padding box, or the viewport for a fixed
+            // box.
+            let out_of_flow = (child.style.position == taffy::Position::Absolute).then(|| {
+                if is_fixed(child) {
+                    Some(viewport_width)
+                } else {
+                    padding_box_width
+                }
+            });
+            let containing_width = match out_of_flow {
+                Some(area) => area,
+                None => inner_width,
+            };
+            let Some(keywords) =
+                intrinsic_widths(&*self.doc, usize::from(child_id), containing_width)
             else {
                 continue;
             };
@@ -1884,6 +1929,15 @@ impl MeasuredTree<'_> {
                 continue;
             }
 
+            // A box whose only keyword is the shrink-to-fit width of an absolutely
+            // positioned box keeps its cache. Taffy asks such a box for its size only with
+            // a known width, so the min- and max-content sizes measured here are cached
+            // under keys nothing else writes, and the next pass reuses them instead of
+            // measuring every positioned box's text again. A box with a written `width`,
+            // `min-width` or `max-width` keyword is measured afresh, because an in-flow
+            // box is asked for its content sizes under those same keys.
+            let keep_cache =
+                keywords.shrink_to_fit && keywords.min.is_none() && keywords.max.is_none();
             // Forget what an earlier pass wrote, and any size cached under it, so the
             // measurement is of the contents alone.
             {
@@ -1898,7 +1952,9 @@ impl MeasuredTree<'_> {
                     style.max_size.width = Dimension::auto();
                 }
             }
-            self.node_mut(child_id).cache.clear();
+            if !keep_cache {
+                self.node_mut(child_id).cache.clear();
+            }
 
             let needs_min = [keywords.width, keywords.min, keywords.max]
                 .into_iter()
@@ -1912,16 +1968,36 @@ impl MeasuredTree<'_> {
             let max_content = self.content_width(child_id, inner, AvailableSpace::MaxContent);
             // The measurement above asked for the contents' size; the next request for this
             // child is for its own, which the cache must not answer with this one.
-            self.node_mut(child_id).cache.clear();
+            if !keep_cache {
+                self.node_mut(child_id).cache.clear();
+            }
 
             let style = &self.node(child_id).style;
             let margin = style
                 .margin
-                .resolve_or_zero(inner_width, resolve_calc_value);
+                .resolve_or_zero(containing_width, resolve_calc_value);
             // The room a `fit-content` box may stretch into: the containing block less the
-            // box's own margins. Under a min- or max-content constraint there is no such
-            // room, and fit-content is the size that constraint asks for.
-            let stretch = inner_width.map(|width| (width - margin.left - margin.right).max(0.0));
+            // box's own margins, and for an absolutely positioned box less its `left` and
+            // `right` too. Under a min- or max-content constraint there is no such room, and
+            // fit-content is the size that constraint asks for.
+            let stretch = containing_width.map(|width| {
+                let insets = match out_of_flow {
+                    Some(_) => {
+                        style
+                            .inset
+                            .left
+                            .resolve_to_option(width, resolve_calc_value)
+                            .unwrap_or(0.0)
+                            + style
+                                .inset
+                                .right
+                                .resolve_to_option(width, resolve_calc_value)
+                                .unwrap_or(0.0)
+                    }
+                    None => 0.0,
+                };
+                (width - margin.left - margin.right - insets).max(0.0)
+            });
             let fit = |limit: Option<f32>| match limit.or(stretch) {
                 Some(room) => max_content.min(room.max(min_content)),
                 None => match inputs.available_space.width {
@@ -1941,10 +2017,10 @@ impl MeasuredTree<'_> {
                 BoxSizing::ContentBox => {
                     let padding = style
                         .padding
-                        .resolve_or_zero(inner_width, resolve_calc_value);
+                        .resolve_or_zero(containing_width, resolve_calc_value);
                     let border = style
                         .border
-                        .resolve_or_zero(inner_width, resolve_calc_value);
+                        .resolve_or_zero(containing_width, resolve_calc_value);
                     padding.left + padding.right + border.left + border.right
                 }
             };
@@ -2010,6 +2086,8 @@ enum IntrinsicWidth {
 /// The intrinsic keywords one box uses for its width.
 #[derive(Clone, Copy, Debug)]
 struct IntrinsicWidths {
+    /// The width is `auto` on an absolutely positioned box, read as `fit-content`.
+    shrink_to_fit: bool,
     width: Option<IntrinsicWidth>,
     min: Option<IntrinsicWidth>,
     max: Option<IntrinsicWidth>,
@@ -2052,8 +2130,22 @@ fn intrinsic_widths(
         }
         _ => None,
     };
+    // An absolutely positioned box whose `width` is `auto` and whose `left` or `right`
+    // is too is shrink-to-fit: `fit-content` against the room its insets leave. A
+    // replaced element's auto width is its own size, which Taffy already gives it.
+    let shrink_to_fit = matches!(
+        style.get_box().position,
+        Position::Absolute | Position::Fixed
+    ) && matches!(position.width, StyloSize::Auto)
+        && (position.left.is_auto() || position.right.is_auto())
+        && !is_replaced(doc, id);
     let widths = IntrinsicWidths {
-        width: size(&position.width),
+        shrink_to_fit,
+        width: if shrink_to_fit {
+            Some(IntrinsicWidth::FitContent(None))
+        } else {
+            size(&position.width)
+        },
         min: size(&position.min_width),
         max: max_size(&position.max_width),
     };
