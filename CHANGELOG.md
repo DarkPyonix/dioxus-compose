@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Everything compose-rust 0.0.10 added, written in rsx
+
+`Image` takes `content_scale`: `ContentScale::Fit` shows the whole picture, `Crop` covers
+the box and `FillBounds` stretches it. `Slider` takes `thumb_size`, the thumb's diameter in
+dp. `Column`, `Row`, `Box`, `Card` and `Surface` take `background_brush`, a list of up to
+four `BackgroundLayer`s in CSS order, the first on top: a paint laid into a rectangle of the
+node and repeated as `BackgroundRepeat` says, drawn over the `background` colour and under
+the border, as CSS draws `background-image`. Every raw element takes it too, as one
+`Modifier::BackgroundBrush` or a list. `CodeEditor` takes `minimap` (a `MinimapSide`),
+`view_zones` (rows after a line that are not text), `word_wrap` (a `WordWrap`),
+`on_edit_group_result` and `on_selections_change`, and `CodeEditorHandle` gains
+`edit_group`, which replaces several ranges as one undo step and is answered once with an
+`EditGroupResult`, `set_selections` for several carets at once, and `insert_snippet`, which
+opens a snippet's tab stops. `on_selections_change` hears every selection while there is
+more than one, and `on_selection_change` goes on hearing the primary one. `TextAlign` has
+the physical `Left` and `Right`, `Brush::elliptical` draws a radial brush as an ellipse,
+and a `Text` with a letter spacing of 0 now sends it, where it used to take the type role's
+spacing. `use_system_color_scheme()` reads the system's light or dark appearance, `None`
+until the renderer first reports it, and re-renders on each change. Each of these is sent
+only when set, and a handler left out is never announced to the renderer.
+
+### HTML: physical alignment, zero letter spacing, elliptical gradients and the system's scheme
+
+`text-align: left` and `right` reach the renderer as `TextAlign::Left` and `Right`, so a
+right-to-left page aligned left stays on the left. `letter-spacing: 0` and `normal` are
+sent as an explicit 0 rather than the smallest positive number that stood in for it. An
+elliptical `radial-gradient()` is drawn as an ellipse instead of the circle of its
+horizontal radius. The function keys F1 to F12 and the context menu key reach the page as
+their DOM `key` and `code`. A page whose theme follows the system answers
+`prefers-color-scheme` with the light or dark appearance the renderer reports, and is
+restyled when it changes.
+
 ### Everything compose-rust 0.0.9 added, written in rsx
 
 `CodeEditor` takes `on_caret_rect`, which brings a `CaretRect` (the caret's place and its
