@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### HTML: CSS 3D transforms
+
+A `transform` with a 3D function is drawn. `rotateX`, `rotateY`, `rotate3d`, `translateZ`,
+`translate3d`, `scaleZ`, `scale3d`, `perspective()` and `matrix3d()`, the `rotate`,
+`translate` and `scale` properties in their 3D forms, and any 2D functions in the same
+list multiply into one 4x4 matrix, the perspective inside it. The box carries it as
+`NodeEntry::transform_3d` and `PlanModifier::Transform3D`, and the renderer receives one
+`Transform3D` modifier with the `transform-origin` as a fraction of the box. A matrix that
+does not come apart into rotations and scales is sent as it is. A function that is 3D by
+name only (`translateZ(0)`, `scale3d(2, 3, 1)`, `rotateZ()`) stays the 2D transform it
+reduces to. A pointer is tested against the shape the 3D transform draws, and a point the
+transform puts behind the viewer hits nothing. `backface-visibility: hidden` goes with the
+matrix: a box whose back is turned to the viewer takes no pointer, and the renderer leaves
+it out. `transform-style: preserve-3d` is drawn flat, each child in its parent's plane;
+the elements that ask for it are listed in `DisplayList::flattened_spaces` and named once
+each on stderr. The warning that a 3D transform was skipped is gone.
+
+A parent's `perspective` property, with its `perspective-origin`, applies to its children's
+3D transforms. It is multiplied in front of the child's own functions, about the
+perspective origin of the parent's border box, and travels inside the child's one matrix:
+no record carries it separately. `perspective: none` changes nothing, a child with a 2D
+transform keeps its 2D transform, and the perspective goes no further down than the
+parent's own children. A scroll inside the parent does not move the perspective origin
+against its children.
+
+A transition or `@keyframes` animation that passes through a 3D transform is not played,
+because the renderer animates 2D transform functions only: the box takes the transform at
+once, and the motion is listed in `DisplayList::skipped_transforms` and named on stderr.
+
+`Matrix3D`, `PlaneMap`, `Transform3D` and `FlattenedSpace` are new in
+`dioxus_compose::html`. `NodeEntry::drawn_map` gives a box's transform, 2D or 3D, as a map
+of the page. `DisplayList::project` answers `None` for a point behind the viewer.
+
 ### Everything compose-rust 0.0.10 added, written in rsx
 
 `Image` takes `content_scale`: `ContentScale::Fit` shows the whole picture, `Crop` covers

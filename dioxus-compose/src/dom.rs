@@ -53,7 +53,8 @@ use crate::layout::{
 use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{
-    AnimatedProperty, DisplayList, DisplayListDiff, InputKind, Rect, Sides, SkippedTransform,
+    AnimatedProperty, DisplayList, DisplayListDiff, FlattenedSpace, InputKind, Rect, Sides,
+    SkippedTransform,
 };
 use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
@@ -680,7 +681,9 @@ impl HtmlDom {
             // After the last use of `playing`, which holds the motion state mutably.
             apply_appearance(&mut list, |node| self.appearance_is_none(node));
             if animating {
-                list.transitions = transitions(&scan, self.current.as_ref(), &list);
+                let mut skipped = Vec::new();
+                list.transitions = transitions(&scan, self.current.as_ref(), &list, &mut skipped);
+                list.skipped_transforms.append(&mut skipped);
             }
             self.motion.end_frame();
             list
@@ -742,9 +745,11 @@ impl HtmlDom {
         *self.resize.collect_buffer() = pending;
     }
 
-    /// Says on stderr, once for each, which element's which 3D transform the layout left
-    /// out. The display list carries them all in
-    /// [`skipped_transforms`](DisplayList::skipped_transforms).
+    /// Says on stderr, once for each, which element's motion through a 3D transform is not
+    /// played, and which element's `transform-style: preserve-3d` is drawn flat. The
+    /// display list carries them all in
+    /// [`skipped_transforms`](DisplayList::skipped_transforms) and
+    /// [`flattened_spaces`](DisplayList::flattened_spaces).
     fn report_skipped(&mut self, list: &DisplayList) {
         for SkippedTransform {
             node,
@@ -754,8 +759,23 @@ impl HtmlDom {
         {
             if self.motion.warned.insert((*node, transform.clone())) {
                 eprintln!(
-                    "dioxus-compose: <{tag}> (node {node}) has the 3D transform `{transform}`. \
-                     3D transforms are not drawn yet, so the element is drawn without it."
+                    "dioxus-compose: <{tag}> (node {node}) animates a 3D transform \
+                     (`{transform}`). The renderer animates 2D transform functions only, so \
+                     this motion is not played and the element is drawn with the transform \
+                     it rests at."
+                );
+            }
+        }
+        for FlattenedSpace { node, tag } in &list.flattened_spaces {
+            if self
+                .motion
+                .warned
+                .insert((*node, "transform-style: preserve-3d".to_string()))
+            {
+                eprintln!(
+                    "dioxus-compose: <{tag}> (node {node}) has `transform-style: \
+                     preserve-3d`. Its children do not share a 3D space here: each is drawn \
+                     flat into the element's plane, as with `transform-style: flat`."
                 );
             }
         }
