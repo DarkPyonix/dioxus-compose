@@ -154,6 +154,10 @@ pub struct HtmlRuntime {
     /// Whether `env(titlebar-area-*)` follows the window's reports. It does for a
     /// whole-screen page whose configuration names no title bar area of its own.
     titlebar_follows_window: bool,
+    /// Nodes currently composing with an IME.
+    composing: HashSet<NodeId>,
+    /// Text waiting to be delivered as a `paste` event to the focused element.
+    pending_pastes: Rc<RefCell<Vec<(NodeId, String)>>>,
 }
 
 impl HtmlRuntime {
@@ -226,6 +230,8 @@ impl HtmlRuntime {
             content_size: None,
             scroll: ScrollSync::default(),
             titlebar_follows_window: false,
+            composing: HashSet::new(),
+            pending_pastes: Rc::default(),
         }
     }
 
@@ -372,6 +378,7 @@ impl HtmlRuntime {
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         if run_dom {
             self.deliver_moments();
+            self.deliver_pastes();
             self.dom.render();
         }
         let first = self.bridge.root_node().is_none();
@@ -499,6 +506,10 @@ impl HtmlRuntime {
     /// The field `node` lost the focus: `change` if its text changed, then `blur`, in the
     /// order a browser sends them.
     fn deliver_blur(&mut self, node: NodeId) {
+        if self.composing.remove(&node) {
+            let data = self.typed.get(&node).cloned().unwrap_or_default();
+            self.dom.composition_end(node, &data);
+        }
         self.deliver_change(node);
         if self.focused == Some(node) {
             self.focused = None;
@@ -515,6 +526,9 @@ impl HtmlRuntime {
         }
         self.typed.insert(node, text.to_owned());
         self.edited.insert(node);
+        if self.composing.contains(&node) {
+            self.dom.composition_update(node, text);
+        }
         self.dom.input(node, text);
     }
 
@@ -525,6 +539,14 @@ impl HtmlRuntime {
         }
         let text = self.typed.get(&node).cloned().unwrap_or_default();
         self.dom.change(node, &text);
+    }
+
+    /// Delivers pending clipboard paste events to their target DOM elements.
+    fn deliver_pastes(&mut self) {
+        let pastes = self.pending_pastes.borrow_mut().split_off(0);
+        for (node, text) in pastes {
+            self.dom.paste(node, &text);
+        }
     }
 }
 
@@ -552,6 +574,7 @@ impl Runtime for HtmlRuntime {
     fn render(&mut self, _frame_time_nanos: Option<u64>) {
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
         self.deliver_moments();
+        self.deliver_pastes();
         self.dom.render();
         self.draw();
         self.deliver_host_moments();
@@ -604,9 +627,6 @@ impl Runtime for HtmlRuntime {
                 // TODO(DarkPyonix/compose-rust#100): map the full W3C `Key`, `Code`,
                 // `Location`, `repeat`, and `is_composing` fields once `EventPayload::KeyDown`
                 // and `EventPayload::KeyUp` carry them on the wire.
-                // TODO(DarkPyonix/compose-rust#98): route IME `compositionstart`,
-                // `compositionupdate`, and `compositionend` wire payloads to
-                // `HtmlDom::composition_start`, `composition_update`, and `composition_end`.
                 // TODO(DarkPyonix/compose-rust#410): route renderer `FocusGained` wire
                 // payloads to `self.deliver_focus(node)`.
                 let (key, code) = match key {
@@ -640,6 +660,35 @@ impl Runtime for HtmlRuntime {
                     self.deliver_focus(node);
                 }
                 let prevented = self.dom.key_down(node, key, code, modifiers);
+                if !prevented {
+                    let is_mac = cfg!(target_os = "macos");
+                    let cmd_ctrl = if is_mac {
+                        *meta_key && !*ctrl_key
+                    } else {
+                        *ctrl_key && !*meta_key
+                    };
+                    if cmd_ctrl && !*alt_key {
+                        let is_v = text.eq_ignore_ascii_case("v") || matches!(code, Code::KeyV);
+                        let is_c = text.eq_ignore_ascii_case("c") || matches!(code, Code::KeyC);
+                        let is_x = text.eq_ignore_ascii_case("x") || matches!(code, Code::KeyX);
+                        if is_v {
+                            let target = self.focused.unwrap_or(node);
+                            let pending = self.pending_pastes.clone();
+                            compose_rust::clipboard::read_text(move |result| {
+                                if let Ok(Some(clip_text)) = result {
+                                    pending.borrow_mut().push((target, clip_text));
+                                }
+                            });
+                        } else if is_c {
+                            let target = self.focused.unwrap_or(node);
+                            self.dom.copy(target);
+                        } else if is_x {
+                            let target = self.focused.unwrap_or(node);
+                            self.dom.cut(target);
+                        }
+                    }
+                }
+                self.deliver_pastes();
                 // In a field, a key nobody prevented goes on to the field: Enter submits
                 // or starts a line. From a box, the key has been offered to the element
                 // and, by bubbling, to every element around it, so the boxes around this
@@ -727,6 +776,20 @@ impl Runtime for HtmlRuntime {
                     },
                 );
             }
+            (
+                BridgeEvent::CompositionChange,
+                EventPayload::CompositionChanged { composing },
+            ) => {
+                if *composing {
+                    if self.composing.insert(node) {
+                        let data = self.typed.get(&node).cloned().unwrap_or_default();
+                        self.dom.composition_start(node, &data);
+                    }
+                } else if self.composing.remove(&node) {
+                    let data = self.typed.get(&node).cloned().unwrap_or_default();
+                    self.dom.composition_end(node, &data);
+                }
+            }
             (BridgeEvent::Toggle, EventPayload::ValueChanged(value)) => {
                 self.dom.check(node, *value != 0.0);
             }
@@ -760,6 +823,9 @@ impl Runtime for HtmlRuntime {
             return Poll::Ready(());
         }
         if relayout {
+            return Poll::Ready(());
+        }
+        if !self.pending_pastes.borrow().is_empty() {
             return Poll::Ready(());
         }
         outer
