@@ -1,19 +1,21 @@
 //! CSS `transform` on the HTML path: a 2D matrix about `transform-origin` that moves how a
 //! box and everything inside it is drawn, and where a pointer lands on it, and nothing
-//! about layout. 3D transforms are left out and named.
+//! about layout. A 3D transform is one 4x4 matrix with its perspective inside it, and
+//! moves the same things.
 //!
 //! Every expected number is worked out by hand from the CSS in the fixture and the matrix
 //! CSS defines for each function (`rotate(a)` is `(cos a, sin a, -sin a, cos a)`, `skewX(a)`
-//! has `tan a` in its third component), never read back from the layout. Text is sized by
+//! has `tan a` in its third component, `rotateY(a)` takes x to `x cos a` and its depth to
+//! `-x sin a`, `perspective(d)` divides by `1 - z / d`), never read back from the layout. Text is sized by
 //! a measurer that gives every character 10px and every line 20px.
 
 use std::cell::{Cell, RefCell};
 
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
-    DisplayList, HtmlConfig, HtmlDom, LiteralColours, Matrix2D, ModifierSlot, NodeEntry, Plan,
-    PlanChange, PlanKey, PlanModifier, TextMeasureRequest, TextMeasurer, TextMetrics, Transform2D,
-    TransformFunction, WidthConstraint, diff,
+    DisplayList, FlattenedSpace, HtmlConfig, HtmlDom, LiteralColours, Matrix2D, ModifierSlot,
+    NodeEntry, Plan, PlanChange, PlanKey, PlanModifier, TextMeasureRequest, TextMeasurer,
+    TextMetrics, Transform2D, TransformFunction, WidthConstraint, diff,
 };
 use dioxus_core::ScopeId;
 
@@ -281,47 +283,67 @@ fn mixed() -> Element {
     }
 }
 
-/// A translation only moves the box, as before. A 3D transform is not approximated in 2D:
-/// the box is drawn without it, and the list names which element's which transform was
-/// left out. `translate3d(5px, 0, 0)` and `translateZ(0)` are flat, so they are not 3D.
+/// A translation only moves the box, as before. A 3D transform is not approximated in 2D
+/// and not left out: it is kept whole, as one 4x4 matrix about the box's centre, and
+/// nothing is reported as skipped. `translate3d(5px, 0, 0)` and `translateZ(0)` are flat,
+/// so they are not 3D.
+///
+/// - `#tilt`, `rotateX(45deg)`: y goes to `y cos 45` and its depth to `y sin 45`, so the
+///   matrix has cos 45 = 0.707107 at row 1 of column 1 and sin 45 at row 2 of column 1.
+/// - `#deep`, `perspective(100px) rotateY(10deg)`: the perspective's `-1 / 100` in the
+///   bottom row meets the rotation's z column, so row 3 of column 2 is `-cos 10 / 100`
+///   and row 3 of column 0 is `sin 10 / 100`. The perspective is in the matrix.
 #[test]
-fn fr34_1_translation_folds_into_the_place_and_3d_is_skipped_with_a_warning() {
+fn fr34_1_translation_folds_into_the_place_and_a_3d_transform_is_kept_whole() {
     let mut dom = HtmlDom::with_config(mixed, config(MIXED));
     let list = dom.layout(800.0, 600.0, 1.0).clone();
 
     let slide = entry(&dom, &list, "slide");
-    assert!(slide.transform.is_none());
+    assert!(slide.transform.is_none() && slide.transform_3d.is_none());
     assert_eq!((slide.rect.x, slide.rect.y), (30.0, 40.0));
 
     let flat = entry(&dom, &list, "flat");
-    assert!(flat.transform.is_none());
+    assert!(flat.transform.is_none() && flat.transform_3d.is_none());
     assert_eq!((flat.rect.x, flat.rect.y), (25.0, 100.0));
 
     let tilt = entry(&dom, &list, "tilt");
     assert!(tilt.transform.is_none(), "not approximated in 2D");
     assert_eq!((tilt.rect.x, tilt.rect.y), (20.0, 200.0));
+    let tilted = tilt.transform_3d.as_ref().expect("#tilt is turned about x");
+    assert_eq!(
+        tilted.origin,
+        (50.0, 25.0),
+        "the default origin is the centre"
+    );
+    assert!(!tilted.backface_hidden);
+    let (sin, cos) = 45.0f32.to_radians().sin_cos();
+    let expected = [
+        1.0, 0.0, 0.0, 0.0, 0.0, cos, sin, 0.0, 0.0, -sin, cos, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ];
+    for (index, (a, e)) in tilted.matrix.0.iter().zip(expected).enumerate() {
+        assert!((a - e).abs() < 1e-5, "#tilt element {index}: {a} for {e}");
+    }
 
     let deep = entry(&dom, &list, "deep");
     assert!(deep.transform.is_none());
     assert_eq!((deep.rect.x, deep.rect.y), (20.0, 300.0));
+    let sunk = deep.transform_3d.as_ref().expect("#deep has a perspective");
+    let (sin, cos) = 10.0f32.to_radians().sin_cos();
+    assert!(
+        (sunk.matrix.0[11] + cos / 100.0).abs() < 1e-6
+            && (sunk.matrix.0[3] - sin / 100.0).abs() < 1e-6,
+        "the perspective is inside the matrix: {:?}",
+        sunk.matrix
+    );
 
     let zero = entry(&dom, &list, "zero");
-    assert!(zero.transform.is_none());
+    assert!(zero.transform.is_none() && zero.transform_3d.is_none());
     assert_eq!((zero.rect.x, zero.rect.y), (20.0, 400.0));
 
-    let skipped = &list.skipped_transforms;
-    assert_eq!(skipped.len(), 2, "{skipped:#?}");
-    assert_eq!(skipped[0].node, tilt.node);
-    assert_eq!(skipped[0].tag, "div");
     assert!(
-        skipped[0].transform.contains("rotateX(45deg)"),
-        "{skipped:#?}"
-    );
-    assert_eq!(skipped[1].node, deep.node);
-    assert!(
-        skipped[1].transform.contains("perspective(100px)")
-            && skipped[1].transform.contains("rotateY(10deg)"),
-        "{skipped:#?}"
+        list.skipped_transforms.is_empty(),
+        "{:#?}",
+        list.skipped_transforms
     );
 }
 
@@ -340,16 +362,16 @@ fn beside_2d() -> Element {
     }
 }
 
-/// A 3D transform on one element is skipped with a warning (the layout writes it to stderr
-/// and lists it in `skipped_transforms`), and the 2D transforms beside it still apply. The
-/// stderr line itself is not asserted here, since the list is what a test can read.
+/// A 3D transform on one element is drawn, and the 2D transforms beside it still apply.
 ///
-/// - `#tilt` is drawn flat at (100, 100) with no transform and is the only skipped entry.
+/// - `#tilt` is 100 by 50 at (100, 100), centre (150, 125). `rotateX(45deg)` with no
+///   perspective leaves x alone and takes y to `y cos 45`: the top and bottom edges move
+///   to 25 cos 45 = 17.6777 above and below the centre. Its layout box does not change.
 /// - `#turn` is 100 by 50 at (300, 100), centre (350, 125), turned a quarter turn, so its
 ///   corners are (375, 75), (375, 175), (325, 175) and (325, 75).
 /// - `#move` is translated 20px, which only moves it to x = 520 and adds no transform.
 #[test]
-fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() {
+fn fr34_1_a_3d_transform_is_drawn_beside_2d_siblings() {
     let mut dom = HtmlDom::with_config(beside_2d, config(BESIDE_2D));
     let list = dom.layout(800.0, 600.0, 1.0).clone();
 
@@ -359,17 +381,30 @@ fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() 
         (tilt.rect.x, tilt.rect.y, tilt.rect.width, tilt.rect.height),
         (100.0, 100.0, 100.0, 50.0)
     );
-
-    let skipped = &list.skipped_transforms;
-    assert_eq!(skipped.len(), 1, "{skipped:#?}");
-    assert_eq!(skipped[0].node, tilt.node);
-    assert_eq!(skipped[0].tag, "div");
+    let half = 25.0 * 45.0f32.to_radians().cos();
+    assert_points(
+        &tilt
+            .transform_3d
+            .as_ref()
+            .expect("#tilt is turned about x")
+            .corners(&tilt.rect)
+            .expect("nothing is behind the viewer"),
+        &[
+            (100.0, 125.0 - half),
+            (200.0, 125.0 - half),
+            (200.0, 125.0 + half),
+            (100.0, 125.0 + half),
+        ],
+        "#tilt",
+    );
     assert!(
-        skipped[0].transform.contains("rotateX(45deg)"),
-        "{skipped:#?}"
+        list.skipped_transforms.is_empty(),
+        "{:#?}",
+        list.skipped_transforms
     );
 
     let turn = entry(&dom, &list, "turn");
+    assert!(turn.transform_3d.is_none());
     assert_points(
         &turn
             .transform
@@ -382,7 +417,7 @@ fn fr34_1_3d_transform_is_skipped_with_a_warning_and_2d_siblings_keep_working() 
 
     let moved = entry(&dom, &list, "move");
     assert!(
-        moved.transform.is_none(),
+        moved.transform.is_none() && moved.transform_3d.is_none(),
         "a translation folds into the place"
     );
     assert_eq!((moved.rect.x, moved.rect.y), (520.0, 100.0));
@@ -522,8 +557,8 @@ fn one_box() -> Element {
 }
 
 enum Expect {
-    /// Left out, listed once under the function's name, and drawn at its layout place.
-    Skipped(&'static str),
+    /// Kept as one 3D matrix, with no 2D transform, at its layout place.
+    ThreeD,
     /// Not 3D and does nothing: no transform, no entry in the list, and the box stays put.
     Untransformed,
     /// A translation folded into the box's place: no transform, no entry, and the box moves
@@ -533,77 +568,64 @@ enum Expect {
     Matrix,
 }
 
-/// Every 3D function the layout can be given, one box each, with what the code does now.
+/// Every 3D function the layout can be given, one box each: which are a 3D matrix and
+/// which are flat.
 ///
-/// The code decides per function. A function that is 3D keeps the whole transform out.
-/// A function that is 3D only by its arguments (a `z` of 0 or a scale of 1 on the z axis)
-/// is flat, and is folded into a 2D form or dropped, as the 2D function it reduces to.
+/// A function that is 3D makes the whole transform one 4x4 matrix. A function that is 3D
+/// only by its name (a `z` of 0 or a scale of 1 on the z axis, a turn about the z axis) is
+/// flat, and is folded into a 2D form or dropped, as the 2D function it reduces to.
 ///
 /// - `rotateX`, `rotateY`, `rotate3d` with an axis that is not the z axis: a turn about x or
-///   y is a 3D rotation, so the transform is skipped.
-/// - `rotate3d(0, 0, 1, 30deg)` is a turn about z, which is a 2D rotation, so it is a matrix.
+///   y is a 3D rotation.
+/// - `rotate3d(0, 0, 1, 30deg)` is a turn about z, which is a 2D rotation, so it is a 2D
+///   matrix.
 /// - `translateZ` and `translate3d` with a non-zero z move the box out of the plane, so they
-///   are skipped. With z = 0 (`translateZ(0px)`, or `translate3d(10px, 20px, 0px)`) they
-///   reduce to the 2D form: `translateZ(0)` is nothing, `translate3d` is a plain translation.
-/// - `scaleZ` and `scale3d` with a z other than 1 scale the depth, so they are skipped.
+///   are 3D. With z = 0 (`translateZ(0px)`, or `translate3d(10px, 20px, 0px)`) they reduce
+///   to the 2D form: `translateZ(0)` is nothing, `translate3d` is a plain translation.
+/// - `scaleZ` and `scale3d` with a z other than 1 scale the depth, so they are 3D.
 ///   `scaleZ(1)` does nothing, and `scale3d(2, 3, 1)` is the 2D `scale(2, 3)`.
-/// - `perspective()` has no 2D form, and the code skips every `perspective()` regardless of
-///   its length.
-/// - `matrix3d()` is skipped when it is not flat (here the z row carries a perspective term
-///   of 0.001). A flat `matrix3d()` would be a 2D matrix.
+/// - `perspective()` has no 2D form.
+/// - `matrix3d()` is 3D when it is not flat (here the z row carries a perspective term of
+///   0.001). A flat `matrix3d()` would be a 2D matrix.
 /// - A mixed list is one transform: `translate(10px) rotateY(30deg)` has a 3D part, so the
-///   whole list is skipped, and the `translate(10px)` is not applied either. The box stays
-///   at x = 20.
+///   whole list is one 3D matrix, the `translate(10px)` inside it. The box stays at x = 20
+///   and the matrix carries the 10px.
 /// - The `rotate`, `translate` and `scale` properties go through the same checks, one value
-///   per property. The 3D forms are listed under the property (`rotate: ...`), and a flat
-///   value such as `translate: 10px 20px 0` folds into the place like its function does.
+///   per property, and a flat value such as `translate: 10px 20px 0` folds into the place
+///   like its function does.
+///
+/// Nothing is reported as skipped in any of them.
 #[test]
-fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
+fn fr34_1_flat_3d_functions_stay_2d_and_the_rest_are_one_3d_matrix() {
     let cases: &[(&str, Expect)] = &[
-        ("transform: rotateX(45deg)", Expect::Skipped("rotateX(")),
-        ("transform: rotateY(30deg)", Expect::Skipped("rotateY(")),
-        (
-            "transform: rotate3d(1, 1, 0, 45deg)",
-            Expect::Skipped("rotate3d("),
-        ),
+        ("transform: rotateX(45deg)", Expect::ThreeD),
+        ("transform: rotateY(30deg)", Expect::ThreeD),
+        ("transform: rotate3d(1, 1, 0, 45deg)", Expect::ThreeD),
         ("transform: rotate3d(0, 0, 1, 30deg)", Expect::Matrix),
-        (
-            "transform: translateZ(10px)",
-            Expect::Skipped("translateZ("),
-        ),
+        ("transform: translateZ(10px)", Expect::ThreeD),
         ("transform: translateZ(0px)", Expect::Untransformed),
-        (
-            "transform: translate3d(10px, 0px, 10px)",
-            Expect::Skipped("translate3d("),
-        ),
+        ("transform: translate3d(10px, 0px, 10px)", Expect::ThreeD),
         (
             "transform: translate3d(10px, 20px, 0px)",
             Expect::Folded(10.0, 20.0),
         ),
-        ("transform: scaleZ(2)", Expect::Skipped("scaleZ(")),
+        ("transform: scaleZ(2)", Expect::ThreeD),
         ("transform: scaleZ(1)", Expect::Untransformed),
-        ("transform: scale3d(2, 2, 2)", Expect::Skipped("scale3d(")),
+        ("transform: scale3d(2, 2, 2)", Expect::ThreeD),
         ("transform: scale3d(2, 3, 1)", Expect::Matrix),
-        (
-            "transform: perspective(100px)",
-            Expect::Skipped("perspective("),
-        ),
+        ("transform: perspective(100px)", Expect::ThreeD),
         (
             "transform: matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0.001, 0, 0, 0, 1)",
-            Expect::Skipped("matrix3d("),
+            Expect::ThreeD,
         ),
-        (
-            "transform: translate(10px) rotateY(30deg)",
-            Expect::Skipped("rotateY("),
-        ),
-        // The individual properties are read by the same code (`functions_of`), and their
-        // 3D forms are listed under the property name, as `describe` writes it.
-        ("rotate: x 45deg", Expect::Skipped("rotate:")),
-        ("rotate: 1 1 0 30deg", Expect::Skipped("rotate:")),
+        ("transform: translate(10px) rotateY(30deg)", Expect::ThreeD),
+        // The individual properties are read by the same code as the functions.
+        ("rotate: x 45deg", Expect::ThreeD),
+        ("rotate: 1 1 0 30deg", Expect::ThreeD),
         ("rotate: 0 0 1 30deg", Expect::Matrix),
-        ("translate: 10px 0 5px", Expect::Skipped("translate:")),
+        ("translate: 10px 0 5px", Expect::ThreeD),
         ("translate: 10px 20px 0", Expect::Folded(10.0, 20.0)),
-        ("scale: 1 1 2", Expect::Skipped("scale:")),
+        ("scale: 1 1 2", Expect::ThreeD),
         ("scale: 2 3 1", Expect::Matrix),
     ];
 
@@ -616,29 +638,35 @@ fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
         let rect = (subject.rect.x, subject.rect.y);
 
         match expect {
-            Expect::Skipped(name) => {
-                assert!(
-                    subject.transform.is_none(),
-                    "`{css}` is drawn untransformed"
-                );
+            Expect::ThreeD => {
+                assert!(subject.transform.is_none(), "`{css}` has no 2D form");
+                let transform = subject
+                    .transform_3d
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("`{css}` is a 3D matrix"));
+                assert_eq!(transform.origin, (50.0, 25.0), "`{css}`");
                 assert_eq!(rect, (20.0, 20.0), "`{css}` stays at its layout place");
-                assert_eq!(skipped.len(), 1, "`{css}`: {skipped:#?}");
-                assert_eq!(skipped[0].node, subject.node, "`{css}`");
-                assert_eq!(skipped[0].tag, "div", "`{css}`");
-                assert!(
-                    skipped[0].transform.contains(*name),
-                    "`{css}` is listed as `{}`, expected it to name `{name}`",
-                    skipped[0].transform
-                );
+                assert!(skipped.is_empty(), "`{css}` is drawn: {skipped:#?}");
+                if *css == "transform: translate(10px) rotateY(30deg)" {
+                    // The translation is the last column of the one matrix.
+                    assert!(
+                        (transform.matrix.0[12] - 10.0).abs() < 1e-5,
+                        "{:?}",
+                        transform.matrix
+                    );
+                }
             }
             Expect::Untransformed => {
-                assert!(subject.transform.is_none(), "`{css}`");
+                assert!(
+                    subject.transform.is_none() && subject.transform_3d.is_none(),
+                    "`{css}`"
+                );
                 assert_eq!(rect, (20.0, 20.0), "`{css}`");
                 assert!(skipped.is_empty(), "`{css}` is not 3D: {skipped:#?}");
             }
             Expect::Folded(dx, dy) => {
                 assert!(
-                    subject.transform.is_none(),
+                    subject.transform.is_none() && subject.transform_3d.is_none(),
                     "`{css}` is folded into the place"
                 );
                 assert_eq!(rect, (20.0 + dx, 20.0 + dy), "`{css}`");
@@ -646,7 +674,7 @@ fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
             }
             Expect::Matrix => {
                 assert!(
-                    subject.transform.is_some(),
+                    subject.transform.is_some() && subject.transform_3d.is_none(),
                     "`{css}` is drawn as a 2D matrix"
                 );
                 assert_eq!(rect, (20.0, 20.0), "`{css}` keeps the layout place");
@@ -654,4 +682,222 @@ fn fr34_1_every_3d_function_is_skipped_with_a_warning() {
             }
         }
     }
+}
+
+const DEEP: &str = r#"
+.box { position: absolute; width: 200px; height: 100px; background-color: rgb(51, 102, 153); }
+#deep { left: 100px; top: 100px; transform: perspective(400px) rotateY(45deg); }
+"#;
+
+fn deep() -> Element {
+    rsx! {
+        div { id: "deep", class: "box", onclick: move |_| hit("deep") }
+    }
+}
+
+/// A pointer is tested against the shape a 3D transform draws.
+///
+/// `#deep` is 200 by 100 at (100, 100), centre (200, 150), under
+/// `perspective(400px) rotateY(45deg)`. A point dx from the centre goes to depth
+/// `-dx sin 45`, so it is divided by `w = 1 + dx sin 45 / 400`:
+///
+/// - the right edge, dx = 100: w = 1.176777, x = 70.7107 / w = 60.088, half height
+///   50 / w = 42.489. It is drawn at x = 260.088, from y = 107.511 to 192.489.
+/// - the left edge, dx = -100: w = 0.823223, x = -85.895, half height 60.737. It is drawn
+///   at x = 114.105, from y = 89.263 to 210.737.
+///
+/// The top edge is the straight line between (114.105, 89.263) and (260.088, 107.511),
+/// which falls 0.125 for each pixel across: y = 90.0 at x = 120 and y = 106.25 at x = 250.
+///
+/// - (200, 150), the centre, is inside.
+/// - (120, 95) is above the layout box (y < 100) and below the drawn top edge, so inside.
+/// - (290, 150) is inside the layout box and right of the drawn right edge.
+/// - (105, 150) is inside the layout box and left of the drawn left edge.
+/// - (250, 103) is inside the layout box and above the drawn top edge.
+#[test]
+fn fr34_1_3d_hit_test_follows_the_drawn_shape() {
+    take_hits();
+    let mut dom = HtmlDom::with_config(deep, config(DEEP));
+    let list = dom.layout(800.0, 600.0, 1.0).clone();
+    let deep = dom.element_by_id("deep").unwrap();
+
+    let (sin, cos) = 45.0f32.to_radians().sin_cos();
+    let right = 1.0 + 100.0 * sin / 400.0;
+    let left = 1.0 - 100.0 * sin / 400.0;
+    let transform = entry(&dom, &list, "deep")
+        .transform_3d
+        .as_ref()
+        .expect("#deep is 3D")
+        .clone();
+    assert_points(
+        &transform
+            .corners(&entry(&dom, &list, "deep").rect)
+            .expect("nothing is behind the viewer"),
+        &[
+            (200.0 - 100.0 * cos / left, 150.0 - 50.0 / left),
+            (200.0 + 100.0 * cos / right, 150.0 - 50.0 / right),
+            (200.0 + 100.0 * cos / right, 150.0 + 50.0 / right),
+            (200.0 - 100.0 * cos / left, 150.0 + 50.0 / left),
+        ],
+        "#deep",
+    );
+    // The middle of the right edge, and back again.
+    let drawn = list.project(deep, 300.0, 150.0).unwrap();
+    assert_points(&[drawn], &[(200.0 + 100.0 * cos / right, 150.0)], "project");
+    let back = list.local_point(deep, drawn.0, drawn.1).unwrap();
+    assert_points(&[back], &[(300.0, 150.0)], "local_point");
+
+    assert_eq!(dom.click(200.0, 150.0), Some(deep));
+    assert_eq!(take_hits(), ["deep"]);
+
+    assert_eq!(dom.click(120.0, 95.0), Some(deep));
+    assert_eq!(take_hits(), ["deep"]);
+
+    for (x, y) in [(290.0, 150.0), (105.0, 150.0), (250.0, 103.0)] {
+        assert_eq!(dom.click(x, y), None, "({x}, {y}) is outside what is drawn");
+        assert_eq!(take_hits(), Vec::<&str>::new());
+    }
+}
+
+const FACES: &str = r#"
+.box { position: absolute; top: 100px; width: 100px; height: 50px; background-color: rgb(51, 102, 153); }
+#back { left: 100px; transform: rotateY(180deg); backface-visibility: hidden; }
+#front { left: 300px; transform: rotateY(30deg); backface-visibility: hidden; }
+#shown { left: 500px; transform: rotateY(180deg); }
+"#;
+
+fn faces() -> Element {
+    rsx! {
+        div { id: "back", class: "box", onclick: move |_| hit("back") }
+        div { id: "front", class: "box", onclick: move |_| hit("front") }
+        div { id: "shown", class: "box", onclick: move |_| hit("shown") }
+    }
+}
+
+/// `backface-visibility: hidden` goes with the 3D transform, and a box whose hidden back
+/// is turned to the viewer is not there: it is marked as not drawn and takes no pointer.
+///
+/// - `#back`, `rotateY(180deg)`, shows its back and hides it. A click at its centre,
+///   (150, 125), reaches nothing.
+/// - `#front`, `rotateY(30deg)`, hides its back too, and shows its front: it is drawn (as
+///   a box 100 cos 30 = 86.6 wide about x = 350) and a click at (350, 125) reaches it.
+/// - `#shown`, `rotateY(180deg)` with the default `backface-visibility: visible`, is drawn
+///   mirrored where it was, and a click at (550, 125) reaches it.
+///
+/// Leaving the box out of the picture is the renderer's part: it is told with the flag on
+/// the plan's 3D transform modifier, which is what is asserted here.
+#[test]
+fn fr34_1_backface_hidden_box_is_not_drawn_from_behind() {
+    take_hits();
+    let mut dom = HtmlDom::with_config(faces, config(FACES));
+    let list = dom.layout(800.0, 600.0, 1.0).clone();
+    let back = entry(&dom, &list, "back");
+    let front = entry(&dom, &list, "front");
+    let shown = entry(&dom, &list, "shown");
+
+    let of = |entry: &NodeEntry| entry.transform_3d.clone().expect("a 3D transform");
+    assert!(of(back).backface_hidden && of(back).faces_away());
+    assert!(back.is_turned_away());
+    assert!(of(front).backface_hidden && !of(front).faces_away());
+    assert!(!front.is_turned_away());
+    assert!(!of(shown).backface_hidden && of(shown).faces_away());
+    assert!(!shown.is_turned_away());
+
+    let plan = dom.plan(&mut LiteralColours).expect("laid out");
+    for (entry, hidden) in [(back, true), (front, true), (shown, false)] {
+        let node = plan.find(PlanKey::Node(entry.node)).expect("in the plan");
+        assert!(
+            matches!(
+                node.modifier(ModifierSlot::Transform),
+                Some(PlanModifier::Transform3D(t)) if t.backface_hidden == hidden
+            ),
+            "{node:#?}"
+        );
+    }
+
+    let (front, shown) = (front.node, shown.node);
+    assert_ne!(list.hit_test(150.0, 125.0), Some(back.node));
+    assert_eq!(dom.click(150.0, 125.0), None, "#back is not there");
+    assert_eq!(take_hits(), Vec::<&str>::new());
+    assert_eq!(dom.click(350.0, 125.0), Some(front));
+    assert_eq!(take_hits(), ["front"]);
+    assert_eq!(dom.click(550.0, 125.0), Some(shown));
+    assert_eq!(take_hits(), ["shown"]);
+}
+
+const SCENE: &str = r#"
+#scene {
+    position: absolute; left: 100px; top: 100px; width: 200px; height: 100px;
+    transform-style: preserve-3d; transform: rotateX(20deg);
+    background-color: rgb(0, 0, 128);
+}
+#card { width: 100px; height: 50px; transform: rotateY(30deg) translateZ(40px); background-color: rgb(255, 200, 0); }
+#plain { position: absolute; left: 400px; top: 100px; width: 50px; height: 50px; transform: rotateX(20deg); }
+"#;
+
+fn scene() -> Element {
+    rsx! {
+        div { id: "scene",
+            div { id: "card" }
+        }
+        div { id: "plain" }
+    }
+}
+
+/// `transform-style: preserve-3d` is drawn flat, and the element that asked for it is
+/// named so the developer can be warned (the layout writes the warning to stderr, once for
+/// each element; the list is what a test can read).
+///
+/// `#scene` asks for it and `#plain`, with the same transform and the default
+/// `transform-style: flat`, does not, so the list names `#scene` alone. `#card` keeps its
+/// own 3D transform and is a child of `#scene`'s node in the plan, placed by its offset in
+/// `#scene`'s plane: it is drawn into that plane and then through `#scene`'s transform,
+/// which is how `flat` composes. Nothing stops: the layout, the plan and a hit test all
+/// answer.
+#[test]
+fn fr34_1_preserve_3d_warns_and_flattens() {
+    let mut dom = HtmlDom::with_config(scene, config(SCENE));
+    let list = dom.layout(800.0, 600.0, 1.0).clone();
+    let scene = entry(&dom, &list, "scene");
+    let card = entry(&dom, &list, "card");
+
+    assert_eq!(
+        list.flattened_spaces,
+        vec![FlattenedSpace {
+            node: scene.node,
+            tag: "div".to_string(),
+        }]
+    );
+    assert!(scene.transform_3d.is_some() && card.transform_3d.is_some());
+    assert_eq!((card.rect.x, card.rect.y), (100.0, 100.0));
+
+    let plan = dom.plan(&mut LiteralColours).expect("laid out");
+    let key = |entry: &NodeEntry| PlanKey::Node(entry.node);
+    assert_eq!(plan.parent_of(key(card)).map(|n| n.key), Some(key(scene)));
+    for entry in [scene, card] {
+        let node = plan.find(key(entry)).unwrap();
+        assert!(
+            matches!(
+                node.modifier(ModifierSlot::Transform),
+                Some(PlanModifier::Transform3D(_))
+            ),
+            "{node:#?}"
+        );
+    }
+    assert_eq!(plan.find(key(card)).unwrap().offset(), (0.0, 0.0));
+
+    // The centre of `#scene` is the origin of its transform, so it is drawn where it lies.
+    // It is drawn 50 cos 20 = 46.98 above and below that centre, so (250, 180) is on it,
+    // right of `#card`.
+    let scene = scene.node;
+    assert_points(
+        &[list.project(scene, 200.0, 150.0).unwrap()],
+        &[(200.0, 150.0)],
+        "#scene's centre",
+    );
+    assert_eq!(list.hit_test(250.0, 180.0), Some(scene));
+
+    // A second layout names the element again and changes nothing else.
+    let again = dom.layout(800.0, 600.0, 1.0).clone();
+    assert_eq!(again.flattened_spaces, list.flattened_spaces);
 }

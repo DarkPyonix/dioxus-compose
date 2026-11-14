@@ -555,10 +555,15 @@ fn value_of(list: &DisplayList, entry: &NodeEntry, property: AnimatedProperty) -
 /// The transitions that began between two layouts: for each node that declares a
 /// transition of a property a renderer plays, and whose steady value for it is not what it
 /// was, an animation from the old value to the new.
+///
+/// A transition of `transform` to or from a 3D transform is not one a renderer plays, so
+/// none is started: the box takes its new transform at once, and the transition is named
+/// in `skipped`.
 pub(crate) fn transitions(
     scan: &Scan,
     prior: Option<&DisplayList>,
     current: &DisplayList,
+    skipped: &mut Vec<SkippedTransform>,
 ) -> Vec<TransitionStart> {
     let Some(prior) = prior else {
         return Vec::new();
@@ -572,6 +577,19 @@ pub(crate) fn transitions(
             continue;
         };
         for spec in &motion.transitions {
+            if spec.property == AnimatedProperty::Transform
+                && (before.transform_3d.is_some() || entry.transform_3d.is_some())
+            {
+                if before.transform_3d != entry.transform_3d || before.transform != entry.transform
+                {
+                    skipped.push(SkippedTransform {
+                        node: entry.node,
+                        tag: entry.tag.clone(),
+                        transform: "transition: transform".to_string(),
+                    });
+                }
+                continue;
+            }
             let mut from = value_of(prior, before, spec.property);
             let mut to = value_of(current, entry, spec.property);
             // A transform that appears or goes away is a transition to or from the identity

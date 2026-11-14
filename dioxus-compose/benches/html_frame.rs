@@ -32,6 +32,11 @@
 //!   a window resize alone is expected to move little in it; the boxes inside the sidebar
 //!   take their width from these two, so this is the resize that moves them. Each
 //!   scenario prints how many entries one of its frames sends before it is measured.
+//! - `ticked_width_transition_300_rows`: the same 300 rows under a bar whose `width` a CSS
+//!   transition changes, so the Host ticks the page: each frame it hands the document the
+//!   frame's time, resolves the styles there and lays the page out again
+//!   (`HtmlDom::tick`). This is what a frame costs while a motion that changes layout runs.
+//!   The transition is started again, outside the timed frame, each time it ends.
 //!
 //! The budget is printed, not asserted. `scripts/check.sh` and CI run every bench target,
 //! and this path has no recorded numbers yet; whether an overrun fails the build is for
@@ -468,6 +473,127 @@ impl Frames for AppFrames {
 }
 
 // ------------------------------------------------------------------------------------------
+// The same rows under a bar whose width a transition changes.
+
+const METER_CSS: &str = "html, body { margin: 0; padding: 0; }
+#meter-row { display: flex; height: 20px; }
+#meter { flex: none; width: 100px; height: 20px; background-color: rgb(200, 0, 0); transition: width 1s linear; }
+#meter.wide { width: 300px; }
+#beside { flex: none; width: 20px; height: 20px; background-color: rgb(0, 128, 0); }";
+
+/// How far the clock moves each frame, in seconds.
+const FRAME_SECONDS: f64 = 1.0 / 60.0;
+
+thread_local! {
+    static METER_IS_WIDE: Cell<bool> = const { Cell::new(false) };
+}
+
+fn rows_under_a_meter() -> Element {
+    let meter_class = if METER_IS_WIDE.with(Cell::get) {
+        "wide"
+    } else {
+        ""
+    };
+    rsx! {
+        div { id: "meter-row",
+            div { id: "meter", class: meter_class }
+            div { id: "beside" }
+        }
+        div { id: "list", style: "display: flex; flex-direction: column; width: 400px",
+            for (index, background) in rows(ROW_BACKGROUND) {
+                div {
+                    key: "{index}",
+                    style: "height: 20px; padding: 0px 8px; background-color: {background}",
+                    "Row {index}"
+                }
+            }
+        }
+    }
+}
+
+struct TickedFrames {
+    dom: HtmlDom,
+    downstream: Downstream,
+    seconds: f64,
+}
+
+impl TickedFrames {
+    fn new() -> Self {
+        METER_IS_WIDE.with(|wide| wide.set(false));
+        let config = HtmlConfig {
+            stylesheets: vec![METER_CSS.to_string()],
+            measurer: Some(Box::new(FixedAdvance)),
+            ..HtmlConfig::default()
+        };
+        let mut dom = HtmlDom::with_config(rows_under_a_meter, config);
+        dom.set_time(0.0);
+        let list = dom.layout(APP_WIDTH, APP_HEIGHT, 1.0).clone();
+        Self {
+            dom,
+            downstream: Downstream::new(list),
+            seconds: 0.0,
+        }
+    }
+
+    /// Sends the bar the other way, which starts its transition, and lays the page out
+    /// once so that the Host begins to tick.
+    fn restart(&mut self) {
+        METER_IS_WIDE.with(|wide| wide.set(!wide.get()));
+        self.dom.virtual_dom_mut().mark_dirty(ScopeId::APP);
+        self.dom.render();
+        self.seconds += FRAME_SECONDS;
+        self.dom.set_time(self.seconds);
+        self.dom.layout(APP_WIDTH, APP_HEIGHT, 1.0);
+        assert!(
+            self.dom.needs_frames(),
+            "a width transition that has just started is ticked by the Host"
+        );
+    }
+}
+
+impl Frames for TickedFrames {
+    fn name(&self) -> &str {
+        "ticked_width_transition_300_rows"
+    }
+
+    /// The change is the clock, which `layout` is handed: there is no separate `apply`.
+    fn changes_something(&self) -> bool {
+        false
+    }
+
+    fn frame(&mut self) -> (FrameTimes, Sent) {
+        if !self.dom.needs_frames() {
+            self.restart();
+        }
+        self.seconds += FRAME_SECONDS;
+        let started = Instant::now();
+        // The tick resolves the styles at the frame's time, lays the page out, builds the
+        // display list and diffs it against the last one, so `layout` here holds one
+        // display list diff more than it does in the other scenarios.
+        drop(black_box(self.dom.tick(
+            self.seconds,
+            APP_WIDTH,
+            APP_HEIGHT,
+            1.0,
+        )));
+        let laid_out = Instant::now();
+        let list = self
+            .dom
+            .display_list()
+            .expect("the tick laid the page out")
+            .clone();
+        let copied = Instant::now();
+        let times = FrameTimes {
+            layout: laid_out - started,
+            ..FrameTimes::default()
+        };
+        let (mut times, sent) = self.downstream.finish(list, started, times);
+        times.total -= copied - laid_out;
+        (times, sent)
+    }
+}
+
+// ------------------------------------------------------------------------------------------
 // Running them.
 
 fn p99(samples: &mut [u128]) -> u128 {
@@ -558,6 +684,7 @@ fn benchmarks(criterion: &mut Criterion) {
         )));
     }
     scenarios.push(Box::new(AppFrames::new()));
+    scenarios.push(Box::new(TickedFrames::new()));
     scenarios.push(Box::new(FixtureFrames::new(
         "viewport_resize_sidebar",
         "sidebar",
