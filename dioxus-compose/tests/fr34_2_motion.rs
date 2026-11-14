@@ -564,3 +564,65 @@ fn fr34_2_a_width_transition_is_ticked_by_the_host_and_sends_only_what_moved() {
     assert!(idle.is_empty());
     assert_eq!(questions.get(), asked, "and the Host is idle again");
 }
+
+const THROUGH_3D_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#flip { width: 100px; height: 50px; transition: transform 1s linear; }
+#flip.on { transform: rotateY(180deg); }
+@keyframes tumble { from { transform: rotateX(0deg); } to { transform: rotateX(360deg); } }
+#tumbler { width: 40px; height: 40px; animation: tumble 2s linear infinite; }
+"#;
+
+fn through_3d() -> Element {
+    rsx! {
+        div { id: "flip", class: class_of("flip") }
+        div { id: "tumbler" }
+    }
+}
+
+/// A renderer animates lists of 2D transform functions, so a motion of `transform` that
+/// passes through a 3D transform is not described for it, and the display list names the
+/// motion instead (the layout writes a warning to stderr for each, once).
+///
+/// - `#flip` declares `transition: transform 1s linear` and the `on` class turns it over
+///   with `rotateY(180deg)`. No transition starts: the box has the 3D transform at once.
+/// - `#tumbler` runs `tumble`, whose last keyframe is `rotateX(360deg)`. The entry lists
+///   no animation of `transform`.
+#[test]
+fn fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named() {
+    let (mut dom, _) = open(through_3d, THROUGH_3D_CSS, false);
+    let first = dom.display_list().unwrap().clone();
+    let tumbler = entry(&dom, &first, "tumbler");
+    assert!(tumbler.animations.is_empty(), "{:#?}", tumbler.animations);
+    assert!(
+        first
+            .skipped_transforms
+            .iter()
+            .any(|skipped| skipped.node == tumbler.node
+                && skipped.transform.contains("@keyframes tumble")),
+        "{:#?}",
+        first.skipped_transforms
+    );
+
+    set("flip", true);
+    let list = relayout(&mut dom, 1.0);
+    let flip = entry(&dom, &list, "flip");
+    assert!(
+        flip.transform.is_none() && flip.transform_3d.is_some(),
+        "#flip is turned over at once: {flip:#?}"
+    );
+    assert!(
+        !list.transitions.iter().any(|start| start.node == flip.node),
+        "{:#?}",
+        list.transitions
+    );
+    assert!(
+        list.skipped_transforms
+            .iter()
+            .any(|skipped| skipped.node == flip.node
+                && skipped.tag == "div"
+                && skipped.transform == "transition: transform"),
+        "{:#?}",
+        list.skipped_transforms
+    );
+}

@@ -1,14 +1,17 @@
-//! Turns a box's computed `transform` into a 2D transform.
+//! Turns a box's computed `transform` into a 2D or a 3D transform.
 //!
 //! The functions are the same pieces a browser multiplies: the individual
 //! `translate`, `rotate` and `scale` properties first, in that order, then the `transform`
 //! list. Percentages in a translation resolve against the box's own border box, and the
 //! point the matrix is applied about is `transform-origin`.
 //!
-//! A transform that really is 3D (a rotation about x or y, a perspective, a `matrix3d()`
-//! that is not flat) has no 2D form, and drawing a 2D guess of it would put the box
-//! somewhere no browser does. Such a transform is reported as [`Moved::ThreeD`] so the
-//! caller can leave it out and say so.
+//! A transform that really is 3D (a rotation about x or y, a move or a scale in depth, a
+//! perspective, a `matrix3d()` that is not flat) has no 2D form, and drawing a 2D guess of
+//! it would put the box somewhere no browser does. Its functions, the 2D ones among them,
+//! are multiplied into one 4x4 matrix instead, with the perspective inside it, and it is
+//! reported as [`Moved::ThreeD`]. A 3D function whose arguments leave it flat
+//! (`translateZ(0)`, `scale3d(2, 3, 1)`, `rotate3d(0, 0, 1, 30deg)`, `rotateZ()`) is the
+//! 2D function it reduces to.
 
 use style::properties::ComputedValues;
 use style::values::computed::Length;
@@ -16,9 +19,8 @@ use style::values::computed::transform::TransformOperation;
 use style::values::generics::transform::{
     GenericRotate, GenericScale, GenericTransformOperation as Operation, GenericTranslate,
 };
-use style_traits::ToCss;
 
-use crate::paint::display_list::{Matrix2D, Transform2D, TransformFunction};
+use crate::paint::display_list::{Matrix2D, Matrix3D, Transform2D, Transform3D, TransformFunction};
 
 /// What a box's `transform` asks of its drawing.
 pub(crate) enum Moved {
@@ -29,8 +31,8 @@ pub(crate) enum Moved {
     Translated(f32, f32),
     /// Any other 2D transform.
     Matrix(Transform2D),
-    /// A 3D transform, as CSS writes it. It is not applied.
-    ThreeD(String),
+    /// A 3D transform.
+    ThreeD(Transform3D),
 }
 
 /// How `style`'s transform moves a box of `width` by `height`.
@@ -40,7 +42,7 @@ pub(crate) enum Moved {
 /// a position it would have to animate separately.
 pub(crate) fn moved(style: &ComputedValues, width: f32, height: f32, keep: bool) -> Moved {
     let Some(functions) = functions_of(style, width, height) else {
-        return Moved::ThreeD(describe(style));
+        return Moved::ThreeD(three_d(style, width, height));
     };
     let transform = Transform2D::new(functions, origin_of(style, width, height));
     // A transform a renderer plays an animation of is kept whole, even where it comes to
@@ -112,21 +114,115 @@ pub(crate) fn origin_of(style: &ComputedValues, width: f32, height: f32) -> (f32
     )
 }
 
-/// The transform as CSS writes it, for a warning.
-fn describe(style: &ComputedValues) -> String {
+/// The box's transform as one 4x4 matrix about `transform-origin`, for a transform that
+/// [`functions_of`] found to be 3D.
+fn three_d(style: &ComputedValues, width: f32, height: f32) -> Transform3D {
     let boxed = style.get_box();
-    let mut parts = Vec::new();
-    for (name, text) in [
-        ("translate", boxed.translate.to_css_string()),
-        ("rotate", boxed.rotate.to_css_string()),
-        ("scale", boxed.scale.to_css_string()),
-        ("transform", boxed.transform.to_css_string()),
-    ] {
-        if text != "none" {
-            parts.push(format!("{name}: {text}"));
+    let mut matrix = Matrix3D::IDENTITY;
+    match &boxed.translate {
+        GenericTranslate::None => {}
+        GenericTranslate::Translate(x, y, z) => {
+            matrix = matrix.times(&Matrix3D::translation(
+                x.resolve(Length::new(width)).px(),
+                y.resolve(Length::new(height)).px(),
+                z.px(),
+            ));
         }
     }
-    parts.join("; ")
+    match &boxed.rotate {
+        GenericRotate::None => {}
+        GenericRotate::Rotate(angle) => {
+            matrix = matrix.times(&Matrix3D::rotation(0.0, 0.0, 1.0, angle.radians()));
+        }
+        GenericRotate::Rotate3D(x, y, z, angle) => {
+            matrix = matrix.times(&Matrix3D::rotation(*x, *y, *z, angle.radians()));
+        }
+    }
+    match &boxed.scale {
+        GenericScale::None => {}
+        GenericScale::Scale(x, y, z) => {
+            matrix = matrix.times(&Matrix3D::scaling(*x, *y, *z));
+        }
+    }
+    matrix = matrix.times(&list_matrix_3d(&boxed.transform.0, width, height));
+
+    // The origin a renderer is given lies in the box's plane, so a depth in
+    // `transform-origin` goes into the matrix: move the origin's depth to zero, apply the
+    // matrix, move it back.
+    let depth = boxed.transform_origin.depth.px();
+    if depth != 0.0 {
+        matrix = Matrix3D::translation(0.0, 0.0, depth)
+            .times(&matrix)
+            .times(&Matrix3D::translation(0.0, 0.0, -depth));
+    }
+    Transform3D {
+        matrix,
+        origin: origin_of(style, width, height),
+        backface_hidden: style.clone_backface_visibility()
+            == style::computed_values::backface_visibility::T::Hidden,
+    }
+}
+
+/// The product of a `transform` list as a 4x4 matrix, in list order.
+fn list_matrix_3d(ops: &[TransformOperation], width: f32, height: f32) -> Matrix3D {
+    let across =
+        |value: &style::values::computed::LengthPercentage| value.resolve(Length::new(width)).px();
+    let down =
+        |value: &style::values::computed::LengthPercentage| value.resolve(Length::new(height)).px();
+    let flat = |matrix: Matrix2D| Matrix3D::from_2d(&matrix);
+    let mut total = Matrix3D::IDENTITY;
+    for op in ops {
+        let matrix = match op {
+            Operation::Matrix(m) => flat(Matrix2D {
+                a: m.a,
+                b: m.b,
+                c: m.c,
+                d: m.d,
+                e: m.e,
+                f: m.f,
+            }),
+            Operation::Matrix3D(m) => Matrix3D([
+                m.m11, m.m12, m.m13, m.m14, m.m21, m.m22, m.m23, m.m24, m.m31, m.m32, m.m33, m.m34,
+                m.m41, m.m42, m.m43, m.m44,
+            ]),
+            Operation::Skew(x, y) => flat(Matrix2D::skew(x.radians(), y.radians())),
+            Operation::SkewX(x) => flat(Matrix2D::skew(x.radians(), 0.0)),
+            Operation::SkewY(y) => flat(Matrix2D::skew(0.0, y.radians())),
+            Operation::Translate(x, y) => Matrix3D::translation(across(x), down(y), 0.0),
+            Operation::TranslateX(x) => Matrix3D::translation(across(x), 0.0, 0.0),
+            Operation::TranslateY(y) => Matrix3D::translation(0.0, down(y), 0.0),
+            Operation::TranslateZ(z) => Matrix3D::translation(0.0, 0.0, z.px()),
+            Operation::Translate3D(x, y, z) => Matrix3D::translation(across(x), down(y), z.px()),
+            Operation::Scale(x, y) => Matrix3D::scaling(*x, *y, 1.0),
+            Operation::ScaleX(x) => Matrix3D::scaling(*x, 1.0, 1.0),
+            Operation::ScaleY(y) => Matrix3D::scaling(1.0, *y, 1.0),
+            Operation::ScaleZ(z) => Matrix3D::scaling(1.0, 1.0, *z),
+            Operation::Scale3D(x, y, z) => Matrix3D::scaling(*x, *y, *z),
+            Operation::Rotate(angle) | Operation::RotateZ(angle) => {
+                Matrix3D::rotation(0.0, 0.0, 1.0, angle.radians())
+            }
+            Operation::RotateX(angle) => Matrix3D::rotation(1.0, 0.0, 0.0, angle.radians()),
+            Operation::RotateY(angle) => Matrix3D::rotation(0.0, 1.0, 0.0, angle.radians()),
+            Operation::Rotate3D(x, y, z, angle) => Matrix3D::rotation(*x, *y, *z, angle.radians()),
+            Operation::Perspective(depth) => {
+                Matrix3D::perspective(depth.infinity_or(|length| length.px()))
+            }
+            // As in the 2D list: the matrices are interpolated component by component,
+            // which keeps the two ends right.
+            Operation::InterpolateMatrix {
+                from_list,
+                to_list,
+                progress,
+            } => {
+                let from = list_matrix_3d(&from_list.0, width, height);
+                let to = list_matrix_3d(&to_list.0, width, height);
+                from.lerp(&to, progress.0)
+            }
+            Operation::AccumulateMatrix { .. } => Matrix3D::IDENTITY,
+        };
+        total = total.times(&matrix);
+    }
+    total
 }
 
 /// `rotate3d(x, y, z, angle)`: flat only when the axis is the z axis, or the angle is
