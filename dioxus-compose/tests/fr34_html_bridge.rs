@@ -1148,6 +1148,126 @@ fn fr34_prefers_color_scheme_follows_the_theme() {
     assert_eq!(next, Vec::new(), "the scheme is applied once");
 }
 
+fn aligned() -> Element {
+    rsx! {
+        div {
+            dir: "rtl",
+            style: "width: 200px",
+            p { style: "text-align: left", "west" }
+            p { style: "text-align: right", "east" }
+            p { style: "text-align: start", "first" }
+            p { style: "text-align: end", "last" }
+        }
+    }
+}
+
+/// `text-align: left` and `right` are physical, so in a right-to-left page they reach the
+/// renderer as `Left` and `Right`, which never swap, and not as `Start` and `End`, which a
+/// right-to-left paragraph would put on the other side. `start` and `end` stay as they are.
+#[test]
+fn fr34_text_align_left_and_right_stay_physical_in_a_right_to_left_page() {
+    use dioxus_compose::schema::TextAlign as Wire;
+    let mut host = Host::html(aligned, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let align_of = |text: &str| {
+        let node = text_node(&first, text);
+        first
+            .iter()
+            .find_map(|record| match record {
+                Record::Prop(id, PropertyKind::TextAlign, Value::Int(align)) if *id == node => {
+                    Some(*align)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{text:?} was sent no alignment: {first:#?}"))
+    };
+    assert_eq!(align_of("west"), i64::from(u16::from(Wire::Left)));
+    assert_eq!(align_of("east"), i64::from(u16::from(Wire::Right)));
+    assert_eq!(align_of("first"), i64::from(u16::from(Wire::Start)));
+    assert_eq!(align_of("last"), i64::from(u16::from(Wire::End)));
+}
+
+fn spaced() -> Element {
+    rsx! {
+        p { style: "letter-spacing: normal", "normal" }
+        p { style: "letter-spacing: 0", "zero" }
+        p { style: "letter-spacing: 2px", "wide" }
+    }
+}
+
+/// Text is measured with the spacing the page computed, and `letter-spacing: normal` and
+/// `0` both compute to none, so both are sent as an explicit 0: no extra space, rather than
+/// the type role's spacing, which would draw the run wider than it was measured.
+#[test]
+fn fr34_letter_spacing_normal_and_zero_are_sent_as_zero() {
+    let mut host = Host::html(spaced, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let spacing_of = |text: &str| {
+        let node = text_node(&first, text);
+        first
+            .iter()
+            .find_map(|record| match record {
+                Record::Prop(id, PropertyKind::LetterSpacing, value) if *id == node => {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{text:?} was sent no letter spacing: {first:#?}"))
+    };
+    assert_eq!(spacing_of("normal"), Value::Float(0.0));
+    assert_eq!(spacing_of("zero"), Value::Float(0.0));
+    assert_eq!(spacing_of("wide"), Value::Float(2.0));
+}
+
+fn radial() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 100px; background-image: radial-gradient(ellipse 80px 40px at center, red, blue)",
+        }
+        div {
+            style: "width: 200px; height: 100px; background-image: radial-gradient(circle 50px at center, red, blue)",
+        }
+    }
+}
+
+/// An elliptical CSS radial gradient is registered with both of its radii, each a fraction
+/// of the tile's larger side; a circle keeps 0 for its vertical radius, which is how
+/// compose-rust names a circle.
+#[test]
+fn fr34_an_elliptical_radial_gradient_is_sent_with_both_radii() {
+    use dioxus_compose::schema::AssetKind;
+    let mut host = Host::html(radial, config);
+    let batch = host.rebuild().unwrap();
+    let mut radii: Vec<(f32, f32)> = decode_batch(batch)
+        .unwrap()
+        .into_iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::RegisterAsset {
+                kind: AssetKind::Brush,
+                bytes,
+                ..
+            } => {
+                let coordinate = |at: usize| {
+                    f32::from_le_bytes(bytes[8 + at * 4..12 + at * 4].try_into().unwrap())
+                };
+                Some((coordinate(2), coordinate(3)))
+            }
+            _ => None,
+        })
+        .collect();
+    radii.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+    assert_eq!(radii.len(), 2, "two brushes were registered: {radii:?}");
+    assert!(
+        close(radii[0].0, 0.25) && radii[0].1 == 0.0,
+        "the circle: {radii:?}"
+    );
+    assert!(
+        close(radii[1].0, 0.4) && close(radii[1].1, 0.2),
+        "the ellipse: {radii:?}"
+    );
+}
+
 /// The `Text` node drawing `text`. There is exactly one.
 #[track_caller]
 fn text_node(records: &[Record], text: &str) -> u32 {

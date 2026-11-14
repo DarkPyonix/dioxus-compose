@@ -58,12 +58,6 @@ const MAX_TILES: usize = 1024;
 /// not the height the page was laid out with.
 const NORMAL_LINE_HEIGHT: f32 = 1.2;
 
-/// What a letter spacing of zero is sent as. The renderer reads zero as "not set" and
-/// falls back to its design system's spacing, which would make every run wider than the
-/// width it was measured at. The smallest positive float is zero on screen and not zero
-/// on the wire.
-const ZERO_LETTER_SPACING: f32 = f32::MIN_POSITIVE;
-
 /// What the page says about clicks and keys, which a plan does not carry.
 pub trait ClickTargets {
     /// Whether a click on the box drawn for `node` does anything of its own.
@@ -2365,11 +2359,6 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 6] {
         TextLineHeight::Px(px) => px,
         TextLineHeight::Normal => style.font_size * NORMAL_LINE_HEIGHT,
     };
-    let letter_spacing = if style.letter_spacing == 0.0 {
-        ZERO_LETTER_SPACING
-    } else {
-        style.letter_spacing
-    };
     [
         (PropertyKind::TypeRole, Prop::Int(TypeRole::None as i64)),
         (PropertyKind::FontSize, Prop::Float(style.font_size)),
@@ -2378,7 +2367,12 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 6] {
             Prop::Int(style.font_weight.round() as i64),
         ),
         (PropertyKind::LineHeight, Prop::Float(line_height)),
-        (PropertyKind::LetterSpacing, Prop::Float(letter_spacing)),
+        // `letter-spacing: normal` computes to 0, which is what the page was measured
+        // with, and a 0 on the wire is a 0: no extra space, not the type role's spacing.
+        (
+            PropertyKind::LetterSpacing,
+            Prop::Float(style.letter_spacing),
+        ),
         (
             PropertyKind::Color,
             Prop::Int(literal(color).to_bits() as i64),
@@ -2443,12 +2437,14 @@ fn slant_and_lines(text: &PlanText) -> Prop {
     Prop::Spans(TextSpans::new([span]))
 }
 
-/// compose-rust aligns by reading direction only. `left` and `right` are sent as start and
-/// end, which is where they are on a left-to-right page.
+/// `start` and `end` follow the reading direction and `left` and `right` do not, on the
+/// wire as in CSS, so a right-to-left page aligned left stays on the left.
 fn wire_align(align: TextAlign) -> WireAlign {
     match align {
-        TextAlign::Start | TextAlign::Left => WireAlign::Start,
-        TextAlign::End | TextAlign::Right => WireAlign::End,
+        TextAlign::Start => WireAlign::Start,
+        TextAlign::End => WireAlign::End,
+        TextAlign::Left => WireAlign::Left,
+        TextAlign::Right => WireAlign::Right,
         TextAlign::Center => WireAlign::Center,
         TextAlign::Justify => WireAlign::Justify,
     }
@@ -2457,10 +2453,9 @@ fn wire_align(align: TextAlign) -> WireAlign {
 /// A plan brush as compose-rust's, for a tile `width` by `height`.
 ///
 /// The plan measures gradient geometry in pixels from the tile's top-left corner;
-/// compose-rust measures it in fractions of the area it fills. A radial gradient's radius
-/// is a fraction of the larger side there, and it is round: an elliptical CSS gradient is
-/// drawn as the circle of its horizontal radius, which is the radius its stop offsets are
-/// fractions of.
+/// compose-rust measures it in fractions of the area it fills. A radial gradient's radii
+/// are fractions of the larger side there. A circle sends its vertical radius as 0, which
+/// is how compose-rust names one, and an ellipse sends both.
 fn wire_brush(brush: &Brush, width: f32, height: f32) -> WireBrush {
     let stops = |stops: &[GradientStop]| -> Vec<Stop> {
         stops
@@ -2490,13 +2485,17 @@ fn wire_brush(brush: &Brush, width: f32, height: f32) -> WireBrush {
         Brush::RadialGradient {
             center,
             radius_x,
-            radius_y: _,
+            radius_y,
             stops: list,
             repeating,
         } => WireBrush::Radial {
             center: (center.0 / width, center.1 / height),
             radius: radius_x / width.max(height),
-            radius_y: 0.0,
+            radius_y: if radius_x == radius_y {
+                0.0
+            } else {
+                radius_y / width.max(height)
+            },
             stops: stops(list),
             tile: tile(*repeating),
         },
