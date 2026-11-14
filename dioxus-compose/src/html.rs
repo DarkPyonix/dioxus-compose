@@ -78,8 +78,8 @@ pub type NodeId = usize;
 
 pub use crate::dom::{
     AppRegion, ClipboardEventData, Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput,
-    PointerKind, PointerSubscription, PointerType, ScrollPosition, TransitionEventData,
-    UserSelect, WheelMode, element_by_id,
+    PointerKind, PointerSubscription, PointerType, ScrollPosition, TransitionEventData, UserSelect,
+    WheelMode, element_by_id,
 };
 pub use crate::html_widget::{WidgetView, WidgetViewProps};
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
