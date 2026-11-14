@@ -2155,3 +2155,50 @@ fn fr34_border_top_draws_on_a_block_with_side_margins() {
         assert_eq!(width, Some(28.0), "28px wide: {modifiers:?}");
     }
 }
+
+fn dialog_cards() -> Element {
+    rsx! {
+        style { ".modal {{ position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }}" }
+        div { class: "modal", role: "presentation",
+            div { role: "dialog", "aria-modal": "true", "aria-label": "Trust",
+                div {
+                    b { "Trust this folder?" }
+                    button { "aria-label": "Trust", onclick: move |_| {}, "Trust" }
+                    button { "aria-label": "Don't trust", onclick: move |_| {}, "Don't trust" }
+                }
+            }
+        }
+        div { class: "modal", role: "presentation",
+            div { role: "alertdialog", "aria-modal": "true", "aria-label": "Close",
+                div {
+                    b { "Save changes?" }
+                    button { "aria-label": "Save", onclick: move |_| {}, "Save" }
+                    button { "aria-label": "Discard", onclick: move |_| {}, "Discard" }
+                }
+            }
+        }
+    }
+}
+
+/// The content of a `role="dialog"` card reaches the accessibility tree exactly as the same
+/// content under `role="alertdialog"` does: the card is a named group and each button inside
+/// it is a named button.
+#[test]
+fn fr34_dialog_descendants_reach_the_accessibility_tree() {
+    let mut host = Host::html(dialog_cards, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let groups: Vec<_> = semantics_of(&first, SemanticsRole::Group)
+        .into_iter()
+        .filter_map(|(node, _)| accessible_name(&first, node))
+        .collect();
+    assert_eq!(groups, ["Trust", "Close"], "{first:#?}");
+    let buttons: Vec<_> = semantics_of(&first, SemanticsRole::Button)
+        .into_iter()
+        .filter_map(|(node, _)| accessible_name(&first, node))
+        .collect();
+    assert_eq!(
+        buttons,
+        ["Trust", "Don't trust", "Save", "Discard"],
+        "{first:#?}"
+    );
+}
