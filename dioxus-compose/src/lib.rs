@@ -46,8 +46,10 @@ pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
 pub use compose_rust::schema::TitleBar;
 // A `FlowRow`'s two alignments. compose-rust keeps them in its schema only, and a screen
 // that writes a `FlowRow` needs them by name.
-pub use compose_rust::code::escape_snippet_text;
 pub use compose_rust::schema::{HorizontalAlignment, VerticalAlignment};
+// Escapes plain text for `CodeEditorHandle::insert_snippet`, so a `$` or a `}` in it is
+// inserted as itself and not read as a tab stop.
+pub use compose_rust::code::escape_snippet_text;
 pub use compose_rust::ui::SemanticsState;
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::window;
