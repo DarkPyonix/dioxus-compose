@@ -1993,9 +1993,7 @@ pub struct ClipboardEventData {
 
 impl ClipboardEventData {
     pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-        }
+        Self { text: text.into() }
     }
 
     pub fn text(&self) -> &str {
