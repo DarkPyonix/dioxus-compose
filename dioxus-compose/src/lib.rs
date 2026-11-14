@@ -116,13 +116,19 @@ pub mod window_attr_markers {
     impl_attr!(ModifierAttr, compose_rust::Modifier, |v| {
         AttributeValue::any_value(v)
     });
+    // A list of background image layers, in CSS order, for `background_brush`.
+    pub struct BackgroundLayersAttr;
+    impl_attr!(BackgroundLayersAttr, Vec<crate::BackgroundLayer>, |v| {
+        AttributeValue::any_value(v)
+    });
 }
 pub use hooks::{
     Animated, CodeEditorHandle, WindowHandle, ZoomHandle, animate_color_as_state,
     animate_float_as_state, animate_offset_as_state, current_window, use_animation_event,
     use_application_reopen, use_code_editor, use_design_system, use_node_size,
-    use_notification_activated, use_notification_permission, use_reduced_motion, use_theme,
-    use_window_requested, use_window_safe_area, use_window_size, use_zoom,
+    use_notification_activated, use_notification_permission, use_reduced_motion,
+    use_system_color_scheme, use_theme, use_window_requested, use_window_safe_area,
+    use_window_size, use_zoom,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
 pub use hover::{HoverHandle, use_hover};
@@ -130,13 +136,13 @@ pub use html_view::HtmlView;
 pub use html_widget::use_widget_box;
 pub use list_detail::ListDetail;
 pub use widgets::{
-    AbsoluteBox, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column, ColumnSpec,
-    ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown, FileDropTarget,
-    FloatingAction, FlowRow, FontFeatures, Icon, Image, LazyColumn, LazyGrid, LazyRow, Menu,
-    Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton, Row, Scaffold,
-    ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator, ShadowLayer,
-    Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField, TimePicker,
-    Tooltip, TopAppBar,
+    AbsoluteBox, BackgroundLayer, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
+    ColumnSpec, ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown,
+    FileDropTarget, FloatingAction, FlowRow, FontFeatures, Icon, Image, LazyColumn, LazyGrid,
+    LazyRow, Menu, Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton, Row,
+    Scaffold, ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator,
+    ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField,
+    TimePicker, Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -261,6 +267,14 @@ pub mod prelude {
         CaretRect, CodeMetrics, CodePointer, CodeRect, CodeScroll, MessageHorizontal,
         MessagePlacement, MessageVertical,
     };
+    // compose-rust 0.0.10: how an image is laid into its box, a node's background image
+    // layers, a code editor's minimap, view zones, word wrap, grouped edits and multiple
+    // selections, and the system's light or dark appearance.
+    pub use crate::{
+        BackgroundLayer, BackgroundRepeat, ContentScale, EditGroupResult, EditGroupStatus,
+        MinimapSide, SelectionsChange, SystemColorScheme, ViewZone, ViewZones, WordWrap,
+        use_system_color_scheme,
+    };
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
@@ -371,6 +385,9 @@ pub mod elements {
             pub const accessible_name: AttributeDescription = ("accessible_name", None, false);
             // How the node's rounded corners curve, from 0 to 1.
             pub const corner_curve: AttributeDescription = ("corner_curve", None, false);
+            // Background image layers over the background colour, up to four, each a
+            // `BackgroundBrush` modifier of its own.
+            pub const background_brush: AttributeDescription = ("background_brush", None, false);
         };
     }
 
@@ -474,7 +491,8 @@ pub mod elements {
     element!(lazycolumn, "LazyColumn", [item_count]);
     // Widget tags 10 and 11. An asset id is the whole of what they carry: the bytes were
     // copied into the Renderer's cache once, at registration.
-    element!(image, "Image", [asset]);
+    // `content_scale` says how the picture is laid into the box, sent only when set.
+    element!(image, "Image", [asset, content_scale]);
     // An Icon takes a tint as well, through the same Paint attribute Text uses.
     element!(icon, "Icon", [asset, color]);
     // Widget tags 12 to 17. A toggle is controlled: `checked` is the whole of what it
@@ -512,7 +530,8 @@ pub mod elements {
             color,
             track_color,
             thumb_color,
-            active_track_color
+            active_track_color,
+            thumb_size
         ]
     );
     // `determinate` says whether `value` means anything and `circular` picks the form. How
@@ -645,7 +664,10 @@ pub mod elements {
             type_role,
             font_size,
             line_height,
-            font
+            font,
+            minimap,
+            view_zones,
+            word_wrap
         ]
     );
     // A row that wraps: the gaps on a line and between lines, where a line's children sit
@@ -922,6 +944,11 @@ pub mod events {
     // A code editor's pointer events of the kinds in `pointer_kinds`, with the place in the
     // text under the pointer.
     optional_event!(oncodepointer, compose_rust::code::CodePointer);
+    // What became of a grouped edit asked of a code editor's handle.
+    optional_event!(oneditgroupresult, compose_rust::code::EditGroupResult);
+    // Every selection of a code editor while it holds more than one. It rides on the
+    // editor's selection listener and announces nothing of its own.
+    optional_event!(onselectionschange, compose_rust::code::SelectionsChange);
     // A node's size motion came to rest, with the size it settled at in dp. Any node can
     // take it; only one whose size moves, through a `motion` role, ever reports it.
     optional_event!(onmotionfinished, crate::MotionFinished);

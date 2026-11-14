@@ -112,6 +112,26 @@ fn editor_colors() -> CodeEditorColors {
         .gutter(ColorRole::SurfaceVariant)
 }
 
+/// The view zones the code editor in `surface()` leaves room for.
+fn editor_zones() -> ViewZones {
+    ViewZones::new([ViewZone::new(0, 1.5).with_text("2 lines removed")])
+}
+
+/// The background image layers of the first Column, in CSS order.
+fn column_layers() -> Vec<BackgroundLayer> {
+    vec![
+        BackgroundLayer::new(Paint::Asset(9), 0.0, 0.0, 16.0, 16.0)
+            .repeat(BackgroundRepeat::Repeat),
+    ]
+}
+
+/// Every selection of the code editor in the event table: anchor and active line and
+/// column of each, 16 bytes apiece.
+const TWO_SELECTIONS: [u8; 32] = [
+    0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, //
+    1, 0, 0, 0, 12, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0,
+];
+
 /// Every element the prelude exports, once, with its main properties and handlers.
 fn surface() -> Element {
     let (text, spans) = spans();
@@ -207,6 +227,7 @@ fn surface() -> Element {
                     fill_max_height: true,
                     padding: 12.0,
                     background: Paint::Role(ColorRole::Surface),
+                    background_brush: column_layers(),
                     corner_radius: 8.0,
                     border_width: 1.0,
                     border_color: OUTLINE,
@@ -311,7 +332,7 @@ fn surface() -> Element {
                             change.viewport_width_px,
                             change.viewport_height_px
                         )),
-                        Image { asset_id: 7, width: 64.0, height: 64.0 }
+                        Image { asset_id: 7, width: 64.0, height: 64.0, content_scale: ContentScale::Crop }
                         Icon { asset_id: 8, color: TERTIARY }
                     }
                     SplitPane {
@@ -378,6 +399,18 @@ fn surface() -> Element {
                         font_size: 13.0,
                         line_height: 20.0,
                         font: css_font(),
+                        minimap: MinimapSide::Left,
+                        view_zones: editor_zones(),
+                        word_wrap: WordWrap::Column(80),
+                        on_edit_group_result: move |result: EditGroupResult| fired(format!(
+                            "CodeEditor.on_edit_group_result({},{:?})",
+                            result.request_id, result.status
+                        )),
+                        on_selections_change: move |change: SelectionsChange| fired(format!(
+                            "CodeEditor.on_selections_change({},{})",
+                            change.version,
+                            change.selections.len()
+                        )),
                         on_change: move |_| fired("CodeEditor.on_change"),
                         on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
                         on_hover: move |_| fired("CodeEditor.on_hover"),
@@ -452,6 +485,7 @@ fn surface() -> Element {
                             track_color: OUTLINE,
                             thumb_color: TERTIARY,
                             active_track_color: SECONDARY,
+                            thumb_size: 22.0,
                             on_change: move |value: f32| fired(format!("Slider.on_change({value})")),
                         }
                         ProgressIndicator { value: 0.75, determinate: true, circular: true }
@@ -925,6 +959,13 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::FontSize, float(13.0)),
                 (P::LineHeight, float(20.0)),
                 (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
+                (P::Minimap, role(MinimapSide::Left)),
+                (
+                    P::ViewZones,
+                    is(Value::Bytes(editor_zones().as_bytes().to_vec())),
+                ),
+                (P::WordWrap, int(WordWrap::Column(80).to_value())),
+                (P::OnEditGroupResult, Handler),
                 (P::OnValueChange, Handler),
                 (P::OnEditRejected, Handler),
                 (P::OnHover, Handler),
@@ -972,7 +1013,13 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnClick, Handler),
             ],
         ),
-        (W::Image, vec![(P::Asset, int(7))]),
+        (
+            W::Image,
+            vec![
+                (P::Asset, int(7)),
+                (P::ContentScale, role(ContentScale::Crop)),
+            ],
+        ),
         (
             W::Icon,
             vec![(P::Asset, int(8)), (P::Color, int(paint_bits(TERTIARY)))],
@@ -1023,6 +1070,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::TrackColor, int(paint_bits(OUTLINE))),
                 (P::ThumbColor, int(paint_bits(TERTIARY))),
                 (P::ActiveTrackColor, int(paint_bits(SECONDARY))),
+                (P::ThumbSize, float(22.0)),
             ],
         ),
         (
@@ -1638,6 +1686,27 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             },
             "TextField.on_motion_finished(240,56)",
         ),
+        (
+            W::CodeEditor,
+            P::OnEditGroupResult,
+            EventPayload::CodeEditGroupResult {
+                request_id: 8,
+                status: EditGroupStatus::Applied,
+                base_version: 1,
+                current_version: 3,
+                index: 2,
+            },
+            "CodeEditor.on_edit_group_result(8,Applied)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnSelectionChange,
+            EventPayload::SelectionsChanged {
+                version: 4,
+                selections: &TWO_SELECTIONS,
+            },
+            "CodeEditor.on_selections_change(4,2)",
+        ),
     ];
     let mut failures = Vec::new();
     for (kind, property, payload, label) in events.iter().cloned() {
@@ -1796,6 +1865,10 @@ fn nothing_asked() -> Element {
             Row { motion: MotionRole::Quick, Text { text: "j" } }
             Sheet { max_height_fraction: 0.0, Text { text: "k" } }
             Popover { anchor: rsx! { Text { text: "e" } }, Text { text: "f" } }
+            Image { asset_id: 1 }
+            Card { Text { text: "l" } }
+            Surface { Text { text: "m" } }
+            dioxus_compose::Box { background_brush: Vec::new(), Text { text: "n" } }
         }
     }
 }
@@ -1846,6 +1919,12 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
         P::OnKeyPreview,
         P::OnCodePointer,
         P::RadioGroup,
+        P::ContentScale,
+        P::ThumbSize,
+        P::Minimap,
+        P::ViewZones,
+        P::WordWrap,
+        P::OnEditGroupResult,
     ];
     let sent: Vec<String> = mutations
         .iter()
@@ -1857,7 +1936,8 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
                 modifier:
                     Modifier::Semantics { .. }
                     | Modifier::CornerCurve { .. }
-                    | Modifier::Transform3D { .. },
+                    | Modifier::Transform3D { .. }
+                    | Modifier::BackgroundBrush { .. },
                 ..
             } => Some(format!("{mutation:?}")),
             _ => None,
@@ -2086,4 +2166,159 @@ fn fr15_font_feature_settings_travel_as_tag_then_value_records() {
         ],
         "{mutations:?}"
     );
+}
+
+/// The value each `Text` was given for `property`, by its text, in the order they arrived.
+fn text_props(mutations: &[Mutation<'_>], property: PropertyKind) -> Vec<(String, Value)> {
+    let mut texts: BTreeMap<u32, String> = BTreeMap::new();
+    let mut found = Vec::new();
+    for mutation in mutations {
+        if let Mutation::SetProp {
+            node_id,
+            property: PropertyKind::Text,
+            value: PropertyValue::String(text),
+        } = mutation
+        {
+            texts.insert(*node_id, (*text).to_owned());
+        }
+    }
+    for mutation in mutations {
+        if let Mutation::SetProp {
+            node_id,
+            property: sent,
+            value,
+        } = mutation
+            && *sent == property
+        {
+            found.push((texts[node_id].clone(), Value::from(value)));
+        }
+    }
+    found
+}
+
+fn aligned() -> Element {
+    rsx! {
+        Column {
+            Text { text: "west", text_align: TextAlign::Left }
+            Text { text: "east", text_align: TextAlign::Right }
+            Text { text: "first", text_align: TextAlign::Start }
+        }
+    }
+}
+
+/// `TextAlign::Left` and `Right` are physical alignments that never swap in right-to-left
+/// text, and they reach the Renderer as their own tags beside `Start` and `End`.
+#[test]
+fn fr15_text_align_left_and_right_arrive_as_their_own_tags() {
+    let (_host, batch) = first_frame(aligned);
+    let mutations = decoded(&batch);
+    assert_eq!(
+        text_props(&mutations, PropertyKind::TextAlign),
+        vec![
+            ("west".to_owned(), Value::Integer(5)),
+            ("east".to_owned(), Value::Integer(6)),
+            ("first".to_owned(), Value::Integer(1)),
+        ]
+    );
+}
+
+fn spaced() -> Element {
+    rsx! {
+        Column {
+            Text { text: "zero", letter_spacing: 0.0 }
+            Text { text: "wide", letter_spacing: 1.5 }
+            Text { text: "plain" }
+        }
+    }
+}
+
+/// A letter spacing of 0 is sent: it draws no extra space, where a text that names no
+/// spacing takes its type role's and sends nothing for it.
+#[test]
+fn fr15_a_letter_spacing_of_zero_is_sent_and_one_left_out_is_not() {
+    let (_host, batch) = first_frame(spaced);
+    let mutations = decoded(&batch);
+    assert_eq!(
+        text_props(&mutations, PropertyKind::LetterSpacing),
+        vec![
+            ("zero".to_owned(), Value::Float(0.0)),
+            ("wide".to_owned(), Value::Float(1.5)),
+        ]
+    );
+}
+
+fn elliptical() -> Element {
+    let glow = brush(Brush::elliptical(
+        0.5,
+        0.25,
+        vec![
+            Stop::new(0.0, Color::rgb(0xffffff)),
+            Stop::new(1.0, Color::rgb(0x000000)),
+        ],
+    ));
+    rsx! { Surface { background: glow, Text { text: "lit" } } }
+}
+
+/// An elliptical radial brush, compose-rust's `Brush::elliptical`, is registered with its
+/// vertical radius beside its horizontal one, and a node painted with it names the asset.
+#[test]
+fn fr15_an_elliptical_radial_brush_reaches_the_renderer_with_both_radii() {
+    let (_host, batch) = first_frame(elliptical);
+    let mutations = decoded(&batch);
+    let (asset, bytes) = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::RegisterAsset {
+                asset_id,
+                kind: dioxus_compose::schema::AssetKind::Brush,
+                bytes,
+            } => Some((*asset_id, *bytes)),
+            _ => None,
+        })
+        .expect("the brush was never registered");
+    let coordinate =
+        |at: usize| f32::from_le_bytes(bytes[8 + at * 4..12 + at * 4].try_into().unwrap());
+    assert_eq!(
+        (coordinate(0), coordinate(1), coordinate(2), coordinate(3)),
+        (0.5, 0.5, 0.5, 0.25)
+    );
+    assert!(mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Background(Paint::Asset(id)), .. } if *id == asset
+    )));
+}
+
+fn appearance() -> Element {
+    let scheme = use_system_color_scheme();
+    rsx! { Text { text: format!("{scheme:?}") } }
+}
+
+/// `use_system_color_scheme` is `None` until the Renderer first reports the system's light
+/// or dark appearance, and a report re-renders the component that reads it with the new
+/// value, in the call that carried the report. The report is the Host's own: it names no
+/// node and no handler.
+#[test]
+fn fr15_use_system_color_scheme_follows_the_reported_appearance() {
+    dioxus_compose::theme::reset_system_color_scheme();
+    let (mut host, batch) = first_frame(appearance);
+    let shown = |mutations: &[Mutation<'_>]| {
+        mutations.iter().find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Text,
+                value: PropertyValue::String(text),
+                ..
+            } => Some((*text).to_owned()),
+            Mutation::SetText { text, .. } => Some((*text).to_owned()),
+            _ => None,
+        })
+    };
+    assert_eq!(shown(&decoded(&batch)).as_deref(), Some("None"));
+    let (after, _) = host
+        .dispatch(HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::ColorSchemeChanged(SystemColorScheme::Dark),
+        })
+        .expect("the report is dispatched");
+    assert_eq!(shown(&decoded(after)).as_deref(), Some("Some(Dark)"));
 }

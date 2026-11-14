@@ -265,6 +265,98 @@ fn shadow_attr(layers: &[ShadowLayer]) -> Option<AttributeValue> {
     Some(AttributeValue::any_value(ShadowChain(chain)))
 }
 
+/// One layer of a node's background image, as CSS draws one `background-image` with its
+/// `background-position`, `background-size` and `background-repeat`.
+///
+/// `x`, `y`, `width` and `height` are the rectangle the paint is laid into, in dp from the
+/// node's top left corner: one tile, which a gradient is measured against rather than the
+/// node. `repeat` says which ways the tile repeats, and `tile_width` and `tile_height` how
+/// far apart the copies are, in dp. The layer is cut to the node's outline, its corners
+/// included, and drawn over the `background` colour and under the border.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BackgroundLayer {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub paint: Paint,
+    pub repeat: compose_rust::BackgroundRepeat,
+    pub tile_width: f32,
+    pub tile_height: f32,
+}
+
+impl BackgroundLayer {
+    /// `paint` laid once into the rectangle at `x`, `y`, `width` by `height` dp.
+    pub const fn new(paint: Paint, x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            paint,
+            repeat: compose_rust::BackgroundRepeat::NoRepeat,
+            tile_width: width,
+            tile_height: height,
+        }
+    }
+
+    /// The same layer repeated as `repeat` says, a copy every rectangle's width and height
+    /// as a plain CSS repeat places them.
+    pub const fn repeat(mut self, repeat: compose_rust::BackgroundRepeat) -> Self {
+        self.repeat = repeat;
+        self
+    }
+
+    /// The step between copies, in dp, where it is not the rectangle's own size: what CSS
+    /// `background-repeat: space` or `round` works out.
+    pub const fn step(mut self, tile_width: f32, tile_height: f32) -> Self {
+        self.tile_width = tile_width;
+        self.tile_height = tile_height;
+        self
+    }
+
+    /// The modifier this layer is on the wire.
+    pub const fn modifier(self) -> compose_rust::Modifier {
+        compose_rust::Modifier::BackgroundBrush {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            paint: self.paint,
+            repeat: self.repeat,
+            tile_width: self.tile_width,
+            tile_height: self.tile_height,
+        }
+    }
+}
+
+/// A background layer list in the order of the modifier chain, the bottom layer first.
+/// Carried as one attribute value and written to one position each.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BackgroundChain(pub(crate) Vec<compose_rust::Modifier>);
+
+/// The chain for a list of layers in CSS order, the first on top. A list longer than a node
+/// can carry keeps the layers on top.
+pub(crate) fn background_chain(layers: &[BackgroundLayer]) -> BackgroundChain {
+    BackgroundChain(
+        layers
+            .iter()
+            .take(crate::renderer::MAX_BACKGROUND_LAYERS)
+            .rev()
+            .map(|layer| layer.modifier())
+            .collect(),
+    )
+}
+
+/// The `background_brush` attribute of a widget from its list, in CSS order. An empty list
+/// sends nothing.
+fn background_attr(layers: &[BackgroundLayer]) -> Option<AttributeValue> {
+    if layers.is_empty() {
+        return None;
+    }
+    Some(AttributeValue::any_value(background_chain(layers)))
+}
+
 /// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
 fn role(value: Option<impl Into<u16>>) -> i64 {
@@ -499,6 +591,11 @@ pub fn Column(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
     /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
     /// node's corner radius. An empty list casts none.
     #[props(default)]
@@ -581,6 +678,7 @@ pub fn Column(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
             shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
@@ -630,6 +728,11 @@ pub fn Row(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
     /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
     /// node's corner radius. An empty list casts none.
     #[props(default)]
@@ -712,6 +815,7 @@ pub fn Row(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
             shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
@@ -831,6 +935,11 @@ pub fn ComposeBox(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
     /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
     /// node's corner radius. An empty list casts none.
     #[props(default)]
@@ -902,6 +1011,7 @@ pub fn ComposeBox(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
             shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
@@ -1218,7 +1328,9 @@ pub fn Text(
                     font_size: dp(font_size),
                     font_weight: i64::from(font_weight.unwrap_or(0)),
                     line_height: dp(line_height),
-                    letter_spacing: dp(letter_spacing),
+                    // 0 is a spacing of its own, no extra space, so only a spacing that is
+                    // left out sends nothing and takes the type role's.
+                    letter_spacing: opt_dp(letter_spacing),
                     color: color.map_or(0, |paint| paint.to_bits() as i64),
                     text_align: role(text_align),
                     max_lines: i64::from(max_lines.unwrap_or(0)),
@@ -1600,6 +1712,11 @@ pub fn Card(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
     /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
     /// node's corner radius. An empty list casts none.
     #[props(default)]
@@ -1670,6 +1787,7 @@ pub fn Card(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
             shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
@@ -1716,6 +1834,11 @@ pub fn Surface(
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
@@ -1782,6 +1905,7 @@ pub fn Surface(
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
             fill_max_width,
             fill_max_height,
             {children}
@@ -2296,6 +2420,10 @@ pub fn Image(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// How the picture is laid into the box: `Fit` shows all of it, `Crop` covers the box
+    /// and `FillBounds` stretches it to the box. Left out, it is fitted and nothing is sent.
+    #[props(default)]
+    content_scale: Option<compose_rust::ContentScale>,
     asset_id: u32,
 ) -> Element {
     rsx! {
@@ -2317,6 +2445,7 @@ pub fn Image(
             fill_max_width,
             fill_max_height,
             asset: i64::from(asset_id),
+            content_scale: opt_role(content_scale),
         }
     }
 }
@@ -2758,6 +2887,10 @@ pub fn Slider(
     /// The part of the track up to the thumb. Left out, the design system's.
     #[props(default)]
     active_track_color: Option<Paint>,
+    /// The diameter of the thumb in dp. Left out, the design system's. The track and the
+    /// area that takes a press stay as they are.
+    #[props(default)]
+    thumb_size: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -2793,6 +2926,7 @@ pub fn Slider(
             track_color: opt_paint(track_color),
             thumb_color: opt_paint(thumb_color),
             active_track_color: opt_paint(active_track_color),
+            thumb_size: opt_dp(thumb_size),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -3811,6 +3945,31 @@ pub fn CodeEditor(
     /// announced.
     #[props(default)]
     on_code_pointer: Option<EventHandler<compose_rust::code::CodePointer>>,
+    /// Which side the minimap is drawn on: the whole document shrunk, with the part on
+    /// screen marked, which a press or a drag scrolls to. `MinimapSide::Off` draws none.
+    /// Left out, none is drawn and nothing is sent.
+    #[props(default)]
+    minimap: Option<compose_rust::MinimapSide>,
+    /// Room left after lines that is not text, the way a diff lines its two sides up. A
+    /// zone follows its line through edits and the caret passes over it. An empty list
+    /// sends nothing.
+    #[props(default)]
+    view_zones: compose_rust::code::ViewZones,
+    /// Where a line too long for the editor is broken onto the rows below: at the edge of
+    /// the view, at a number of columns, or at whichever comes first. Left out, no line is
+    /// broken and nothing is sent.
+    #[props(default)]
+    word_wrap: Option<compose_rust::code::WordWrap>,
+    /// Called once for every grouped edit asked of the handle with
+    /// [`crate::CodeEditorHandle::edit_group`], with whether it went in whole or why it
+    /// stayed out. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_edit_group_result: Option<EventHandler<compose_rust::code::EditGroupResult>>,
+    /// Called with every selection, the primary first, while the editor holds more than
+    /// one, and once more when it is back to one. `on_selection_change` goes on hearing the
+    /// primary selection alone.
+    #[props(default)]
+    on_selections_change: Option<EventHandler<compose_rust::code::SelectionsChange>>,
     /// The rung of the type ladder the text is set in. Left out, the design system's
     /// monospace rung.
     #[props(default)]
@@ -3908,6 +4067,11 @@ pub fn CodeEditor(
             onkeypreview: optional_listener(on_key_preview, |key: &KeyEvent| key.clone()),
             pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
             oncodepointer: optional_listener(on_code_pointer, |pointer: &compose_rust::code::CodePointer| pointer.clone()),
+            minimap: opt_role(minimap),
+            view_zones: (!view_zones.is_empty()).then(|| AttributeValue::any_value(view_zones)),
+            word_wrap: word_wrap.map(compose_rust::code::WordWrap::to_value),
+            oneditgroupresult: optional_listener(on_edit_group_result, |result: &compose_rust::code::EditGroupResult| *result),
+            onselectionschange: optional_listener(on_selections_change, |change: &compose_rust::code::SelectionsChange| change.clone()),
             type_role: opt_role(type_role),
             font_size: opt_dp(font_size),
             line_height: opt_dp(line_height),
