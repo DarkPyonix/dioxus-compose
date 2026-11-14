@@ -33,7 +33,7 @@ use crate::paint::display_list::{
     Transform2D, Transform3D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
-use crate::paint::transform::{self, Moved};
+use crate::paint::transform::{self, Moved, Perspective};
 
 /// What the first walk settles for one box.
 struct Placed {
@@ -72,6 +72,8 @@ struct Ambient {
     clip: Option<Rect>,
     opacity: f32,
     scroll_parent: Option<NodeId>,
+    /// The parent's `perspective`, which its children's 3D transforms are seen through.
+    perspective: Option<Perspective>,
 }
 
 /// Reads a laid-out document into a display list. `playback` says which motions a renderer
@@ -103,6 +105,7 @@ pub(crate) fn build_display_list<'a>(
             clip: None,
             opacity: 1.0,
             scroll_parent: None,
+            perspective: None,
         },
     );
     if painter.placed.contains_key(&root) {
@@ -318,6 +321,18 @@ impl Painter<'_, '_> {
             layout.size.width,
             layout.size.height,
         );
+        // The parent's perspective goes in front of this box's own 3D transform, inside
+        // the one matrix. Both are in document coordinates, so this holds wherever the box
+        // was placed.
+        let transform_3d = match (transform_3d, ambient.perspective) {
+            (Some(transform), Some(perspective)) => Some(transform::under_perspective(
+                transform,
+                &perspective,
+                rect.x,
+                rect.y,
+            )),
+            (transform, _) => transform,
+        };
 
         let own_opacity = animated_opacity
             .unwrap_or_else(|| style.as_ref().map_or(1.0, |style| style.clone_opacity()));
@@ -344,6 +359,15 @@ impl Painter<'_, '_> {
             clip: ambient.clip,
             opacity,
             scroll_parent: ambient.scroll_parent,
+            // A perspective is for the box's own children and goes no further down. An
+            // anonymous block is not an element, so what it wraps are still the children
+            // of the element above it.
+            perspective: match node.data {
+                NodeData::AnonymousBlock(_) => ambient.perspective,
+                _ => style.as_ref().and_then(|style| {
+                    transform::perspective_of(style, rect.x, rect.y, width, height)
+                }),
+            },
         };
         let own_clip = style.as_ref().is_some_and(|style| clips(style));
         if let Some(style) = style.as_ref() {

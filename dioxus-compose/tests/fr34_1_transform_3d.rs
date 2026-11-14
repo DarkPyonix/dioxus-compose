@@ -426,3 +426,165 @@ fn fr34_1_backface_hidden_reaches_the_renderer_with_the_matrix() {
     assert!(!hidden);
     assert_matrix(m, rotate_y(180.0), "rotateY(180deg)");
 }
+
+fn under_a_perspective() -> Element {
+    rsx! {
+        style {
+            ".stage {{ position: absolute; left: 0; top: 0; width: 400px; height: 200px; }}
+             .card {{ position: absolute; left: 50px; top: 20px; width: 200px; height: 100px; }}"
+        }
+        div { class: "stage", style: "perspective: 400px",
+            div { class: "card", style: "background-color: rgb(1, 0, 0); transform: rotateY(45deg)" }
+        }
+        div { class: "stage", style: "perspective: 400px; perspective-origin: 25% 150px",
+            div { class: "card", style: "background-color: rgb(2, 0, 0); transform: rotateY(45deg)" }
+        }
+        div { class: "stage",
+            div { class: "card", style: "background-color: rgb(3, 0, 0); transform: rotateY(45deg)" }
+        }
+        div { class: "stage", style: "perspective: none; perspective-origin: 25% 150px",
+            div { class: "card", style: "background-color: rgb(4, 0, 0); transform: rotateY(45deg)" }
+        }
+        div { class: "stage", style: "perspective: 400px",
+            div { class: "card", style: "background-color: rgb(5, 0, 0); transform: rotate(30deg)" }
+        }
+        div { class: "stage", style: "perspective: 400px",
+            div { class: "card",
+                div { class: "card", style: "background-color: rgb(6, 0, 0); transform: rotateY(45deg)" }
+            }
+        }
+    }
+}
+
+/// Where CSS draws the point (dx, dy) from the centre of a card under `rotateY(45deg)`,
+/// from that centre, when its parent has `perspective: 400px` and the perspective origin
+/// is (px, py) from the card's centre.
+///
+/// The rotation sends the point to (dx cos 45, dy, -dx sin 45). The perspective then
+/// divides its distance from the perspective origin by w = 1 - z / 400 = 1 + dx sin 45 /
+/// 400: x = (dx cos 45 - px) / w + px and y = (dy - py) / w + py.
+fn turned_under_parent(dx: f32, dy: f32, (px, py): (f32, f32)) -> (f32, f32) {
+    let (s45, c45) = 45.0f32.to_radians().sin_cos();
+    let w = 1.0 + dx * s45 / 400.0;
+    ((dx * c45 - px) / w + px, (dy - py) / w + py)
+}
+
+/// A parent's `perspective` property reaches its child's 3D transform inside the child's
+/// one matrix, in front of the child's own functions, and nothing else carries it.
+///
+/// Each stage is 400 by 200 at the page's corner and each card is 200 by 100 at (50, 20)
+/// inside it, so a card's centre, which its transform is applied about, is at (150, 70)
+/// of the stage.
+///
+/// - `perspective: 400px` with the default origin, the stage's centre (200, 100): the
+///   origin is (50, 30) from the card's centre, and the matrix is
+///   translate(50, 30) perspective(400) translate(-50, -30) rotateY(45deg). The right
+///   corners (dx = 100, w = 1.17678) are drawn at x = (70.71 - 50) / w + 50 = 67.60 and
+///   y = (-50 - 30) / w + 30 = -37.98 and (50 - 30) / w + 30 = 47.00 from the centre; the
+///   left ones (dx = -100, w = 0.82322) at x = -120.71 / w + 50 = -96.63 and y = -67.18
+///   and 54.29.
+/// - `perspective-origin: 25% 150px` is (100, 150) of the stage, (-50, 80) from the
+///   card's centre, and the matrix is
+///   translate(-50, 80) perspective(400) translate(50, -80) rotateY(45deg). The right
+///   corners are drawn at x = (70.71 + 50) / 1.17678 - 50 = 52.58, not 67.60.
+/// - A stage without the property, and one with `perspective: none` (whatever its
+///   `perspective-origin`), leave the card's matrix the rotation alone.
+/// - A card that only turns in the plane, `rotate(30deg)`, lies where a perspective moves
+///   nothing: it keeps the 2D `Transform` it has anywhere else.
+/// - A perspective is for the stage's own children. A card inside a card is not one, so
+///   its matrix is the rotation alone.
+#[test]
+fn fr34_1_parent_perspective_property_folds_into_the_child_matrix() {
+    let mut host = Host::html(under_a_perspective, config);
+    let first = owned(host.rebuild().unwrap());
+    let size = (200.0, 100.0);
+
+    let cases: [(u8, &str, (f32, f32)); 2] = [
+        (1, "the default perspective origin", (50.0, 30.0)),
+        (2, "perspective-origin: 25% 150px", (-50.0, 80.0)),
+    ];
+    for (red, what, (px, py)) in cases {
+        let sent = transform_3d(&modifiers_of(&first, (red, 0, 0)));
+        let (m, origin, backface_hidden) = sent;
+        assert_matrix(
+            m,
+            product(&[
+                translate(px, py, 0.0),
+                perspective(400.0),
+                translate(-px, -py, 0.0),
+                rotate_y(45.0),
+            ]),
+            what,
+        );
+        assert_eq!(origin, (0.5, 0.5), "{what}: about the card's own centre");
+        assert!(!backface_hidden, "{what}");
+        for (dx, dy) in [
+            (-100.0, -50.0),
+            (100.0, -50.0),
+            (100.0, 50.0),
+            (-100.0, 50.0),
+        ] {
+            let (ex, ey) = turned_under_parent(dx, dy, (px, py));
+            let (x, y) = drawn(sent, size, (100.0 + dx, 50.0 + dy));
+            assert!(
+                (x - (100.0 + ex)).abs() < 0.05 && (y - (50.0 + ey)).abs() < 0.05,
+                "{what}: the corner ({dx}, {dy}) is drawn at ({x}, {y}), expected ({}, {})",
+                100.0 + ex,
+                50.0 + ey
+            );
+        }
+    }
+
+    // The numbers of the doc comment, so the expectation does not rest on the helper alone.
+    let default_origin = transform_3d(&modifiers_of(&first, (1, 0, 0)));
+    for (corner, expected) in [
+        ((200.0, 0.0), (167.60, 12.02)),
+        ((200.0, 100.0), (167.60, 97.00)),
+        ((0.0, 0.0), (3.37, -17.18)),
+        ((0.0, 100.0), (3.37, 104.29)),
+    ] {
+        let (x, y) = drawn(default_origin, size, corner);
+        assert!(
+            (x - expected.0).abs() < 1.0 && (y - expected.1).abs() < 1.0,
+            "the corner {corner:?} is drawn at ({x}, {y}), expected {expected:?}"
+        );
+    }
+    let moved_origin = transform_3d(&modifiers_of(&first, (2, 0, 0)));
+    let (x, _) = drawn(moved_origin, size, (200.0, 0.0));
+    assert!(
+        (x - 152.58).abs() < 0.05,
+        "a perspective origin to the left draws the right edge at {x}, expected 152.58"
+    );
+
+    for (red, what) in [
+        (3, "no perspective"),
+        (4, "perspective: none"),
+        (6, "a grandchild of the perspective"),
+    ] {
+        let (m, origin, _) = transform_3d(&modifiers_of(&first, (red, 0, 0)));
+        assert_matrix(m, rotate_y(45.0), what);
+        assert_eq!(m[3], 0.0, "{what}: no perspective term");
+        assert_eq!(m[7], 0.0, "{what}: no perspective term");
+        assert_eq!(m[11], 0.0, "{what}: no perspective term");
+        assert_eq!(origin, (0.5, 0.5), "{what}");
+    }
+    let (plain, _, _) = transform_3d(&modifiers_of(&first, (3, 0, 0)));
+    let (none, _, _) = transform_3d(&modifiers_of(&first, (4, 0, 0)));
+    assert_eq!(plain, none, "perspective: none changes nothing");
+
+    let flat = modifiers_of(&first, (5, 0, 0));
+    let (sin, cos) = 30.0f32.to_radians().sin_cos();
+    assert!(
+        flat.iter().any(|modifier| matches!(
+            modifier,
+            Modifier::Transform { a, b, c, d, .. }
+                if (a - cos).abs() < 1e-4
+                    && (b - sin).abs() < 1e-4
+                    && (c + sin).abs() < 1e-4
+                    && (d - cos).abs() < 1e-4
+        )) && !flat
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::Transform3D { .. })),
+        "a 2D transform under a perspective stays the 2D transform: {flat:#?}"
+    );
+}

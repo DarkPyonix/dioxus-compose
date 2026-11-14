@@ -19,6 +19,14 @@ it out. `transform-style: preserve-3d` is drawn flat, each child in its parent's
 the elements that ask for it are listed in `DisplayList::flattened_spaces` and named once
 each on stderr. The warning that a 3D transform was skipped is gone.
 
+A parent's `perspective` property, with its `perspective-origin`, applies to its children's
+3D transforms. It is multiplied in front of the child's own functions, about the
+perspective origin of the parent's border box, and travels inside the child's one matrix:
+no record carries it separately. `perspective: none` changes nothing, a child with a 2D
+transform keeps its 2D transform, and the perspective goes no further down than the
+parent's own children. A scroll inside the parent does not move the perspective origin
+against its children.
+
 A transition or `@keyframes` animation that passes through a 3D transform is not played,
 because the renderer animates 2D transform functions only: the box takes the transform at
 once, and the motion is listed in `DisplayList::skipped_transforms` and named on stderr.

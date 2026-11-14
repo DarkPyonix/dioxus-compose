@@ -12,6 +12,11 @@
 //! reported as [`Moved::ThreeD`]. A 3D function whose arguments leave it flat
 //! (`translateZ(0)`, `scale3d(2, 3, 1)`, `rotate3d(0, 0, 1, 30deg)`, `rotateZ()`) is the
 //! 2D function it reduces to.
+//!
+//! A parent's `perspective` property reaches a child's 3D transform through
+//! [`under_perspective`], which multiplies it in front of the child's matrix. A child whose
+//! transform is 2D lies in the parent's plane, where a perspective moves nothing, so it
+//! keeps its 2D transform.
 
 use style::properties::ComputedValues;
 use style::values::computed::Length;
@@ -160,6 +165,74 @@ fn three_d(style: &ComputedValues, width: f32, height: f32) -> Transform3D {
         origin: origin_of(style, width, height),
         backface_hidden: style.clone_backface_visibility()
             == style::computed_values::backface_visibility::T::Hidden,
+    }
+}
+
+/// A parent's `perspective` as its children see it: the viewer's distance from the plane,
+/// and the point the viewer looks at (`perspective-origin`) in document coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Perspective {
+    pub(crate) depth: f32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+}
+
+/// The `perspective` that `style` gives the children of a box whose border box is at
+/// (`x`, `y`) and is `width` by `height`. `None` for `perspective: none`.
+///
+/// `perspective-origin` is measured from the top-left corner of the box's reference box,
+/// which for an element laid out by CSS is its border box, and its percentages are of that
+/// box's size.
+pub(crate) fn perspective_of(
+    style: &ComputedValues,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) -> Option<Perspective> {
+    let boxed = style.get_box();
+    let depth = match &boxed.perspective {
+        style::values::computed::Perspective::None => return None,
+        style::values::computed::Perspective::Length(depth) => depth.0.px(),
+    };
+    let origin = &boxed.perspective_origin;
+    Some(Perspective {
+        depth,
+        x: x + origin.horizontal.resolve(Length::new(width)).px(),
+        y: y + origin.vertical.resolve(Length::new(height)).px(),
+    })
+}
+
+/// Puts the parent's `perspective` in front of a child's 3D transform, for the child whose
+/// untransformed border box has its top-left corner at (`x`, `y`) in the document.
+///
+/// CSS draws the child with `T(p) P T(-p)` applied after its own transform, where `P` is
+/// the matrix of `perspective(depth)` and `p` is the perspective origin: move the origin
+/// to zero, divide by the distance, move it back. The child's own transform is
+/// `T(o) M T(-o)` about its `transform-origin` `o`. With both points measured from the
+/// child's corner, what is drawn is
+///
+/// ```text
+/// T(p) P T(-p) T(o) M T(-o)  =  T(o) [T(p - o) P T(o - p) M] T(-o)
+/// ```
+///
+/// so the matrix in the brackets, about the same `transform-origin`, is the one transform
+/// the renderer needs. Nothing about the parent travels beside it.
+pub(crate) fn under_perspective(
+    transform: Transform3D,
+    perspective: &Perspective,
+    x: f32,
+    y: f32,
+) -> Transform3D {
+    let across = perspective.x - x - transform.origin.0;
+    let down = perspective.y - y - transform.origin.1;
+    let matrix = Matrix3D::translation(across, down, 0.0)
+        .times(&Matrix3D::perspective(perspective.depth))
+        .times(&Matrix3D::translation(-across, -down, 0.0))
+        .times(&transform.matrix);
+    Transform3D {
+        matrix,
+        ..transform
     }
 }
 
