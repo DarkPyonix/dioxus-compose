@@ -47,6 +47,9 @@ pub use compose_rust::schema::TitleBar;
 // A `FlowRow`'s two alignments. compose-rust keeps them in its schema only, and a screen
 // that writes a `FlowRow` needs them by name.
 pub use compose_rust::schema::{HorizontalAlignment, VerticalAlignment};
+// Escapes plain text for `CodeEditorHandle::insert_snippet`, so a `$` or a `}` in it is
+// inserted as itself and not read as a tab stop.
+pub use compose_rust::code::escape_snippet_text;
 pub use compose_rust::ui::SemanticsState;
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::window;
@@ -273,13 +276,13 @@ pub mod prelude {
     pub use crate::{
         BackgroundLayer, BackgroundRepeat, ContentScale, EditGroupResult, EditGroupStatus,
         MinimapSide, SelectionsChange, SystemColorScheme, ViewZone, ViewZones, WordWrap,
-        use_system_color_scheme,
+        escape_snippet_text, use_system_color_scheme,
     };
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
-        EditRejected, HoverPhase, Position, SaveRequest, Severity, SyntaxSpan, SyntaxSpans,
-        use_code_editor,
+        EditRejected, HoverPhase, Position, SaveRequest, SelectionChange, Severity, SyntaxSpan,
+        SyntaxSpans, use_code_editor,
     };
     // Notifications, from a component or from a worker thread.
     pub use crate::{

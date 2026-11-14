@@ -853,7 +853,7 @@ impl CodeEditorHandle {
     ///
     /// The snippet is written in the part of VS Code's syntax the editor reads: `$1`,
     /// `${1:placeholder}`, `${1|one,two|}`, `$0`, and `\$` for a dollar sign
-    /// (`compose_rust::code::escape_snippet_text` escapes plain text). The caret selects the
+    /// ([`crate::escape_snippet_text`] escapes plain text). The caret selects the
     /// first stop, Tab and Shift+Tab move between the stops, and the session ends at `$0`,
     /// on Escape or when the caret leaves the snippet. What it leaves arrives as ordinary
     /// changes and undoes as one step. Like [`edit`](Self::edit) it goes out with the batch
