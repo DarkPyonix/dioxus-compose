@@ -948,6 +948,63 @@ fn fr34_key_reaches_the_focused_dom_handler() {
     );
 }
 
+fn coded() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 40px",
+            onkeydown: move |event| heard(format!("{} {}", event.key(), event.code())),
+        }
+    }
+}
+
+/// The function keys and the key that opens a context menu reach the page as the DOM
+/// `key` and `code` a browser gives them, not as an unidentified key.
+#[test]
+fn fr34_function_and_context_menu_keys_reach_the_page_as_their_dom_keys() {
+    use dioxus_compose::schema::Key as Wire;
+    take_heard();
+    let mut host = Host::html(coded, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let (node_id, handler_id) = handlers_for(&first, PropertyKind::OnKeyDown)[0];
+    let keys = [
+        (Wire::F1, "F1"),
+        (Wire::F2, "F2"),
+        (Wire::F3, "F3"),
+        (Wire::F4, "F4"),
+        (Wire::F5, "F5"),
+        (Wire::F6, "F6"),
+        (Wire::F7, "F7"),
+        (Wire::F8, "F8"),
+        (Wire::F9, "F9"),
+        (Wire::F10, "F10"),
+        (Wire::F11, "F11"),
+        (Wire::F12, "F12"),
+        (Wire::ContextMenu, "ContextMenu"),
+    ];
+    for (key, _) in keys {
+        host.dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::KeyDown {
+                key,
+                shift_key: false,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0,
+                text: "",
+            },
+        })
+        .expect("the key is dispatched");
+    }
+    let expected: Vec<String> = keys
+        .iter()
+        .map(|(_, name)| format!("{name} {name}"))
+        .collect();
+    assert_eq!(take_heard(), expected);
+}
+
 fn focusable() -> Element {
     rsx! {
         div {

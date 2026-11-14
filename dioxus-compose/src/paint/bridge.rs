@@ -2496,6 +2496,7 @@ fn wire_brush(brush: &Brush, width: f32, height: f32) -> WireBrush {
         } => WireBrush::Radial {
             center: (center.0 / width, center.1 / height),
             radius: radius_x / width.max(height),
+            radius_y: 0.0,
             stops: stops(list),
             tile: tile(*repeating),
         },

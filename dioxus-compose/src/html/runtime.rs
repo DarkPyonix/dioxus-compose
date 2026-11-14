@@ -623,6 +623,19 @@ impl Runtime for HtmlRuntime {
                     WireKey::End => (Key::End, Code::End),
                     WireKey::PageUp => (Key::PageUp, Code::PageUp),
                     WireKey::PageDown => (Key::PageDown, Code::PageDown),
+                    WireKey::F1 => (Key::F1, Code::F1),
+                    WireKey::F2 => (Key::F2, Code::F2),
+                    WireKey::F3 => (Key::F3, Code::F3),
+                    WireKey::F4 => (Key::F4, Code::F4),
+                    WireKey::F5 => (Key::F5, Code::F5),
+                    WireKey::F6 => (Key::F6, Code::F6),
+                    WireKey::F7 => (Key::F7, Code::F7),
+                    WireKey::F8 => (Key::F8, Code::F8),
+                    WireKey::F9 => (Key::F9, Code::F9),
+                    WireKey::F10 => (Key::F10, Code::F10),
+                    WireKey::F11 => (Key::F11, Code::F11),
+                    WireKey::F12 => (Key::F12, Code::F12),
+                    WireKey::ContextMenu => (Key::ContextMenu, Code::ContextMenu),
                     // A key the wire enum does not name: its DOM `key` string travels in
                     // `text`, so a printable key reaches the page as that character.
                     WireKey::Other if !text.is_empty() => {

@@ -217,6 +217,12 @@ pub(crate) fn deliver_event(
     if code_pointer_handler != matches!(event.payload, EventPayload::CodePointer { .. }) {
         return Err(ProtocolError::InvalidValueKind(0));
     }
+    // Every selection of a code editor arrives through its selection listener, the
+    // handler a single selection is reported to, and nowhere else.
+    let selections = matches!(event.payload, EventPayload::SelectionsChanged { .. });
+    if selections && !matches!(name, "selectionchange" | "onselectionchange") {
+        return Err(ProtocolError::InvalidValueKind(0));
+    }
     let mut key_event = None;
     let mut pointer_event = None;
     // A press on a link run arrives as a click on the handler the run was given, and
@@ -386,6 +392,25 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
+        // While a code editor holds more than one selection, and once more when it is back
+        // to one. They go to the editor's own `selectionschange` listener, beside the
+        // `selectionchange` one that goes on hearing the primary selection alone.
+        EventPayload::SelectionsChanged { .. } => {
+            let Some(value) = compose_rust::code::SelectionsChange::from_payload(&event.payload)
+            else {
+                return Err(ProtocolError::InvalidValueKind(0));
+            };
+            Event::new(Rc::new(value), false).into_any()
+        }
+        // What became of one grouped edit asked of the editor's handle. It answers that
+        // editor's own request, so it does not bubble to an ancestor.
+        EventPayload::CodeEditGroupResult { .. } => {
+            let Some(value) = compose_rust::code::EditGroupResult::from_payload(&event.payload)
+            else {
+                return Err(ProtocolError::InvalidValueKind(0));
+            };
+            Event::new(Rc::new(value), false).into_any()
+        }
         EventPayload::VisibleRangeChanged {
             version,
             first_line,
@@ -554,6 +579,7 @@ pub(crate) fn deliver_event(
         | EventPayload::NotificationPermissionChanged(_)
         | EventPayload::AnimationEvent { .. }
         | EventPayload::ReducedMotionChanged(_)
+        | EventPayload::ColorSchemeChanged(_)
         | EventPayload::ZoomChanged { .. }
         | EventPayload::WindowRequested { .. }
         | EventPayload::ApplicationReopen
@@ -569,6 +595,7 @@ pub(crate) fn deliver_event(
         }
     };
     let _window_guard = crate::hooks::ActiveWindowGuard::enter(renderer.window_of(node_id));
+    let name = if selections { "selectionschange" } else { name };
     dom.runtime().handle_event(name, event_data, element);
     Ok(i64::from(
         key_event.is_some_and(|event| event.consumed())
