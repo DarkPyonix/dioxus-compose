@@ -1115,10 +1115,6 @@ fn schemed() -> Element {
 
 /// The application turns its theme dark, the page's `prefers-color-scheme: dark` rules
 /// apply from the same frame, and the batch carries only the box whose style they changed.
-///
-/// compose-rust does not tell the Host when the system's scheme changes: the renderer
-/// applies it on its own side. So the page follows the scheme the application's theme
-/// names, and keeps its configured one while the theme follows the system.
 #[test]
 fn fr34_prefers_color_scheme_follows_the_theme() {
     let mut host = Host::html(schemed, schemed_config);
@@ -1146,6 +1142,62 @@ fn fr34_prefers_color_scheme_follows_the_theme() {
 
     let next = tree(records(host.render_frame(0).unwrap()));
     assert_eq!(next, Vec::new(), "the scheme is applied once");
+}
+
+fn following() -> Element {
+    rsx! {
+        div { id: "panel" }
+        div { id: "other" }
+    }
+}
+
+/// While the theme follows the system, the page answers `prefers-color-scheme` with the
+/// light or dark appearance the renderer reports: the configured scheme until the first
+/// report, and each report restyles the page in the call that carried it, sending only the
+/// box whose style changed. A report of the scheme already held sends nothing.
+#[test]
+fn fr34_prefers_color_scheme_follows_the_system_appearance_the_renderer_reports() {
+    use dioxus_compose::schema::SystemColorScheme;
+    let report = |host: &mut Host, scheme| {
+        let (batch, _) = host
+            .dispatch(HostEvent {
+                node_id: 0,
+                handler_id: 0,
+                payload: EventPayload::ColorSchemeChanged(scheme),
+            })
+            .expect("the report is dispatched");
+        tree(records(batch))
+    };
+    let mut host = Host::html(following, schemed_config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let panel = node_with(&first, &Modifier::Background(rgb(255, 255, 255)));
+    let index = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Modifier(node, index, Modifier::Background(_)) if *node == panel => {
+                Some(*index)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    assert_eq!(
+        report(&mut host, SystemColorScheme::Dark),
+        vec![Record::Modifier(
+            panel,
+            index,
+            Modifier::Background(rgb(0, 0, 0))
+        )]
+    );
+    assert_eq!(report(&mut host, SystemColorScheme::Dark), Vec::new());
+    assert_eq!(
+        report(&mut host, SystemColorScheme::Light),
+        vec![Record::Modifier(
+            panel,
+            index,
+            Modifier::Background(rgb(255, 255, 255))
+        )]
+    );
 }
 
 fn aligned() -> Element {

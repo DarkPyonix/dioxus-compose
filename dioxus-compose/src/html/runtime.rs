@@ -20,8 +20,8 @@
 //! `keyup` is never delivered from here.
 //!
 //! `prefers-color-scheme` follows the theme's colour scheme when the application says
-//! light or dark. When it follows the system, the renderer applies the system's choice
-//! without telling the Host, so the page keeps the scheme its configuration names.
+//! light or dark. When it follows the system, it follows the light or dark appearance the
+//! renderer reports, and the scheme the configuration names until the first report.
 //!
 //! Text is measured by the configured [`TextMeasurer`](crate::html::TextMeasurer), the
 //! renderer's measure call by default ([`RendererMeasurer`](crate::html::RendererMeasurer)),
@@ -118,7 +118,7 @@ pub struct HtmlRuntime {
     /// The field that has the focus, as far as the page has been told.
     focused: Option<NodeId>,
     /// The scheme the configuration names, for an application whose theme follows the
-    /// system.
+    /// system, until the renderer has reported the system's.
     configured_scheme: ColorScheme,
     /// The theme and design system the text sizes were measured under. A change of either
     /// makes the renderer's earlier answers wrong.
@@ -135,6 +135,9 @@ pub struct HtmlRuntime {
     /// lives. A report is answered with a frame only when something reads it, and the page
     /// does: it is laid out in a viewport and a resolution that depend on it.
     _zoom: compose_rust::zoom::ZoomSubscription,
+    /// Keeps the registration for the system's light or dark appearance, for the same
+    /// reason: a page whose theme follows the system answers `prefers-color-scheme` with it.
+    _scheme: compose_rust::theme::SystemColorSchemeSubscription,
     /// The `(layout_revision, viewport_w_bits, viewport_h_bits, zoom_bits)` last applied to
     /// `self.bridge`, so an unchanged frame skips `dom.plan` and `bridge.apply`.
     applied_revision: Option<(u64, u32, u32, u32)>,
@@ -212,6 +215,7 @@ impl HtmlRuntime {
             measured_under: None,
             _moments: subscription,
             _zoom: compose_rust::zoom::subscribe(std::sync::Arc::new(|| {})),
+            _scheme: compose_rust::subscribe_system_color_scheme(std::sync::Arc::new(|| {})),
             focused: None,
             configured_scheme,
             dom: HtmlDom::with_config(app, config),
@@ -315,7 +319,11 @@ impl HtmlRuntime {
         let scheme = match compose_rust::theme::current_theme().color_scheme {
             ThemeScheme::Light => ColorScheme::Light,
             ThemeScheme::Dark => ColorScheme::Dark,
-            ThemeScheme::FollowSystem => self.configured_scheme,
+            ThemeScheme::FollowSystem => match compose_rust::system_color_scheme() {
+                Some(compose_rust::SystemColorScheme::Light) => ColorScheme::Light,
+                Some(compose_rust::SystemColorScheme::Dark) => ColorScheme::Dark,
+                None => self.configured_scheme,
+            },
         };
         self.dom.set_color_scheme(scheme);
         let under = (
