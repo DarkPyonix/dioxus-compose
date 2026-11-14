@@ -35,10 +35,11 @@ use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
 use dioxus_html::{
-    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasCompositionData,
-    HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData, HtmlEventConverter, Key,
-    KeyboardData, Location, Modifiers, MountedData, MountedError, MouseData, PlatformEventData,
-    RenderedElementBacking, ScrollBehavior, ScrollToOptions, TransitionData,
+    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasClipboardData,
+    HasCompositionData, HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData,
+    HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData, MountedError,
+    MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior, ScrollToOptions,
+    TransitionData,
 };
 
 use crate::html::NodeId;
@@ -1134,6 +1135,67 @@ impl HtmlDom {
         Some(target)
     }
 
+    /// Delivers `paste` carrying `text` to the nearest handler at or around `node`, bubbling
+    /// the way Dioxus bubbles.
+    ///
+    /// When not prevented by a handler, and `node` is an editable `<input>` or `<textarea>`,
+    /// the pasted text is inserted into the control's value and an `input` event is delivered
+    /// to the control, matching browser default paste behavior.
+    /// Returns the target node whose handler received the event, or `Some(node)`.
+    pub fn paste(&mut self, node: NodeId, text: &str) -> Option<NodeId> {
+        let mut prevented = false;
+        let mut target_node = None;
+        if let Some((target, element)) = self.listener_target(node, "paste") {
+            let data = ClipboardEventData::new(text);
+            prevented = self.send(element, "paste", Box::new(data), true);
+            target_node = Some(target);
+        }
+        if !prevented {
+            self.apply_default_paste(node, text);
+        }
+        target_node.or(Some(node))
+    }
+
+    /// Delivers `copy` to the nearest handler at or around `node`, bubbling the way Dioxus
+    /// bubbles. Returns the target node whose handler received the event.
+    pub fn copy(&mut self, node: NodeId) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, "copy")?;
+        let data = ClipboardEventData::new("");
+        self.send(element, "copy", Box::new(data), true);
+        Some(target)
+    }
+
+    /// Delivers `cut` to the nearest handler at or around `node`, bubbling the way Dioxus
+    /// bubbles. Returns the target node whose handler received the event.
+    pub fn cut(&mut self, node: NodeId) -> Option<NodeId> {
+        let (target, element) = self.listener_target(node, "cut")?;
+        let data = ClipboardEventData::new("");
+        self.send(element, "cut", Box::new(data), true);
+        Some(target)
+    }
+
+    fn apply_default_paste(&mut self, node: NodeId, text: &str) {
+        let Some(element) = self.doc.get_node(node) else {
+            return;
+        };
+        if element.attr(local("disabled")).is_some() || element.attr(local("readonly")).is_some() {
+            return;
+        }
+        let is_editable = match form::tag(element) {
+            Some("textarea") => true,
+            Some("input") => !matches!(
+                form::input_type(element).as_str(),
+                "checkbox" | "radio" | "button" | "submit" | "image" | "hidden"
+            ),
+            _ => false,
+        };
+        if is_editable {
+            let mut value = form::field_value(&self.doc, self.state.committed_values(), node);
+            value.push_str(text);
+            self.input(node, &value);
+        }
+    }
+
     /// The node that currently holds the document's focus, if any.
     pub fn focused(&self) -> Option<NodeId> {
         self.doc.get_focussed_node_id()
@@ -1923,6 +1985,30 @@ impl HasCompositionData for CompositionEventData {
     }
 }
 
+/// What a clipboard event (`copy`, `cut`, `paste`) carries to its handler.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClipboardEventData {
+    pub text: String,
+}
+
+impl ClipboardEventData {
+    pub fn new(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+        }
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+}
+
+impl HasClipboardData for ClipboardEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Backing for `onmounted` (`MountedData`), allowing handlers to call `set_focus` or
 /// `get_client_rect` on the mounted DOM node.
 #[derive(Clone)]
@@ -2188,8 +2274,12 @@ impl HtmlEventConverter for Converter {
     fn convert_cancel_data(&self, _: &PlatformEventData) -> dioxus_html::CancelData {
         not_sent("cancel")
     }
-    fn convert_clipboard_data(&self, _: &PlatformEventData) -> dioxus_html::ClipboardData {
-        not_sent("clipboard")
+    fn convert_clipboard_data(&self, event: &PlatformEventData) -> dioxus_html::ClipboardData {
+        let data = event
+            .downcast::<ClipboardEventData>()
+            .expect("every clipboard event this document sends carries ClipboardEventData")
+            .clone();
+        dioxus_html::ClipboardData::new(data)
     }
     fn convert_composition_data(&self, event: &PlatformEventData) -> CompositionData {
         let data = event
