@@ -193,6 +193,8 @@ pub enum BridgeEvent {
     KeyDown,
     /// The user pressed a key in an `<input>` or `<textarea>`.
     FieldKeyDown,
+    /// An IME composition changed in an `<input>` or `<textarea>`.
+    CompositionChange,
     /// The user ticked or cleared a checkbox, or picked a radio button.
     Toggle,
     /// The user picked an option of a `<select>`.
@@ -1512,8 +1514,13 @@ impl PlanBridge {
             // the renderer asks before Enter submits or starts a line, and the answer
             // depends on handlers that may be added later.
             // TODO(DarkPyonix/compose-rust#100): extend OnKeyDown beyond Enter to general key events.
-            // TODO(DarkPyonix/compose-rust#98): wire IME composition events for HTML fields.
             // TODO(DarkPyonix/compose-rust#410): wire OnFocusGained and programmatic focus requests.
+            self.add_handler(
+                batch,
+                key,
+                PropertyKind::OnCompositionChange,
+                BridgeEvent::CompositionChange,
+            );
             self.add_handler(
                 batch,
                 key,

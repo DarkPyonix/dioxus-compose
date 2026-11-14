@@ -13,17 +13,8 @@
 name: Test
 
 on:
-  # Only what is about to become public, or what already is. Work lands on develop many
-  # times an hour and running the matrix on each push is noise rather than signal. Every
-  # release reaches main as a pull request, so the gate still runs before anything is
-  # published, which is the moment that matters.
-  # The pull request only. `release` reaches `main` through a pull request that a human
-  # merges, so that run is the gate, and it finishes before main moves. Running again on
-  # the push afterwards tested the identical tree and doubled every number on the actions
-  # page for nothing.
-  # develop as well: work reaches it through pull requests, and those had no gate at all.
-  # workflow_dispatch runs the gate by hand, and release-sync uses it on the release branch,
-  # because a push made with GITHUB_TOKEN does not start pull_request workflows.
+  push:
+    branches: [develop]
   pull_request:
     branches: [main, develop]
   workflow_dispatch:
