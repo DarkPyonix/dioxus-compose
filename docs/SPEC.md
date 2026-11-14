@@ -1954,6 +1954,9 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 8. 3D 변환된 상자의 그려진 모양 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불린다(기준 3의 3D판). 테스트 `fr34_1_3d_hit_test_follows_the_drawn_shape` (예정).
 9. `backface-visibility: hidden`인 상자가 뒷면을 보일 때(`rotateY(180deg)`) 그려지지 않는다. 앞면을 보일 때는 그려진다. 테스트 `fr34_1_backface_hidden_box_is_not_drawn_from_behind` (예정).
 10. `transform-style: preserve-3d`인 요소의 자식은 평면으로 합성되어 그려지고, Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다. 프로세스는 중단되지 않는다. 테스트 `fr34_1_preserve_3d_warns_and_flattens` (예정).
+11. **부모의 `perspective` 속성**([leader, provisional] (darkpyonix leader, 2026-11-15), 이슈 #46). 부모에 `perspective: <길이>`(와 `perspective-origin`)가 있으면 그 자식의 3D 변환은 CSS가 정한 대로 그 원근을 받는다. Host가 부모의 원근 행렬을 자식의 행렬 앞에 접어 넣어 `Transform3D` 하나로 보내며, `perspective()` 함수와 같은 방식으로 따로 실리는 값은 없다. `perspective: none`이나 속성이 없는 부모는 지금과 같다. 카드 뒤집기 CSS가 흔히 이 속성을 쓴다. 테스트 `fr34_1_parent_perspective_property_folds_into_the_child_matrix` (예정).
+
+**알려진 한계(리더 결정 2026-11-15).** 3D 변환을 지나는 움직임은 재생하지 않는다. compose-rust의 `KeyframeValue::Transform`이 2D 함수만 싣기 때문에, 3D 변환으로 가거나 3D 변환에서 오는 transition은 끝 값이 바로 적용되고, 3D 키프레임이 있는 `@keyframes`에는 transform 트랙이 없다. Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다(`fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named`). compose-rust가 3D 키프레임을 실을 수 있게 되면 이 한계를 없앤다.
 
 #### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
 
