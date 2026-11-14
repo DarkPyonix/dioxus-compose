@@ -1948,13 +1948,13 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 2. 회전된 상자 안의 글자와 자식도 함께 회전합니다.
 3. 회전된 상자의 모서리 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불립니다.
 4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
-5. Q3의 3D 함수가 든 `transform`이 Host에서 행렬 하나와 원점으로 접혀 그 노드의 `Transform3D` 수정자 하나로 나간다. 2D 함수가 섞여도 같은 행렬 하나다. 지금의 "3D 변환을 건너뛰었다"는 경고는 더 나오지 않고, 그것을 고정하던 테스트 `fr34_1_every_3d_function_is_skipped_with_a_warning`은 이 전송 테스트로 바뀐다. 테스트 `fr34_1_3d_functions_fold_into_one_transform3d` (예정).
-6. `rotateX(60deg)`, `rotateY(45deg)`, `perspective(400px)`의 조합과 `perspective(400px) rotateY(45deg)`를 쓴 상자 각각의 네 모서리가 CSS가 계산한 자리와 1px 안에서 맞는다. 원근은 행렬 안에 있고 따로 실리지 않는다. 테스트 `fr34_1_3d_corners_match_css_within_1px` (예정).
-7. `graphicsLayer`로 분해되지 않는 행렬(기울임과 원근의 조합 등)도 Host는 고치지 않고 그대로 보내고, 렌더러의 어댑터 경로로 그려 기준 6의 허용치를 지킨다. 렌더러 쪽 확인과 Compose 버전 기록은 compose-rust FR-41.3의 것이다. 테스트 `fr34_1_undecomposable_3d_matrix_is_sent_unchanged` (예정).
-8. 3D 변환된 상자의 그려진 모양 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불린다(기준 3의 3D판). 테스트 `fr34_1_3d_hit_test_follows_the_drawn_shape` (예정).
-9. `backface-visibility: hidden`인 상자가 뒷면을 보일 때(`rotateY(180deg)`) 그려지지 않는다. 앞면을 보일 때는 그려진다. 테스트 `fr34_1_backface_hidden_box_is_not_drawn_from_behind` (예정).
-10. `transform-style: preserve-3d`인 요소의 자식은 평면으로 합성되어 그려지고, Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다. 프로세스는 중단되지 않는다. 테스트 `fr34_1_preserve_3d_warns_and_flattens` (예정).
-11. **부모의 `perspective` 속성**([leader, provisional] (darkpyonix leader, 2026-11-15), 이슈 #46). 부모에 `perspective: <길이>`(와 `perspective-origin`)가 있으면 그 자식의 3D 변환은 CSS가 정한 대로 그 원근을 받는다. Host가 부모의 원근 행렬을 자식의 행렬 앞에 접어 넣어 `Transform3D` 하나로 보내며, `perspective()` 함수와 같은 방식으로 따로 실리는 값은 없다. `perspective: none`이나 속성이 없는 부모는 지금과 같다. 카드 뒤집기 CSS가 흔히 이 속성을 쓴다. 테스트 `fr34_1_parent_perspective_property_folds_into_the_child_matrix` (예정).
+5. Q3의 3D 함수가 든 `transform`이 Host에서 행렬 하나와 원점으로 접혀 그 노드의 `Transform3D` 수정자 하나로 나간다. 2D 함수가 섞여도 같은 행렬 하나다. 지금의 "3D 변환을 건너뛰었다"는 경고는 더 나오지 않고, 그것을 고정하던 테스트 `fr34_1_every_3d_function_is_skipped_with_a_warning`은 이 전송 테스트로 바뀐다. 테스트 `fr34_1_3d_functions_fold_into_one_transform3d` (통과, 2026-11-15).
+6. `rotateX(60deg)`, `rotateY(45deg)`, `perspective(400px)`의 조합과 `perspective(400px) rotateY(45deg)`를 쓴 상자 각각의 네 모서리가 CSS가 계산한 자리와 1px 안에서 맞는다. 원근은 행렬 안에 있고 따로 실리지 않는다. 테스트 `fr34_1_3d_corners_match_css_within_1px` (통과, 2026-11-15).
+7. `graphicsLayer`로 분해되지 않는 행렬(기울임과 원근의 조합 등)도 Host는 고치지 않고 그대로 보내고, 렌더러의 어댑터 경로로 그려 기준 6의 허용치를 지킨다. 렌더러 쪽 확인과 Compose 버전 기록은 compose-rust FR-41.3의 것이다. 테스트 `fr34_1_undecomposable_3d_matrix_is_sent_unchanged` (통과, 2026-11-15).
+8. 3D 변환된 상자의 그려진 모양 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불린다(기준 3의 3D판). 테스트 `fr34_1_3d_hit_test_follows_the_drawn_shape` (통과, 2026-11-15).
+9. `backface-visibility: hidden`인 상자가 뒷면을 보일 때(`rotateY(180deg)`) 그려지지 않는다. 앞면을 보일 때는 그려진다. 테스트 `fr34_1_backface_hidden_box_is_not_drawn_from_behind` (통과, 2026-11-15).
+10. `transform-style: preserve-3d`인 요소의 자식은 평면으로 합성되어 그려지고, Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다. 프로세스는 중단되지 않는다. 테스트 `fr34_1_preserve_3d_warns_and_flattens` (통과, 2026-11-15).
+11. **부모의 `perspective` 속성**([leader, provisional] (darkpyonix leader, 2026-11-15), 이슈 #46). 부모에 `perspective: <길이>`(와 `perspective-origin`)가 있으면 그 자식의 3D 변환은 CSS가 정한 대로 그 원근을 받는다. Host가 부모의 원근 행렬을 자식의 행렬 앞에 접어 넣어 `Transform3D` 하나로 보내며, `perspective()` 함수와 같은 방식으로 따로 실리는 값은 없다. `perspective: none`이나 속성이 없는 부모는 지금과 같다. 카드 뒤집기 CSS가 흔히 이 속성을 쓴다. 테스트 `fr34_1_parent_perspective_property_folds_into_the_child_matrix` (통과, 2026-11-15).
 
 **알려진 한계(리더 결정 2026-11-15).** 3D 변환을 지나는 움직임은 재생하지 않는다. compose-rust의 `KeyframeValue::Transform`이 2D 함수만 싣기 때문에, 3D 변환으로 가거나 3D 변환에서 오는 transition은 끝 값이 바로 적용되고, 3D 키프레임이 있는 `@keyframes`에는 transform 트랙이 없다. Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다(`fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named`). compose-rust가 3D 키프레임을 실을 수 있게 되면 이 한계를 없앤다.
 
@@ -1977,7 +1977,7 @@ M12 이후 과제입니다(소유자 결정 2026-10-03). 예제 overlay와 theme
 1. `opacity`, `transform`, `background-color`의 transition이 CSS가 정한 시간과 시간 함수대로 진행되고, 끝 값이 Chromium과 같습니다.
 2. `@keyframes`의 반복(`infinite` 포함)과 `animation-direction`, `animation-delay`가 지켜집니다.
 3. 레이아웃에 영향이 없는 속성의 애니메이션이 도는 동안 Host의 프레임당 작업이 0입니다.
-4. 애니메이션이 도는 동안 프레임 시간이 NFR-9 예산 안이고, 수치를 이 항목에 기록합니다.
+4. 애니메이션이 도는 동안 프레임 시간이 NFR-9 예산 안이고, 수치를 이 항목에 기록합니다. 측정(2026-11-15, Apple Silicon Mac mini, `cargo bench`의 `fr34_html_frame/ticked_width_transition_300_rows`, 300행 페이지에서 폭 transition 한 프레임을 Host가 진행시키는 경우): 레이아웃 1.48 ms, 표시 목록 차이 0.058 ms, 계획 0.36 ms, 계획 차이 0.46 ms, 합계 중앙값 2.57 ms(범위 2.37 ~ 3.37 ms). 한 프레임에 표시 목록 306개 가운데 2개만 보냅니다. 렌더러가 재생하는 속성(`opacity`, `transform`, 색)은 프레임마다 Host 일이 0입니다(기준 3). 순수 Compose 기준선과의 비교(NFR-9의 10%)는 이 수치로 아직 판정하지 않았습니다.
 5. `prefers-reduced-motion: reduce`이면 CSS가 그 조건으로 정한 대로 동작합니다.
 
 기준 1, 3과 `opacity`/`transform`에 대한 기준 2, 5는 M14(10-18)에서, 레이아웃 속성에 대한 기준 2, 4, 5는 M15에서 확인합니다.
