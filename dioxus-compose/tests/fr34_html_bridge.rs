@@ -1,0 +1,2157 @@
+//! A screen written with HTML elements and CSS, drawn through compose-rust.
+//!
+//! Each test runs an app through a Host the way a window runs it, and reads the records
+//! the renderer would receive: the first batch draws the whole page, later batches carry
+//! only what changed, and events the renderer sends reach the DOM node's handler.
+//!
+//! Text is sized by a measurer that gives every character 10px and every line 20px. The
+//! renderer has not reported a window size, so pages are laid out at 800 by 600.
+
+use std::cell::RefCell;
+
+use dioxus_compose::Host;
+use dioxus_compose::html::prelude::dioxus_elements::point_interaction::ModifiersInteraction;
+use dioxus_compose::html::prelude::*;
+use dioxus_compose::html::{
+    HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
+};
+use dioxus_compose::prelude::WritableExt;
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::schema::{
+    Color, EventPayload, Modifier, Paint, PropertyKind, SEMANTICS_CLICK_ACTION_BIT,
+    SEMANTICS_DISABLED_SHIFT, SEMANTICS_EXPANDED_SHIFT, SEMANTICS_HIDDEN_BIT,
+    SEMANTICS_SELECTED_SHIFT, SemanticsRole, TextOverflow, WidgetKind,
+};
+use dioxus_compose::spans::{TextSpan, TextSpans};
+use dioxus_hooks::use_signal;
+
+struct FixedAdvance;
+
+impl TextMeasurer for FixedAdvance {
+    fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics {
+        let width = match request.width {
+            WidthConstraint::AtMost(width) => {
+                (request.text.chars().count() as f32 * 10.0).min(width.max(0.0))
+            }
+            _ => request.text.chars().count() as f32 * 10.0,
+        };
+        TextMetrics {
+            width,
+            height: 20.0,
+            first_baseline: 15.0,
+            line_count: 1,
+        }
+    }
+}
+
+fn config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec!["html, body { margin: 0; padding: 0; }".to_string()],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+/// Names `cat.png` as asset 7, 40 by 30.
+struct Cat;
+
+impl ImageResolver for Cat {
+    fn resolve(&mut self, url: &str) -> Option<AssetId> {
+        (url == "cat.png").then_some(AssetId(7))
+    }
+
+    fn size(&mut self, url: &str) -> Option<ImageSize> {
+        (url == "cat.png").then_some(ImageSize::new(40, 30))
+    }
+}
+
+fn config_with_cat() -> HtmlConfig {
+    HtmlConfig {
+        images: Some(Box::new(Cat)),
+        ..config()
+    }
+}
+
+/// A property value, owned, so records outlive the batch they came in.
+#[derive(Clone, Debug, PartialEq)]
+enum Value {
+    None,
+    Str(String),
+    Bool(bool),
+    Int(i64),
+    Float(f32),
+    Bytes(Vec<u8>),
+}
+
+/// One record of a batch, owned.
+#[derive(Clone, Debug, PartialEq)]
+enum Record {
+    Create(u32, WidgetKind),
+    Prop(u32, PropertyKind, Value),
+    Modifier(u32, u16, Modifier),
+    Insert {
+        parent: u32,
+        node: u32,
+        index: u32,
+    },
+    Move {
+        parent: u32,
+        node: u32,
+        index: u32,
+    },
+    Remove(u32),
+    SetText(u32, String),
+    /// A record that is not about the tree: the theme, the window, an asset.
+    Other,
+}
+
+fn records(bytes: &[u8]) -> Vec<Record> {
+    decode_batch(bytes)
+        .expect("the batch decodes")
+        .into_iter()
+        .map(|record| match record {
+            Mutation::Create { node_id, widget } => Record::Create(node_id, widget),
+            Mutation::SetProp {
+                node_id,
+                property,
+                value,
+            } => Record::Prop(
+                node_id,
+                property,
+                match value {
+                    PropertyValue::None => Value::None,
+                    PropertyValue::String(text) => Value::Str(text.to_string()),
+                    PropertyValue::Bool(flag) => Value::Bool(flag),
+                    PropertyValue::Integer(number) => Value::Int(number),
+                    PropertyValue::Float(number) => Value::Float(number),
+                    PropertyValue::Bytes(bytes) => Value::Bytes(bytes.to_vec()),
+                },
+            ),
+            Mutation::SetModifier {
+                node_id,
+                index,
+                modifier,
+            } => Record::Modifier(node_id, index, modifier),
+            Mutation::Insert {
+                parent_id,
+                node_id,
+                index,
+            } => Record::Insert {
+                parent: parent_id,
+                node: node_id,
+                index,
+            },
+            Mutation::Move {
+                parent_id,
+                node_id,
+                index,
+            } => Record::Move {
+                parent: parent_id,
+                node: node_id,
+                index,
+            },
+            Mutation::Remove { node_id } => Record::Remove(node_id),
+            Mutation::SetText { node_id, text, .. } => Record::SetText(node_id, text.to_string()),
+            _ => Record::Other,
+        })
+        .collect()
+}
+
+/// The records about the tree, without the theme and window every rebuild starts with.
+fn tree(records: Vec<Record>) -> Vec<Record> {
+    records
+        .into_iter()
+        .filter(|record| *record != Record::Other)
+        .collect()
+}
+
+fn rgb(r: u8, g: u8, b: u8) -> Paint {
+    Paint::Literal(Color::argb(
+        0xff00_0000 | (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
+    ))
+}
+
+/// The modifier list each node ends up with after `records`, by index.
+fn modifiers_of(records: &[Record], node: u32) -> Vec<Modifier> {
+    let mut list: Vec<Modifier> = Vec::new();
+    for record in records {
+        if let Record::Modifier(id, index, modifier) = record
+            && *id == node
+        {
+            let index = usize::from(*index);
+            if list.len() <= index {
+                list.resize(index + 1, Modifier::Empty);
+            }
+            list[index] = modifier.clone();
+        }
+    }
+    list.retain(|modifier| *modifier != Modifier::Empty);
+    list
+}
+
+/// The one node given `modifier`.
+#[track_caller]
+fn node_with(records: &[Record], modifier: &Modifier) -> u32 {
+    let nodes: Vec<u32> = records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, given) if given == modifier => Some(*node),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(nodes.len(), 1, "one node has {modifier:?}: {records:#?}");
+    nodes[0]
+}
+
+/// The handler a node was given for `property`.
+#[track_caller]
+fn handler_of(records: &[Record], node: u32, property: PropertyKind) -> u64 {
+    records
+        .iter()
+        .find_map(|record| match record {
+            Record::Prop(id, given, Value::Int(handler)) if *id == node && *given == property => {
+                Some(*handler as u64)
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("node {node} has a {property:?} handler: {records:#?}"))
+}
+
+/// The nodes created as `widget`.
+fn created(records: &[Record], widget: WidgetKind) -> Vec<u32> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Create(node, kind) if *kind == widget => Some(*node),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The node with a `Clickable` modifier, and its handler. There is exactly one.
+#[track_caller]
+fn clickable(records: &[Record]) -> (u32, u64) {
+    let found: Vec<(u32, u64)> = records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, Modifier::Clickable { handler_id }) => {
+                Some((*node, *handler_id))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "one clickable node: {records:#?}");
+    found[0]
+}
+
+fn click(host: &mut Host, (node_id, handler_id): (u32, u64)) -> Vec<Record> {
+    let (batch, _) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        })
+        .expect("the click is dispatched");
+    tree(records(batch))
+}
+
+fn texts(records: &[Record]) -> Vec<String> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(_, PropertyKind::Text, Value::Str(text)) => Some(text.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn every_kind() -> Element {
+    rsx! {
+        div { style: "width: 200px; height: 40px",
+            div { style: "width: 10px; height: 10px; background-color: rgb(0, 0, 255)" }
+        }
+        p { "words" }
+        img { src: "cat.png" }
+        div { style: "width: 60px; height: 60px; overflow: auto",
+            div { style: "width: 200px; height: 200px; background-color: rgb(255, 0, 0)" }
+        }
+        input { value: "Ada", style: "width: 120px; height: 24px" }
+        input { r#type: "checkbox" }
+        input { r#type: "radio" }
+        select {
+            option { "one" }
+            option { "two" }
+        }
+    }
+}
+
+/// The first frame creates every plan kind as the widget it is drawn with: boxes holding
+/// others as `AbsoluteBox`, an empty one as `Box`, a run as `Text`, an image as an `Image`
+/// with its asset, both scroll axes, and the four form controls. Every node but the
+/// window's own scroll is inserted somewhere, so the page is one tree.
+#[test]
+fn fr42_first_frame_creates_the_widget_of_every_plan_kind() {
+    let mut host = Host::html(every_kind, config_with_cat);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    for widget in [
+        WidgetKind::AbsoluteBox,
+        WidgetKind::Box,
+        WidgetKind::Text,
+        WidgetKind::Image,
+        WidgetKind::ScrollColumn,
+        WidgetKind::ScrollRow,
+        WidgetKind::TextField,
+        WidgetKind::Checkbox,
+        WidgetKind::RadioButton,
+        WidgetKind::Dropdown,
+    ] {
+        assert!(
+            !created(&first, widget).is_empty(),
+            "a {widget:?} is created: {first:#?}"
+        );
+    }
+
+    let image = created(&first, WidgetKind::Image);
+    assert_eq!(image.len(), 1);
+    assert!(
+        first.contains(&Record::Prop(image[0], PropertyKind::Asset, Value::Int(7))),
+        "the image draws asset 7"
+    );
+    assert_eq!(
+        modifiers_of(&first, image[0]),
+        vec![
+            Modifier::Offset { x: 0.0, y: 0.0 },
+            Modifier::RequiredSize {
+                width: 40.0,
+                height: 30.0
+            },
+        ]
+    );
+
+    let dropdown = created(&first, WidgetKind::Dropdown)[0];
+    let options: Vec<u32> = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Insert { parent, node, .. } if *parent == dropdown => Some(*node),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(options.len(), 2, "the select's two options: {first:#?}");
+    let labels = texts(&first);
+    assert!(labels.contains(&"one".to_string()) && labels.contains(&"two".to_string()));
+
+    let field = created(&first, WidgetKind::TextField)[0];
+    assert!(first.contains(&Record::Prop(
+        field,
+        PropertyKind::Text,
+        Value::Str("Ada".to_string())
+    )));
+
+    // The window's own box, which names the factor the page is drawn at, is the one node
+    // nothing inserts. The page's scroll hangs from it.
+    let window = match first.iter().rev().find_map(|record| match record {
+        Record::Create(node, WidgetKind::AbsoluteBox) => Some(*node),
+        _ => None,
+    }) {
+        Some(node) => node,
+        None => panic!("the window's box is created: {first:#?}"),
+    };
+    assert!(
+        first.iter().any(|record| matches!(
+            record,
+            Record::Insert { parent, node, .. }
+                if *parent == window && created(&first, WidgetKind::ScrollColumn).contains(node)
+        )),
+        "the window's scroll hangs from the window's box: {first:#?}"
+    );
+    for record in &first {
+        if let Record::Create(node, _) = record
+            && *node != window
+        {
+            assert!(
+                first
+                    .iter()
+                    .any(|record| matches!(record, Record::Insert { node: inserted, .. } if inserted == node)),
+                "node {node} is inserted: {first:#?}"
+            );
+        }
+    }
+}
+
+/// A frame in which nothing changed sends nothing.
+#[test]
+fn fr34_unchanged_frame_sends_nothing() {
+    let mut host = Host::html(every_kind, config_with_cat);
+    host.rebuild().unwrap();
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new());
+}
+
+fn boxed_inlines() -> Element {
+    rsx! {
+        img { src: "cat.png" }
+        input { r#type: "checkbox" }
+    }
+}
+
+/// An anonymous block that wraps only nodes with boxes of their own (an image and a form
+/// control) is listed under the same key in every layout, so a second frame resends nothing.
+#[test]
+fn fr34_anonymous_block_of_boxed_inlines_keeps_its_key() {
+    let mut host = Host::html(boxed_inlines, config_with_cat);
+    host.rebuild().unwrap();
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new());
+}
+
+fn bars() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let colour = if presses() > 0 {
+        "rgb(255, 0, 0)"
+    } else {
+        "rgb(0, 0, 255)"
+    };
+    rsx! {
+        div { style: "display: flex; flex-direction: column; width: 100px",
+            div {
+                style: "height: 20px; background-color: rgb(0, 128, 0)",
+                onclick: move |_| presses += 1,
+            }
+            div { style: "height: 20px; background-color: {colour}" }
+            div { style: "height: 20px; background-color: rgb(0, 128, 0)" }
+        }
+    }
+}
+
+/// One box's background changes, and the batch that follows is that one modifier on that
+/// one node: nothing else is resent.
+#[test]
+fn fr34_background_change_sends_only_that_box() {
+    let mut host = Host::html(bars, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let target = node_with(&first, &Modifier::Background(rgb(0, 0, 255)));
+    let index = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Modifier(node, index, Modifier::Background(_)) if *node == target => {
+                Some(*index)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    let after = click(&mut host, clickable(&first));
+    assert_eq!(
+        after,
+        vec![Record::Modifier(
+            target,
+            index,
+            Modifier::Background(rgb(255, 0, 0))
+        )]
+    );
+}
+
+fn counter() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let count = presses();
+    rsx! {
+        div {
+            style: "width: 100px; height: 20px",
+            onclick: move |_| presses += 1,
+            "pressed {count}"
+        }
+    }
+}
+
+/// The renderer presses the box it drew for a node with a click handler, the event goes
+/// back through the Host to that node's Dioxus handler, and the next batch draws what the
+/// handler changed. An event naming the handler from another node is refused.
+#[test]
+fn fr34_click_reaches_the_dom_handler_through_the_renderer() {
+    let mut host = Host::html(counter, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    assert!(texts(&first).contains(&"pressed 0".to_string()));
+    let (node, handler) = clickable(&first);
+    assert!(
+        created(&first, WidgetKind::AbsoluteBox).contains(&node),
+        "the clickable node is the box: {first:#?}"
+    );
+
+    assert!(
+        host.dispatch(HostEvent {
+            node_id: node + 1000,
+            handler_id: handler,
+            payload: EventPayload::Clicked,
+        })
+        .is_err(),
+        "a handler is only reached from the node it was set on"
+    );
+
+    let after = click(&mut host, (node, handler));
+    assert_eq!(texts(&after), vec!["pressed 1".to_string()]);
+    let after = click(&mut host, (node, handler));
+    assert_eq!(texts(&after), vec!["pressed 2".to_string()]);
+}
+
+fn page_with_script() -> Element {
+    rsx! {
+        p { "visible" }
+        script { "globalThis.ran = true; while (true) ;" }
+    }
+}
+
+/// A `<script>` reaches the renderer as nothing: no text of its source is drawn, and the
+/// page around it is.
+#[test]
+fn fr34_script_is_not_run() {
+    let mut host = Host::html(page_with_script, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let drawn = texts(&first);
+    assert!(drawn.contains(&"visible".to_string()), "{drawn:?}");
+    assert!(
+        drawn.iter().all(|text| !text.contains("globalThis")),
+        "the script's source is not drawn: {drawn:?}"
+    );
+}
+
+fn rounded() -> Element {
+    rsx! {
+        div { style: "direction: rtl; position: relative; width: 300px; height: 200px",
+            div { style: "position: absolute; left: 10px; top: 5px; width: 100px; height: 100px; border-radius: 4px 8px 12px 16px; background-color: rgb(255, 0, 0)" }
+            div { style: "position: absolute; left: 150px; top: 5px; width: 100px; height: 100px; border-radius: 6px; background-color: rgb(0, 0, 255)" }
+        }
+    }
+}
+
+/// Corners go one radius per corner, in physical order (top left, top right, bottom
+/// right, bottom left), on a right-to-left page as on any other, and four equal corners
+/// still go as `CornerEach`, never as the design system's `Shape`. Offsets are physical
+/// too: `left: 10px` is ten from the left.
+#[test]
+fn fr42_corners_are_sent_per_corner_and_physical() {
+    let mut host = Host::html(rounded, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let mixed = node_with(&first, &Modifier::Background(rgb(255, 0, 0)));
+    let mixed_modifiers = modifiers_of(&first, mixed);
+    assert!(
+        mixed_modifiers.contains(&Modifier::CornerEach {
+            top_left: 4.0,
+            top_right: 8.0,
+            bottom_right: 12.0,
+            bottom_left: 16.0,
+        }),
+        "{mixed_modifiers:?}"
+    );
+    assert_eq!(mixed_modifiers[0], Modifier::Offset { x: 10.0, y: 5.0 });
+
+    let even = node_with(&first, &Modifier::Background(rgb(0, 0, 255)));
+    let even_modifiers = modifiers_of(&first, even);
+    assert!(
+        even_modifiers.contains(&Modifier::CornerEach {
+            top_left: 6.0,
+            top_right: 6.0,
+            bottom_right: 6.0,
+            bottom_left: 6.0,
+        }),
+        "{even_modifiers:?}"
+    );
+    assert_eq!(even_modifiers[0], Modifier::Offset { x: 150.0, y: 5.0 });
+
+    assert!(
+        first
+            .iter()
+            .all(|record| !matches!(record, Record::Modifier(_, _, Modifier::Shape { .. }))),
+        "no corner goes as Shape: {first:#?}"
+    );
+}
+
+fn shadowed() -> Element {
+    rsx! {
+        div { style: "width: 50px; height: 50px; background-color: rgb(255, 255, 255); box-shadow: 1px 2px 3px 0px rgb(255, 0, 0), 4px 5px 6px 0px rgb(0, 0, 255)" }
+    }
+}
+
+/// CSS draws the first shadow of a list on top, and a modifier list draws its later
+/// entries over its earlier ones, so the list goes last to first: the blue shadow, then the
+/// red one over it.
+#[test]
+fn fr42_shadows_go_last_to_first() {
+    let mut host = Host::html(shadowed, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let card = node_with(&first, &Modifier::Background(rgb(255, 255, 255)));
+    let shadows: Vec<Modifier> = modifiers_of(&first, card)
+        .into_iter()
+        .filter(|modifier| matches!(modifier, Modifier::Shadow { .. }))
+        .collect();
+    assert_eq!(
+        shadows,
+        vec![
+            Modifier::Shadow {
+                x: 4.0,
+                y: 5.0,
+                blur: 6.0,
+                spread: 0.0,
+                paint: rgb(0, 0, 255),
+            },
+            Modifier::Shadow {
+                x: 1.0,
+                y: 2.0,
+                blur: 3.0,
+                spread: 0.0,
+                paint: rgb(255, 0, 0),
+            },
+        ]
+    );
+    // Drawn under the background, so both come before it.
+    let list = modifiers_of(&first, card);
+    let background = list
+        .iter()
+        .position(|modifier| matches!(modifier, Modifier::Background(_)))
+        .unwrap();
+    assert!(
+        list[..background]
+            .iter()
+            .filter(|modifier| matches!(modifier, Modifier::Shadow { .. }))
+            .count()
+            == 2
+    );
+}
+
+fn overflowing() -> Element {
+    rsx! {
+        div { style: "width: 50px; height: 50px; overflow: hidden; background-color: rgb(0, 0, 255)",
+            div { style: "width: 100px; height: 100px; background-color: rgb(255, 0, 0)" }
+        }
+        div { style: "width: 50px; height: 50px; border-radius: 8px; background-color: rgb(0, 128, 0)",
+            div { style: "width: 100px; height: 100px; background-color: rgb(255, 255, 0)" }
+        }
+    }
+}
+
+/// `overflow: hidden` clips the box's content, and is sent as `Clip`. `overflow: visible`
+/// with rounded corners rounds the box and clips nothing, as CSS does, so that box has its
+/// corners and no `Clip`.
+#[test]
+fn fr42_overflow_hidden_sends_clip_visible_does_not() {
+    let mut host = Host::html(overflowing, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let hidden = node_with(&first, &Modifier::Background(rgb(0, 0, 255)));
+    assert!(
+        modifiers_of(&first, hidden).contains(&Modifier::Clip(true)),
+        "{:?}",
+        modifiers_of(&first, hidden)
+    );
+
+    let visible = node_with(&first, &Modifier::Background(rgb(0, 128, 0)));
+    let modifiers = modifiers_of(&first, visible);
+    assert!(
+        modifiers
+            .iter()
+            .any(|modifier| matches!(modifier, Modifier::CornerEach { .. })),
+        "{modifiers:?}"
+    );
+    assert!(
+        modifiers
+            .iter()
+            .all(|modifier| !matches!(modifier, Modifier::Clip(_))),
+        "{modifiers:?}"
+    );
+}
+
+fn rounded_scroller() -> Element {
+    rsx! {
+        div { style: "width: 120px; overflow-x: auto; border-radius: 8px; background-color: rgb(0, 0, 255)",
+            div { style: "width: 300px; height: 40px; background-color: rgb(255, 0, 0)" }
+        }
+    }
+}
+
+/// A scroll container with rounded corners clips its content to them, as `overflow: hidden`
+/// does: its scroll viewport is sent with the corners and then `Clip`, so the content's
+/// corners are cut where the box's are. `overflow-x: auto` makes `overflow-y` compute to
+/// `auto` as well, so the box scrolls on both axes: the column is its viewport and has the
+/// corners, and the row inside it, as tall as the content, has none.
+#[test]
+fn fr34_scroll_container_clips_to_its_rounded_corners() {
+    let mut host = Host::html(rounded_scroller, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let rows = created(&first, WidgetKind::ScrollRow);
+    assert_eq!(rows.len(), 1, "{first:#?}");
+    let viewport = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Insert { parent, node, .. } if *node == rows[0] => Some(*parent),
+            _ => None,
+        })
+        .expect("the row is inside its viewport");
+    assert!(
+        created(&first, WidgetKind::ScrollColumn).contains(&viewport),
+        "the row is inside the box's scroll column: {first:#?}"
+    );
+    let modifiers = modifiers_of(&first, viewport);
+    let corners = modifiers
+        .iter()
+        .position(|modifier| {
+            *modifier
+                == Modifier::CornerEach {
+                    top_left: 8.0,
+                    top_right: 8.0,
+                    bottom_right: 8.0,
+                    bottom_left: 8.0,
+                }
+        })
+        .unwrap_or_else(|| panic!("the scroll viewport has 8px corners: {modifiers:?}"));
+    let clip = modifiers
+        .iter()
+        .position(|modifier| *modifier == Modifier::Clip(true))
+        .unwrap_or_else(|| panic!("the scroll viewport clips: {modifiers:?}"));
+    assert!(corners < clip, "{modifiers:?}");
+
+    let inner = modifiers_of(&first, rows[0]);
+    assert!(
+        inner
+            .iter()
+            .all(|modifier| !matches!(modifier, Modifier::CornerEach { .. })),
+        "{inner:?}"
+    );
+}
+
+fn reordering() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let items: Vec<u32> = if presses() > 0 {
+        vec![3, 1, 2]
+    } else {
+        vec![1, 2, 3]
+    };
+    rsx! {
+        div {
+            style: "width: 20px; height: 20px; background-color: rgb(0, 0, 0)",
+            onclick: move |_| presses += 1,
+        }
+        div { style: "width: 100px",
+            for item in items {
+                div {
+                    key: "{item}",
+                    style: "height: 10px; background-color: rgb({item}, 0, 0)",
+                }
+            }
+        }
+    }
+}
+
+/// Keyed boxes that change places are moved, not made again: no node is created or
+/// removed, and the box that went first is moved to the front of its parent.
+#[test]
+fn fr34_reordered_boxes_are_moved_not_recreated() {
+    let mut host = Host::html(reordering, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let third = node_with(&first, &Modifier::Background(rgb(3, 0, 0)));
+
+    let after = click(&mut host, clickable(&first));
+    assert!(
+        after
+            .iter()
+            .all(|record| !matches!(record, Record::Create(..) | Record::Remove(_))),
+        "{after:#?}"
+    );
+    assert!(
+        after
+            .iter()
+            .any(|record| matches!(record, Record::Move { node, index: 0, .. } if *node == third)),
+        "the third box moves to the front: {after:#?}"
+    );
+}
+
+thread_local! {
+    static TYPED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+fn field() -> Element {
+    rsx! {
+        input {
+            value: "Ada",
+            style: "width: 120px; height: 24px",
+            oninput: move |event| TYPED.with(|typed| typed.borrow_mut().push(event.value())),
+        }
+    }
+}
+
+/// Text the user types reaches the field's `oninput`, and is not sent back: the field owns
+/// its text while it is being edited.
+#[test]
+fn fr34_typed_text_reaches_oninput_and_is_not_sent_back() {
+    TYPED.with(|typed| typed.borrow_mut().clear());
+    let mut host = Host::html(field, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let field = created(&first, WidgetKind::TextField)[0];
+    let handler = handler_of(&first, field, PropertyKind::OnValueChange);
+
+    let (batch, _) = host
+        .dispatch(HostEvent {
+            node_id: field,
+            handler_id: handler,
+            payload: EventPayload::TextChanged("Ada Lovelace"),
+        })
+        .unwrap();
+    let after = tree(records(batch));
+    assert_eq!(
+        TYPED.with(|typed| typed.borrow().clone()),
+        vec!["Ada Lovelace".to_string()]
+    );
+    assert!(
+        after
+            .iter()
+            .all(|record| !matches!(record, Record::SetText(..))),
+        "{after:#?}"
+    );
+}
+
+thread_local! {
+    static HEARD: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+fn heard(line: impl Into<String>) {
+    HEARD.with(|heard| heard.borrow_mut().push(line.into()));
+}
+
+fn take_heard() -> Vec<String> {
+    HEARD.with(|heard| std::mem::take(&mut *heard.borrow_mut()))
+}
+
+/// Every node given a handler for `property`, with the handler.
+fn handlers_for(records: &[Record], property: PropertyKind) -> Vec<(u32, u64)> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(node, given, Value::Int(handler)) if *given == property => {
+                Some((*node, *handler as u64))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn enter(host: &mut Host, (node_id, handler_id): (u32, u64), ctrl_key: bool) -> i64 {
+    let (_, result) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::KeyDown {
+                key: dioxus_compose::schema::Key::Enter,
+                shift_key: true,
+                ctrl_key,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
+            },
+        })
+        .expect("the key is dispatched");
+    result
+}
+
+fn keyed() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 40px",
+            onkeydown: move |event| heard(format!("div keydown {}", event.key())),
+            input {
+                style: "width: 120px; height: 24px",
+                onkeydown: move |event| {
+                    let modifiers = event.modifiers();
+                    heard(format!(
+                        "input keydown {} shift={} ctrl={}",
+                        event.key(),
+                        modifiers.contains(dioxus_elements::Modifiers::SHIFT),
+                        modifiers.contains(dioxus_elements::Modifiers::CONTROL),
+                    ));
+                    if modifiers.contains(dioxus_elements::Modifiers::CONTROL) {
+                        event.prevent_default();
+                    }
+                },
+                onkeypress: move |event| heard(format!("input keypress {}", event.key())),
+            }
+        }
+    }
+}
+
+/// Enter pressed in a field reaches the field's `onkeydown` with its modifiers, bubbles to
+/// the element around it, and is followed by `keypress`. The renderer is told the key was
+/// not used, so the field still does what Enter does; when a handler prevents the default
+/// it is told the key was used, and `keypress` does not follow. The box of an element that
+/// listens for keys gets a handler of its own, for keys pressed in whatever inside it has
+/// the focus, and the field's own box does not, so no key reaches the page twice.
+#[test]
+fn fr34_key_reaches_the_focused_dom_handler() {
+    take_heard();
+    let mut host = Host::html(keyed, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let field = created(&first, WidgetKind::TextField)[0];
+    let field_keys = (field, handler_of(&first, field, PropertyKind::OnKeyDown));
+    let box_keys: Vec<(u32, u64)> = handlers_for(&first, PropertyKind::OnKeyDown)
+        .into_iter()
+        .filter(|(node, _)| *node != field)
+        .collect();
+    assert_eq!(
+        box_keys.len(),
+        1,
+        "only the div's box takes keys besides the field: {first:#?}"
+    );
+    assert!(created(&first, WidgetKind::AbsoluteBox).contains(&box_keys[0].0));
+
+    assert_eq!(enter(&mut host, field_keys, false), 0);
+    assert_eq!(
+        take_heard(),
+        vec![
+            "input keydown Enter shift=true ctrl=false".to_string(),
+            "div keydown Enter".to_string(),
+            "input keypress Enter".to_string(),
+        ]
+    );
+
+    assert_eq!(enter(&mut host, field_keys, true), 1);
+    assert_eq!(
+        take_heard(),
+        vec![
+            "input keydown Enter shift=true ctrl=true".to_string(),
+            "div keydown Enter".to_string(),
+        ]
+    );
+
+    // From the div's box the key has already been offered to every element around the
+    // div, so the renderer is told it was used.
+    assert_eq!(enter(&mut host, box_keys[0], false), 1);
+    assert_eq!(take_heard(), vec!["div keydown Enter".to_string()]);
+
+    assert!(
+        host.dispatch(HostEvent {
+            node_id: field + 1000,
+            handler_id: field_keys.1,
+            payload: EventPayload::KeyDown {
+                key: dioxus_compose::schema::Key::Enter,
+                shift_key: false,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
+            },
+        })
+        .is_err(),
+        "a key handler is only reached from the node it was set on"
+    );
+}
+
+fn coded() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 40px",
+            onkeydown: move |event| heard(format!("{} {}", event.key(), event.code())),
+        }
+    }
+}
+
+/// The function keys and the key that opens a context menu reach the page as the DOM
+/// `key` and `code` a browser gives them, not as an unidentified key.
+#[test]
+fn fr34_function_and_context_menu_keys_reach_the_page_as_their_dom_keys() {
+    use dioxus_compose::schema::Key as Wire;
+    take_heard();
+    let mut host = Host::html(coded, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let (node_id, handler_id) = handlers_for(&first, PropertyKind::OnKeyDown)[0];
+    let keys = [
+        (Wire::F1, "F1"),
+        (Wire::F2, "F2"),
+        (Wire::F3, "F3"),
+        (Wire::F4, "F4"),
+        (Wire::F5, "F5"),
+        (Wire::F6, "F6"),
+        (Wire::F7, "F7"),
+        (Wire::F8, "F8"),
+        (Wire::F9, "F9"),
+        (Wire::F10, "F10"),
+        (Wire::F11, "F11"),
+        (Wire::F12, "F12"),
+        (Wire::ContextMenu, "ContextMenu"),
+    ];
+    for (key, _) in keys {
+        host.dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::KeyDown {
+                key,
+                shift_key: false,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0,
+                text: "",
+            },
+        })
+        .expect("the key is dispatched");
+    }
+    let expected: Vec<String> = keys
+        .iter()
+        .map(|(_, name)| format!("{name} {name}"))
+        .collect();
+    assert_eq!(take_heard(), expected);
+}
+
+fn focusable() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 40px",
+            onfocus: move |_| heard("div focus"),
+            onblur: move |_| heard("div blur"),
+            onfocusin: move |_| heard("div focusin"),
+            onfocusout: move |_| heard("div focusout"),
+            input {
+                style: "width: 120px; height: 24px",
+                onfocus: move |_| heard("input focus"),
+                onblur: move |_| heard("input blur"),
+                onchange: move |_| heard("input change"),
+            }
+        }
+    }
+}
+
+fn type_into(host: &mut Host, (node_id, handler_id): (u32, u64), text: &str) {
+    host.dispatch(HostEvent {
+        node_id,
+        handler_id,
+        payload: EventPayload::TextChanged(text),
+    })
+    .expect("the text is dispatched");
+}
+
+/// A field's `focus` reaches its handler when the user first does something in it, with
+/// `focusin` bubbling after it; leaving the field delivers `change`, then `blur`, then
+/// `focusout` bubbling. `focus` and `blur` do not bubble, so the element around the field
+/// hears only `focusin` and `focusout`.
+#[test]
+fn fr34_focus_and_blur_reach_the_dom_handler() {
+    take_heard();
+    let mut host = Host::html(focusable, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let field = created(&first, WidgetKind::TextField)[0];
+    let typing = (
+        field,
+        handler_of(&first, field, PropertyKind::OnValueChange),
+    );
+    let leaving = (field, handler_of(&first, field, PropertyKind::OnFocusLost));
+
+    type_into(&mut host, typing, "a");
+    assert_eq!(
+        take_heard(),
+        vec!["input focus".to_string(), "div focusin".to_string()]
+    );
+    type_into(&mut host, typing, "ab");
+    assert_eq!(
+        take_heard(),
+        Vec::<String>::new(),
+        "focus is delivered once"
+    );
+
+    host.dispatch(HostEvent {
+        node_id: leaving.0,
+        handler_id: leaving.1,
+        payload: EventPayload::FocusLost,
+    })
+    .expect("the focus loss is dispatched");
+    assert_eq!(
+        take_heard(),
+        vec![
+            "input change".to_string(),
+            "input blur".to_string(),
+            "div focusout".to_string(),
+        ]
+    );
+
+    // Back in the field: it has the focus again.
+    let keys = (field, handler_of(&first, field, PropertyKind::OnKeyDown));
+    enter(&mut host, keys, false);
+    assert_eq!(
+        take_heard(),
+        vec!["input focus".to_string(), "div focusin".to_string()]
+    );
+}
+
+fn schemed_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![
+            "html, body { margin: 0; padding: 0; } \
+             #panel { width: 100px; height: 20px; background-color: rgb(255, 255, 255); } \
+             #other { width: 100px; height: 20px; background-color: rgb(0, 128, 0); } \
+             #switch { width: 100px; height: 20px; } \
+             @media (prefers-color-scheme: dark) { \
+                 #panel { background-color: rgb(0, 0, 0); } \
+             }"
+            .to_string(),
+        ],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+fn schemed() -> Element {
+    let theme = dioxus_compose::use_theme();
+    rsx! {
+        div { id: "panel" }
+        div { id: "other" }
+        div {
+            id: "switch",
+            onclick: move |_| theme.set_color_scheme(dioxus_compose::schema::ColorScheme::Dark),
+        }
+    }
+}
+
+/// The application turns its theme dark, the page's `prefers-color-scheme: dark` rules
+/// apply from the same frame, and the batch carries only the box whose style they changed.
+#[test]
+fn fr34_prefers_color_scheme_follows_the_theme() {
+    let mut host = Host::html(schemed, schemed_config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let panel = node_with(&first, &Modifier::Background(rgb(255, 255, 255)));
+    let index = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Modifier(node, index, Modifier::Background(_)) if *node == panel => {
+                Some(*index)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    let after = click(&mut host, clickable(&first));
+    assert_eq!(
+        after,
+        vec![Record::Modifier(
+            panel,
+            index,
+            Modifier::Background(rgb(0, 0, 0))
+        )]
+    );
+
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new(), "the scheme is applied once");
+}
+
+fn following() -> Element {
+    rsx! {
+        div { id: "panel" }
+        div { id: "other" }
+    }
+}
+
+/// While the theme follows the system, the page answers `prefers-color-scheme` with the
+/// light or dark appearance the renderer reports: the configured scheme until the first
+/// report, and each report restyles the page in the call that carried it, sending only the
+/// box whose style changed. A report of the scheme already held sends nothing.
+#[test]
+fn fr34_prefers_color_scheme_follows_the_system_appearance_the_renderer_reports() {
+    use dioxus_compose::schema::SystemColorScheme;
+    let report = |host: &mut Host, scheme| {
+        let (batch, _) = host
+            .dispatch(HostEvent {
+                node_id: 0,
+                handler_id: 0,
+                payload: EventPayload::ColorSchemeChanged(scheme),
+            })
+            .expect("the report is dispatched");
+        tree(records(batch))
+    };
+    let mut host = Host::html(following, schemed_config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let panel = node_with(&first, &Modifier::Background(rgb(255, 255, 255)));
+    let index = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Modifier(node, index, Modifier::Background(_)) if *node == panel => {
+                Some(*index)
+            }
+            _ => None,
+        })
+        .unwrap();
+
+    assert_eq!(
+        report(&mut host, SystemColorScheme::Dark),
+        vec![Record::Modifier(
+            panel,
+            index,
+            Modifier::Background(rgb(0, 0, 0))
+        )]
+    );
+    assert_eq!(report(&mut host, SystemColorScheme::Dark), Vec::new());
+    assert_eq!(
+        report(&mut host, SystemColorScheme::Light),
+        vec![Record::Modifier(
+            panel,
+            index,
+            Modifier::Background(rgb(255, 255, 255))
+        )]
+    );
+}
+
+fn aligned() -> Element {
+    rsx! {
+        div {
+            dir: "rtl",
+            style: "width: 200px",
+            p { style: "text-align: left", "west" }
+            p { style: "text-align: right", "east" }
+            p { style: "text-align: start", "first" }
+            p { style: "text-align: end", "last" }
+        }
+    }
+}
+
+/// `text-align: left` and `right` are physical, so in a right-to-left page they reach the
+/// renderer as `Left` and `Right`, which never swap, and not as `Start` and `End`, which a
+/// right-to-left paragraph would put on the other side. `start` and `end` stay as they are.
+#[test]
+fn fr34_text_align_left_and_right_stay_physical_in_a_right_to_left_page() {
+    use dioxus_compose::schema::TextAlign as Wire;
+    let mut host = Host::html(aligned, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let align_of = |text: &str| {
+        let node = text_node(&first, text);
+        first
+            .iter()
+            .find_map(|record| match record {
+                Record::Prop(id, PropertyKind::TextAlign, Value::Int(align)) if *id == node => {
+                    Some(*align)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{text:?} was sent no alignment: {first:#?}"))
+    };
+    assert_eq!(align_of("west"), i64::from(u16::from(Wire::Left)));
+    assert_eq!(align_of("east"), i64::from(u16::from(Wire::Right)));
+    assert_eq!(align_of("first"), i64::from(u16::from(Wire::Start)));
+    assert_eq!(align_of("last"), i64::from(u16::from(Wire::End)));
+}
+
+fn spaced() -> Element {
+    rsx! {
+        p { style: "letter-spacing: normal", "normal" }
+        p { style: "letter-spacing: 0", "zero" }
+        p { style: "letter-spacing: 2px", "wide" }
+    }
+}
+
+/// Text is measured with the spacing the page computed, and `letter-spacing: normal` and
+/// `0` both compute to none, so both are sent as an explicit 0: no extra space, rather than
+/// the type role's spacing, which would draw the run wider than it was measured.
+#[test]
+fn fr34_letter_spacing_normal_and_zero_are_sent_as_zero() {
+    let mut host = Host::html(spaced, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let spacing_of = |text: &str| {
+        let node = text_node(&first, text);
+        first
+            .iter()
+            .find_map(|record| match record {
+                Record::Prop(id, PropertyKind::LetterSpacing, value) if *id == node => {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{text:?} was sent no letter spacing: {first:#?}"))
+    };
+    assert_eq!(spacing_of("normal"), Value::Float(0.0));
+    assert_eq!(spacing_of("zero"), Value::Float(0.0));
+    assert_eq!(spacing_of("wide"), Value::Float(2.0));
+}
+
+fn radial() -> Element {
+    rsx! {
+        div {
+            style: "width: 200px; height: 100px; background-image: radial-gradient(ellipse 80px 40px at center, red, blue)",
+        }
+        div {
+            style: "width: 200px; height: 100px; background-image: radial-gradient(circle 50px at center, red, blue)",
+        }
+    }
+}
+
+/// An elliptical CSS radial gradient is registered with both of its radii, each a fraction
+/// of the tile's larger side; a circle keeps 0 for its vertical radius, which is how
+/// compose-rust names a circle.
+#[test]
+fn fr34_an_elliptical_radial_gradient_is_sent_with_both_radii() {
+    use dioxus_compose::schema::AssetKind;
+    let mut host = Host::html(radial, config);
+    let batch = host.rebuild().unwrap();
+    let mut radii: Vec<(f32, f32)> = decode_batch(batch)
+        .unwrap()
+        .into_iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::RegisterAsset {
+                kind: AssetKind::Brush,
+                bytes,
+                ..
+            } => {
+                let coordinate = |at: usize| {
+                    f32::from_le_bytes(bytes[8 + at * 4..12 + at * 4].try_into().unwrap())
+                };
+                Some((coordinate(2), coordinate(3)))
+            }
+            _ => None,
+        })
+        .collect();
+    radii.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+    assert_eq!(radii.len(), 2, "two brushes were registered: {radii:?}");
+    assert!(
+        close(radii[0].0, 0.25) && radii[0].1 == 0.0,
+        "the circle: {radii:?}"
+    );
+    assert!(
+        close(radii[1].0, 0.4) && close(radii[1].1, 0.2),
+        "the ellipse: {radii:?}"
+    );
+}
+
+/// The `Text` node drawing `text`. There is exactly one.
+#[track_caller]
+fn text_node(records: &[Record], text: &str) -> u32 {
+    let found: Vec<u32> = records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(node, PropertyKind::Text, Value::Str(given)) if given == text => {
+                Some(*node)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "one node draws {text:?}: {records:#?}");
+    found[0]
+}
+
+/// The spans each `Spans` record in `records` gives `node`, in order.
+fn spans_sent(records: &[Record], node: u32) -> Vec<Vec<TextSpan>> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(id, PropertyKind::Spans, Value::Bytes(bytes)) if *id == node => {
+                Some(TextSpans::from_bytes(bytes.clone()).spans().collect())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn slanted() -> Element {
+    rsx! {
+        p { style: "font-style: italic", "Leaning" }
+        p { style: "font-style: oblique", "Tilted" }
+        p { em { "stressed" } }
+        p { "Upright" }
+    }
+}
+
+/// Text set in `font-style: italic` or `oblique` is sent with one italic span over all of
+/// it, which is how compose-rust's text takes a slant. `<em>` is italic by the browser's
+/// own stylesheet, and its run gets the same span. Upright text gets none.
+#[test]
+fn fr34_italic_text_is_sent_as_a_whole_text_span() {
+    let mut host = Host::html(slanted, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    for text in ["Leaning", "Tilted", "stressed"] {
+        let node = text_node(&first, text);
+        assert_eq!(
+            spans_sent(&first, node),
+            vec![vec![TextSpan::new(0, text.len() as u32).italic()]],
+            "{text:?} is one italic span: {first:#?}"
+        );
+    }
+    let upright = text_node(&first, "Upright");
+    assert_eq!(spans_sent(&first, upright), Vec::<Vec<TextSpan>>::new());
+}
+
+fn ruled() -> Element {
+    rsx! {
+        p { style: "text-decoration-line: underline", "Under" }
+        p { style: "text-decoration-line: line-through", "Struck" }
+        p { style: "text-decoration-line: underline line-through", "Both" }
+        p { style: "font-style: italic; text-decoration-line: underline", "Everything" }
+        div { style: "text-decoration-line: line-through",
+            p { "Inherited" }
+        }
+    }
+}
+
+/// `text-decoration-line: underline`, `line-through`, and both together are sent as one
+/// span over the whole run with those lines, combined with a slant when there is one. A
+/// box's lines are drawn across the text of the boxes inside it, though the property is
+/// not inherited, so a paragraph inside a struck-through box is struck through too.
+#[test]
+fn fr34_underline_and_line_through_are_sent_as_a_whole_text_span() {
+    let mut host = Host::html(ruled, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let expected = [
+        ("Under", TextSpan::new(0, 5).underline()),
+        ("Struck", TextSpan::new(0, 6).strikethrough()),
+        ("Both", TextSpan::new(0, 4).underline().strikethrough()),
+        ("Everything", TextSpan::new(0, 10).italic().underline()),
+        ("Inherited", TextSpan::new(0, 9).strikethrough()),
+    ];
+    for (text, span) in expected {
+        let node = text_node(&first, text);
+        assert_eq!(
+            spans_sent(&first, node),
+            vec![vec![span]],
+            "{text:?} is one span: {first:#?}"
+        );
+    }
+}
+
+fn leaning_on_click() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let slant = if presses() % 2 == 1 {
+        "font-style: italic"
+    } else {
+        "font-style: normal"
+    };
+    rsx! {
+        div {
+            style: "width: 100px; height: 20px; {slant}",
+            onclick: move |_| presses += 1,
+            "Plain"
+        }
+    }
+}
+
+/// Text with no slant and no lines sends no `Spans` record at all, so a plain page's
+/// records are what they were before spans were sent. A run that turns italic gets its
+/// span, and when it turns upright again the span is taken back and nothing else changes.
+#[test]
+fn fr34_plain_text_sends_no_span() {
+    let mut host = Host::html(leaning_on_click, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    assert!(
+        !first
+            .iter()
+            .any(|record| matches!(record, Record::Prop(_, PropertyKind::Spans, _))),
+        "no span is sent for plain text: {first:#?}"
+    );
+    let text = text_node(&first, "Plain");
+    let target = clickable(&first);
+
+    let italic = click(&mut host, target);
+    assert_eq!(
+        spans_sent(&italic, text),
+        vec![vec![TextSpan::new(0, 5).italic()]]
+    );
+    assert_eq!(italic.len(), 1, "only the span is sent: {italic:#?}");
+
+    let upright = click(&mut host, target);
+    assert_eq!(
+        upright,
+        vec![Record::Prop(text, PropertyKind::Spans, Value::None)]
+    );
+}
+
+fn transformed() -> Element {
+    rsx! {
+        div { style: "position: relative; width: 300px; height: 200px",
+            div { style: "position: absolute; left: 10px; top: 5px; width: 100px; height: 40px; background-color: rgb(255, 0, 0); transform: translate(20px, 30px) scale(2); transform-origin: 0 0" }
+        }
+    }
+}
+
+/// A 2D transform goes to compose-rust as one `Transform` modifier, with its
+/// `transform-origin` as a fraction of the box: `0 0` here, the top left.
+#[test]
+fn fr34_1_transform_is_sent_as_a_matrix_about_the_top_left() {
+    let mut host = Host::html(transformed, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let node = node_with(&first, &Modifier::Background(rgb(255, 0, 0)));
+    let modifiers = modifiers_of(&first, node);
+    let sent = modifiers.iter().find_map(|modifier| match modifier {
+        Modifier::Transform {
+            a,
+            b,
+            c,
+            d,
+            e,
+            f,
+            origin_x,
+            origin_y,
+        } => Some([*a, *b, *c, *d, *e, *f, *origin_x, *origin_y]),
+        _ => None,
+    });
+    // `translate(20px, 30px) scale(2)` about the top left: x goes to 2x + 20.
+    assert_eq!(
+        sent,
+        Some([2.0, 0.0, 0.0, 2.0, 20.0, 30.0, 0.0, 0.0]),
+        "{modifiers:?}"
+    );
+}
+
+fn title_bar() -> Element {
+    rsx! {
+        style { ".bar {{ -webkit-app-region: drag; height: 40px; }} .bar .tool {{ app-region: no-drag; width: 30px; height: 20px; }}" }
+        div { class: "bar",
+            span { "title" }
+            button { class: "tool", "x" }
+        }
+        div { id: "plain", style: "height: 10px", "page" }
+    }
+}
+
+#[test]
+fn fr34_app_region_drag_and_no_drag_reach_the_renderer_as_window_drag() {
+    let mut host = Host::html(title_bar, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let dragged = node_with(&first, &Modifier::WindowDrag(true));
+    let cut_out = node_with(&first, &Modifier::WindowDrag(false));
+    assert_ne!(dragged, cut_out);
+    assert!(
+        modifiers_of(&first, dragged).contains(&Modifier::WindowDrag(true)),
+        "the drag region carries WindowDrag(true): {first:#?}"
+    );
+    // Only the two elements the page marked carry the modifier.
+    let marked = first
+        .iter()
+        .filter(|record| matches!(record, Record::Modifier(_, _, Modifier::WindowDrag(_))))
+        .count();
+    assert_eq!(marked, 2, "{first:#?}");
+}
+
+#[test]
+fn fr34_app_region_unchanged_frame_sends_nothing() {
+    let mut host = Host::html(title_bar, config);
+    host.rebuild().unwrap();
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+}
+
+fn button_under_block() -> Element {
+    rsx! {
+        div { style: "display: block;",
+            button { style: "display: inline-flex;", "다시 연결" }
+        }
+    }
+}
+
+#[test]
+fn fr34_button_under_block_sends_label_and_soft_wrap_false() {
+    let mut host = Host::html(button_under_block, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let text_nodes = created(&first, WidgetKind::Text);
+    assert!(
+        !text_nodes.is_empty(),
+        "a text widget was created: {first:#?}"
+    );
+    let text_node = text_nodes[0];
+    let props: Vec<(PropertyKind, Value)> = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Prop(id, prop, val) if *id == text_node => Some((*prop, val.clone())),
+            _ => None,
+        })
+        .collect();
+    let text = props
+        .iter()
+        .find(|(prop, _)| *prop == PropertyKind::Text)
+        .and_then(|(_, val)| match val {
+            Value::Str(s) => Some(s.as_str()),
+            _ => None,
+        });
+    assert_eq!(text, Some("다시 연결"), "button label text: {props:#?}");
+    let soft_wrap = props
+        .iter()
+        .find(|(prop, _)| *prop == PropertyKind::SoftWrap)
+        .and_then(|(_, val)| match val {
+            Value::Bool(b) => Some(*b),
+            _ => None,
+        });
+    assert_eq!(
+        soft_wrap,
+        Some(false),
+        "soft wrap is false for unconstrained label: {props:#?}"
+    );
+}
+
+fn ellipsis_boxes() -> Element {
+    rsx! {
+        div {
+            style: "width: 100px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis",
+            "abcdefghijklmnop"
+        }
+        div { style: "width: 100px; overflow: hidden; white-space: nowrap", "qrstuvwxyzabcdef" }
+    }
+}
+
+/// The value the last record for `property` on `node` gave it.
+#[track_caller]
+fn prop_of(records: &[Record], node: u32, property: PropertyKind) -> Value {
+    records
+        .iter()
+        .rev()
+        .find_map(|record| match record {
+            Record::Prop(id, given, value) if *id == node && *given == property => {
+                Some(value.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("node {node} has no {property:?}: {records:#?}"))
+}
+
+/// A one-line box with `overflow: hidden`, `white-space: nowrap` and
+/// `text-overflow: ellipsis` ends its text in an ellipsis, as Chromium does. The 16
+/// characters are 160px and the box is 100px, so the text node is sent as one line that
+/// does not wrap, cut with an ellipsis, and as wide as the box: the renderer places the
+/// ellipsis at the width it is given. The same box without `text-overflow: ellipsis` keeps
+/// the whole 160px line, which the box clips.
+#[test]
+fn fr34_ellipsis_box_sends_an_ellipsis_at_the_box_width() {
+    let mut host = Host::html(ellipsis_boxes, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let cut = text_node(&first, "abcdefghijklmnop");
+    assert_eq!(
+        prop_of(&first, cut, PropertyKind::Overflow),
+        Value::Int(TextOverflow::Ellipsis as i64)
+    );
+    assert_eq!(prop_of(&first, cut, PropertyKind::MaxLines), Value::Int(1));
+    assert_eq!(
+        prop_of(&first, cut, PropertyKind::SoftWrap),
+        Value::Bool(false)
+    );
+    let modifiers = modifiers_of(&first, cut);
+    assert!(
+        modifiers.contains(&Modifier::Width(100.0)),
+        "the text is as wide as the box: {modifiers:?}"
+    );
+
+    let clipped = text_node(&first, "qrstuvwxyzabcdef");
+    assert_eq!(
+        prop_of(&first, clipped, PropertyKind::Overflow),
+        Value::Int(TextOverflow::Visible as i64)
+    );
+    let modifiers = modifiers_of(&first, clipped);
+    assert!(
+        modifiers.contains(&Modifier::Width(160.0)),
+        "the text keeps its whole line: {modifiers:?}"
+    );
+}
+
+fn density() -> Element {
+    let mut chosen = use_signal(|| 0usize);
+    rsx! {
+        for (index, label) in ["Comfortable", "Compact"].into_iter().enumerate() {
+            label { key: "{label}",
+                input {
+                    r#type: "radio",
+                    name: "density",
+                    value: "{label}",
+                    checked: chosen() == index,
+                    onclick: move |_| chosen.set(index),
+                }
+                "{label}"
+            }
+        }
+        input { r#type: "checkbox", checked: true }
+    }
+}
+
+/// The checked radio button of a group is sent checked and the other unchecked, so the
+/// renderer draws the dot in the one the app chose. Neither it nor the checkbox sits in a
+/// box that draws the user-agent `input` border or background around the control.
+#[test]
+fn fr34_checked_radio_is_sent_checked_and_controls_draw_no_input_box() {
+    let mut host = Host::html(density, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let radios = created(&first, WidgetKind::RadioButton);
+    assert_eq!(radios.len(), 2, "two radio buttons: {first:#?}");
+    let checked: Vec<Option<bool>> = radios
+        .iter()
+        .map(|radio| {
+            first.iter().rev().find_map(|record| match record {
+                Record::Prop(id, PropertyKind::Checked, Value::Bool(on)) if id == radio => {
+                    Some(*on)
+                }
+                _ => None,
+            })
+        })
+        .collect();
+    assert_eq!(
+        checked,
+        vec![Some(true), Some(false)],
+        "Comfortable is sent checked, Compact unchecked: {first:#?}"
+    );
+
+    let checkbox = created(&first, WidgetKind::Checkbox);
+    assert_eq!(checkbox.len(), 1);
+    assert!(first.contains(&Record::Prop(
+        checkbox[0],
+        PropertyKind::Checked,
+        Value::Bool(true)
+    )));
+
+    for control in radios.iter().chain(&checkbox) {
+        let holder = first
+            .iter()
+            .find_map(|record| match record {
+                Record::Insert { parent, node, .. } if node == control => Some(*parent),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("control {control} is inserted: {first:#?}"));
+        for modifier in modifiers_of(&first, holder)
+            .into_iter()
+            .chain(modifiers_of(&first, *control))
+        {
+            assert!(
+                !matches!(
+                    modifier,
+                    Modifier::Background(_) | Modifier::Border { .. } | Modifier::BorderEach { .. }
+                ),
+                "control {control} is drawn without the input box, but has {modifier:?}: {first:#?}"
+            );
+        }
+    }
+}
+
+fn broken_avatar() -> Element {
+    rsx! {
+        div { style: "display: flex; align-items: flex-start",
+            img { src: "avatars/me.png", alt: "Me" }
+            img { src: "cat.png", alt: "Cat" }
+        }
+    }
+}
+
+/// An image the resolver cannot draw reaches the renderer as Chromium draws a broken
+/// image: a `Canvas` drawing the 16px broken-image icon, and its alt text as a `Text` beside
+/// it, inside a clipping box the size of the image. An image the resolver draws sends its
+/// picture and not its alt text.
+#[test]
+fn fr34_unresolved_img_sends_the_broken_image_icon_and_its_alt_text() {
+    let mut host = Host::html(broken_avatar, config_with_cat);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let canvases = created(&first, WidgetKind::Canvas);
+    assert_eq!(
+        canvases.len(),
+        1,
+        "one icon, for the image with no asset: {first:#?}"
+    );
+    let icon = canvases[0];
+    let drawing = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Prop(node, PropertyKind::Commands, Value::Bytes(bytes)) if *node == icon => {
+                Some(bytes.clone())
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("the icon is given its drawing: {first:#?}"));
+    let commands = dioxus_compose::drawing::decode_commands(&drawing).expect("the drawing decodes");
+    assert!(!commands.is_empty(), "the icon draws something");
+    assert_eq!(
+        modifiers_of(&first, icon),
+        vec![
+            Modifier::Offset { x: 0.0, y: 0.0 },
+            Modifier::RequiredSize {
+                width: 16.0,
+                height: 16.0
+            },
+        ]
+    );
+
+    let alt = text_node(&first, "Me");
+    assert!(
+        modifiers_of(&first, alt).contains(&Modifier::Offset { x: 16.0, y: 0.0 }),
+        "the alt text starts after the icon: {first:#?}"
+    );
+    assert!(
+        !texts(&first).iter().any(|text| text == "Cat"),
+        "the image the resolver draws shows no alt text"
+    );
+    assert_eq!(
+        created(&first, WidgetKind::Image).len(),
+        1,
+        "the cat is drawn"
+    );
+
+    // The box both sit in clips them to the image: "Me" is 20px, so 36 by 20.
+    let holder = first
+        .iter()
+        .find_map(|record| match record {
+            Record::Insert { parent, node, .. } if *node == icon => Some(*parent),
+            _ => None,
+        })
+        .expect("the icon is inserted");
+    let holder_modifiers = modifiers_of(&first, holder);
+    assert!(
+        holder_modifiers.contains(&Modifier::RequiredSize {
+            width: 36.0,
+            height: 20.0
+        }) && holder_modifiers.contains(&Modifier::Clip(true)),
+        "{holder_modifiers:#?}"
+    );
+
+    let next = tree(records(host.render_frame(0).unwrap()));
+    assert_eq!(next, Vec::new(), "an unchanged frame sends nothing");
+}
+
+fn semantic_page() -> Element {
+    rsx! {
+        div { role: "tablist", "aria-label": "열린 파일",
+            div { role: "tab", "aria-selected": "true", "a.rs" }
+            div { role: "tab", "aria-selected": "false", "b.rs" }
+        }
+        nav { "aria-label": "도구 창", "tools" }
+        button { title: "닫기", onclick: move |_| {}, "x" }
+        div { role: "treeitem", "aria-expanded": "true", "aria-label": "src", "src" }
+        div { "aria-hidden": "true", "decoration" }
+        button { disabled: true, "nope" }
+        div { "plain" }
+    }
+}
+
+fn semantics_of(records: &[Record], role: SemanticsRole) -> Vec<(u32, u32)> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, Modifier::Semantics { role: r, state }) if *r == role => {
+                Some((*node, *state))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn accessible_name(records: &[Record], node: u32) -> Option<String> {
+    records.iter().rev().find_map(|record| match record {
+        Record::Prop(id, PropertyKind::AccessibleName, Value::Str(text)) if *id == node => {
+            Some(text.clone())
+        }
+        _ => None,
+    })
+}
+
+/// An element's `role`, its `aria-label` or `title`, and its `aria-*` state reach the renderer as a
+/// `Semantics` modifier and an `AccessibleName` property, so the accessibility tree names what an
+/// icon button or a tab is. An element that says nothing is left as it was.
+#[test]
+fn fr34_aria_role_label_and_state_reach_the_renderer_as_semantics() {
+    let mut host = Host::html(semantic_page, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let tablist = semantics_of(&first, SemanticsRole::TabList);
+    assert_eq!(tablist.len(), 1, "{first:#?}");
+    assert_eq!(tablist[0].1, 0, "no state, no click action");
+    assert_eq!(
+        accessible_name(&first, tablist[0].0).as_deref(),
+        Some("열린 파일")
+    );
+
+    let tabs = semantics_of(&first, SemanticsRole::Tab);
+    assert_eq!(tabs.len(), 2);
+    assert_eq!(
+        tabs[0].1,
+        2 << SEMANTICS_SELECTED_SHIFT,
+        "aria-selected=true"
+    );
+    assert_eq!(
+        tabs[1].1,
+        1 << SEMANTICS_SELECTED_SHIFT,
+        "aria-selected=false is off, not unset"
+    );
+
+    let nav = semantics_of(&first, SemanticsRole::Navigation);
+    assert_eq!(nav.len(), 1, "a <nav> is a navigation");
+    assert_eq!(
+        accessible_name(&first, nav[0].0).as_deref(),
+        Some("도구 창")
+    );
+
+    let buttons = semantics_of(&first, SemanticsRole::Button);
+    assert_eq!(buttons.len(), 2, "both <button>s");
+    let closing = buttons
+        .iter()
+        .find(|(node, _)| accessible_name(&first, *node).as_deref() == Some("닫기"))
+        .expect("the title names the icon button");
+    assert_eq!(
+        closing.1 & SEMANTICS_CLICK_ACTION_BIT,
+        SEMANTICS_CLICK_ACTION_BIT,
+        "it takes a click"
+    );
+    let disabled = buttons.iter().find(|(node, _)| node != &closing.0).unwrap();
+    assert_eq!(
+        disabled.1 & (3 << SEMANTICS_DISABLED_SHIFT),
+        2 << SEMANTICS_DISABLED_SHIFT,
+        "the disabled attribute"
+    );
+
+    let item = semantics_of(&first, SemanticsRole::TreeItem);
+    assert_eq!(
+        item[0].1,
+        2 << SEMANTICS_EXPANDED_SHIFT,
+        "aria-expanded=true"
+    );
+    assert_eq!(accessible_name(&first, item[0].0).as_deref(), Some("src"));
+
+    let hidden: Vec<_> = first
+        .iter()
+        .filter(|record| matches!(record, Record::Modifier(_, _, Modifier::Semantics { state, .. }) if state & SEMANTICS_HIDDEN_BIT != 0))
+        .collect();
+    assert_eq!(
+        hidden.len(),
+        1,
+        "aria-hidden=true leaves the node out of the tree"
+    );
+
+    let semantic_nodes = first
+        .iter()
+        .filter(|record| matches!(record, Record::Modifier(_, _, Modifier::Semantics { .. })))
+        .count();
+    assert_eq!(
+        semantic_nodes, 8,
+        "the plain div carries no semantics: {first:#?}"
+    );
+}
+
+fn named_by_text() -> Element {
+    rsx! {
+        button { "  Save " span { "  all" } "  " }
+        div { role: "tab", "a.rs" }
+        h2 { "Settings" }
+        button { "aria-label": "Close", span { "x" } }
+        button { title: "Run", "▶" }
+        button { span { "aria-hidden": "true", "★" } "Star" }
+        div { role: "tablist", "a.rs b.rs" }
+        button { span {} }
+    }
+}
+
+/// Without `aria-label` or `title`, a button, a tab and a heading are named by their text:
+/// every descendant's text joined, white space folded to one space. A label wins over the
+/// text, a role that does not take its name from its content (a tab list) gets none from
+/// it, and a button with no text has no name.
+#[test]
+fn fr34_semantics_name_comes_from_text_without_a_label() {
+    let mut host = Host::html(named_by_text, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let names = |role| -> Vec<Option<String>> {
+        semantics_of(&first, role)
+            .iter()
+            .map(|(node, _)| accessible_name(&first, *node))
+            .collect()
+    };
+    assert_eq!(
+        names(SemanticsRole::Button),
+        vec![
+            Some("Save all".to_string()),
+            Some("Close".to_string()),
+            Some("Run".to_string()),
+            Some("Star".to_string()),
+            None,
+        ],
+        "{first:#?}"
+    );
+    assert_eq!(names(SemanticsRole::Tab), vec![Some("a.rs".to_string())]);
+    assert_eq!(
+        names(SemanticsRole::Heading),
+        vec![Some("Settings".to_string())]
+    );
+    assert_eq!(names(SemanticsRole::TabList), vec![None]);
+}
+
+fn menu_with_action() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let count = presses();
+    rsx! {
+        div { role: "menu",
+            div {
+                role: "menuitem",
+                style: "width: 100px; height: 20px",
+                onclick: move |_| presses += 1,
+                "Open {count}"
+            }
+        }
+    }
+}
+
+/// An element with a click handler exposes the click action, and the renderer's
+/// accessibility click (a `Clicked` event for the node's `Clickable` handler, which is what
+/// AXPress sends) runs that element's `onclick`. An element without one exposes no action.
+#[test]
+fn fr34_semantics_click_action_dispatches_onclick() {
+    let mut host = Host::html(menu_with_action, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let menu = semantics_of(&first, SemanticsRole::Menu);
+    assert_eq!(menu.len(), 1, "{first:#?}");
+    assert_eq!(
+        menu[0].1 & SEMANTICS_CLICK_ACTION_BIT,
+        0,
+        "the menu takes no click"
+    );
+
+    let item = semantics_of(&first, SemanticsRole::MenuItem);
+    assert_eq!(item.len(), 1, "{first:#?}");
+    let (node, state) = item[0];
+    assert_eq!(
+        state & SEMANTICS_CLICK_ACTION_BIT,
+        SEMANTICS_CLICK_ACTION_BIT
+    );
+    assert_eq!(accessible_name(&first, node).as_deref(), Some("Open 0"));
+    let handler = modifiers_of(&first, node)
+        .iter()
+        .find_map(|modifier| match modifier {
+            Modifier::Clickable { handler_id } => Some(*handler_id),
+            _ => None,
+        })
+        .expect("the item the action is on carries the handler the action calls");
+
+    let after = click(&mut host, (node, handler));
+    assert_eq!(texts(&after), vec!["Open 1".to_string()]);
+    assert_eq!(
+        accessible_name(&after, node).as_deref(),
+        Some("Open 1"),
+        "the name follows the text: {after:#?}"
+    );
+}
+
+fn toggled_tabs() -> Element {
+    let mut current = use_signal(|| 0u32);
+    let selected = |index: u32| if current() == index { "true" } else { "false" };
+    rsx! {
+        div { role: "tablist",
+            div { role: "tab", "aria-selected": selected(0), onclick: move |_| current.set(0), "a.rs" }
+            div { role: "tab", "aria-selected": selected(1), onclick: move |_| current.set(1), "b.rs" }
+        }
+        div { "plain" }
+    }
+}
+
+/// An unchanged frame sends no semantics. An `aria-selected` that changes sends the
+/// `Semantics` modifier of the two tabs it changed on, and nothing for the other nodes.
+#[test]
+fn fr34_semantics_unchanged_frame_sends_nothing() {
+    let mut host = Host::html(semantic_page, config);
+    host.rebuild().unwrap();
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+
+    let mut host = Host::html(toggled_tabs, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+    let tabs = semantics_of(&first, SemanticsRole::Tab);
+    assert_eq!(tabs.len(), 2, "{first:#?}");
+    let second = tabs[1].0;
+    let handler = modifiers_of(&first, second)
+        .iter()
+        .find_map(|modifier| match modifier {
+            Modifier::Clickable { handler_id } => Some(*handler_id),
+            _ => None,
+        })
+        .expect("the tab takes clicks");
+
+    let after = click(&mut host, (second, handler));
+    let sent: Vec<&Record> = after
+        .iter()
+        .filter(|record| {
+            matches!(record, Record::Modifier(_, _, Modifier::Semantics { .. }))
+                || matches!(record, Record::Prop(_, PropertyKind::AccessibleName, _))
+        })
+        .collect();
+    let click_action = SEMANTICS_CLICK_ACTION_BIT;
+    assert_eq!(
+        sent.len(),
+        2,
+        "the two tabs whose aria-selected changed, and no name: {after:#?}"
+    );
+    assert!(sent.iter().any(|record| matches!(record,
+        Record::Modifier(node, _, Modifier::Semantics { role: SemanticsRole::Tab, state })
+            if *node == tabs[0].0 && *state == (1 << SEMANTICS_SELECTED_SHIFT) | click_action)));
+    assert!(sent.iter().any(|record| matches!(record,
+        Record::Modifier(node, _, Modifier::Semantics { role: SemanticsRole::Tab, state })
+            if *node == second && *state == (2 << SEMANTICS_SELECTED_SHIFT) | click_action)));
+    let touched: Vec<u32> = after
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, _) | Record::Prop(node, _, _) => Some(*node),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        touched
+            .iter()
+            .all(|node| *node == tabs[0].0 || *node == second),
+        "only the two tabs are written to: {after:#?}"
+    );
+    assert_eq!(tree(records(host.render_frame(0).unwrap())), Vec::new());
+}
+
+fn stripes() -> Element {
+    rsx! {
+        div { style: "width: 40px",
+            div { style: "margin: 0 6px; border-top: 1px solid #d9d7d0; padding-top: 6px", "x" }
+        }
+        // A column of tool buttons at the bottom of a rail, set off by a line above it: a
+        // flex column inside a flex column, clipped, with the line on its own top.
+        div { style: "display: flex; flex-direction: column; width: 40px; height: 200px; --line: #d9d7d0",
+            div { style: "flex: 1" }
+            nav {
+                style: "display: flex; flex-direction: column; align-items: center; gap: 2px; \
+                        padding: 6px 0; min-height: 0; overflow: hidden; \
+                        border-top: 1px solid var(--line); margin: 0 6px",
+                button { style: "width: 30px; height: 30px; padding: 0; border: 0" }
+                button { style: "width: 30px; height: 30px; padding: 0; border: 0" }
+            }
+        }
+    }
+}
+
+/// A top border on a block with side margins reaches the renderer: each of the two boxes
+/// is 28px wide, 6px in from its 40px parent, and is drawn with a 1px line on its top side
+/// and nothing on the others.
+#[test]
+fn fr34_border_top_draws_on_a_block_with_side_margins() {
+    let mut host = Host::html(stripes, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let line = rgb(0xd9, 0xd7, 0xd0);
+    let top_only = |modifier: &Modifier| {
+        matches!(
+            modifier,
+            Modifier::BorderEach { top, right, bottom, left, top_paint, .. }
+                if *top == 1.0 && *right == 0.0 && *bottom == 0.0 && *left == 0.0
+                    && *top_paint == line
+        )
+    };
+    let mut lined: Vec<u32> = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Modifier(node, _, modifier) if top_only(modifier) => Some(*node),
+            _ => None,
+        })
+        .collect();
+    lined.dedup();
+    assert_eq!(lined.len(), 2, "both boxes draw their top line: {first:#?}");
+    for node in lined {
+        let modifiers = modifiers_of(&first, node);
+        let offset_x = modifiers.iter().find_map(|modifier| match modifier {
+            Modifier::Offset { x, .. } => Some(*x),
+            _ => None,
+        });
+        assert_eq!(offset_x, Some(6.0), "6px in: {modifiers:?}");
+        let width = modifiers.iter().find_map(|modifier| match modifier {
+            Modifier::RequiredSize { width, .. } => Some(*width),
+            _ => None,
+        });
+        assert_eq!(width, Some(28.0), "28px wide: {modifiers:?}");
+    }
+}

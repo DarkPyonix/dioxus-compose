@@ -1060,6 +1060,19 @@
       narrower than it needs to be.
     </p>
 
+    <h3>Window safe area</h3>
+    <p>
+      <code>Window::new().chrome(Chrome::FullSize)</code> draws the content from the very top of
+      the window, with the window buttons over it. <code>use_window_safe_area()</code> says where
+      those buttons are, as a <code>WindowSafeArea { top, leading, trailing }</code> in dp for the
+      calling component's window: <code>leading</code> is the width of the macOS traffic lights,
+      <code>trailing</code> the width of the Windows caption buttons. All three are zero before the
+      renderer reports, for a window with no buttons to avoid, and on iOS, Android and the web.
+      A change of the safe area alone, such as entering full screen, redraws the components that
+      called the hook and nothing else. macOS is supported first; dragging a full-size window on
+      Windows and Linux follows compose-rust's next release.
+    </p>
+
     <div class="note">
       <span class="label">Reach for the hook last</span>
       <p>

@@ -21,14 +21,20 @@ pub use compose_rust::ios_main;
 // (`dom`), styles and the layout pass (`layout`), and the display list and plan the
 // renderer draws (`paint`). Their public names are gathered in `html`, apart from the
 // crate root, because some of them (`Brush`, `TextAlign`) already mean a widget's here.
+mod animated_visibility;
 mod dom;
 mod extensions;
 mod hooks;
 pub mod host;
+mod hover;
 pub mod html;
+mod html_view;
+mod html_widget;
 mod layout;
+mod list_detail;
 mod paint;
 pub mod renderer;
+pub mod theme_variables;
 mod widgets;
 
 pub use dioxus_core::{Element, VirtualDom};
@@ -36,20 +42,107 @@ pub use dioxus_core::{Element, VirtualDom};
 // `#[derive(Props)]`. Without it an application that writes a component of its own fails
 // to compile on a macro it never typed, and the fix is to add `dioxus-core-macro` as a
 // second dependency, which defeats the promise that one dependency is enough.
+pub use animated_visibility::{AnimatedVisibility, Enter, Exit};
+pub use compose_rust::schema::TitleBar;
+// A `FlowRow`'s two alignments. compose-rust keeps them in its schema only, and a screen
+// that writes a `FlowRow` needs them by name.
+pub use compose_rust::schema::{HorizontalAlignment, VerticalAlignment};
+pub use compose_rust::ui::SemanticsState;
 pub use dioxus_core_macro::{Props, component, rsx};
+pub use elements::window;
 pub use elements::*;
 pub use extensions::LinearProgressIndicator;
+
+/// Marker types for `IntoAttributeValue` implementations on window element properties.
+pub mod window_attr_markers {
+    use dioxus_core::{AttributeValue, IntoAttributeValue};
+
+    pub struct PairF32;
+    pub struct PairF64;
+    pub struct PairI32;
+    pub struct ChromeAttr;
+    pub struct TitleBarAttr;
+    pub struct DragAttr;
+    pub struct DragTupleAttr;
+    pub struct ThemeAttr;
+
+    macro_rules! impl_attr {
+        ($marker:ty, $ty:ty, |$val:ident| $body:expr) => {
+            impl IntoAttributeValue<$marker> for $ty {
+                fn into_value(self) -> AttributeValue {
+                    let $val = self;
+                    $body
+                }
+            }
+
+            impl IntoAttributeValue<$marker> for Option<$ty> {
+                fn into_value(self) -> AttributeValue {
+                    match self {
+                        Some($val) => $body,
+                        None => AttributeValue::None,
+                    }
+                }
+            }
+        };
+    }
+
+    impl_attr!(PairF32, (f32, f32), |v| AttributeValue::any_value(v));
+    impl_attr!(PairF64, (f64, f64), |v| AttributeValue::any_value((
+        v.0 as f32, v.1 as f32
+    )));
+    impl_attr!(PairI32, (i32, i32), |v| AttributeValue::any_value((
+        v.0 as f32, v.1 as f32
+    )));
+    impl_attr!(ChromeAttr, compose_rust::schema::Chrome, |v| {
+        AttributeValue::Int(i64::from(v as u16))
+    });
+    impl_attr!(TitleBarAttr, compose_rust::schema::TitleBar, |v| {
+        AttributeValue::Int(i64::from(v as u16))
+    });
+    impl_attr!(DragAttr, compose_rust::windows::DragFromPointer, |v| {
+        AttributeValue::any_value(v)
+    });
+    impl_attr!(DragTupleAttr, (u32, f32, f32), |v| {
+        AttributeValue::any_value(compose_rust::windows::DragFromPointer {
+            pointer_id: v.0,
+            anchor_x: v.1,
+            anchor_y: v.2,
+        })
+    });
+    impl_attr!(ThemeAttr, compose_rust::schema::Theme, |v| {
+        AttributeValue::any_value(v)
+    });
+    pub struct ModifierAttr;
+    impl_attr!(ModifierAttr, compose_rust::Modifier, |v| {
+        AttributeValue::any_value(v)
+    });
+    // A list of background image layers, in CSS order, for `background_brush`.
+    pub struct BackgroundLayersAttr;
+    impl_attr!(BackgroundLayersAttr, Vec<crate::BackgroundLayer>, |v| {
+        AttributeValue::any_value(v)
+    });
+}
 pub use hooks::{
-    use_design_system, use_node_size, use_notification_activated, use_notification_permission,
-    use_theme, use_window_size,
+    Animated, CodeEditorHandle, WindowHandle, ZoomHandle, animate_color_as_state,
+    animate_float_as_state, animate_offset_as_state, current_window, use_animation_event,
+    use_application_reopen, use_code_editor, use_design_system, use_node_size,
+    use_notification_activated, use_notification_permission, use_reduced_motion,
+    use_system_color_scheme, use_theme, use_window_requested, use_window_safe_area,
+    use_window_size, use_zoom,
 };
 pub use host::{DioxusRuntime, Host, LaunchBuilder, launch, runtime_for};
+pub use hover::{HoverHandle, use_hover};
+pub use html_view::HtmlView;
+pub use html_widget::use_widget_box;
+pub use list_detail::ListDetail;
 pub use widgets::{
-    Badge, Button, Canvas, Card, Checkbox, Chip, Column, ComposeBox as Box, DatePicker, Dialog,
-    Divider, Dropdown, FileDropTarget, FloatingAction, Icon, Image, LazyColumn, LazyGrid, LazyRow,
-    Menu, Navigation, NavigationItem, ProgressIndicator, RadioButton, Row, Scaffold, ScrollColumn,
-    ScrollRow, SelectionContainer, Separator, Sheet, Slider, Spacer, SplitPane, Surface, Switch,
-    Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
+    AbsoluteBox, BackgroundLayer, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
+    ColumnSpec, ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown,
+    FileDropTarget, FloatingAction, FlowRow, FontFeatures, Icon, Image, LazyColumn, LazyGrid,
+    LazyRow, Menu, Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton, Row,
+    Scaffold, ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator,
+    ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField,
+    TimePicker, Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -131,24 +224,63 @@ pub mod prelude {
     // Exporting the Compose `Box` through this glob prelude shadows it. Use
     // `dioxus_compose::Box { ... }` in RSX until upstream qualifies std::boxed::Box.
     pub use crate::{
-        Alignment, Arrangement, AssetKind, Badge, Brush, Button, ButtonVariant, Canvas, Card,
-        Checkbox, Chip, Color, ColorRole, ColorScheme, Column, DatePicker, DesignSystem, Dialog,
-        Divider, DrawCommand, DrawList, Dropdown, Element, FileDrop, FileDropTarget,
-        FloatingAction, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder, LazyColumn, LazyGrid,
-        LazyRow, LinearProgressIndicator, LoopMode, MaterialRole, Menu, Message, MessageDuration,
-        Modifier, MotionRole, Navigation, NavigationItem, Paint, Palette, ProgressIndicator, Props,
+        AbsoluteBox, Alignment, AnimatedVisibility, Arrangement, AssetKind, Badge, Brush, Button,
+        ButtonKind, ButtonVariant, Canvas, Card, Checkbox, Chip, Color, ColorRole, ColorScheme,
+        Column, ColumnSpec, ColumnWidth, Cursor, DatePicker, DesignSystem, Dialog, Divider,
+        DrawCommand, DrawList, Dropdown, Element, Enter, Exit, FileDrop, FileDropTarget,
+        FloatingAction, HoverHandle, HtmlView, Icon, IconRole, Image, Key, KeyEvent, LaunchBuilder,
+        LazyColumn, LazyGrid, LazyRow, LinearProgressIndicator, ListDetail, LoopMode, MaterialRole,
+        Menu, Message, MessageDuration, Modifier, MotionRole, Navigation, NavigationItem, Paint,
+        Palette, PointerEvent, PointerKind, PointerKinds, PointerType, ProgressIndicator, Props,
         RadioButton, RangeRequest, Row, Scaffold, ScrollColumn, ScrollRow, SelectionContainer,
-        Separator, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop, Surface, Switch,
-        Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode, TimePicker, Tooltip,
-        TopAppBar, TypeRole, WindowHeightClass, WindowSize, WindowSizeClass, asset, brush,
-        component, launch, rsx, show_message, use_design_system, use_node_size, use_theme,
-        use_window_size,
+        Separator, ShadowLayer, ShapeRole, Sheet, Slider, SpaceRole, Spacer, SplitPane, Stop,
+        Surface, Switch, Table, Tabs, Text, TextAlign, TextField, TextOverflow, Theme, TileMode,
+        TimePicker, TitleBar, Tooltip, TopAppBar, TypeRole, UserSelect, WheelDeltaMode,
+        WindowDragEvent, WindowDragOver, WindowDragOverKind, WindowDragPhase, WindowEvent,
+        WindowFrame, WindowHandle, WindowHeightClass, WindowMode, WindowRequest, WindowSafeArea,
+        WindowSize, WindowSizeClass, Zoom, ZoomHandle, asset, brush, component, current_window,
+        launch, rsx, show_message, use_application_reopen, use_design_system, use_hover,
+        use_node_size, use_theme, use_window_requested, use_window_safe_area, use_window_size,
+        use_zoom,
     };
     // Under its own name, and the one thing in this list that could shadow something a
     // reader already has: an application that draws its own `Window` component would find
     // this one instead. It is here because the alternative is a fully qualified path in
     // every `main`, and because `Chrome` beside it is meaningless on its own.
     pub use crate::schema::{Chrome, Window};
+    pub use crate::windows::{DragFromPointer, LastWindowClosed};
+    // The widgets and values the schema gained with compose-rust 0.0.7: a wrapping row, a
+    // box attached to an anchor, what a node is to assistive technology, where a scroll
+    // container is, and what a navigation becomes in a compact window.
+    // compose-rust 0.0.8: the size a motion settled at, how a scroll container stops,
+    // and the OpenType features a text asks its font for.
+    pub use crate::{
+        CodeEditorColors, CompactNavigation, FlowRow, HorizontalAlignment, Popover, PopoverAlign,
+        PopoverPlacement, ScrollChange, Semantics, SemanticsRole, SemanticsState,
+        VerticalAlignment,
+    };
+    pub use crate::{FontFeature, FontFeatures, MotionFinished, Snap};
+    // compose-rust 0.0.9: where a code editor's caret is and where any position of it is,
+    // its pointer events with the text under them, its row height and scroll offset, and
+    // where a transient message is drawn.
+    pub use crate::{
+        CaretRect, CodeMetrics, CodePointer, CodeRect, CodeScroll, MessageHorizontal,
+        MessagePlacement, MessageVertical,
+    };
+    // compose-rust 0.0.10: how an image is laid into its box, a node's background image
+    // layers, a code editor's minimap, view zones, word wrap, grouped edits and multiple
+    // selections, and the system's light or dark appearance.
+    pub use crate::{
+        BackgroundLayer, BackgroundRepeat, ContentScale, EditGroupResult, EditGroupStatus,
+        MinimapSide, SelectionsChange, SystemColorScheme, ViewZone, ViewZones, WordWrap,
+        use_system_color_scheme,
+    };
+    // A code editor, its handle, and the ranges and events it speaks in.
+    pub use crate::{
+        CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
+        EditRejected, HoverPhase, Position, SaveRequest, Severity, SyntaxSpan, SyntaxSpans,
+        use_code_editor,
+    };
     // Notifications, from a component or from a worker thread.
     pub use crate::{
         Notification, NotificationActivation, NotificationImportance, NotificationPermission,
@@ -215,6 +347,47 @@ pub mod elements {
             // keeps a screen from lighting up every container it has.
             pub const onfilesentered: AttributeDescription = ("onfilesentered", None, false);
             pub const onfilesdropped: AttributeDescription = ("onfilesdropped", None, false);
+            // Pointer input is subscribed to by naming the kinds, and a handler is only
+            // announced to the Renderer for a node that names some.
+            pub const pointer_kinds: AttributeDescription = ("pointer_kinds", None, false);
+            pub const onpointer: AttributeDescription = ("onpointer", None, false);
+            // What the Host resolved from CSS for the node, or the application chose.
+            pub const cursor: AttributeDescription = ("cursor", None, false);
+            pub const user_select: AttributeDescription = ("user_select", None, false);
+            // The elements an HTML and CSS screen is drawn with. The ones with more than one
+            // number carry the whole `compose_rust::Modifier`, so the numbers of one box
+            // arrive together as one record.
+            pub const offset: AttributeDescription = ("offset", None, false);
+            pub const required_size: AttributeDescription = ("required_size", None, false);
+            pub const border_each: AttributeDescription = ("border_each", None, false);
+            pub const corner_each: AttributeDescription = ("corner_each", None, false);
+            pub const shadow: AttributeDescription = ("shadow", None, false);
+            pub const clip: AttributeDescription = ("clip", None, false);
+            pub const alpha: AttributeDescription = ("alpha", None, false);
+            pub const transform: AttributeDescription = ("transform", None, false);
+            // Values the Renderer animates to on its own clock whenever they change.
+            pub const animated_alpha: AttributeDescription = ("animated_alpha", None, false);
+            pub const animated_background: AttributeDescription =
+                ("animated_background", None, false);
+            pub const animated_offset: AttributeDescription = ("animated_offset", None, false);
+            pub const tear_off_key: AttributeDescription = ("tear_off_key", None, false);
+            pub const onwindowdragover: AttributeDescription = ("onwindowdragover", None, false);
+            pub const on_window_drag_over: AttributeDescription = ("onwindowdragover", None, false);
+            pub const match_parent_size: AttributeDescription = ("match_parent_size", None, false);
+            pub const window_drag: AttributeDescription = ("window_drag", None, false);
+            pub const press_feedback: AttributeDescription = ("press_feedback", None, false);
+            // A CSS 3D transform, carried as the whole `Modifier::Transform3D`. It takes the
+            // chain position a 2D `transform` takes, so a node has one or the other.
+            pub const transform_3d: AttributeDescription = ("transform_3d", None, false);
+            // What the node is to assistive technology, as a `Modifier::Semantics`, and the
+            // name it reads, which is a property because a string does not fit a modifier.
+            pub const semantics: AttributeDescription = ("semantics", None, false);
+            pub const accessible_name: AttributeDescription = ("accessible_name", None, false);
+            // How the node's rounded corners curve, from 0 to 1.
+            pub const corner_curve: AttributeDescription = ("corner_curve", None, false);
+            // Background image layers over the background colour, up to four, each a
+            // `BackgroundBrush` modifier of its own.
+            pub const background_brush: AttributeDescription = ("background_brush", None, false);
         };
     }
 
@@ -243,12 +416,17 @@ pub mod elements {
     }
 
     // Layout containers carry arrangement, spacing and cross-axis alignment.
+    // A column or a row may gather the radio buttons inside it into one group.
     element!(
         column,
         "Column",
-        [arrangement, spacing, space_role, alignment]
+        [arrangement, spacing, space_role, alignment, radio_group]
     );
-    element!(row, "Row", [arrangement, spacing, space_role, alignment]);
+    element!(
+        row,
+        "Row",
+        [arrangement, spacing, space_role, alignment, radio_group]
+    );
     element!(composebox, "Box", [item_key, alignment]);
     // The type role plus one attribute per override axis, so changing one axis is one
     // SetProp and the rest of the text's styling is not resent.
@@ -266,36 +444,96 @@ pub mod elements {
             color,
             text_align,
             max_lines,
-            overflow
+            overflow,
+            font,
+            span_fonts,
+            word_break,
+            overflow_wrap,
+            tab_size,
+            absolute_size,
+            soft_wrap,
+            font_feature_settings
         ]
     );
     element!(
         textfield,
         "TextField",
-        [placeholder, enabled, multiline, type_role]
+        [
+            placeholder,
+            enabled,
+            multiline,
+            type_role,
+            font,
+            bare,
+            font_feature_settings
+        ]
     );
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
     // second place a role icon reaches the tree, because a toolbar is a row of icon
     // buttons and nothing else in the vocabulary can place one.
-    element!(button, "Button", [text, icon, enabled, variant, color]);
+    element!(
+        button,
+        "Button",
+        [
+            text,
+            icon,
+            enabled,
+            variant,
+            color,
+            button_kind,
+            max_lines,
+            overflow
+        ]
+    );
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
     // every widget carries, which is also how a Compose Spacer is sized.
     element!(spacer, "Spacer", []);
     element!(lazycolumn, "LazyColumn", [item_count]);
     // Widget tags 10 and 11. An asset id is the whole of what they carry: the bytes were
     // copied into the Renderer's cache once, at registration.
-    element!(image, "Image", [asset]);
+    // `content_scale` says how the picture is laid into the box, sent only when set.
+    element!(image, "Image", [asset, content_scale]);
     // An Icon takes a tint as well, through the same Paint attribute Text uses.
     element!(icon, "Icon", [asset, color]);
     // Widget tags 12 to 17. A toggle is controlled: `checked` is the whole of what it
     // draws, so the box on screen and the value the Host holds can never disagree.
-    element!(checkbox, "Checkbox", [checked, enabled]);
-    element!(radiobutton, "RadioButton", [checked, enabled]);
-    element!(switch, "Switch", [checked, enabled]);
+    // A control's colours and size are each sent only when set, so one that sets none
+    // draws as the design system draws it.
+    element!(
+        checkbox,
+        "Checkbox",
+        [checked, enabled, container_color, check_color, control_size]
+    );
+    // A radio button's ring is its container colour and its dot its check colour.
+    element!(
+        radiobutton,
+        "RadioButton",
+        [checked, enabled, container_color, check_color, control_size]
+    );
+    element!(
+        switch,
+        "Switch",
+        [checked, enabled, track_color, thumb_color, control_size]
+    );
     // The position a drag is passing through is the Renderer's, like scroll and focus, so
     // following a finger costs no boundary call. `value` seeds it and carries a change
     // that came from somewhere else.
-    element!(slider, "Slider", [value, min, max, steps, enabled, color]);
+    element!(
+        slider,
+        "Slider",
+        [
+            value,
+            min,
+            max,
+            steps,
+            enabled,
+            color,
+            track_color,
+            thumb_color,
+            active_track_color,
+            thumb_size
+        ]
+    );
     // `determinate` says whether `value` means anything and `circular` picks the form. How
     // fast an indeterminate indicator travels is motion, and motion is the design system's.
     element!(
@@ -312,8 +550,8 @@ pub mod elements {
     element!(surface, "Surface", []);
     // `open` seeds the Renderer's own open state rather than driving it frame by frame: the
     // Renderer owns the enter and exit so neither crosses the boundary.
-    element!(dialog, "Dialog", [open]);
-    element!(menu, "Menu", [open]);
+    element!(dialog, "Dialog", [open, scrim]);
+    element!(menu, "Menu", [open, scrim]);
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
     element!(tabs, "Tabs", [selected_index, color]);
@@ -328,13 +566,19 @@ pub mod elements {
     // flyout is the design system's decision.
     element!(datepicker, "DatePicker", [value, min, max, enabled]);
     element!(timepicker, "TimePicker", [value, min, max, enabled]);
-    element!(dropdown, "Dropdown", [selected_index, enabled]);
+    element!(dropdown, "Dropdown", [selected_index, enabled, bare]);
     // Whole content plus a vertical scroll. The position stays in the Renderer.
-    element!(scrollcolumn, "ScrollColumn", []);
+    // `snap` stops a fling with a child at the start of the visible area. Sent only when
+    // set, so a container that says nothing scrolls freely.
+    element!(scrollcolumn, "ScrollColumn", [snap]);
     // Widget tags 30 to 32. `Navigation` carries the selection and nothing about whether
     // it is a bar, a rail or a drawer: the Renderer has measured the window and chooses.
     // The destinations are the `NavigationItem` children and the rest is the screen.
-    element!(navigation, "Navigation", [selected_index]);
+    element!(
+        navigation,
+        "Navigation",
+        [selected_index, compact_navigation]
+    );
     // A destination's label and icon are properties, not a child tree. A child tree would
     // fix the arrangement, and the three presentations exist because it differs: a bar
     // stacks the label under the icon, a drawer sets it beside.
@@ -346,7 +590,8 @@ pub mod elements {
     // Like a Dialog on the wire: `open` seeds the Renderer's own state and `on_dismiss`
     // says once that the user asked to close it. Which edge it enters from is the
     // Renderer's, because it is the side that knows how wide the window is.
-    element!(sheet, "Sheet", [open]);
+    // `max_height_fraction` caps a bottom sheet at that share of the window's height.
+    element!(sheet, "Sheet", [open, scrim, max_height_fraction]);
     // The screen's frame. It carries nothing of its own: what it is made of arrives as
     // slots, and what each slot becomes is decided where the window's width is known.
     element!(scaffold, "Scaffold", []);
@@ -362,7 +607,7 @@ pub mod elements {
     element!(filedroptarget, "FileDropTarget", [alignment]);
     // Whole content plus a horizontal scroll, the same contract as the vertical one: every
     // child is sent and the position stays in the Renderer.
-    element!(scrollrow, "ScrollRow", []);
+    element!(scrollrow, "ScrollRow", [snap]);
     // Widget tags 38 and 39. A chip is a label, an optional icon and whether it is chosen,
     // on the same boolean the toggles use: a chosen chip and a ticked box are one fact.
     // The chosen state is the Host's, so the chip draws exactly what `checked` says.
@@ -385,8 +630,104 @@ pub mod elements {
     element!(
         splitpane,
         "SplitPane",
-        [value, min, max, collapsible, selected_index, text]
+        [
+            value,
+            min,
+            max,
+            collapsible,
+            selected_index,
+            text,
+            collapse_below
+        ]
     );
+    // Children laid where the Host put them, each at its own `offset`. Nothing of its own:
+    // where a child goes is the child's modifier, not the box's property.
+    element!(absolutebox, "AbsoluteBox", [island_zoom]);
+    // The editor's own attributes. Its text and its colouring cross the boundary as the
+    // Host writes them, and its events are declared on the element in widgets.rs.
+    element!(
+        codeeditor,
+        "CodeEditor",
+        [
+            editor,
+            text,
+            syntax_spans,
+            decorations,
+            folds,
+            gutter_decorations,
+            tab_width,
+            line_numbers,
+            gutter_min_width_dp,
+            gutter_padding_dp,
+            text_inset_dp,
+            code_editor_colors,
+            type_role,
+            font_size,
+            line_height,
+            font,
+            minimap,
+            view_zones,
+            word_wrap
+        ]
+    );
+    // A row that wraps: the gaps on a line and between lines, where a line's children sit
+    // along it and inside its height, and the most one line may hold.
+    element!(
+        flowrow,
+        "FlowRow",
+        [
+            horizontal_spacing,
+            vertical_spacing,
+            horizontal_alignment,
+            vertical_alignment,
+            max_items_in_each_row
+        ]
+    );
+    // A box attached to its first child. `open` is the Host's, read every time; the side,
+    // the edge and the gap are said here and the Renderer keeps the box in the window.
+    // `scrim` is `true` for the design system's dimming or a paint for a colour of its own.
+    element!(
+        popover,
+        "Popover",
+        [open, placement, align, offset_dp, scrim]
+    );
+    // A platform window in a multi-window application, valid only directly under the root.
+    pub mod window {
+        use super::AttributeDescription;
+        pub use compose_rust::window::{
+            NodeSize, NodeSizeSubscription, WindowSize, WindowSizeSubscription, WindowSubscription,
+            next_node_token, node_size, reset_window_size, subscribe, subscribe_node,
+            subscribe_window,
+        };
+
+        pub const TAG_NAME: &str = "Window";
+        pub const NAME_SPACE: Option<&str> = None;
+        pub const title: AttributeDescription = ("title", None, false);
+        pub const size: AttributeDescription = ("size", None, false);
+        pub const min_size: AttributeDescription = ("min_size", None, false);
+        pub const resizable: AttributeDescription = ("resizable", None, false);
+        pub const chrome: AttributeDescription = ("chrome", None, false);
+        pub const title_bar: AttributeDescription = ("title_bar", None, false);
+        pub const icon: AttributeDescription = ("icon", None, false);
+        pub const position: AttributeDescription = ("position", None, false);
+        pub const restore_key: AttributeDescription = ("restore_key", None, false);
+        pub const zoom_level: AttributeDescription = ("zoom_level", None, false);
+        pub const drag_from_pointer: AttributeDescription = ("drag_from_pointer", None, false);
+        pub const theme: AttributeDescription = ("theme", None, false);
+        // Ask for a size report on every whole-dp change, not only when the size class does.
+        pub const report_size: AttributeDescription = ("report_size", None, false);
+        pub const window_title: AttributeDescription = ("window_title", None, false);
+        pub const window_size: AttributeDescription = ("window_size", None, false);
+        pub const window_min_size: AttributeDescription = ("window_min_size", None, false);
+        pub const window_resizable: AttributeDescription = ("window_resizable", None, false);
+        pub const window_chrome: AttributeDescription = ("window_chrome", None, false);
+        pub const window_title_bar: AttributeDescription = ("window_title_bar", None, false);
+        pub const window_icon: AttributeDescription = ("window_icon", None, false);
+        pub const window_position: AttributeDescription = ("window_position", None, false);
+        pub const window_restore_key: AttributeDescription = ("window_restore_key", None, false);
+        pub const window_zoom_level: AttributeDescription = ("window_zoom_level", None, false);
+        modifier_attributes!();
+    }
 
     #[doc(hidden)]
     pub mod completions {
@@ -433,6 +774,11 @@ pub mod elements {
             badge {},
             selectioncontainer {},
             splitpane {},
+            absolutebox {},
+            codeeditor {},
+            flowrow {},
+            popover {},
+            window {},
         }
     }
 }
@@ -468,11 +814,144 @@ pub mod events {
         };
     }
 
+    /// What an optional listener accepts: a closure, like any event, or an `Option` of a
+    /// listener callback, so a widget can pass along a handler it may not have.
+    pub trait IntoOptionalListener<T, Marker> {
+        fn into_listener(self) -> dioxus_core::AttributeValue;
+    }
+
+    impl<T: 'static, Marker, F: SuperInto<ListenerCallback<T>, Marker>>
+        IntoOptionalListener<T, ClosureMarker<Marker>> for F
+    {
+        fn into_listener(self) -> dioxus_core::AttributeValue {
+            dioxus_core::AttributeValue::Listener(self.super_into().erase())
+        }
+    }
+
+    impl<T: 'static> IntoOptionalListener<T, OptionalMarker> for Option<ListenerCallback<T>> {
+        fn into_listener(self) -> dioxus_core::AttributeValue {
+            match self {
+                Some(callback) => dioxus_core::AttributeValue::Listener(callback.erase()),
+                None => dioxus_core::AttributeValue::None,
+            }
+        }
+    }
+
+    macro_rules! optional_event {
+        ($name:ident, $data:ty) => {
+            pub fn $name<Marker>(handler: impl IntoOptionalListener<$data, Marker>) -> Attribute {
+                Attribute::new(stringify!($name), handler.into_listener(), None, false)
+            }
+
+            pub mod $name {
+                use super::*;
+
+                pub fn call_with_explicit_closure<Marker, Return>(
+                    handler: impl FnMut(Event<$data>) -> Return + 'static,
+                ) -> Attribute
+                where
+                    Return: SpawnIfAsync<Marker> + 'static,
+                {
+                    Attribute::new(
+                        stringify!($name),
+                        dioxus_core::AttributeValue::Listener(
+                            ListenerCallback::new(handler).erase(),
+                        ),
+                        None,
+                        false,
+                    )
+                }
+            }
+        };
+    }
+
     event!(onclick, ());
+
+    /// What `onclickable` accepts: a closure, like any event, or an `Option` of a listener
+    /// callback, so a widget can pass along a handler it may not have. A `None` writes no
+    /// modifier at all.
+    pub trait IntoClickable<Marker> {
+        fn into_clickable(self) -> dioxus_core::AttributeValue;
+    }
+
+    pub struct ClosureMarker<Marker>(std::marker::PhantomData<Marker>);
+    pub struct OptionalMarker;
+
+    impl<Marker, F: SuperInto<ListenerCallback<()>, Marker>> IntoClickable<ClosureMarker<Marker>>
+        for F
+    {
+        fn into_clickable(self) -> dioxus_core::AttributeValue {
+            dioxus_core::AttributeValue::Listener(self.super_into())
+        }
+    }
+
+    impl IntoClickable<OptionalMarker> for Option<ListenerCallback<()>> {
+        fn into_clickable(self) -> dioxus_core::AttributeValue {
+            match self {
+                Some(callback) => dioxus_core::AttributeValue::Listener(callback),
+                None => dioxus_core::AttributeValue::None,
+            }
+        }
+    }
+
+    /// Makes a node respond to a press with a click on its own handler, whatever widget it
+    /// is. The Renderer decides what a press looks like, so the handler gets the empty
+    /// click payload and nothing else.
+    pub fn onclickable<Marker>(handler: impl IntoClickable<Marker>) -> Attribute {
+        Attribute::new("onclickable", handler.into_clickable(), None, false)
+    }
+
+    pub mod onclickable {
+        use super::*;
+
+        pub fn call_with_explicit_closure<Marker, Return>(
+            handler: impl FnMut(Event<()>) -> Return + 'static,
+        ) -> Attribute
+        where
+            Return: SpawnIfAsync<Marker> + 'static,
+        {
+            Attribute::new(
+                "onclickable",
+                dioxus_core::AttributeValue::Listener(ListenerCallback::new(handler)),
+                None,
+                false,
+            )
+        }
+    }
+
+    // A press on one run of a `Text`, carrying the value the application gave that run.
+    // It travels as a click on a handler of the run's own, so no new event exists for it.
+    event!(onlink, u64);
     event!(onvaluechange, String);
     event!(onsubmit, String);
     event!(onfocuslost, ());
     event!(onkeydown, crate::KeyEvent);
+    // Each of these is announced to the Renderer only when there is a handler, so a node
+    // whose screen did not ask is never sent the event: a closure, or an `Option` of a
+    // listener callback that writes nothing when it is `None`.
+    optional_event!(onfocusgained, ());
+    optional_event!(onkeyup, crate::KeyEvent);
+    // Where a scroll container is.
+    optional_event!(onscrollchanged, crate::ScrollChange);
+    // A code editor's row height and scroll offset, each in physical pixels.
+    optional_event!(oncodemetrics, compose_rust::code::CodeMetrics);
+    optional_event!(oncodescrolled, compose_rust::code::CodeScroll);
+    // Where a code editor draws its caret, in the window's dp.
+    optional_event!(oncaretrect, compose_rust::code::CaretRect);
+    // Each key press a code editor offers before it handles the key itself. Consuming it
+    // keeps it from the editor.
+    optional_event!(onkeypreview, crate::KeyEvent);
+    // A code editor's pointer events of the kinds in `pointer_kinds`, with the place in the
+    // text under the pointer.
+    optional_event!(oncodepointer, compose_rust::code::CodePointer);
+    // What became of a grouped edit asked of a code editor's handle.
+    optional_event!(oneditgroupresult, compose_rust::code::EditGroupResult);
+    // Every selection of a code editor while it holds more than one. It rides on the
+    // editor's selection listener and announces nothing of its own.
+    optional_event!(onselectionschange, compose_rust::code::SelectionsChange);
+    // A node's size motion came to rest, with the size it settled at in dp. Any node can
+    // take it; only one whose size moves, through a `motion` role, ever reports it.
+    optional_event!(onmotionfinished, crate::MotionFinished);
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
@@ -481,9 +960,127 @@ pub mod events {
     // not need to know.
     event!(onfilesentered, ());
     event!(onfilesdropped, crate::FileDrop);
+    // A pointer did something in a node that subscribed to it with `pointer_kinds`.
+    event!(onpointer, crate::PointerEvent);
     // A control reports the value the user landed on, as one f64. A picker reads it as
     // the epoch count it speaks, a slider as a position, a toggle as off or on. It shares
     // the wire property with the text field's value change, because both are "this
     // control's value is now this".
     event!(onchange, f64);
+    // A code editor's committed edits. They travel under the same property a text field's
+    // value change does, because both are "what this control holds is now different", and
+    // under their own name here because what they carry is an edit and not a value.
+    event!(oncodechange, compose_rust::code::CodeChange);
+    event!(oneditrejected, compose_rust::code::EditRejected);
+    event!(onhover, compose_rust::code::CodeHover);
+    event!(onsave, compose_rust::code::SaveRequest);
+    // The id the application gave the decoration that was pressed or accepted.
+    event!(ondecorationclick, u64);
+    // The rest of a code editor's reports: the selection moving, the visible lines
+    // changing, the editor gaining or losing focus (true is gained), a stretch folded or
+    // unfolded, and an input method starting or ending a composition (true is started).
+    event!(onselectionchange, compose_rust::code::SelectionChange);
+    event!(onvisiblerangechange, compose_rust::code::VisibleRange);
+    event!(oneditorfocuschange, bool);
+    event!(onfoldchange, compose_rust::code::FoldChange);
+    event!(oncompositionchange, bool);
+    // Window events and root window requests.
+    event!(onclosing, ());
+    event!(onclose_request, ());
+    event!(on_close_request, ());
+    event!(onwindowclose, ());
+    event!(onfocuschange, bool);
+    event!(on_focus_change, bool);
+    event!(onwindowfocus, bool);
+    event!(onmoved, compose_rust::windows::WindowFrame);
+    event!(on_moved, compose_rust::windows::WindowFrame);
+    event!(onwindowmoved, compose_rust::windows::WindowFrame);
+    event!(onwindowdrag, compose_rust::windows::WindowDragEvent);
+    event!(on_window_drag, compose_rust::windows::WindowDragEvent);
+    event!(onunavailable, ());
+    event!(on_unavailable, ());
+    event!(onwindowunavailable, ());
+    event!(onclosed, ());
+    event!(on_closed, ());
+    event!(onwindowclosed, ());
+
+    pub trait IntoWindowDragOver<Marker> {
+        fn into_window_drag_over(self) -> dioxus_core::AttributeValue;
+    }
+
+    impl<Marker, F: SuperInto<ListenerCallback<compose_rust::windows::WindowDragOver>, Marker>>
+        IntoWindowDragOver<ClosureMarker<Marker>> for F
+    {
+        fn into_window_drag_over(self) -> dioxus_core::AttributeValue {
+            dioxus_core::AttributeValue::Listener(self.super_into().erase())
+        }
+    }
+
+    impl IntoWindowDragOver<OptionalMarker>
+        for Option<ListenerCallback<compose_rust::windows::WindowDragOver>>
+    {
+        fn into_window_drag_over(self) -> dioxus_core::AttributeValue {
+            match self {
+                Some(callback) => dioxus_core::AttributeValue::Listener(callback.erase()),
+                None => dioxus_core::AttributeValue::None,
+            }
+        }
+    }
+
+    pub fn onwindowdragover<Marker>(handler: impl IntoWindowDragOver<Marker>) -> Attribute {
+        Attribute::new(
+            "onwindowdragover",
+            handler.into_window_drag_over(),
+            None,
+            false,
+        )
+    }
+
+    pub mod onwindowdragover {
+        use super::*;
+
+        pub fn call_with_explicit_closure<Marker, Return>(
+            handler: impl FnMut(Event<compose_rust::windows::WindowDragOver>) -> Return + 'static,
+        ) -> Attribute
+        where
+            Return: SpawnIfAsync<Marker> + 'static,
+        {
+            Attribute::new(
+                "onwindowdragover",
+                dioxus_core::AttributeValue::Listener(ListenerCallback::new(handler).erase()),
+                None,
+                false,
+            )
+        }
+    }
+
+    pub fn on_window_drag_over<Marker>(handler: impl IntoWindowDragOver<Marker>) -> Attribute {
+        Attribute::new(
+            "on_window_drag_over",
+            handler.into_window_drag_over(),
+            None,
+            false,
+        )
+    }
+
+    pub mod on_window_drag_over {
+        use super::*;
+
+        pub fn call_with_explicit_closure<Marker, Return>(
+            handler: impl FnMut(Event<compose_rust::windows::WindowDragOver>) -> Return + 'static,
+        ) -> Attribute
+        where
+            Return: SpawnIfAsync<Marker> + 'static,
+        {
+            Attribute::new(
+                "on_window_drag_over",
+                dioxus_core::AttributeValue::Listener(ListenerCallback::new(handler).erase()),
+                None,
+                false,
+            )
+        }
+    }
+
+    event!(onrequested, compose_rust::windows::WindowRequest);
+    event!(on_requested, compose_rust::windows::WindowRequest);
 }

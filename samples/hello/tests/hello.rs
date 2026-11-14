@@ -14,7 +14,10 @@
 //! So `h1` is at y = 40, `#intro` at 40 + 40 + 16 = 96, `#action` at 96 + 24 + 12 = 132
 //! and `#status` at 132 + 24 + 12 = 168.
 
-use dioxus_compose::html::HtmlDom;
+use dioxus_compose::Host;
+use dioxus_compose::html::{HtmlConfig, HtmlDom};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::schema::{EventPayload, Modifier, PropertyKind, WidgetKind};
 use sample_html_hello as hello;
 use sample_html_support::{Measurer, assert_rect, centre, config, entry, node, text_of};
 
@@ -54,52 +57,36 @@ fn fr34_hello_blocks_flow_with_collapsed_margins() {
     assert_rect(title[0].rect, 48.0, 40.0, 208.0, 40.0, "the heading's text");
 }
 
-/// The paragraph mixes three styles (plain, `strong`, `em`), so it is laid out as one
-/// inline formatting context with a run per style. All of them sit on its one 24px line,
-/// in source order.
+/// The paragraph mixes three styles (plain, `strong`, `em`), so it is one text with a bold
+/// span and an italic span, measured and drawn by the renderer as a whole. The text is one
+/// 24px line, and the spans are in source order over the words they wrap.
 #[test]
 fn fr34_hello_inline_runs_share_one_line() {
     let dom = laid_out();
     let intro = entry(&dom, "intro");
-    let bold = node(&dom, "bold");
-    let italic = node(&dom, "italic");
 
-    let text = text_of(intro);
-    for piece in ["This page is", "HTML", "CSS", "laid out by the Host."] {
-        assert!(
-            text.contains(piece),
-            "{piece:?} is drawn: {:?}",
-            intro.texts
-        );
-    }
-
-    let run_of = |owner: usize, word: &str| {
-        intro
-            .texts
-            .iter()
-            .find(|run| run.owner == owner && run.text.trim() == word)
-            .cloned()
-            .unwrap_or_else(|| panic!("a run of {word:?} owned by node {owner}: {:?}", intro.texts))
-    };
-    let strong = run_of(bold, "HTML");
-    let em = run_of(italic, "CSS");
+    assert_eq!(intro.texts.len(), 1, "{:?}", intro.texts);
+    let run = &intro.texts[0];
+    assert_eq!(run.text, "This page is HTML and CSS, laid out by the Host.");
+    assert_eq!(run.line_count, 1, "{run:?}");
+    let (_, middle) = centre(run.rect);
     assert!(
-        strong.rect.x < em.rect.x,
-        "`strong` comes before `em` on the line: {:?} then {:?}",
-        strong.rect,
-        em.rect
+        (96.0..120.0).contains(&middle),
+        "the paragraph's one line is at y 96 to 120: {:?}",
+        run.rect
     );
 
-    for run in &intro.texts {
-        assert_eq!(run.line_count, 1, "{run:?}");
-        let (_, middle) = centre(run.rect);
-        assert!(
-            (96.0..120.0).contains(&middle),
-            "{:?} is on the paragraph's one line, y 96 to 120: {:?}",
-            run.text,
-            run.rect
-        );
-    }
+    let word = |span: &dioxus_compose::html::SpanRun| run.text[span.start..span.end].to_string();
+    let bold: Vec<_> = run.spans.iter().filter(|span| span.bold).collect();
+    let italic: Vec<_> = run.spans.iter().filter(|span| span.italic).collect();
+    assert_eq!(bold.len(), 1, "{:?}", run.spans);
+    assert_eq!(italic.len(), 1, "{:?}", run.spans);
+    assert_eq!(word(bold[0]), "HTML");
+    assert_eq!(word(italic[0]), "CSS");
+    assert!(
+        bold[0].start < italic[0].start,
+        "`strong` comes before `em`"
+    );
 }
 
 /// The link is the only thing in its paragraph, so its text is one measured run owned by
@@ -136,4 +123,86 @@ fn fr34_hello_clicking_the_link_reaches_its_handler() {
     dom.render();
     dom.layout(800.0, 600.0, 1.0);
     assert_eq!(text_of(entry(&dom, "status")), "You said hello 2 times");
+}
+
+fn bridged() -> HtmlConfig {
+    config(hello::STYLE, Measurer::new())
+}
+
+/// The texts a batch sets.
+fn texts(records: &[Mutation<'_>]) -> Vec<String> {
+    records
+        .iter()
+        .filter_map(|record| match record {
+            Mutation::SetProp {
+                property: PropertyKind::Text,
+                value: PropertyValue::String(text),
+                ..
+            } => Some(text.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The page runs the way the window runs it: through a Host, whose first batch draws every
+/// run of text, and whose link is a clickable text the renderer can press. Pressing it goes
+/// back through the Host to the link's handler, and the next batch carries the new status
+/// line and nothing that did not change.
+#[test]
+fn fr34_hello_runs_through_the_bridge() {
+    let mut host = Host::html(hello::app, bridged);
+    let (shown, link) = {
+        let first = decode_batch(host.rebuild().unwrap()).unwrap();
+        let shown = texts(&first);
+        let text_nodes: Vec<u32> = first
+            .iter()
+            .filter_map(|record| match record {
+                Mutation::Create {
+                    node_id,
+                    widget: WidgetKind::Text,
+                } => Some(*node_id),
+                _ => None,
+            })
+            .collect();
+        let link = first
+            .iter()
+            .find_map(|record| match record {
+                Mutation::SetModifier {
+                    node_id,
+                    modifier: Modifier::Clickable { handler_id },
+                    ..
+                } if text_nodes.contains(node_id) => Some((*node_id, *handler_id)),
+                _ => None,
+            })
+            .expect("the link's text is clickable");
+        (shown, link)
+    };
+    // "HTML" and "CSS" are no longer texts of their own: the paragraph is drawn as one text
+    // with a bold and an italic span over them.
+    for text in [
+        "Hello, Dioxus",
+        "This page is HTML and CSS, laid out by the Host.",
+        "Say hello",
+        "Nobody has said hello yet",
+    ] {
+        assert!(
+            shown.iter().any(|shown| shown.trim() == text),
+            "{text:?} is drawn: {shown:?}"
+        );
+    }
+
+    let (node_id, handler_id) = link;
+    let (batch, _) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        })
+        .unwrap();
+    let after = decode_batch(batch).unwrap();
+    assert_eq!(
+        texts(&after),
+        vec!["You said hello once".to_string()],
+        "only the status line changes: {after:#?}"
+    );
 }

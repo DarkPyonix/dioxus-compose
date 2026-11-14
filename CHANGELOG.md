@@ -2,6 +2,190 @@
 
 ## Unreleased
 
+### Everything compose-rust 0.0.10 added, written in rsx
+
+`Image` takes `content_scale`: `ContentScale::Fit` shows the whole picture, `Crop` covers
+the box and `FillBounds` stretches it. `Slider` takes `thumb_size`, the thumb's diameter in
+dp. `Column`, `Row`, `Box`, `Card` and `Surface` take `background_brush`, a list of up to
+four `BackgroundLayer`s in CSS order, the first on top: a paint laid into a rectangle of the
+node and repeated as `BackgroundRepeat` says, drawn over the `background` colour and under
+the border, as CSS draws `background-image`. Every raw element takes it too, as one
+`Modifier::BackgroundBrush` or a list. `CodeEditor` takes `minimap` (a `MinimapSide`),
+`view_zones` (rows after a line that are not text), `word_wrap` (a `WordWrap`),
+`on_edit_group_result` and `on_selections_change`, and `CodeEditorHandle` gains
+`edit_group`, which replaces several ranges as one undo step and is answered once with an
+`EditGroupResult`, `set_selections` for several carets at once, and `insert_snippet`, which
+opens a snippet's tab stops. `on_selections_change` hears every selection while there is
+more than one, and `on_selection_change` goes on hearing the primary one. `TextAlign` has
+the physical `Left` and `Right`, `Brush::elliptical` draws a radial brush as an ellipse,
+and a `Text` with a letter spacing of 0 now sends it, where it used to take the type role's
+spacing. `use_system_color_scheme()` reads the system's light or dark appearance, `None`
+until the renderer first reports it, and re-renders on each change. Each of these is sent
+only when set, and a handler left out is never announced to the renderer.
+
+### HTML: physical alignment, zero letter spacing, elliptical gradients and the system's scheme
+
+`text-align: left` and `right` reach the renderer as `TextAlign::Left` and `Right`, so a
+right-to-left page aligned left stays on the left. `letter-spacing: 0` and `normal` are
+sent as an explicit 0 rather than the smallest positive number that stood in for it. An
+elliptical `radial-gradient()` is drawn as an ellipse instead of the circle of its
+horizontal radius. The function keys F1 to F12 and the context menu key reach the page as
+their DOM `key` and `code`. A page whose theme follows the system answers
+`prefers-color-scheme` with the light or dark appearance the renderer reports, and is
+restyled when it changes.
+
+### Everything compose-rust 0.0.9 added, written in rsx
+
+`CodeEditor` takes `on_caret_rect`, which brings a `CaretRect` (the caret's place and its
+rectangle in the window's dp) when the caret moves or the view scrolls, and
+`CodeEditorHandle::query_position_rect(position, on_answer)` asks where any other position
+would be drawn, answering once with a `CodeRect` or `None` where the position is not on
+screen. `on_key_preview` hears each key press before the editor does, as the `KeyEvent` a
+key handler gets, and a key it consumes is not the editor's. `pointer_kinds` and
+`on_code_pointer` bring a `CodePointer`: the pointer event and the character under it, and a
+press it consumes leaves the caret where it was. `Decoration::line_background` and
+`Decoration::range_background` tint whole lines and the characters inside them, for a diff
+view. The editor takes `type_role`, `font_size`, `line_height` and `font`;
+`on_code_metrics` and `on_code_scrolled` now bring compose-rust's `CodeMetrics` and
+`CodeScroll` rather than a bare number, still in physical pixels; and
+`CodeEditorHandle::set_scroll_offset(offset_px)` scrolls the editor in the same unit.
+`RadioButton` takes `ring_color`, `dot_color` and `size`, and `Column` and `Row` take
+`radio_group`, which makes the layout one Tab stop whose arrow keys move along its radio
+buttons. A `Message` can name its place with `with_placement` and its distance from the
+edge with `with_offset`. Each of these is sent only when set, and a handler left out is
+never announced to the renderer.
+
+### Everything compose-rust 0.0.8 added, written in rsx
+
+`ScrollColumn` and `ScrollRow` take `snap` (`Snap::ItemStart` stops a fling with a child at
+the start of the visible area), `Sheet` takes `max_height_fraction`, the most of the
+window's height a bottom sheet may take, and `SplitPane` takes `collapse_below`, the width
+in dp below which it shows one pane at a time. `Text` and `TextField` take
+`font_feature_settings`, the OpenType features the text asks its font for, as a
+`FontFeatures` list built from `FontFeature`s or `(tag, value)` pairs such as
+`[(b"tnum", 1)]`. `Column`, `Row`, `Box`, `Card`, `Surface` and `TextField` take
+`on_motion_finished`, and every element takes `onmotionfinished`: it runs once when the
+node's size motion comes to rest, with a `MotionFinished` holding the size it settled at in
+dp. Overlay tokens carry `toast_elevation` and `toast_corner_radius`. Each of these is sent
+only when set, and a handler left out is never announced to the renderer.
+
+### Everything compose-rust 0.0.7 added, written in rsx
+
+Two widgets: `FlowRow`, a row that wraps (`horizontal_spacing`, `vertical_spacing`,
+`horizontal_alignment`, `vertical_alignment`, `max_items_in_each_row`), and `Popover`, a box
+attached to its `anchor` (`open`, `placement`, `align`, `offset` in dp, `scrim` or
+`scrim_color`, `on_dismiss`). Every widget takes `semantics` (a `Semantics` role and
+`SemanticsState`), `accessible_name` and `corner_curve`, and `AbsoluteBox` takes
+`transform_3d`, CSS `matrix3d` with a backface flag. `Switch`, `Checkbox` and `Slider` take
+their track, thumb, container and check colours and a `size`; `TextField` and `Dropdown`
+take `bare`; `Dialog`, `Menu` and `Sheet` take `scrim`; `Navigation` takes `compact`; a
+`window` element takes `report_size`. `CodeEditor` takes `line_numbers`,
+`gutter_min_width`, `gutter_padding`, `text_inset`, `colors` (`CodeEditorColors`) and
+`on_code_metrics` and `on_code_scrolled`, each reporting physical pixels. `TextField` takes
+`on_focus_gained` and `on_key_up`, which brings the same `KeyEvent` as `on_key_down`, now
+with its `repeat`, `code` and `text` on both. The scroll containers and the lazy lists take
+`on_scroll_changed`, which brings a `ScrollChange` with every field of the report. A
+handler left out is never announced to the renderer, and one taken away is withdrawn.
+
+### HTML tables fill their width
+
+A table whose width is greater than its columns, such as `width: 100%` in a wider
+container, gives the extra width to its columns. When every column has a fixed width, each
+one grows in proportion to it, as in Chromium's auto table layout. Before, the columns kept
+their widths and the space past them stayed empty. Tables with `auto` or percentage columns
+are unchanged. The change is a blitz-dom patch, `scripts/patches/blitz-dom-0.2.4/0003-table-width-fills-columns.patch`.
+
+### List bullets are drawn as shapes
+
+`list-style-type: disc`, `circle` and `square` are drawn as a filled circle, a 1px ring and
+a filled square, as Chromium draws them, instead of the font's bullet character, which was
+smaller. A display list entry carries the shape in `marker` (`MarkerShape`, with its
+`MarkerSymbol`, rectangle and the item's colour), and the plan draws it as a box keyed
+`PlanKey::Marker`. Its size and place come from the font's ascent: 5px across for a 16px
+font, its left edge 16px before the item, level with the middle of the lowercase letters.
+An inside bullet keeps its character's place in the text, drawn transparent, under the
+shape. Numbered and lettered markers are still text.
+
+### Content from the top of the window, and its safe area
+
+`Window::new().chrome(Chrome::FullSize)` (the `Chrome` in the prelude is compose-rust's)
+draws the content from the very top of the window, with the window buttons over it.
+`use_window_safe_area()` returns `WindowSafeArea { top, leading, trailing }` in dp for the
+calling component's window, as the renderer reports it, and redraws only the components
+that called it when only the safe area changes. All three are zero on platforms whose
+window is not ours. macOS comes first; checking it by eye on a real Mac is manual.
+
+### Several shadows on Column, Row, Box and Card
+
+These four take `shadow: Vec<ShadowLayer>`, a list in CSS order where the first layer is on
+top. Each layer is a `Shadow` modifier in its own chain position, up to eight, drawn behind
+the node. The shadow follows the node's corner radius once the renderer carries
+compose-rust's change for it. The chain positions after the shadows moved up by seven;
+nothing outside this crate depends on them.
+
+### HTML screens zoom as a whole
+
+An HTML screen is zoomed the way an editor zooms. The renderer reports `k`, the system's
+text size times `1.2^level`, and the page is laid out in a viewport of the window's size
+over `k`, drawn at `k`, and measured at `k`. A `width` media query sees that viewport and a
+`resolution` query sees `k`. `html::launch` and every `HtmlView` do this, and
+`use_zoom()` reads the factor and level and sets the level (`zoom_in`, `zoom_out`, `reset`,
+`set_level`). `AbsoluteBox` takes `island_zoom`. The zoom starts at 1 until the renderer
+reports one, which is where the web target stays. Checking a real VS Code at the same
+zoom, and the system text size on each desktop, is manual. The renderer is pinned at the
+compose-rust commit that has the zoom report and the island factor.
+
+### Transforms and renderer-played animations from rsx
+
+`AbsoluteBox` takes a CSS `transform` matrix with its `transform_origin`, or a Compose style
+`graphics_layer` (rotation, scale, translation and opacity). `animate_float_as_state`,
+`animate_color_as_state` and `animate_offset_as_state` give an `AbsoluteBox` an opacity, a
+background or a translation that the renderer animates to whenever the target changes: a
+change is one `StartAnimation` record, and the component is not rendered again while it
+plays. `use_reduced_motion` reads the platform's reduced motion setting and re-renders when
+it changes, and `use_animation_event` hears the animation events a screen asked for. These
+need compose-rust's transform and animation records, so compose-rust is pinned at the
+commit that has them (compose-rust #83).
+
+### HTML and CSS screens reach the renderer
+
+An HTML app is launched the way a widget app is: `dioxus_compose::html::launch(app)`, or
+`LaunchBuilder::new().with_html(config).launch(app)` to pass a configuration.
+`cargo run -p sample-html-hello` opens the hello sample in a window.
+
+The bridge writes the drawing plan into compose-rust's batch. The first frame sends the
+whole tree; after that only what the plan diff reports is sent, and a frame where nothing
+changed sends nothing. Every kind of drawing element has a compose-rust widget to become.
+Clicks, typed text, focus leaving a field, Enter in a field, checkbox and radio toggles and
+select choices come back to the Dioxus handlers.
+
+The records the renderer receives are tested on the Host. Drawing them on screen has not
+been confirmed by running the renderer yet ([#43](https://github.com/DarkPyonix/dioxus-compose/issues/43)).
+Text is still measured by Parley, and `font-family` does not reach the screen yet.
+`font-style: italic` and `oblique`, and `text-decoration-line: underline` and `line-through`
+alone or together, are sent as one span over the whole run of text, because compose-rust's
+text style has no slant or lines of its own and its spans do. A box's lines are drawn across
+the text inside it, as a browser draws them, so a link is underlined by the default
+stylesheet. Plain text sends no span.
+
+Keys and focus reach HTML elements as DOM events. Enter pressed in a field, or in a box
+whose element listens for keys, delivers `keydown` and then `keypress`, bubbling from the
+focused element; a handler that prevents the default keeps the field from submitting or
+starting a line. A field delivers `focus` and `focusin` before the first thing the user does
+in it, and `change`, `blur` and `focusout` when it loses the focus. Enter is the one key
+compose-rust carries, it has no key release, and it reports a field losing the focus but not
+gaining it, so `keyup` is never sent and `focus` arrives with the first keystroke.
+
+`prefers-color-scheme` follows the theme: an application that switches its theme to light or
+dark while running has its HTML screen restyled in the same frame, and only the boxes whose
+style changed are sent. A theme that follows the system keeps the configured scheme, because
+the renderer applies a system change without telling the Host.
+
+The hello sample builds for Android, iOS and the web as well as the desktop, with the entry
+points the native-widget samples have. `AbsoluteBox` and the `offset`, `required_size`,
+`border_each`, `corner_each`, `shadow`, `clip` and `alpha` attributes can be written in a
+widget `rsx!` app, as compose-rust's adapter writes them.
+
 ### The renderer is built for the platform where Compose publishes one
 
 macOS no longer carries a Java runtime. Where Compose publishes a target of its own, the

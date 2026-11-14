@@ -107,7 +107,8 @@
        text sizes from a TextMeasurer
   -&gt; DisplayList                       boxes in paint order, absolute rectangles
   -&gt; Plan, and diff against the last   drawing elements nested in their containers
-  -&gt; renderer (Compose)                planned: the bridge is not built yet</code></pre>
+  -&gt; PlanBridge                        writes the plan into compose-rust's batch
+  -&gt; renderer (Compose)                draws it (not yet confirmed on screen)</code></pre>
 </figure>
     <p>
       Each stage is a value you can inspect, which is how the examples are tested. The
@@ -123,10 +124,41 @@
       same for every app, and it means a CSS feature is added in Rust, in one place.
     </p>
     <p>
-      Two pieces are not built yet. The bridge from the plan to compose-rust's
-      <code>AbsoluteBox</code> and drawing modifiers is
-      <span class="pill partial">partial</span>, and so is the synchronous call through which the
-      Host will ask Compose how big a run of text is during layout
+      <code>dioxus_compose::html::PlanBridge</code> carries the plan to the renderer. On the first
+      frame it writes the whole tree into compose-rust's batch; after that it writes only what the
+      plan diff reports (nodes created, moved or removed, properties and modifiers whose values
+      changed), so a frame where nothing changed sends nothing. Every plan kind becomes a
+      compose-rust widget: <code>AbsoluteBox</code>, <code>Box</code>, <code>Text</code>,
+      <code>Image</code>, <code>ScrollColumn</code>, <code>ScrollRow</code>, <code>TextField</code>,
+      <code>Checkbox</code>, <code>RadioButton</code> and <code>Dropdown</code>.
+    </p>
+    <ul>
+      <li>Corners are sent one by one (<code>CornerEach</code>), in physical order: top left, top
+        right, bottom right, bottom left.</li>
+      <li>A <code>box-shadow</code> list is sent last to first, so the first shadow in CSS ends up on
+        top, as in a browser.</li>
+      <li>Any <code>overflow</code> other than <code>visible</code> is sent as a clip.</li>
+      <li>Background gradients and images become boxes the size of their painting area, one box per
+        tile.</li>
+      <li>The page sits in a vertical scroll the size of the window. Scroll containers inside the
+        page scroll in the renderer, which owns the scroll position.</li>
+    </ul>
+    <p>
+      Events come back the same way: clicks on boxes with a click handler, on labels, buttons and
+      submit inputs, and on the text of inline elements such as links; typed text
+      (<code>oninput</code>); focus leaving a field (<code>onchange</code>); Enter in a single-line
+      field, which submits its form; checkbox and radio toggles; and select choices. Each reaches the
+      Dioxus handler of its DOM node.
+    </p>
+    <p>
+      The bridge is <span class="pill partial">partial</span>. It is tested on the Host against the
+      records the renderer receives, and drawing on screen has not been confirmed by running the
+      renderer yet. Text is still measured by Parley, because compose-rust has no synchronous measure
+      call yet. Text is drawn in the design system's typeface, because compose-rust's
+      <code>Text</code> takes no font family or italic, so <code>font-family</code>,
+      <code>font-style</code> and <code>text-decoration</code> do not reach the screen yet. An
+      <code>object-fit: fill</code> image with a different aspect ratio is drawn letterboxed, because
+      compose-rust's <code>Image</code> draws a picture whole and centred
       (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).
     </p>
 

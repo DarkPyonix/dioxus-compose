@@ -18,8 +18,10 @@
 //! gets a new one, which is one change to the background slot of the node that draws it.
 //!
 //! Images are drawn with the assets an [`ImageResolver`] names for their URLs. A URL it has
-//! no asset for, or any URL when there is no resolver, draws nothing: no image node, no
-//! brush.
+//! no asset for, or any URL when there is no resolver, draws no picture and no brush. An
+//! `<img>` with no picture and with alt text draws what Chromium draws for an image it could
+//! not load: a [`PlanKind::BrokenImageIcon`] and its alt text as a [`PlanKind::Text`], in a
+//! box keyed [`PlanKey::Image`] that clips them to the image.
 //!
 //! [`diff`] compares two plans node by node and says what a renderer has to change: a
 //! modifier set or removed, a node inserted, removed or moved among its siblings.
@@ -48,23 +50,49 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
 use crate::layout::image::{AssetId, ImageResolver};
-use crate::layout::measure::TextStyle;
+use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
-    BackgroundImage, Corners, DisplayList, GradientStop, InputKind, NodeEntry, Radius, Rect, Rgba,
-    Sides, TextAlign, TileRepeat,
+    AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
+    DisplayList, GradientStop, ImageFallback, InputKind, MarkerSymbol, Matrix2D, NodeEntry,
+    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun, TileRepeat,
+    Transform2D, bounds_of,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
 const EPSILON: f32 = 0.01;
 
 /// A tree of drawing elements. Lengths are CSS pixels, which the renderer draws as dp.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Plan {
     /// The page: a [`PlanKind::AbsoluteBox`] keyed [`PlanKey::Page`] holding every
-    /// top-level box.
+    /// top-level box. It draws the canvas background, which CSS paints over the whole
+    /// canvas rather than over the box of the element that declared it, and it plays the
+    /// animations of that element's background colour.
     pub root: PlanNode,
     /// Every brush a [`PlanModifier::BackgroundBrush`] in the tree names, once.
     pub brushes: BTreeMap<BrushId, Brush>,
+    /// The transitions the display list says began, by the node they play on. These are
+    /// events: they are in the plan built for the layout that started them and in none
+    /// after, and [`diff`] reports each as a [`PlanChange::AnimationStarted`] when the
+    /// plan it compares to lacks it.
+    pub transitions: Vec<(PlanKey, Animation)>,
+    /// The element the canvas background was taken from, whose background-colour
+    /// animations and transitions play on the page.
+    pub(crate) canvas: Option<NodeId>,
+    /// Layout revision that built this plan, or `0` when built standalone via `plan_from`.
+    pub(crate) revision: u64,
+    /// True when [`HtmlDom::plan`] reused the plan from the previous layout because
+    /// [`HtmlDom::layout`] skipped recomputing an unchanged document.
+    pub(crate) unchanged: bool,
+}
+
+impl PartialEq for Plan {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.brushes == other.brushes
+            && self.transitions == other.transitions
+            && self.canvas == other.canvas
+    }
 }
 
 /// Names a [`Brush`] by its content: two equal brushes have the same id, in this plan and
@@ -148,9 +176,10 @@ impl Brush {
 ///
 /// Every node comes from one display list entry, so every key but [`PlanKey::Page`] names
 /// a DOM node; the variant says which of the elements made for that node it is.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum PlanKey {
     /// The page every top-level box is placed in.
+    #[default]
     Page,
     /// The box of a display list entry.
     Node(NodeId),
@@ -170,8 +199,19 @@ pub enum PlanKey {
     ScrollContent(NodeId),
     /// A clip a box inherits from an ancestor it could not be nested inside.
     InheritedClip(NodeId),
-    /// The image of an `<img>`.
+    /// The image of an `<img>`: the picture, or the box its broken-image icon and alt text
+    /// are clipped to when there is no picture to draw.
     Image(NodeId),
+    /// The `outline` of a box: a border-only box around the border box, placed beside the
+    /// box (or inside it, when the box is transformed) so that it can draw outside the
+    /// box's bounds.
+    Outline(NodeId),
+    /// The broken-image icon of an `<img>` with no picture, drawn beside its alt text.
+    BrokenImageIcon(NodeId),
+
+    /// The list marker of a list item when it is a shape (`disc`, `circle`, `square`): a
+    /// box rounded into a circle, or square, filled or outlined in the item's colour.
+    Marker(NodeId),
 }
 
 impl PlanKey {
@@ -187,7 +227,10 @@ impl PlanKey {
             | PlanKey::ScrollRow(node)
             | PlanKey::ScrollContent(node)
             | PlanKey::InheritedClip(node)
-            | PlanKey::Image(node) => Some(node),
+            | PlanKey::Image(node)
+            | PlanKey::BrokenImageIcon(node)
+            | PlanKey::Outline(node)
+            | PlanKey::Marker(node) => Some(node),
         }
     }
 }
@@ -197,18 +240,23 @@ impl PlanKey {
 pub struct PlanNode {
     pub key: PlanKey,
     pub kind: PlanKind,
-    /// In a fixed order: offset, size, alpha, shape, shadows, background, background
-    /// brushes, border, clip.
+    /// In a fixed order: offset, size, transform, alpha, shape, shadows, background,
+    /// background brushes, border, clip.
     pub modifiers: Vec<PlanModifier>,
+    /// The `@keyframes` animations a renderer plays on the node for as long as they are
+    /// listed. Each plays on the node's own value of the property it names, over the
+    /// node's modifiers.
+    pub animations: Vec<Animation>,
     /// Back to front.
     pub children: Vec<PlanNode>,
 }
 
 /// What a plan node is.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum PlanKind {
     /// Places each child at its own [`PlanModifier::Offset`]; children do not affect each
     /// other's place or size. Later children are drawn on top.
+    #[default]
     AbsoluteBox,
     /// A box with nothing inside: background, border, shadow.
     Box,
@@ -216,6 +264,9 @@ pub enum PlanKind {
     Text(PlanText),
     /// An image.
     Image(PlanImage),
+    /// The icon Chromium draws for an image it could not load, 16 by 16: a picture with a
+    /// tear across it. The renderer draws it as a `Canvas`.
+    BrokenImageIcon,
     /// Scrolls its one child vertically. The renderer owns the scroll position.
     ScrollColumn,
     /// Scrolls its one child horizontally. The renderer owns the scroll position.
@@ -240,13 +291,31 @@ impl PlanKind {
 /// The text of a [`PlanKind::Text`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct PlanText {
+    /// The element the text belongs to: the innermost element that holds all of it, which
+    /// may be an inline element (a link, an emphasis) inside the box the run is drawn in.
+    /// A click on the run is a click on this element.
+    pub owner: NodeId,
     pub text: String,
     pub style: TextStyle,
     pub color: Rgba,
+    /// The lines drawn through or under the text.
+    pub decoration: TextDecoration,
+    /// How lines sit in the node's width. With [`TextAlign::Justify`] and `soft_wrap`, the
+    /// node's width is the width the lines are stretched to, every line but the last.
     pub align: TextAlign,
     /// Whether lines wrap at the node's width. A run laid out as one unconstrained line
     /// does not.
     pub soft_wrap: bool,
+    /// `Some(width)` when `text-overflow: ellipsis` cuts the text: lines that reach past
+    /// `width` end in an ellipsis in the place of what is cut. The renderer draws it; the
+    /// Host does not shape the ellipsis.
+    pub ellipsis: Option<f32>,
+    /// Whether the text is a list marker, or starts with one.
+    pub marker: RunMarker,
+    /// The runs of `text` that differ in weight, slant, lines, colour or font family, with
+    /// their colours resolved. Empty for text in one style; the bridge then sends the text
+    /// as one run, and otherwise as the text and its spans together.
+    pub spans: Vec<SpanRun>,
 }
 
 /// The image of a [`PlanKind::Image`]. The node is the `<img>` element's content box.
@@ -308,6 +377,10 @@ pub enum PlanModifier {
         width: f32,
         height: f32,
     },
+    /// Draws the node, and everything inside it, through a 2D matrix about a point of the
+    /// node. The node keeps the place and size layout gave it: this moves how it is drawn,
+    /// and where a pointer lands on it, and nothing else.
+    Transform(Transform2D),
     /// The width a text run is laid out in. Its height is the renderer's.
     Width(f32),
     /// Applies to the node and everything inside it as one group: the group is composed
@@ -319,8 +392,8 @@ pub enum PlanModifier {
     },
     /// Rounds each corner by its own radius.
     CornerEach(Corners<f32>),
-    /// One outer shadow, in the node's shape. A box with several shadows has several,
-    /// back to front.
+    /// One outer shadow, in the node's shape. A box with several shadows has several, in
+    /// CSS order: the first is drawn on top.
     Shadow {
         x: f32,
         y: f32,
@@ -357,6 +430,7 @@ pub enum PlanModifier {
 pub enum ModifierSlot {
     Offset,
     RequiredSize,
+    Transform,
     Width,
     Alpha,
     Shape,
@@ -401,6 +475,14 @@ pub enum PlanChange {
     },
     /// The node no longer has a modifier in `slot`.
     ModifierRemoved { key: PlanKey, slot: ModifierSlot },
+    /// The `@keyframes` animations on the node are now these: a renderer starts the ones it
+    /// is not playing and stops the ones that are no longer listed.
+    AnimationsChanged {
+        key: PlanKey,
+        animations: Vec<Animation>,
+    },
+    /// A transition began on the node.
+    AnimationStarted { key: PlanKey, animation: Animation },
 }
 
 /// Which colour of a node is being resolved.
@@ -529,12 +611,15 @@ pub fn plan_from_images(
 }
 
 /// A plan node while the tree is being built: children are indices into the arena.
+#[derive(Default)]
 struct Slot {
     key: PlanKey,
     kind: PlanKind,
     modifiers: Vec<PlanModifier>,
     children: Vec<usize>,
     parent: Option<usize>,
+    /// Index of this slot inside `parent.children`.
+    index_in_parent: usize,
     /// What a child placed in this node is measured from, in document coordinates.
     origin: (f32, f32),
     /// The clip this node imposes on what is placed in it, in document coordinates.
@@ -544,10 +629,13 @@ struct Slot {
     /// What the node itself draws, for the overlap test; `None` for containers that draw
     /// nothing.
     drawn: Option<Rect>,
+    /// Bounding union of `drawn` over this slot and every slot inside its subtree.
+    subtree_drawn: Option<Rect>,
 }
 
 struct Builder<'a> {
     entries: &'a [NodeEntry],
+    canvas: Option<&'a CanvasBackground>,
     colours: &'a mut dyn ColourResolver,
     images: Option<&'a mut dyn ImageResolver>,
     brushes: BTreeMap<BrushId, Brush>,
@@ -557,6 +645,15 @@ struct Builder<'a> {
     slots: Vec<Slot>,
     /// Per placed entry: the slot its descendants go into.
     content: HashMap<NodeId, usize>,
+    /// What each entry draws, in document coordinates, with every transform around it
+    /// applied.
+    drawn: Vec<Option<Rect>>,
+    /// The animations of the nodes that have any, by plan key.
+    animated: HashMap<PlanKey, Vec<Animation>>,
+    transitions: &'a [crate::paint::display_list::TransitionStart],
+    /// The boxes that are the place of a Compose widget. They stay containers while empty,
+    /// because the renderer hangs the widget tree under them.
+    widget_places: HashSet<PlanKey>,
 }
 
 impl<'a> Builder<'a> {
@@ -571,7 +668,24 @@ impl<'a> Builder<'a> {
             .enumerate()
             .map(|(index, entry)| (entry.node, index))
             .collect();
-        let mut subtree: Vec<Option<Rect>> = entries.iter().map(drawn_bounds).collect();
+        let worlds = world_matrices(entries, &by_node);
+        let drawn: Vec<Option<Rect>> = entries
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| {
+                let bounds = drawn_bounds(entry)?;
+                Some(match worlds[index] {
+                    Some(world) => bounds_of(&[
+                        world.apply(bounds.x, bounds.y),
+                        world.apply(bounds.right(), bounds.y),
+                        world.apply(bounds.right(), bounds.bottom()),
+                        world.apply(bounds.x, bounds.bottom()),
+                    ]),
+                    None => bounds,
+                })
+            })
+            .collect();
+        let mut subtree: Vec<Option<Rect>> = drawn.clone();
         for (index, entry) in entries.iter().enumerate() {
             let Some(own) = subtree[index] else {
                 continue;
@@ -595,13 +709,16 @@ impl<'a> Builder<'a> {
             modifiers: Vec::new(),
             children: Vec::new(),
             parent: None,
+            index_in_parent: 0,
             origin: (0.0, 0.0),
             clip: None,
             opacity: 1.0,
             drawn: None,
+            subtree_drawn: None,
         };
         Builder {
             entries,
+            canvas: list.canvas.as_ref(),
             colours,
             images,
             brushes: BTreeMap::new(),
@@ -609,27 +726,67 @@ impl<'a> Builder<'a> {
             subtree,
             slots: vec![page],
             content: HashMap::new(),
+            drawn,
+            animated: HashMap::new(),
+            transitions: &list.transitions,
+            widget_places: HashSet::new(),
         }
     }
 
     fn build(mut self) -> Plan {
+        if let Some(canvas) = self.canvas {
+            let mut modifiers = Vec::new();
+            self.paint_background(
+                canvas.source,
+                (0.0, 0.0),
+                canvas.background,
+                &canvas.backgrounds,
+                &mut modifiers,
+            );
+            self.slots[0].modifiers = modifiers;
+        }
         for index in 0..self.entries.len() {
             self.place(index);
         }
         let root = self.finish(0);
+        let transitions = self
+            .transitions
+            .iter()
+            .map(|start| {
+                (
+                    self.animated_on(start.node, &start.animation),
+                    start.animation.clone(),
+                )
+            })
+            .collect();
         Plan {
             root,
             brushes: std::mem::take(&mut self.brushes),
+            transitions,
+            canvas: self.canvas.map(|canvas| canvas.source),
+            revision: 0,
+            unchanged: false,
         }
     }
 
     fn push(&mut self, parent: usize, slot: Slot) -> usize {
         let index = self.slots.len();
+        let index_in_parent = self.slots[parent].children.len();
+        let own_drawn = slot.drawn;
         self.slots.push(Slot {
             parent: Some(parent),
+            index_in_parent,
+            subtree_drawn: own_drawn,
             ..slot
         });
         self.slots[parent].children.push(index);
+        if let Some(rect) = own_drawn {
+            let mut cur = Some(parent);
+            while let Some(anc) = cur {
+                self.slots[anc].subtree_drawn = union(self.slots[anc].subtree_drawn, Some(rect));
+                cur = self.slots[anc].parent;
+            }
+        }
         index
     }
 
@@ -644,8 +801,10 @@ impl<'a> Builder<'a> {
             if !seen.insert(id) {
                 break;
             }
+            // Everything inside a transformed box is drawn through its transform, so it stays
+            // inside the box whatever it overlaps.
             if let Some(&container) = self.content.get(&id)
-                && !self.drawn_after(container, bounds)
+                && (self.is_transformed(id) || !self.drawn_after(container, bounds))
             {
                 return container;
             }
@@ -655,6 +814,12 @@ impl<'a> Builder<'a> {
                 .and_then(|&at| self.entries[at].parent);
         }
         0
+    }
+
+    fn is_transformed(&self, node: NodeId) -> bool {
+        self.by_node
+            .get(&node)
+            .is_some_and(|&at| self.entries[at].transform.is_some())
     }
 
     /// Whether anything placed after the end of `container`'s subtree, in tree order,
@@ -667,10 +832,7 @@ impl<'a> Builder<'a> {
         let mut at = container;
         while let Some(parent) = self.slots[at].parent {
             let siblings = &self.slots[parent].children;
-            let position = siblings
-                .iter()
-                .position(|&child| child == at)
-                .expect("a slot is among its parent's children");
+            let position = self.slots[at].index_in_parent;
             for &later in &siblings[position + 1..] {
                 if self.subtree_overlaps(later, &bounds) {
                     return true;
@@ -682,6 +844,12 @@ impl<'a> Builder<'a> {
     }
 
     fn subtree_overlaps(&self, slot: usize, bounds: &Rect) -> bool {
+        if !self.slots[slot]
+            .subtree_drawn
+            .is_some_and(|sub| overlaps(&sub, bounds))
+        {
+            return false;
+        }
         if self.slots[slot]
             .drawn
             .is_some_and(|drawn| overlaps(&drawn, bounds))
@@ -730,6 +898,7 @@ impl<'a> Builder<'a> {
                     clip: Some(clip),
                     opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             );
         }
@@ -749,6 +918,9 @@ impl<'a> Builder<'a> {
                 height: rect.height,
             },
         ];
+        if let Some(transform) = &entry.transform {
+            modifiers.push(PlanModifier::Transform(transform.clone()));
+        }
         // The entry's opacity includes every ancestor's; the container already applies
         // the part that belongs to them.
         if provided_opacity > 0.0 {
@@ -785,36 +957,114 @@ impl<'a> Builder<'a> {
                     provided_clip
                 },
                 opacity: entry.opacity,
-                drawn: drawn_bounds(entry),
+                drawn: self.drawn[index],
+                ..Slot::default()
             },
         );
+        if entry.widget {
+            self.widget_places.insert(PlanKey::Node(entry.node));
+        }
+        for animation in &entry.animations {
+            let key = self.animated_on(entry.node, animation);
+            self.animated
+                .entry(key)
+                .or_default()
+                .push(animation.clone());
+        }
+
+        if let (Some(outline), Some(area)) = (entry.outline, outline_area(entry)) {
+            // The outline is drawn over the box and everything inside it, outside the box's
+            // bounds. Beside the box in its container, it is not clipped by the box, and
+            // it is drawn after everything inside the box. A transformed box carries it
+            // inside, so that it moves with the box.
+            let (target, origin, alpha) = if entry.transform.is_some() {
+                (node, (rect.x, rect.y), 1.0)
+            } else if provided_opacity > 0.0 {
+                (container, (ox, oy), entry.opacity / provided_opacity)
+            } else {
+                (container, (ox, oy), 1.0)
+            };
+            let mut outline_modifiers = vec![
+                PlanModifier::Offset {
+                    x: area.x - origin.0,
+                    y: area.y - origin.1,
+                },
+                PlanModifier::RequiredSize {
+                    width: area.width,
+                    height: area.height,
+                },
+            ];
+            if alpha < 1.0 - 1e-4 {
+                outline_modifiers.push(PlanModifier::Alpha(alpha.max(0.0)));
+            }
+            if let Some(radii) = entry.radii {
+                push_shape(&mut outline_modifiers, outline_radii(&radii, &outline));
+            }
+            outline_modifiers.push(PlanModifier::Border {
+                width: outline.width,
+                color: self
+                    .colours
+                    .resolve(entry.node, ColourUse::Border, outline.color),
+            });
+            self.push(
+                target,
+                Slot {
+                    key: PlanKey::Outline(entry.node),
+                    kind: PlanKind::Box,
+                    modifiers: outline_modifiers,
+                    children: Vec::new(),
+                    parent: None,
+                    origin: (area.x, area.y),
+                    clip: provided_clip,
+                    opacity: entry.opacity,
+                    drawn: Some(area),
+                    ..Slot::default()
+                },
+            );
+        }
 
         let content = if let Some(scroll) = entry.scroll {
             let viewport = scroll.viewport;
             let content_width = scroll.content_width.max(viewport.width);
             let content_height = scroll.content_height.max(viewport.height);
             let clip = Some(intersect(provided_clip, viewport));
-            let viewport_slot = |key: PlanKey, width: f32, height: f32, offset: (f32, f32)| Slot {
-                key,
-                kind: match key {
-                    PlanKey::ScrollRow(_) => PlanKind::ScrollRow,
-                    _ => PlanKind::ScrollColumn,
-                },
-                modifiers: vec![
-                    PlanModifier::Offset {
-                        x: offset.0,
-                        y: offset.1,
-                    },
-                    PlanModifier::RequiredSize { width, height },
-                    PlanModifier::Clip,
-                ],
-                children: Vec::new(),
-                parent: None,
-                origin: (viewport.x, viewport.y),
-                clip,
-                opacity: entry.opacity,
-                drawn: None,
-            };
+            // The outermost viewport is the padding box, and CSS clips a scroll container's
+            // content to that box with its corners rounded: the border radii less the
+            // adjoining border widths, as `overflow: hidden` does. A row inside a column is
+            // as tall as the content and scrolls with it, so it is clipped by the column's
+            // rounded corners and has none of its own.
+            let rounded = entry
+                .radii
+                .map(|radii| inner_radii(&radii, &border.unwrap_or_default()));
+            let viewport_slot =
+                |key: PlanKey, width: f32, height: f32, offset: (f32, f32), outermost: bool| {
+                    let mut modifiers = vec![
+                        PlanModifier::Offset {
+                            x: offset.0,
+                            y: offset.1,
+                        },
+                        PlanModifier::RequiredSize { width, height },
+                    ];
+                    if let (true, Some(corners)) = (outermost, rounded) {
+                        push_shape(&mut modifiers, corners);
+                    }
+                    modifiers.push(PlanModifier::Clip);
+                    Slot {
+                        key,
+                        kind: match key {
+                            PlanKey::ScrollRow(_) => PlanKind::ScrollRow,
+                            _ => PlanKind::ScrollColumn,
+                        },
+                        modifiers,
+                        children: Vec::new(),
+                        parent: None,
+                        origin: (viewport.x, viewport.y),
+                        clip,
+                        opacity: entry.opacity,
+                        drawn: None,
+                        ..Slot::default()
+                    }
+                };
             let inset = (viewport.x - rect.x, viewport.y - rect.y);
             let mut outer = node;
             if scroll.vertical {
@@ -825,6 +1075,7 @@ impl<'a> Builder<'a> {
                         viewport.width,
                         viewport.height,
                         inset,
+                        true,
                     ),
                 );
             }
@@ -843,6 +1094,7 @@ impl<'a> Builder<'a> {
                         viewport.width,
                         height,
                         offset,
+                        !scroll.vertical,
                     ),
                 );
             }
@@ -864,6 +1116,7 @@ impl<'a> Builder<'a> {
                     clip,
                     opacity: entry.opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             )
         } else if entry.clips_children && has_border {
@@ -895,12 +1148,14 @@ impl<'a> Builder<'a> {
                     clip: Some(intersect(provided_clip, padding)),
                     opacity: entry.opacity,
                     drawn: None,
+                    ..Slot::default()
                 },
             )
         } else {
             node
         };
 
+        self.add_marker(entry, content);
         // A field draws its own text; text laid out inside it would be drawn twice.
         if entry.input.is_none() {
             self.add_texts(entry, content);
@@ -908,6 +1163,21 @@ impl<'a> Builder<'a> {
         self.add_field(entry, content);
         self.add_image(entry, content);
         self.content.insert(entry.node, content);
+    }
+
+    /// The plan node an animation of `node` plays on: the node's own, except for the
+    /// background colour of the element the canvas background came from, which the page
+    /// draws.
+    fn animated_on(&self, node: NodeId, animation: &Animation) -> PlanKey {
+        match self.canvas {
+            Some(canvas)
+                if canvas.source == node
+                    && animation.property == AnimatedProperty::BackgroundColor =>
+            {
+                PlanKey::Page
+            }
+            _ => PlanKey::Node(node),
+        }
     }
 
     fn decorate(&mut self, entry: &NodeEntry, modifiers: &mut Vec<PlanModifier>) {
@@ -932,54 +1202,13 @@ impl<'a> Builder<'a> {
                 color: self.colours.resolve(node, ColourUse::Shadow, shadow.color),
             });
         }
-        if let Some(background) = entry.background {
-            modifiers.push(PlanModifier::Background(self.colours.resolve(
-                node,
-                ColourUse::Background,
-                background,
-            )));
-        }
-        // CSS lists the top layer first; a renderer draws modifiers back to front.
-        for layer in entry.backgrounds.iter().rev() {
-            let brush = match &layer.image {
-                BackgroundImage::Url(url) => {
-                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
-                        Some(asset) => Brush::Image(asset),
-                        None => continue,
-                    }
-                }
-                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
-                    start: gradient.start,
-                    end: gradient.end,
-                    stops: self.stops(node, &gradient.stops),
-                    repeating: gradient.repeating,
-                },
-                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
-                    center: gradient.center,
-                    radius_x: gradient.radius_x,
-                    radius_y: gradient.radius_y,
-                    stops: self.stops(node, &gradient.stops),
-                    repeating: gradient.repeating,
-                },
-            };
-            let id = brush.id();
-            self.brushes.entry(id).or_insert(brush);
-            let relative = |rect: Rect| {
-                Rect::new(
-                    rect.x - entry.rect.x,
-                    rect.y - entry.rect.y,
-                    rect.width,
-                    rect.height,
-                )
-            };
-            modifiers.push(PlanModifier::BackgroundBrush {
-                brush: id,
-                area: relative(layer.area),
-                tile: relative(layer.tile),
-                repeat_x: layer.repeat_x,
-                repeat_y: layer.repeat_y,
-            });
-        }
+        self.paint_background(
+            node,
+            (entry.rect.x, entry.rect.y),
+            entry.background,
+            &entry.backgrounds,
+            modifiers,
+        );
         if let Some(border) = entry.border {
             let mut side = |width: f32, color: Rgba| BorderSide {
                 width,
@@ -1008,6 +1237,67 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// The background colour and the background layers of a box, as modifiers: the colour,
+    /// then each layer from the bottom up, measured from `origin`, the top-left corner of
+    /// the node that draws them. `node` is the element whose colours they are.
+    fn paint_background(
+        &mut self,
+        node: NodeId,
+        origin: (f32, f32),
+        background: Option<Rgba>,
+        layers: &[BackgroundLayer],
+        modifiers: &mut Vec<PlanModifier>,
+    ) {
+        if let Some(background) = background {
+            modifiers.push(PlanModifier::Background(self.colours.resolve(
+                node,
+                ColourUse::Background,
+                background,
+            )));
+        }
+        let relative = |rect: Rect| {
+            Rect::new(
+                rect.x - origin.0,
+                rect.y - origin.1,
+                rect.width,
+                rect.height,
+            )
+        };
+        // CSS lists the top layer first; a renderer draws modifiers back to front.
+        for layer in layers.iter().rev() {
+            let brush = match &layer.image {
+                BackgroundImage::Url(url) => {
+                    match self.images.as_mut().and_then(|images| images.resolve(url)) {
+                        Some(asset) => Brush::Image(asset),
+                        None => continue,
+                    }
+                }
+                BackgroundImage::Linear(gradient) => Brush::LinearGradient {
+                    start: gradient.start,
+                    end: gradient.end,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+                BackgroundImage::Radial(gradient) => Brush::RadialGradient {
+                    center: gradient.center,
+                    radius_x: gradient.radius_x,
+                    radius_y: gradient.radius_y,
+                    stops: self.stops(node, &gradient.stops),
+                    repeating: gradient.repeating,
+                },
+            };
+            let id = brush.id();
+            self.brushes.entry(id).or_insert(brush);
+            modifiers.push(PlanModifier::BackgroundBrush {
+                brush: id,
+                area: relative(layer.area),
+                tile: relative(layer.tile),
+                repeat_x: layer.repeat_x,
+                repeat_y: layer.repeat_y,
+            });
+        }
+    }
+
     /// Gradient stops with their colours expressed through the colour resolver.
     fn stops(&mut self, node: NodeId, stops: &[GradientStop]) -> Vec<GradientStop> {
         stops
@@ -1021,7 +1311,8 @@ impl<'a> Builder<'a> {
             .collect()
     }
 
-    /// The image of an `<img>`, when the resolver names an asset for it.
+    /// The image of an `<img>`, when the resolver names an asset for it, and its broken-image
+    /// icon and alt text when it names none and the image has alt text to show.
     fn add_image(&mut self, entry: &NodeEntry, content: usize) {
         let Some(image) = entry.image.as_ref() else {
             return;
@@ -1031,6 +1322,9 @@ impl<'a> Builder<'a> {
             .as_mut()
             .and_then(|images| images.resolve(&image.source))
         else {
+            if let Some(fallback) = image.fallback.as_ref() {
+                self.add_image_fallback(entry.node, image.content_rect, fallback, content);
+            }
             return;
         };
         let (ox, oy) = self.slots[content].origin;
@@ -1076,46 +1370,201 @@ impl<'a> Builder<'a> {
                 clip,
                 opacity,
                 drawn: None,
+                ..Slot::default()
             },
         );
     }
 
-    fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
+    /// The marker of a list item drawn as a shape. A disc is a box rounded by half its size
+    /// and filled, a square a filled box. A circle is Chromium's 1px line centred on the
+    /// shape's edge: a box half a pixel larger on every side with a 1px border, which a
+    /// renderer draws inside the box's bounds.
+    fn add_marker(&mut self, entry: &NodeEntry, content: usize) {
+        let Some(marker) = entry.marker else {
+            return;
+        };
         let (ox, oy) = self.slots[content].origin;
         let clip = self.slots[content].clip;
         let opacity = self.slots[content].opacity;
-        for (index, run) in entry.texts.iter().enumerate() {
-            let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
-            self.push(
-                content,
-                Slot {
-                    key: PlanKey::Text {
-                        node: entry.node,
-                        index,
-                    },
-                    kind: PlanKind::Text(PlanText {
-                        text: run.text.clone(),
-                        style: run.style.clone(),
-                        color,
-                        align: run.align,
-                        soft_wrap: run.wrap_width.is_some(),
-                    }),
-                    modifiers: vec![
-                        PlanModifier::Offset {
-                            x: run.rect.x - ox,
-                            y: run.rect.y - oy,
-                        },
-                        PlanModifier::Width(run.rect.width),
-                    ],
-                    children: Vec::new(),
-                    parent: None,
-                    origin: (run.rect.x, run.rect.y),
-                    clip,
-                    opacity,
-                    drawn: None,
-                },
-            );
+        let color = self
+            .colours
+            .resolve(marker.owner, ColourUse::Text, marker.color);
+        let bounds = match marker.symbol {
+            MarkerSymbol::Circle => Rect::new(
+                marker.rect.x - 0.5,
+                marker.rect.y - 0.5,
+                marker.rect.width + 1.0,
+                marker.rect.height + 1.0,
+            ),
+            MarkerSymbol::Disc | MarkerSymbol::Square => marker.rect,
+        };
+        let mut modifiers = vec![
+            PlanModifier::Offset {
+                x: bounds.x - ox,
+                y: bounds.y - oy,
+            },
+            PlanModifier::RequiredSize {
+                width: bounds.width,
+                height: bounds.height,
+            },
+        ];
+        match marker.symbol {
+            MarkerSymbol::Disc => {
+                modifiers.push(PlanModifier::Shape {
+                    radius: bounds.width.min(bounds.height) / 2.0,
+                });
+                modifiers.push(PlanModifier::Background(color));
+            }
+            MarkerSymbol::Circle => {
+                modifiers.push(PlanModifier::Shape {
+                    radius: bounds.width.min(bounds.height) / 2.0,
+                });
+                modifiers.push(PlanModifier::Border { width: 1.0, color });
+            }
+            MarkerSymbol::Square => modifiers.push(PlanModifier::Background(color)),
         }
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Marker(entry.node),
+                kind: PlanKind::Box,
+                modifiers,
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip,
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+    }
+
+    /// The broken-image icon and alt text of an `<img>` the resolver names no asset for, in a
+    /// box of the image's content box that clips them, as Chromium clips them to the image.
+    fn add_image_fallback(
+        &mut self,
+        node: NodeId,
+        bounds: Rect,
+        fallback: &ImageFallback,
+        content: usize,
+    ) {
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let holder = self.push(
+            content,
+            Slot {
+                key: PlanKey::Image(node),
+                kind: PlanKind::AbsoluteBox,
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: bounds.x - ox,
+                        y: bounds.y - oy,
+                    },
+                    PlanModifier::RequiredSize {
+                        width: bounds.width,
+                        height: bounds.height,
+                    },
+                    PlanModifier::Clip,
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (bounds.x, bounds.y),
+                clip: Some(intersect(clip, bounds)),
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+        let icon = fallback.icon;
+        self.push(
+            holder,
+            Slot {
+                key: PlanKey::BrokenImageIcon(node),
+                kind: PlanKind::BrokenImageIcon,
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: icon.x - bounds.x,
+                        y: icon.y - bounds.y,
+                    },
+                    PlanModifier::RequiredSize {
+                        width: icon.width,
+                        height: icon.height,
+                    },
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (icon.x, icon.y),
+                clip: Some(intersect(clip, bounds)),
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
+        self.add_text(node, 0, &fallback.text, holder);
+    }
+
+    fn add_texts(&mut self, entry: &NodeEntry, content: usize) {
+        for (index, run) in entry.texts.iter().enumerate() {
+            self.add_text(entry.node, index, run, content);
+        }
+    }
+
+    /// The `index`th text run of `node`, placed in `content`.
+    fn add_text(&mut self, node: NodeId, index: usize, run: &TextRun, content: usize) {
+        let (ox, oy) = self.slots[content].origin;
+        let clip = self.slots[content].clip;
+        let opacity = self.slots[content].opacity;
+        let color = self.colours.resolve(run.owner, ColourUse::Text, run.color);
+        let spans: Vec<SpanRun> = run
+            .spans
+            .iter()
+            .map(|span| SpanRun {
+                color: span
+                    .color
+                    .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
+                ..span.clone()
+            })
+            .collect();
+        self.push(
+            content,
+            Slot {
+                key: PlanKey::Text { node, index },
+                kind: PlanKind::Text(PlanText {
+                    owner: run.owner,
+                    text: run.text.clone(),
+                    style: run.style.clone(),
+                    color,
+                    decoration: run.decoration,
+                    align: run.align,
+                    soft_wrap: run.wrap_width.is_some()
+                        && (run.line_count > 1 || run.align == TextAlign::Justify),
+                    ellipsis: run.ellipsis,
+                    marker: run.marker,
+                    spans,
+                }),
+                modifiers: vec![
+                    PlanModifier::Offset {
+                        x: run.rect.x - ox,
+                        y: run.rect.y - oy,
+                    },
+                    // Text cut with an ellipsis is as wide as the cut: the renderer ends a
+                    // line that does not fit the width it is given in an ellipsis.
+                    PlanModifier::Width(
+                        run.ellipsis
+                            .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
+                    ),
+                ],
+                children: Vec::new(),
+                parent: None,
+                origin: (run.rect.x, run.rect.y),
+                clip,
+                opacity,
+                drawn: None,
+                ..Slot::default()
+            },
+        );
     }
 
     fn add_field(&mut self, entry: &NodeEntry, content: usize) {
@@ -1169,6 +1618,7 @@ impl<'a> Builder<'a> {
                 clip,
                 opacity,
                 drawn: None,
+                ..Slot::default()
             },
         );
     }
@@ -1182,13 +1632,18 @@ impl<'a> Builder<'a> {
             .collect();
         let kind = match (&source.key, &source.kind) {
             // A box with nothing inside it has no children to place.
-            (PlanKey::Node(_), PlanKind::AbsoluteBox) if children.is_empty() => PlanKind::Box,
+            (key @ PlanKey::Node(_), PlanKind::AbsoluteBox)
+                if children.is_empty() && !self.widget_places.contains(key) =>
+            {
+                PlanKind::Box
+            }
             (_, kind) => kind.clone(),
         };
         PlanNode {
             key: source.key,
             kind,
             modifiers: source.modifiers.clone(),
+            animations: self.animated.get(&source.key).cloned().unwrap_or_default(),
             children,
         }
     }
@@ -1201,6 +1656,45 @@ fn one_radius(radius: Radius) -> f32 {
         0.0
     } else {
         radius.x.min(radius.y)
+    }
+}
+
+/// The box an outline's line fills the border of: the border box grown by the outline's
+/// offset and width on every side, so the line sits `offset` outside the border box. A
+/// negative offset shrinks it. `None` when the box has no outline or nothing is left.
+fn outline_area(entry: &NodeEntry) -> Option<Rect> {
+    let outline = entry.outline?;
+    if !entry.visible || outline.width <= 0.0 {
+        return None;
+    }
+    let grow = outline.offset + outline.width;
+    let rect = entry.rect;
+    let area = Rect::new(
+        rect.x - grow,
+        rect.y - grow,
+        rect.width + 2.0 * grow,
+        rect.height + 2.0 * grow,
+    );
+    (area.width > 0.0 && area.height > 0.0).then_some(area)
+}
+
+/// The corner radii of an outline's outer edge: the border radii grown by the offset and
+/// the width, so the outline follows the shape of the border. A square corner stays
+/// square.
+fn outline_radii(radii: &Corners<Radius>, outline: &Outline) -> Corners<f32> {
+    let grow = outline.offset + outline.width;
+    let outer = |radius: Radius| {
+        if radius.is_zero() {
+            0.0
+        } else {
+            (radius.x.min(radius.y) + grow).max(0.0)
+        }
+    };
+    Corners {
+        top_left: outer(radii.top_left),
+        top_right: outer(radii.top_right),
+        bottom_right: outer(radii.bottom_right),
+        bottom_left: outer(radii.bottom_left),
     }
 }
 
@@ -1254,6 +1748,7 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     if decorated {
         bounds = union(bounds, Some(entry.rect));
     }
+    bounds = union(bounds, outline_area(entry));
     for shadow in entry.shadows.iter().filter(|shadow| !shadow.inset) {
         let reach = shadow.blur.max(0.0) + shadow.spread;
         let rect = entry.rect;
@@ -1270,6 +1765,19 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     for run in &entry.texts {
         bounds = union(bounds, Some(run.rect));
     }
+    if let Some(marker) = &entry.marker {
+        // A circle's line reaches half a pixel past the shape's rectangle.
+        let rect = marker.rect;
+        bounds = union(
+            bounds,
+            Some(Rect::new(
+                rect.x - 0.5,
+                rect.y - 0.5,
+                rect.width + 1.0,
+                rect.height + 1.0,
+            )),
+        );
+    }
     if entry.input.is_some() {
         bounds = union(bounds, Some(entry.rect));
     }
@@ -1285,6 +1793,47 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
         }
         (bounds, _) => bounds,
     }
+}
+
+/// For each entry, the matrix that carries a point of the untransformed layout to where it
+/// is drawn: the transforms of the entry and of every box around it, outermost applied
+/// last. `None` for an entry nothing transforms.
+fn world_matrices(
+    entries: &[NodeEntry],
+    by_node: &HashMap<NodeId, usize>,
+) -> Vec<Option<Matrix2D>> {
+    if entries.iter().all(|entry| entry.transform.is_none()) {
+        return vec![None; entries.len()];
+    }
+    entries
+        .iter()
+        .map(|entry| {
+            let mut chain = vec![entry];
+            let mut seen = HashSet::from([entry.node]);
+            let mut parent = entry.parent;
+            while let Some(id) = parent {
+                if !seen.insert(id) {
+                    break;
+                }
+                let Some(&at) = by_node.get(&id) else {
+                    break;
+                };
+                chain.push(&entries[at]);
+                parent = entries[at].parent;
+            }
+            let mut world = Matrix2D::IDENTITY;
+            let mut any = false;
+            // From the outermost box in: each box's own transform applies first to what is
+            // inside it, so the outer ones multiply on the left.
+            for above in chain.iter().rev() {
+                if let Some(transform) = &above.transform {
+                    world = world.times(&transform.in_document(&above.rect));
+                    any = true;
+                }
+            }
+            any.then_some(world)
+        })
+        .collect()
 }
 
 fn union(a: Option<Rect>, b: Option<Rect>) -> Option<Rect> {
@@ -1335,6 +1884,7 @@ fn slots(modifiers: &[PlanModifier]) -> Vec<(ModifierSlot, &PlanModifier)> {
             let slot = match modifier {
                 PlanModifier::Offset { .. } => ModifierSlot::Offset,
                 PlanModifier::RequiredSize { .. } => ModifierSlot::RequiredSize,
+                PlanModifier::Transform(_) => ModifierSlot::Transform,
                 PlanModifier::Width(_) => ModifierSlot::Width,
                 PlanModifier::Alpha(_) => ModifierSlot::Alpha,
                 PlanModifier::Shape { .. } => ModifierSlot::Shape,
@@ -1384,6 +1934,9 @@ fn index_plan<'a>(
 /// another parent, or that became another kind of element is reported removed (where it
 /// was) and inserted (where it is), with everything inside it.
 pub fn diff(previous: &Plan, next: &Plan) -> Vec<PlanChange> {
+    if next.unchanged && previous.revision != 0 && previous.revision == next.revision {
+        return Vec::new();
+    }
     let mut old = HashMap::new();
     let mut old_order = Vec::new();
     index_plan(&previous.root, None, &mut old, &mut old_order);
@@ -1416,6 +1969,18 @@ pub fn diff(previous: &Plan, next: &Plan) -> Vec<PlanChange> {
             index: 0,
             node: next.root.clone(),
         });
+    }
+    for (key, animation) in &next.transitions {
+        let already = previous
+            .transitions
+            .iter()
+            .any(|(other_key, other)| other_key == key && other == animation);
+        if !already && new.contains_key(key) {
+            changes.push(PlanChange::AnimationStarted {
+                key: *key,
+                animation: animation.clone(),
+            });
+        }
     }
     changes
 }
@@ -1453,6 +2018,13 @@ fn diff_node(
         changes.push(PlanChange::KindChanged {
             key: node.key,
             kind: node.kind.clone(),
+        });
+    }
+
+    if before.animations != node.animations {
+        changes.push(PlanChange::AnimationsChanged {
+            key: node.key,
+            animations: node.animations.clone(),
         });
     }
 

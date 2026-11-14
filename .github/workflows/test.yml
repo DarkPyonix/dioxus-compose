@@ -13,22 +13,7 @@
 name: Test
 
 on:
-  # Only what is about to become public, or what already is. Work lands on develop many
-  # times an hour and running the matrix on each push is noise rather than signal. Every
-  # release reaches main as a pull request, so the gate still runs before anything is
-  # published, which is the moment that matters.
-  # The pull request only. `release` reaches `main` through a pull request that a human
-  # merges, so that run is the gate, and it finishes before main moves. Running again on
-  # the push afterwards tested the identical tree and doubled every number on the actions
-  # page for nothing.
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-
-concurrency:
-  # One in-flight run per branch or PR; superseded runs are cancelled.
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 permissions:
   contents: read
@@ -95,6 +80,11 @@ jobs:
         # crate-readme.test.sh asks cargo what the packaged crate would contain, and
         # spec-cites-real-tests.test.sh asks it where the compose-rust checkout is.
         run: rustup toolchain install stable --profile minimal && rustup default stable
+
+      - name: Build the patched blitz-dom
+        # The workspace patches blitz-dom with a directory scripts/apply-patches.sh builds,
+        # and cargo (which crate-readme.test.sh runs) fails to load the workspace without it.
+        run: ./scripts/apply-patches.sh
 
       - name: Run the shell tests
         # scripts/tests/ and the release script's own test beside it in

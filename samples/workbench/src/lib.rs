@@ -315,3 +315,37 @@ pub fn app() -> Element {
         }
     }
 }
+
+/// What the window lays the page out with: the stylesheet, and text measured by the
+/// renderer.
+pub fn config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![STYLE.to_string()],
+        ..HtmlConfig::default()
+    }
+}
+
+/// Opens the page in a window. Does not return while it is open.
+pub fn launch() {
+    launch_builder().launch(app);
+}
+
+/// How the page starts, in one place because four entry points need it: the desktop
+/// binary, an Android Activity, a browser page and an iOS bundle.
+fn launch_builder() -> dioxus_compose::LaunchBuilder {
+    dioxus_compose::LaunchBuilder::new()
+        .with_window(
+            dioxus_compose::schema::Window::new()
+                .with_title("Workbench")
+                .with_size(1100, 700),
+        )
+        .with_html(config)
+}
+
+// The platforms where the page is not a program: Android's Activity and the browser's page
+// call an entry point that registers the root component, and iOS starts at a C `main`
+// (ios/main.c) that hands over to `launch`. Each macro compiles into nothing off its own
+// platform.
+dioxus_compose::android_main!({ launch_builder() }, app);
+dioxus_compose::web_main!({ launch_builder() }, app);
+dioxus_compose::ios_main!(launch);

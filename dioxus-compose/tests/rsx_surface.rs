@@ -18,9 +18,27 @@ use dioxus_compose::Host;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    EventPayload, MODIFIER_SCHEMA, PROPERTY_SCHEMA, PropertyKind, WIDGET_SCHEMA, WidgetKind,
+    EventPayload, MODIFIER_SCHEMA, Modifier, PROPERTY_SCHEMA, PointerKind, PointerType,
+    PropertyKind, WIDGET_SCHEMA, WheelDeltaMode, WidgetKind,
 };
-use dioxus_compose::spans::TextSpans;
+use dioxus_compose::spans::{TextSpan, TextSpans};
+use dioxus_compose::{FontRef, FontRefs, GenericFamily, OverflowWrap, WordBreak};
+
+/// The font list of the CSS text in `surface()`.
+fn css_font() -> FontRefs {
+    FontRefs::new([
+        FontRef::System("Menlo".to_owned()),
+        FontRef::Generic(GenericFamily::Monospace),
+    ])
+}
+
+/// Its runs: one names a font of its own.
+fn css_spans() -> TextSpans {
+    TextSpans::new_with_fonts([(
+        TextSpan::new(0, 3),
+        FontRefs::new([FontRef::Generic(GenericFamily::Serif)]),
+    )])
+}
 
 thread_local! {
     /// What the handlers written in `surface()` were called with, in order.
@@ -36,6 +54,22 @@ fn take_fired() -> Vec<String> {
 }
 
 const SPANS_SOURCE: &str = "every **widget** in `rsx`";
+
+/// The two lists a code editor carries, built the same way in surface() and expectations().
+fn code_lists() -> (SyntaxSpans, Decorations) {
+    (
+        SyntaxSpans::new([SyntaxSpan::role(
+            0,
+            CodeRange::of(0, 0, 0, 1),
+            ColorRole::Primary,
+        )]),
+        Decorations::new([Decoration::underline(
+            0,
+            CodeRange::of(0, 4, 0, 5),
+            Severity::Warning,
+        )]),
+    )
+}
 
 fn spans() -> (String, TextSpans) {
     TextSpans::from_markdown(SPANS_SOURCE)
@@ -58,241 +92,501 @@ const SECONDARY: Paint = Paint::Role(ColorRole::Secondary);
 const TERTIARY: Paint = Paint::Role(ColorRole::Tertiary);
 const ON_SURFACE: Paint = Paint::Role(ColorRole::OnSurface);
 const OUTLINE: Paint = Paint::Role(ColorRole::Outline);
+const SURFACE: Paint = Paint::Role(ColorRole::Surface);
+const SCRIM: Paint = Paint::Role(ColorRole::OnBackground);
+
+/// A 3D matrix that is not the identity, so a value that arrives is plainly this one.
+const MATRIX_3D: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.002, 0.0, 0.0, 1.0, 0.0, 4.0, 8.0, 0.0, 1.0,
+];
+
+/// What the first Column says to assistive technology.
+fn column_semantics() -> Semantics {
+    Semantics::new(SemanticsRole::Group).with_state(SemanticsState::expanded(true))
+}
+
+/// The colours the code editor in `surface()` names for its own parts.
+fn editor_colors() -> CodeEditorColors {
+    CodeEditorColors::new()
+        .container(ColorRole::Surface)
+        .gutter(ColorRole::SurfaceVariant)
+}
+
+/// The view zones the code editor in `surface()` leaves room for.
+fn editor_zones() -> ViewZones {
+    ViewZones::new([ViewZone::new(0, 1.5).with_text("2 lines removed")])
+}
+
+/// The background image layers of the first Column, in CSS order.
+fn column_layers() -> Vec<BackgroundLayer> {
+    vec![
+        BackgroundLayer::new(Paint::Asset(9), 0.0, 0.0, 16.0, 16.0)
+            .repeat(BackgroundRepeat::Repeat),
+    ]
+}
+
+/// Every selection of the code editor in the event table: anchor and active line and
+/// column of each, 16 bytes apiece.
+const TWO_SELECTIONS: [u8; 32] = [
+    0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, //
+    1, 0, 0, 0, 12, 0, 0, 0, 1, 0, 0, 0, 8, 0, 0, 0,
+];
 
 /// Every element the prelude exports, once, with its main properties and handlers.
 fn surface() -> Element {
     let (text, spans) = spans();
     rsx! {
-        Scaffold {
-            background: Paint::Role(ColorRole::Background),
-            material: MaterialRole::Chrome,
-            top_bar: rsx! {
-                TopAppBar { title: "Inbox", fill_max_width: true }
+        window {
+            title: "Inbox",
+            size: (800.0, 600.0),
+            min_size: (400.0, 300.0),
+            resizable: true,
+            chrome: Chrome::Modern,
+            title_bar: TitleBar::Simple,
+            icon: 9_u32,
+            position: (120.0, 80.0),
+            restore_key: "main",
+            zoom_level: 2_i32,
+            drag_from_pointer: DragFromPointer {
+                pointer_id: 1,
+                anchor_x: 24.0,
+                anchor_y: 12.0,
             },
-            bottom_bar: rsx! {
-                Navigation {
-                    selected_index: 1,
-                    head: rsx! { Text { text: "head" } },
-                    foot: rsx! { Text { text: "foot" } },
-                    NavigationItem {
-                        text: "Inbox",
-                        icon: IconRole::Inbox,
-                        color: SECONDARY,
-                        enabled: true,
-                        section: "Mail".to_string(),
-                        on_click: move |_| fired("NavigationItem.on_click"),
+            theme: Theme::unified(DesignSystem::Material3),
+            onclosing: move |_| fired("window.onclosing"),
+            onfocuschange: move |focused: Event<bool>| {
+                fired(format!("window.onfocuschange({})", *focused.data()))
+            },
+            onmoved: move |frame: Event<WindowFrame>| {
+                let frame = frame.data();
+                fired(format!(
+                    "window.onmoved({},{},{},{})",
+                    frame.x, frame.y, frame.width, frame.height
+                ))
+            },
+            onwindowdrag: move |drag: Event<WindowDragEvent>| {
+                fired(format!("window.onwindowdrag({:?})", drag.data().phase))
+            },
+            onunavailable: move |_| fired("window.onunavailable"),
+            onclosed: move |_| fired("window.onclosed"),
+            report_size: true,
+            Scaffold {
+                background: Paint::Role(ColorRole::Background),
+                material: MaterialRole::Chrome,
+                top_bar: rsx! {
+                    TopAppBar { title: "Inbox", fill_max_width: true }
+                },
+                bottom_bar: rsx! {
+                    Navigation {
+                        selected_index: 1,
+                        compact: CompactNavigation::Sidebar,
+                        head: rsx! { Text { text: "head" } },
+                        foot: rsx! { Text { text: "foot" } },
+                        NavigationItem {
+                            text: "Inbox",
+                            icon: IconRole::Inbox,
+                            color: SECONDARY,
+                            enabled: true,
+                            section: "Mail".to_string(),
+                            on_click: move |_| fired("NavigationItem.on_click"),
+                        }
+                        NavigationItem { text: "Sent", icon: IconRole::Send }
                     }
-                    NavigationItem { text: "Sent", icon: IconRole::Send }
-                }
-            },
-            floating_action: rsx! {
-                Button {
-                    text: "Send",
-                    icon: IconRole::Send,
-                    enabled: true,
-                    variant: ButtonVariant::Tonal,
-                    color: ERROR,
-                    on_click: move |_| fired("Button.on_click"),
-                }
-            },
-            Column {
-                observe_size: 42,
-                motion: MotionRole::Quick,
-                material: MaterialRole::Thin,
-                weight: 1.0,
-                fill_max_width: true,
-                fill_max_height: true,
-                padding: 12.0,
-                background: Paint::Role(ColorRole::Surface),
-                corner_radius: 8.0,
-                border_width: 1.0,
-                border_color: OUTLINE,
-                elevation: 3.0,
-                arrangement: Arrangement::SpaceBetween,
-                spacing: 8.0,
-                space_role: SpaceRole::Md,
-                alignment: Alignment::Center,
-                Row {
-                    width: 320.0,
-                    height: 48.0,
-                    padding_role: SpaceRole::Sm,
-                    shape_role: ShapeRole::Large,
-                    arrangement: Arrangement::End,
-                    spacing: 4.0,
-                    space_role: SpaceRole::Xs,
-                    alignment: Alignment::CenterStart,
-                    Spacer { width: 16.0, height: 16.0 }
-                    Separator {}
-                    Divider { vertical: true }
-                }
-                dioxus_compose::Box {
-                    alignment: Alignment::BottomEnd,
-                    Text {
-                        text: text.clone(),
-                        spans: spans.clone(),
-                        type_role: TypeRole::Title,
-                        font_size: 18.0,
-                        font_weight: 600,
-                        line_height: 24.0,
-                        letter_spacing: 0.5,
-                        color: PRIMARY,
-                        text_align: TextAlign::Center,
+                },
+                floating_action: rsx! {
+                    Button {
+                        text: "Send",
+                        icon: IconRole::Send,
+                        enabled: true,
+                        variant: ButtonVariant::Tonal,
+                        button_kind: ButtonKind::ActionKey,
+                        color: ERROR,
                         max_lines: 2,
-                        overflow: TextOverflow::Ellipsis,
+                        overflow: TextOverflow::Clip,
+                        on_click: move |_| fired("Button.on_click"),
                     }
-                }
-                TextField {
-                    placeholder: "Search",
-                    enabled: true,
-                    multiline: true,
-                    type_role: TypeRole::Mono,
-                    on_value_change: move |value: String| fired(format!("TextField.on_value_change({value})")),
-                    on_submit: move |value: String| fired(format!("TextField.on_submit({value})")),
-                    on_focus_lost: move |_| fired("TextField.on_focus_lost"),
-                    on_key_down: move |event: KeyEvent| fired(format!("TextField.on_key_down({:?})", event.key())),
-                }
-                ScrollColumn {
-                    fill_max_width: true,
-                    Image { asset_id: 7, width: 64.0, height: 64.0 }
-                    Icon { asset_id: 8, color: TERTIARY }
-                }
-                SplitPane {
-                    value: 320.0,
-                    min: 200.0,
-                    max: 400.0,
-                    collapsible: true,
-                    selected_index: 1,
-                    label: "Sessions",
-                    on_change: move |value: f32| fired(format!("SplitPane.on_change({value})")),
-                    on_dismiss: move |_| fired("SplitPane.on_dismiss"),
-                    Column {}
-                    Column {}
-                }
-                SelectionContainer {
-                    Badge {
-                        value: 3,
-                        color: ColorRole::Primary,
-                        Text { text: "Inbox" }
-                    }
-                }
-                ScrollRow {
-                    fill_max_width: true,
-                    Chip {
-                        text: "Unread",
-                        icon: IconRole::History,
-                        selected: true,
-                        enabled: true,
-                        on_click: move |_| fired("Chip.on_click"),
-                    }
-                    FloatingAction {
-                        text: "New",
-                        icon: IconRole::Add,
-                        on_click: move |_| fired("FloatingAction.on_click"),
-                    }
-                }
-                Card {
-                    elevation: 2.0,
-                    Checkbox {
-                        checked: true,
-                        enabled: true,
-                        on_change: move |value: bool| fired(format!("Checkbox.on_change({value})")),
-                    }
-                    RadioButton {
-                        selected: true,
-                        enabled: true,
-                        on_change: move |value: bool| fired(format!("RadioButton.on_change({value})")),
-                    }
-                    Switch {
-                        checked: true,
-                        enabled: true,
-                        on_change: move |value: bool| fired(format!("Switch.on_change({value})")),
-                    }
-                }
-                Surface {
-                    background: Paint::Role(ColorRole::SurfaceVariant),
-                    Slider {
-                        value: 0.25,
-                        min: -1.0,
-                        max: 2.0,
-                        steps: 4,
-                        enabled: true,
-                        color: PRIMARY,
-                        on_change: move |value: f32| fired(format!("Slider.on_change({value})")),
-                    }
-                    ProgressIndicator { value: 0.75, determinate: true, circular: true }
-                    LinearProgressIndicator { progress: 0.5 }
-                }
-                Tabs {
-                    selected_index: 1,
-                    color: ON_SURFACE,
-                    Text { text: "first tab" }
-                    Text { text: "second tab" }
-                }
-                Tooltip {
-                    text: "More options",
-                    Text { text: "hover me" }
-                }
-                Canvas { width: 10.0, height: 10.0, commands: drawing() }
-                DatePicker {
-                    value: 19723,
-                    min: 19000,
-                    max: 20000,
-                    enabled: true,
-                    on_change: move |value: i64| fired(format!("DatePicker.on_change({value})")),
-                }
-                TimePicker {
-                    value: 615,
-                    min: 480,
-                    max: 1080,
-                    enabled: true,
-                    on_change: move |value: u32| fired(format!("TimePicker.on_change({value})")),
-                }
-                Dropdown {
-                    selected_index: 1,
-                    enabled: true,
-                    on_change: move |value: usize| fired(format!("Dropdown.on_change({value})")),
-                    Text { text: "one" }
-                    Text { text: "two" }
-                    Text { text: "three" }
-                }
-                LazyColumn {
-                    item_count: 3,
-                    key_of: move |index: usize| format!("message-{index}"),
-                    item: move |index: usize| rsx! { Text { text: "message {index}" } },
-                }
-                LazyRow {
-                    item_count: 4,
-                    item: move |index: usize| rsx! { Text { text: "chip {index}" } },
-                }
-                LazyGrid {
-                    item_count: 6,
-                    columns: 3,
-                    min_column_width: 120.0,
-                    item: move |index: usize| rsx! { Text { text: "tile {index}" } },
-                }
-                FileDropTarget {
-                    alignment: Alignment::Center,
-                    on_files_entered: move |_| fired("FileDropTarget.on_files_entered"),
-                    on_files_dropped: move |drop: FileDrop| {
-                        fired(format!("FileDropTarget.on_files_dropped({:?})", drop.paths()))
+                },
+                Column {
+                    observe_size: 42,
+                    tear_off_key: "tab:inbox",
+                    corner_curve: 0.6,
+                    semantics: column_semantics(),
+                    accessible_name: "Mail",
+                    on_window_drag_over: move |over: WindowDragOver| {
+                        fired(format!("Column.on_window_drag_over({:?},{})", over.kind, over.window))
                     },
-                    Text { text: "drop files here" }
-                }
-                Dialog {
-                    open: true,
-                    on_dismiss: move |_| fired("Dialog.on_dismiss"),
-                    Text { text: "dialog body" }
-                }
-                Menu {
-                    expanded: true,
-                    on_dismiss: move |_| fired("Menu.on_dismiss"),
-                    anchor: rsx! { Text { text: "menu anchor" } },
-                    Text { text: "menu entry" }
-                }
-                Sheet {
-                    open: true,
-                    on_dismiss: move |_| fired("Sheet.on_dismiss"),
-                    Text { text: "sheet body" }
+                    motion: MotionRole::Quick,
+                    radio_group: true,
+                    on_motion_finished: move |size: MotionFinished| fired(format!(
+                        "Column.on_motion_finished({},{})",
+                        size.width_dp, size.height_dp
+                    )),
+                    material: MaterialRole::Thin,
+                    weight: 1.0,
+                    fill_max_width: true,
+                    fill_max_height: true,
+                    padding: 12.0,
+                    background: Paint::Role(ColorRole::Surface),
+                    background_brush: column_layers(),
+                    corner_radius: 8.0,
+                    border_width: 1.0,
+                    border_color: OUTLINE,
+                    elevation: 3.0,
+                    arrangement: Arrangement::SpaceBetween,
+                    spacing: 8.0,
+                    space_role: SpaceRole::Md,
+                    alignment: Alignment::Center,
+                    cursor: Cursor::Pointer,
+                    user_select: UserSelect::None,
+                    pointer_kinds: PointerKinds::MOVE | PointerKinds::WHEEL,
+                    on_pointer: move |event: PointerEvent| {
+                        fired(format!("Column.on_pointer({:?})", event.kind()))
+                    },
+                    Row {
+                        width: 320.0,
+                        height: 48.0,
+                        padding_role: SpaceRole::Sm,
+                        shape_role: ShapeRole::Large,
+                        arrangement: Arrangement::End,
+                        spacing: 4.0,
+                        space_role: SpaceRole::Xs,
+                        alignment: Alignment::CenterStart,
+                        radio_group: true,
+                        Spacer { width: 16.0, height: 16.0 }
+                        Separator {}
+                        Divider { vertical: true }
+                    }
+                    dioxus_compose::Box {
+                        alignment: Alignment::BottomEnd,
+                        match_parent_size: true,
+                        window_drag: true,
+                        press_feedback: (0.95, 0.1),
+                        Text {
+                            window_drag: false,
+                            text: text.clone(),
+                            spans: spans.clone(),
+                            type_role: TypeRole::Title,
+                            font_size: 18.0,
+                            font_weight: 600,
+                            line_height: 24.0,
+                            letter_spacing: 0.5,
+                            color: PRIMARY,
+                            text_align: TextAlign::Center,
+                            max_lines: 2,
+                            overflow: TextOverflow::Ellipsis,
+                        }
+                        // Text laid out by CSS: no rung of the ladder, and everything it says
+                        // about itself instead.
+                        Text {
+                            text: "css\ttext",
+                            spans: css_spans(),
+                            type_role: TypeRole::None,
+                            font: css_font(),
+                            word_break: WordBreak::KeepAll,
+                            overflow_wrap: OverflowWrap::BreakWord,
+                            tab_size: 2,
+                            absolute_size: true,
+                            soft_wrap: false,
+                            font_feature_settings: [(b"tnum", 1), (b"liga", 0)],
+                        }
+                    }
+                    TextField {
+                        placeholder: "Search",
+                        enabled: true,
+                        multiline: true,
+                        type_role: TypeRole::Mono,
+                        font: css_font(),
+                        on_value_change: move |value: String| fired(format!("TextField.on_value_change({value})")),
+                        on_submit: move |value: String| fired(format!("TextField.on_submit({value})")),
+                        on_focus_lost: move |_| fired("TextField.on_focus_lost"),
+                        on_key_down: move |event: KeyEvent| fired(format!("TextField.on_key_down({:?})", event.key())),
+                        bare: true,
+                        font_feature_settings: vec![FontFeature::SLASHED_ZERO],
+                        on_motion_finished: move |size: MotionFinished| fired(format!(
+                            "TextField.on_motion_finished({},{})",
+                            size.width_dp, size.height_dp
+                        )),
+                        on_focus_gained: move |_| fired("TextField.on_focus_gained"),
+                        on_key_up: move |event: KeyEvent| fired(format!(
+                            "TextField.on_key_up({:?},{},{},{},{})",
+                            event.key(),
+                            event.shift_key(),
+                            event.repeat(),
+                            event.code(),
+                            event.text()
+                        )),
+                    }
+                    ScrollColumn {
+                        fill_max_width: true,
+                        snap: Snap::ItemStart,
+                        on_scroll_changed: move |change: ScrollChange| fired(format!(
+                            "ScrollColumn.on_scroll_changed({},{},{},{},{},{},{},{},{},{})",
+                            change.item,
+                            change.settled,
+                            change.can_scroll_backward,
+                            change.can_scroll_forward,
+                            change.x_px,
+                            change.y_px,
+                            change.max_x_px,
+                            change.max_y_px,
+                            change.viewport_width_px,
+                            change.viewport_height_px
+                        )),
+                        Image { asset_id: 7, width: 64.0, height: 64.0, content_scale: ContentScale::Crop }
+                        Icon { asset_id: 8, color: TERTIARY }
+                    }
+                    SplitPane {
+                        value: 320.0,
+                        min: 200.0,
+                        max: 400.0,
+                        collapsible: true,
+                        collapse_below: 600.0,
+                        selected_index: 1,
+                        label: "Sessions",
+                        on_change: move |value: f32| fired(format!("SplitPane.on_change({value})")),
+                        on_dismiss: move |_| fired("SplitPane.on_dismiss"),
+                        Column {}
+                        Column {}
+                    }
+                    AbsoluteBox {
+                        required_size: (320.0, 180.0),
+                        background: Paint::Role(ColorRole::Surface),
+                        border: ([1.0, 2.0, 1.0, 2.0], [OUTLINE; 4]),
+                        corners: [8.0, 0.0, 8.0, 0.0],
+                        shadow: (0.0, 2.0, 6.0, 0.0, OUTLINE),
+                        clip: true,
+                        alpha: 0.5,
+                        transform: (0.0, 1.0, -1.0, 0.0, 4.0, 0.0),
+                        island_zoom: 1.5,
+                        AbsoluteBox {
+                            offset: (12.0, 24.0),
+                            required_size: (100.0, 40.0),
+                            transform_3d: (MATRIX_3D, true),
+                            Text { text: "placed" }
+                        }
+                    }
+                    CodeEditor {
+                        text: "x = 1",
+                        syntax_spans: code_lists().0,
+                        decorations: code_lists().1,
+                        folds: compose_rust::code::Folds::new([compose_rust::code::Fold::new(0, 0, 1)]),
+                        gutter_decorations: compose_rust::code::GutterDecorations::new([compose_rust::code::GutterDecoration::dot(0, 0, 1)]),
+                        tab_width: 4_u32,
+                        line_numbers: false,
+                        gutter_min_width: 40.0,
+                        gutter_padding: 6.0,
+                        text_inset: 8.0,
+                        colors: editor_colors(),
+                        on_code_metrics: move |metrics: CodeMetrics| fired(format!("CodeEditor.on_code_metrics({})", metrics.line_height_px)),
+                        on_code_scrolled: move |scroll: CodeScroll| fired(format!("CodeEditor.on_code_scrolled({})", scroll.offset_px)),
+                        on_caret_rect: move |caret: CaretRect| fired(format!(
+                            "CodeEditor.on_caret_rect({},{},{},{},{},{})",
+                            caret.position.line,
+                            caret.position.column,
+                            caret.rect.x,
+                            caret.rect.y,
+                            caret.rect.width,
+                            caret.rect.height
+                        )),
+                        on_key_preview: move |event: KeyEvent| fired(format!("CodeEditor.on_key_preview({:?})", event.key())),
+                        pointer_kinds: PointerKinds::DOWN | PointerKinds::MOVE,
+                        on_code_pointer: move |pointer: CodePointer| fired(format!(
+                            "CodeEditor.on_code_pointer({:?},{:?})",
+                            pointer.event.kind(),
+                            pointer.position.map(|at| (at.line, at.column))
+                        )),
+                        type_role: TypeRole::Mono,
+                        font_size: 13.0,
+                        line_height: 20.0,
+                        font: css_font(),
+                        minimap: MinimapSide::Left,
+                        view_zones: editor_zones(),
+                        word_wrap: WordWrap::Column(80),
+                        on_edit_group_result: move |result: EditGroupResult| fired(format!(
+                            "CodeEditor.on_edit_group_result({},{:?})",
+                            result.request_id, result.status
+                        )),
+                        on_selections_change: move |change: SelectionsChange| fired(format!(
+                            "CodeEditor.on_selections_change({},{})",
+                            change.version,
+                            change.selections.len()
+                        )),
+                        on_change: move |_| fired("CodeEditor.on_change"),
+                        on_edit_rejected: move |_| fired("CodeEditor.on_edit_rejected"),
+                        on_hover: move |_| fired("CodeEditor.on_hover"),
+                        on_save: move |_| fired("CodeEditor.on_save"),
+                        on_selection_change: move |_| fired("CodeEditor.on_selection_change"),
+                        on_visible_range_change: move |_| fired("CodeEditor.on_visible_range_change"),
+                        on_editor_focus_change: move |_| fired("CodeEditor.on_editor_focus_change"),
+                        on_fold_change: move |_| fired("CodeEditor.on_fold_change"),
+                        on_composition_change: move |_| fired("CodeEditor.on_composition_change"),
+                        on_decoration_click: move |id: u64| fired(format!("CodeEditor.on_decoration_click({id})")),
+                    }
+                    SelectionContainer {
+                        Badge {
+                            value: 3,
+                            color: ColorRole::Primary,
+                            Text { text: "Inbox" }
+                        }
+                    }
+                    ScrollRow {
+                        fill_max_width: true,
+                        snap: Snap::ItemStart,
+                        Chip {
+                            text: "Unread",
+                            icon: IconRole::History,
+                            selected: true,
+                            enabled: true,
+                            on_click: move |_| fired("Chip.on_click"),
+                        }
+                        FloatingAction {
+                            text: "New",
+                            icon: IconRole::Add,
+                            on_click: move |_| fired("FloatingAction.on_click"),
+                        }
+                    }
+                    Card {
+                        elevation: 2.0,
+                        Checkbox {
+                            checked: true,
+                            enabled: true,
+                            container_color: PRIMARY,
+                            check_color: SURFACE,
+                            size: 18.0,
+                            on_change: move |value: bool| fired(format!("Checkbox.on_change({value})")),
+                        }
+                        RadioButton {
+                            selected: true,
+                            enabled: true,
+                            ring_color: PRIMARY,
+                            dot_color: SURFACE,
+                            size: 20.0,
+                            on_change: move |value: bool| fired(format!("RadioButton.on_change({value})")),
+                        }
+                        Switch {
+                            checked: true,
+                            enabled: true,
+                            track_color: SECONDARY,
+                            thumb_color: SURFACE,
+                            size: (52.0, 32.0),
+                            on_change: move |value: bool| fired(format!("Switch.on_change({value})")),
+                        }
+                    }
+                    Surface {
+                        background: Paint::Role(ColorRole::SurfaceVariant),
+                        on_click: move |()| fired("Surface.on_click"),
+                        Slider {
+                            value: 0.25,
+                            min: -1.0,
+                            max: 2.0,
+                            steps: 4,
+                            enabled: true,
+                            color: PRIMARY,
+                            track_color: OUTLINE,
+                            thumb_color: TERTIARY,
+                            active_track_color: SECONDARY,
+                            thumb_size: 22.0,
+                            on_change: move |value: f32| fired(format!("Slider.on_change({value})")),
+                        }
+                        ProgressIndicator { value: 0.75, determinate: true, circular: true }
+                        LinearProgressIndicator { progress: 0.5 }
+                    }
+                    Tabs {
+                        selected_index: 1,
+                        color: ON_SURFACE,
+                        Text { text: "first tab" }
+                        Text { text: "second tab" }
+                    }
+                    Tooltip {
+                        text: "More options",
+                        Text { text: "hover me" }
+                    }
+                    Canvas { width: 10.0, height: 10.0, commands: drawing() }
+                    DatePicker {
+                        value: 19723,
+                        min: 19000,
+                        max: 20000,
+                        enabled: true,
+                        on_change: move |value: i64| fired(format!("DatePicker.on_change({value})")),
+                    }
+                    TimePicker {
+                        value: 615,
+                        min: 480,
+                        max: 1080,
+                        enabled: true,
+                        on_change: move |value: u32| fired(format!("TimePicker.on_change({value})")),
+                    }
+                    Dropdown {
+                        selected_index: 1,
+                        enabled: true,
+                        bare: true,
+                        on_change: move |value: usize| fired(format!("Dropdown.on_change({value})")),
+                        Text { text: "one" }
+                        Text { text: "two" }
+                        Text { text: "three" }
+                    }
+                    LazyColumn {
+                        item_count: 3,
+                        key_of: move |index: usize| format!("message-{index}"),
+                        item: move |index: usize| rsx! { Text { text: "message {index}" } },
+                    }
+                    LazyRow {
+                        item_count: 4,
+                        item: move |index: usize| rsx! { Text { text: "chip {index}" } },
+                    }
+                    LazyGrid {
+                        item_count: 6,
+                        columns: 3,
+                        min_column_width: 120.0,
+                        item: move |index: usize| rsx! { Text { text: "tile {index}" } },
+                    }
+                    FileDropTarget {
+                        alignment: Alignment::Center,
+                        on_files_entered: move |_| fired("FileDropTarget.on_files_entered"),
+                        on_files_dropped: move |drop: FileDrop| {
+                            fired(format!("FileDropTarget.on_files_dropped({:?})", drop.paths()))
+                        },
+                        Text { text: "drop files here" }
+                    }
+                    Dialog {
+                        open: true,
+                        scrim: SCRIM,
+                        on_dismiss: move |_| fired("Dialog.on_dismiss"),
+                        Text { text: "dialog body" }
+                    }
+                    Menu {
+                        expanded: true,
+                        scrim: SCRIM,
+                        on_dismiss: move |_| fired("Menu.on_dismiss"),
+                        anchor: rsx! { Text { text: "menu anchor" } },
+                        Text { text: "menu entry" }
+                    }
+                    Sheet {
+                        open: true,
+                        scrim: SCRIM,
+                        max_height_fraction: 0.6,
+                        on_dismiss: move |_| fired("Sheet.on_dismiss"),
+                        Text { text: "sheet body" }
+                    }
+                    FlowRow {
+                        horizontal_spacing: 6.0,
+                        vertical_spacing: 10.0,
+                        horizontal_alignment: HorizontalAlignment::Center,
+                        vertical_alignment: VerticalAlignment::Bottom,
+                        max_items_in_each_row: 3,
+                        Text { text: "tag one" }
+                        Text { text: "tag two" }
+                    }
+                    Popover {
+                        open: true,
+                        placement: PopoverPlacement::Top,
+                        align: PopoverAlign::End,
+                        offset: 6.0,
+                        scrim: true,
+                        on_dismiss: move |_| fired("Popover.on_dismiss"),
+                        anchor: rsx! { Text { text: "popover anchor" } },
+                        Text { text: "popover body" }
+                    }
                 }
             }
         }
@@ -462,6 +756,21 @@ fn role(value: impl Into<u16>) -> Expect {
     int(i64::from(value.into()))
 }
 
+fn pair_bytes(a: f32, b: f32) -> Expect {
+    let mut out = Vec::with_capacity(8);
+    out.extend_from_slice(&a.to_le_bytes());
+    out.extend_from_slice(&b.to_le_bytes());
+    is(Value::Bytes(out))
+}
+
+fn drag_bytes(pointer_id: u32, anchor_x: f32, anchor_y: f32) -> Expect {
+    let mut out = Vec::with_capacity(12);
+    out.extend_from_slice(&pointer_id.to_le_bytes());
+    out.extend_from_slice(&anchor_x.to_le_bytes());
+    out.extend_from_slice(&anchor_y.to_le_bytes());
+    is(Value::Bytes(out))
+}
+
 /// What each widget in `surface()` should carry on the wire. A kind can appear more than
 /// once when the surface uses it in more than one way.
 fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
@@ -470,12 +779,44 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
     let (spans_text, spans) = spans();
     vec![
         (
+            W::Window,
+            vec![
+                (P::WindowTitle, text("Inbox")),
+                (P::WindowSize, pair_bytes(800.0, 600.0)),
+                (P::WindowMinSize, pair_bytes(400.0, 300.0)),
+                (P::WindowResizable, flag(true)),
+                (P::WindowChrome, role(Chrome::Modern)),
+                (P::WindowTitleBar, role(TitleBar::Simple)),
+                (P::WindowIcon, int(9)),
+                (P::WindowPosition, pair_bytes(120.0, 80.0)),
+                (P::WindowRestoreKey, text("main")),
+                (P::WindowZoomLevel, int(2)),
+                (P::DragFromPointer, drag_bytes(1, 24.0, 12.0)),
+                (P::OnWindowCloseRequested, Handler),
+                (P::OnWindowFocusChanged, Handler),
+                (P::OnWindowMoved, Handler),
+                (P::OnWindowDrag, Handler),
+                (P::OnWindowUnavailable, Handler),
+                (P::OnWindowClosed, Handler),
+                (P::ReportSize, flag(true)),
+            ],
+        ),
+        (
             W::Column,
             vec![
                 (P::Arrangement, role(Arrangement::SpaceBetween)),
                 (P::Spacing, float(8.0)),
                 (P::SpaceRole, role(SpaceRole::Md)),
                 (P::Alignment, role(Alignment::Center)),
+                (P::Cursor, role(Cursor::Pointer)),
+                (P::UserSelect, role(UserSelect::None)),
+                (P::PointerKinds, int(1 | 64)),
+                (P::OnPointer, Handler),
+                (P::TearOffKey, text("tab:inbox")),
+                (P::OnWindowDragOver, Handler),
+                (P::AccessibleName, text("Mail")),
+                (P::OnMotionFinished, Handler),
+                (P::RadioGroup, flag(true)),
             ],
         ),
         (
@@ -485,6 +826,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Spacing, float(4.0)),
                 (P::SpaceRole, role(SpaceRole::Xs)),
                 (P::Alignment, role(Alignment::CenterStart)),
+                (P::RadioGroup, flag(true)),
             ],
         ),
         (W::Box, vec![(P::Alignment, role(Alignment::BottomEnd))]),
@@ -507,6 +849,28 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Overflow, role(TextOverflow::Ellipsis)),
             ],
         ),
+        (
+            W::Text,
+            vec![
+                (P::Text, text("css\ttext")),
+                (P::TypeRole, int(0)),
+                (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
+                (P::Spans, is(Value::Bytes(css_spans().as_bytes().to_vec()))),
+                (
+                    P::SpanFonts,
+                    is(Value::Bytes(css_spans().font_table().to_vec())),
+                ),
+                (P::WordBreak, role(WordBreak::KeepAll)),
+                (P::OverflowWrap, role(OverflowWrap::BreakWord)),
+                (P::TabSize, int(2)),
+                (P::AbsoluteSize, int(1)),
+                (P::SoftWrap, flag(false)),
+                (
+                    P::FontFeatureSettings,
+                    is(Value::Bytes(b"tnum\x01\0\0\0liga\0\0\0\0".to_vec())),
+                ),
+            ],
+        ),
         (W::Text, vec![(P::Text, text("message 1"))]),
         (W::Text, vec![(P::Text, text("chip 0"))]),
         (W::Text, vec![(P::Text, text("tile 1"))]),
@@ -514,13 +878,22 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             W::TextField,
             vec![
                 (P::Placeholder, text("Search")),
+                (
+                    P::FontFeatureSettings,
+                    is(Value::Bytes(b"zero\x01\0\0\0".to_vec())),
+                ),
+                (P::OnMotionFinished, Handler),
                 (P::Enabled, flag(true)),
                 (P::Multiline, flag(true)),
                 (P::TypeRole, role(TypeRole::Mono)),
+                (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
                 (P::OnValueChange, Handler),
                 (P::OnSubmit, Handler),
                 (P::OnFocusLost, Handler),
                 (P::OnKeyDown, Handler),
+                (P::Bare, flag(true)),
+                (P::OnFocusGained, Handler),
+                (P::OnKeyUp, Handler),
             ],
         ),
         (
@@ -530,7 +903,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Icon, role(IconRole::Send)),
                 (P::Enabled, flag(true)),
                 (P::Variant, role(ButtonVariant::Tonal)),
+                (P::ButtonKind, role(ButtonKind::ActionKey)),
                 (P::Color, int(paint_bits(ERROR))),
+                (P::MaxLines, int(2)),
+                (P::Overflow, role(TextOverflow::Clip)),
                 (P::OnClick, Handler),
             ],
         ),
@@ -539,8 +915,64 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             W::LazyColumn,
             vec![(P::ItemCount, int(3)), (P::OnRangeRequested, Handler)],
         ),
-        (W::ScrollColumn, vec![]),
-        (W::ScrollRow, vec![]),
+        (
+            W::ScrollColumn,
+            vec![
+                (P::OnScrollChanged, Handler),
+                (P::Snap, role(Snap::ItemStart)),
+            ],
+        ),
+        (W::AbsoluteBox, vec![(P::IslandZoom, float(1.5))]),
+        (W::AbsoluteBox, vec![]),
+        (W::ScrollRow, vec![(P::Snap, role(Snap::ItemStart))]),
+        (
+            W::CodeEditor,
+            vec![
+                (P::Text, text("x = 1")),
+                (
+                    P::SyntaxSpans,
+                    is(Value::Bytes(code_lists().0.as_bytes().to_vec())),
+                ),
+                (
+                    P::Decorations,
+                    is(Value::Bytes(code_lists().1.as_bytes().to_vec())),
+                ),
+                (P::TabWidth, int(4)),
+                (P::LineNumbers, flag(false)),
+                (P::GutterMinWidthDp, float(40.0)),
+                (P::GutterPaddingDp, float(6.0)),
+                (P::TextInsetDp, float(8.0)),
+                (
+                    P::CodeEditorColors,
+                    is(Value::Bytes(editor_colors().to_bytes().to_vec())),
+                ),
+                (P::OnCodeMetrics, Handler),
+                (P::OnCodeScrolled, Handler),
+                (P::OnCaretRect, Handler),
+                (P::OnKeyPreview, Handler),
+                (
+                    P::PointerKinds,
+                    int(i64::from((PointerKinds::DOWN | PointerKinds::MOVE).bits())),
+                ),
+                (P::OnCodePointer, Handler),
+                (P::TypeRole, role(TypeRole::Mono)),
+                (P::FontSize, float(13.0)),
+                (P::LineHeight, float(20.0)),
+                (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
+                (P::Minimap, role(MinimapSide::Left)),
+                (
+                    P::ViewZones,
+                    is(Value::Bytes(editor_zones().as_bytes().to_vec())),
+                ),
+                (P::WordWrap, int(WordWrap::Column(80).to_value())),
+                (P::OnEditGroupResult, Handler),
+                (P::OnValueChange, Handler),
+                (P::OnEditRejected, Handler),
+                (P::OnHover, Handler),
+                (P::OnSave, Handler),
+                (P::OnDecorationClick, Handler),
+            ],
+        ),
         (
             W::SplitPane,
             vec![
@@ -548,6 +980,7 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Min, float(200.0)),
                 (P::Max, float(400.0)),
                 (P::Collapsible, flag(true)),
+                (P::CollapseBelow, float(600.0)),
                 (P::SelectedIndex, int(1)),
                 (P::Text, text("Sessions")),
                 (P::OnValueChange, Handler),
@@ -580,7 +1013,13 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnClick, Handler),
             ],
         ),
-        (W::Image, vec![(P::Asset, int(7))]),
+        (
+            W::Image,
+            vec![
+                (P::Asset, int(7)),
+                (P::ContentScale, role(ContentScale::Crop)),
+            ],
+        ),
         (
             W::Icon,
             vec![(P::Asset, int(8)), (P::Color, int(paint_bits(TERTIARY)))],
@@ -591,6 +1030,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::ContainerColor, int(paint_bits(PRIMARY))),
+                (P::CheckColor, int(paint_bits(SURFACE))),
+                (P::ControlSize, pair_bytes(18.0, 18.0)),
             ],
         ),
         (
@@ -599,6 +1041,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::ContainerColor, int(paint_bits(PRIMARY))),
+                (P::CheckColor, int(paint_bits(SURFACE))),
+                (P::ControlSize, pair_bytes(20.0, 20.0)),
             ],
         ),
         (
@@ -607,6 +1052,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::TrackColor, int(paint_bits(SECONDARY))),
+                (P::ThumbColor, int(paint_bits(SURFACE))),
+                (P::ControlSize, pair_bytes(52.0, 32.0)),
             ],
         ),
         (
@@ -619,6 +1067,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Enabled, flag(true)),
                 (P::Color, int(paint_bits(PRIMARY))),
                 (P::OnValueChange, Handler),
+                (P::TrackColor, int(paint_bits(OUTLINE))),
+                (P::ThumbColor, int(paint_bits(TERTIARY))),
+                (P::ActiveTrackColor, int(paint_bits(SECONDARY))),
+                (P::ThumbSize, float(22.0)),
             ],
         ),
         (
@@ -634,11 +1086,19 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
         (W::Surface, vec![]),
         (
             W::Dialog,
-            vec![(P::Open, flag(true)), (P::OnDismiss, Handler)],
+            vec![
+                (P::Open, flag(true)),
+                (P::OnDismiss, Handler),
+                (P::Scrim, int(paint_bits(SCRIM))),
+            ],
         ),
         (
             W::Menu,
-            vec![(P::Open, flag(true)), (P::OnDismiss, Handler)],
+            vec![
+                (P::Open, flag(true)),
+                (P::OnDismiss, Handler),
+                (P::Scrim, int(paint_bits(SCRIM))),
+            ],
         ),
         (
             W::Tabs,
@@ -683,9 +1143,16 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::SelectedIndex, int(1)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::Bare, flag(true)),
             ],
         ),
-        (W::Navigation, vec![(P::SelectedIndex, int(1))]),
+        (
+            W::Navigation,
+            vec![
+                (P::SelectedIndex, int(1)),
+                (P::CompactNavigation, role(CompactNavigation::Sidebar)),
+            ],
+        ),
         (
             W::NavigationItem,
             vec![
@@ -700,7 +1167,12 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
         (W::NavigationItem, vec![(P::Text, text("Sent"))]),
         (
             W::Sheet,
-            vec![(P::Open, flag(true)), (P::OnDismiss, Handler)],
+            vec![
+                (P::Open, flag(true)),
+                (P::OnDismiss, Handler),
+                (P::Scrim, int(paint_bits(SCRIM))),
+                (P::MaxHeightFraction, float(0.6)),
+            ],
         ),
         (W::Scaffold, vec![]),
         // One slot per part of the frame the screen filled, and the two a navigation's
@@ -727,6 +1199,27 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
             ],
         ),
         (W::LinearProgressIndicator, vec![(P::Progress, float(0.5))]),
+        (
+            W::FlowRow,
+            vec![
+                (P::HorizontalSpacing, float(6.0)),
+                (P::VerticalSpacing, float(10.0)),
+                (P::HorizontalAlignment, role(HorizontalAlignment::Center)),
+                (P::VerticalAlignment, role(VerticalAlignment::Bottom)),
+                (P::MaxItemsInEachRow, int(3)),
+            ],
+        ),
+        (
+            W::Popover,
+            vec![
+                (P::Open, flag(true)),
+                (P::Placement, role(PopoverPlacement::Top)),
+                (P::Align, role(PopoverAlign::End)),
+                (P::OffsetDp, float(6.0)),
+                (P::Scrim, flag(true)),
+                (P::OnDismiss, Handler),
+            ],
+        ),
     ]
 }
 
@@ -823,10 +1316,7 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-/// - `Clickable`: the attribute is declared as `onclickable`, and rsx reads any attribute
-///   starting with `on` as an event, which has to be a function in `events`. There is
-///   none by that name, so the attribute cannot be written.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach", "Clickable"];
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {
@@ -881,6 +1371,26 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             "FloatingAction.on_click",
         ),
         (
+            W::Column,
+            P::OnPointer,
+            EventPayload::Pointer {
+                kind: PointerKind::Move,
+                pointer_id: 1,
+                pointer_type: PointerType::Mouse,
+                x: 3.0,
+                y: 4.0,
+                buttons: 0,
+                button: 0,
+                modifiers: 0,
+                click_count: 0,
+                delta_x: 0.0,
+                delta_y: 0.0,
+                delta_mode: WheelDeltaMode::Pixel,
+                timestamp_nanos: 0,
+            },
+            "Column.on_pointer(Move)",
+        ),
+        (
             W::TextField,
             P::OnValueChange,
             EventPayload::TextChanged("한글"),
@@ -907,8 +1417,115 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
                 ctrl_key: false,
                 alt_key: false,
                 meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
             },
             "TextField.on_key_down(Enter)",
+        ),
+        (
+            W::TextField,
+            P::OnFocusGained,
+            EventPayload::FocusGained,
+            "TextField.on_focus_gained",
+        ),
+        (
+            W::TextField,
+            P::OnKeyUp,
+            EventPayload::KeyUp {
+                key: Key::Enter,
+                shift_key: true,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0x28,
+                text: "Enter",
+            },
+            "TextField.on_key_up(Enter,true,false,40,Enter)",
+        ),
+        (
+            W::ScrollColumn,
+            P::OnScrollChanged,
+            EventPayload::ScrollChanged {
+                item: 0,
+                settled: true,
+                can_scroll_backward: true,
+                can_scroll_forward: false,
+                x_px: 0.0,
+                y_px: 700.5,
+                max_x_px: 0.0,
+                max_y_px: 700.5,
+                viewport_width_px: 320.0,
+                viewport_height_px: 300.0,
+            },
+            "ScrollColumn.on_scroll_changed(0,true,true,false,0,700.5,0,700.5,320,300)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCodeMetrics,
+            EventPayload::CodeMetrics {
+                line_height_px: 18.5,
+            },
+            "CodeEditor.on_code_metrics(18.5)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCodeScrolled,
+            EventPayload::CodeScrolled { offset_px: 240.0 },
+            "CodeEditor.on_code_scrolled(240)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCaretRect,
+            EventPayload::CaretRect {
+                line: 2,
+                column: 4,
+                rect: CodeRect::new(120.5, 64.25, 2.0, 20.0),
+            },
+            "CodeEditor.on_caret_rect(2,4,120.5,64.25,2,20)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnKeyPreview,
+            EventPayload::KeyDown {
+                key: Key::ArrowDown,
+                shift_key: false,
+                ctrl_key: false,
+                alt_key: false,
+                meta_key: false,
+                repeat: false,
+                code: 0x51,
+                text: "ArrowDown",
+            },
+            "CodeEditor.on_key_preview(ArrowDown)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnCodePointer,
+            EventPayload::CodePointer {
+                kind: PointerKind::Down,
+                pointer_id: 1,
+                pointer_type: PointerType::Mouse,
+                x: 96.5,
+                y: 30.25,
+                buttons: 1,
+                button: 1,
+                modifiers: 8,
+                click_count: 1,
+                delta_x: 0.0,
+                delta_y: 0.0,
+                delta_mode: WheelDeltaMode::Pixel,
+                timestamp_nanos: 0,
+                position: Some(Position::new(1, 13)),
+            },
+            "CodeEditor.on_code_pointer(Down,Some((1, 13)))",
+        ),
+        (
+            W::Popover,
+            P::OnDismiss,
+            EventPayload::Clicked,
+            "Popover.on_dismiss",
         ),
         (
             W::Checkbox,
@@ -994,6 +1611,102 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             EventPayload::FilesDropped("/tmp/a.txt\0/tmp/b.txt"),
             "FileDropTarget.on_files_dropped([\"/tmp/a.txt\", \"/tmp/b.txt\"])",
         ),
+        (
+            W::Window,
+            P::OnWindowCloseRequested,
+            EventPayload::WindowCloseRequested,
+            "window.onclosing",
+        ),
+        (
+            W::Window,
+            P::OnWindowFocusChanged,
+            EventPayload::WindowFocusChanged { focused: true },
+            "window.onfocuschange(true)",
+        ),
+        (
+            W::Window,
+            P::OnWindowMoved,
+            EventPayload::WindowMoved {
+                x: 10.0,
+                y: 20.0,
+                width: 800.0,
+                height: 600.0,
+            },
+            "window.onmoved(10,20,800,600)",
+        ),
+        (
+            W::Window,
+            P::OnWindowDrag,
+            EventPayload::WindowDrag {
+                phase: 2,
+                screen_x: 100.0,
+                screen_y: 200.0,
+                over_window: 0,
+            },
+            "window.onwindowdrag(End)",
+        ),
+        (
+            W::Window,
+            P::OnWindowUnavailable,
+            EventPayload::WindowUnavailable,
+            "window.onunavailable",
+        ),
+        (
+            W::Window,
+            P::OnWindowClosed,
+            EventPayload::WindowClosed,
+            "window.onclosed",
+        ),
+        (
+            W::Column,
+            P::OnWindowDragOver,
+            EventPayload::WindowDragOver {
+                kind: 4,
+                window: 7,
+                x: 12.0,
+                y: 16.0,
+            },
+            "Column.on_window_drag_over(Drop,7)",
+        ),
+        (
+            W::Column,
+            P::OnMotionFinished,
+            EventPayload::MotionFinished {
+                width_dp: 120.0,
+                height_dp: 48.5,
+            },
+            "Column.on_motion_finished(120,48.5)",
+        ),
+        (
+            W::TextField,
+            P::OnMotionFinished,
+            EventPayload::MotionFinished {
+                width_dp: 240.0,
+                height_dp: 56.0,
+            },
+            "TextField.on_motion_finished(240,56)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnEditGroupResult,
+            EventPayload::CodeEditGroupResult {
+                request_id: 8,
+                status: EditGroupStatus::Applied,
+                base_version: 1,
+                current_version: 3,
+                index: 2,
+            },
+            "CodeEditor.on_edit_group_result(8,Applied)",
+        ),
+        (
+            W::CodeEditor,
+            P::OnSelectionChange,
+            EventPayload::SelectionsChanged {
+                version: 4,
+                selections: &TWO_SELECTIONS,
+            },
+            "CodeEditor.on_selections_change(4,2)",
+        ),
     ];
     let mut failures = Vec::new();
     for (kind, property, payload, label) in events.iter().cloned() {
@@ -1017,4 +1730,595 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// The batch the first frame of `app` writes.
+fn first_frame(app: fn() -> Element) -> (Host, Vec<u8>) {
+    let mut host = Host::new(app);
+    let batch = host
+        .rebuild()
+        .expect("the first frame should build")
+        .to_vec();
+    (host, batch)
+}
+
+fn decoded(batch: &[u8]) -> Vec<Mutation<'_>> {
+    decode_batch(batch).expect("the Host produced a batch it cannot decode")
+}
+
+/// The handler id each `property` was announced with, by node.
+fn announced(mutations: &[Mutation<'_>], property: PropertyKind) -> Vec<(u32, u64)> {
+    mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property: sent,
+                value: PropertyValue::Integer(handler),
+            } if *sent == property && *handler > 0 => Some((*node_id, *handler as u64)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn key_logger() -> Element {
+    rsx! {
+        TextField {
+            on_key_down: move |event: KeyEvent| fired(format!(
+                "{:?},{},{},{},{},{},{},{}",
+                event.key(),
+                event.shift_key(),
+                event.ctrl_key(),
+                event.alt_key(),
+                event.meta_key(),
+                event.repeat(),
+                event.code(),
+                event.text()
+            )),
+            on_key_up: move |event: KeyEvent| fired(format!(
+                "{:?},{},{},{},{},{},{},{}",
+                event.key(),
+                event.shift_key(),
+                event.ctrl_key(),
+                event.alt_key(),
+                event.meta_key(),
+                event.repeat(),
+                event.code(),
+                event.text()
+            )),
+        }
+    }
+}
+
+/// A key going up reaches `on_key_up` as the same `KeyEvent` a key going down brings to
+/// `on_key_down`: the key, every modifier, the repeat flag, the physical code and the text.
+#[test]
+fn fr15_on_key_up_delivers_the_key_event_on_key_down_does() {
+    let (mut host, batch) = first_frame(key_logger);
+    let mutations = decoded(&batch);
+    take_fired();
+    let down = announced(&mutations, PropertyKind::OnKeyDown);
+    let up = announced(&mutations, PropertyKind::OnKeyUp);
+    assert_eq!((down.len(), up.len()), (1, 1), "{mutations:?}");
+    let fields = |down: bool| {
+        let (key, shift_key, ctrl_key, alt_key, meta_key) =
+            (Key::ArrowDown, false, true, true, false);
+        let (repeat, code, text) = (false, 0x51, "ArrowDown");
+        if down {
+            EventPayload::KeyDown {
+                key,
+                shift_key,
+                ctrl_key,
+                alt_key,
+                meta_key,
+                repeat,
+                code,
+                text,
+            }
+        } else {
+            EventPayload::KeyUp {
+                key,
+                shift_key,
+                ctrl_key,
+                alt_key,
+                meta_key,
+                repeat,
+                code,
+                text,
+            }
+        }
+    };
+    for ((node_id, handler_id), payload) in [(down[0], fields(true)), (up[0], fields(false))] {
+        host.dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload,
+        })
+        .expect("the key event is delivered");
+    }
+    let calls = take_fired();
+    assert_eq!(
+        calls, ["ArrowDown,false,true,true,false,false,81,ArrowDown"; 2],
+        "the key going down and the key going up should read the same"
+    );
+}
+
+fn nothing_asked() -> Element {
+    rsx! {
+        Column {
+            TextField { placeholder: "plain" }
+            Dropdown { Text { text: "one" } }
+            Switch { checked: true }
+            Checkbox { checked: true }
+            RadioButton { selected: true }
+            Slider { value: 0.5 }
+            ScrollColumn { Text { text: "a" } }
+            LazyColumn { item_count: 1, item: move |_| rsx! { Text { text: "b" } } }
+            CodeEditor { text: "x" }
+            Navigation { NavigationItem { text: "Inbox" } }
+            Dialog { Text { text: "c" } }
+            FlowRow { Text { text: "d" } }
+            Text { text: "g", font_feature_settings: FontFeatures::new() }
+            ScrollRow { Text { text: "h" } }
+            Sheet { Text { text: "i" } }
+            SplitPane { Column {} Column {} }
+            Row { motion: MotionRole::Quick, Text { text: "j" } }
+            Sheet { max_height_fraction: 0.0, Text { text: "k" } }
+            Popover { anchor: rsx! { Text { text: "e" } }, Text { text: "f" } }
+            Image { asset_id: 1 }
+            Card { Text { text: "l" } }
+            Surface { Text { text: "m" } }
+            dioxus_compose::Box { background_brush: Vec::new(), Text { text: "n" } }
+        }
+    }
+}
+
+/// A widget that sets none of the new properties and handlers sends none of them: absent
+/// is each one's default, and a handler nobody wrote is never announced, so the Renderer
+/// is never asked to report what no screen listens for.
+#[test]
+fn fr15_what_a_screen_leaves_out_is_never_sent() {
+    use PropertyKind as P;
+    let (_host, batch) = first_frame(nothing_asked);
+    let mutations = decoded(&batch);
+    let left_out = [
+        P::OnFocusGained,
+        P::OnKeyUp,
+        P::AccessibleName,
+        P::TrackColor,
+        P::ThumbColor,
+        P::ActiveTrackColor,
+        P::ContainerColor,
+        P::CheckColor,
+        P::ControlSize,
+        P::Scrim,
+        P::Bare,
+        P::HorizontalSpacing,
+        P::VerticalSpacing,
+        P::HorizontalAlignment,
+        P::VerticalAlignment,
+        P::MaxItemsInEachRow,
+        P::Placement,
+        P::Align,
+        P::OffsetDp,
+        P::LineNumbers,
+        P::GutterMinWidthDp,
+        P::GutterPaddingDp,
+        P::TextInsetDp,
+        P::CodeEditorColors,
+        P::OnCodeMetrics,
+        P::OnCodeScrolled,
+        P::CompactNavigation,
+        P::OnScrollChanged,
+        P::OnMotionFinished,
+        P::FontFeatureSettings,
+        P::Snap,
+        P::MaxHeightFraction,
+        P::CollapseBelow,
+        P::OnCaretRect,
+        P::OnKeyPreview,
+        P::OnCodePointer,
+        P::RadioGroup,
+        P::ContentScale,
+        P::ThumbSize,
+        P::Minimap,
+        P::ViewZones,
+        P::WordWrap,
+        P::OnEditGroupResult,
+    ];
+    let sent: Vec<String> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp { property, .. } if left_out.contains(property) => {
+                Some(format!("{mutation:?}"))
+            }
+            Mutation::SetModifier {
+                modifier:
+                    Modifier::Semantics { .. }
+                    | Modifier::CornerCurve { .. }
+                    | Modifier::Transform3D { .. }
+                    | Modifier::BackgroundBrush { .. },
+                ..
+            } => Some(format!("{mutation:?}")),
+            _ => None,
+        })
+        .collect();
+    assert!(sent.is_empty(), "nothing asked for these: {sent:?}");
+}
+
+fn tinted_popover() -> Element {
+    rsx! {
+        Popover {
+            open: true,
+            scrim_color: SCRIM,
+            anchor: rsx! { Text { text: "anchor" } },
+            Text { text: "body" }
+        }
+    }
+}
+
+/// A popover's scrim is `true` for the design system's dimming, as `surface()` shows, and
+/// the paint itself when the screen names a colour.
+#[test]
+fn fr15_a_popover_scrim_colour_travels_as_a_paint() {
+    let (_host, batch) = first_frame(tinted_popover);
+    let mutations = decoded(&batch);
+    let scrims: Vec<&PropertyValue<'_>> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Scrim,
+                value,
+                ..
+            } => Some(value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        scrims,
+        [&PropertyValue::Integer(paint_bits(SCRIM))],
+        "{mutations:?}"
+    );
+}
+
+fn described() -> Element {
+    rsx! {
+        Column {
+            semantics: Semantics::new(SemanticsRole::Button).with_state(SemanticsState {
+                checked: Some(true),
+                selected: Some(false),
+                hidden: true,
+                click_action: true,
+                ..SemanticsState::default()
+            }),
+            corner_radius: 12.0,
+            corner_curve: 1.5,
+            AbsoluteBox {
+                transform_origin: (0.0, 1.0),
+                transform_3d: (MATRIX_3D, false),
+                Text { text: "x" }
+            }
+        }
+    }
+}
+
+/// The three modifiers arrive with the values written: the role and every state field of
+/// `Semantics` packed as the protocol defines them, a corner curve outside 0..=1 as the
+/// nearer end, and a 3D matrix with the origin it turns about.
+#[test]
+fn fr15_semantics_corner_curve_and_transform_3d_arrive_as_written() {
+    use dioxus_compose::schema::{
+        SEMANTICS_CHECKED_SHIFT, SEMANTICS_CLICK_ACTION_BIT, SEMANTICS_HIDDEN_BIT,
+        SEMANTICS_SELECTED_SHIFT,
+    };
+    let (_host, batch) = first_frame(described);
+    let mutations = decoded(&batch);
+    let modifiers: Vec<&Modifier> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier { modifier, .. } => Some(modifier),
+            _ => None,
+        })
+        .collect();
+    let state = (2 << SEMANTICS_CHECKED_SHIFT)
+        | (1 << SEMANTICS_SELECTED_SHIFT)
+        | SEMANTICS_HIDDEN_BIT
+        | SEMANTICS_CLICK_ACTION_BIT;
+    for wanted in [
+        Modifier::Semantics {
+            role: SemanticsRole::Button,
+            state,
+        },
+        Modifier::CornerCurve { smoothing: 1.0 },
+        Modifier::Transform3D {
+            m: MATRIX_3D,
+            origin_x: 0.0,
+            origin_y: 1.0,
+            backface_hidden: false,
+        },
+    ] {
+        assert!(
+            modifiers.contains(&&wanted),
+            "{wanted:?} did not arrive; the modifiers were {modifiers:?}"
+        );
+    }
+}
+
+fn withdrawn() -> Element {
+    let mut listening = use_signal(|| true);
+    let on_key_up = listening()
+        .then(|| dioxus_core::ListenerCallback::new(move |_: Event<KeyEvent>| fired("key up")));
+    rsx! {
+        Column {
+            textfield { onkeyup: on_key_up }
+            Button { text: "stop", on_click: move |_| listening.set(false) }
+        }
+    }
+}
+
+/// A handler that is taken away is withdrawn from the Renderer, so it stops reporting to a
+/// listener that is gone, rather than reporting to a handler id nothing answers.
+#[test]
+fn fr15_a_handler_taken_away_is_withdrawn() {
+    let (mut host, first) = first_frame(withdrawn);
+    let mutations = decoded(&first);
+    let up = announced(&mutations, PropertyKind::OnKeyUp);
+    assert_eq!(up.len(), 1, "{mutations:?}");
+    let (node_id, handler_id) = announced(&mutations, PropertyKind::OnClick)[0];
+    let batch = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::Clicked,
+        })
+        .expect("the press is dispatched")
+        .0
+        .to_vec();
+    let after = decoded(&batch);
+    assert!(
+        after.contains(&Mutation::SetProp {
+            node_id: up[0].0,
+            property: PropertyKind::OnKeyUp,
+            value: PropertyValue::None,
+        }),
+        "the key-up handler was not withdrawn: {after:?}"
+    );
+}
+
+fn settling() -> Element {
+    rsx! {
+        Column {
+            motion: MotionRole::Quick,
+            on_motion_finished: move |size: MotionFinished| fired(format!(
+                "{:?}",
+                (size.width_dp, size.height_dp)
+            )),
+            Text { text: "grows" }
+        }
+    }
+}
+
+/// A node's size motion coming to rest reaches `on_motion_finished` once, as a
+/// `MotionFinished` carrying the width and the height it settled at in dp, unrounded.
+#[test]
+fn fr15_on_motion_finished_delivers_the_settled_size_in_dp() {
+    let (mut host, batch) = first_frame(settling);
+    let mutations = decoded(&batch);
+    take_fired();
+    let finished = announced(&mutations, PropertyKind::OnMotionFinished);
+    assert_eq!(finished.len(), 1, "{mutations:?}");
+    let (node_id, handler_id) = finished[0];
+    host.dispatch(HostEvent {
+        node_id,
+        handler_id,
+        payload: EventPayload::MotionFinished {
+            width_dp: 312.25,
+            height_dp: 0.5,
+        },
+    })
+    .expect("the motion report is delivered");
+    assert_eq!(take_fired(), ["(312.25, 0.5)"]);
+}
+
+fn featured() -> Element {
+    rsx! {
+        Column {
+            Text {
+                text: "12:30",
+                type_role: TypeRole::Body,
+                font_feature_settings: [
+                    FontFeature::TABULAR_NUMS,
+                    FontFeature::new(b"ss02", 0x0102_0304),
+                ],
+            }
+            Text {
+                text: "pairs",
+                font_feature_settings: [(*b"cv11", 7_u32)],
+            }
+        }
+    }
+}
+
+/// Font features travel as one 8-byte record each, in the order written: the four tag
+/// bytes, then the value as a little-endian `u32`. A text with a type role takes them too.
+#[test]
+fn fr15_font_feature_settings_travel_as_tag_then_value_records() {
+    let (_host, batch) = first_frame(featured);
+    let mutations = decoded(&batch);
+    let blobs: Vec<&PropertyValue<'_>> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::FontFeatureSettings,
+                value,
+                ..
+            } => Some(value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        blobs,
+        [
+            &PropertyValue::Bytes(&[
+                b't', b'n', b'u', b'm', 1, 0, 0, 0, b's', b's', b'0', b'2', 4, 3, 2, 1
+            ]),
+            &PropertyValue::Bytes(&[b'c', b'v', b'1', b'1', 7, 0, 0, 0]),
+        ],
+        "{mutations:?}"
+    );
+}
+
+/// The value each `Text` was given for `property`, by its text, in the order they arrived.
+fn text_props(mutations: &[Mutation<'_>], property: PropertyKind) -> Vec<(String, Value)> {
+    let mut texts: BTreeMap<u32, String> = BTreeMap::new();
+    let mut found = Vec::new();
+    for mutation in mutations {
+        if let Mutation::SetProp {
+            node_id,
+            property: PropertyKind::Text,
+            value: PropertyValue::String(text),
+        } = mutation
+        {
+            texts.insert(*node_id, (*text).to_owned());
+        }
+    }
+    for mutation in mutations {
+        if let Mutation::SetProp {
+            node_id,
+            property: sent,
+            value,
+        } = mutation
+            && *sent == property
+        {
+            found.push((texts[node_id].clone(), Value::from(value)));
+        }
+    }
+    found
+}
+
+fn aligned() -> Element {
+    rsx! {
+        Column {
+            Text { text: "west", text_align: TextAlign::Left }
+            Text { text: "east", text_align: TextAlign::Right }
+            Text { text: "first", text_align: TextAlign::Start }
+        }
+    }
+}
+
+/// `TextAlign::Left` and `Right` are physical alignments that never swap in right-to-left
+/// text, and they reach the Renderer as their own tags beside `Start` and `End`.
+#[test]
+fn fr15_text_align_left_and_right_arrive_as_their_own_tags() {
+    let (_host, batch) = first_frame(aligned);
+    let mutations = decoded(&batch);
+    assert_eq!(
+        text_props(&mutations, PropertyKind::TextAlign),
+        vec![
+            ("west".to_owned(), Value::Integer(5)),
+            ("east".to_owned(), Value::Integer(6)),
+            ("first".to_owned(), Value::Integer(1)),
+        ]
+    );
+}
+
+fn spaced() -> Element {
+    rsx! {
+        Column {
+            Text { text: "zero", letter_spacing: 0.0 }
+            Text { text: "wide", letter_spacing: 1.5 }
+            Text { text: "plain" }
+        }
+    }
+}
+
+/// A letter spacing of 0 is sent: it draws no extra space, where a text that names no
+/// spacing takes its type role's and sends nothing for it.
+#[test]
+fn fr15_a_letter_spacing_of_zero_is_sent_and_one_left_out_is_not() {
+    let (_host, batch) = first_frame(spaced);
+    let mutations = decoded(&batch);
+    assert_eq!(
+        text_props(&mutations, PropertyKind::LetterSpacing),
+        vec![
+            ("zero".to_owned(), Value::Float(0.0)),
+            ("wide".to_owned(), Value::Float(1.5)),
+        ]
+    );
+}
+
+fn elliptical() -> Element {
+    let glow = brush(Brush::elliptical(
+        0.5,
+        0.25,
+        vec![
+            Stop::new(0.0, Color::rgb(0xffffff)),
+            Stop::new(1.0, Color::rgb(0x000000)),
+        ],
+    ));
+    rsx! { Surface { background: glow, Text { text: "lit" } } }
+}
+
+/// An elliptical radial brush, compose-rust's `Brush::elliptical`, is registered with its
+/// vertical radius beside its horizontal one, and a node painted with it names the asset.
+#[test]
+fn fr15_an_elliptical_radial_brush_reaches_the_renderer_with_both_radii() {
+    let (_host, batch) = first_frame(elliptical);
+    let mutations = decoded(&batch);
+    let (asset, bytes) = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::RegisterAsset {
+                asset_id,
+                kind: dioxus_compose::schema::AssetKind::Brush,
+                bytes,
+            } => Some((*asset_id, *bytes)),
+            _ => None,
+        })
+        .expect("the brush was never registered");
+    let coordinate =
+        |at: usize| f32::from_le_bytes(bytes[8 + at * 4..12 + at * 4].try_into().unwrap());
+    assert_eq!(
+        (coordinate(0), coordinate(1), coordinate(2), coordinate(3)),
+        (0.5, 0.5, 0.5, 0.25)
+    );
+    assert!(mutations.iter().any(|mutation| matches!(
+        mutation,
+        Mutation::SetModifier { modifier: Modifier::Background(Paint::Asset(id)), .. } if *id == asset
+    )));
+}
+
+fn appearance() -> Element {
+    let scheme = use_system_color_scheme();
+    rsx! { Text { text: format!("{scheme:?}") } }
+}
+
+/// `use_system_color_scheme` is `None` until the Renderer first reports the system's light
+/// or dark appearance, and a report re-renders the component that reads it with the new
+/// value, in the call that carried the report. The report is the Host's own: it names no
+/// node and no handler.
+#[test]
+fn fr15_use_system_color_scheme_follows_the_reported_appearance() {
+    dioxus_compose::theme::reset_system_color_scheme();
+    let (mut host, batch) = first_frame(appearance);
+    let shown = |mutations: &[Mutation<'_>]| {
+        mutations.iter().find_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Text,
+                value: PropertyValue::String(text),
+                ..
+            } => Some((*text).to_owned()),
+            Mutation::SetText { text, .. } => Some((*text).to_owned()),
+            _ => None,
+        })
+    };
+    assert_eq!(shown(&decoded(&batch)).as_deref(), Some("None"));
+    let (after, _) = host
+        .dispatch(HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::ColorSchemeChanged(SystemColorScheme::Dark),
+        })
+        .expect("the report is dispatched");
+    assert_eq!(shown(&decoded(after)).as_deref(), Some("Some(Dark)"));
 }

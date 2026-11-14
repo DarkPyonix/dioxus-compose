@@ -6,12 +6,356 @@ use dioxus_hooks::use_signal;
 use dioxus_signals::WritableExt as _;
 
 use crate as dioxus_elements;
+use crate::hooks::use_node_size;
 use compose_rust::drawing::DrawList;
 use compose_rust::schema::{
-    Alignment, Arrangement, ButtonVariant, ColorRole, IconRole, MaterialRole, MotionRole, Paint,
-    ShapeRole, SlotRole, SpaceRole, TextAlign, TextOverflow, TypeRole,
+    Alignment, Arrangement, ButtonKind, ButtonVariant, ColorRole, CompactNavigation, Cursor,
+    HorizontalAlignment, IconRole, MaterialRole, MotionRole, OverflowWrap, Paint, PopoverAlign,
+    PopoverPlacement, SemanticsRole, ShapeRole, SlotRole, Snap, SpaceRole, TextAlign, TextOverflow,
+    TypeRole, UserSelect, VerticalAlignment, WordBreak,
 };
-use compose_rust::{FileDrop, KeyEvent, RangeRequest};
+use compose_rust::ui::SemanticsState;
+use compose_rust::{
+    FileDrop, FontFeature, KeyEvent, MotionFinished, PointerEvent, PointerKinds, RangeRequest,
+};
+
+/// What a node is to assistive technology: the role it plays and the state a screen reader
+/// announces for it, such as checked, selected or expanded.
+///
+/// A role left out keeps the one the widget already has, and every state field left unset
+/// says nothing, so `Semantics::default()` changes nothing at all. The name that is read is
+/// a separate attribute, `accessible_name`, because a string does not fit in a modifier.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Semantics {
+    pub role: Option<SemanticsRole>,
+    pub state: SemanticsState,
+}
+
+impl Semantics {
+    /// A node that plays `role` and says nothing about its state.
+    pub const fn new(role: SemanticsRole) -> Self {
+        Self {
+            role: Some(role),
+            state: SemanticsState {
+                checked: None,
+                selected: None,
+                expanded: None,
+                disabled: None,
+                focused: None,
+                hidden: false,
+                click_action: false,
+                focus_action: false,
+            },
+        }
+    }
+
+    /// The same role, with this state.
+    pub const fn with_state(mut self, state: SemanticsState) -> Self {
+        self.state = state;
+        self
+    }
+
+    /// The state word the `Semantics` modifier carries: each tri-state field two bits wide,
+    /// 0 for unset, 1 for off and 2 for on, and the flags above them.
+    pub fn state_bits(&self) -> u32 {
+        use compose_rust::schema::{
+            SEMANTICS_CHECKED_SHIFT, SEMANTICS_CLICK_ACTION_BIT, SEMANTICS_DISABLED_SHIFT,
+            SEMANTICS_EXPANDED_SHIFT, SEMANTICS_FOCUS_ACTION_BIT, SEMANTICS_FOCUSED_SHIFT,
+            SEMANTICS_HIDDEN_BIT, SEMANTICS_SELECTED_SHIFT,
+        };
+        let tri = |value: Option<bool>| value.map_or(0_u32, |on| if on { 2 } else { 1 });
+        let flag = |on: bool, bit: u32| if on { bit } else { 0 };
+        let state = self.state;
+        (tri(state.checked) << SEMANTICS_CHECKED_SHIFT)
+            | (tri(state.selected) << SEMANTICS_SELECTED_SHIFT)
+            | (tri(state.expanded) << SEMANTICS_EXPANDED_SHIFT)
+            | (tri(state.disabled) << SEMANTICS_DISABLED_SHIFT)
+            | (tri(state.focused) << SEMANTICS_FOCUSED_SHIFT)
+            | flag(state.hidden, SEMANTICS_HIDDEN_BIT)
+            | flag(state.click_action, SEMANTICS_CLICK_ACTION_BIT)
+            | flag(state.focus_action, SEMANTICS_FOCUS_ACTION_BIT)
+    }
+
+    /// The modifier this travels as.
+    pub fn to_modifier(&self) -> compose_rust::Modifier {
+        compose_rust::Modifier::Semantics {
+            role: self.role.unwrap_or(SemanticsRole::None),
+            state: self.state_bits(),
+        }
+    }
+
+    /// The value of the `semantics` attribute.
+    pub(crate) fn attribute(self) -> AttributeValue {
+        AttributeValue::any_value(self.to_modifier())
+    }
+}
+
+/// Where a scroll container is, as the Renderer reports it to `on_scroll_changed`: at most
+/// once a frame while it moves, and once more with `settled` when it comes to rest.
+///
+/// Every length is in physical pixels, the unit the Renderer scrolls in, so a value read
+/// here and asked for again names the same place. In a lazy list `item` is the first
+/// visible item and the main-axis offset is the distance into it; such a list does not know
+/// its whole length, so its main-axis maximum is `-1.0`. Anywhere else `item` is 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollChange {
+    pub item: u32,
+    /// The movement ended: a drag, a fling or an animation came to rest.
+    pub settled: bool,
+    /// The container can still scroll towards the start of its main axis.
+    pub can_scroll_backward: bool,
+    /// The container can still scroll towards the end of its main axis.
+    pub can_scroll_forward: bool,
+    pub x_px: f64,
+    pub y_px: f64,
+    pub max_x_px: f64,
+    pub max_y_px: f64,
+    pub viewport_width_px: f64,
+    pub viewport_height_px: f64,
+}
+
+/// The OpenType features a text asks its font for, in order: tabular figures, a ligature
+/// left apart, a stylistic set. A feature never changes which font the text is set in; it
+/// picks one of the forms the font already has, so text with a type role takes them too.
+///
+/// Built from [`FontFeature`]s or from `(tag, value)` pairs, such as
+/// `[(b"tnum", 1), (b"liga", 0)]`. A node carries at most 16; a longer list is sent as it
+/// is, and the Renderer reports it as a protocol error and draws the text without any.
+/// An empty list sends nothing.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct FontFeatures(Vec<FontFeature>);
+
+impl FontFeatures {
+    /// No features: the font's defaults.
+    pub const fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// The features, in the order they were given.
+    pub fn as_slice(&self) -> &[FontFeature] {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// The value of the `font_feature_settings` attribute, or nothing for an empty list.
+    pub(crate) fn attribute(self) -> Option<AttributeValue> {
+        (!self.0.is_empty()).then(|| AttributeValue::any_value(self))
+    }
+}
+
+impl From<Vec<FontFeature>> for FontFeatures {
+    fn from(features: Vec<FontFeature>) -> Self {
+        Self(features)
+    }
+}
+
+impl From<&[FontFeature]> for FontFeatures {
+    fn from(features: &[FontFeature]) -> Self {
+        Self(features.to_vec())
+    }
+}
+
+impl<const N: usize> From<[FontFeature; N]> for FontFeatures {
+    fn from(features: [FontFeature; N]) -> Self {
+        Self(features.to_vec())
+    }
+}
+
+impl From<Vec<([u8; 4], u32)>> for FontFeatures {
+    fn from(features: Vec<([u8; 4], u32)>) -> Self {
+        features.into_iter().collect()
+    }
+}
+
+impl<const N: usize> From<[([u8; 4], u32); N]> for FontFeatures {
+    fn from(features: [([u8; 4], u32); N]) -> Self {
+        features.into_iter().collect()
+    }
+}
+
+impl<const N: usize> From<[(&[u8; 4], u32); N]> for FontFeatures {
+    fn from(features: [(&[u8; 4], u32); N]) -> Self {
+        features
+            .into_iter()
+            .map(|(tag, value)| FontFeature::new(tag, value))
+            .collect()
+    }
+}
+
+impl FromIterator<FontFeature> for FontFeatures {
+    fn from_iter<I: IntoIterator<Item = FontFeature>>(features: I) -> Self {
+        Self(features.into_iter().collect())
+    }
+}
+
+impl FromIterator<([u8; 4], u32)> for FontFeatures {
+    fn from_iter<I: IntoIterator<Item = ([u8; 4], u32)>>(features: I) -> Self {
+        Self(
+            features
+                .into_iter()
+                .map(|(tag, value)| FontFeature::new(&tag, value))
+                .collect(),
+        )
+    }
+}
+
+/// A handler that is announced to the Renderer only when there is one, so a widget whose
+/// screen did not ask for the event costs no record and is never sent it.
+fn optional_listener<T: 'static, U: 'static>(
+    handler: Option<EventHandler<U>>,
+    convert: impl Fn(&T) -> U + 'static,
+) -> Option<dioxus_core::ListenerCallback<T>> {
+    handler.map(|handler| {
+        dioxus_core::ListenerCallback::new(move |event: dioxus_core::Event<T>| {
+            handler.call(convert(&event.data()))
+        })
+    })
+}
+
+/// One layer of a container's shadow, as CSS `box-shadow` gives one: an offset, a blur
+/// radius and a spread in dp, and a paint whose alpha is the shadow's opacity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShadowLayer {
+    pub x: f32,
+    pub y: f32,
+    pub blur: f32,
+    pub spread: f32,
+    pub paint: Paint,
+}
+
+impl ShadowLayer {
+    pub const fn new(x: f32, y: f32, blur: f32, spread: f32, paint: Paint) -> Self {
+        Self {
+            x,
+            y,
+            blur,
+            spread,
+            paint,
+        }
+    }
+}
+
+/// A shadow list in the order of the modifier chain, which draws a later modifier over an
+/// earlier one. Carried as one attribute value and written to one position each.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ShadowChain(pub(crate) Vec<compose_rust::Modifier>);
+
+/// The `shadow` attribute of a container from its list, which is in CSS order: the first
+/// layer is on top, so the chain gets it last. A list longer than the node can carry keeps
+/// the layers that are on top. An empty list sends nothing.
+fn shadow_attr(layers: &[ShadowLayer]) -> Option<AttributeValue> {
+    if layers.is_empty() {
+        return None;
+    }
+    let chain = layers
+        .iter()
+        .take(crate::renderer::MAX_SHADOWS)
+        .rev()
+        .map(|layer| compose_rust::Modifier::Shadow {
+            x: layer.x,
+            y: layer.y,
+            blur: layer.blur,
+            spread: layer.spread,
+            paint: layer.paint,
+        })
+        .collect();
+    Some(AttributeValue::any_value(ShadowChain(chain)))
+}
+
+/// One layer of a node's background image, as CSS draws one `background-image` with its
+/// `background-position`, `background-size` and `background-repeat`.
+///
+/// `x`, `y`, `width` and `height` are the rectangle the paint is laid into, in dp from the
+/// node's top left corner: one tile, which a gradient is measured against rather than the
+/// node. `repeat` says which ways the tile repeats, and `tile_width` and `tile_height` how
+/// far apart the copies are, in dp. The layer is cut to the node's outline, its corners
+/// included, and drawn over the `background` colour and under the border.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BackgroundLayer {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub paint: Paint,
+    pub repeat: compose_rust::BackgroundRepeat,
+    pub tile_width: f32,
+    pub tile_height: f32,
+}
+
+impl BackgroundLayer {
+    /// `paint` laid once into the rectangle at `x`, `y`, `width` by `height` dp.
+    pub const fn new(paint: Paint, x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+            paint,
+            repeat: compose_rust::BackgroundRepeat::NoRepeat,
+            tile_width: width,
+            tile_height: height,
+        }
+    }
+
+    /// The same layer repeated as `repeat` says, a copy every rectangle's width and height
+    /// as a plain CSS repeat places them.
+    pub const fn repeat(mut self, repeat: compose_rust::BackgroundRepeat) -> Self {
+        self.repeat = repeat;
+        self
+    }
+
+    /// The step between copies, in dp, where it is not the rectangle's own size: what CSS
+    /// `background-repeat: space` or `round` works out.
+    pub const fn step(mut self, tile_width: f32, tile_height: f32) -> Self {
+        self.tile_width = tile_width;
+        self.tile_height = tile_height;
+        self
+    }
+
+    /// The modifier this layer is on the wire.
+    pub const fn modifier(self) -> compose_rust::Modifier {
+        compose_rust::Modifier::BackgroundBrush {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            paint: self.paint,
+            repeat: self.repeat,
+            tile_width: self.tile_width,
+            tile_height: self.tile_height,
+        }
+    }
+}
+
+/// A background layer list in the order of the modifier chain, the bottom layer first.
+/// Carried as one attribute value and written to one position each.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BackgroundChain(pub(crate) Vec<compose_rust::Modifier>);
+
+/// The chain for a list of layers in CSS order, the first on top. A list longer than a node
+/// can carry keeps the layers on top.
+pub(crate) fn background_chain(layers: &[BackgroundLayer]) -> BackgroundChain {
+    BackgroundChain(
+        layers
+            .iter()
+            .take(crate::renderer::MAX_BACKGROUND_LAYERS)
+            .rev()
+            .map(|layer| layer.modifier())
+            .collect(),
+    )
+}
+
+/// The `background_brush` attribute of a widget from its list, in CSS order. An empty list
+/// sends nothing.
+fn background_attr(layers: &[BackgroundLayer]) -> Option<AttributeValue> {
+    if layers.is_empty() {
+        return None;
+    }
+    Some(AttributeValue::any_value(background_chain(layers)))
+}
 
 /// A role that was not set is tag 0, which means "not sent". The Renderer
 /// never sees a zero role, so it never has to guess what an unset role meant.
@@ -38,8 +382,184 @@ fn dp(value: Option<f32>) -> f64 {
     f64::from(value.unwrap_or(0.0))
 }
 
+fn opt_press_feedback(value: Option<(f32, f32)>) -> Option<AttributeValue> {
+    value.map(AttributeValue::any_value)
+}
+
+/// A box that places each child where the Host already put it, for a screen whose layout
+/// was computed before it got here, such as an HTML page laid out by a CSS engine.
+///
+/// Every property is the box's own place and decoration, in CSS's terms: `offset` from the
+/// box it is in, `required_size` whatever that box allows, a border and a radius for each
+/// side and corner in CSS order (top, right, bottom, left and top left, top right, bottom
+/// right, bottom left), one `box-shadow`, `overflow: hidden` and `opacity`. A child is
+/// placed by giving it its own `offset`, which for anything but another `AbsoluteBox`
+/// means wrapping it in one. Equal sides and equal corners go out as the ordinary border
+/// and shape records.
+#[component]
+pub fn AbsoluteBox(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
+    #[props(default)] offset: Option<(f32, f32)>,
+    #[props(default)] required_size: Option<(f32, f32)>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] border: Option<([f32; 4], [Paint; 4])>,
+    #[props(default)] corners: Option<[f32; 4]>,
+    /// x and y offset, blur, spread and paint, as CSS `box-shadow` takes them.
+    #[props(default)]
+    shadow: Option<(f32, f32, f32, f32, Paint)>,
+    #[props(default)] clip: bool,
+    #[props(default)] alpha: Option<f32>,
+    /// CSS `matrix(a, b, c, d, e, f)`, with `e` and `f` in dp. Drawn without moving the
+    /// layout, and a pointer is tested against the shape that is drawn.
+    #[props(default)]
+    transform: Option<(f32, f32, f32, f32, f32, f32)>,
+    /// The point the transform turns about, as a fraction of the box's size. The middle,
+    /// as in CSS, when it is not given.
+    #[props(default)]
+    transform_origin: Option<(f32, f32)>,
+    /// CSS `matrix3d(...)`: sixteen values in column-major order, translations in dp, with
+    /// any perspective already folded in, and whether the box is hidden while its back is
+    /// turned to the viewer (`backface-visibility: hidden`). It turns about
+    /// `transform_origin` and takes the place of `transform`.
+    #[props(default)]
+    transform_3d: Option<([f32; 16], bool)>,
+    /// How the rounded corners curve, from 0 (a circular arc) to 1 (the smoothest curve).
+    #[props(default)]
+    corner_curve: Option<f32>,
+    /// What the box is to assistive technology.
+    #[props(default)]
+    semantics: Option<Semantics>,
+    /// The name assistive technology reads for the box.
+    #[props(into, default)]
+    accessible_name: Option<String>,
+    /// Compose's `graphicsLayer`: a rotation, a scale, a translation and an opacity, drawn
+    /// as a `Transform` and an `Alpha`. It takes the place of `transform` and `alpha`.
+    #[props(default)]
+    graphics_layer: Option<compose_rust::GraphicsLayer>,
+    /// An opacity the Renderer animates to, from `animate_float_as_state`. It takes the
+    /// place of `alpha`.
+    #[props(default)]
+    animated_alpha: Option<crate::hooks::Animated<f32>>,
+    /// A background the Renderer animates to, from `animate_color_as_state`. It takes the
+    /// place of `background`.
+    #[props(default)]
+    animated_background: Option<crate::hooks::Animated<Paint>>,
+    /// A translation the Renderer animates to, from `animate_offset_as_state`. It takes the
+    /// place of `transform` and `graphics_layer`.
+    #[props(default)]
+    animated_offset: Option<crate::hooks::Animated<(f32, f32)>>,
+    children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The factor an HTML island is drawn at, on the island's root: the Renderer draws what
+    /// is inside at its density times this, with no font scale of its own. Left out, the
+    /// box draws its children as the widgets around it are drawn.
+    #[props(default)]
+    island_zoom: Option<f32>,
+) -> Element {
+    use compose_rust::Modifier;
+    let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
+    // An animated value takes the place of the plain one in the same slot, and a graphics
+    // layer takes the place of a bare transform and opacity.
+    let background = if animated_background.is_some() {
+        None
+    } else {
+        opt_paint(background)
+    };
+    let alpha = if animated_alpha.is_some() {
+        None
+    } else {
+        opt_dp(graphics_layer.map(|layer| layer.alpha).or(alpha))
+    };
+    let transform_3d = transform_3d.map(|(m, backface_hidden)| {
+        AttributeValue::any_value(Modifier::Transform3D {
+            m,
+            origin_x,
+            origin_y,
+            backface_hidden,
+        })
+    });
+    let transform = if animated_offset.is_some() || transform_3d.is_some() {
+        None
+    } else if let Some(layer) = graphics_layer {
+        Some(AttributeValue::any_value(layer.transform()))
+    } else {
+        transform.map(|(a, b, c, d, e, f)| {
+            AttributeValue::any_value(Modifier::Transform {
+                a,
+                b,
+                c,
+                d,
+                e,
+                f,
+                origin_x,
+                origin_y,
+            })
+        })
+    };
+    rsx! {
+        absolutebox {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            island_zoom: island_zoom.map(f64::from),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
+            required_size: required_size.map(|(width, height)| {
+                AttributeValue::any_value(Modifier::RequiredSize { width, height })
+            }),
+            background,
+            border_each: border.map(|(widths, paints)| {
+                AttributeValue::any_value(Modifier::border_sides(widths, paints))
+            }),
+            corner_each: corners.map(|radii| AttributeValue::any_value(Modifier::corner_radii(radii))),
+            shadow: shadow.map(|(x, y, blur, spread, paint)| {
+                AttributeValue::any_value(Modifier::Shadow { x, y, blur, spread, paint })
+            }),
+            clip: clip.then_some(true),
+            alpha,
+            transform,
+            transform_3d,
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            animated_alpha: animated_alpha.map(AttributeValue::any_value),
+            animated_background: animated_background.map(AttributeValue::any_value),
+            animated_offset: animated_offset.map(AttributeValue::any_value),
+            {children}
+        }
+    }
+}
+
 #[component]
 pub fn Column(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -52,6 +572,11 @@ pub fn Column(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -60,19 +585,82 @@ pub fn Column(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] arrangement: Option<Arrangement>,
     #[props(default)] spacing: Option<f32>,
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
+    /// Makes this layout a group of the `RadioButton`s inside it. The group is one stop for
+    /// Tab, on the selected button or the first, the arrow keys move focus along its
+    /// buttons, wrapping at the ends, and each one they land on reports `on_change(true)`
+    /// once, as a click would. Which button is selected stays the application's to decide.
+    /// Assistive technology hears the layout as a radio group. Left out, it is no group and
+    /// nothing is sent.
+    #[props(default)]
+    radio_group: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         column {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -84,15 +672,21 @@ pub fn Column(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             arrangement: role(arrangement),
             spacing: dp(spacing),
             space_role: role(space_role),
             alignment: role(alignment),
+            radio_group: radio_group.then_some(true),
             {children}
         }
     }
@@ -100,6 +694,9 @@ pub fn Column(
 
 #[component]
 pub fn Row(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -112,6 +709,11 @@ pub fn Row(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -120,19 +722,82 @@ pub fn Row(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] arrangement: Option<Arrangement>,
     #[props(default)] spacing: Option<f32>,
     #[props(default)] space_role: Option<SpaceRole>,
     #[props(default)] alignment: Option<Alignment>,
+    /// Makes this layout a group of the `RadioButton`s inside it. The group is one stop for
+    /// Tab, on the selected button or the first, the arrow keys move focus along its
+    /// buttons, wrapping at the ends, and each one they land on reports `on_change(true)`
+    /// once, as a click would. Which button is selected stays the application's to decide.
+    /// Assistive technology hears the layout as a radio group. Left out, it is no group and
+    /// nothing is sent.
+    #[props(default)]
+    radio_group: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         row {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -144,15 +809,91 @@ pub fn Row(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             arrangement: role(arrangement),
             spacing: dp(spacing),
             space_role: role(space_role),
             alignment: role(alignment),
+            radio_group: radio_group.then_some(true),
+            {children}
+        }
+    }
+}
+
+/// A row that wraps, Compose's `FlowRow`. Each child is measured at its own width and
+/// placed after the one before it; a child that does not fit in what is left of the line
+/// starts the next one, and a child wider than the whole line has the line to itself.
+///
+/// Every property is left to the Renderer's default when it is not given: no gaps, lines
+/// that start at the start, children at the top of their line, and no limit on how many
+/// share one.
+#[component]
+pub fn FlowRow(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// The gap between two children on the same line, in dp.
+    #[props(default)]
+    horizontal_spacing: Option<f32>,
+    /// The gap between two lines, in dp.
+    #[props(default)]
+    vertical_spacing: Option<f32>,
+    /// Where the children of a line sit along it when they do not fill it.
+    #[props(default)]
+    horizontal_alignment: Option<HorizontalAlignment>,
+    /// Where a child sits inside the height of its line.
+    #[props(default)]
+    vertical_alignment: Option<VerticalAlignment>,
+    /// The most children one line holds, even when more would fit.
+    #[props(default)]
+    max_items_in_each_row: Option<u32>,
+    children: Element,
+) -> Element {
+    rsx! {
+        flowrow {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            horizontal_spacing: opt_dp(horizontal_spacing),
+            vertical_spacing: opt_dp(vertical_spacing),
+            horizontal_alignment: opt_role(horizontal_alignment),
+            vertical_alignment: opt_role(vertical_alignment),
+            max_items_in_each_row: max_items_in_each_row.map(i64::from),
             {children}
         }
     }
@@ -160,6 +901,9 @@ pub fn Row(
 
 #[component]
 pub fn ComposeBox(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -172,6 +916,11 @@ pub fn ComposeBox(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -180,16 +929,71 @@ pub fn ComposeBox(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] alignment: Option<Alignment>,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         composebox {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -201,9 +1005,14 @@ pub fn ComposeBox(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             alignment: role(alignment),
@@ -216,6 +1025,17 @@ pub fn ComposeBox(
 /// Renderer's, like focus and animation state, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollColumn(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
+    /// Where a fling comes to rest: `Snap::ItemStart` stops it with a child at the start of
+    /// the visible area, like CSS `scroll-snap-align: start`. Left out, it scrolls freely.
+    #[props(default)]
+    snap: Option<Snap>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -224,15 +1044,42 @@ pub fn ScrollColumn(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         scrollcolumn {
+            snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -241,6 +1088,9 @@ pub fn ScrollColumn(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -256,6 +1106,17 @@ pub fn ScrollColumn(
 /// scroll position is the Renderer's, so scrolling never reaches the Host.
 #[component]
 pub fn ScrollRow(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
+    /// Where a fling comes to rest: `Snap::ItemStart` stops it with a child at the start of
+    /// the visible area, like CSS `scroll-snap-align: start`. Left out, it scrolls freely.
+    #[props(default)]
+    snap: Option<Snap>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -264,15 +1125,42 @@ pub fn ScrollRow(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         scrollrow {
+            snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -281,6 +1169,9 @@ pub fn ScrollRow(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -296,6 +1187,13 @@ pub fn ScrollRow(
 /// size does not resend the rest of the text's styling.
 #[component]
 pub fn Text(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
+    /// The OpenType features the text asks its font for, such as tabular figures. Taken
+    /// with or without a type role. Left out, or empty, nothing is sent.
+    #[props(into, default)]
+    font_feature_settings: FontFeatures,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -304,6 +1202,9 @@ pub fn Text(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -312,7 +1213,7 @@ pub fn Text(
     /// Runs of different treatment inside [text]: a bold phrase, a link, a piece of
     /// code. Left out, the widget travels exactly as it did before runs existed.
     #[props(default)]
-    spans: crate::spans::TextSpans,
+    spans: compose_rust::spans::TextSpans,
     #[props(into)] text: String,
     #[props(default)] type_role: Option<TypeRole>,
     #[props(default)] font_size: Option<f32>,
@@ -323,41 +1224,139 @@ pub fn Text(
     #[props(default)] text_align: Option<TextAlign>,
     #[props(default)] max_lines: Option<u32>,
     #[props(default)] overflow: Option<TextOverflow>,
+    /// The fonts to try, in order, for text whose `type_role` is `TypeRole::None`. Text
+    /// with a role is set in the theme's font whatever this says.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
+    /// Where a line may break: CSS `word-break`.
+    #[props(default)]
+    word_break: Option<WordBreak>,
+    /// Whether a word too long for its line may be broken inside: CSS `overflow-wrap`.
+    #[props(default)]
+    overflow_wrap: Option<OverflowWrap>,
+    /// How many spaces apart the tab stops are. Left out, eight.
+    #[props(default)]
+    tab_size: Option<u8>,
+    /// The sizes are CSS pixels, which the system's font scale does not enlarge.
+    #[props(default)]
+    absolute_size: bool,
+    /// Whether lines wrap at the width they are given. `false` is CSS `nowrap` and `pre`.
+    #[props(default = true)]
+    soft_wrap: bool,
+    /// Says this string usually grows at the end, the way a reply arriving token by token
+    /// does. While it only grows, the Renderer is sent the new tail rather than the whole
+    /// string again. Any other change is sent whole, so this never changes what is shown.
+    #[props(default)]
+    streaming: bool,
+    /// Called with a link run's value when that run is pressed. The value is whatever the
+    /// run's `on_click` named it, so one handler can tell several links apart. Without a
+    /// handler a press on a link run does nothing.
+    #[props(default)]
+    on_link: Option<EventHandler<u64>>,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
-    rsx! {
-        text {
-            weight: opt_dp(weight),
-            width: opt_dp(width),
-            height: opt_dp(height),
-            padding: opt_dp(padding),
-            padding_role: opt_role(padding_role),
-            background: opt_paint(background),
-            shape_role: opt_role(shape_role),
-            corner_radius: opt_dp(corner_radius),
-            border_width: opt_dp(border_width),
-            border_color: opt_paint(border_color),
-            elevation: opt_dp(elevation),
-            fill_max_width,
-            fill_max_height,
-            // Left out entirely when there are none, so a Text that says nothing about
-            // runs travels exactly as it did before runs existed.
-            spans: (!spans.is_empty()).then(|| AttributeValue::any_value(spans)),
-            text,
-            type_role: role(type_role),
-            font_size: dp(font_size),
-            font_weight: i64::from(font_weight.unwrap_or(0)),
-            line_height: dp(line_height),
-            letter_spacing: dp(letter_spacing),
-            color: color.map_or(0, |paint| paint.to_bits() as i64),
-            text_align: role(text_align),
-            max_lines: i64::from(max_lines.unwrap_or(0)),
-            overflow: role(overflow),
-        }
+    // Worked out before the element, because the run list travels twice: its records as
+    // `spans` and its font table as `span_fonts`, and only one of them can take it.
+    let span_fonts = (spans.font_entry_count() > 0)
+        .then(|| AttributeValue::any_value(crate::renderer::SpanFontTable(spans.clone())));
+    let spans = (!spans.is_empty()).then(|| AttributeValue::any_value(spans));
+    let font = (!font.is_empty()).then(|| AttributeValue::any_value(font));
+    let text: dioxus_core::AttributeValue = if streaming {
+        dioxus_core::AttributeValue::any_value(crate::renderer::GrowingText(text))
+    } else {
+        dioxus_core::AttributeValue::Text(text)
+    };
+    // The element is written out twice so that a `Text` without a link handler carries no
+    // listener at all, and travels exactly as it did before links reported anything.
+    macro_rules! text_element {
+        ($($listener:tt)*) => {
+            rsx! {
+                text {
+                    match_parent_size: match_parent_size.then_some(true),
+                    window_drag,
+                    press_feedback: opt_press_feedback(press_feedback),
+                    cursor: opt_role(cursor),
+                    user_select: opt_role(user_select),
+                    pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+                    onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+                    weight: opt_dp(weight),
+                    width: opt_dp(width),
+                    height: opt_dp(height),
+                    padding: opt_dp(padding),
+                    padding_role: opt_role(padding_role),
+                    background: opt_paint(background),
+                    shape_role: opt_role(shape_role),
+                    corner_radius: opt_dp(corner_radius),
+                    corner_curve: opt_dp(corner_curve),
+                    semantics: semantics.map(Semantics::attribute),
+                    accessible_name,
+                    border_width: opt_dp(border_width),
+                    border_color: opt_paint(border_color),
+                    elevation: opt_dp(elevation),
+                    fill_max_width,
+                    fill_max_height,
+                    // Left out entirely when there are none, so a Text that says nothing
+                    // about runs travels exactly as it did before runs existed.
+                    span_fonts,
+                    spans,
+                    text,
+                    // Sent only when there is one, and as its tag when there is:
+                    // `TypeRole::None` is tag 0 and has to arrive as a value, because
+                    // absent is the default rung.
+                    type_role: type_role.map(|role| i64::from(u16::from(role))),
+                    font,
+                    font_feature_settings: font_feature_settings.attribute(),
+                    word_break: role(word_break),
+                    overflow_wrap: role(overflow_wrap),
+                    tab_size: i64::from(tab_size.unwrap_or(0)),
+                    absolute_size: i64::from(absolute_size),
+                    soft_wrap: (!soft_wrap).then_some(false),
+                    font_size: dp(font_size),
+                    font_weight: i64::from(font_weight.unwrap_or(0)),
+                    line_height: dp(line_height),
+                    // 0 is a spacing of its own, no extra space, so only a spacing that is
+                    // left out sends nothing and takes the type role's.
+                    letter_spacing: opt_dp(letter_spacing),
+                    color: color.map_or(0, |paint| paint.to_bits() as i64),
+                    text_align: role(text_align),
+                    max_lines: i64::from(max_lines.unwrap_or(0)),
+                    overflow: role(overflow),
+                    $($listener)*
+                }
+            }
+        };
     }
+    if let Some(on_link) = on_link {
+        return text_element!(onlink: move |event: dioxus_core::Event<u64>| on_link.call(*event.data()),);
+    }
+    text_element!()
 }
 
 #[component]
 pub fn TextField(
+    /// The OpenType features the text asks its font for, such as tabular figures. Taken
+    /// with or without a type role. Left out, or empty, nothing is sent.
+    #[props(into, default)]
+    font_feature_settings: FontFeatures,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -366,6 +1365,9 @@ pub fn TextField(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -378,13 +1380,31 @@ pub fn TextField(
     /// path or a snippet of code wants the monospace rung; prose does not.
     #[props(default)]
     type_role: Option<TypeRole>,
+    /// The fonts to try, in order, for a field whose `type_role` is `TypeRole::None`, the
+    /// way `Text` takes them. A field with a role is set in the theme's font for it.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
     #[props(default)] on_value_change: EventHandler<String>,
     #[props(default)] on_submit: EventHandler<String>,
     #[props(default)] on_focus_lost: EventHandler<()>,
     #[props(default)] on_key_down: EventHandler<KeyEvent>,
+    /// Drawn without the design system's frame: no fill, line, underline, corner clip,
+    /// inner padding, minimum height or focus line. A `background` or a border given here
+    /// is still drawn.
+    #[props(default)]
+    bare: bool,
+    /// Called when the field gains the keyboard focus. Left out, the Renderer is not asked
+    /// to report it.
+    #[props(default)]
+    on_focus_gained: Option<EventHandler<()>>,
+    /// Called when a key is let go in the field, with the same event a key going down
+    /// brings. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_key_up: Option<EventHandler<KeyEvent>>,
 ) -> Element {
     rsx! {
         textfield {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -393,6 +1413,9 @@ pub fn TextField(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -401,11 +1424,16 @@ pub fn TextField(
             placeholder,
             enabled,
             multiline,
-            type_role: role(type_role),
+            type_role: type_role.map(|role| i64::from(u16::from(role))),
+            font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
+            font_feature_settings: font_feature_settings.attribute(),
             onvaluechange: move |event| on_value_change.call((*event.data()).clone()),
             onsubmit: move |event| on_submit.call((*event.data()).clone()),
             onfocuslost: move |_| on_focus_lost.call(()),
             onkeydown: move |event| on_key_down.call((*event.data()).clone()),
+            bare: bare.then_some(true),
+            onfocusgained: optional_listener(on_focus_gained, |_: &()| ()),
+            onkeyup: optional_listener(on_key_up, KeyEvent::clone),
         }
     }
 }
@@ -414,6 +1442,9 @@ pub fn TextField(
 /// The same rsx draws differently per system, and that is correct behaviour.
 #[component]
 pub fn Button(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -422,6 +1453,9 @@ pub fn Button(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -437,16 +1471,31 @@ pub fn Button(
     #[props(default)]
     icon: Option<IconRole>,
     #[props(default = true)] enabled: bool,
+    /// What the button is, apart from how loud its variant is: a plain button, or one key
+    /// of a dense grid of them.
+    #[props(default)]
+    button_kind: Option<ButtonKind>,
     #[props(default)] variant: Option<ButtonVariant>,
     /// The label's colour, for the rare button whose meaning is not the variant's.
     /// A destructive action is the case that needs it: it is a plain button in every
     /// design system, and what marks it is that its label is the error colour.
     #[props(default)]
     color: Option<Paint>,
+    /// How many lines the label may take. Left out, one: a Button label does not wrap, so
+    /// a squeezed button keeps the whole word instead of breaking a Hangul label by syllable.
+    #[props(default)]
+    max_lines: Option<u32>,
+    /// What happens to a label cut by `max_lines` or by a narrow button. Left out, an ellipsis.
+    #[props(default)]
+    overflow: Option<TextOverflow>,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
         button {
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            button_kind: opt_role(button_kind),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -455,6 +1504,9 @@ pub fn Button(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -465,6 +1517,8 @@ pub fn Button(
             enabled,
             variant: role(variant),
             color: opt_paint(color),
+            max_lines: i64::from(max_lines.unwrap_or(0)),
+            overflow: role(overflow),
             onclick: move |_| on_click.call(()),
         }
     }
@@ -496,14 +1550,36 @@ pub fn Spacer(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         spacer {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -512,6 +1588,9 @@ pub fn Spacer(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -531,6 +1610,10 @@ pub fn Spacer(
 /// scrolling back re-materialises an identical subtree.
 #[component]
 pub fn LazyColumn(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -539,6 +1622,9 @@ pub fn LazyColumn(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -554,6 +1640,7 @@ pub fn LazyColumn(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazycolumn {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -562,6 +1649,9 @@ pub fn LazyColumn(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -572,14 +1662,12 @@ pub fn LazyColumn(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -590,6 +1678,9 @@ pub fn LazyColumn(
 /// own. `Modifier::Elevation` overrides the resting height when the Host has a reason to.
 #[component]
 pub fn Card(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -602,6 +1693,11 @@ pub fn Card(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -610,15 +1706,70 @@ pub fn Card(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
+    /// Shadows cast behind the node, in CSS order: the first is on top. Each follows the
+    /// node's corner radius. An empty list casts none.
+    #[props(default)]
+    shadow: Vec<ShadowLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         card {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -630,9 +1781,14 @@ pub fn Card(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
+            shadow: shadow_attr(&shadow),
             fill_max_width,
             fill_max_height,
             {children}
@@ -644,6 +1800,9 @@ pub fn Card(
 /// would be wrong and only the surface is wanted.
 #[component]
 pub fn Surface(
+    #[props(default)] match_parent_size: bool,
+    #[props(default)] window_drag: Option<bool>,
+    #[props(default)] press_feedback: Option<(f32, f32)>,
     /// Asks the Renderer to report this node's measured size, under the name a
     /// screen gave it with `use_node_size`. Nothing is measured without it.
     #[props(default)]
@@ -656,6 +1815,11 @@ pub fn Surface(
     /// on the ones that lift, a flat fill on the rest.
     #[props(default)]
     material: Option<MaterialRole>,
+    /// Called once when this node's size motion comes to rest, with the size it settled at
+    /// in dp. The node needs a `motion` role for its size to move. Left out, the Renderer
+    /// attaches nothing to the motion.
+    #[props(default)]
+    on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -664,15 +1828,66 @@ pub fn Surface(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
+    /// Background images over the `background` colour, in CSS order: the first is on top.
+    /// A node carries up to four; a longer list keeps the four on top. An empty list sends
+    /// nothing.
+    #[props(default)]
+    background_brush: Vec<BackgroundLayer>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
+    /// Makes the node respond to a press. Left out, nothing is written for it and it takes
+    /// no press. What a press looks like is the design system's, and press feedback for
+    /// these nodes is not drawn yet (tracked as compose-rust #305).
+    #[props(default)]
+    on_click: Option<EventHandler<()>>,
+    /// The `RestoreKey` of the window to open when this node is torn off by dragging.
+    #[props(into, default)]
+    tear_off_key: Option<String>,
+    /// Called when a torn-off window is dragged over or dropped onto this node.
+    #[props(default)]
+    on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
     rsx! {
         surface {
+            onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
+            match_parent_size: match_parent_size.then_some(true),
+            window_drag,
+            press_feedback: opt_press_feedback(press_feedback),
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            tear_off_key,
+            onwindowdragover: on_window_drag_over.map(|handler| {
+                dioxus_core::ListenerCallback::new(
+                    move |event: dioxus_core::Event<compose_rust::WindowDragOver>| {
+                        handler.call(*event.data())
+                    },
+                )
+            }),
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
@@ -684,9 +1899,13 @@ pub fn Surface(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
+            background_brush: background_attr(&background_brush),
             fill_max_width,
             fill_max_height,
             {children}
@@ -700,6 +1919,9 @@ pub fn Surface(
 /// close it, and the Host decides whether to honour that by setting `open` to false.
 #[component]
 pub fn Dialog(
+    /// The colour that dims the window behind it. Left out, the design system's.
+    #[props(default)]
+    scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -708,6 +1930,9 @@ pub fn Dialog(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -719,6 +1944,7 @@ pub fn Dialog(
 ) -> Element {
     rsx! {
         dialog {
+            scrim: opt_paint(scrim),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -727,6 +1953,9 @@ pub fn Dialog(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -747,6 +1976,9 @@ pub fn Dialog(
 /// chosen. The Renderer closes the popup itself.
 #[component]
 pub fn Menu(
+    /// The colour that dims the window behind it. Left out, the design system's.
+    #[props(default)]
+    scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -755,6 +1987,9 @@ pub fn Menu(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -767,6 +2002,7 @@ pub fn Menu(
 ) -> Element {
     rsx! {
         menu {
+            scrim: opt_paint(scrim),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -775,12 +2011,103 @@ pub fn Menu(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
             open: expanded,
+            ondismiss: move |_| on_dismiss.call(()),
+            {anchor}
+            {children}
+        }
+    }
+}
+
+/// A floating box of any content attached to `anchor`, Compose's `Popup` with the place
+/// said rather than computed.
+///
+/// The anchor is always drawn and is the first child on the wire; the children are the
+/// content, drawn only while `open` is true. `open` is the application's: pressing outside
+/// the box or pressing Escape calls `on_dismiss` once and changes nothing, so the handler
+/// is where the screen closes it, or keeps it open to ask about unsaved work.
+///
+/// The Renderer places the box. It opens on the side `placement` names, lined up with the
+/// edge `align` names, `offset` dp away, and moves to the opposite side or slides along the
+/// edge when it would otherwise leave the window. The Modifier attributes here belong to
+/// the floating box, not to the anchor.
+#[component]
+pub fn Popover(
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    #[props(default)] open: bool,
+    /// The side of the anchor the box opens on. Left out, `Bottom`.
+    #[props(default)]
+    placement: Option<PopoverPlacement>,
+    /// The edge of the anchor the box lines up with. Left out, `Start`.
+    #[props(default)]
+    align: Option<PopoverAlign>,
+    /// The gap between the anchor and the box, in dp. Left out, the design system's.
+    #[props(default)]
+    offset: Option<f32>,
+    /// Whether the window behind the box is dimmed while it is open. It is not, unless
+    /// asked.
+    #[props(default)]
+    scrim: bool,
+    /// Dims the window behind the box with this colour instead of the design system's.
+    #[props(default)]
+    scrim_color: Option<Paint>,
+    #[props(default)] on_dismiss: EventHandler<()>,
+    anchor: Element,
+    children: Element,
+) -> Element {
+    // A colour says both that the window is dimmed and with what; `true` alone leaves the
+    // colour to the design system.
+    let scrim = match (scrim_color, scrim) {
+        (Some(paint), _) => Some(AttributeValue::Int(paint.to_bits() as i64)),
+        (None, true) => Some(AttributeValue::Bool(true)),
+        (None, false) => None,
+    };
+    rsx! {
+        popover {
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            open,
+            placement: opt_role(placement),
+            align: opt_role(align),
+            offset_dp: opt_dp(offset),
+            scrim,
             ondismiss: move |_| on_dismiss.call(()),
             {anchor}
             {children}
@@ -810,6 +2137,9 @@ pub fn Tabs(
     color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -829,6 +2159,9 @@ pub fn Tabs(
             color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -852,6 +2185,9 @@ pub fn TopAppBar(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -879,6 +2215,9 @@ pub fn TopAppBar(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -895,6 +2234,10 @@ pub fn TopAppBar(
 /// read-ahead buffer belongs to the Renderer because the scroll position does.
 #[component]
 pub fn LazyRow(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -903,6 +2246,9 @@ pub fn LazyRow(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -918,6 +2264,7 @@ pub fn LazyRow(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazyrow {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -926,6 +2273,9 @@ pub fn LazyRow(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -936,14 +2286,12 @@ pub fn LazyRow(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -962,6 +2310,9 @@ pub fn Tooltip(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -980,6 +2331,9 @@ pub fn Tooltip(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1010,6 +2364,9 @@ pub fn Canvas(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1027,6 +2384,9 @@ pub fn Canvas(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1052,11 +2412,18 @@ pub fn Image(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// How the picture is laid into the box: `Fit` shows all of it, `Crop` covers the box
+    /// and `FillBounds` stretches it to the box. Left out, it is fitted and nothing is sent.
+    #[props(default)]
+    content_scale: Option<compose_rust::ContentScale>,
     asset_id: u32,
 ) -> Element {
     rsx! {
@@ -1069,12 +2436,16 @@ pub fn Image(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
             asset: i64::from(asset_id),
+            content_scale: opt_role(content_scale),
         }
     }
 }
@@ -1091,6 +2462,9 @@ pub fn Icon(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1109,6 +2483,9 @@ pub fn Icon(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1139,6 +2516,9 @@ pub fn DatePicker(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1161,6 +2541,9 @@ pub fn DatePicker(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1189,6 +2572,9 @@ pub fn TimePicker(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1211,6 +2597,9 @@ pub fn TimePicker(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1233,6 +2622,9 @@ const MINUTES_IN_A_DAY: u32 = 24 * 60;
 /// position the user landed on.
 #[component]
 pub fn Dropdown(
+    /// Drawn without the design system's frame, as a bare `TextField` is.
+    #[props(default)]
+    bare: bool,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1241,6 +2633,9 @@ pub fn Dropdown(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1253,6 +2648,7 @@ pub fn Dropdown(
 ) -> Element {
     rsx! {
         dropdown {
+            bare: bare.then_some(true),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1261,6 +2657,9 @@ pub fn Dropdown(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1284,6 +2683,15 @@ pub fn Dropdown(
 /// system's rule.
 #[component]
 pub fn Checkbox(
+    /// The box when it is checked. Left out, the design system's.
+    #[props(default)]
+    container_color: Option<Paint>,
+    /// The check mark. Left out, the design system's.
+    #[props(default)]
+    check_color: Option<Paint>,
+    /// The length of the box's side in dp. Left out, the design system's.
+    #[props(default)]
+    size: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1292,6 +2700,9 @@ pub fn Checkbox(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1303,6 +2714,9 @@ pub fn Checkbox(
 ) -> Element {
     rsx! {
         checkbox {
+            container_color: opt_paint(container_color),
+            check_color: opt_paint(check_color),
+            control_size: size.map(|side| AttributeValue::any_value((side, side))),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1311,6 +2725,9 @@ pub fn Checkbox(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1331,6 +2748,17 @@ pub fn Checkbox(
 /// selected radio button and a switch that is on are one fact.
 #[component]
 pub fn RadioButton(
+    /// The ring around the button, selected or not. Where the design system fills a
+    /// selected button, the fill takes this colour as well. Left out, the design system's.
+    #[props(default)]
+    ring_color: Option<Paint>,
+    /// The dot inside a selected button. Left out, the design system's.
+    #[props(default)]
+    dot_color: Option<Paint>,
+    /// The diameter of the ring in dp; the dot scales with it. Left out, the design
+    /// system's.
+    #[props(default)]
+    size: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1339,6 +2767,9 @@ pub fn RadioButton(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1350,6 +2781,9 @@ pub fn RadioButton(
 ) -> Element {
     rsx! {
         radiobutton {
+            container_color: opt_paint(ring_color),
+            check_color: opt_paint(dot_color),
+            control_size: size.map(|side| AttributeValue::any_value((side, side))),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1358,6 +2792,9 @@ pub fn RadioButton(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1374,6 +2811,17 @@ pub fn RadioButton(
 /// track, the thumb and the way the change is animated belong to the design system.
 #[component]
 pub fn Switch(
+    /// The track, whichever state the switch is in. The Host owns the state, so it passes
+    /// the colour that goes with it. Left out, the design system's.
+    #[props(default)]
+    track_color: Option<Paint>,
+    /// The thumb that travels along the track. Left out, the design system's.
+    #[props(default)]
+    thumb_color: Option<Paint>,
+    /// The track's width and height in dp; the thumb scales with the height. Left out, the
+    /// design system's.
+    #[props(default)]
+    size: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1382,6 +2830,9 @@ pub fn Switch(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1393,6 +2844,9 @@ pub fn Switch(
 ) -> Element {
     rsx! {
         switch {
+            track_color: opt_paint(track_color),
+            thumb_color: opt_paint(thumb_color),
+            control_size: size.map(AttributeValue::any_value),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1401,6 +2855,9 @@ pub fn Switch(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1421,6 +2878,19 @@ pub fn Switch(
 /// the slider continuous.
 #[component]
 pub fn Slider(
+    /// The part of the track that is not filled. Left out, the design system's.
+    #[props(default)]
+    track_color: Option<Paint>,
+    /// The thumb. Left out, the design system's.
+    #[props(default)]
+    thumb_color: Option<Paint>,
+    /// The part of the track up to the thumb. Left out, the design system's.
+    #[props(default)]
+    active_track_color: Option<Paint>,
+    /// The diameter of the thumb in dp. Left out, the design system's. The track and the
+    /// area that takes a press stay as they are.
+    #[props(default)]
+    thumb_size: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1436,6 +2906,9 @@ pub fn Slider(
     color: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1450,6 +2923,10 @@ pub fn Slider(
 ) -> Element {
     rsx! {
         slider {
+            track_color: opt_paint(track_color),
+            thumb_color: opt_paint(thumb_color),
+            active_track_color: opt_paint(active_track_color),
+            thumb_size: opt_dp(thumb_size),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1459,6 +2936,9 @@ pub fn Slider(
             color: opt_paint(color),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1489,6 +2969,9 @@ pub fn ProgressIndicator(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1508,6 +2991,9 @@ pub fn ProgressIndicator(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1532,6 +3018,9 @@ pub fn Divider(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1549,6 +3038,9 @@ pub fn Divider(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1586,6 +3078,11 @@ fn is_on(value: f64) -> bool {
 /// selection in the Renderer and reports it by firing that destination's own `on_click`.
 #[component]
 pub fn Navigation(
+    /// What the destinations become in a compact window: the put-away sidebar, or nothing
+    /// at all so the screen reaches them its own way. Left out, or `Default`, the design
+    /// system's answer.
+    #[props(default)]
+    compact: Option<CompactNavigation>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1594,6 +3091,9 @@ pub fn Navigation(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1613,6 +3113,9 @@ pub fn Navigation(
 ) -> Element {
     rsx! {
         navigation {
+            compact_navigation: compact
+                .filter(|compact| *compact != CompactNavigation::Default)
+                .map(|compact| i64::from(u16::from(compact))),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1621,6 +3124,9 @@ pub fn Navigation(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1660,6 +3166,9 @@ pub fn NavigationItem(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1695,6 +3204,9 @@ pub fn NavigationItem(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1724,6 +3236,13 @@ pub fn NavigationItem(
 /// a date picker for a wheel.
 #[component]
 pub fn Sheet(
+    /// The colour that dims the window behind it. Left out, the design system's.
+    #[props(default)]
+    scrim: Option<Paint>,
+    /// The most of the window's height a bottom sheet may take, from 0 to 1. A value above
+    /// 1 is taken as 1, and one of 0 or less as not given. Left out, the design system's.
+    #[props(default)]
+    max_height_fraction: Option<f32>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1732,6 +3251,9 @@ pub fn Sheet(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1743,6 +3265,12 @@ pub fn Sheet(
 ) -> Element {
     rsx! {
         sheet {
+            scrim: opt_paint(scrim),
+            max_height_fraction: opt_dp(
+                max_height_fraction
+                    .filter(|fraction| *fraction > 0.0)
+                    .map(|fraction| fraction.min(1.0)),
+            ),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1751,6 +3279,9 @@ pub fn Sheet(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1856,6 +3387,10 @@ pub fn Scaffold(
 /// decide.
 #[component]
 pub fn LazyGrid(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -1864,6 +3399,9 @@ pub fn LazyGrid(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1885,6 +3423,7 @@ pub fn LazyGrid(
     let last = first.saturating_add(count).min(item_count);
     rsx! {
         lazygrid {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1893,6 +3432,9 @@ pub fn LazyGrid(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -1905,14 +3447,12 @@ pub fn LazyGrid(
                 let requested = event.data();
                 range.set((requested.start(), requested.count()));
             },
-            for index in first..last {
-                {
-                    let item_key = key_of
-                        .map_or_else(|| index.to_string(), |key_of| key_of.call(index));
-                    rsx! {
-                        composebox { key: "{item_key}", item_key, {item.call(index)} }
-                    }
-                }
+            // The key sits on the loop's own element. Inside a nested block it would key
+            // a fragment the loop does not see, and a reorder would rebuild every item.
+            for (index, item_key) in (first..last).map(|index| {
+                (index, key_of.map_or_else(|| index.to_string(), |key_of| key_of.call(index)))
+            }) {
+                composebox { key: "{item_key}", item_key, {item.call(index)} }
             }
         }
     }
@@ -1937,6 +3477,9 @@ pub fn FileDropTarget(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -1963,6 +3506,9 @@ pub fn FileDropTarget(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2083,6 +3629,9 @@ pub fn Badge(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2110,6 +3659,9 @@ pub fn Badge(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2147,15 +3699,37 @@ pub fn SelectionContainer(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     children: Element,
+    /// The shape of the pointer over this node. Left out, the widget under it decides.
+    #[props(default)]
+    cursor: Option<Cursor>,
+    /// Whether text under this node can be selected. Left out, it follows the parent.
+    #[props(default)]
+    user_select: Option<UserSelect>,
+    /// The kinds of pointer input `on_pointer` is called for. Left out, or empty, the
+    /// node takes no pointer input at all.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`. Calling `consume` on
+    /// the event keeps it from the nearest subscribed ancestor and from the Renderer's
+    /// own handling.
+    #[props(default)]
+    on_pointer: EventHandler<PointerEvent>,
 ) -> Element {
     rsx! {
         selectioncontainer {
+            cursor: opt_role(cursor),
+            user_select: opt_role(user_select),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2164,6 +3738,9 @@ pub fn SelectionContainer(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2216,6 +3793,9 @@ pub fn SplitPane(
     #[props(default)] background: Option<Paint>,
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
     #[props(default)] border_color: Option<Paint>,
     #[props(default)] elevation: Option<f32>,
@@ -2231,6 +3811,10 @@ pub fn SplitPane(
     /// The widest the side pane may be dragged, in dp.
     #[props(default)]
     max: Option<f32>,
+    /// The width in dp below which the split pane shows one pane at a time instead of two.
+    /// Left out, the design system's breakpoint.
+    #[props(default)]
+    collapse_below: Option<f32>,
     /// Whether the side pane may be folded away.
     #[props(default)]
     collapsible: bool,
@@ -2258,6 +3842,9 @@ pub fn SplitPane(
             background: opt_paint(background),
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
             border_width: opt_dp(border_width),
             border_color: opt_paint(border_color),
             elevation: opt_dp(elevation),
@@ -2267,11 +3854,511 @@ pub fn SplitPane(
             min: min.map(f64::from),
             max: max.map(f64::from),
             collapsible,
+            collapse_below: opt_dp(collapse_below),
             selected_index: selected_index as i64,
             text: label,
             onchange: move |event: dioxus_core::Event<f64>| on_change.call(*event.data() as f32),
             ondismiss: move |_| on_dismiss.call(()),
             {children}
+        }
+    }
+}
+
+/// Several lines of code that the reader edits.
+///
+/// The document belongs to the Renderer from the moment it opens. The caret, the selection,
+/// the scroll position, the undo history and anything an input method is still composing
+/// stay there, exactly as a text field's do, and `on_change` hears about every committed
+/// edit with the version of the document it produced. Give that to a language server as it
+/// is: the range is in the document as it stood before the edit and columns are UTF-16
+/// units, which is what a language server counts.
+///
+/// `text` is what the editor opens with, as version 0. Giving it text that differs from
+/// what the editor holds replaces the whole document and starts again from version 0,
+/// which is opening a file. Giving it the text it already holds does nothing, so an
+/// application that writes each change back into the signal it passes here keeps the
+/// reader's caret and undo history. To open the same text afresh, give the editor a new
+/// key: a new node is a new document.
+///
+/// `syntax_spans` colour the text and `decorations` draw over it. Each run and each
+/// decoration names the version its range was written against, and the editor moves it
+/// along with whatever the reader typed since, dropping it where its text was deleted. So a
+/// list computed while the reader kept typing still lands on the text it was about, and
+/// the application has nothing to do until it has a newer list.
+///
+/// `handle` addresses the editor for edits the application makes itself: formatting,
+/// accepting a completion, reloading a file. See [`crate::CodeEditorHandle`].
+///
+/// The weight of an underline and how faint a suggestion is are the design system's. The
+/// gutter, the line numbers and the colours of the editor's parts are too, unless
+/// `line_numbers`, the gutter sizes and `colors` say otherwise, and the text is set in its
+/// monospace rung unless `type_role`, `font_size`, `line_height` or `font` do.
+#[component]
+pub fn CodeEditor(
+    /// Called with where the container is, at most once a frame while it scrolls and once
+    /// more when it comes to rest. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_scroll_changed: Option<EventHandler<ScrollChange>>,
+    /// Whether the line numbers are drawn. Left out, they are.
+    #[props(default)]
+    line_numbers: Option<bool>,
+    /// The least width of the line number column with its padding, in dp.
+    #[props(default)]
+    gutter_min_width: Option<f32>,
+    /// The padding on each side of a line number, in dp.
+    #[props(default)]
+    gutter_padding: Option<f32>,
+    /// The space between the gutter and the text, in dp.
+    #[props(default)]
+    text_inset: Option<f32>,
+    /// The colours of the editor's own parts. A part not named keeps the design system's.
+    #[props(default)]
+    colors: compose_rust::code::CodeEditorColors,
+    /// Called with the height of one row in physical pixels when the editor is first drawn
+    /// and whenever it changes. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_code_metrics: Option<EventHandler<compose_rust::code::CodeMetrics>>,
+    /// Called with how far the editor is scrolled down, in physical pixels, at most once a
+    /// frame. The handle's `set_scroll_offset` takes the same unit. Left out, the Renderer
+    /// is not asked to report it.
+    #[props(default)]
+    on_code_scrolled: Option<EventHandler<compose_rust::code::CodeScroll>>,
+    /// Called with where the caret is drawn, its place in the document and its rectangle in
+    /// the window's dp, when the caret moves or the view scrolls, at most once a frame. A
+    /// suggestion list is placed under it. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_caret_rect: Option<EventHandler<compose_rust::code::CaretRect>>,
+    /// Offered every key press before the editor handles it, except while an input method
+    /// is composing. Calling `consume` on the event keeps the key from the editor, as
+    /// `TextField`'s `on_key_down` does: Down does not move the caret and Enter inserts no
+    /// line. Left out, the editor hears every key itself.
+    #[props(default)]
+    on_key_preview: Option<EventHandler<KeyEvent>>,
+    /// The kinds of pointer input `on_code_pointer` is called for. Left out, or empty, none
+    /// is reported.
+    #[props(default)]
+    pointer_kinds: Option<PointerKinds>,
+    /// Called for each pointer event of the kinds in `pointer_kinds`, with the character
+    /// under the pointer, or none over the gutter, past the end of a line or below the last
+    /// one. Calling `consume` on its `event` keeps a press from moving the caret, which is
+    /// what Cmd or Ctrl and a click needs to go to a definition. Left out, nothing is
+    /// announced.
+    #[props(default)]
+    on_code_pointer: Option<EventHandler<compose_rust::code::CodePointer>>,
+    /// Which side the minimap is drawn on: the whole document shrunk, with the part on
+    /// screen marked, which a press or a drag scrolls to. `MinimapSide::Off` draws none.
+    /// Left out, none is drawn and nothing is sent.
+    #[props(default)]
+    minimap: Option<compose_rust::MinimapSide>,
+    /// Room left after lines that is not text, the way a diff lines its two sides up. A
+    /// zone follows its line through edits and the caret passes over it. An empty list
+    /// sends nothing.
+    #[props(default)]
+    view_zones: compose_rust::code::ViewZones,
+    /// Where a line too long for the editor is broken onto the rows below: at the edge of
+    /// the view, at a number of columns, or at whichever comes first. Left out, no line is
+    /// broken and nothing is sent.
+    #[props(default)]
+    word_wrap: Option<compose_rust::code::WordWrap>,
+    /// Called once for every grouped edit asked of the handle with
+    /// [`crate::CodeEditorHandle::edit_group`], with whether it went in whole or why it
+    /// stayed out. Left out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_edit_group_result: Option<EventHandler<compose_rust::code::EditGroupResult>>,
+    /// Called with every selection, the primary first, while the editor holds more than
+    /// one, and once more when it is back to one. `on_selection_change` goes on hearing the
+    /// primary selection alone.
+    #[props(default)]
+    on_selections_change: Option<EventHandler<compose_rust::code::SelectionsChange>>,
+    /// The rung of the type ladder the text is set in. Left out, the design system's
+    /// monospace rung.
+    #[props(default)]
+    type_role: Option<TypeRole>,
+    /// The size of the text in sp, over the rung's.
+    #[props(default)]
+    font_size: Option<f32>,
+    /// The height of a row in sp, over the rung's.
+    #[props(default)]
+    line_height: Option<f32>,
+    /// The fonts to try, in order, for an editor set in the application's own monospace
+    /// list. An empty list sends nothing.
+    #[props(default)]
+    font: compose_rust::fonts::FontRefs,
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+    /// The document the editor opens with.
+    #[props(into, default)]
+    text: String,
+    /// Colour runs for the syntax, usually in the code colour roles.
+    #[props(default)]
+    syntax_spans: compose_rust::code::SyntaxSpans,
+    /// Underlines, lenses, hover anchors and inline suggestions.
+    #[props(default)]
+    decorations: compose_rust::code::Decorations,
+    /// The stretches of lines that can be folded, and which of them are folded now.
+    #[props(default)]
+    folds: compose_rust::code::Folds,
+    /// The marks drawn beside the line numbers.
+    #[props(default)]
+    gutter_decorations: compose_rust::code::GutterDecorations,
+    /// How many columns a tab advances. Left to the design system where it is not given.
+    #[props(default)]
+    tab_width: Option<u32>,
+    /// What edits asked of the application's own handle are addressed to.
+    #[props(default)]
+    handle: Option<crate::CodeEditorHandle>,
+    /// Every committed edit, in order.
+    #[props(default)]
+    on_change: EventHandler<compose_rust::code::CodeChange>,
+    /// An edit asked of the handle that the editor did not apply, because the reader had
+    /// changed the same place in the meantime.
+    #[props(default)]
+    on_edit_rejected: EventHandler<compose_rust::code::EditRejected>,
+    /// A pointer came to rest over a place in the editor, or left it.
+    #[props(default)]
+    on_hover: EventHandler<compose_rust::code::CodeHover>,
+    /// The reader pressed the platform's save shortcut.
+    #[props(default)]
+    on_save: EventHandler<compose_rust::code::SaveRequest>,
+    /// A lens was pressed or a suggestion accepted, named by the id it was given.
+    #[props(default)]
+    on_decoration_click: EventHandler<u64>,
+    /// The selection moved.
+    #[props(default)]
+    on_selection_change: EventHandler<compose_rust::code::SelectionChange>,
+    /// The lines on screen changed.
+    #[props(default)]
+    on_visible_range_change: EventHandler<compose_rust::code::VisibleRange>,
+    /// The editor gained (true) or lost (false) the keyboard focus.
+    #[props(default)]
+    on_editor_focus_change: EventHandler<bool>,
+    /// The reader folded or unfolded a stretch.
+    #[props(default)]
+    on_fold_change: EventHandler<compose_rust::code::FoldChange>,
+    /// An input method started (true) or ended (false) a composition.
+    #[props(default)]
+    on_composition_change: EventHandler<bool>,
+) -> Element {
+    rsx! {
+        codeeditor {
+            onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
+            line_numbers,
+            gutter_min_width_dp: opt_dp(gutter_min_width),
+            gutter_padding_dp: opt_dp(gutter_padding),
+            text_inset_dp: opt_dp(text_inset),
+            code_editor_colors: (!colors.is_empty()).then(|| AttributeValue::any_value(colors)),
+            oncodemetrics: optional_listener(on_code_metrics, |metrics: &compose_rust::code::CodeMetrics| *metrics),
+            oncodescrolled: optional_listener(on_code_scrolled, |scroll: &compose_rust::code::CodeScroll| *scroll),
+            oncaretrect: optional_listener(on_caret_rect, |caret: &compose_rust::code::CaretRect| *caret),
+            onkeypreview: optional_listener(on_key_preview, |key: &KeyEvent| key.clone()),
+            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            oncodepointer: optional_listener(on_code_pointer, |pointer: &compose_rust::code::CodePointer| pointer.clone()),
+            minimap: opt_role(minimap),
+            view_zones: (!view_zones.is_empty()).then(|| AttributeValue::any_value(view_zones)),
+            word_wrap: word_wrap.map(compose_rust::code::WordWrap::to_value),
+            oneditgroupresult: optional_listener(on_edit_group_result, |result: &compose_rust::code::EditGroupResult| *result),
+            onselectionschange: optional_listener(on_selections_change, |change: &compose_rust::code::SelectionsChange| change.clone()),
+            type_role: opt_role(type_role),
+            font_size: opt_dp(font_size),
+            line_height: opt_dp(line_height),
+            font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
+            editor: handle.map(|handle| i64::from(handle.token())),
+            text,
+            // Left out entirely while there are none, so an editor without them sends
+            // nothing for them at all.
+            syntax_spans: (!syntax_spans.is_empty()).then(|| AttributeValue::any_value(syntax_spans)),
+            decorations: (!decorations.is_empty()).then(|| AttributeValue::any_value(decorations)),
+            folds: (!folds.is_empty()).then(|| AttributeValue::any_value(folds)),
+            gutter_decorations: (!gutter_decorations.is_empty()).then(|| AttributeValue::any_value(gutter_decorations)),
+            tab_width: tab_width.map(i64::from),
+            oncodechange: move |event: dioxus_core::Event<compose_rust::code::CodeChange>| {
+                on_change.call(event.data().as_ref().clone());
+            },
+            oneditrejected: move |event: dioxus_core::Event<compose_rust::code::EditRejected>| {
+                on_edit_rejected.call(*event.data());
+            },
+            onhover: move |event: dioxus_core::Event<compose_rust::code::CodeHover>| {
+                on_hover.call(*event.data());
+            },
+            onsave: move |event: dioxus_core::Event<compose_rust::code::SaveRequest>| {
+                on_save.call(*event.data());
+            },
+            ondecorationclick: move |event: dioxus_core::Event<u64>| {
+                on_decoration_click.call(*event.data());
+            },
+            onselectionchange: move |event: dioxus_core::Event<compose_rust::code::SelectionChange>| {
+                on_selection_change.call(*event.data());
+            },
+            onvisiblerangechange: move |event: dioxus_core::Event<compose_rust::code::VisibleRange>| {
+                on_visible_range_change.call(*event.data());
+            },
+            oneditorfocuschange: move |event: dioxus_core::Event<bool>| {
+                on_editor_focus_change.call(*event.data());
+            },
+            onfoldchange: move |event: dioxus_core::Event<compose_rust::code::FoldChange>| {
+                on_fold_change.call(*event.data());
+            },
+            oncompositionchange: move |event: dioxus_core::Event<bool>| {
+                on_composition_change.call(*event.data());
+            },
+        }
+    }
+}
+
+/// How wide one column of a [`Table`] is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColumnWidth {
+    /// A width in dp.
+    Fixed(f32),
+    /// A share of the width left over once the other columns are placed. These are the
+    /// columns that give way when the table is narrow.
+    Weight(f32),
+    /// As wide as the widest of the header and the cells drawn so far.
+    Content,
+}
+
+/// One column of a [`Table`]: what its header says and how wide it is.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColumnSpec {
+    label: String,
+    width: ColumnWidth,
+}
+
+impl ColumnSpec {
+    /// A column as wide as its widest drawn cell or its header, whichever is wider.
+    pub fn content(label: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            width: ColumnWidth::Content,
+        }
+    }
+
+    /// A column taking `weight` shares of the width the other columns leave.
+    pub fn weight(label: impl Into<String>, weight: f32) -> Self {
+        Self {
+            label: label.into(),
+            width: ColumnWidth::Weight(weight),
+        }
+    }
+
+    /// A column `width` dp wide.
+    pub fn fixed(label: impl Into<String>, width: f32) -> Self {
+        Self {
+            label: label.into(),
+            width: ColumnWidth::Fixed(width),
+        }
+    }
+
+    /// What the header says.
+    pub fn label(&self) -> String {
+        self.label.clone()
+    }
+
+    /// How wide the column is.
+    pub fn width(&self) -> ColumnWidth {
+        self.width
+    }
+}
+
+/// Rows with the same columns, over a windowed list, with a header that stays put.
+///
+/// The body is a [`LazyColumn`], so only the rows the Renderer asked for exist, and row
+/// `i` carries `row_key(i)` as its key: a row whose key moves is moved rather than rebuilt.
+/// Each row is one `Row` whose cell `j` is as wide as `columns[j]` says, and the header's
+/// cell `j` is given the same width, so the header and every row line up.
+///
+/// A `Content` column is measured. Each drawn cell in it and its header report their
+/// width, and the column keeps the largest it has seen, so it does not shrink when the
+/// widest row scrolls out. Changing `source` says the data was replaced, and the column
+/// is measured again from the rows drawn after that. A cell is measured inside the width
+/// the column already has, so a later cell wider than that is clipped to it.
+///
+/// With `sticky_header: false` the header is the list's first item and scrolls with the
+/// rows. There is no horizontal scrolling: when the width runs short, the `Weight`
+/// columns give way.
+///
+/// ```ignore
+/// Table {
+///     columns: vec![ColumnSpec::content("name"), ColumnSpec::weight("status", 1.0)],
+///     row_count: rows.len(),
+///     row_key: move |i| rows[i].id.to_string(),
+///     cell: move |(row, col): (usize, usize)| rsx! { Text { text: rows[row].cell(col) } },
+/// }
+/// ```
+#[component]
+pub fn Table(
+    columns: Vec<ColumnSpec>,
+    row_count: usize,
+    /// The key of row `i`, stable across reorders.
+    row_key: Callback<usize, String>,
+    /// The cell at `(row, column)`.
+    cell: Callback<(usize, usize), Element>,
+    /// The header cell of a column. Left out, the column's label as text.
+    #[props(default)]
+    header: Option<Callback<ColumnSpec, Element>>,
+    /// Called with the row's index when a row is pressed. Left out, rows take no press.
+    #[props(default)]
+    on_row_click: Option<EventHandler<usize>>,
+    /// Whether the header stays put above the scrolling rows.
+    #[props(default = true)]
+    sticky_header: bool,
+    /// Names the data the rows come from. A different value means the data was replaced,
+    /// and the `Content` columns are measured again.
+    #[props(default)]
+    source: u64,
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+) -> Element {
+    let mut widths = use_signal(|| vec![0.0_f32; columns.len()]);
+    let mut last_source = use_signal(|| source);
+    if *dioxus_signals::ReadableExt::peek(&last_source) != source {
+        last_source.set(source);
+        widths.set(vec![0.0; columns.len()]);
+    } else if dioxus_signals::ReadableExt::peek(&widths).len() != columns.len() {
+        widths.set(vec![0.0; columns.len()]);
+    }
+    let header_cells = {
+        let columns = columns.clone();
+        move || {
+            rsx! {
+                Row {
+                    fill_max_width: true,
+                    for (index, column) in columns.iter().enumerate() {
+                        TableCell {
+                            key: "{index}",
+                            width: column.width(),
+                            column: index,
+                            widths,
+                            match header {
+                                Some(header) => header.call(column.clone()),
+                                None => rsx! { Text { text: column.label() } },
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    };
+    let offset = usize::from(!sticky_header);
+    let body_columns = columns.clone();
+    let body_header = header_cells.clone();
+    let item = Callback::new(move |index: usize| {
+        if index < offset {
+            return body_header();
+        }
+        let row = index - offset;
+        rsx! {
+            Row {
+                fill_max_width: true,
+                on_click: on_row_click.map(|handler| EventHandler::new(move |_: ()| handler.call(row))),
+                for (index, column) in body_columns.iter().enumerate() {
+                    TableCell {
+                        key: "{index}",
+                        width: column.width(),
+                        column: index,
+                        widths,
+                        {cell.call((row, index))}
+                    }
+                }
+            }
+        }
+    });
+    let key_of = Callback::new(move |index: usize| {
+        if index < offset {
+            // Row keys are the application's, so the header's must be one no row has.
+            "\u{0}header".to_string()
+        } else {
+            row_key.call(index - offset)
+        }
+    });
+    rsx! {
+        Column {
+            weight,
+            fill_max_width,
+            fill_max_height,
+            if sticky_header {
+                {header_cells()}
+            }
+            LazyColumn {
+                weight: 1.0,
+                fill_max_width: true,
+                item_count: row_count + offset,
+                key_of,
+                item,
+            }
+        }
+    }
+}
+
+/// One cell of a [`Table`], given its column's width. A `Content` cell also measures what
+/// it holds and raises the column's width when it is the widest seen.
+#[component]
+fn TableCell(
+    width: ColumnWidth,
+    column: usize,
+    widths: dioxus_signals::Signal<Vec<f32>>,
+    children: Element,
+) -> Element {
+    let size = use_node_size();
+    let content = width == ColumnWidth::Content;
+    let measured = size.measured().width_dp;
+    let mut widths = widths;
+    // Read with a subscription, so a reset of the column measures this cell again.
+    let seen = dioxus_signals::ReadableExt::read(&widths)
+        .get(column)
+        .copied()
+        .unwrap_or(0.0);
+    if content
+        && measured > seen
+        && let Some(slot) = widths.write().get_mut(column)
+    {
+        *slot = measured;
+    }
+    let (fixed, share) = match width {
+        ColumnWidth::Fixed(dp) => (Some(dp), None),
+        ColumnWidth::Weight(share) => (None, Some(share)),
+        ColumnWidth::Content => (Some(seen.max(measured)).filter(|dp| *dp > 0.0), None),
+    };
+    rsx! {
+        ComposeBox {
+            width: fixed,
+            weight: share,
+            if content {
+                ComposeBox { observe_size: size.token(), {children} }
+            } else {
+                {children}
+            }
         }
     }
 }
