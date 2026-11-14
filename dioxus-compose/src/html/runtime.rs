@@ -797,10 +797,7 @@ impl Runtime for HtmlRuntime {
                     },
                 );
             }
-            (
-                BridgeEvent::CompositionChange,
-                EventPayload::CompositionChanged { composing },
-            ) => {
+            (BridgeEvent::CompositionChange, EventPayload::CompositionChanged { composing }) => {
                 if *composing {
                     if self.composing.insert(node) {
                         let data = self.typed.get(&node).cloned().unwrap_or_default();
