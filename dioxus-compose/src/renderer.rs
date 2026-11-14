@@ -127,25 +127,33 @@ pub mod slot {
     pub const CORNER_EACH: u16 = SHADOW + super::MAX_SHADOWS as u16;
     pub const SHAPE: u16 = CORNER_EACH + 1;
     pub const BACKGROUND: u16 = CORNER_EACH + 2;
-    pub const BORDER: u16 = CORNER_EACH + 3;
-    pub const BORDER_EACH: u16 = CORNER_EACH + 4;
-    pub const ELEVATION: u16 = CORNER_EACH + 5;
-    pub const CLIP: u16 = CORNER_EACH + 6;
-    pub const CLICKABLE: u16 = CORNER_EACH + 7;
-    pub const PADDING: u16 = CORNER_EACH + 8;
-    pub const OBSERVE_SIZE: u16 = CORNER_EACH + 9;
-    pub const MOTION: u16 = CORNER_EACH + 10;
-    pub const MATERIAL: u16 = CORNER_EACH + 11;
-    pub const MATCH_PARENT_SIZE: u16 = CORNER_EACH + 12;
-    pub const WINDOW_DRAG: u16 = CORNER_EACH + 13;
-    pub const PRESS_FEEDBACK: u16 = CORNER_EACH + 14;
-    pub const SEMANTICS: u16 = CORNER_EACH + 15;
-    pub const CORNER_CURVE: u16 = CORNER_EACH + 16;
+    // The background image layers take BACKGROUND_BRUSH and the positions after it, up
+    // to MAX_BACKGROUND_LAYERS: over the background colour and under the border, the way
+    // CSS paints `background-image` over `background-color`.
+    pub const BACKGROUND_BRUSH: u16 = CORNER_EACH + 3;
+    pub const BORDER: u16 = BACKGROUND_BRUSH + super::MAX_BACKGROUND_LAYERS as u16;
+    pub const BORDER_EACH: u16 = BORDER + 1;
+    pub const ELEVATION: u16 = BORDER + 2;
+    pub const CLIP: u16 = BORDER + 3;
+    pub const CLICKABLE: u16 = BORDER + 4;
+    pub const PADDING: u16 = BORDER + 5;
+    pub const OBSERVE_SIZE: u16 = BORDER + 6;
+    pub const MOTION: u16 = BORDER + 7;
+    pub const MATERIAL: u16 = BORDER + 8;
+    pub const MATCH_PARENT_SIZE: u16 = BORDER + 9;
+    pub const WINDOW_DRAG: u16 = BORDER + 10;
+    pub const PRESS_FEEDBACK: u16 = BORDER + 11;
+    pub const SEMANTICS: u16 = BORDER + 12;
+    pub const CORNER_CURVE: u16 = BORDER + 13;
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = 34;
+const MODIFIER_SLOTS: usize = slot::CORNER_CURVE as usize + 1;
+
+/// How many background image layers one node can carry, one `BackgroundBrush` modifier
+/// each. The first is drawn at the bottom.
+pub const MAX_BACKGROUND_LAYERS: usize = 4;
 
 /// The properties a node sends only once it has been given a value. Absent is the
 /// Renderer's default for each of them, so the first frame of a widget that never set one
@@ -184,6 +192,11 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::MaxHeightFraction,
     PropertyKind::FontFeatureSettings,
     PropertyKind::RadioGroup,
+    PropertyKind::ContentScale,
+    PropertyKind::ThumbSize,
+    PropertyKind::Minimap,
+    PropertyKind::ViewZones,
+    PropertyKind::WordWrap,
 ];
 
 /// How many shadows one node can carry. Each takes a chain position of its own, because a
@@ -563,6 +576,36 @@ impl ComposeRenderer {
             }
             EditorRequest::ScrollTo { offset_px, .. } => {
                 self.batch.set_scroll_offset(node_id, *offset_px);
+            }
+            EditorRequest::EditGroup {
+                request_id,
+                base_version,
+                edits,
+                ..
+            } => {
+                let edits: Vec<(compose_rust::code::CodeRange, &str)> = edits
+                    .iter()
+                    .map(|(range, text)| (*range, text.as_str()))
+                    .collect();
+                self.batch
+                    .edit_group(node_id, *request_id, *base_version, &edits);
+            }
+            EditorRequest::SetSelections {
+                base_version,
+                selections,
+                ..
+            } => {
+                self.batch
+                    .set_selections(node_id, *base_version, selections);
+            }
+            EditorRequest::InsertSnippet {
+                base_version,
+                range,
+                snippet,
+                ..
+            } => {
+                self.batch
+                    .insert_snippet(node_id, *base_version, *range, snippet);
             }
         }
     }
@@ -1066,6 +1109,85 @@ impl ComposeRenderer {
         }
     }
 
+    /// Writes a node's background image layers: one `BackgroundBrush` modifier in each of
+    /// the positions from `slot::BACKGROUND_BRUSH`, the bottom layer first, and `Empty` in a
+    /// position a shorter list no longer fills.
+    ///
+    /// The value is a widget's list, already in chain order, one `Modifier::BackgroundBrush`
+    /// or a `Vec<BackgroundLayer>` in CSS order, the first on top. A layer the Renderer
+    /// would refuse, with a number that is not finite or a step that is not a size, is left
+    /// out here rather than sent. A position is cleared only when this attribute wrote it,
+    /// so a node that never had a layer costs no mutation.
+    fn write_background_layers(&mut self, node_id: u32, value: &AttributeValue) {
+        use compose_rust::Modifier;
+        let layers: Vec<Modifier> = match value {
+            AttributeValue::Any(any) => {
+                let any = any.as_any();
+                if let Some(chain) = any.downcast_ref::<crate::widgets::BackgroundChain>() {
+                    chain.0.clone()
+                } else if let Some(layers) = any.downcast_ref::<Vec<crate::BackgroundLayer>>() {
+                    crate::widgets::background_chain(layers).0
+                } else if let Some(layer @ Modifier::BackgroundBrush { .. }) =
+                    any.downcast_ref::<Modifier>()
+                {
+                    vec![layer.clone()]
+                } else {
+                    Vec::new()
+                }
+            }
+            _ => Vec::new(),
+        };
+        let drawable = |layer: &&Modifier| match layer {
+            Modifier::BackgroundBrush {
+                x,
+                y,
+                width,
+                height,
+                tile_width,
+                tile_height,
+                ..
+            } => {
+                [x, y, width, height, tile_width, tile_height]
+                    .iter()
+                    .all(|value| value.is_finite())
+                    && *tile_width > 0.0
+                    && *tile_height > 0.0
+            }
+            _ => false,
+        };
+        let layers: Vec<&Modifier> = layers
+            .iter()
+            .filter(drawable)
+            .take(MAX_BACKGROUND_LAYERS)
+            .collect();
+        let owners = self
+            .modifier_slots
+            .entry(node_id)
+            .or_insert([""; MODIFIER_SLOTS]);
+        let mut writes = Vec::new();
+        for position in 0..MAX_BACKGROUND_LAYERS {
+            let slot = slot::BACKGROUND_BRUSH as usize + position;
+            match layers.get(position) {
+                Some(layer) => {
+                    owners[slot] = "background_brush";
+                    writes.push((slot as u16, (*layer).clone()));
+                }
+                None if owners[slot] == "background_brush" => {
+                    owners[slot] = "";
+                    writes.push((slot as u16, Modifier::Empty));
+                }
+                None => {}
+            }
+        }
+        for (index, modifier) in writes {
+            self.write(Mutation::SetModifier {
+                node_id,
+                index,
+                modifier,
+            });
+        }
+    }
+
     fn allocate_node(&mut self, widget: WidgetKind) -> u32 {
         let id = self.next_node_id;
         self.next_node_id = self.next_node_id.checked_add(1).unwrap_or(1);
@@ -1487,6 +1609,8 @@ impl ComposeRenderer {
                     PropertyValue::Bytes(marks.as_bytes())
                 } else if let Some(spans) = any.downcast_ref::<compose_rust::code::SyntaxSpans>() {
                     PropertyValue::Bytes(spans.as_bytes())
+                } else if let Some(zones) = any.downcast_ref::<compose_rust::code::ViewZones>() {
+                    PropertyValue::Bytes(zones.as_bytes())
                 } else {
                     return;
                 }
@@ -1496,8 +1620,20 @@ impl ComposeRenderer {
         // A type role of zero is `TypeRole::None`, which is a value: text with no rung of
         // the ladder. A Text with no role at all sends nothing, and one whose role was
         // taken away sends `None`, which is what drops it on the other side.
-        let neutral = matches!(value, PropertyValue::None | PropertyValue::Float(0.0))
-            || (matches!(value, PropertyValue::Integer(0)) && property != PropertyKind::TypeRole);
+        //
+        // A letter spacing of zero is a value too: no extra space between letters, where a
+        // spacing that is not set takes the type role's. Not set is nothing, or NaN.
+        let neutral = if property == PropertyKind::LetterSpacing {
+            match value {
+                PropertyValue::None => true,
+                PropertyValue::Float(spacing) => spacing.is_nan(),
+                _ => false,
+            }
+        } else {
+            matches!(value, PropertyValue::None | PropertyValue::Float(0.0))
+                || (matches!(value, PropertyValue::Integer(0))
+                    && property != PropertyKind::TypeRole)
+        };
         if !self.should_write_optional_property(node_id, property, neutral) {
             return;
         }
@@ -1955,7 +2091,9 @@ impl WriteMutations for ComposeRenderer {
             // and is now gone is taken away as Dioxus would remove it, so the Renderer stops
             // reporting to it, and one that never was writes nothing.
             if let Some(event) = name.strip_prefix("on")
-                && (event_property(event).is_some() || is_clickable_event(event))
+                && (event_property(event).is_some()
+                    || is_clickable_event(event)
+                    || is_unannounced_event(event))
             {
                 self.remove_event_listener(event, id);
                 return;
@@ -1966,6 +2104,11 @@ impl WriteMutations for ComposeRenderer {
             // A node's shadows are a list, so one attribute writes several positions.
             if name == "shadow" {
                 self.write_shadows(node_id, value);
+                return;
+            }
+            // And so are its background images.
+            if name == "background_brush" {
+                self.write_background_layers(node_id, value);
                 return;
             }
             if let Some(slot) = self.modifier_for(id, node_id, name, value) {
@@ -2124,6 +2267,12 @@ fn is_pointer_event(name: &str) -> bool {
     matches!(name, "pointer" | "onpointer")
 }
 
+/// Listeners that ride on another listener's handler and announce nothing of their own:
+/// every selection of a code editor reaches it through its selection listener.
+fn is_unannounced_event(name: &str) -> bool {
+    matches!(name, "selectionschange" | "onselectionschange")
+}
+
 fn event_property(name: &str) -> Option<PropertyKind> {
     match name {
         "click" | "onclick" => Some(PropertyKind::OnClick),
@@ -2139,6 +2288,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "caretrect" | "oncaretrect" => Some(PropertyKind::OnCaretRect),
         "keypreview" | "onkeypreview" => Some(PropertyKind::OnKeyPreview),
         "codepointer" | "oncodepointer" => Some(PropertyKind::OnCodePointer),
+        "editgroupresult" | "oneditgroupresult" => Some(PropertyKind::OnEditGroupResult),
         "motionfinished" | "onmotionfinished" => Some(PropertyKind::OnMotionFinished),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),

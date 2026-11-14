@@ -601,6 +601,23 @@ pub(crate) enum EditorRequest {
         token: u32,
         offset_px: f64,
     },
+    EditGroup {
+        token: u32,
+        request_id: u32,
+        base_version: u32,
+        edits: Vec<(compose_rust::code::CodeRange, String)>,
+    },
+    SetSelections {
+        token: u32,
+        base_version: u32,
+        selections: Vec<(compose_rust::code::Position, compose_rust::code::Position)>,
+    },
+    InsertSnippet {
+        token: u32,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        snippet: String,
+    },
 }
 
 /// The callback a position query waits with, taken out once when the query is written.
@@ -616,7 +633,10 @@ impl EditorRequest {
             | Self::Reveal { token, .. }
             | Self::Fold { token, .. }
             | Self::QueryPosition { token, .. }
-            | Self::ScrollTo { token, .. } => *token,
+            | Self::ScrollTo { token, .. }
+            | Self::EditGroup { token, .. }
+            | Self::SetSelections { token, .. }
+            | Self::InsertSnippet { token, .. } => *token,
         }
     }
 }
@@ -770,6 +790,89 @@ impl CodeEditorHandle {
             });
         });
     }
+
+    /// Replaces every range in `edits` with its text, all of them or none, as one undo step.
+    ///
+    /// Every range is in the document as it stood at `base_version`, so an edit never moves
+    /// the ranges of the others, and they may be listed in any order; they must not overlap.
+    /// Where the reader has typed since, the Renderer moves every range past what they
+    /// typed, and keeps the whole group out where any range meets it. The editor's
+    /// `on_edit_group_result` then hears exactly once what became of the group, named by
+    /// `request_id`, and an edit that went in also comes back as an ordinary change. A
+    /// group with no edits sends nothing. Like [`edit`](Self::edit) it goes out with the
+    /// batch the current call produces.
+    pub fn edit_group<T: Into<String>>(
+        &self,
+        request_id: u32,
+        base_version: u32,
+        edits: impl IntoIterator<Item = (compose_rust::code::CodeRange, T)>,
+    ) {
+        let edits: Vec<_> = edits
+            .into_iter()
+            .map(|(range, text)| (range, text.into()))
+            .collect();
+        if edits.is_empty() {
+            return;
+        }
+        EDITS.with_borrow_mut(|queue| {
+            queue.push(EditorRequest::EditGroup {
+                token: self.token,
+                request_id,
+                base_version,
+                edits,
+            });
+        });
+    }
+
+    /// Sets every selection of the editor, each an anchor and an active end in the document
+    /// as it stood at `base_version`, the first the primary one.
+    ///
+    /// Typing, deleting and pasting then happen at every selection as one step, and Escape
+    /// goes back to the primary one. The Renderer moves every end past what the reader typed
+    /// since and refuses the request, with a protocol error, where an end is not a place in
+    /// the document or the list is empty. Like [`edit`](Self::edit) it goes out with the
+    /// batch the current call produces.
+    pub fn set_selections(
+        &self,
+        base_version: u32,
+        selections: impl IntoIterator<
+            Item = (compose_rust::code::Position, compose_rust::code::Position),
+        >,
+    ) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::SetSelections {
+                token: self.token,
+                base_version,
+                selections: selections.into_iter().collect(),
+            });
+        });
+    }
+
+    /// Replaces `range`, in the document as it stood at `base_version`, with `snippet`, and
+    /// opens its tab stops.
+    ///
+    /// The snippet is written in the part of VS Code's syntax the editor reads: `$1`,
+    /// `${1:placeholder}`, `${1|one,two|}`, `$0`, and `\$` for a dollar sign
+    /// (`compose_rust::code::escape_snippet_text` escapes plain text). The caret selects the
+    /// first stop, Tab and Shift+Tab move between the stops, and the session ends at `$0`,
+    /// on Escape or when the caret leaves the snippet. What it leaves arrives as ordinary
+    /// changes and undoes as one step. Like [`edit`](Self::edit) it goes out with the batch
+    /// the current call produces.
+    pub fn insert_snippet(
+        &self,
+        base_version: u32,
+        range: compose_rust::code::CodeRange,
+        snippet: impl Into<String>,
+    ) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::InsertSnippet {
+                token: self.token,
+                base_version,
+                range,
+                snippet: snippet.into(),
+            });
+        });
+    }
 }
 
 /// A handle to the editor this component draws, the same one on every render.
@@ -812,6 +915,22 @@ pub fn use_reduced_motion() -> compose_rust::ReducedMotion {
         ))
     });
     compose_rust::reduced_motion()
+}
+
+/// Whether the system appearance is light or dark, and a re-render when that changes.
+///
+/// The Renderer reports it once before its first frame and again on every change, whatever
+/// the theme's colour scheme is, so this is the system's own setting. It is `None` until the
+/// first report. Native widgets already follow the theme without it; it is for what an
+/// application draws itself. [`compose_rust::resolved_color_scheme`] gives the scheme the
+/// theme is drawn in.
+pub fn use_system_color_scheme() -> Option<compose_rust::SystemColorScheme> {
+    dioxus_core::use_hook(|| {
+        Rc::new(compose_rust::subscribe_system_color_scheme(
+            dioxus_core::schedule_update(),
+        ))
+    });
+    compose_rust::system_color_scheme()
 }
 
 /// Runs `handler` for every event the Renderer reports about an animation it is playing.

@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use dioxus_compose::code::SYNTAX_SPAN_LEN;
+use dioxus_compose::code::{SYNTAX_SPAN_LEN, SelectionChange};
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::schema::RevealAlign;
@@ -1238,4 +1238,340 @@ fn fr38_line_and_range_backgrounds_travel_in_the_decoration_list() {
             Decoration::range_background(0, CodeRange::of(1, 4, 1, 5), ColorRole::DiffAdded),
         ]
     );
+}
+
+thread_local! {
+    static GROUP_RESULTS: RefCell<Vec<EditGroupResult>> = const { RefCell::new(Vec::new()) };
+    static ALL_SELECTIONS: RefCell<Vec<SelectionsChange>> = const { RefCell::new(Vec::new()) };
+    static PRIMARY: RefCell<Vec<SelectionChange>> = const { RefCell::new(Vec::new()) };
+}
+
+fn grouping_app() -> Element {
+    let handle = use_code_editor();
+    rsx! {
+        Column {
+            CodeEditor {
+                text: "let a = 1;\nlet b = 2;\n",
+                handle,
+                on_edit_group_result: move |result: EditGroupResult| GROUP_RESULTS.with_borrow_mut(|seen| seen.push(result)),
+                on_selections_change: move |change: SelectionsChange| ALL_SELECTIONS.with_borrow_mut(|seen| seen.push(change)),
+                on_selection_change: move |change: SelectionChange| PRIMARY.with_borrow_mut(|seen| seen.push(change)),
+            }
+            Button {
+                text: "Rename",
+                on_click: move |_| handle.edit_group(
+                    8,
+                    1,
+                    [
+                        (CodeRange::of(1, 4, 1, 5), "y"),
+                        (CodeRange::of(0, 4, 0, 5), "x"),
+                    ],
+                ),
+            }
+            Button {
+                text: "Nothing",
+                on_click: move |_| handle.edit_group(9, 1, Vec::<(CodeRange, String)>::new()),
+            }
+            Button {
+                text: "Carets",
+                on_click: move |_| handle.set_selections(
+                    2,
+                    [
+                        (Position::new(0, 4), Position::new(0, 5)),
+                        (Position::new(1, 4), Position::new(1, 5)),
+                    ],
+                ),
+            }
+            Button {
+                text: "Snippet",
+                on_click: move |_| handle.insert_snippet(
+                    3,
+                    CodeRange::of(1, 0, 1, 0),
+                    "for ${1:item} in ${2:list} {\n\t$0\n}",
+                ),
+            }
+        }
+    }
+}
+
+/// The grouped edits, selections and snippets the batch carried for `node`, in order.
+fn editor_commands(batch: &[u8], node: u32) -> Vec<String> {
+    decode_batch(batch)
+        .unwrap()
+        .into_iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::EditCodeGroup {
+                node_id,
+                request_id,
+                base_version,
+                edits,
+            } if node_id == node => Some(format!(
+                "group {request_id} @{base_version} {:?}",
+                dioxus_compose::code::decode_edit_group(edits).expect("the edits decode")
+            )),
+            Mutation::SetSelections {
+                node_id,
+                base_version,
+                selections,
+            } if node_id == node => Some(format!(
+                "selections @{base_version} {:?}",
+                dioxus_compose::code::decode_selections(selections).expect("the selections decode")
+            )),
+            Mutation::InsertSnippet {
+                node_id,
+                base_version,
+                start_line,
+                start_column,
+                end_line,
+                end_column,
+                snippet,
+            } if node_id == node => Some(format!(
+                "snippet @{base_version} {start_line}:{start_column}-{end_line}:{end_column} {snippet:?}"
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+fn press(host: &mut Host, first: &[Record], nth: usize) -> Vec<u8> {
+    let buttons: Vec<u32> = first
+        .iter()
+        .filter_map(|record| match record {
+            Record::Create(node_id, WidgetKind::Button) => Some(*node_id),
+            _ => None,
+        })
+        .collect();
+    let button = buttons[nth];
+    let mut wire = Vec::new();
+    encode_event(
+        &HostEvent {
+            node_id: button,
+            handler_id: handler_of(first, button, PropertyKind::OnClick),
+            payload: EventPayload::Clicked,
+        },
+        &mut wire,
+    )
+    .unwrap();
+    host.dispatch_event(&wire).unwrap().0.to_vec()
+}
+
+/// A grouped edit asked of a handle goes out as one `EditCodeGroup` to the editor that
+/// carries the handle, every range in the version it names, in the order it was listed.
+/// A group with no edits sends nothing at all.
+#[test]
+fn fr38_a_grouped_edit_asked_of_a_handle_goes_out_to_its_editor() {
+    let mut host = Host::new(grouping_app);
+    let first = records(host.rebuild().unwrap());
+    let editor = node_of(&first, WidgetKind::CodeEditor);
+    let batch = press(&mut host, &first, 0);
+    assert_eq!(
+        editor_commands(&batch, editor),
+        vec![format!(
+            "group 8 @1 {:?}",
+            vec![
+                (CodeRange::of(1, 4, 1, 5), "y"),
+                (CodeRange::of(0, 4, 0, 5), "x"),
+            ]
+        )]
+    );
+    let batch = press(&mut host, &first, 1);
+    assert_eq!(editor_commands(&batch, editor), Vec::<String>::new());
+}
+
+/// Every selection asked of a handle goes out as one `SetSelections`, the primary first,
+/// and a snippet as one `InsertSnippet` with its range and its text as written.
+#[test]
+fn fr38_selections_and_a_snippet_asked_of_a_handle_go_out_to_its_editor() {
+    let mut host = Host::new(grouping_app);
+    let first = records(host.rebuild().unwrap());
+    let editor = node_of(&first, WidgetKind::CodeEditor);
+    let batch = press(&mut host, &first, 2);
+    assert_eq!(
+        editor_commands(&batch, editor),
+        vec![format!(
+            "selections @2 {:?}",
+            vec![
+                (Position::new(0, 4), Position::new(0, 5)),
+                (Position::new(1, 4), Position::new(1, 5)),
+            ]
+        )]
+    );
+    let batch = press(&mut host, &first, 3);
+    assert_eq!(
+        editor_commands(&batch, editor),
+        vec!["snippet @3 1:0-1:0 \"for ${1:item} in ${2:list} {\\n\\t$0\\n}\"".to_string()]
+    );
+}
+
+/// What became of a grouped edit reaches `on_edit_group_result` as compose-rust's
+/// `EditGroupResult`, through the handler announced for it.
+#[test]
+fn fr38_on_edit_group_result_delivers_what_became_of_the_group() {
+    GROUP_RESULTS.with_borrow_mut(Vec::clear);
+    let mut host = Host::new(grouping_app);
+    let first = records(host.rebuild().unwrap());
+    let editor = node_of(&first, WidgetKind::CodeEditor);
+    let handler = handler_of(&first, editor, PropertyKind::OnEditGroupResult);
+    send(
+        &mut host,
+        editor,
+        handler,
+        EventPayload::CodeEditGroupResult {
+            request_id: 8,
+            status: EditGroupStatus::Rejected,
+            base_version: 1,
+            current_version: 3,
+            index: 1,
+        },
+    );
+    GROUP_RESULTS.with_borrow(|seen| {
+        assert_eq!(
+            seen.as_slice(),
+            &[EditGroupResult {
+                request_id: 8,
+                status: EditGroupStatus::Rejected,
+                base_version: 1,
+                current_version: 3,
+                index: 1,
+            }]
+        )
+    });
+}
+
+/// Every selection arrives through the editor's selection listener: `on_selections_change`
+/// hears all of them, the primary first, and `on_selection_change` goes on hearing the
+/// primary alone. The same report sent to any other handler of the editor is refused.
+#[test]
+fn fr38_every_selection_reaches_on_selections_change_through_the_selection_listener() {
+    ALL_SELECTIONS.with_borrow_mut(Vec::clear);
+    PRIMARY.with_borrow_mut(Vec::clear);
+    let mut host = Host::new(grouping_app);
+    let first = records(host.rebuild().unwrap());
+    let editor = node_of(&first, WidgetKind::CodeEditor);
+    let handler = handler_of(&first, editor, PropertyKind::OnSelectionChange);
+    let mut bytes = Vec::new();
+    let both = [
+        (Position::new(0, 3), Position::new(0, 7)),
+        (Position::new(1, 12), Position::new(1, 8)),
+    ];
+    dioxus_compose::code::encode_selections(&both, &mut bytes);
+    send(
+        &mut host,
+        editor,
+        handler,
+        EventPayload::SelectionsChanged {
+            version: 4,
+            selections: &bytes,
+        },
+    );
+    send(
+        &mut host,
+        editor,
+        handler,
+        EventPayload::SelectionChanged {
+            version: 4,
+            anchor_line: 0,
+            anchor_column: 3,
+            active_line: 0,
+            active_column: 7,
+        },
+    );
+    ALL_SELECTIONS.with_borrow(|seen| {
+        assert_eq!(
+            seen.as_slice(),
+            &[SelectionsChange {
+                version: 4,
+                selections: both.to_vec(),
+            }]
+        )
+    });
+    PRIMARY.with_borrow(|seen| {
+        assert_eq!(
+            seen.as_slice(),
+            &[SelectionChange {
+                version: 4,
+                anchor: Position::new(0, 3),
+                active: Position::new(0, 7),
+            }]
+        )
+    });
+
+    let other = handler_of(&first, editor, PropertyKind::OnEditGroupResult);
+    let mut wire = Vec::new();
+    encode_event(
+        &HostEvent {
+            node_id: editor,
+            handler_id: other,
+            payload: EventPayload::SelectionsChanged {
+                version: 4,
+                selections: &bytes,
+            },
+        },
+        &mut wire,
+    )
+    .unwrap();
+    assert!(host.dispatch_event(&wire).is_err());
+}
+
+fn wrapped_app() -> Element {
+    let mut shown = use_signal(|| true);
+    rsx! {
+        Column {
+            CodeEditor {
+                text: "a\nb\n",
+                minimap: shown().then_some(MinimapSide::Right),
+                view_zones: if shown() {
+                    ViewZones::new([ViewZone::new(0, 1.5).with_text("2 lines removed")])
+                } else {
+                    ViewZones::default()
+                },
+                word_wrap: shown().then_some(WordWrap::Bounded(80)),
+            }
+            Button {
+                text: "Plain",
+                on_click: move |_| shown.set(false),
+            }
+        }
+    }
+}
+
+/// An editor's minimap side, view zones and word wrap arrive as written: the side as its
+/// tag, the zones as their records and text, and the wrap as one integer. Each one taken
+/// away is withdrawn once, so the editor goes back to drawing none of them.
+#[test]
+fn fr38_minimap_view_zones_and_word_wrap_arrive_and_are_withdrawn() {
+    let mut host = Host::new(wrapped_app);
+    let first = records(host.rebuild().unwrap());
+    let editor = node_of(&first, WidgetKind::CodeEditor);
+    assert_eq!(
+        prop_of(&first, editor, PropertyKind::Minimap),
+        Some(Value::Integer(i64::from(u16::from(MinimapSide::Right))))
+    );
+    let Some(Value::Bytes(zones)) = prop_of(&first, editor, PropertyKind::ViewZones) else {
+        panic!("the view zones did not travel as bytes: {first:?}");
+    };
+    assert_eq!(
+        ViewZones::from_bytes(zones).zones(),
+        vec![ViewZone::new(0, 1.5).with_text("2 lines removed")]
+    );
+    assert_eq!(
+        prop_of(&first, editor, PropertyKind::WordWrap),
+        Some(Value::Integer(WordWrap::Bounded(80).to_value()))
+    );
+
+    let after = button_named(&first, &mut host, 0);
+    for property in [
+        PropertyKind::Minimap,
+        PropertyKind::ViewZones,
+        PropertyKind::WordWrap,
+    ] {
+        assert_eq!(
+            after
+                .iter()
+                .filter(|record| matches!(record, Record::Prop(_, sent, _) if *sent == property))
+                .collect::<Vec<_>>(),
+            vec![&Record::Prop(editor, property, Value::None)],
+            "{property:?}"
+        );
+    }
 }
