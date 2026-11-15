@@ -52,10 +52,9 @@ The differences between the two are tracked from issue #179.
   `WebAssembly.instantiateStreaming` without needing special Chromium flags) with its
   `compose_rust_host.wasm` replaced by `sample_html_<sample>.wasm` (built for
   `wasm32-unknown-unknown` with `--import-memory`, `--global-base=4194304`,
-  `--initial-memory=16777216`, `--no-stack-first`).
+  `--initial-memory=8388608`, `--no-stack-first`).
 
 What differs between targets is tracked from #179: on Windows weight 600 at 28px
 (compose-rust#551), on Web `web/settings.png` draws the `<select>` dropdown arrow as a
-missing-glyph box (#276) and `web/table.png` omits the `th` and `td` text runs inside the
-`.table-wrap` horizontal `ScrollRow` (#278), and on Android `android/settings.png` has a
-stray rounded border at the right edge beside `Bio` and `Theme` (#277).
+missing-glyph box (#276), and on Android `android/settings.png` has a stray rounded border
+at the right edge beside `Bio` and `Theme` (#277).
