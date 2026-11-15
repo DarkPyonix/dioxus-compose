@@ -44,7 +44,8 @@ The differences between the two are tracked from issue #179.
   (`cargo build --target aarch64-linux-android --release --lib -p sample-html-<sample>`)
   is packaged into the `samples-android` APK as `lib/arm64-v8a/libmain.so`, signed with
   the Android debug keystore, launched with `am start -S -W`, and photographed with
-  `screencap -p`.
+  `screencap -p`. The Android captures on the Flip 4 show the One UI Edge Panel handle at
+  `x` 1013..1080, `y` 536..878 (#277); ignore it when comparing.
 - `web/<sample>.png`: all 17 samples in headless Chromium (chrome-headless-shell 1248) at
   each sample's window size, captured 2026-11-15 against compose-rust v0.0.10. Each page
   uses the v0.0.10 `samples-web` bundle (`renderer/web/build/dist/wasmJs/productionExecutable`
@@ -55,6 +56,5 @@ The differences between the two are tracked from issue #179.
   `--initial-memory=8388608`, `--no-stack-first`).
 
 What differs between targets is tracked from #179: on Windows weight 600 at 28px
-(compose-rust#551), on Web `web/settings.png` draws the `<select>` dropdown arrow as a
-missing-glyph box (#276), and on Android `android/settings.png` has a stray rounded border
-at the right edge beside `Bio` and `Theme` (#277).
+(compose-rust#551), and on Web `web/settings.png` draws the `<select>` dropdown arrow as a
+missing-glyph box (#276).
