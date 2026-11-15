@@ -17,10 +17,6 @@
 //!   fixed width, so the auto table layout algorithm gives the extra width to the columns
 //!   in proportion to those widths, as Chromium does: in a 720px viewport the wrapper is
 //!   672px and each column is 672 / 640 = 1.05 times its width.
-//!
-//! Cell text is laid out by the table's own text layout, not by the test measurer, so its
-//! width depends on the fonts on the machine. Only where the text starts or ends is
-//! asserted, which `text-align` decides whatever the width.
 
 use dioxus_compose::html::{
     DisplayList, HtmlDom, LiteralColours, ModifierSlot, NodeEntry, PlanKey, PlanKind, PlanModifier,
@@ -336,6 +332,43 @@ fn fr34_table_clicking_the_amount_header_sorts_the_rows() {
             assert_rect(cell.rect, x, y, width, 37.0, &format!("sorted row {index}"));
         }
     }
+}
+
+/// Every header and body cell is measured through the caller's `TextMeasurer`, so targets
+/// where blitz-dom's own font collection has no system fonts (`wasm32-unknown-unknown`)
+/// still record and draw the text of every `<th>` and `<td>`.
+#[test]
+fn fr34_table_cells_are_measured_by_the_text_measurer() {
+    let measurer = Measurer::new();
+    let requests = measurer.requests();
+    let mut dom = HtmlDom::with_config(table::app, config(table::STYLE, measurer));
+    dom.layout(480.0, 600.0, 1.0);
+
+    let asked: Vec<String> = requests
+        .borrow()
+        .iter()
+        .map(|req| req.text.clone())
+        .collect();
+    for expected in [
+        "Invoice",
+        "Client",
+        "Due",
+        "Amount",
+        "INV-1001",
+        "Analytical Engines Ltd",
+        "$1,250.00",
+    ] {
+        assert!(
+            asked.iter().any(|text| text == expected),
+            "expected cell text {expected:?} to be measured by TextMeasurer, got {asked:?}"
+        );
+    }
+
+    let list = dom.display_list().unwrap();
+    let rows = body_rows(list);
+    // At 14px the test measurer gives each character 7px (`$1,250.00` = 9 * 7 = 63px).
+    let amount = &rows[0][3].texts[0];
+    assert_eq!(amount.rect.width, 63.0);
 }
 
 /// The wrapper's `border-radius: 8px` rounds its scroll viewport and the viewport clips to
