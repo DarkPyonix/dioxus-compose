@@ -16,7 +16,11 @@ An SVG drawn by an `<img>` takes the element's CSS `color` wherever it says
 it once per colour it is drawn in, with every `currentColor` written as that colour, and a
 change of `color` draws the registration for the new one. An SVG without `currentColor`,
 and an image the resolver gives no source for, is still the asset `resolve` names.
-`ReplacedImage` gains `color`, the element's computed `color`.
+
+Breaking: `ReplacedImage` has a new public field, `color`, the element's computed `color`,
+so code that builds a `ReplacedImage` with a struct literal must set it. `ImageResolver`
+has a new method, `svg`, with a default that returns `None`, so an existing resolver
+compiles unchanged and keeps drawing what `resolve` names.
 
 ### HTML: CSS 3D transforms
 
