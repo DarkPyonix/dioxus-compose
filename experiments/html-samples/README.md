@@ -55,6 +55,7 @@ The differences between the two are tracked from issue #179.
   `--initial-memory=16777216`, `--no-stack-first`).
 
 What differs between targets is tracked from #179: on Windows weight 600 at 28px
-(compose-rust#551), and on Web `web/table.png` omits the `th` and `td` text runs inside
-the `.table-wrap` horizontal `ScrollRow` while drawing the `Invoices` heading, header fill
-and row borders.
+(compose-rust#551), on Web `web/settings.png` draws the `<select>` dropdown arrow as a
+missing-glyph box (#276) and `web/table.png` omits the `th` and `td` text runs inside the
+`.table-wrap` horizontal `ScrollRow` (#278), and on Android `android/settings.png` has a
+stray rounded border at the right edge beside `Bio` and `Theme` (#277).
