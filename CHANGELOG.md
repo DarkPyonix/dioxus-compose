@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### HTML: italic labels measured as drawn
+
+An italic run of text is measured with the same description of its slant as it is drawn
+with: an upright text style and one italic span over the whole text. The measure request
+used to carry the slant in the text style, which the renderer tracks differently from a
+slanted span, so an italic label could measure narrower than it drew and lose its last
+glyph.
+
 ### HTML: CSS 3D transforms
 
 A `transform` with a 3D function is drawn. `rotateX`, `rotateY`, `rotate3d`, `translateZ`,

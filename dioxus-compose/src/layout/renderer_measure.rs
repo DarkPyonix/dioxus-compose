@@ -240,7 +240,11 @@ fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
         font: font_refs(&style.font_family),
         font_size: Some(style.font_size),
         font_weight: Some(style.font_weight.round().clamp(1.0, 1000.0) as u16),
-        italic: style.italic,
+        // The page draws a slant as a span over the text, never in the text style, and the
+        // renderer tracks a slanted style differently from a slanted span. The slant goes
+        // in the spans here as well (`measure_spans`), so the width measured is the width
+        // drawn.
+        italic: false,
         letter_spacing: Some(style.letter_spacing),
         // `normal` is the multiple the page draws it with.
         line_height: Some(match style.line_height {
@@ -274,7 +278,9 @@ impl TextMeasurer for RendererMeasurer {
 
     fn measure_spans(&mut self, request: &TextMeasureRequest<'_>, runs: &[SpanRun]) -> TextMetrics {
         // Only what changes a size goes in the question: a colour does not.
-        let spans = if runs.is_empty() {
+        // A text with no runs that is slanted all through is drawn as one italic span over
+        // every byte, and `wire_spans` gives exactly that span for no runs and a slanted base.
+        let spans = if runs.is_empty() && !request.style.italic {
             TextSpans::default()
         } else {
             let base = SpanBase {
