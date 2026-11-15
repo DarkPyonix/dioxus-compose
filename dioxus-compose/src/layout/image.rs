@@ -16,6 +16,8 @@
 //! resolver answered, with no pixels, onto each `<img>` before layout, and blitz-dom's
 //! replaced-element sizing reads only the width and height of it.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use blitz_dom::node::{ImageData, RasterImageData, SpecialElementData};
@@ -23,7 +25,10 @@ use blitz_dom::{BaseDocument, NodeData};
 use blitz_traits::net::Url;
 use style::values::computed::url::ComputedUrl;
 
+use compose_rust::schema::AssetKind;
+
 use crate::layout::local;
+use crate::paint::display_list::Rgba;
 
 /// An image the application registered with the renderer, as the application numbers it.
 /// Opaque to this crate: it is handed back in the plan and never looked into.
@@ -66,6 +71,75 @@ pub trait ImageResolver {
     fn size(&mut self, _url: &str) -> Option<ImageSize> {
         None
     }
+
+    /// The source of the image at `url`, when it is an SVG that should take the `<img>`
+    /// element's CSS `color` wherever it says `currentColor`, the way an inline `<svg>`
+    /// does in a browser. Asked while a plan is built, before [`resolve`](Self::resolve).
+    ///
+    /// An SVG that names `currentColor` is registered with the renderer once per colour it
+    /// is drawn in, with every `currentColor` written as that colour, and drawn from that
+    /// registration; [`resolve`](Self::resolve) is not asked for it. A change of the
+    /// element's `color` draws the registration for the new colour. An SVG that does not
+    /// name `currentColor`, and `None`, the default, leave the image to
+    /// [`resolve`](Self::resolve).
+    fn svg(&mut self, _url: &str) -> Option<&'static [u8]> {
+        None
+    }
+}
+
+/// `svg` with every `currentColor` written as `color`, registered with the renderer, or
+/// `None` when `svg` is not UTF-8 or never names `currentColor`.
+///
+/// The answer is kept per source and colour, so a plan built again for the same image in
+/// the same colour neither rewrites the bytes nor looks through the renderer's registry.
+pub(crate) fn current_color_asset(svg: &'static [u8], color: Rgba) -> Option<AssetId> {
+    type Tinted = HashMap<(usize, usize, [u8; 4]), Option<u32>>;
+    thread_local! {
+        static TINTED: RefCell<Tinted> = RefCell::new(HashMap::new());
+    }
+    let key = (
+        svg.as_ptr() as usize,
+        svg.len(),
+        [color.r, color.g, color.b, color.a],
+    );
+    if let Some(known) = TINTED.with_borrow(|tinted| tinted.get(&key).copied()) {
+        return known.map(AssetId);
+    }
+    let id = std::str::from_utf8(svg)
+        .ok()
+        .and_then(|text| with_current_color(text, color))
+        .map(|text| compose_rust::asset::register_owned(AssetKind::Svg, text.into_bytes()));
+    TINTED.with_borrow_mut(|tinted| tinted.insert(key, id));
+    id.map(AssetId)
+}
+
+/// `text` with every `currentColor`, in any case as CSS allows, written as `color` in hex,
+/// or `None` when it has none.
+pub(crate) fn with_current_color(text: &str, color: Rgba) -> Option<String> {
+    const KEYWORD: &str = "currentcolor";
+    // Lowering ASCII keeps every byte where it was, so a match in the lowered text is at
+    // the same place in the original.
+    let lowered = text.to_ascii_lowercase();
+    if !lowered.contains(KEYWORD) {
+        return None;
+    }
+    let hex = if color.a == u8::MAX {
+        format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
+    } else {
+        format!(
+            "#{:02x}{:02x}{:02x}{:02x}",
+            color.r, color.g, color.b, color.a
+        )
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    for (start, _) in lowered.match_indices(KEYWORD) {
+        out.push_str(&text[at..start]);
+        out.push_str(&hex);
+        at = start + KEYWORD.len();
+    }
+    out.push_str(&text[at..]);
+    Some(out)
 }
 
 /// The base URL a document is given when the application names none.

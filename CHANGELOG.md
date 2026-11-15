@@ -2,13 +2,21 @@
 
 ## Unreleased
 
-### HTML: italic labels measured as drawn
+### HTML: italic labels measured as drawn, and SVG images in currentColor
 
 An italic run of text is measured with the same description of its slant as it is drawn
 with: an upright text style and one italic span over the whole text. The measure request
 used to carry the slant in the text style, which the renderer tracks differently from a
 slanted span, so an italic label could measure narrower than it drew and lose its last
 glyph.
+
+An SVG drawn by an `<img>` takes the element's CSS `color` wherever it says
+`currentColor`, so an icon follows the colour of its button the way it does in a browser.
+`ImageResolver::svg` hands over the SVG's source (it defaults to `None`). The page registers
+it once per colour it is drawn in, with every `currentColor` written as that colour, and a
+change of `color` draws the registration for the new one. An SVG without `currentColor`,
+and an image the resolver gives no source for, is still the asset `resolve` names.
+`ReplacedImage` gains `color`, the element's computed `color`.
 
 ### HTML: CSS 3D transforms
 
