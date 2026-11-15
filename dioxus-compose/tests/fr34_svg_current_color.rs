@@ -8,8 +8,7 @@
 use dioxus_compose::Host;
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
-    AssetId, HtmlConfig, ImageResolver, ImageSize, TextMeasureRequest, TextMeasurer,
-    TextMetrics,
+    AssetId, HtmlConfig, ImageResolver, ImageSize, TextMeasureRequest, TextMeasurer, TextMetrics,
 };
 use dioxus_compose::prelude::WritableExt;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
