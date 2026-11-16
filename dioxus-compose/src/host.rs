@@ -424,7 +424,8 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
-        EventPayload::EditorFocusChanged { focused } => {
+        EventPayload::EditorFocusChanged { focused }
+        | EventPayload::NativeViewFocus { focused } => {
             Event::new(Rc::new(focused), true).into_any()
         }
         EventPayload::FoldChanged {
@@ -594,10 +595,7 @@ pub(crate) fn deliver_event(
         // A new display density and a native view's parent window are the Host's own: it
         // takes them before any runtime sees them.
         | EventPayload::DensityChanged { .. }
-        | EventPayload::NativeViewParent { .. }
-        // Focus moving into or out of a native view names that view's handler, and nothing
-        // here creates a native view.
-        | EventPayload::NativeViewFocus { .. } => {
+        | EventPayload::NativeViewParent { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };
