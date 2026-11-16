@@ -445,9 +445,9 @@ fn surface() -> Element {
                     }
                     ScrollRow {
                         fill_max_width: true,
+                        sticky: true,
                         snap: Snap::ItemStart,
                         Chip {
-                            sticky: true,
                             text: "Unread",
                             icon: IconRole::History,
                             selected: true,
