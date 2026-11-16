@@ -590,7 +590,14 @@ pub(crate) fn deliver_event(
         | EventPayload::StorageLocation(_)
         // The answer to a position query names a request and no handler. The Host hands it
         // to the callback that asked before any runtime sees it.
-        | EventPayload::PositionRect { .. } => {
+        | EventPayload::PositionRect { .. }
+        // A new display density and a native view's parent window are the Host's own: it
+        // takes them before any runtime sees them.
+        | EventPayload::DensityChanged { .. }
+        | EventPayload::NativeViewParent { .. }
+        // Focus moving into or out of a native view names that view's handler, and nothing
+        // here creates a native view.
+        | EventPayload::NativeViewFocus { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };

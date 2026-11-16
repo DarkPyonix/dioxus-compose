@@ -45,6 +45,7 @@ impl Semantics {
                 hidden: false,
                 click_action: false,
                 focus_action: false,
+                has_popup: false,
             },
         }
     }
