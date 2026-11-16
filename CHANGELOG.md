@@ -3,6 +3,34 @@
 ## Unreleased
 
 ### HTML: italic labels measured as drawn, and SVG images in currentColor
+### rsx: compose-rust 0.0.11's widgets, properties and modifiers
+
+Everything compose-rust 0.0.11 added to the schema can be written in `rsx!`.
+
+- `NativeView { handle, visible, on_focus_change }`: a place for a platform view the
+  application made, as a `NativeHandle`. The view is handed over as an `AttachNativeView`
+  command when it changes and not on a frame that keeps it, `visible: false` hides it
+  without taking it out of the window, and `on_focus_change` hears it take and lose the
+  keyboard focus. Make the view against `native_view::native_parent`.
+- Six modifiers on every widget: `size_in` (a `SizeIn` with any of `min_width`,
+  `max_width`, `min_height`, `max_height` in dp), `aspect_ratio` with
+  `match_height_constraints_first`, `min_touch_target`, `overlay` (a `Paint`), `sticky`
+  and `unbounded_width`.
+- `TextField`: `placeholder_color` and `caret_color`.
+- `Icon`: `icon_asset`, an SVG drawn in the icon slot and tinted with `color`, in place of
+  `asset_id`. `asset_id` is now optional.
+- `Sheet`: `presentation` (`SheetPresentation::Centered` for a modal in the middle of the
+  window) and `max_width` in dp for a centred sheet.
+- `TopAppBar`: `separator`, whether the design system's hairline is drawn under the bar.
+- `Text`: runs built with `TextSpans::new_with_features` send their OpenType features as
+  `SpanFontFeatures` beside the runs.
+- `CodeEditor`: `content_padding_dp: (top, bottom)` and `content_padding_top_dp`, room
+  above the first line and below the last that scrolls with the text, and
+  `fixed_gutter_columns`, which keeps the fold and change bar columns whether or not the
+  file has any. `CodeEditorColors::current_line_gutter` colours the current line's part of
+  the gutter.
+
+### HTML: italic labels measured as drawn
 
 An italic run of text is measured with the same description of its slant as it is drawn
 with: an upright text style and one italic span over the whole text. The measure request
