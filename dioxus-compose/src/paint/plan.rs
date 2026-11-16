@@ -49,7 +49,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
-use crate::layout::image::{AssetId, ImageResolver, current_color_asset};
+use crate::layout::image::{AssetId, ImageResolver, begin_plan, current_color_asset};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
@@ -612,6 +612,7 @@ pub fn plan_from_images(
     // Reborrowed so all three share the builder's one lifetime: a `&mut dyn` is invariant,
     // so the resolvers' own lifetimes cannot simply be shortened in place.
     let images = images.map(|images| -> &mut dyn ImageResolver { &mut *images });
+    begin_plan();
     Builder::new(list, &mut *colours, images).build()
 }
 

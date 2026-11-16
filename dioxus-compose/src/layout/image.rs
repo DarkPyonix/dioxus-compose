@@ -87,30 +87,93 @@ pub trait ImageResolver {
     }
 }
 
+/// How many colours one SVG keeps registered at once. A colour animation draws a new colour
+/// on every frame, and each one is a registration the renderer keeps a picture for, so past
+/// this many the least recently drawn is let go.
+pub(crate) const COLOURS_PER_SVG: usize = 16;
+
+/// One colour an SVG is registered in, and the plan that last drew it.
+struct Tint {
+    color: [u8; 4],
+    id: u32,
+    drawn_in: u64,
+}
+
+/// What is known about one source SVG: whether it can be tinted at all, and the colours it
+/// is registered in.
+#[derive(Default)]
+struct Source {
+    untintable: bool,
+    tints: Vec<Tint>,
+}
+
+#[derive(Default)]
+struct Tinted {
+    /// Counts plan builds, so a colour drawn in the plan being built is never let go.
+    plan: u64,
+    sources: HashMap<(usize, usize), Source>,
+}
+
+thread_local! {
+    static TINTED: RefCell<Tinted> = RefCell::new(Tinted::default());
+}
+
+/// Marks the start of a plan build. Every colour drawn from here until the next call
+/// belongs to this plan and stays registered while it is being built.
+pub(crate) fn begin_plan() {
+    TINTED.with_borrow_mut(|tinted| tinted.plan += 1);
+}
+
 /// `svg` with every `currentColor` written as `color`, registered with the renderer, or
 /// `None` when `svg` is not UTF-8 or never names `currentColor`.
 ///
 /// The answer is kept per source and colour, so a plan built again for the same image in
 /// the same colour neither rewrites the bytes nor looks through the renderer's registry.
+/// Each source keeps at most [`COLOURS_PER_SVG`] colours: a new one past that releases the
+/// one drawn longest ago, unless every one of them is drawn in the current plan, in which
+/// case the plan's colours all stay until a later plan stops drawing some.
 pub(crate) fn current_color_asset(svg: &'static [u8], color: Rgba) -> Option<AssetId> {
-    type Tinted = HashMap<(usize, usize, [u8; 4]), Option<u32>>;
-    thread_local! {
-        static TINTED: RefCell<Tinted> = RefCell::new(HashMap::new());
-    }
-    let key = (
-        svg.as_ptr() as usize,
-        svg.len(),
-        [color.r, color.g, color.b, color.a],
-    );
-    if let Some(known) = TINTED.with_borrow(|tinted| tinted.get(&key).copied()) {
-        return known.map(AssetId);
-    }
-    let id = std::str::from_utf8(svg)
-        .ok()
-        .and_then(|text| with_current_color(text, color))
-        .map(|text| compose_rust::asset::register_owned(AssetKind::Svg, text.into_bytes()));
-    TINTED.with_borrow_mut(|tinted| tinted.insert(key, id));
-    id.map(AssetId)
+    let key = (svg.as_ptr() as usize, svg.len());
+    let color = [color.r, color.g, color.b, color.a];
+    TINTED.with_borrow_mut(|tinted| {
+        let plan = tinted.plan;
+        let source = tinted.sources.entry(key).or_default();
+        if source.untintable {
+            return None;
+        }
+        if let Some(tint) = source.tints.iter_mut().find(|tint| tint.color == color) {
+            tint.drawn_in = plan;
+            return Some(AssetId(tint.id));
+        }
+        let rgba = Rgba::new(color[0], color[1], color[2], color[3]);
+        let Some(text) = std::str::from_utf8(svg)
+            .ok()
+            .and_then(|text| with_current_color(text, rgba))
+        else {
+            source.untintable = true;
+            return None;
+        };
+        if source.tints.len() >= COLOURS_PER_SVG {
+            let oldest = source
+                .tints
+                .iter()
+                .enumerate()
+                .filter(|(_, tint)| tint.drawn_in < plan)
+                .min_by_key(|(_, tint)| tint.drawn_in)
+                .map(|(at, _)| at);
+            if let Some(at) = oldest {
+                let gone = source.tints.swap_remove(at);
+                compose_rust::asset::release_owned(gone.id, AssetKind::Svg);
+            }
+        }
+        let id = compose_rust::asset::register_owned(AssetKind::Svg, text.into_bytes());
+        source.tints.push(Tint {
+            color,
+            id,
+            drawn_in: plan,
+        });
+        Some(AssetId(id))
+    })
 }
 
 /// `text` with every `currentColor`, in any case as CSS allows, written as `color` in hex,

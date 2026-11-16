@@ -42,7 +42,10 @@ An SVG drawn by an `<img>` takes the element's CSS `color` wherever it says
 `currentColor`, so an icon follows the colour of its button the way it does in a browser.
 `ImageResolver::svg` hands over the SVG's source (it defaults to `None`). The page registers
 it once per colour it is drawn in, with every `currentColor` written as that colour, and a
-change of `color` draws the registration for the new one. An SVG without `currentColor`,
+change of `color` draws the registration for the new one. One SVG keeps at most 16 colours
+registered: a new colour past that releases the one drawn longest ago (never one the
+current frame draws), so a colour animation does not grow the renderer's cache without
+bound, and a released colour drawn again is registered afresh. An SVG without `currentColor`,
 and an image the resolver gives no source for, is still the asset `resolve` names.
 
 Breaking: `ReplacedImage` has a new public field, `color`, the element's computed `color`,
