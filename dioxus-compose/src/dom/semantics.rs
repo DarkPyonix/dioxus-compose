@@ -150,6 +150,7 @@ pub(crate) fn semantics_for(
                 hidden,
                 click_action: takes_clicks,
                 focus_action: false,
+                has_popup: false,
             },
         },
         label,
