@@ -117,7 +117,12 @@ fn seen(bytes: &[u8]) -> Seen {
 /// The registered SVG the batch draws the icon from.
 #[track_caller]
 fn drawn_svg(seen: &Seen) -> String {
-    assert_eq!(seen.drawn.len(), 1, "one picture is drawn: {:?}", seen.drawn);
+    assert_eq!(
+        seen.drawn.len(),
+        1,
+        "one picture is drawn: {:?}",
+        seen.drawn
+    );
     let id = seen.drawn[0];
     assert_ne!(
         id,
@@ -161,7 +166,10 @@ fn fr34_svg_img_takes_current_color_from_its_element() {
         2,
         "the icon did not follow the colour to rgb(255, 0, 0): {red}"
     );
-    assert!(!red.contains("#008000"), "the old colour is still drawn: {red}");
+    assert!(
+        !red.contains("#008000"),
+        "the old colour is still drawn: {red}"
+    );
 }
 
 /// Distinct colours the cap test steps through, well past what one SVG keeps.
