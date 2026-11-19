@@ -227,6 +227,17 @@ fn zoom(host: &mut Host, k: f32) -> Seen {
     )
 }
 
+fn density(host: &mut Host, scale: f32) -> Seen {
+    send(
+        host,
+        HostEvent {
+            node_id: 0,
+            handler_id: 0,
+            payload: EventPayload::DensityChanged { scale },
+        },
+    )
+}
+
 /// The renderer's report on the vertical scroll `node`, in renderer pixels.
 fn report(
     started: &mut Started,
@@ -345,31 +356,31 @@ fn fr34_5_scroll_into_view_uses_the_requested_alignment() {
 fn fr34_5_scroll_sets_the_container_offset_in_renderer_pixels() {
     let mut started = started();
     // The page is drawn at k = 1.5 on a screen of density 2: a CSS pixel is three
-    // renderer pixels.
+    // renderer pixels. The renderer reports both before the page scrolls.
+    density(&mut started.host, 2.0);
     zoom(&mut started.host, 1.5);
 
-    // Before any report the Host does not know the density, so the move waits for one.
-    let _ = now(mounted("outer").scroll(Vector2D::new(10.0, 40.0), ScrollBehavior::Instant));
-    let waiting = frame(&mut started.host);
-    assert!(waiting.scroll_to.is_empty(), "{waiting:#?}");
-
-    // `#outer` is 200 by 100 CSS pixels, which the renderer reports as 600 by 300.
+    // Before any scroll report arrives, the move goes out at once with the reported
+    // density and zoom.
     let (outer, row) = (started.outer, started.outer_row);
-    let reported = report(&mut started, outer, 0.0, 300.0, (600.0, 300.0));
+    let _ = now(mounted("outer").scroll(Vector2D::new(10.0, 40.0), ScrollBehavior::Instant));
+    let written = frame(&mut started.host);
     assert_eq!(
-        reported.scroll_to,
+        written.scroll_to,
         [(outer, 1 << 2, 0.0, 120.0), (row, 1 << 1, 30.0, 0.0)],
         "40 CSS pixels down is 120 renderer pixels and 10 across is 30. Each axis goes to \
-         its own container, which is written only that axis: {reported:#?}"
+         its own container, which is written only that axis: {written:#?}"
     );
 
-    // From then on a move goes out in the frame it was asked in, and a smooth one animates.
-    let _ = now(mounted("outer").scroll(Vector2D::new(0.0, 25.0), ScrollBehavior::Smooth));
+    // A smooth move animates, and moving the window to a screen of another density scales
+    // the next move by the new density.
+    density(&mut started.host, 1.25);
+    let _ = now(mounted("outer").scroll(Vector2D::new(0.0, 24.0), ScrollBehavior::Smooth));
     let next = frame(&mut started.host);
     assert_eq!(
         next.scroll_to,
         [
-            (outer, 1 | (1 << 2), 0.0, 75.0),
+            (outer, 1 | (1 << 2), 0.0, 45.0),
             (row, 1 | (1 << 1), 0.0, 0.0)
         ]
     );
@@ -394,6 +405,7 @@ fn fr34_5_scroll_offset_reads_the_last_report() {
     );
 
     // Density 2 at k = 1: the 100 pixel tall viewport is 200 renderer pixels.
+    density(&mut started.host, 2.0);
     let node = started.outer;
     report(&mut started, node, 120.0, 200.0, (400.0, 200.0));
     let offset = now(outer.get_scroll_offset()).unwrap();
@@ -417,6 +429,7 @@ fn fr34_5_scroll_offset_reads_the_last_report() {
 #[test]
 fn fr34_5_scroll_report_reaches_onscroll() {
     let mut started = started();
+    density(&mut started.host, 2.0);
     SCROLLS.with(|scrolls| scrolls.borrow_mut().clear());
     let node = started.outer;
     report(&mut started, node, 80.0, 200.0, (400.0, 200.0));
