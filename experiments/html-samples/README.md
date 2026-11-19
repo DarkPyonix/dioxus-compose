@@ -56,5 +56,4 @@ The differences between the two are tracked from issue #179.
   `--initial-memory=8388608`, `--no-stack-first`).
 
 What differs between targets is tracked from #179: on Windows weight 600 at 28px
-(compose-rust#551), and on Web `web/settings.png` draws the `<select>` dropdown arrow as a
-missing-glyph box (#276).
+(compose-rust#551).
