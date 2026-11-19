@@ -49,7 +49,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
-use crate::layout::image::{AssetId, ImageResolver};
+use crate::layout::image::{AssetId, ImageResolver, begin_plan, current_color_asset};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
@@ -612,6 +612,7 @@ pub fn plan_from_images(
     // Reborrowed so all three share the builder's one lifetime: a `&mut dyn` is invariant,
     // so the resolvers' own lifetimes cannot simply be shortened in place.
     let images = images.map(|images| -> &mut dyn ImageResolver { &mut *images });
+    begin_plan();
     Builder::new(list, &mut *colours, images).build()
 }
 
@@ -1319,11 +1320,14 @@ impl<'a> Builder<'a> {
         let Some(image) = entry.image.as_ref() else {
             return;
         };
-        let Some(asset) = self
-            .images
-            .as_mut()
-            .and_then(|images| images.resolve(&image.source))
-        else {
+        // An SVG the resolver hands over as source is drawn in the element's `color` wherever
+        // it says `currentColor`; any other image is the asset the resolver names.
+        let Some(asset) = self.images.as_mut().and_then(|images| {
+            images
+                .svg(&image.source)
+                .and_then(|svg| current_color_asset(svg, image.color))
+                .or_else(|| images.resolve(&image.source))
+        }) else {
             if let Some(fallback) = image.fallback.as_ref() {
                 self.add_image_fallback(entry.node, image.content_rect, fallback, content);
             }

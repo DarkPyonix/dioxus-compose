@@ -447,6 +447,8 @@ pub struct ReplacedImage {
     /// What the application's [`ImageResolver`](crate::html::ImageResolver) answered for the
     /// image's natural size during layout, if anything.
     pub natural_size: Option<(f32, f32)>,
+    /// The element's computed CSS `color`, which `currentColor` in an SVG image takes.
+    pub color: Rgba,
     /// What the element shows when the plan has no picture to draw for it: present for an
     /// image with no natural size and a non-empty `alt`.
     pub fallback: Option<ImageFallback>,

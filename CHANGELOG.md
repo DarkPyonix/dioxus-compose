@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+### HTML: italic labels measured as drawn, and SVG images in currentColor
 ### rsx: compose-rust 0.0.11's widgets, properties and modifiers
 
 Everything compose-rust 0.0.11 added to the schema can be written in `rsx!`.
@@ -36,6 +37,21 @@ with: an upright text style and one italic span over the whole text. The measure
 used to carry the slant in the text style, which the renderer tracks differently from a
 slanted span, so an italic label could measure narrower than it drew and lose its last
 glyph.
+
+An SVG drawn by an `<img>` takes the element's CSS `color` wherever it says
+`currentColor`, so an icon follows the colour of its button the way it does in a browser.
+`ImageResolver::svg` hands over the SVG's source (it defaults to `None`). The page registers
+it once per colour it is drawn in, with every `currentColor` written as that colour, and a
+change of `color` draws the registration for the new one. One SVG keeps at most 16 colours
+registered: a new colour past that releases the one drawn longest ago (never one the
+current frame draws), so a colour animation does not grow the renderer's cache without
+bound, and a released colour drawn again is registered afresh. An SVG without `currentColor`,
+and an image the resolver gives no source for, is still the asset `resolve` names.
+
+Breaking: `ReplacedImage` has a new public field, `color`, the element's computed `color`,
+so code that builds a `ReplacedImage` with a struct literal must set it. `ImageResolver`
+has a new method, `svg`, with a default that returns `None`, so an existing resolver
+compiles unchanged and keeps drawing what `resolve` names.
 
 ### HTML: CSS 3D transforms
 
