@@ -135,6 +135,9 @@ pub struct HtmlRuntime {
     /// lives. A report is answered with a frame only when something reads it, and the page
     /// does: it is laid out in a viewport and a resolution that depend on it.
     _zoom: compose_rust::zoom::ZoomSubscription,
+    /// Keeps the registration for the renderer's display density reports, so a density
+    /// report wakes a frame to flush any scroll offset request held before the first report.
+    _density: compose_rust::density::DensitySubscription,
     /// Keeps the registration for the system's light or dark appearance, for the same
     /// reason: a page whose theme follows the system answers `prefers-color-scheme` with it.
     _scheme: compose_rust::theme::SystemColorSchemeSubscription,
@@ -211,6 +214,8 @@ impl HtmlRuntime {
             sink.borrow_mut().push(moment)
         }));
         let owner = crate::html_widget::new_owner();
+        let scroll = ScrollSync::new();
+        let density_subscription = scroll.subscribe_density();
         // The page's first render runs inside the constructor, and its widgets belong to it.
         let _owner = crate::html_widget::OwnerScope::enter(owner);
         Self {
@@ -219,6 +224,7 @@ impl HtmlRuntime {
             measured_under: None,
             _moments: subscription,
             _zoom: compose_rust::zoom::subscribe(std::sync::Arc::new(|| {})),
+            _density: density_subscription,
             _scheme: compose_rust::subscribe_system_color_scheme(std::sync::Arc::new(|| {})),
             focused: None,
             configured_scheme,
@@ -232,7 +238,7 @@ impl HtmlRuntime {
             seen_island: WindowSize::default(),
             seen_window: WindowSize::default(),
             content_size: None,
-            scroll: ScrollSync::default(),
+            scroll,
             titlebar_follows_window: false,
             composing: HashSet::new(),
             pending_pastes: Rc::default(),

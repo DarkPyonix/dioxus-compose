@@ -505,18 +505,6 @@ impl PlanBridge {
         false
     }
 
-    /// The size the renderer node drawn for `key` was given, in CSS pixels.
-    pub(crate) fn required_size(&self, key: PlanKey) -> Option<(f32, f32)> {
-        self.nodes
-            .get(&key)?
-            .modifiers
-            .iter()
-            .find_map(|modifier| match modifier {
-                Modifier::RequiredSize { width, height } => Some((*width, *height)),
-                _ => None,
-            })
-    }
-
     /// Records the text the user typed into the field of `node`, so that the same text
     /// coming back from the page is not sent to the renderer again. The field owns its
     /// text while the user edits it.
