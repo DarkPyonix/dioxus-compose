@@ -1949,7 +1949,7 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 2. 회전된 상자 안의 글자와 자식도 함께 회전합니다.
 3. 회전된 상자의 모서리 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불립니다.
 4. 변환 값만 바뀐 갱신에서 그 노드의 변환 수정자 하나만 나갑니다.
-5. Q3의 3D 함수가 든 `transform`이 Host에서 행렬 하나와 원점으로 접혀 그 노드의 `Transform3D` 수정자 하나로 나간다. 2D 함수가 섞여도 같은 행렬 하나다. 지금의 "3D 변환을 건너뛰었다"는 경고는 더 나오지 않고, 그것을 고정하던 테스트 `fr34_1_every_3d_function_is_skipped_with_a_warning`은 이 전송 테스트로 바뀐다. 테스트 `fr34_1_3d_functions_fold_into_one_transform3d` (통과, 2026-11-15).
+5. Q3의 3D 함수가 든 `transform`이 Host에서 행렬 하나와 원점으로 접혀 그 노드의 `Transform3D` 수정자 하나로 나간다. 2D 함수가 섞여도 같은 행렬 하나다. 지금의 "3D 변환을 건너뛰었다"는 경고는 더 나오지 않는다. 테스트 `fr34_1_3d_functions_fold_into_one_transform3d`, `fr34_1_flat_3d_functions_stay_2d_and_the_rest_are_one_3d_matrix` (통과, 2026-11-15).
 6. `rotateX(60deg)`, `rotateY(45deg)`, `perspective(400px)`의 조합과 `perspective(400px) rotateY(45deg)`를 쓴 상자 각각의 네 모서리가 CSS가 계산한 자리와 1px 안에서 맞는다. 원근은 행렬 안에 있고 따로 실리지 않는다. 테스트 `fr34_1_3d_corners_match_css_within_1px` (통과, 2026-11-15).
 7. `graphicsLayer`로 분해되지 않는 행렬(기울임과 원근의 조합 등)도 Host는 고치지 않고 그대로 보내고, 렌더러의 어댑터 경로로 그려 기준 6의 허용치를 지킨다. 렌더러 쪽 확인과 Compose 버전 기록은 compose-rust FR-41.3의 것이다. 테스트 `fr34_1_undecomposable_3d_matrix_is_sent_unchanged` (통과, 2026-11-15).
 8. 3D 변환된 상자의 그려진 모양 바깥을 누르면 그 상자의 핸들러가 불리지 않고, 안쪽을 누르면 불린다(기준 3의 3D판). 테스트 `fr34_1_3d_hit_test_follows_the_drawn_shape` (통과, 2026-11-15).
