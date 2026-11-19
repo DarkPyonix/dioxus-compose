@@ -89,6 +89,7 @@ fn window_event(
             safe_area_top: top,
             safe_area_leading: leading,
             safe_area_trailing: trailing,
+            safe_area_bottom: 0.0,
         },
     }
 }

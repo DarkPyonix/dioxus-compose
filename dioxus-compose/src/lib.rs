@@ -481,6 +481,7 @@ pub mod elements {
             placeholder,
             enabled,
             multiline,
+            read_only,
             type_role,
             font,
             bare,
@@ -620,7 +621,14 @@ pub mod elements {
     element!(
         sheet,
         "Sheet",
-        [open, scrim, max_height_fraction, presentation, max_width]
+        [
+            open,
+            scrim,
+            max_height_fraction,
+            presentation,
+            max_width,
+            sheet_handle
+        ]
     );
     // The screen's frame. It carries nothing of its own: what it is made of arrives as
     // slots, and what each slot becomes is decided where the window's width is known.

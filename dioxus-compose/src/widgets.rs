@@ -1599,11 +1599,15 @@ pub fn TextField(
     /// The colour of the caret. Left out, the design system's.
     #[props(default)]
     caret_color: Option<Paint>,
+    /// When true, the field stays focusable and selectable (including copy) while rejecting edits.
+    #[props(default)]
+    read_only: bool,
 ) -> Element {
     rsx! {
         textfield {
             placeholder_color: opt_paint(placeholder_color),
             caret_color: opt_paint(caret_color),
+            read_only: read_only.then_some(true),
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             weight: opt_dp(weight),
             width: opt_dp(width),
@@ -3894,6 +3898,9 @@ pub fn Sheet(
     /// 1 is taken as 1, and one of 0 or less as not given. Left out, the design system's.
     #[props(default)]
     max_height_fraction: Option<f32>,
+    /// Whether a bottom sheet draws its drag handle. Left out, the design system decides.
+    #[props(default)]
+    sheet_handle: Option<bool>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -3933,6 +3940,7 @@ pub fn Sheet(
                     .filter(|fraction| *fraction > 0.0)
                     .map(|fraction| fraction.min(1.0)),
             ),
+            sheet_handle,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
