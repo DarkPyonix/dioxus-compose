@@ -355,16 +355,24 @@ fn fr34_5_scroll_into_view_uses_the_requested_alignment() {
 #[test]
 fn fr34_5_scroll_sets_the_container_offset_in_renderer_pixels() {
     let mut started = started();
-    // The page is drawn at k = 1.5 on a screen of density 2: a CSS pixel is three
-    // renderer pixels. The renderer reports both before the page scrolls.
-    density(&mut started.host, 2.0);
-    zoom(&mut started.host, 1.5);
-
-    // Before any scroll report arrives, the move goes out at once with the reported
-    // density and zoom.
     let (outer, row) = (started.outer, started.outer_row);
+    // An offset request before the renderer has reported the screen's density is held so it
+    // is not sent at the fallback 1.0 density on a 2x screen.
     let _ = now(mounted("outer").scroll(Vector2D::new(10.0, 40.0), ScrollBehavior::Instant));
-    let written = frame(&mut started.host);
+    assert!(
+        frame(&mut started.host).scroll_to.is_empty(),
+        "an offset request waits until the renderer reports the screen's density"
+    );
+
+    // The page is drawn at k = 1.5 on a screen of density 2: a CSS pixel is three
+    // renderer pixels. When the 2x density arrives after the request, the held move is
+    // written in the frame that answers the report.
+    zoom(&mut started.host, 1.5);
+    assert!(
+        frame(&mut started.host).scroll_to.is_empty(),
+        "a zoom report alone does not release a move that is still waiting on the density"
+    );
+    let written = density(&mut started.host, 2.0);
     assert_eq!(
         written.scroll_to,
         [(outer, 1 << 2, 0.0, 120.0), (row, 1 << 1, 30.0, 0.0)],
@@ -372,7 +380,8 @@ fn fr34_5_scroll_sets_the_container_offset_in_renderer_pixels() {
          its own container, which is written only that axis: {written:#?}"
     );
 
-    // A smooth move animates, and moving the window to a screen of another density scales
+    // Once the density is known, a later move goes out in the frame it was asked in. A
+    // smooth move animates, and moving the window to a screen of another density scales
     // the next move by the new density.
     density(&mut started.host, 1.25);
     let _ = now(mounted("outer").scroll(Vector2D::new(0.0, 24.0), ScrollBehavior::Smooth));

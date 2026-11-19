@@ -4,9 +4,15 @@
 //! The renderer owns every scroll position and scrolls in its own physical pixels. A CSS
 //! pixel is one dp of the page, which the renderer draws at the zoom factor `k` and then
 //! at the screen's density, so one CSS pixel is `k × density` renderer pixels. Both arrive
-//! from the renderer (`ZoomChanged` and `DensityChanged`), so a request to move to an
-//! offset goes out in the frame it was asked in, and a request to bring an element into
-//! view names the element's node and needs no conversion.
+//! from the renderer (`ZoomChanged` and `DensityChanged`). A request to bring an element
+//! into view names the element's node and needs no conversion, so it goes out in the frame
+//! it was asked in. A request to move to an offset is held only while the screen's density
+//! has not been reported yet (such as a scroll asked from `onmounted` during the first
+//! batch, before the renderer's `DensityReporter` side effect has run), and goes out as
+//! soon as the density is known.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use compose_rust::Batch;
 use compose_rust::schema::{Rect, ScrollAlign, ScrollIntoView, ScrollTarget, ScrollTo};
@@ -45,22 +51,92 @@ pub(crate) struct Report {
 }
 
 /// What the runtime keeps between frames for the page's scrolling.
-#[derive(Default)]
 pub(crate) struct ScrollSync {
+    /// Whether the screen's density is known: either a `DensityChanged` report arrived
+    /// (which already set a non-1.0 density before the runtime started, or notified our
+    /// subscription), or the renderer sent a `ScrollChanged` report (which only happens
+    /// after the first composition, when `DensityReporter`'s side effect has already run).
+    density_known: Arc<AtomicBool>,
+    /// Offset requests made before the screen's density was known. Written on the first
+    /// frame after it is known.
+    held: Vec<ScrollRequest>,
     /// The requests taken from the document this frame. Kept to reuse its capacity.
     taken: Vec<ScrollRequest>,
 }
 
 impl ScrollSync {
+    pub(crate) fn new() -> Self {
+        let initial = compose_rust::density();
+        let known = initial.is_finite()
+            && initial > 0.0
+            && initial != compose_rust::density::DEFAULT_DENSITY;
+        Self {
+            density_known: Arc::new(AtomicBool::new(known)),
+            held: Vec::new(),
+            taken: Vec::new(),
+        }
+    }
+
+    /// Subscribes to `compose_rust::density` so that a density report marks the density
+    /// as known and wakes a frame to flush any held scroll offset requests.
+    pub(crate) fn subscribe_density(&self) -> compose_rust::density::DensitySubscription {
+        let flag = self.density_known.clone();
+        compose_rust::density::subscribe(Arc::new(move || {
+            flag.store(true, Ordering::Relaxed);
+        }))
+    }
+
+    fn is_density_known(&self) -> bool {
+        if self.density_known.load(Ordering::Relaxed) {
+            return true;
+        }
+        let scale = compose_rust::density();
+        if scale.is_finite() && scale > 0.0 && scale != compose_rust::density::DEFAULT_DENSITY {
+            self.density_known.store(true, Ordering::Relaxed);
+            return true;
+        }
+        false
+    }
+
     /// Writes the moves the page asked for into `batch`. Called after the bridge has
     /// written the frame's plan, so a container made in this frame has its node.
     pub(crate) fn write(&mut self, dom: &mut HtmlDom, bridge: &PlanBridge, batch: &mut Batch) {
         dom.take_scroll_requests(&mut self.taken);
-        if self.taken.is_empty() {
+        if self.held.is_empty() && self.taken.is_empty() {
+            return;
+        }
+        if !self.is_density_known() {
+            for request in self.taken.drain(..) {
+                match request {
+                    ScrollRequest::IntoView {
+                        node,
+                        align_x,
+                        align_y,
+                        animate,
+                    } => into_view(dom, bridge, batch, node, (align_x, align_y), animate),
+                    ScrollRequest::To {
+                        node,
+                        x,
+                        y,
+                        animate,
+                    } => {
+                        if bridge.node_id(PlanKey::ScrollColumn(node)).is_some()
+                            || bridge.node_id(PlanKey::ScrollRow(node)).is_some()
+                        {
+                            self.held.push(ScrollRequest::To {
+                                node,
+                                x,
+                                y,
+                                animate,
+                            });
+                        }
+                    }
+                }
+            }
             return;
         }
         let scale = page_scale();
-        for request in self.taken.drain(..) {
+        for request in self.held.drain(..).chain(self.taken.drain(..)) {
             match request {
                 ScrollRequest::IntoView {
                     node,
@@ -119,6 +195,9 @@ impl ScrollSync {
         horizontal: bool,
         report: Report,
     ) {
+        // Any scroll report from the renderer arrives after the first composition, when
+        // DensityReporter's side effect has already reported the window's density.
+        self.density_known.store(true, Ordering::Relaxed);
         let scale = page_scale();
         let mut position = dom.scroll_position(node).unwrap_or_default();
         // The axis the container scrolls is its own. A box that scrolls one way only has
