@@ -83,6 +83,7 @@ fn measure(host: &mut Host, node_id: u32, width_dp: f32) -> Vec<f32> {
             safe_area_leading: 0.0,
             safe_area_top: 0.0,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
     };
     let (batch, _) = host.dispatch(event).unwrap();
@@ -212,6 +213,7 @@ fn fr34_3_island_scroll_gets_a_size_not_a_fill() {
                 safe_area_leading: 0.0,
                 safe_area_top: 0.0,
                 safe_area_trailing: 0.0,
+                safe_area_bottom: 0.0,
             },
         })
         .unwrap();

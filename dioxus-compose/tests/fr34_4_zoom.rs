@@ -127,6 +127,7 @@ fn window_event(width_dp: f32, height_dp: f32) -> HostEvent<'static> {
             safe_area_leading: 0.0,
             safe_area_top: 0.0,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
     }
 }
@@ -603,6 +604,7 @@ fn fr34_4_an_htmlview_names_the_zoom_and_lays_out_in_its_own_viewport() {
             safe_area_leading: 0.0,
             safe_area_top: 0.0,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
     };
     // A widget app's Host answers the zoom report itself, so it reaches the island with no

@@ -305,6 +305,7 @@ fn surface() -> Element {
                         caret_color: PRIMARY,
                         enabled: true,
                         multiline: true,
+                        read_only: true,
                         type_role: TypeRole::Mono,
                         font: css_font(),
                         on_value_change: move |value: String| fired(format!("TextField.on_value_change({value})")),
@@ -580,6 +581,7 @@ fn surface() -> Element {
                         open: true,
                         scrim: SCRIM,
                         max_height_fraction: 0.6,
+                        sheet_handle: Some(false),
                         presentation: SheetPresentation::Centered,
                         max_width: 480_u32,
                         on_dismiss: move |_| fired("Sheet.on_dismiss"),
@@ -1387,7 +1389,14 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &[
+    "Size",
+    "PaddingEach",
+    "BorderDash",
+    "HoverStyle",
+    "FocusRing",
+    "PressStyle",
+];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {
