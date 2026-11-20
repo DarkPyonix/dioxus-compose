@@ -49,13 +49,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
-use crate::layout::image::{AssetId, ImageResolver};
+use crate::layout::image::{AssetId, ImageResolver, begin_plan, current_color_asset};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
-    DisplayList, GradientStop, ImageFallback, InputKind, MarkerSymbol, Matrix2D, NodeEntry,
-    Outline, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun, TileRepeat,
-    Transform2D, bounds_of,
+    DisplayList, GradientStop, ImageFallback, InputKind, MarkerSymbol, NodeEntry, Outline,
+    PlaneMap, Radius, Rect, Rgba, RunMarker, Sides, TextAlign, TextDecoration, TextRun, TileRepeat,
+    Transform2D, Transform3D,
 };
 
 /// How close two lengths must be to count as equal, in CSS pixels.
@@ -381,6 +381,11 @@ pub enum PlanModifier {
     /// node. The node keeps the place and size layout gave it: this moves how it is drawn,
     /// and where a pointer lands on it, and nothing else.
     Transform(Transform2D),
+    /// Draws the node, and everything inside it, through a 4x4 matrix about a point of the
+    /// node, perspective included. Like [`PlanModifier::Transform`] it changes how the node
+    /// is drawn and where a pointer lands on it, and it takes that modifier's slot: a node
+    /// has one or the other.
+    Transform3D(Transform3D),
     /// The width a text run is laid out in. Its height is the renderer's.
     Width(f32),
     /// Applies to the node and everything inside it as one group: the group is composed
@@ -607,6 +612,7 @@ pub fn plan_from_images(
     // Reborrowed so all three share the builder's one lifetime: a `&mut dyn` is invariant,
     // so the resolvers' own lifetimes cannot simply be shortened in place.
     let images = images.map(|images| -> &mut dyn ImageResolver { &mut *images });
+    begin_plan();
     Builder::new(list, &mut *colours, images).build()
 }
 
@@ -675,12 +681,7 @@ impl<'a> Builder<'a> {
             .map(|(index, entry)| {
                 let bounds = drawn_bounds(entry)?;
                 Some(match worlds[index] {
-                    Some(world) => bounds_of(&[
-                        world.apply(bounds.x, bounds.y),
-                        world.apply(bounds.right(), bounds.y),
-                        world.apply(bounds.right(), bounds.bottom()),
-                        world.apply(bounds.x, bounds.bottom()),
-                    ]),
+                    Some(world) => world.bounds(&bounds),
                     None => bounds,
                 })
             })
@@ -819,7 +820,7 @@ impl<'a> Builder<'a> {
     fn is_transformed(&self, node: NodeId) -> bool {
         self.by_node
             .get(&node)
-            .is_some_and(|&at| self.entries[at].transform.is_some())
+            .is_some_and(|&at| self.entries[at].is_transformed())
     }
 
     /// Whether anything placed after the end of `container`'s subtree, in tree order,
@@ -920,6 +921,8 @@ impl<'a> Builder<'a> {
         ];
         if let Some(transform) = &entry.transform {
             modifiers.push(PlanModifier::Transform(transform.clone()));
+        } else if let Some(transform) = &entry.transform_3d {
+            modifiers.push(PlanModifier::Transform3D(transform.clone()));
         }
         // The entry's opacity includes every ancestor's; the container already applies
         // the part that belongs to them.
@@ -977,7 +980,7 @@ impl<'a> Builder<'a> {
             // bounds. Beside the box in its container, it is not clipped by the box, and
             // it is drawn after everything inside the box. A transformed box carries it
             // inside, so that it moves with the box.
-            let (target, origin, alpha) = if entry.transform.is_some() {
+            let (target, origin, alpha) = if entry.is_transformed() {
                 (node, (rect.x, rect.y), 1.0)
             } else if provided_opacity > 0.0 {
                 (container, (ox, oy), entry.opacity / provided_opacity)
@@ -1317,11 +1320,14 @@ impl<'a> Builder<'a> {
         let Some(image) = entry.image.as_ref() else {
             return;
         };
-        let Some(asset) = self
-            .images
-            .as_mut()
-            .and_then(|images| images.resolve(&image.source))
-        else {
+        // An SVG the resolver hands over as source is drawn in the element's `color` wherever
+        // it says `currentColor`; any other image is the asset the resolver names.
+        let Some(asset) = self.images.as_mut().and_then(|images| {
+            images
+                .svg(&image.source)
+                .and_then(|svg| current_color_asset(svg, image.color))
+                .or_else(|| images.resolve(&image.source))
+        }) else {
             if let Some(fallback) = image.fallback.as_ref() {
                 self.add_image_fallback(entry.node, image.content_rect, fallback, content);
             }
@@ -1795,14 +1801,14 @@ fn drawn_bounds(entry: &NodeEntry) -> Option<Rect> {
     }
 }
 
-/// For each entry, the matrix that carries a point of the untransformed layout to where it
+/// For each entry, the map that carries a point of the untransformed layout to where it
 /// is drawn: the transforms of the entry and of every box around it, outermost applied
 /// last. `None` for an entry nothing transforms.
 fn world_matrices(
     entries: &[NodeEntry],
     by_node: &HashMap<NodeId, usize>,
-) -> Vec<Option<Matrix2D>> {
-    if entries.iter().all(|entry| entry.transform.is_none()) {
+) -> Vec<Option<PlaneMap>> {
+    if !entries.iter().any(NodeEntry::is_transformed) {
         return vec![None; entries.len()];
     }
     entries
@@ -1821,13 +1827,13 @@ fn world_matrices(
                 chain.push(&entries[at]);
                 parent = entries[at].parent;
             }
-            let mut world = Matrix2D::IDENTITY;
+            let mut world = PlaneMap::IDENTITY;
             let mut any = false;
             // From the outermost box in: each box's own transform applies first to what is
             // inside it, so the outer ones multiply on the left.
             for above in chain.iter().rev() {
-                if let Some(transform) = &above.transform {
-                    world = world.times(&transform.in_document(&above.rect));
+                if let Some(map) = above.drawn_map() {
+                    world = world.times(&map);
                     any = true;
                 }
             }
@@ -1884,7 +1890,9 @@ fn slots(modifiers: &[PlanModifier]) -> Vec<(ModifierSlot, &PlanModifier)> {
             let slot = match modifier {
                 PlanModifier::Offset { .. } => ModifierSlot::Offset,
                 PlanModifier::RequiredSize { .. } => ModifierSlot::RequiredSize,
-                PlanModifier::Transform(_) => ModifierSlot::Transform,
+                PlanModifier::Transform(_) | PlanModifier::Transform3D(_) => {
+                    ModifierSlot::Transform
+                }
                 PlanModifier::Width(_) => ModifierSlot::Width,
                 PlanModifier::Alpha(_) => ModifierSlot::Alpha,
                 PlanModifier::Shape { .. } => ModifierSlot::Shape,

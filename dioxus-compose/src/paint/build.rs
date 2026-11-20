@@ -27,13 +27,13 @@ use crate::layout::{
 };
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, CanvasBackground,
-    Corners, DisplayList, ImageFallback, InputField, InputKind, MarkerShape, MeasuredAlt,
-    MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect, Rgba,
-    RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun,
-    Transform2D,
+    Corners, DisplayList, FlattenedSpace, ImageFallback, InputField, InputKind, MarkerShape,
+    MeasuredAlt, MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect,
+    Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun,
+    Transform2D, Transform3D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
-use crate::paint::transform::{self, Moved};
+use crate::paint::transform::{self, Moved, Perspective};
 
 /// What the first walk settles for one box.
 struct Placed {
@@ -56,6 +56,8 @@ struct Placed {
     clips: bool,
     /// The 2D transform that is drawn on top of this box's place, unless it only translates.
     transform: Option<Transform2D>,
+    /// The 3D transform that is drawn on top of this box's place, when its transform is one.
+    transform_3d: Option<Transform3D>,
     /// The animations a renderer plays on this box.
     animations: Vec<Animation>,
     /// The background colour a running animation starts from, in place of the cascade's.
@@ -70,6 +72,8 @@ struct Ambient {
     clip: Option<Rect>,
     opacity: f32,
     scroll_parent: Option<NodeId>,
+    /// The parent's `perspective`, which its children's 3D transforms are seen through.
+    perspective: Option<Perspective>,
 }
 
 /// Reads a laid-out document into a display list. `playback` says which motions a renderer
@@ -87,6 +91,7 @@ pub(crate) fn build_display_list<'a>(
         images: RefCell::new(images),
         playback,
         skipped: Vec::new(),
+        flattened: Vec::new(),
         placed: HashMap::new(),
         order: Vec::new(),
     };
@@ -100,6 +105,7 @@ pub(crate) fn build_display_list<'a>(
             clip: None,
             opacity: 1.0,
             scroll_parent: None,
+            perspective: None,
         },
     );
     if painter.placed.contains_key(&root) {
@@ -131,6 +137,7 @@ pub(crate) fn build_display_list<'a>(
         entries,
         transitions: Vec::new(),
         skipped_transforms: painter.skipped,
+        flattened_spaces: painter.flattened,
     }
 }
 
@@ -141,8 +148,10 @@ struct Painter<'a, 'i> {
     images: RefCell<&'a mut ImageLookup<'i>>,
     /// Which motions a renderer plays, if the caller wants them described.
     playback: Option<&'a mut dyn Playback>,
-    /// The 3D transforms left out.
+    /// The motions of `transform` that are not played because they pass through 3D.
     skipped: Vec<SkippedTransform>,
+    /// The elements whose `transform-style: preserve-3d` is drawn flat.
+    flattened: Vec<FlattenedSpace>,
     placed: HashMap<NodeId, Placed>,
     order: Vec<NodeId>,
 }
@@ -272,19 +281,26 @@ impl Painter<'_, '_> {
             Some(AnimatedValue::Colour(colour)) => Some(colour),
             _ => None,
         };
-        let (shift_x, shift_y, transform) = match moved {
-            Moved::Nothing => (0.0, 0.0, None),
-            Moved::Translated(x, y) => (x, y, None),
-            Moved::Matrix(transform) => (0.0, 0.0, Some(transform)),
-            Moved::ThreeD(text) => {
-                self.skipped.push(SkippedTransform {
-                    node: id,
-                    tag: tag_of(),
-                    transform: text,
-                });
-                (0.0, 0.0, None)
-            }
+        let (shift_x, shift_y, transform, transform_3d) = match moved {
+            Moved::Nothing => (0.0, 0.0, None, None),
+            Moved::Translated(x, y) => (x, y, None, None),
+            Moved::Matrix(transform) => (0.0, 0.0, Some(transform), None),
+            Moved::ThreeD(transform) => (0.0, 0.0, None, Some(transform)),
         };
+        // Boxes inside a `preserve-3d` element would share its 3D space. Here each one is
+        // drawn flat into the element's plane, and the element is named so the developer
+        // can be told.
+        if style.as_ref().is_some_and(|style| {
+            matches!(
+                style.clone_transform_style(),
+                style::values::computed::TransformStyle::Preserve3d
+            )
+        }) {
+            self.flattened.push(FlattenedSpace {
+                node: id,
+                tag: tag_of(),
+            });
+        }
         let fixed = is_fixed(node);
         // A fixed box's location is in viewport coordinates already, and no ancestor's
         // clip or scroll position applies to it.
@@ -305,6 +321,18 @@ impl Painter<'_, '_> {
             layout.size.width,
             layout.size.height,
         );
+        // The parent's perspective goes in front of this box's own 3D transform, inside
+        // the one matrix. Both are in document coordinates, so this holds wherever the box
+        // was placed.
+        let transform_3d = match (transform_3d, ambient.perspective) {
+            (Some(transform), Some(perspective)) => Some(transform::under_perspective(
+                transform,
+                &perspective,
+                rect.x,
+                rect.y,
+            )),
+            (transform, _) => transform,
+        };
 
         let own_opacity = animated_opacity
             .unwrap_or_else(|| style.as_ref().map_or(1.0, |style| style.clone_opacity()));
@@ -320,7 +348,7 @@ impl Painter<'_, '_> {
         // the rest also do in CSS; this display list does not carry them.)
         let context = match (positioned, z_index) {
             (true, Some(z)) => Some(z),
-            _ if own_opacity < 1.0 || transform.is_some() => Some(0),
+            _ if own_opacity < 1.0 || transform.is_some() || transform_3d.is_some() => Some(0),
             _ => None,
         };
         let opacity = ambient.opacity * own_opacity;
@@ -331,6 +359,15 @@ impl Painter<'_, '_> {
             clip: ambient.clip,
             opacity,
             scroll_parent: ambient.scroll_parent,
+            // A perspective is for the box's own children and goes no further down. An
+            // anonymous block is not an element, so what it wraps are still the children
+            // of the element above it.
+            perspective: match node.data {
+                NodeData::AnonymousBlock(_) => ambient.perspective,
+                _ => style.as_ref().and_then(|style| {
+                    transform::perspective_of(style, rect.x, rect.y, width, height)
+                }),
+            },
         };
         let own_clip = style.as_ref().is_some_and(|style| clips(style));
         if let Some(style) = style.as_ref() {
@@ -374,6 +411,7 @@ impl Painter<'_, '_> {
                 fixed,
                 clips: own_clip,
                 transform,
+                transform_3d,
                 animations,
                 background: animated_background,
             },
@@ -541,6 +579,7 @@ impl Painter<'_, '_> {
             clips_children: false,
             opacity: placed.opacity,
             transform: placed.transform.clone(),
+            transform_3d: placed.transform_3d.clone(),
             animations: placed.animations.clone(),
             scroll: None,
             scroll_parent: placed.scroll_parent,

@@ -1349,6 +1349,84 @@ impl MeasuredTree<'_> {
         }
     }
 
+    /// Measures every inline formatting context inside a table that blitz-dom laid out on
+    /// its own, at the content width the table gave its box.
+    ///
+    /// blitz-dom's `TableTreeWrapper` walks a table's cells through `BaseDocument` rather
+    /// than this tree, so `compute_measured` never sees them. On targets where Parley has no
+    /// system fonts (`wasm32-unknown-unknown`), blitz-dom shapes zero glyph runs for those
+    /// cells and the display list would have no text to draw. Measuring each inline root in
+    /// the table subtree after the table's final pass records its `MeasuredText` with the
+    /// caller's [`TextMeasurer`], at the cell's settled content width.
+    fn measure_table_texts(&mut self, table_id: usize) {
+        let mut stack = vec![table_id];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.doc.get_node(id) else {
+                continue;
+            };
+            if node.style.display == Display::None {
+                continue;
+            }
+            if id != table_id && node.flags.is_table_root() {
+                continue;
+            }
+            let children = node.children.clone();
+            if node.flags.is_inline_root() {
+                let layout = node.unrounded_layout;
+                let content_width = (layout.size.width
+                    - layout.padding.left
+                    - layout.padding.right
+                    - layout.border.left
+                    - layout.border.right)
+                    .max(0.0);
+                if let Some(Some(prepared)) = prepare_inline(&*self.doc, id) {
+                    let constraint = if !prepared.white_space.wrap {
+                        WidthConstraint::MaxContent
+                    } else {
+                        WidthConstraint::AtMost(content_width)
+                    };
+                    let mut metrics = self.measurer.measure_spans(
+                        &TextMeasureRequest {
+                            text: &prepared.text,
+                            style: &prepared.style,
+                            width: constraint,
+                            white_space: prepared.white_space,
+                        },
+                        &prepared.spans,
+                    );
+                    if let (TextAlign::Justify, WidthConstraint::AtMost(width)) =
+                        (prepared.align, constraint)
+                        && metrics.line_count > 1
+                        && !prepared.text.contains('\n')
+                    {
+                        metrics.width = metrics.width.max(width);
+                    }
+                    let wrap_width = match constraint {
+                        WidthConstraint::AtMost(width) => Some(width),
+                        WidthConstraint::MinContent => Some(metrics.width),
+                        WidthConstraint::MaxContent => None,
+                    };
+                    self.texts.insert(
+                        id,
+                        MeasuredText {
+                            owner: prepared.owner,
+                            text: prepared.text,
+                            style: prepared.style,
+                            color: prepared.color,
+                            decoration: prepared.decoration,
+                            align: prepared.align,
+                            metrics,
+                            wrap_width,
+                            marker_prefix: prepared.marker_prefix,
+                            spans: prepared.spans,
+                        },
+                    );
+                }
+            }
+            stack.extend(children);
+        }
+    }
+
     /// Sizes and places every `position: fixed` box under `root` against the viewport,
     /// outer boxes before the boxes inside them. A fixed box's location is written in
     /// viewport coordinates.
@@ -2917,11 +2995,20 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                 Route::Select => tree.compute_select(id, inputs),
                 Route::Blitz => {
                     tree.pre_measure_inline_boxes(node_id, inputs);
-                    <BaseDocument as LayoutPartialTree>::compute_child_layout(
+                    let output = <BaseDocument as LayoutPartialTree>::compute_child_layout(
                         &mut *tree.doc,
                         node_id,
                         inputs,
-                    )
+                    );
+                    if inputs.run_mode == RunMode::PerformLayout
+                        && tree
+                            .doc
+                            .get_node(id)
+                            .is_some_and(|node| node.flags.is_table_root())
+                    {
+                        tree.measure_table_texts(id);
+                    }
+                    output
                 }
                 Route::Measured(prepared) => tree.compute_measured(id, prepared, inputs),
                 Route::Block => {

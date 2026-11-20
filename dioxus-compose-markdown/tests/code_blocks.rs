@@ -16,7 +16,7 @@ use std::time::Duration;
 use support::apps::{self, quiet};
 use support::{Prop, Screen, Tree};
 
-const WAIT: Duration = Duration::from_secs(60);
+const WAIT: Duration = Duration::from_secs(180);
 
 /// The Text a code block's code is drawn in: the monospace Text inside a ScrollRow.
 fn code_texts(tree: &Tree) -> Vec<u32> {

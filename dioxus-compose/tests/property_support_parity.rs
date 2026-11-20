@@ -150,6 +150,16 @@ fn property_of(attribute: &str) -> Option<&'static str> {
         "minimap" => "Minimap",
         "view_zones" => "ViewZones",
         "word_wrap" => "WordWrap",
+        "placeholder_color" => "PlaceholderColor",
+        "caret_color" => "CaretColor",
+        "icon_asset" => "IconAsset",
+        "presentation" => "Presentation",
+        "max_width" => "MaxWidth",
+        "separator" => "Separator",
+        "span_font_features" => "SpanFontFeatures",
+        "content_padding_dp" => "ContentPaddingDp",
+        "fixed_gutter_columns" => "FixedGutterColumns",
+        "native_visible" => "NativeVisible",
         // Everything else is either a Modifier rather than a property, or a property this
         // comparison has not been taught. Returning None skips it rather than failing,
         // because a Modifier is not subject to the rule being checked here.

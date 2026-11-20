@@ -26,8 +26,13 @@
 //!
 //! CSS `transform` is carried as a 2D matrix about `transform-origin` on the entry
 //! ([`NodeEntry::transform`]) and as a modifier of the plan node ([`PlanModifier::Transform`]);
-//! a pointer is hit-tested against the transformed shape. 3D transforms are left out, and
-//! named in [`DisplayList::skipped_transforms`]. A CSS transition or `@keyframes` animation
+//! a pointer is hit-tested against the transformed shape. A 3D transform is one 4x4 matrix
+//! with its perspective inside it ([`NodeEntry::transform_3d`],
+//! [`PlanModifier::Transform3D`]), with `backface-visibility` beside it, and is hit-tested
+//! the same way. `transform-style: preserve-3d` is drawn flat, and the elements that ask
+//! for it are named in [`DisplayList::flattened_spaces`]. A motion of `transform` that
+//! passes through a 3D transform is not played, and is named in
+//! [`DisplayList::skipped_transforms`]. A CSS transition or `@keyframes` animation
 //! of `opacity`, `transform` or `background-color` is described for the renderer to play
 //! ([`TransitionStart`], [`NodeEntry::animations`]), and one that changes layout is ticked by
 //! the Host ([`HtmlDom::set_time`], [`HtmlDom::needs_frames`], [`HtmlDom::tick`]).
@@ -78,8 +83,8 @@ pub type NodeId = usize;
 
 pub use crate::dom::{
     AppRegion, ClipboardEventData, Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput,
-    PointerKind, PointerSubscription, PointerType, ScrollPosition, TransitionEventData,
-    UserSelect, WheelMode, element_by_id,
+    PointerKind, PointerSubscription, PointerType, ScrollPosition, TransitionEventData, UserSelect,
+    WheelMode, element_by_id,
 };
 pub use crate::html_widget::{WidgetView, WidgetViewProps};
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
@@ -94,11 +99,11 @@ pub use crate::paint::bridge::{
 pub use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, BackgroundImage, BackgroundLayer, Border,
     BorderLine, BoxShadow, CanvasBackground, Corners, DisplayList, DisplayListDiff, Easing,
-    FillMode, GradientStop, ImageFallback, InputField, InputKind, Iterations, Keyframe,
-    LinearGradient, MarkerShape, MarkerSymbol, Matrix2D, NodeEntry, ObjectFit, Outline,
-    PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker, ScrollContainer,
-    Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun, TileRepeat,
-    Transform2D, TransformFunction, TransitionStart,
+    FillMode, FlattenedSpace, GradientStop, ImageFallback, InputField, InputKind, Iterations,
+    Keyframe, LinearGradient, MarkerShape, MarkerSymbol, Matrix2D, Matrix3D, NodeEntry, ObjectFit,
+    Outline, PlaneMap, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker,
+    ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun,
+    TileRepeat, Transform2D, Transform3D, TransformFunction, TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,

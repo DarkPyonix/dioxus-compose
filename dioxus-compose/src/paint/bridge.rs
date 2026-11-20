@@ -505,18 +505,6 @@ impl PlanBridge {
         false
     }
 
-    /// The size the renderer node drawn for `key` was given, in CSS pixels.
-    pub(crate) fn required_size(&self, key: PlanKey) -> Option<(f32, f32)> {
-        self.nodes
-            .get(&key)?
-            .modifiers
-            .iter()
-            .find_map(|modifier| match modifier {
-                Modifier::RequiredSize { width, height } => Some((*width, *height)),
-                _ => None,
-            })
-    }
-
     /// Records the text the user typed into the field of `node`, so that the same text
     /// coming back from the page is not sent to the renderer again. The field owns its
     /// text while the user edits it.
@@ -2114,6 +2102,25 @@ fn wire_modifiers(
                     origin_y,
                 }
             }
+            // A 3D transform goes the same way: the whole matrix, perspective included, and
+            // the origin as a fraction of the box. The matrix is sent as CSS computed it,
+            // whether or not it comes apart into rotations and scales; drawing it is the
+            // renderer's.
+            PlanModifier::Transform3D(transform) => {
+                let (m, (origin_x, origin_y)) = match origin_fraction(transform.origin, size) {
+                    Some(fraction) => (transform.matrix, fraction),
+                    None => (transform.about_origin(), (0.0, 0.0)),
+                };
+                if !m.0.iter().all(|v| v.is_finite()) {
+                    continue;
+                }
+                Modifier::Transform3D {
+                    m: m.0,
+                    origin_x,
+                    origin_y,
+                    backface_hidden: transform.backface_hidden,
+                }
+            }
             PlanModifier::Width(width) => Modifier::Width(*width),
             PlanModifier::Alpha(alpha) => Modifier::Alpha(*alpha),
             // Corners always go per corner, even when all four are the same. compose-rust's
@@ -2242,9 +2249,12 @@ fn pin_modifiers(out: &mut Vec<Modifier>, pins: &[AnimatedProperty], origin: (f3
         )
     };
     if pins.contains(&AnimatedProperty::Transform)
-        && !out
-            .iter()
-            .any(|modifier| matches!(modifier, Modifier::Transform { .. }))
+        && !out.iter().any(|modifier| {
+            matches!(
+                modifier,
+                Modifier::Transform { .. } | Modifier::Transform3D { .. }
+            )
+        })
     {
         let at = out.iter().position(ends_placement).unwrap_or(out.len());
         out.insert(

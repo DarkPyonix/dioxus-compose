@@ -424,7 +424,8 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
-        EventPayload::EditorFocusChanged { focused } => {
+        EventPayload::EditorFocusChanged { focused }
+        | EventPayload::NativeViewFocus { focused } => {
             Event::new(Rc::new(focused), true).into_any()
         }
         EventPayload::FoldChanged {
@@ -590,7 +591,11 @@ pub(crate) fn deliver_event(
         | EventPayload::StorageLocation(_)
         // The answer to a position query names a request and no handler. The Host hands it
         // to the callback that asked before any runtime sees it.
-        | EventPayload::PositionRect { .. } => {
+        | EventPayload::PositionRect { .. }
+        // A new display density and a native view's parent window are the Host's own: it
+        // takes them before any runtime sees them.
+        | EventPayload::DensityChanged { .. }
+        | EventPayload::NativeViewParent { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
     };

@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use dioxus_compose::code::{SYNTAX_SPAN_LEN, SelectionChange};
+use dioxus_compose::code::SYNTAX_SPAN_LEN;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::schema::RevealAlign;
@@ -1574,4 +1574,51 @@ fn fr38_minimap_view_zones_and_word_wrap_arrive_and_are_withdrawn() {
             "{property:?}"
         );
     }
+}
+
+fn unattached_advanced_app() -> Element {
+    let handle = CodeEditorHandle::new();
+    rsx! {
+        Column {
+            Button {
+                text: "Trigger",
+                on_click: move |_| {
+                    handle.edit_group(1, 0, [(CodeRange::of(0, 0, 0, 0), "foo")]);
+                    handle.set_selections(0, [(Position::new(0, 0), Position::new(0, 1))]);
+                    handle.insert_snippet(0, CodeRange::of(0, 0, 0, 0), "bar");
+                },
+            }
+        }
+    }
+}
+
+/// A handle no editor carries drops grouped edits, selections and snippets before the boundary.
+#[test]
+fn fr38_grouped_edits_selections_and_snippets_for_unattached_handle_are_dropped() {
+    let mut host = Host::new(unattached_advanced_app);
+    let first = records(host.rebuild().unwrap());
+    let after = press(&mut host, &first, 0);
+    let mutations = decode_batch(&after).unwrap();
+    assert!(
+        !mutations.iter().any(|m| matches!(
+            m,
+            Mutation::EditCodeGroup { .. }
+                | Mutation::SetSelections { .. }
+                | Mutation::InsertSnippet { .. }
+        )),
+        "{mutations:?}"
+    );
+}
+
+/// `escape_snippet_text` escapes special snippet characters so they are inserted literally.
+#[test]
+fn fr38_escape_snippet_text_escapes_literal_characters() {
+    assert_eq!(escape_snippet_text("a$1}\\b"), "a\\$1\\}\\\\b");
+
+    let complex = r"fn test() { let $x = 1; } \ ${choice}";
+    let complex_escaped = escape_snippet_text(complex);
+    assert_eq!(
+        complex_escaped,
+        "fn test() { let \\$x = 1; \\} \\\\ \\${choice\\}"
+    );
 }

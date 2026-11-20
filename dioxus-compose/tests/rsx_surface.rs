@@ -32,6 +32,14 @@ fn css_font() -> FontRefs {
     ])
 }
 
+/// Runs that each name OpenType features of their own.
+fn featured_spans() -> TextSpans {
+    TextSpans::new_with_features([(TextSpan::new(0, 3), vec![FontFeature::new(b"tnum", 1)])])
+}
+
+/// The platform view the `NativeView` in `surface()` is handed.
+const VIEW: NativeHandle = NativeHandle(0x5eed);
+
 /// Its runs: one names a font of its own.
 fn css_spans() -> TextSpans {
     TextSpans::new_with_fonts([(
@@ -174,7 +182,7 @@ fn surface() -> Element {
                 background: Paint::Role(ColorRole::Background),
                 material: MaterialRole::Chrome,
                 top_bar: rsx! {
-                    TopAppBar { title: "Inbox", fill_max_width: true }
+                    TopAppBar { title: "Inbox", fill_max_width: true, separator: true }
                 },
                 bottom_bar: rsx! {
                     Navigation {
@@ -289,11 +297,15 @@ fn surface() -> Element {
                             soft_wrap: false,
                             font_feature_settings: [(b"tnum", 1), (b"liga", 0)],
                         }
+                        Text { text: "123", spans: featured_spans() }
                     }
                     TextField {
                         placeholder: "Search",
+                        placeholder_color: SECONDARY,
+                        caret_color: PRIMARY,
                         enabled: true,
                         multiline: true,
+                        read_only: true,
                         type_role: TypeRole::Mono,
                         font: css_font(),
                         on_value_change: move |value: String| fired(format!("TextField.on_value_change({value})")),
@@ -334,6 +346,7 @@ fn surface() -> Element {
                         )),
                         Image { asset_id: 7, width: 64.0, height: 64.0, content_scale: ContentScale::Crop }
                         Icon { asset_id: 8, color: TERTIARY }
+                        Icon { icon_asset: 11_u32, color: PRIMARY }
                     }
                     SplitPane {
                         value: 320.0,
@@ -402,6 +415,8 @@ fn surface() -> Element {
                         minimap: MinimapSide::Left,
                         view_zones: editor_zones(),
                         word_wrap: WordWrap::Column(80),
+                        content_padding_dp: (12.0, 24.0),
+                        fixed_gutter_columns: true,
                         on_edit_group_result: move |result: EditGroupResult| fired(format!(
                             "CodeEditor.on_edit_group_result({},{:?})",
                             result.request_id, result.status
@@ -431,6 +446,7 @@ fn surface() -> Element {
                     }
                     ScrollRow {
                         fill_max_width: true,
+                        sticky: true,
                         snap: Snap::ItemStart,
                         Chip {
                             text: "Unread",
@@ -565,6 +581,9 @@ fn surface() -> Element {
                         open: true,
                         scrim: SCRIM,
                         max_height_fraction: 0.6,
+                        sheet_handle: Some(false),
+                        presentation: SheetPresentation::Centered,
+                        max_width: 480_u32,
                         on_dismiss: move |_| fired("Sheet.on_dismiss"),
                         Text { text: "sheet body" }
                     }
@@ -586,6 +605,20 @@ fn surface() -> Element {
                         on_dismiss: move |_| fired("Popover.on_dismiss"),
                         anchor: rsx! { Text { text: "popover anchor" } },
                         Text { text: "popover body" }
+                    }
+                    NativeView {
+                        handle: VIEW,
+                        visible: false,
+                        width: 200.0,
+                        size_in: SizeIn::new().min_height(80.0).max_height(240.0),
+                        aspect_ratio: 1.5,
+                        match_height_constraints_first: true,
+                        min_touch_target: 48.0,
+                        overlay: SCRIM,
+                        unbounded_width: true,
+                        on_focus_change: move |focused: bool| {
+                            fired(format!("NativeView.on_focus_change({focused})"))
+                        },
                     }
                 }
             }
@@ -1107,7 +1140,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Color, int(paint_bits(ON_SURFACE))),
             ],
         ),
-        (W::TopAppBar, vec![(P::Text, text("Inbox"))]),
+        (
+            W::TopAppBar,
+            vec![(P::Text, text("Inbox")), (P::Separator, flag(true))],
+        ),
         (
             W::LazyRow,
             vec![(P::ItemCount, int(4)), (P::OnRangeRequested, Handler)],
@@ -1220,6 +1256,43 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnDismiss, Handler),
             ],
         ),
+        // What compose-rust 0.0.11 added, each on the widget that takes it.
+        (
+            W::Text,
+            vec![(
+                P::SpanFontFeatures,
+                is(Value::Bytes(featured_spans().feature_table().to_vec())),
+            )],
+        ),
+        (
+            W::TextField,
+            vec![
+                (P::PlaceholderColor, int(paint_bits(SECONDARY))),
+                (P::CaretColor, int(paint_bits(PRIMARY))),
+            ],
+        ),
+        (W::Icon, vec![(P::IconAsset, int(11))]),
+        (
+            W::Sheet,
+            vec![
+                (P::Presentation, role(SheetPresentation::Centered)),
+                (P::MaxWidth, int(480)),
+            ],
+        ),
+        (
+            W::CodeEditor,
+            vec![
+                (P::ContentPaddingDp, pair_bytes(12.0, 24.0)),
+                (P::FixedGutterColumns, flag(true)),
+            ],
+        ),
+        (
+            W::NativeView,
+            vec![
+                (P::NativeVisible, flag(false)),
+                (P::OnNativeViewFocus, Handler),
+            ],
+        ),
     ]
 }
 
@@ -1316,7 +1389,14 @@ fn fr15_every_property_in_the_schema_is_reachable_from_rsx() {
 ///
 /// - `Size`: there is no `size` attribute; `width` and `height` are written separately.
 /// - `PaddingEach`: there is no attribute for four different paddings.
-const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &["Size", "PaddingEach"];
+const MODIFIERS_WITHOUT_AN_RSX_ATTRIBUTE: &[&str] = &[
+    "Size",
+    "PaddingEach",
+    "BorderDash",
+    "HoverStyle",
+    "FocusRing",
+    "PressStyle",
+];
 
 #[test]
 fn fr15_every_modifier_in_the_schema_is_reachable_from_rsx() {
@@ -1707,6 +1787,12 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             },
             "CodeEditor.on_selections_change(4,2)",
         ),
+        (
+            W::NativeView,
+            P::OnNativeViewFocus,
+            EventPayload::NativeViewFocus { focused: true },
+            "NativeView.on_focus_change(true)",
+        ),
     ];
     let mut failures = Vec::new();
     for (kind, property, payload, label) in events.iter().cloned() {
@@ -1866,6 +1952,9 @@ fn nothing_asked() -> Element {
             Sheet { max_height_fraction: 0.0, Text { text: "k" } }
             Popover { anchor: rsx! { Text { text: "e" } }, Text { text: "f" } }
             Image { asset_id: 1 }
+            Icon { asset_id: 2 }
+            TopAppBar { title: "o" }
+            NativeView { width: 10.0, height: 10.0 }
             Card { Text { text: "l" } }
             Surface { Text { text: "m" } }
             dioxus_compose::Box { background_brush: Vec::new(), Text { text: "n" } }
@@ -1925,6 +2014,17 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
         P::ViewZones,
         P::WordWrap,
         P::OnEditGroupResult,
+        P::PlaceholderColor,
+        P::CaretColor,
+        P::IconAsset,
+        P::Presentation,
+        P::MaxWidth,
+        P::Separator,
+        P::SpanFontFeatures,
+        P::ContentPaddingDp,
+        P::FixedGutterColumns,
+        P::NativeVisible,
+        P::OnNativeViewFocus,
     ];
     let sent: Vec<String> = mutations
         .iter()
@@ -1937,9 +2037,17 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
                     Modifier::Semantics { .. }
                     | Modifier::CornerCurve { .. }
                     | Modifier::Transform3D { .. }
-                    | Modifier::BackgroundBrush { .. },
+                    | Modifier::BackgroundBrush { .. }
+                    | Modifier::SizeIn { .. }
+                    | Modifier::AspectRatio { .. }
+                    | Modifier::MinTouchTarget { .. }
+                    | Modifier::Overlay(_)
+                    | Modifier::Sticky
+                    | Modifier::UnboundedWidth,
                 ..
             } => Some(format!("{mutation:?}")),
+            // A native view with no view is not handed one.
+            Mutation::AttachNativeView { .. } => Some(format!("{mutation:?}")),
             _ => None,
         })
         .collect();
@@ -2321,4 +2429,384 @@ fn fr15_use_system_color_scheme_follows_the_reported_appearance() {
         })
         .expect("the report is dispatched");
     assert_eq!(shown(&decoded(after)).as_deref(), Some("Some(Dark)"));
+}
+
+/// The properties the first node of `widget` was sent, in the order they arrived.
+fn props_of(mutations: &[Mutation<'_>], widget: WidgetKind) -> Vec<(PropertyKind, Value)> {
+    let node = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: created,
+            } if *created == widget => Some(*node_id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {widget:?} was created: {mutations:?}"));
+    mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                node_id,
+                property,
+                value,
+            } if *node_id == node => Some((*property, Value::from(value))),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every modifier the first node of `widget` was sent.
+fn modifiers_of(mutations: &[Mutation<'_>], widget: WidgetKind) -> Vec<Modifier> {
+    let node = mutations
+        .iter()
+        .find_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: created,
+            } if *created == widget => Some(*node_id),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {widget:?} was created: {mutations:?}"));
+    mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                node_id, modifier, ..
+            } if *node_id == node => Some(modifier.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn constrained() -> Element {
+    rsx! {
+        ScrollRow {
+            Row {
+                size_in: SizeIn::new().min_width(40.0).max_height(120.0),
+                aspect_ratio: 2.0,
+                match_height_constraints_first: true,
+                min_touch_target: 48.0,
+                overlay: SCRIM,
+                sticky: true,
+                unbounded_width: true,
+                Text { text: "pinned" }
+            }
+        }
+    }
+}
+
+/// The size bounds, the aspect ratio, the press area, the overlay, the pin to a scroll
+/// container's start and the unbounded measure each go out as their own modifier, with the
+/// numbers written in rsx. A bound left out of `SizeIn` crosses as NaN, unconstrained.
+#[test]
+fn fr15_layout_modifiers_arrive_as_written() {
+    let (_host, batch) = first_frame(constrained);
+    let mutations = decoded(&batch);
+    let modifiers = modifiers_of(&mutations, WidgetKind::Row);
+    assert!(
+        modifiers.iter().any(|modifier| matches!(
+            modifier,
+            Modifier::SizeIn { min_width, max_width, min_height, max_height }
+                if *min_width == 40.0
+                    && max_width.is_nan()
+                    && min_height.is_nan()
+                    && *max_height == 120.0
+        )),
+        "{modifiers:?}"
+    );
+    for expected in [
+        Modifier::AspectRatio {
+            ratio: 2.0,
+            match_height_constraints_first: true,
+        },
+        Modifier::MinTouchTarget { size: 48.0 },
+        Modifier::Overlay(SCRIM),
+        Modifier::Sticky,
+        Modifier::UnboundedWidth,
+    ] {
+        assert!(
+            modifiers.contains(&expected),
+            "{expected:?} was not sent; the Row carried {modifiers:?}"
+        );
+    }
+}
+
+fn coloured_field() -> Element {
+    rsx! {
+        TextField {
+            placeholder: "Search",
+            placeholder_color: SECONDARY,
+            caret_color: ERROR,
+        }
+    }
+}
+
+/// A text field's placeholder and caret colours travel as the bits of a Paint.
+#[test]
+fn fr15_text_field_placeholder_and_caret_colours_travel_as_paints() {
+    let (_host, batch) = first_frame(coloured_field);
+    let props = props_of(&decoded(&batch), WidgetKind::TextField);
+    assert!(
+        props.contains(&(
+            PropertyKind::PlaceholderColor,
+            Value::Integer(paint_bits(SECONDARY))
+        )),
+        "{props:?}"
+    );
+    assert!(
+        props.contains(&(PropertyKind::CaretColor, Value::Integer(paint_bits(ERROR)))),
+        "{props:?}"
+    );
+}
+
+fn svg_icon() -> Element {
+    rsx! {
+        Icon { icon_asset: 21_u32, color: PRIMARY }
+    }
+}
+
+/// An icon drawn from an SVG sends its asset as `IconAsset` and sends no `Asset` at all, so
+/// the Renderer tints the picture rather than drawing it as it is.
+#[test]
+fn fr15_an_svg_icon_sends_icon_asset_in_place_of_asset() {
+    let (_host, batch) = first_frame(svg_icon);
+    let props = props_of(&decoded(&batch), WidgetKind::Icon);
+    assert!(
+        props.contains(&(PropertyKind::IconAsset, Value::Integer(21))),
+        "{props:?}"
+    );
+    assert!(
+        !props
+            .iter()
+            .any(|(property, _)| *property == PropertyKind::Asset),
+        "{props:?}"
+    );
+}
+
+fn centred_sheet() -> Element {
+    rsx! {
+        Column {
+            Sheet {
+                open: true,
+                presentation: SheetPresentation::Centered,
+                max_width: 420_u32,
+                Text { text: "centred" }
+            }
+            Sheet {
+                open: true,
+                presentation: SheetPresentation::Edge,
+                max_width: 0_u32,
+                Text { text: "edge" }
+            }
+        }
+    }
+}
+
+/// A centred sheet sends its presentation and its widest width in dp. An edge sheet, and a
+/// width of 0, send nothing: absent is the edge and the design system's width.
+#[test]
+fn fr15_a_centred_sheet_sends_its_presentation_and_max_width() {
+    let (_host, batch) = first_frame(centred_sheet);
+    let mutations = decoded(&batch);
+    let sent: Vec<(PropertyKind, Value)> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: property @ (PropertyKind::Presentation | PropertyKind::MaxWidth),
+                value,
+                ..
+            } => Some((*property, Value::from(value))),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        [
+            (
+                PropertyKind::Presentation,
+                Value::Integer(i64::from(u16::from(SheetPresentation::Centered)))
+            ),
+            (PropertyKind::MaxWidth, Value::Integer(420)),
+        ],
+        "{mutations:?}"
+    );
+}
+
+fn bars() -> Element {
+    rsx! {
+        Column {
+            TopAppBar { title: "with", separator: true }
+            TopAppBar { title: "without", separator: false }
+            TopAppBar { title: "default" }
+        }
+    }
+}
+
+/// A bar says whether the design system's hairline is drawn under it, either way, and a
+/// bar that says nothing sends nothing and leaves it to the design system.
+#[test]
+fn fr15_a_top_app_bar_separator_is_sent_only_when_said() {
+    let (_host, batch) = first_frame(bars);
+    let mutations = decoded(&batch);
+    let sent: Vec<Value> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Separator,
+                value,
+                ..
+            } => Some(Value::from(value)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        [Value::Bool(true), Value::Bool(false)],
+        "{mutations:?}"
+    );
+}
+
+fn featured_runs() -> Element {
+    rsx! {
+        Column {
+            Text { text: "123 abc", spans: featured_spans() }
+            Text { text: "plain", spans: css_spans() }
+        }
+    }
+}
+
+/// The OpenType features each run names travel as their own table beside the runs, and a
+/// text whose runs name none sends no table.
+#[test]
+fn fr15_span_font_features_travel_beside_the_runs() {
+    let (_host, batch) = first_frame(featured_runs);
+    let mutations = decoded(&batch);
+    let tables = text_props(&mutations, PropertyKind::SpanFontFeatures);
+    let expected = featured_spans().feature_table().to_vec();
+    assert!(!expected.is_empty());
+    assert_eq!(
+        tables,
+        [("123 abc".to_owned(), Value::Bytes(expected))],
+        "{mutations:?}"
+    );
+}
+
+fn padded_editors() -> Element {
+    rsx! {
+        Column {
+            CodeEditor { text: "a", content_padding_dp: (8.0, 32.0), fixed_gutter_columns: true }
+            CodeEditor { text: "b", content_padding_top_dp: 16.0 }
+            CodeEditor { text: "c", content_padding_dp: (0.0, 0.0) }
+        }
+    }
+}
+
+/// An editor's room above and below its text crosses as two `f32` in dp, top then bottom,
+/// and room above alone as a bottom of 0. No room sends nothing, and an editor that keeps
+/// its gutter columns says so.
+#[test]
+fn fr15_code_editor_content_padding_and_fixed_gutter_columns_arrive_as_written() {
+    let (_host, batch) = first_frame(padded_editors);
+    let mutations = decoded(&batch);
+    let padding = |top: f32, bottom: f32| {
+        let mut bytes = top.to_le_bytes().to_vec();
+        bytes.extend_from_slice(&bottom.to_le_bytes());
+        Value::Bytes(bytes)
+    };
+    let sent: Vec<Value> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::ContentPaddingDp,
+                value,
+                ..
+            } => Some(Value::from(value)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sent,
+        [padding(8.0, 32.0), padding(16.0, 0.0)],
+        "{mutations:?}"
+    );
+    let gutters: Vec<Value> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::FixedGutterColumns,
+                value,
+                ..
+            } => Some(Value::from(value)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(gutters, [Value::Bool(true)], "{mutations:?}");
+}
+
+fn embedded() -> Element {
+    let mut focused = use_signal(|| false);
+    rsx! {
+        Column {
+            NativeView {
+                handle: VIEW,
+                visible: false,
+                width: 320.0,
+                height: 240.0,
+                on_focus_change: move |now: bool| focused.set(now),
+            }
+            Text { text: "focused: {focused}" }
+        }
+    }
+}
+
+/// A native view is handed its platform view once, as a command, and is not handed it
+/// again on a frame that did not change it. Hiding it sends `NativeVisible` false, and the
+/// view taking the focus reaches the handler written in rsx.
+#[test]
+fn fr15_a_native_view_is_handed_its_view_once_and_reports_its_focus() {
+    let (mut host, batch) = first_frame(embedded);
+    let mutations = decoded(&batch);
+    let attached: Vec<(u32, NativeHandle)> = mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::AttachNativeView { node_id, handle } => Some((*node_id, *handle)),
+            _ => None,
+        })
+        .collect();
+    let node = props_of(&mutations, WidgetKind::NativeView);
+    assert!(
+        node.contains(&(PropertyKind::NativeVisible, Value::Bool(false))),
+        "{node:?}"
+    );
+    let [(node_id, handle)] = attached[..] else {
+        panic!("the view should be handed over once: {mutations:?}");
+    };
+    assert_eq!(handle, VIEW);
+    let [(focus_node, handler_id)] = announced(&mutations, PropertyKind::OnNativeViewFocus)[..]
+    else {
+        panic!("the focus handler should be announced once: {mutations:?}");
+    };
+    assert_eq!(focus_node, node_id);
+    let (after, _) = host
+        .dispatch(HostEvent {
+            node_id,
+            handler_id,
+            payload: EventPayload::NativeViewFocus { focused: true },
+        })
+        .expect("the focus report is dispatched");
+    let after = decoded(after);
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetProp { value: PropertyValue::String(text), .. } if *text == "focused: true"
+        ) || matches!(mutation, Mutation::SetText { text, .. } if *text == "focused: true")),
+        "the handler should have re-rendered the label: {after:?}"
+    );
+    assert!(
+        !after
+            .iter()
+            .any(|mutation| matches!(mutation, Mutation::AttachNativeView { .. })),
+        "an unchanged view was handed over again: {after:?}"
+    );
 }

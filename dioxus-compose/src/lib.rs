@@ -47,6 +47,9 @@ pub use compose_rust::schema::TitleBar;
 // A `FlowRow`'s two alignments. compose-rust keeps them in its schema only, and a screen
 // that writes a `FlowRow` needs them by name.
 pub use compose_rust::schema::{HorizontalAlignment, VerticalAlignment};
+// Escapes plain text for `CodeEditorHandle::insert_snippet`, so a `$` or a `}` in it is
+// inserted as itself and not read as a tab stop.
+pub use compose_rust::code::escape_snippet_text;
 pub use compose_rust::ui::SemanticsState;
 pub use dioxus_core_macro::{Props, component, rsx};
 pub use elements::window;
@@ -139,10 +142,10 @@ pub use widgets::{
     AbsoluteBox, BackgroundLayer, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
     ColumnSpec, ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown,
     FileDropTarget, FloatingAction, FlowRow, FontFeatures, Icon, Image, LazyColumn, LazyGrid,
-    LazyRow, Menu, Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton, Row,
-    Scaffold, ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator,
-    ShadowLayer, Sheet, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text, TextField,
-    TimePicker, Tooltip, TopAppBar,
+    LazyRow, Menu, NativeView, Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton,
+    Row, Scaffold, ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator,
+    ShadowLayer, Sheet, SizeIn, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text,
+    TextField, TimePicker, Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -273,13 +276,16 @@ pub mod prelude {
     pub use crate::{
         BackgroundLayer, BackgroundRepeat, ContentScale, EditGroupResult, EditGroupStatus,
         MinimapSide, SelectionsChange, SystemColorScheme, ViewZone, ViewZones, WordWrap,
-        use_system_color_scheme,
+        escape_snippet_text, use_system_color_scheme,
     };
+    // compose-rust 0.0.11: a place for a platform view, the bounds a node's size is kept
+    // within, a centred sheet, and a code editor's room above and below its text.
+    pub use crate::{ContentPadding, NativeHandle, NativeView, SheetPresentation, SizeIn};
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
-        EditRejected, HoverPhase, Position, SaveRequest, Severity, SyntaxSpan, SyntaxSpans,
-        use_code_editor,
+        EditRejected, HoverPhase, Position, SaveRequest, SelectionChange, Severity, SyntaxSpan,
+        SyntaxSpans, use_code_editor,
     };
     // Notifications, from a component or from a worker thread.
     pub use crate::{
@@ -388,6 +394,18 @@ pub mod elements {
             // Background image layers over the background colour, up to four, each a
             // `BackgroundBrush` modifier of its own.
             pub const background_brush: AttributeDescription = ("background_brush", None, false);
+            // The bounds the node's size is kept within, as a `Modifier::SizeIn`, and the
+            // width over height it is sized to, as a number or a `Modifier::AspectRatio`.
+            pub const size_in: AttributeDescription = ("size_in", None, false);
+            pub const aspect_ratio: AttributeDescription = ("aspect_ratio", None, false);
+            // The least size in dp of the area that takes the node's presses.
+            pub const min_touch_target: AttributeDescription = ("min_touch_target", None, false);
+            // A paint laid over the node and its content, in its background's outline.
+            pub const overlay: AttributeDescription = ("overlay", None, false);
+            // Pinned to the start edge of the scrolling container it is in.
+            pub const sticky: AttributeDescription = ("sticky", None, false);
+            // Measured with no maximum width, so an observed size is what its content asks.
+            pub const unbounded_width: AttributeDescription = ("unbounded_width", None, false);
         };
     }
 
@@ -452,7 +470,8 @@ pub mod elements {
             tab_size,
             absolute_size,
             soft_wrap,
-            font_feature_settings
+            font_feature_settings,
+            span_font_features
         ]
     );
     element!(
@@ -462,10 +481,13 @@ pub mod elements {
             placeholder,
             enabled,
             multiline,
+            read_only,
             type_role,
             font,
             bare,
-            font_feature_settings
+            font_feature_settings,
+            placeholder_color,
+            caret_color
         ]
     );
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
@@ -494,7 +516,9 @@ pub mod elements {
     // `content_scale` says how the picture is laid into the box, sent only when set.
     element!(image, "Image", [asset, content_scale]);
     // An Icon takes a tint as well, through the same Paint attribute Text uses.
-    element!(icon, "Icon", [asset, color]);
+    // `icon_asset` is an SVG drawn in the icon slot and tinted with `color`, in place of
+    // `asset`.
+    element!(icon, "Icon", [asset, icon_asset, color]);
     // Widget tags 12 to 17. A toggle is controlled: `checked` is the whole of what it
     // draws, so the box on screen and the value the Host holds can never disagree.
     // A control's colours and size are each sent only when set, so one that sets none
@@ -555,7 +579,8 @@ pub mod elements {
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
     element!(tabs, "Tabs", [selected_index, color]);
-    element!(topappbar, "TopAppBar", [text]);
+    // `separator` says whether the design system's hairline is drawn under the bar.
+    element!(topappbar, "TopAppBar", [text, separator]);
     element!(lazyrow, "LazyRow", [item_count]);
     element!(tooltip, "Tooltip", [text]);
     // The command list is a byte blob, so it is one attribute and one SetProp. An
@@ -591,7 +616,20 @@ pub mod elements {
     // says once that the user asked to close it. Which edge it enters from is the
     // Renderer's, because it is the side that knows how wide the window is.
     // `max_height_fraction` caps a bottom sheet at that share of the window's height.
-    element!(sheet, "Sheet", [open, scrim, max_height_fraction]);
+    // `presentation` asks for a centred modal in place of an edge drawer, and `max_width`
+    // caps the width of a centred one in dp.
+    element!(
+        sheet,
+        "Sheet",
+        [
+            open,
+            scrim,
+            max_height_fraction,
+            presentation,
+            max_width,
+            sheet_handle
+        ]
+    );
     // The screen's frame. It carries nothing of its own: what it is made of arrives as
     // slots, and what each slot becomes is decided where the window's width is known.
     element!(scaffold, "Scaffold", []);
@@ -667,7 +705,9 @@ pub mod elements {
             font,
             minimap,
             view_zones,
-            word_wrap
+            word_wrap,
+            content_padding_dp,
+            fixed_gutter_columns
         ]
     );
     // A row that wraps: the gaps on a line and between lines, where a line's children sit
@@ -691,6 +731,10 @@ pub mod elements {
         "Popover",
         [open, placement, align, offset_dp, scrim]
     );
+    // A place for a platform view the application made: `handle` is the view, which goes
+    // out as a command rather than a property, and `native_visible` hides it without
+    // taking it out of the window.
+    element!(nativeview, "NativeView", [handle, native_visible]);
     // A platform window in a multi-window application, valid only directly under the root.
     pub mod window {
         use super::AttributeDescription;
@@ -778,6 +822,7 @@ pub mod elements {
             codeeditor {},
             flowrow {},
             popover {},
+            nativeview {},
             window {},
         }
     }
@@ -952,6 +997,8 @@ pub mod events {
     // A node's size motion came to rest, with the size it settled at in dp. Any node can
     // take it; only one whose size moves, through a `motion` role, ever reports it.
     optional_event!(onmotionfinished, crate::MotionFinished);
+    // A native view took the keyboard focus (true) or lost it.
+    optional_event!(onnativeviewfocus, bool);
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
