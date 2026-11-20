@@ -128,15 +128,7 @@ fn send(
     payload: EventPayload<'_>,
 ) {
     let mut wire = Vec::new();
-    encode_event(
-        &HostEvent {
-            node_id,
-            handler_id,
-            payload,
-        },
-        &mut wire,
-    )
-    .unwrap();
+    encode_event(&HostEvent::new(node_id, handler_id, payload), &mut wire).unwrap();
     let (batch, _) = host.dispatch_event(&wire).unwrap();
     let batch = batch.to_vec();
     mock.apply(&batch);

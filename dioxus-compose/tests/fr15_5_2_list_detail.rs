@@ -108,11 +108,7 @@ fn dispatch(
     payload: EventPayload<'static>,
 ) -> Vec<Record> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, payload))
         .unwrap();
     records(batch)
 }

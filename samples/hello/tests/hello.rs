@@ -193,11 +193,7 @@ fn fr34_hello_runs_through_the_bridge() {
 
     let (node_id, handler_id) = link;
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .unwrap();
     let after = decode_batch(batch).unwrap();
     assert_eq!(

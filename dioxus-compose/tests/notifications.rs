@@ -145,11 +145,7 @@ fn session_finished_command() -> Command {
 }
 
 fn host_event(payload: EventPayload<'_>) -> HostEvent<'_> {
-    HostEvent {
-        node_id: 0,
-        handler_id: 0,
-        payload,
-    }
+    HostEvent::new(0, 0, payload)
 }
 
 /// The first button's click handler, from the batch that created it.
@@ -211,11 +207,7 @@ fn fr36_a_notification_posted_in_a_handler_rides_that_handlers_batch() {
 
     let before = requests();
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .unwrap();
     assert_eq!(
         commands(batch),
@@ -370,21 +362,10 @@ fn fr36_notification_events_name_no_node_and_no_handler() {
         EventPayload::NotificationPermissionChanged(NotificationPermission::Granted),
     ] {
         assert!(
-            host.dispatch(HostEvent {
-                node_id: 3,
-                handler_id: 0,
-                payload: payload.clone(),
-            })
-            .is_err()
+            host.dispatch(HostEvent::new(3, 0, payload.clone()))
+                .is_err()
         );
-        assert!(
-            host.dispatch(HostEvent {
-                node_id: 0,
-                handler_id: 9,
-                payload,
-            })
-            .is_err()
-        );
+        assert!(host.dispatch(HostEvent::new(0, 9, payload)).is_err());
     }
 }
 

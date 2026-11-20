@@ -91,11 +91,7 @@ fn handler(records: &[Record], node: u32) -> u64 {
 
 fn click(host: &mut Host, node: u32, handler_id: u64) -> Vec<Record> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: node,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node, handler_id, EventPayload::Clicked))
         .unwrap();
     records(batch)
 }

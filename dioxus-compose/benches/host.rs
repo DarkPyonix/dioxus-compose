@@ -51,11 +51,7 @@ fn host_and_targets() -> (Host, HostEvent<'static>, u32) {
     drop(initial);
     (
         host,
-        HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        },
+        HostEvent::new(node_id, handler_id, EventPayload::Clicked),
         text_node_id,
     )
 }

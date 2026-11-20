@@ -243,11 +243,7 @@ fn fr34_3_click_on_a_widget_runs_its_handler_then_the_wrapper_once() {
     // The renderer gives a press to the widget first. The widget does not consume it, so
     // the renderer offers it to the clickable box around it.
     let (_, consumed) = host
-        .dispatch(HostEvent {
-            node_id: button,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(button, handler, EventPayload::Clicked))
         .unwrap();
     assert_eq!(
         consumed, 0,
@@ -259,11 +255,11 @@ fn fr34_3_click_on_a_widget_runs_its_handler_then_the_wrapper_once() {
         "the Host must not run the wrapper itself: the renderer delivers that click",
     );
 
-    host.dispatch(HostEvent {
-        node_id: wrapper,
-        handler_id: wrapper_handler,
-        payload: EventPayload::Clicked,
-    })
+    host.dispatch(HostEvent::new(
+        wrapper,
+        wrapper_handler,
+        EventPayload::Clicked,
+    ))
     .unwrap();
     assert_eq!(
         LOG.with(|log| log.borrow().clone()),
@@ -375,11 +371,7 @@ fn fr38_a_code_editor_handle_in_a_widget_tree_reaches_its_editor() {
         (button, handler, editor)
     };
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: button,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(button, handler, EventPayload::Clicked))
         .unwrap();
     let after = decode_batch(batch).unwrap();
     assert!(

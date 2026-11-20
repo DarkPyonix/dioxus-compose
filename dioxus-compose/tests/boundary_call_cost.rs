@@ -80,11 +80,7 @@ fn field_and_handler(batch: &MutationBatch) -> (u32, u64) {
 fn typed_event(field: u32, handler: u64, text: &str) -> Vec<u8> {
     let mut bytes = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: field,
-            handler_id: handler,
-            payload: EventPayload::TextChanged(text),
-        },
+        &HostEvent::new(field, handler, EventPayload::TextChanged(text)),
         &mut bytes,
     )
     .expect("the keystroke did not encode");

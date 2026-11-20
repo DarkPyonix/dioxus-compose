@@ -250,10 +250,10 @@ fn fr34_5_mod_v_reads_clipboard_and_dispatches_paste() {
     // 1. Dispatch Mod+V keydown event.
     let is_mac = cfg!(target_os = "macos");
     let (key_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: field,
-            handler_id: key_handler,
-            payload: EventPayload::KeyDown {
+        .dispatch(HostEvent::new(
+            field,
+            key_handler,
+            EventPayload::KeyDown {
                 key: WireKey::Other,
                 shift_key: false,
                 ctrl_key: !is_mac,
@@ -263,7 +263,7 @@ fn fr34_5_mod_v_reads_clipboard_and_dispatches_paste() {
                 code: 0,
                 text: "v",
             },
-        })
+        ))
         .expect("keydown dispatches");
 
     let key_mutations = decode_batch(key_batch).expect("key batch decodes");
@@ -278,16 +278,16 @@ fn fr34_5_mod_v_reads_clipboard_and_dispatches_paste() {
     // 2. Dispatch renderer's ClipboardText reply with status 1 (TEXT).
     let clip_text = "pasted";
     let (reply_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::ClipboardText {
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::ClipboardText {
                 request: read_request,
                 status: 1,
                 len: clip_text.len() as u32,
                 text: clip_text,
             },
-        })
+        ))
         .expect("clipboard reply dispatches");
 
     let _ = reply_batch;
@@ -327,21 +327,21 @@ fn fr34_5_composition_events_from_live_renderer() {
         .expect("field has OnValueChange handler");
 
     // 1. Composition starts: composing = true
-    host.dispatch(HostEvent {
-        node_id: field,
-        handler_id: comp_handler,
-        payload: EventPayload::CompositionChanged { composing: true },
-    })
+    host.dispatch(HostEvent::new(
+        field,
+        comp_handler,
+        EventPayload::CompositionChanged { composing: true },
+    ))
     .expect("composition start dispatches");
 
     assert_eq!(take_log(), vec!["start: ".to_string()]);
 
     // 2. IME updates composed text: TextChanged("ㅎ")
-    host.dispatch(HostEvent {
-        node_id: field,
-        handler_id: text_handler,
-        payload: EventPayload::TextChanged("ㅎ"),
-    })
+    host.dispatch(HostEvent::new(
+        field,
+        text_handler,
+        EventPayload::TextChanged("ㅎ"),
+    ))
     .expect("text change dispatches");
 
     assert_eq!(
@@ -350,11 +350,11 @@ fn fr34_5_composition_events_from_live_renderer() {
     );
 
     // 3. IME updates composed text again: TextChanged("하")
-    host.dispatch(HostEvent {
-        node_id: field,
-        handler_id: text_handler,
-        payload: EventPayload::TextChanged("하"),
-    })
+    host.dispatch(HostEvent::new(
+        field,
+        text_handler,
+        EventPayload::TextChanged("하"),
+    ))
     .expect("text change dispatches");
 
     assert_eq!(
@@ -363,11 +363,11 @@ fn fr34_5_composition_events_from_live_renderer() {
     );
 
     // 4. Composition commits / ends: composing = false
-    host.dispatch(HostEvent {
-        node_id: field,
-        handler_id: comp_handler,
-        payload: EventPayload::CompositionChanged { composing: false },
-    })
+    host.dispatch(HostEvent::new(
+        field,
+        comp_handler,
+        EventPayload::CompositionChanged { composing: false },
+    ))
     .expect("composition end dispatches");
 
     assert_eq!(take_log(), vec!["end: 하".to_string()]);
