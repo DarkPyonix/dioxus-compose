@@ -92,11 +92,7 @@ fn pointer(kind: PointerKind) -> EventPayload<'static> {
 /// Returns the handler result: whether the event was consumed.
 fn send(host: &mut Host, (node_id, handler_id): (u32, u64), kind: PointerKind) -> i64 {
     let (_, result) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: pointer(kind),
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, pointer(kind)))
         .expect("the pointer event is dispatched");
     result
 }

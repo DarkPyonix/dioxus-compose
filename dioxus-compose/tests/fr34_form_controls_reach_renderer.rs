@@ -137,11 +137,7 @@ fn change(host: &mut Host, controls: &mut Controls, node_id: u32, value: f64) {
     let handler_id = controls.handlers[&node_id];
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::ValueChanged(value),
-        },
+        &HostEvent::new(node_id, handler_id, EventPayload::ValueChanged(value)),
         &mut wire,
     )
     .unwrap();

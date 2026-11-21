@@ -110,11 +110,7 @@ fn fr15_date_picker_reports_the_picked_day() {
     let handler = handler_of(&batch, node, PropertyKind::OnValueChange);
     let mut encoded = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::ValueChanged(20_400.0),
-        },
+        &HostEvent::new(node, handler, EventPayload::ValueChanged(20_400.0)),
         &mut encoded,
     )
     .unwrap();
@@ -177,11 +173,7 @@ fn fr15_dropdown_carries_its_options_as_children() {
     let handler = handler_of(&batch, node, PropertyKind::OnValueChange);
     let mut encoded = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::ValueChanged(1.0),
-        },
+        &HostEvent::new(node, handler, EventPayload::ValueChanged(1.0)),
         &mut encoded,
     )
     .unwrap();

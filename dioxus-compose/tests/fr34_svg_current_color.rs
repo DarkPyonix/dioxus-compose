@@ -153,11 +153,7 @@ fn fr34_svg_img_takes_current_color_from_its_element() {
 
     let (node_id, handler_id) = first.clickable.expect("the button is clickable");
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .expect("the click is dispatched");
     let after = seen(batch);
     let red = drawn_svg(&after);
@@ -279,11 +275,7 @@ fn fr34_svg_img_keeps_at_most_sixteen_colours_registered() {
         }
         let (node_id, handler_id) = batch.clickable.expect("the button is clickable");
         let (bytes, _) = host
-            .dispatch(HostEvent {
-                node_id,
-                handler_id,
-                payload: EventPayload::Clicked,
-            })
+            .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
             .expect("the click is dispatched");
         let clickable = batch.clickable;
         batch = turnover(bytes);

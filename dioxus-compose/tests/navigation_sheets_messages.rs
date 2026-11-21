@@ -90,10 +90,10 @@ fn messages(records: &[Record]) -> Vec<&Record> {
 
 fn resize(host: &mut Host, width_dp: f32) -> Vec<Record> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::WindowSizeChanged {
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::WindowSizeChanged {
                 width_dp,
                 height_dp: 800.0,
                 class: WindowSizeClass::from_width_dp(width_dp),
@@ -103,7 +103,7 @@ fn resize(host: &mut Host, width_dp: f32) -> Vec<Record> {
                 safe_area_trailing: 0.0,
                 safe_area_bottom: 0.0,
             },
-        })
+        ))
         .unwrap();
     records(batch)
 }
@@ -213,11 +213,7 @@ fn fr21_choosing_a_destination_fires_that_destinations_click_once() {
         .expect("the second destination has no click handler");
 
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: second,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(second, handler, EventPayload::Clicked))
         .unwrap();
     let after = records(batch);
     assert_eq!(SELECTED.with_borrow(|value| *value), 1);
@@ -283,11 +279,7 @@ fn click_button(host: &mut Host, initial: &[Record], index: usize) -> Vec<Record
         })
         .expect("that button has no click handler");
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node, handler, EventPayload::Clicked))
         .unwrap();
     records(batch)
 }
@@ -331,11 +323,7 @@ fn fr21_a_message_rides_the_batch_and_creates_no_node() {
 
     // Pressing the action names no node, because the message owns none.
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(0, handler_id, EventPayload::Clicked))
         .unwrap();
     let _ = records(batch);
     assert_eq!(UNDOS.load(Ordering::SeqCst), 1);
@@ -343,12 +331,8 @@ fn fr21_a_message_rides_the_batch_and_creates_no_node() {
     // An action is pressed once. The message is gone afterwards, so a second press is a
     // press on something that is no longer there and is refused rather than run again.
     assert!(
-        host.dispatch(HostEvent {
-            node_id: 0,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
-        .is_err()
+        host.dispatch(HostEvent::new(0, handler_id, EventPayload::Clicked))
+            .is_err()
     );
     assert_eq!(UNDOS.load(Ordering::SeqCst), 1);
 }
@@ -412,11 +396,7 @@ fn fr21_a_sheet_seeds_its_open_state_and_reports_one_dismissal() {
         .expect("the sheet has no dismiss handler");
 
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: sheet,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(sheet, handler, EventPayload::Clicked))
         .unwrap();
     let after = records(batch);
     assert_eq!(DISMISSALS.load(Ordering::SeqCst), 1);

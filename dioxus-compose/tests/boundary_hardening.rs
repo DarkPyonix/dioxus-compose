@@ -32,15 +32,7 @@ fn handshake() -> Vec<u8> {
 
 fn clicked_event() -> Vec<u8> {
     let mut bytes = Vec::new();
-    encode_event(
-        &HostEvent {
-            node_id: 1,
-            handler_id: 1,
-            payload: EventPayload::Clicked,
-        },
-        &mut bytes,
-    )
-    .unwrap();
+    encode_event(&HostEvent::new(1, 1, EventPayload::Clicked), &mut bytes).unwrap();
     bytes
 }
 

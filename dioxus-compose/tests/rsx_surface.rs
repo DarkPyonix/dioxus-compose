@@ -743,11 +743,11 @@ fn build() -> (Host, Wire) {
     ] {
         let (node_id, handler_id) = wire.handler(kind, PropertyKind::OnRangeRequested);
         let batch = host
-            .dispatch(HostEvent {
+            .dispatch(HostEvent::new(
                 node_id,
                 handler_id,
-                payload: EventPayload::RangeRequested { start: 0, count: 2 },
-            })
+                EventPayload::RangeRequested { start: 0, count: 2 },
+            ))
             .unwrap_or_else(|error| panic!("asking {kind:?} for its first items failed: {error:?}"))
             .0
             .to_vec();
@@ -1797,11 +1797,7 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
     let mut failures = Vec::new();
     for (kind, property, payload, label) in events.iter().cloned() {
         let (node_id, handler_id) = wire.handler(kind, property);
-        if let Err(error) = host.dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload,
-        }) {
+        if let Err(error) = host.dispatch(HostEvent::new(node_id, handler_id, payload)) {
             failures.push(format!(
                 "{kind:?} {property:?}: the Host refused the event: {error:?}"
             ));
@@ -1915,12 +1911,8 @@ fn fr15_on_key_up_delivers_the_key_event_on_key_down_does() {
         }
     };
     for ((node_id, handler_id), payload) in [(down[0], fields(true)), (up[0], fields(false))] {
-        host.dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload,
-        })
-        .expect("the key event is delivered");
+        host.dispatch(HostEvent::new(node_id, handler_id, payload))
+            .expect("the key event is delivered");
     }
     let calls = take_fired();
     assert_eq!(
@@ -2174,11 +2166,7 @@ fn fr15_a_handler_taken_away_is_withdrawn() {
     assert_eq!(up.len(), 1, "{mutations:?}");
     let (node_id, handler_id) = announced(&mutations, PropertyKind::OnClick)[0];
     let batch = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .expect("the press is dispatched")
         .0
         .to_vec();
@@ -2216,14 +2204,14 @@ fn fr15_on_motion_finished_delivers_the_settled_size_in_dp() {
     let finished = announced(&mutations, PropertyKind::OnMotionFinished);
     assert_eq!(finished.len(), 1, "{mutations:?}");
     let (node_id, handler_id) = finished[0];
-    host.dispatch(HostEvent {
+    host.dispatch(HostEvent::new(
         node_id,
         handler_id,
-        payload: EventPayload::MotionFinished {
+        EventPayload::MotionFinished {
             width_dp: 312.25,
             height_dp: 0.5,
         },
-    })
+    ))
     .expect("the motion report is delivered");
     assert_eq!(take_fired(), ["(312.25, 0.5)"]);
 }
@@ -2422,11 +2410,11 @@ fn fr15_use_system_color_scheme_follows_the_reported_appearance() {
     };
     assert_eq!(shown(&decoded(&batch)).as_deref(), Some("None"));
     let (after, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::ColorSchemeChanged(SystemColorScheme::Dark),
-        })
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::ColorSchemeChanged(SystemColorScheme::Dark),
+        ))
         .expect("the report is dispatched");
     assert_eq!(shown(&decoded(after)).as_deref(), Some("Some(Dark)"));
 }
@@ -2789,11 +2777,11 @@ fn fr15_a_native_view_is_handed_its_view_once_and_reports_its_focus() {
     };
     assert_eq!(focus_node, node_id);
     let (after, _) = host
-        .dispatch(HostEvent {
+        .dispatch(HostEvent::new(
             node_id,
             handler_id,
-            payload: EventPayload::NativeViewFocus { focused: true },
-        })
+            EventPayload::NativeViewFocus { focused: true },
+        ))
         .expect("the focus report is dispatched");
     let after = decoded(after);
     assert!(
