@@ -598,7 +598,7 @@ pub(crate) fn deliver_event(
         | EventPayload::NativeViewParent { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
-        // An event a newer compose-rust added (FR-41) has no listener here yet, so it is
+        // An event a newer compose-rust added has no listener here yet, so it is
         // refused like a payload no handler takes rather than reaching one as the wrong type.
         _ => return Err(ProtocolError::InvalidValueKind(0)),
     };
