@@ -708,11 +708,7 @@ fn decompose_3d(matrix: &Matrix3D) -> Option<Decomposed3D> {
 
     let translate = [m[12], m[13], m[14]];
 
-    let mut row = [
-        [m[0], m[1], m[2]],
-        [m[4], m[5], m[6]],
-        [m[8], m[9], m[10]],
-    ];
+    let mut row = [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]];
     let mut scale = [0.0f32; 3];
     let mut skew = [0.0f32; 3];
 
@@ -974,8 +970,8 @@ pub(crate) fn accumulate_3d(from: &Matrix3D, to: &Matrix3D, count: i32) -> Matri
 #[cfg(test)]
 mod tests {
     use style::values::computed::angle::Angle;
-    use style::values::computed::transform::Transform;
     use style::values::computed::{LengthPercentage, Percentage};
+    use style::values::generics::transform::Transform as GenericTransform;
 
     use super::*;
 
@@ -1006,8 +1002,8 @@ mod tests {
 
     #[test]
     fn fr34_1_interpolate_matrix_2d_rotates_without_shrinking() {
-        let from = Transform(vec![Operation::Rotate(Angle::from_degrees(0.0))].into());
-        let to = Transform(vec![Operation::Rotate(Angle::from_degrees(90.0))].into());
+        let from = GenericTransform(vec![Operation::Rotate(Angle::from_degrees(0.0))].into());
+        let to = GenericTransform(vec![Operation::Rotate(Angle::from_degrees(90.0))].into());
         let op = Operation::InterpolateMatrix {
             from_list: from,
             to_list: to,
@@ -1025,7 +1021,7 @@ mod tests {
 
     #[test]
     fn fr34_1_accumulate_matrix_2d_combines_translation_scale_and_rotation() {
-        let from = Transform(
+        let from = GenericTransform(
             vec![
                 Operation::TranslateX(LengthPercentage::new_length(Length::new(10.0))),
                 Operation::Rotate(Angle::from_degrees(30.0)),
@@ -1033,7 +1029,7 @@ mod tests {
             ]
             .into(),
         );
-        let to = Transform(
+        let to = GenericTransform(
             vec![
                 Operation::TranslateX(LengthPercentage::new_length(Length::new(5.0))),
                 Operation::Rotate(Angle::from_degrees(15.0)),
@@ -1057,8 +1053,12 @@ mod tests {
     #[test]
     fn fr34_1_interpolate_matrix_3d_slerps_rotation_and_interpolates_perspective() {
         let from = Matrix3D::perspective(400.0).times(&Matrix3D::rotation(0.0, 1.0, 0.0, 0.0));
-        let to = Matrix3D::perspective(200.0)
-            .times(&Matrix3D::rotation(0.0, 1.0, 0.0, 90.0f32.to_radians()));
+        let to = Matrix3D::perspective(200.0).times(&Matrix3D::rotation(
+            0.0,
+            1.0,
+            0.0,
+            90.0f32.to_radians(),
+        ));
         let mid = interpolate_3d(&from, &to, 0.5);
         // Perspective -1/d interpolates linearly from -1/400 to -1/200 (-0.00375),
         // and rotation slerps to rotateY(45deg).
@@ -1070,7 +1070,7 @@ mod tests {
 
     #[test]
     fn fr34_1_accumulate_matrix_3d_combines_translation_scale_and_rotation() {
-        let from = Transform(
+        let from = GenericTransform(
             vec![
                 Operation::Translate3D(
                     LengthPercentage::new_length(Length::new(10.0)),
@@ -1082,7 +1082,7 @@ mod tests {
             ]
             .into(),
         );
-        let to = Transform(
+        let to = GenericTransform(
             vec![
                 Operation::Translate3D(
                     LengthPercentage::new_length(Length::new(5.0)),

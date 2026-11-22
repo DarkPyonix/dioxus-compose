@@ -922,26 +922,29 @@ html, body { margin: 0; padding: 0; }
 /// unit determinant rather than a shrunk component-wise lerp.
 #[test]
 fn fr34_1_mismatched_transform_transition_interpolates_by_decomposition() {
-    use std::cell::Cell;
+    use dioxus_compose::html::prelude::dioxus_signals::{ReadableExt, WritableExt};
+    use dioxus_compose::prelude::use_signal;
 
-    thread_local! {
-        static ON: Cell<bool> = const { Cell::new(false) };
-    }
     fn app() -> Element {
-        let class = if ON.with(Cell::get) { "on" } else { "" };
-        rsx! { div { id: "box", class: "{class}" } }
+        let mut on = use_signal(|| false);
+        let class = if *on.read() { "on" } else { "" };
+        rsx! {
+            div {
+                id: "box",
+                class: "{class}",
+                onclick: move |_| on.set(true),
+            }
+        }
     }
 
-    ON.with(|on| on.set(false));
     let mut dom = HtmlDom::with_config(app, config(MISMATCHED_TRANSITION_CSS));
-    dom.layout_at(10.0, 800.0, 600.0, 1.0);
+    let _ = dom.layout(800.0, 600.0, 1.0);
 
-    ON.with(|on| on.set(true));
-    dom.mark_dirty();
+    let box_id = dom.element_by_id("box").expect("box exists");
+    dom.click_node(box_id);
     dom.render();
-    dom.layout_at(10.0, 800.0, 600.0, 1.0);
-    dom.tick(10.5, 800.0, 600.0, 1.0);
-
+    let _ = dom.layout(800.0, 600.0, 1.0);
+    let _ = dom.tick(0.5, 800.0, 600.0, 1.0);
     let list = dom.display_list().expect("laid out");
     let box_entry = entry(&dom, list, "box");
     let transform = box_entry
