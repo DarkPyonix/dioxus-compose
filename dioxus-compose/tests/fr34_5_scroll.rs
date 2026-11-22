@@ -345,6 +345,70 @@ fn fr34_5_scroll_into_view_uses_the_requested_alignment() {
 }
 
 #[test]
+fn fr34_5_onmounted_scroll_to_in_palette_structure_writes_into_view_on_first_batch() {
+    const PALETTE_SHEET: &str = "
+        html, body { margin: 0; padding: 0; }
+        .ed-pal { position: absolute; overflow: hidden; width: 400px; }
+        .ed-pall { max-height: 320px; overflow: auto; }
+        .ed-tn { height: 34px; }
+    ";
+    fn palette_config() -> HtmlConfig {
+        HtmlConfig {
+            stylesheets: vec![PALETTE_SHEET.to_string()],
+            ..HtmlConfig::default()
+        }
+    }
+    fn palette() -> Element {
+        rsx! {
+            div { class: "ed-pal",
+                div { class: "ed-pall",
+                    for index in 0..60 {
+                        if index == 38 {
+                            div { class: "ed-tn", id: "target",
+                                onmounted: move |evt| {
+                                    let data = evt.data();
+                                    dioxus_core::spawn(async move {
+                                        let _ = data.scroll_to(ScrollBehavior::Instant).await;
+                                    });
+                                },
+                                "Language {index}"
+                            }
+                        } else {
+                            div { class: "ed-tn", "Language {index}" }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut host = Host::html(palette, palette_config);
+    let first = seen(host.rebuild().expect("the first batch encodes"));
+    assert!(
+        first.columns.len() >= 2,
+        "page scroll column and .ed-pall scroll column must both exist: {first:#?}"
+    );
+    let list_col = first.columns[1];
+    let list_req = first
+        .into_view
+        .iter()
+        .find(|(container, _, _, _, _, _, _)| *container == list_col);
+    assert!(
+        list_req.is_some(),
+        "first batch must carry a ScrollIntoView for .ed-pall's ScrollColumn ({list_col}): {first:#?}"
+    );
+    let &(_, target, kind, align_x, align_y, flags, rect) = list_req.unwrap();
+    assert!(
+        first.created.contains(&target) && target != list_col,
+        "ScrollIntoView must name a descendant node created in the batch: target={target}, list_col={list_col}"
+    );
+    assert_eq!(kind, NODE);
+    assert_eq!((align_x, align_y), (NEAREST, NEAREST));
+    assert_eq!(flags, 0);
+    assert_eq!(rect, Rect::default());
+}
+
+#[test]
 fn fr34_5_scroll_sets_the_container_offset_in_renderer_pixels() {
     let mut started = started();
     let (outer, row) = (started.outer, started.outer_row);
