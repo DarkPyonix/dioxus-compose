@@ -413,6 +413,16 @@ impl HtmlRuntime {
         self.scroll.write(&mut self.dom, &self.bridge, batch);
         Self::sync_focus(&self.dom, &self.bridge, &mut self.renderer_focused, batch);
         self.deliver_host_moments();
+        // The page's layout gave every widget tree its box, which the tree reads with
+        // `use_widget_box`, exactly as it does when the page is the root. Without this a
+        // tree that waits for its box (a code editor must be told its size) never draws.
+        {
+            let dom = &self.dom;
+            crate::html_widget::set_boxes(self.owner, &|node| {
+                let rect = dom.display_list()?.get(node)?.rect;
+                Some((rect.width, rect.height))
+            });
+        }
         let bridge = &self.bridge;
         crate::html_widget::attach(
             self.owner,
