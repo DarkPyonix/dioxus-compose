@@ -1547,6 +1547,9 @@ impl PlanBridge {
             .placeholder
             .as_ref()
             .map_or(Prop::None, |text| Prop::Str(text.clone()));
+        // The CSS border and background of an `<input>` or `<textarea>` are the Host's own
+        // boxes, so the renderer's `TextField` draws without the design system's frame.
+        self.set_prop(batch, key, PropertyKind::Bare, Prop::Bool(true));
         self.set_prop(batch, key, PropertyKind::Placeholder, placeholder);
         self.set_prop(
             batch,
@@ -1574,7 +1577,9 @@ impl PlanBridge {
             .map_or(Prop::None, |index| Prop::Int(index as i64));
         self.set_prop(batch, key, PropertyKind::SelectedIndex, selected);
         // A `<select>` rests as a closed field on every design system, as a browser draws
-        // it, and never as a wheel that shows every option at once.
+        // it, and never as a wheel that shows every option at once. The CSS border and
+        // background are the Host's own boxes, so the field itself is bare.
+        self.set_prop(batch, key, PropertyKind::Bare, Prop::Bool(true));
         self.set_prop(batch, key, PropertyKind::Collapsible, Prop::Bool(true));
 
         let same_options = matches!(previous, PlanKind::Dropdown(before)
@@ -2207,37 +2212,7 @@ fn wire_modifiers(
     for (&index, modifier) in shadows.iter().zip(reversed) {
         out[index] = modifier;
     }
-    if matches!(node.kind, PlanKind::TextField(_) | PlanKind::Dropdown(_)) {
-        out.extend(bare_field());
-    }
     out
-}
-
-/// What a form field names for itself so that the renderer draws no frame around its text.
-///
-/// The CSS border and background of an `<input>`, `<textarea>` or `<select>` are the
-/// Host's own boxes, and the renderer's field sits in the content box. Left to itself the
-/// renderer's `TextField` or `Dropdown` draws the design system's field there: a fill, a
-/// line, a pill or rounded shape, and padding that cuts a line of text in half in a box one
-/// line tall. A field that names its own fill, line, shape and padding is drawn as it asked,
-/// so it names ones that draw nothing.
-// TODO(DarkPyonix/compose-rust#519): ask for a bare field instead once the renderer has one.
-fn bare_field() -> [Modifier; 4] {
-    let clear = Paint::Literal(Color::argb(0));
-    [
-        Modifier::Background(clear),
-        Modifier::Border {
-            width: 0.0,
-            paint: clear,
-        },
-        Modifier::Shape {
-            top_start: 0.0,
-            top_end: 0.0,
-            bottom_end: 0.0,
-            bottom_start: 0.0,
-        },
-        Modifier::Padding(0.0),
-    ]
 }
 
 /// Gives the node the modifier of each property in `pins` it lacks, with the value that
