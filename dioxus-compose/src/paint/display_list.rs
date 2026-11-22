@@ -271,8 +271,8 @@ impl TextRun {
         }
         let total_lines = self.line_count.max(1) as usize;
         let line_height = self.rect.height / total_lines as f32;
-        let line_idx = (((py - self.rect.y) / line_height).floor().max(0.0) as usize)
-            .min(total_lines - 1);
+        let line_idx =
+            (((py - self.rect.y) / line_height).floor().max(0.0) as usize).min(total_lines - 1);
         let frac_x = ((px - self.rect.x) / self.rect.width).clamp(0.0, 1.0);
 
         if total_lines > 1 && self.text.contains('\n') {
@@ -308,10 +308,7 @@ impl TextRun {
             let line_frac = (line_idx as f32 + frac_x) / total_lines as f32;
             ((line_frac * total_chars as f32).floor() as usize).min(total_chars - 1)
         };
-        self.text
-            .char_indices()
-            .nth(char_idx)
-            .map(|(byte, _)| byte)
+        self.text.char_indices().nth(char_idx).map(|(byte, _)| byte)
     }
 }
 

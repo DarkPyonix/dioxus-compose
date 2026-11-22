@@ -465,12 +465,13 @@ fn fr34_an_onclick_on_an_inline_element_in_a_mixed_paragraph_still_fires() {
     assert_eq!(run.spans[0].owner, Some(word));
 
     // Clicking the plain prefix does not trigger the inline element's handler.
-    let y = run.rect.y + run.rect.height / 2.0;
-    assert_eq!(dom.click(run.rect.x + 0.5 * CHAR, y), None);
+    let rect = run.rect;
+    let y = rect.y + rect.height / 2.0;
+    assert_eq!(dom.click(rect.x + 0.5 * CHAR, y), None);
     assert!(PRESSED.with(|pressed| pressed.borrow().is_empty()));
 
     // Clicking over "bold" (characters 2..6) routes to the inline element.
-    assert_eq!(dom.click(run.rect.x + 4.0 * CHAR, y), Some(word));
+    assert_eq!(dom.click(rect.x + 4.0 * CHAR, y), Some(word));
     assert_eq!(
         PRESSED.with(|pressed| pressed.borrow().clone()),
         vec!["word"]
@@ -507,13 +508,14 @@ fn fr34_inline_link_stays_spanned_and_routes_click_to_link() {
     assert!(run.spans[0].underline);
     assert_eq!(run.spans[0].owner, Some(link));
 
-    let y = run.rect.y + run.rect.height / 2.0;
+    let rect = run.rect;
+    let y = rect.y + rect.height / 2.0;
     // Clicking "See" (characters 0..3) does not hit the link.
-    assert_eq!(dom.click(run.rect.x + 1.0 * CHAR, y), None);
+    assert_eq!(dom.click(rect.x + 1.0 * CHAR, y), None);
     assert!(PRESSED.with(|pressed| pressed.borrow().is_empty()));
 
     // Clicking "docs" (characters 4..8) hits the link and runs its onclick handler.
-    assert_eq!(dom.click(run.rect.x + 6.0 * CHAR, y), Some(link));
+    assert_eq!(dom.click(rect.x + 6.0 * CHAR, y), Some(link));
     assert_eq!(
         PRESSED.with(|pressed| pressed.borrow().clone()),
         vec!["link"]
@@ -531,12 +533,14 @@ fn fr34_host_batch_registers_per_span_click_handler_for_inline_link() {
     ASKED.with(|asked| asked.borrow_mut().clear());
     reset_window_size();
 
-    let mut host = Host::html(handled::link_paragraph, || HtmlConfig {
+    let mut host = Host::html(handled::link_paragraph, || {
+        HtmlConfig {
         stylesheets: vec![
             "html, body { margin: 0; padding: 0; } a { color: #0000ff; text-decoration: underline; }"
                 .to_string(),
         ],
         ..HtmlConfig::default()
+    }
     });
     let first = decode_batch(host.rebuild().unwrap()).unwrap();
 

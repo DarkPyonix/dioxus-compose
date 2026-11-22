@@ -11,7 +11,8 @@
 
 use std::borrow::Cow;
 
-use crate::paint::display_list::{NodeId, Rgba};
+use crate::html::NodeId;
+use crate::paint::display_list::Rgba;
 use parley::{
     FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight,
     OverflowWrap as ParleyOverflowWrap, StyleProperty, WordBreakStrength,
