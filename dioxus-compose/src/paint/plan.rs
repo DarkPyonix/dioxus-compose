@@ -719,6 +719,7 @@ impl<'a> Builder<'a> {
             origin: (0.0, 0.0),
             clip: None,
             opacity: 1.0,
+            color: None,
             drawn: None,
             subtree_drawn: None,
         };
