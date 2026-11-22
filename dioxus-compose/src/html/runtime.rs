@@ -400,6 +400,7 @@ impl HtmlRuntime {
             self.deliver_moments();
             self.deliver_pastes();
             self.dom.render();
+            self.prune_removed_nodes();
         }
         let first = self.bridge.root_node().is_none();
         let _owner = crate::html_widget::OwnerScope::enter(self.owner);
@@ -585,6 +586,22 @@ impl HtmlRuntime {
         }
     }
 
+    /// Drops per-node input state for DOM nodes removed in the last render so a reused
+    /// slab id never inherits a removed node's focus, typed text or composition state.
+    fn prune_removed_nodes(&mut self) {
+        for node in self.dom.take_removed_nodes() {
+            if self.focused == Some(node) {
+                self.focused = None;
+            }
+            self.typed.remove(&node);
+            self.edited.remove(&node);
+            self.composing.remove(&node);
+            self.pending_pastes
+                .borrow_mut()
+                .retain(|(id, _)| *id != node);
+        }
+    }
+
     /// Forwards DOM focus changes (from `autofocus`, programmatic focus calls or Tab
     /// traversal) to the renderer via `RequestFocus`.
     fn sync_focus(
@@ -631,6 +648,7 @@ impl Runtime for HtmlRuntime {
         self.deliver_moments();
         self.deliver_pastes();
         self.dom.render();
+        self.prune_removed_nodes();
         self.draw();
         self.deliver_host_moments();
     }
