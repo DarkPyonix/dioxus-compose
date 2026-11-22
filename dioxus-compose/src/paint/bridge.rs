@@ -642,7 +642,7 @@ impl PlanBridge {
                     });
                 }
                 self.viewport_node = Some(viewport_node);
-                let page = self.build(batch, &plan.root, None, clicks);
+                let page = self.build(batch, &plan.root, None, None, clicks);
                 batch.write(Mutation::Insert {
                     parent_id: viewport_node,
                     node_id: page,
@@ -730,7 +730,9 @@ impl PlanBridge {
                         self.insert(batch, parent, index, &node, clicks);
                     }
                 }
-                PlanChange::KindChanged { key, kind } => self.set_kind(batch, key, &kind, false),
+                PlanChange::KindChanged { key, kind } => {
+                    self.set_kind(batch, key, &kind, false, None)
+                }
                 PlanChange::ModifierSet { key, .. } | PlanChange::ModifierRemoved { key, .. } => {
                     dirty.insert(key);
                 }
@@ -772,7 +774,62 @@ impl PlanBridge {
                 }
             }
         }
+        if self
+            .pins
+            .values()
+            .any(|pins| pins.contains(&AnimatedProperty::Color))
+        {
+            self.sync_colors(batch, &plan.root, None);
+        }
         self.play_nodes(batch, &nodes, changed, started, clicks);
+    }
+
+    /// Keeps container `Color` properties and inheriting `Text` nodes in sync with any
+    /// `AnimatedProperty::Color` pins. A container pinned for a `color` animation carries
+    /// `PropertyKind::Color` as its steady value, and descendant `Text` nodes whose colour
+    /// matches it omit their own `PropertyKind::Color` so the renderer's inherited colour
+    /// producer recolours them in the draw phase without per-frame Host work.
+    fn sync_colors(&mut self, batch: &mut Batch, node: &PlanNode, inherited: Option<Rgba>) {
+        let next = match &node.kind {
+            PlanKind::AbsoluteBox
+            | PlanKind::Box
+            | PlanKind::ScrollColumn
+            | PlanKind::ScrollRow => {
+                let pinned = self
+                    .pins
+                    .get(&node.key)
+                    .is_some_and(|pins| pins.contains(&AnimatedProperty::Color));
+                if pinned {
+                    let color = node.color.unwrap_or(Rgba::new(0, 0, 0, 255));
+                    self.set_prop(
+                        batch,
+                        node.key,
+                        PropertyKind::Color,
+                        Prop::Int(literal(color).to_bits() as i64),
+                    );
+                    Some(color)
+                } else if let (Some(parent_color), Some(own_color)) = (inherited, node.color)
+                    && own_color != parent_color
+                {
+                    None
+                } else {
+                    inherited
+                }
+            }
+            PlanKind::Text(text) => {
+                let value = if inherited == Some(text.color) {
+                    Prop::None
+                } else {
+                    Prop::Int(literal(text.color).to_bits() as i64)
+                };
+                self.set_prop(batch, node.key, PropertyKind::Color, value);
+                return;
+            }
+            _ => return,
+        };
+        for child in &node.children {
+            self.sync_colors(batch, child, next);
+        }
     }
 
     /// Records the properties the plan animates, and returns the nodes that gained one.
@@ -1077,6 +1134,7 @@ impl PlanBridge {
         batch: &mut Batch,
         node: &PlanNode,
         parent: Option<PlanKey>,
+        inherited_color: Option<Rgba>,
         clicks: &dyn ClickTargets,
     ) -> u32 {
         let id = self.create(batch, widget_for(&node.kind));
@@ -1099,10 +1157,38 @@ impl PlanBridge {
                 shown: String::new(),
             },
         );
-        self.set_kind(batch, node.key, &node.kind, true);
+        let next_inherited = match &node.kind {
+            PlanKind::AbsoluteBox
+            | PlanKind::Box
+            | PlanKind::ScrollColumn
+            | PlanKind::ScrollRow => {
+                let pinned = self
+                    .pins
+                    .get(&node.key)
+                    .is_some_and(|pins| pins.contains(&AnimatedProperty::Color));
+                if pinned {
+                    let color = node.color.unwrap_or(Rgba::new(0, 0, 0, 255));
+                    self.set_prop(
+                        batch,
+                        node.key,
+                        PropertyKind::Color,
+                        Prop::Int(literal(color).to_bits() as i64),
+                    );
+                    Some(color)
+                } else if let (Some(parent_color), Some(own_color)) = (inherited_color, node.color)
+                    && own_color != parent_color
+                {
+                    None
+                } else {
+                    inherited_color
+                }
+            }
+            _ => None,
+        };
+        self.set_kind(batch, node.key, &node.kind, true, inherited_color);
         self.decorate(batch, node, clicks);
         for child in &node.children {
-            let child_id = self.build(batch, child, Some(node.key), clicks);
+            let child_id = self.build(batch, child, Some(node.key), next_inherited, clicks);
             let placed = self
                 .nodes
                 .get_mut(&node.key)
@@ -1129,7 +1215,7 @@ impl PlanBridge {
         if !self.nodes.contains_key(&parent) {
             return;
         }
-        let child_id = self.build(batch, node, Some(parent), clicks);
+        let child_id = self.build(batch, node, Some(parent), None, clicks);
         let placed = self
             .nodes
             .get_mut(&parent)
@@ -1158,7 +1244,7 @@ impl PlanBridge {
         let Some(viewport_node) = self.viewport_node else {
             return;
         };
-        let id = self.build(batch, page, None, clicks);
+        let id = self.build(batch, page, None, None, clicks);
         batch.write(Mutation::Insert {
             parent_id: viewport_node,
             node_id: id,
@@ -1381,7 +1467,14 @@ impl PlanBridge {
 
     /// Sends what a node's kind carries: a run's text and style, a field's value, whether
     /// a box is ticked, the options of a dropdown, the picture of an image.
-    fn set_kind(&mut self, batch: &mut Batch, key: PlanKey, kind: &PlanKind, created: bool) {
+    fn set_kind(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        kind: &PlanKind,
+        created: bool,
+        inherited_color: Option<Rgba>,
+    ) {
         let Some(placed) = self.nodes.get(&key) else {
             return;
         };
@@ -1403,7 +1496,8 @@ impl PlanBridge {
             }
             PlanKind::Text(text) => {
                 self.set_prop(batch, key, PropertyKind::Text, Prop::Str(text.text.clone()));
-                self.set_text_style(batch, key, &text.style, text.color);
+                let color = (inherited_color != Some(text.color)).then_some(text.color);
+                self.set_text_style(batch, key, &text.style, color);
                 self.set_prop(batch, key, PropertyKind::Font, font_prop(&text.style));
                 let (spans, span_fonts) = text_spans(text);
                 self.set_prop(batch, key, PropertyKind::Spans, spans);
@@ -1467,7 +1561,13 @@ impl PlanBridge {
         }
     }
 
-    fn set_text_style(&mut self, batch: &mut Batch, key: PlanKey, style: &TextStyle, color: Rgba) {
+    fn set_text_style(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        style: &TextStyle,
+        color: Option<Rgba>,
+    ) {
         for (property, value) in text_style(style, color) {
             self.set_prop(batch, key, property, value);
         }
@@ -1554,7 +1654,7 @@ impl PlanBridge {
             PropertyKind::Multiline,
             Prop::Bool(field.multiline),
         );
-        self.set_text_style(batch, key, &field.style, field.color);
+        self.set_text_style(batch, key, &field.style, Some(field.color));
         self.set_prop(batch, key, PropertyKind::Font, font_prop(&field.style));
     }
 
@@ -1601,7 +1701,7 @@ impl PlanBridge {
                 property: PropertyKind::Text,
                 value: PropertyValue::String(label),
             });
-            for (property, value) in text_style(&dropdown.style, dropdown.color) {
+            for (property, value) in text_style(&dropdown.style, Some(dropdown.color)) {
                 batch.write(Mutation::SetProp {
                     node_id: option,
                     property,
@@ -2384,7 +2484,7 @@ fn page_extent(page: &PlanNode) -> f32 {
 /// type ladder, or with no role sent, is drawn in the theme's family and ignores the
 /// `Font` list ([`font_prop`]) the page's `font-family` travels as. The slant is not among
 /// them: a run of text sends it as a span instead ([`slant_and_lines`]).
-fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 6] {
+fn text_style(style: &TextStyle, color: Option<Rgba>) -> [(PropertyKind, Prop); 6] {
     let line_height = match style.line_height {
         TextLineHeight::Px(px) => px,
         TextLineHeight::Normal => style.font_size * NORMAL_LINE_HEIGHT,
@@ -2405,7 +2505,10 @@ fn text_style(style: &TextStyle, color: Rgba) -> [(PropertyKind, Prop); 6] {
         ),
         (
             PropertyKind::Color,
-            Prop::Int(literal(color).to_bits() as i64),
+            match color {
+                Some(color) => Prop::Int(literal(color).to_bits() as i64),
+                None => Prop::None,
+            },
         ),
     ]
 }

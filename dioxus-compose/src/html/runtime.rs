@@ -122,6 +122,8 @@ pub struct HtmlRuntime {
     /// The scheme the configuration names, for an application whose theme follows the
     /// system, until the renderer has reported the system's.
     configured_scheme: ColorScheme,
+    /// The reduced-motion setting the configuration names, until the renderer reports one.
+    configured_reduced_motion: bool,
     /// The theme and design system the text sizes were measured under. A change of either
     /// makes the renderer's earlier answers wrong.
     measured_under: Option<(
@@ -143,6 +145,9 @@ pub struct HtmlRuntime {
     /// Keeps the registration for the system's light or dark appearance, for the same
     /// reason: a page whose theme follows the system answers `prefers-color-scheme` with it.
     _scheme: compose_rust::theme::SystemColorSchemeSubscription,
+    /// Keeps the registration for the platform's reduced-motion setting, so a change wakes a
+    /// frame and updates `prefers-reduced-motion` media rules.
+    _reduced_motion: compose_rust::animation::ReducedMotionSubscription,
     /// The `(layout_revision, viewport_w_bits, viewport_h_bits, zoom_bits)` last applied to
     /// `self.bridge`, so an unchanged frame skips `dom.plan` and `bridge.apply`.
     applied_revision: Option<(u64, u32, u32, u32)>,
@@ -210,6 +215,7 @@ impl HtmlRuntime {
 
     fn with_bridge(app: fn() -> Element, config: HtmlConfig, bridge: PlanBridge) -> Self {
         let configured_scheme = config.color_scheme;
+        let configured_reduced_motion = config.reduced_motion;
         let moments: Rc<RefCell<Vec<AnimationMoment>>> = Rc::default();
         let sink = moments.clone();
         let subscription = on_animation_event(Rc::new(move |moment: AnimationMoment| {
@@ -228,9 +234,13 @@ impl HtmlRuntime {
             _zoom: compose_rust::zoom::subscribe(std::sync::Arc::new(|| {})),
             _density: density_subscription,
             _scheme: compose_rust::subscribe_system_color_scheme(std::sync::Arc::new(|| {})),
+            _reduced_motion: compose_rust::animation::subscribe_reduced_motion(
+                std::sync::Arc::new(|| {}),
+            ),
             focused: None,
             renderer_focused: None,
             configured_scheme,
+            configured_reduced_motion,
             dom: HtmlDom::with_config(app, config),
             bridge,
             batch: Batch::new(),
@@ -347,6 +357,12 @@ impl HtmlRuntime {
             },
         };
         self.dom.set_color_scheme(scheme);
+        let reduced = match compose_rust::reduced_motion() {
+            compose_rust::ReducedMotion::On => true,
+            compose_rust::ReducedMotion::Off => false,
+            compose_rust::ReducedMotion::Unknown => self.configured_reduced_motion,
+        };
+        self.dom.set_reduced_motion(reduced);
         let under = (
             compose_rust::theme::current_theme(),
             compose_rust::design_system(),

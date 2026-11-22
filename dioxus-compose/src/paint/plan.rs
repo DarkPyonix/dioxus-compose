@@ -247,6 +247,9 @@ pub struct PlanNode {
     /// listed. Each plays on the node's own value of the property it names, over the
     /// node's modifiers.
     pub animations: Vec<Animation>,
+    /// The resolved CSS `color` of an element container, used when a `color` animation plays
+    /// on the container so inheriting text children follow it.
+    pub color: Option<Rgba>,
     /// Back to front.
     pub children: Vec<PlanNode>,
 }
@@ -632,6 +635,8 @@ struct Slot {
     clip: Option<Rect>,
     /// The accumulated opacity of what is placed in it.
     opacity: f32,
+    /// The resolved CSS `color` of an element box, for `color` animations on containers.
+    color: Option<Rgba>,
     /// What the node itself draws, for the overlap test; `None` for containers that draw
     /// nothing.
     drawn: Option<Rect>,
@@ -945,6 +950,10 @@ impl<'a> Builder<'a> {
             modifiers.push(PlanModifier::Clip);
         }
 
+        let node_color = Some(
+            self.colours
+                .resolve(entry.node, ColourUse::Text, entry.color),
+        );
         let node = self.push(
             container,
             Slot {
@@ -960,6 +969,7 @@ impl<'a> Builder<'a> {
                     provided_clip
                 },
                 opacity: entry.opacity,
+                color: node_color,
                 drawn: self.drawn[index],
                 ..Slot::default()
             },
@@ -1650,6 +1660,7 @@ impl<'a> Builder<'a> {
             kind,
             modifiers: source.modifiers.clone(),
             animations: self.animated.get(&source.key).cloned().unwrap_or_default(),
+            color: source.color,
             children,
         }
     }
