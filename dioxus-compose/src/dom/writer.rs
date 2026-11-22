@@ -64,6 +64,8 @@ pub(crate) struct WriterState {
     pub(crate) pending_mounts: Vec<NodeId>,
     /// The most recently added or updated element carrying an active `autofocus` attribute.
     pub(crate) pending_autofocus: Option<NodeId>,
+    /// Document node ids dropped from `blitz-dom`'s slab during the current render pass.
+    pub(crate) removed_nodes: Vec<NodeId>,
 }
 
 impl WriterState {
@@ -237,10 +239,46 @@ impl<'a> DomWriter<'a> {
         }
     }
 
+    /// Clears document focus if the currently focused node is `root` or any of its
+    /// descendants. Called before detaching or dropping `root` so `blitz-dom`'s
+    /// `clear_focus` snapshots a live node and clears `:focus-within` on surviving
+    /// ancestors while the parent chain is still intact.
+    fn clear_focus_in_subtree(&mut self, root: NodeId) {
+        let Some(focused) = self.mutator.doc.get_focussed_node_id() else {
+            return;
+        };
+        if !is_in_subtree(self.mutator.doc, root, focused) {
+            return;
+        }
+        let mut ancestor = self.mutator.doc.get_node(root).and_then(|n| n.parent);
+        if self.mutator.doc.get_node(focused).is_some() {
+            self.mutator.doc.clear_focus();
+        }
+        while let Some(id) = ancestor {
+            self.state.mark_style_dirty(id);
+            ancestor = self.mutator.doc.get_node(id).and_then(|n| n.parent);
+        }
+    }
+
+    /// Forgets and records every node in `node`'s subtree before `blitz-dom` drops it
+    /// directly (as `set_inner_html` does to an element's existing children).
+    fn record_removed_subtree(&mut self, node: NodeId) {
+        if self.mutator.doc.get_node(node).is_none() {
+            return;
+        }
+        let children = self.mutator.child_ids(node);
+        for child in children {
+            self.record_removed_subtree(child);
+        }
+        self.state.forget(node);
+        self.state.removed_nodes.push(node);
+        self.layout_state.forget(node);
+    }
+
     /// Recursively drops a detached node and its descendants from both `WriterState` and
     /// `blitz-dom`'s slab when the node is not waiting on the writer's stack.
     fn drop_detached_subtree(&mut self, node: NodeId) {
-        if self.state.stack.contains(&node) {
+        if self.state.stack.contains(&node) || self.mutator.doc.get_node(node).is_none() {
             return;
         }
         let children = self.mutator.child_ids(node);
@@ -248,7 +286,11 @@ impl<'a> DomWriter<'a> {
             self.mutator.remove_node(child);
             self.drop_detached_subtree(child);
         }
+        if self.mutator.doc.get_focussed_node_id() == Some(node) {
+            self.mutator.doc.clear_focus();
+        }
         self.state.forget(node);
+        self.state.removed_nodes.push(node);
         self.layout_state.forget(node);
         self.mutator.remove_node_if_unparented(node);
     }
@@ -279,6 +321,17 @@ impl<'a> DomWriter<'a> {
         let top = *self.state.stack.last()?;
         Some(self.mutator.node_at_path(top, path))
     }
+}
+
+fn is_in_subtree(doc: &BaseDocument, root: NodeId, target: NodeId) -> bool {
+    let mut current = Some(target);
+    while let Some(id) = current {
+        if id == root {
+            return true;
+        }
+        current = doc.get_node(id).and_then(|node| node.parent);
+    }
+    false
 }
 
 pub(crate) fn element_name(tag: &str, namespace: Option<&str>) -> QualName {
@@ -724,6 +777,7 @@ impl WriteMutations for DomWriter<'_> {
     fn replace_node_with(&mut self, id: ElementId, m: usize) {
         let replacements = self.state.take_stack(m);
         if let Some(anchor) = self.node(id) {
+            self.clear_focus_in_subtree(anchor);
             let parent = self.mutator.doc.get_node(anchor).and_then(|n| n.parent);
             if let Some(parent) = parent {
                 self.state.mark_children_dirty(parent);
@@ -742,6 +796,7 @@ impl WriteMutations for DomWriter<'_> {
         // Take the new nodes first: the path is relative to the node below them.
         let replacements = self.state.take_stack(m);
         if let Some(anchor) = self.node_at_path(path) {
+            self.clear_focus_in_subtree(anchor);
             let parent = self.mutator.doc.get_node(anchor).and_then(|n| n.parent);
             if let Some(parent) = parent {
                 self.state.mark_children_dirty(parent);
@@ -840,6 +895,13 @@ impl WriteMutations for DomWriter<'_> {
             // text form for the document.
             AttributeValue::Listener(_) | AttributeValue::Any(_) => return,
         };
+        if namespace.is_none() && name == "dangerous_inner_html" && text.is_some() {
+            let children = self.mutator.child_ids(node);
+            for child in children {
+                self.clear_focus_in_subtree(child);
+                self.record_removed_subtree(child);
+            }
+        }
         let non_inherited =
             set_attribute_value(&mut self.mutator, node, name, namespace, text.as_deref());
         if namespace.is_none() && name == "checked" {
@@ -911,6 +973,7 @@ impl WriteMutations for DomWriter<'_> {
 
     fn remove_node(&mut self, id: ElementId) {
         if let Some(node) = self.node(id) {
+            self.clear_focus_in_subtree(node);
             if self
                 .mutator
                 .doc

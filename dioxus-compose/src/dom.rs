@@ -320,6 +320,9 @@ pub struct HtmlDom {
     /// The values `env(safe-area-inset-*)` and `env(titlebar-area-*)` read.
     safe_area_insets: Option<Sides<f32>>,
     titlebar_area: Option<Rect>,
+    /// Nodes dropped from `blitz-dom` in the most recent `render` pass, for the runtime to
+    /// clear its own per-node state.
+    last_removed: Vec<NodeId>,
 }
 
 /// How many frames in a row a page whose text could not be measured yet is laid out
@@ -412,6 +415,7 @@ impl HtmlDom {
             author_sheets,
             safe_area_insets: config.safe_area_insets,
             titlebar_area: config.titlebar_area,
+            last_removed: Vec::new(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
@@ -423,14 +427,33 @@ impl HtmlDom {
     /// Runs pending work (handlers that wrote signals, scopes marked dirty) and applies
     /// the resulting mutations to the document.
     pub fn render(&mut self) {
+        self.last_removed.clear();
         let mut writer = DomWriter::new(&mut self.doc, &mut self.state, &mut self.layout_state);
         self.vdom.render_immediate(&mut writer);
         drop(writer);
+        if !self.state.removed_nodes.is_empty() {
+            let removed_vec = std::mem::take(&mut self.state.removed_nodes);
+            let removed: std::collections::HashSet<NodeId> = removed_vec.iter().copied().collect();
+            self.pointer.prune_removed(&removed);
+            self.focus_requests
+                .borrow_mut()
+                .retain(|(id, _)| !removed.contains(id));
+            self.scrolls
+                .borrow_mut()
+                .reported
+                .retain(|id, _| !removed.contains(id));
+            self.last_removed = removed_vec;
+        }
         if self.state.listeners_dirty {
             self.pointer.kinds.borrow_mut().take();
             self.state.listeners_dirty = false;
         }
         self.flush_mounts();
+    }
+
+    /// Takes the node ids dropped from `blitz-dom` during the most recent [`HtmlDom::render`].
+    pub(crate) fn take_removed_nodes(&mut self) -> Vec<NodeId> {
+        std::mem::take(&mut self.last_removed)
     }
 
     /// Applies any queued `autofocus` attribute, fires `onmounted` on newly mounted nodes,
@@ -1373,13 +1396,23 @@ impl HtmlDom {
     }
 
     fn focus_node(&mut self, node: NodeId) {
+        if self.doc.get_node(node).is_none() {
+            return;
+        }
         let previous = self.doc.get_focussed_node_id();
         if previous == Some(node) {
             return;
         }
         if let Some(prev) = previous {
-            self.state.mark_style_dirty(prev);
-            self.send_focus(prev, "blur", "focusout");
+            if self.doc.get_node(prev).is_some() {
+                self.state.mark_style_dirty(prev);
+                self.send_focus(prev, "blur", "focusout");
+            } else {
+                return;
+            }
+        }
+        if self.doc.get_node(node).is_none() {
+            return;
         }
         self.doc.set_focus_to(node);
         self.state.mark_style_dirty(node);
@@ -1391,7 +1424,7 @@ impl HtmlDom {
     /// before this, from [`HtmlDom::change`].
     /// A node that is not the focused one leaves the focus where it is.
     pub fn blur(&mut self, node: NodeId) {
-        if self.doc.get_focussed_node_id() == Some(node) {
+        if self.doc.get_focussed_node_id() == Some(node) && self.doc.get_node(node).is_some() {
             self.doc.clear_focus();
             self.state.mark_style_dirty(node);
         }
