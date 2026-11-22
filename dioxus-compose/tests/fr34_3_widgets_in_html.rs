@@ -564,3 +564,163 @@ fn fr34_3_textfield_and_datepicker_sit_in_the_line_at_their_measured_size() {
         "the line is {line_height} tall"
     );
 }
+
+/// A click on a widget's button reaches the widget's handler when the widget sits in a page
+/// that is an `HtmlView` island of a Compose root. The widget tree gives out handler ids from
+/// a range of its own, which the island's page does not own, so the root's routing has to
+/// find the page that holds the tree; it used to refuse the event instead.
+#[test]
+fn fr34_3_click_on_a_widget_inside_an_htmlview_island_runs_its_handler() {
+    install();
+    reset_window_size();
+    LOG.with(|log| log.borrow_mut().clear());
+    let mut host = Host::new(screen);
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+    let (button, handler) =
+        widget_click(&first).expect("the widget's button inside the island has no click handler");
+
+    host.dispatch(HostEvent::new(button, handler, EventPayload::Clicked))
+        .expect("the root refused the click on a widget inside an island");
+    assert_eq!(
+        LOG.with(|log| log.borrow().clone()),
+        vec!["widget"],
+        "the widget's click handler did not run",
+    );
+}
+
+mod counter_widgets {
+    use dioxus_compose::prelude::*;
+
+    /// A button that counts its clicks into a label next to it.
+    pub fn counter() -> Element {
+        let mut clicks = use_signal(|| 0_u32);
+        rsx! {
+            Column {
+                Text { text: "clicked {clicks}" }
+                Button { text: "count", on_click: move |_| clicks += 1 }
+            }
+        }
+    }
+}
+
+mod counter_page {
+    use super::counter_widgets;
+    use dioxus_compose::html::prelude::*;
+
+    pub fn app() -> Element {
+        rsx! {
+            div { style: "width: 300px",
+                WidgetView { app: counter_widgets::counter, style: "display: block" }
+            }
+        }
+    }
+}
+
+fn counter_screen() -> dioxus_compose::Element {
+    use dioxus_compose::prelude::*;
+    rsx! {
+        Column {
+            HtmlView { app: counter_page::app, height: 200.0 }
+        }
+    }
+}
+
+fn texts(mutations: &[Mutation<'_>]) -> Vec<String> {
+    mutations
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetProp {
+                property: PropertyKind::Text,
+                value: PropertyValue::String(value),
+                ..
+            } => Some((*value).to_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// What a widget's handler changes inside an island is drawn in the batch that answers the
+/// event, as it is when the page is the root: the page that holds the widget draws its
+/// widget trees, so it draws in that frame.
+#[test]
+fn fr34_3_a_widget_inside_an_htmlview_island_redraws_in_the_events_batch() {
+    install();
+    reset_window_size();
+    let mut host = Host::new(counter_screen);
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+    assert!(
+        texts(&first).iter().any(|text| text == "clicked 0"),
+        "the counter's label was not drawn: {:?}",
+        texts(&first),
+    );
+    let (button, handler) = widget_click(&first).expect("the counter's button");
+
+    let (batch, _) = host
+        .dispatch(HostEvent::new(button, handler, EventPayload::Clicked))
+        .expect("the root refused the click on a widget inside an island");
+    let after = decode_batch(batch).unwrap();
+    assert!(
+        texts(&after).iter().any(|text| text == "clicked 1"),
+        "the label did not change in the click's batch: {:?}",
+        texts(&after),
+    );
+}
+
+fn editor_screen() -> dioxus_compose::Element {
+    use dioxus_compose::prelude::*;
+    rsx! {
+        Column {
+            HtmlView { app: editor_page::app, height: 200.0 }
+        }
+    }
+}
+
+/// What a code editor handle in a widget tree asks reaches its editor when the tree sits in
+/// an `HtmlView` island of a Compose root. The root's own flush does not know the tree's
+/// editor, and it used to drop the request before the island drew.
+#[test]
+fn fr38_a_code_editor_handle_in_a_widget_tree_inside_an_island_reaches_its_editor() {
+    install();
+    reset_window_size();
+    let mut host = Host::new(editor_screen);
+    let (button, handler, editor) = {
+        let first = decode_batch(host.rebuild().unwrap()).unwrap();
+        let (button, handler) = widget_click(&first).expect("the widget's button");
+        let editor = first
+            .iter()
+            .find_map(|mutation| match mutation {
+                Mutation::Create {
+                    node_id,
+                    widget: dioxus_compose::schema::WidgetKind::CodeEditor,
+                } => Some(*node_id),
+                _ => None,
+            })
+            .expect("the editor was created");
+        (button, handler, editor)
+    };
+    let (batch, _) = host
+        .dispatch(HostEvent::new(button, handler, EventPayload::Clicked))
+        .expect("the root refused the click on a widget inside an island");
+    let after = decode_batch(batch).unwrap();
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::EditCode { node_id, request_id: 7, base_version: 0, .. } if *node_id == editor
+        )),
+        "the edit did not reach the editor: {after:#?}"
+    );
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::SetSelection { node_id, base_version: 0, anchor_line: 0, anchor_column: 4, active_line: 0, active_column: 5 } if *node_id == editor
+        )),
+        "the selection did not reach the editor: {after:#?}"
+    );
+    assert!(
+        after.iter().any(|mutation| matches!(
+            mutation,
+            Mutation::RevealRange { node_id, .. } if *node_id == editor
+        )),
+        "the reveal did not reach the editor: {after:#?}"
+    );
+}
