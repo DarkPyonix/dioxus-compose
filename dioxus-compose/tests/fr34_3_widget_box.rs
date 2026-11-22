@@ -191,11 +191,11 @@ fn click_twice(host: &mut Host, click: (u32, u64)) -> bool {
     let mut wrote_widget = false;
     for _ in 0..2 {
         let (batch, _) = host
-            .dispatch(dioxus_compose::protocol::HostEvent {
-                node_id: click.0,
-                handler_id: click.1,
-                payload: dioxus_compose::schema::EventPayload::Clicked,
-            })
+            .dispatch(dioxus_compose::protocol::HostEvent::new(
+                click.0,
+                click.1,
+                dioxus_compose::schema::EventPayload::Clicked,
+            ))
             .unwrap();
         wrote_widget |= writes_widget(&decode_batch(batch).unwrap());
         for _ in 0..3 {

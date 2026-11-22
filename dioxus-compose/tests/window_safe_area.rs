@@ -12,10 +12,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 static SERIAL: Mutex<()> = Mutex::new(());
 
 fn size_event(node_id: u32, width_dp: f32, safe: WindowSafeArea) -> HostEvent<'static> {
-    HostEvent {
+    HostEvent::new(
         node_id,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp,
             height_dp: 800.0,
             class: WindowSizeClass::from_width_dp(width_dp),
@@ -25,7 +25,7 @@ fn size_event(node_id: u32, width_dp: f32, safe: WindowSafeArea) -> HostEvent<'s
             safe_area_trailing: safe.trailing,
             safe_area_bottom: safe.bottom,
         },
-    }
+    )
 }
 
 fn texts(batch: &[u8]) -> Vec<String> {

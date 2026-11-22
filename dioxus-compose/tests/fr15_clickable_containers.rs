@@ -39,12 +39,8 @@ fn press_the_only_clickable_node(app: fn() -> Element) {
     let nodes = clickable_nodes(&batch);
     assert_eq!(nodes.len(), 1, "one clickable node expected");
     let (node_id, handler_id) = nodes[0];
-    host.dispatch(HostEvent {
-        node_id,
-        handler_id,
-        payload: EventPayload::Clicked,
-    })
-    .expect("the press is dispatched");
+    host.dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
+        .expect("the press is dispatched");
     assert_eq!(CLICKS.with(Cell::get), 1);
 }
 

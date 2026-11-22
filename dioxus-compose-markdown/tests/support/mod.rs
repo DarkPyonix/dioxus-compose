@@ -425,11 +425,7 @@ impl Screen {
         use dioxus_compose::schema::EventPayload;
         let (batch, _) = self
             .host
-            .dispatch(HostEvent {
-                node_id,
-                handler_id,
-                payload: EventPayload::Clicked,
-            })
+            .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
             .expect("the click failed");
         let mutations = decode_batch(batch).expect("the click's frame did not decode");
         self.tree.apply(&mutations);

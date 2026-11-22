@@ -238,11 +238,7 @@ fn fr42_a_shorter_list_clears_the_positions_it_no_longer_fills() {
 
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: button,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        },
+        &HostEvent::new(button, handler, EventPayload::Clicked),
         &mut wire,
     )
     .unwrap();
