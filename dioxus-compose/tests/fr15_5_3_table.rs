@@ -241,11 +241,7 @@ impl Screen {
     ) -> Vec<Record> {
         let (batch, _) = self
             .host
-            .dispatch(HostEvent {
-                node_id,
-                handler_id,
-                payload,
-            })
+            .dispatch(HostEvent::new(node_id, handler_id, payload))
             .unwrap();
         let mut out = records(batch);
         out.extend(records(self.host.render_frame(0).unwrap()));

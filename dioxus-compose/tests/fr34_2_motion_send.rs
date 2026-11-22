@@ -110,11 +110,7 @@ fn clickable(batch: &[Mutation<'static>]) -> (u32, u64) {
 
 fn click(host: &mut Host, (node_id, handler_id): (u32, u64)) -> Vec<Mutation<'static>> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .expect("the click is dispatched");
     owned(batch)
 }
@@ -210,10 +206,10 @@ fn fr34_2_the_end_of_a_transition_reaches_the_page_as_transitionend() {
     let changed = click(&mut host, target);
     let animation = started(&changed).remove(0);
 
-    host.dispatch(HostEvent {
-        node_id: target.0,
-        handler_id: 0,
-        payload: EventPayload::AnimationEvent {
+    host.dispatch(HostEvent::new(
+        target.0,
+        0,
+        EventPayload::AnimationEvent {
             animation_id: animation.animation_id,
             kind: AnimationEventKind::End,
             property: AnimatedProperty::Alpha,
@@ -222,7 +218,7 @@ fn fr34_2_the_end_of_a_transition_reaches_the_page_as_transitionend() {
             elapsed_ms: 500.0,
             time_nanos: 1,
         },
-    })
+    ))
     .expect("the event is dispatched");
     SEEN.with(|seen| {
         let seen = seen.borrow();
@@ -341,10 +337,10 @@ fn fr34_2_a_transform_animation_is_sent_in_degrees_and_its_moments_come_back() {
         (AnimationEventKind::Active, 0.0),
         (AnimationEventKind::End, 1000.0),
     ] {
-        host.dispatch(HostEvent {
-            node_id: animation.node_id,
-            handler_id: 0,
-            payload: EventPayload::AnimationEvent {
+        host.dispatch(HostEvent::new(
+            animation.node_id,
+            0,
+            EventPayload::AnimationEvent {
                 animation_id: animation.animation_id,
                 kind,
                 property: AnimatedProperty::Transform,
@@ -353,7 +349,7 @@ fn fr34_2_a_transform_animation_is_sent_in_degrees_and_its_moments_come_back() {
                 elapsed_ms,
                 time_nanos: 1,
             },
-        })
+        ))
         .expect("the event is dispatched");
     }
     SPINS.with(|spins| {
@@ -490,10 +486,10 @@ fn watched() -> Element {
 }
 
 fn renderer_says(host: &mut Host, node_id: u32, animation_id: u32, kind: AnimationEventKind) {
-    host.dispatch(HostEvent {
+    host.dispatch(HostEvent::new(
         node_id,
-        handler_id: 0,
-        payload: EventPayload::AnimationEvent {
+        0,
+        EventPayload::AnimationEvent {
             animation_id,
             kind,
             property: AnimatedProperty::Alpha,
@@ -502,7 +498,7 @@ fn renderer_says(host: &mut Host, node_id: u32, animation_id: u32, kind: Animati
             elapsed_ms: 0.0,
             time_nanos: 1,
         },
-    })
+    ))
     .expect("the event is dispatched");
 }
 

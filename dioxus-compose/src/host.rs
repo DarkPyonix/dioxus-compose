@@ -598,6 +598,9 @@ pub(crate) fn deliver_event(
         | EventPayload::NativeViewParent { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
+        // An event a newer compose-rust added has no listener here yet, so it is
+        // refused like a payload no handler takes rather than reaching one as the wrong type.
+        _ => return Err(ProtocolError::InvalidValueKind(0)),
     };
     let _window_guard = crate::hooks::ActiveWindowGuard::enter(renderer.window_of(node_id));
     let name = if selections { "selectionschange" } else { name };

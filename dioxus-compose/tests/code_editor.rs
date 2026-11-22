@@ -194,15 +194,7 @@ fn send_for_result(
     payload: EventPayload<'_>,
 ) -> (Vec<Record>, i64) {
     let mut wire = Vec::new();
-    encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload,
-        },
-        &mut wire,
-    )
-    .unwrap();
+    encode_event(&HostEvent::new(node, handler, payload), &mut wire).unwrap();
     let (batch, result) = host.dispatch_event(&wire).unwrap();
     (records(batch), result)
 }
@@ -1184,10 +1176,10 @@ fn fr38_on_code_pointer_delivers_the_text_position_and_returns_consumption() {
 
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: editor,
-            handler_id: handler,
-            payload: EventPayload::Pointer {
+        &HostEvent::new(
+            editor,
+            handler,
+            EventPayload::Pointer {
                 kind: PointerKind::Down,
                 pointer_id: 1,
                 pointer_type: PointerType::Mouse,
@@ -1202,7 +1194,7 @@ fn fr38_on_code_pointer_delivers_the_text_position_and_returns_consumption() {
                 delta_mode: WheelDeltaMode::Pixel,
                 timestamp_nanos: 0,
             },
-        },
+        ),
         &mut wire,
     )
     .unwrap();
@@ -1344,11 +1336,11 @@ fn press(host: &mut Host, first: &[Record], nth: usize) -> Vec<u8> {
     let button = buttons[nth];
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: button,
-            handler_id: handler_of(first, button, PropertyKind::OnClick),
-            payload: EventPayload::Clicked,
-        },
+        &HostEvent::new(
+            button,
+            handler_of(first, button, PropertyKind::OnClick),
+            EventPayload::Clicked,
+        ),
         &mut wire,
     )
     .unwrap();
@@ -1499,14 +1491,14 @@ fn fr38_every_selection_reaches_on_selections_change_through_the_selection_liste
     let other = handler_of(&first, editor, PropertyKind::OnEditGroupResult);
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: editor,
-            handler_id: other,
-            payload: EventPayload::SelectionsChanged {
+        &HostEvent::new(
+            editor,
+            other,
+            EventPayload::SelectionsChanged {
                 version: 4,
                 selections: &bytes,
             },
-        },
+        ),
         &mut wire,
     )
     .unwrap();

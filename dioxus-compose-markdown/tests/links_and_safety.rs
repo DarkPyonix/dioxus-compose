@@ -166,11 +166,11 @@ fn fr37_a_theme_change_costs_the_document_nothing() {
     ] {
         let (batch, _) = screen
             .host
-            .dispatch(HostEvent {
-                node_id: 0,
-                handler_id: 0,
-                payload: EventPayload::DesignSystemResolved(system),
-            })
+            .dispatch(HostEvent::new(
+                0,
+                0,
+                EventPayload::DesignSystemResolved(system),
+            ))
             .expect("the design system change failed");
         let mutations = decode_batch(batch).expect("decode");
         assert!(

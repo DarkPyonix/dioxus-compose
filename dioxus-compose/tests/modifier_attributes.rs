@@ -518,11 +518,11 @@ fn fr15_background_brush_keeps_four_layers_and_clears_what_a_shorter_list_leaves
         })
         .unwrap();
     let (batch, _) = host
-        .dispatch(dioxus_compose::protocol::HostEvent {
-            node_id: button,
-            handler_id: handler,
-            payload: dioxus_compose::EventPayload::Clicked,
-        })
+        .dispatch(dioxus_compose::protocol::HostEvent::new(
+            button,
+            handler,
+            dioxus_compose::EventPayload::Clicked,
+        ))
         .unwrap();
     let after: Vec<(u32, u16, dioxus_compose::Modifier)> = slot_writes(batch)
         .into_iter()
