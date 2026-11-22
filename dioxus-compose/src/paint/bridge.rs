@@ -188,6 +188,7 @@ pub enum BridgeEvent {
     TextSubmit,
     /// A field lost focus.
     FocusLost,
+    FocusGained,
     /// The user pressed a key in a box whose element listens for keys, or in something
     /// inside it that has the focus.
     KeyDown,
@@ -491,6 +492,13 @@ impl PlanBridge {
     /// The renderer node drawn for a plan node.
     pub fn node_id(&self, key: PlanKey) -> Option<u32> {
         self.nodes.get(&key).map(|placed| placed.id)
+    }
+
+    /// The renderer node that holds keyboard focus for a DOM element: its native field
+    /// when it has one, otherwise its box node.
+    pub fn focus_target_id(&self, node: NodeId) -> Option<u32> {
+        self.node_id(PlanKey::Field(node))
+            .or_else(|| self.node_id(PlanKey::Node(node)))
     }
 
     /// Whether the renderer node drawn for `key` is inside the one drawn for `ancestor`.
@@ -1495,6 +1503,12 @@ impl PlanBridge {
                 PropertyKind::OnFocusLost,
                 BridgeEvent::FocusLost,
             );
+            self.add_handler(
+                batch,
+                key,
+                PropertyKind::OnFocusGained,
+                BridgeEvent::FocusGained,
+            );
             if !field.multiline {
                 self.add_handler(batch, key, PropertyKind::OnSubmit, BridgeEvent::TextSubmit);
             }
@@ -1502,7 +1516,6 @@ impl PlanBridge {
             // the renderer asks before Enter submits or starts a line, and the answer
             // depends on handlers that may be added later.
             // TODO(DarkPyonix/compose-rust#100): extend OnKeyDown beyond Enter to general key events.
-            // TODO(DarkPyonix/compose-rust#410): wire OnFocusGained and programmatic focus requests.
             self.add_handler(
                 batch,
                 key,
