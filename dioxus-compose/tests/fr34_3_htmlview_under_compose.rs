@@ -200,7 +200,12 @@ fn fr34_3_html_view_under_a_compose_root_relayouts_on_every_resize() {
         .expect("the HtmlView asked the renderer to measure its box");
     // Opening size, then shrink, grow and shrink again.
     resize(&mut host, node, 900.0, 600.0);
-    for (width, height) in [(500.0, 400.0), (700.0, 500.0), (500.0, 400.0), (300.0, 300.0)] {
+    for (width, height) in [
+        (500.0, 400.0),
+        (700.0, 500.0),
+        (500.0, 400.0),
+        (300.0, 300.0),
+    ] {
         let widths = resize(&mut host, node, width, height);
         assert!(
             widths.contains(&width),
