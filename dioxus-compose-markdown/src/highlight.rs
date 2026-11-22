@@ -84,7 +84,6 @@ pub fn supported_languages() -> impl Iterator<Item = &'static str> {
     LANGUAGES.iter().map(|(names, _, _)| names[0])
 }
 
-#[cfg(not(target_family = "wasm"))]
 mod engine {
     use super::{CodeSpan, LANGUAGES, RUNS_ON_THIS_THREAD};
     use dioxus_compose::ColorRole;
@@ -244,26 +243,23 @@ mod engine {
 /// Colours `text` as the language a fence named. `None` when no grammar knows the
 /// language, which callers draw as plain monospace.
 ///
-/// Runs on the calling thread. The `Markdown` and `CodeBlock` components never call it
-/// on the UI thread; they hand the work to the highlighter thread.
-#[cfg(not(target_family = "wasm"))]
+/// Runs on the calling thread. On targets with threads, the `Markdown` and `CodeBlock`
+/// components hand the work to the highlighter thread rather than calling this on the UI
+/// thread.
 pub fn highlight(language: &str, text: &str) -> Option<Vec<CodeSpan>> {
     engine::highlight(language, text)
-}
-
-/// A browser build has no highlighter: there is no worker thread to run it on.
-#[cfg(target_family = "wasm")]
-pub fn highlight(_language: &str, _text: &str) -> Option<Vec<CodeSpan>> {
-    RUNS_ON_THIS_THREAD.with(|runs| runs.set(runs.get() + 1));
-    None
 }
 
 /// What a code block gets back: the key it asked with, and the runs.
 pub(crate) type Delivery = Box<dyn FnOnce(u64, std::sync::Arc<Vec<CodeSpan>>) + Send>;
 
+/// Results kept for blocks that come back, such as a message scrolled out of a list
+/// and back in. Bounded, because a long session sees a great deal of code.
+const CACHE_LIMIT: usize = 128;
+
 #[cfg(not(target_family = "wasm"))]
 mod worker {
-    use super::{CodeSpan, Delivery};
+    use super::{CACHE_LIMIT, CodeSpan, Delivery};
     use std::collections::HashMap;
     use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::sync::mpsc::{Sender, channel};
@@ -275,10 +271,6 @@ mod worker {
         pub text: Arc<str>,
         pub deliver: Delivery,
     }
-
-    /// Results kept for blocks that come back, such as a message scrolled out of a list
-    /// and back in. Bounded, because a long session sees a great deal of code.
-    const CACHE_LIMIT: usize = 128;
 
     pub(super) fn sender() -> Option<&'static Sender<Job>> {
         static SENDER: OnceLock<Option<Sender<Job>>> = OnceLock::new();
@@ -319,9 +311,42 @@ mod worker {
     }
 }
 
-/// Asks the highlighter thread for `text`'s colours. `deliver` runs on that thread.
+#[cfg(target_family = "wasm")]
+mod inline {
+    use super::{CACHE_LIMIT, CodeSpan, Delivery};
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    thread_local! {
+        static CACHE: RefCell<HashMap<u64, Arc<Vec<CodeSpan>>>> = RefCell::new(HashMap::new());
+    }
+
+    pub(super) fn run(key: u64, language: &str, text: Arc<str>, deliver: Delivery) {
+        let cached = CACHE.with(|cache| cache.borrow().get(&key).cloned());
+        let spans = match cached {
+            Some(spans) => spans,
+            None => {
+                let spans = Arc::new(super::highlight(language, &text).unwrap_or_default());
+                CACHE.with(|cache| {
+                    let mut cache = cache.borrow_mut();
+                    if cache.len() >= CACHE_LIMIT {
+                        cache.clear();
+                    }
+                    cache.insert(key, spans.clone());
+                });
+                spans
+            }
+        };
+        deliver(key, spans);
+    }
+}
+
+/// Asks the highlighter for `text`'s colours.
 ///
-/// On a target without threads nothing is delivered and the code stays plain.
+/// On targets with threads, `deliver` runs on the highlighter worker thread. On wasm,
+/// where there is no worker thread, the pure-Rust engine runs inline with a bounded cache
+/// and invokes `deliver` immediately.
 pub(crate) fn request(key: u64, language: &str, text: std::sync::Arc<str>, deliver: Delivery) {
     #[cfg(not(target_family = "wasm"))]
     {
@@ -336,7 +361,7 @@ pub(crate) fn request(key: u64, language: &str, text: std::sync::Arc<str>, deliv
     }
     #[cfg(target_family = "wasm")]
     {
-        let _ = (key, language, text, deliver);
+        inline::run(key, language, text, deliver);
     }
 }
 
@@ -347,4 +372,43 @@ pub(crate) fn key_of(language: &str, text: &str) -> u64 {
     canonical_language(language).hash(&mut hasher);
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::mpsc::channel;
+    use std::time::Duration;
+
+    #[test]
+    fn fr37_highlight_api_produces_spans_and_canonicalizes_aliases() {
+        let rust = highlight("rust", "fn main() { let x = 42; }\n")
+            .expect("rust grammar should be available");
+        assert!(!rust.is_empty(), "rust code should produce highlighted spans");
+        let rs = highlight("rs", "fn main() { let x = 42; }\n")
+            .expect("rs alias should resolve to rust grammar");
+        assert_eq!(rust, rs);
+        assert_eq!(highlight("unknown-lang-xyz", "plain text\n"), None);
+    }
+
+    #[test]
+    fn fr37_highlight_request_delivers_spans() {
+        let code = "fn add(a: i32, b: i32) -> i32 { a + b }\n";
+        let key = key_of("rust", code);
+        let (tx, rx) = channel();
+        request(
+            key,
+            "rust",
+            Arc::<str>::from(code),
+            Box::new(move |delivered_key, spans| {
+                let _ = tx.send((delivered_key, spans));
+            }),
+        );
+        let (delivered_key, spans) = rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("highlight delivery should arrive");
+        assert_eq!(delivered_key, key);
+        assert!(!spans.is_empty(), "delivered rust spans should not be empty");
+    }
 }

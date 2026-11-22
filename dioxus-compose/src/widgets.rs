@@ -462,6 +462,107 @@ fn aspect_ratio_attr(
     })
 }
 
+/// Discrete pointer gesture handlers on a widget, merged into the node's single
+/// `pointer_kinds` mask and `on_pointer` callback so no extra wire properties are needed.
+#[derive(Clone, Copy, Default)]
+struct PointerGestures {
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    on_scroll: Option<EventHandler<PointerEvent>>,
+}
+
+impl PointerGestures {
+    /// Combined `pointer_kinds` bitmask from an explicit `pointer_kinds` prop and every
+    /// discrete gesture handler that is set. Returns `None` when nothing is subscribed.
+    fn kinds(&self, explicit: Option<PointerKinds>) -> Option<i64> {
+        let mut mask = explicit.unwrap_or(PointerKinds::NONE);
+        if self.on_pointer_enter.is_some() {
+            mask = mask.union(PointerKinds::ENTER);
+        }
+        if self.on_pointer_leave.is_some() {
+            mask = mask.union(PointerKinds::LEAVE);
+        }
+        if self.on_pointer_move.is_some() {
+            mask = mask.union(PointerKinds::MOVE);
+        }
+        if self.on_long_press.is_some() {
+            mask = mask.union(PointerKinds::DOWN);
+        }
+        if self.on_context_menu.is_some() {
+            mask = mask.union(PointerKinds::CONTEXT_MENU);
+        }
+        if self.on_drag_start.is_some() {
+            mask = mask.union(PointerKinds::DOWN);
+        }
+        if self.on_drag_move.is_some() {
+            mask = mask.union(PointerKinds::MOVE);
+        }
+        if self.on_drag_end.is_some() {
+            mask = mask.union(PointerKinds::UP).union(PointerKinds::CANCEL);
+        }
+        if self.on_scroll.is_some() {
+            mask = mask.union(PointerKinds::WHEEL);
+        }
+        (mask != PointerKinds::NONE).then(|| i64::from(mask.bits()))
+    }
+
+    /// Routes an incoming pointer event to matching discrete gesture handlers and then to
+    /// the widget's general `on_pointer` handler.
+    fn dispatch(&self, on_pointer: EventHandler<PointerEvent>, event: PointerEvent) {
+        use compose_rust::schema::PointerKind;
+        match event.kind() {
+            PointerKind::Enter => {
+                if let Some(handler) = self.on_pointer_enter {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Leave => {
+                if let Some(handler) = self.on_pointer_leave {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Move => {
+                if let Some(handler) = self.on_pointer_move {
+                    handler.call(event.clone());
+                }
+                if let Some(handler) = self.on_drag_move {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Down => {
+                if let Some(handler) = self.on_long_press {
+                    handler.call(event.clone());
+                }
+                if let Some(handler) = self.on_drag_start {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Up | PointerKind::Cancel => {
+                if let Some(handler) = self.on_drag_end {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Wheel => {
+                if let Some(handler) = self.on_scroll {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::ContextMenu => {
+                if let Some(handler) = self.on_context_menu {
+                    handler.call(event.clone());
+                }
+            }
+        }
+        on_pointer.call(event);
+    }
+}
+
 /// A box that places each child where the Host already put it, for a screen whose layout
 /// was computed before it got here, such as an HTML page laid out by a CSS engine.
 ///
@@ -549,6 +650,33 @@ pub fn AbsoluteBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -561,6 +689,17 @@ pub fn AbsoluteBox(
     island_zoom: Option<f32>,
 ) -> Element {
     use compose_rust::Modifier;
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
     // An animated value takes the place of the plain one in the same slot, and a graphics
     // layer takes the place of a bare transform and opacity.
@@ -608,9 +747,9 @@ pub fn AbsoluteBox(
             island_zoom: island_zoom.map(f64::from),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
             required_size: required_size.map(|(width, height)| {
                 AttributeValue::any_value(Modifier::RequiredSize { width, height })
@@ -726,6 +865,33 @@ pub fn Column(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -738,6 +904,17 @@ pub fn Column(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         column {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -746,9 +923,9 @@ pub fn Column(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -876,6 +1053,33 @@ pub fn Row(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -888,6 +1092,17 @@ pub fn Row(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         row {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -896,9 +1111,9 @@ pub fn Row(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -1098,6 +1313,33 @@ pub fn ComposeBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -1110,6 +1352,17 @@ pub fn ComposeBox(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         composebox {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -1118,9 +1371,9 @@ pub fn ComposeBox(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -1216,7 +1469,45 @@ pub fn ScrollColumn(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         scrollcolumn {
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
@@ -1226,8 +1517,8 @@ pub fn ScrollColumn(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1310,7 +1601,45 @@ pub fn ScrollRow(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         scrollrow {
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
@@ -1320,8 +1649,8 @@ pub fn ScrollRow(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1442,7 +1771,45 @@ pub fn Text(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     // Worked out before the element, because the run list travels twice: its records as
     // `spans` and its font table as `span_fonts`, and only one of them can take it.
     let span_fonts = (spans.font_entry_count() > 0)
@@ -1469,8 +1836,8 @@ pub fn Text(
                     press_feedback: opt_press_feedback(press_feedback),
                     cursor: opt_role(cursor),
                     user_select: opt_role(user_select),
-                    pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-                    onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+                    pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+                    onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
                     weight: opt_dp(weight),
                     width: opt_dp(width),
                     height: opt_dp(height),
@@ -1803,13 +2170,51 @@ pub fn Spacer(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         spacer {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1995,6 +2400,33 @@ pub fn Card(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -2007,6 +2439,17 @@ pub fn Card(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         card {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -2015,9 +2458,9 @@ pub fn Card(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -2126,6 +2569,33 @@ pub fn Surface(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -2138,6 +2608,17 @@ pub fn Surface(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         surface {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -2146,9 +2627,9 @@ pub fn Surface(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -4445,13 +4926,51 @@ pub fn SelectionContainer(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         selectioncontainer {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
