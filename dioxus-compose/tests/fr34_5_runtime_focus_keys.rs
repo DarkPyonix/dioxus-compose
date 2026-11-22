@@ -400,8 +400,8 @@ fn fr34_5_runtime_key_events_carry_is_composing_during_ime_composition() {
         .expect("TextField registers OnCompositionChange");
     let down = node_handler(&first, field_id, PropertyKind::OnKeyDown)
         .expect("TextField registers OnKeyDown");
-    let up = node_handler(&first, field_id, PropertyKind::OnKeyUp)
-        .expect("TextField registers OnKeyUp");
+    let up =
+        node_handler(&first, field_id, PropertyKind::OnKeyUp).expect("TextField registers OnKeyUp");
 
     host.dispatch(HostEvent::new(
         field_id,

@@ -49,7 +49,9 @@ use compose_rust::{AnimationMoment, Batch, Runtime, WindowSize};
 use dioxus_core::{Element, ScopeId};
 use dioxus_html::{Code, Key, Location, Modifiers};
 
-use crate::dom::{HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind, PointerType, WheelMode};
+use crate::dom::{
+    HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind, PointerType, WheelMode,
+};
 use crate::html::scroll::{Report, ScrollSync};
 use crate::html::{ColorScheme, NodeId, PlanKey, Rect};
 use crate::paint::animate;

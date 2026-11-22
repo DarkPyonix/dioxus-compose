@@ -1535,12 +1535,7 @@ impl PlanBridge {
                 PropertyKind::OnKeyDown,
                 BridgeEvent::FieldKeyDown,
             );
-            self.add_handler(
-                batch,
-                key,
-                PropertyKind::OnKeyUp,
-                BridgeEvent::FieldKeyUp,
-            );
+            self.add_handler(batch, key, PropertyKind::OnKeyUp, BridgeEvent::FieldKeyUp);
         } else if let Some(placed) = self.nodes.get_mut(&key) {
             // The renderer owns the text while the user edits it. The Host's value goes out
             // only when the app set a new one, and not when it is what the field already
