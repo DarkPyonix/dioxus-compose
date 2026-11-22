@@ -901,3 +901,65 @@ fn fr34_1_preserve_3d_warns_and_flattens() {
     let again = dom.layout(800.0, 600.0, 1.0).clone();
     assert_eq!(again.flattened_spaces, list.flattened_spaces);
 }
+
+const MISMATCHED_TRANSITION_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#box {
+    width: 100px;
+    height: 100px;
+    transform: translateX(0px) rotate(0deg);
+    transition: width 1s linear, transform 1s linear;
+}
+#box.on {
+    width: 200px;
+    transform: rotate(90deg) translateX(0px);
+}
+"#;
+
+/// Transitioning between mismatched transform lists produces an `InterpolateMatrix`
+/// operation in stylo. Halfway between `translateX(0px) rotate(0deg)` and
+/// `rotate(90deg) translateX(0px)`, matrix decomposition yields `rotate(45deg)` with
+/// unit determinant rather than a shrunk component-wise lerp.
+#[test]
+fn fr34_1_mismatched_transform_transition_interpolates_by_decomposition() {
+    use std::cell::Cell;
+
+    thread_local! {
+        static ON: Cell<bool> = const { Cell::new(false) };
+    }
+    fn app() -> Element {
+        let class = if ON.with(Cell::get) { "on" } else { "" };
+        rsx! { div { id: "box", class: "{class}" } }
+    }
+
+    ON.with(|on| on.set(false));
+    let mut dom = HtmlDom::with_config(app, config(MISMATCHED_TRANSITION_CSS));
+    dom.layout_at(10.0, 800.0, 600.0, 1.0);
+
+    ON.with(|on| on.set(true));
+    dom.mark_dirty();
+    dom.render();
+    dom.layout_at(10.0, 800.0, 600.0, 1.0);
+    dom.tick(10.5, 800.0, 600.0, 1.0);
+
+    let list = dom.display_list().expect("laid out");
+    let box_entry = entry(&dom, list, "box");
+    let transform = box_entry
+        .transform
+        .as_ref()
+        .expect("midpoint has a 2D transform");
+    let expected = Matrix2D::rotation(45.0f32.to_radians());
+    assert!(
+        (transform.matrix.a - expected.a).abs() < 1e-3
+            && (transform.matrix.b - expected.b).abs() < 1e-3
+            && (transform.matrix.c - expected.c).abs() < 1e-3
+            && (transform.matrix.d - expected.d).abs() < 1e-3,
+        "expected rotate(45deg) {expected:?}, got {:?}",
+        transform.matrix
+    );
+    assert!(
+        (transform.matrix.determinant() - 1.0).abs() < 1e-3,
+        "determinant should stay 1.0, got {}",
+        transform.matrix.determinant()
+    );
+}
