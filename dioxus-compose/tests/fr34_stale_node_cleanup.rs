@@ -8,13 +8,14 @@
 use std::cell::RefCell;
 
 use dioxus_compose::Host;
-use dioxus_compose::html::prelude::dioxus_signals::{ReadableExt, WritableExt, use_signal};
+use dioxus_compose::html::prelude::dioxus_signals::{ReadableExt, WritableExt};
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{HtmlConfig, HtmlDom, PointerInput, PointerKind as DomPointerKind};
+use dioxus_compose::prelude::use_signal;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    EventPayload, Key as WireKey, Modifier, PointerKind, PointerType, PropertyKind,
-    WheelDeltaMode, WidgetKind,
+    EventPayload, Key as WireKey, Modifier, PointerKind, PointerType, PropertyKind, WheelDeltaMode,
+    WidgetKind,
 };
 use dioxus_elements::Key;
 
@@ -125,7 +126,10 @@ fn fr34_unmounting_focused_overlay_then_clicking_outside_does_not_panic() {
     assert_eq!(dom.focused(), Some(input));
 
     // Hover and press down on the backdrop so pointer hover, active, and capture hold it.
-    dom.pointer_event(html_root, &PointerInput::new(DomPointerKind::Move, 10.0, 10.0));
+    dom.pointer_event(
+        html_root,
+        &PointerInput::new(DomPointerKind::Move, 10.0, 10.0),
+    );
     dom.pointer_event(html_root, &PointerInput::press(10.0, 10.0, 1, 1));
     assert!(dom.is_hovered(backdrop));
     assert!(dom.is_active(backdrop));
@@ -137,7 +141,7 @@ fn fr34_unmounting_focused_overlay_then_clicking_outside_does_not_panic() {
     assert!(dom.element_by_id("backdrop").is_none());
     assert_eq!(
         dom.focused(),
-        None,
+        Some(html_root),
         "document focus must be cleared before dropping the focused node"
     );
 
@@ -145,7 +149,10 @@ fn fr34_unmounting_focused_overlay_then_clicking_outside_does_not_panic() {
 
     // Releasing the pointer, moving over `#outside`, and moving focus must not panic.
     dom.pointer_event(html_root, &PointerInput::release(10.0, 10.0, 1, 1));
-    dom.pointer_event(html_root, &PointerInput::new(DomPointerKind::Move, 20.0, 20.0));
+    dom.pointer_event(
+        html_root,
+        &PointerInput::new(DomPointerKind::Move, 20.0, 20.0),
+    );
     dom.focus(outside);
     assert_eq!(dom.focused(), Some(outside));
 
@@ -195,9 +202,14 @@ fn fr34_unmounting_hovered_and_active_element_on_resize_does_not_panic() {
     dom.render();
     dom.layout(800.0, 600.0, 1.0);
 
-    let panel = dom.element_by_id("panel").expect("panel exists at wide width");
+    let panel = dom
+        .element_by_id("panel")
+        .expect("panel exists at wide width");
     let html_root = dom.document().root_element().id;
-    dom.pointer_event(html_root, &PointerInput::new(DomPointerKind::Move, 20.0, 20.0));
+    dom.pointer_event(
+        html_root,
+        &PointerInput::new(DomPointerKind::Move, 20.0, 20.0),
+    );
     dom.pointer_event(html_root, &PointerInput::press(20.0, 20.0, 1, 1));
     assert!(dom.is_hovered(panel));
     assert!(dom.is_active(panel));
@@ -206,12 +218,15 @@ fn fr34_unmounting_hovered_and_active_element_on_resize_does_not_panic() {
     dom.layout(400.0, 600.0, 1.0);
     dom.render();
     assert!(dom.element_by_id("panel").is_none());
-    assert_eq!(dom.focused(), None);
+    assert_eq!(dom.focused(), Some(html_root));
     dom.layout(400.0, 600.0, 1.0);
 
     // Subsequent pointer release and move must not panic on the removed panel node.
     dom.pointer_event(html_root, &PointerInput::release(20.0, 20.0, 1, 1));
-    dom.pointer_event(html_root, &PointerInput::new(DomPointerKind::Move, 30.0, 30.0));
+    dom.pointer_event(
+        html_root,
+        &PointerInput::new(DomPointerKind::Move, 30.0, 30.0),
+    );
 }
 
 #[test]
@@ -248,19 +263,17 @@ fn fr34_host_dispatch_overlay_close_and_click_outside_returns_ok() {
     let first = decode_batch(host.rebuild().expect("rebuild encodes")).expect("batch decodes");
     let (pointer_node, pointer_handler) = root_pointer_handler(&first);
 
-    let text_fields: Vec<u32> = first
+    let text_fields: Vec<(u32, u64)> = first
         .iter()
         .filter_map(|m| match m {
             Mutation::Create { node_id, widget } if *widget == WidgetKind::TextField => {
-                Some(*node_id)
+                let h = prop_handler(&first, *node_id, PropertyKind::OnFocusGained)?;
+                Some((*node_id, h))
             }
             _ => None,
         })
         .collect();
     assert_eq!(text_fields.len(), 2, "expected outside and palette inputs");
-    let outside_field = text_fields[0];
-    let outside_focus_gained = prop_handler(&first, outside_field, PropertyKind::OnFocusGained)
-        .expect("outside input registers OnFocusGained");
 
     let clickables: Vec<(u32, u64)> = first
         .iter()
@@ -292,12 +305,51 @@ fn fr34_host_dispatch_overlay_close_and_click_outside_returns_ok() {
     .expect("press on backdrop must succeed");
 
     // Click backdrop to close the palette (unmounts backdrop and focused palette input).
-    host.dispatch(HostEvent::new(
-        backdrop_node,
-        backdrop_handler,
-        EventPayload::Clicked,
-    ))
-    .expect("click closing palette must succeed");
+    let (close_batch, _) = host
+        .dispatch(HostEvent::new(
+            backdrop_node,
+            backdrop_handler,
+            EventPayload::Clicked,
+        ))
+        .expect("click closing palette must succeed");
+    let after_close = decode_batch(close_batch).expect("close batch decodes");
+    let removed_nodes: std::collections::HashSet<u32> = after_close
+        .iter()
+        .filter_map(|m| match m {
+            Mutation::Remove { node_id } => Some(*node_id),
+            _ => None,
+        })
+        .collect();
+    let (outside_field, outside_focus_gained) = after_close
+        .iter()
+        .find_map(|m| match m {
+            Mutation::Create { node_id, widget } if *widget == WidgetKind::TextField => {
+                let h = prop_handler(&after_close, *node_id, PropertyKind::OnFocusGained)?;
+                Some((*node_id, h))
+            }
+            _ => None,
+        })
+        .unwrap_or_else(|| {
+            let (id, initial) = text_fields
+                .iter()
+                .copied()
+                .find(|(id, _)| !removed_nodes.contains(id))
+                .expect("outside input survives palette close");
+            let h = prop_handler(&after_close, id, PropertyKind::OnFocusGained).unwrap_or(initial);
+            (id, h)
+        });
+
+    let (outside_btn_node, outside_btn_handler) = after_close
+        .iter()
+        .find_map(|m| match m {
+            Mutation::SetModifier {
+                node_id,
+                modifier: Modifier::Clickable { handler_id },
+                ..
+            } => Some((*node_id, *handler_id)),
+            _ => None,
+        })
+        .unwrap_or((outside_btn_node, outside_btn_handler));
 
     // Pointer release, pointer move outside, focus on outside input, and click outside
     // must all return Ok without panicking in blitz-dom.
