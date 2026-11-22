@@ -1036,6 +1036,7 @@ pub enum AnimatedProperty {
     /// A box's own `opacity` (not multiplied by its ancestors').
     Opacity,
     Transform,
+    Color,
     BackgroundColor,
 }
 
@@ -1209,6 +1210,9 @@ pub struct NodeEntry {
     pub clips_children: bool,
     /// The product of this box's `opacity` and every ancestor's.
     pub opacity: f32,
+    /// The box's computed CSS `color`, or the rest value of a running `color` `@keyframes`
+    /// animation.
+    pub color: Rgba,
     /// The box's 2D `transform`, which also carries every box inside it. `None` for no
     /// transform, and for one that only moves the box: a translation is folded into
     /// [`NodeEntry::rect`] (unless an animation or transition of `transform` is declared,
