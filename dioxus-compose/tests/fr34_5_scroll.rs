@@ -366,7 +366,10 @@ fn fr34_5_onmounted_scroll_to_in_palette_structure_writes_into_view_on_first_bat
                         if index == 38 {
                             div { class: "ed-tn", id: "target",
                                 onmounted: move |evt| {
-                                    let _ = evt.data().scroll_to(ScrollBehavior::Instant);
+                                    let data = evt.data();
+                                    dioxus_core::spawn(async move {
+                                        let _ = data.scroll_to(ScrollBehavior::Instant).await;
+                                    });
                                 },
                                 "Language {index}"
                             }
