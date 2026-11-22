@@ -65,7 +65,7 @@ SPEC과 코드가 어긋나면 SPEC이 기준입니다. SPEC이 틀렸다면 SPE
 
 Ember PROJECT.md의 "dioxus-compose M13 workbench"가 가리키는 것이 M13 항목이고, M9~M11은 이 문서에 아직 정의되지 않았습니다.
 
-**M12 현황.** HTML 경로, measure call 기반 텍스트 측정, span, 변환과 모션, HtmlView와 WidgetView, blitz 패치를 통한 포커스 선택자(PR #111, 리뷰 중)가 develop에 있습니다. 남은 것은 FR-34 허용 오차의 재측정과 native-image 빌드에서의 창과 IME 확인(사람이 하는 수동 점검), 줌(#58, compose-rust #267 대기), 3D 변환(FR-41.3의 수용 기준은 소유자 결정 사항), compose-rust의 span 글자 크기와 밀도 및 글꼴 변경 신호입니다. 새 예정일은 2026-11-01입니다. 다만 수동 점검과 compose-rust 또는 소유자 결정에 막힌 항목은 막힘이 풀릴 때까지 날짜가 없습니다. 기존 예정일은 2026-10-15였습니다.
+**M12 현황.** HTML 경로, measure call 기반 텍스트 측정, span, 2D/3D 변환과 모션, 줌(#58), HtmlView와 WidgetView, blitz 패치를 통한 포커스 선택자, `autofocus`와 코드 포커스 요청의 렌더러 전달(#290), 17개 HTML 예제의 macOS/Linux/Windows 창 실행(#181)이 develop에 있습니다. 남은 것은 FR-34 기준 1의 Compose 측정 기반 허용 오차 재측정(#43), native-image 빌드에서의 한글 IME 수동 점검(기준 3, darkpyonix#141), 그리고 3D 변환 키프레임 모션(#46, compose-rust CR-8a 대기)입니다.
 
 **M13 현황.** 갭 분석이 끝났습니다. `:focus`, `:focus-within`, `:focus-visible`은 진행 중이고, `:has()`는 Ember 쪽에서 상태 클래스로 대체됩니다(darkpyonix-ember#142). 남은 것은 hover와 포인터 이벤트, outline, pointer-events, codicon @font-face, mask와 SVG, sticky입니다. 이 항목들은 아직 SPEC 근거가 없고 소유자 질문이 대기 중입니다. 새 예정일은 소유자가 결정한 뒤 약 2주이며, 그 전까지는 없습니다. 기존 예정일은 2026-10-18이었습니다.
 
