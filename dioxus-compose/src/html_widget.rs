@@ -461,16 +461,24 @@ pub(crate) fn render_islands(owner: u32, batch: &mut Batch) {
         }
         // What the application asked of its code editor handles goes to the editor that carries
         // each handle: a handle in a widget tree names a node of that tree's renderer, which the
-        // page's own flush does not know. A handle no tree carries is dropped here.
-        crate::hooks::drain_edits(|request| {
+        // page's own flush does not know. A request for a tree of another page waits for that
+        // page to draw, and a handle no tree carries is dropped here.
+        crate::hooks::drain_edits_keeping(|request| {
             let token = request.token();
-            if let Some(island) = registry.islands.values_mut().find(|island| {
-                island.owner == owner && island.renderer.editor_node(token).is_some()
-            }) {
-                std::mem::swap(island.renderer.batch_mut(), batch);
-                island.renderer.apply_editor_request(request);
-                std::mem::swap(island.renderer.batch_mut(), batch);
+            let Some(island) = registry
+                .islands
+                .values_mut()
+                .find(|island| island.renderer.editor_node(token).is_some())
+            else {
+                return true;
+            };
+            if island.owner != owner {
+                return false;
             }
+            std::mem::swap(island.renderer.batch_mut(), batch);
+            island.renderer.apply_editor_request(request);
+            std::mem::swap(island.renderer.batch_mut(), batch);
+            true
         });
         if changed_after_layout {
             registry.pending.insert(owner);
@@ -591,6 +599,30 @@ pub(crate) fn route_event(event: &HostEvent<'_>) -> Option<Result<i64, ProtocolE
             .values_mut()
             .find(|island| island.renderer.handler(event.handler_id).is_some())?;
         Some(deliver_event(&mut island.dom, &island.renderer, event))
+    })
+}
+
+/// The page that holds the widget tree which gave out `handler_id`, or `None` when no widget
+/// tree did.
+pub(crate) fn owner_of_handler(handler_id: u64) -> Option<u32> {
+    REGISTRY.with_borrow(|registry| {
+        registry
+            .islands
+            .values()
+            .find(|island| island.renderer.handler(handler_id).is_some())
+            .map(|island| island.owner)
+    })
+}
+
+/// The page that holds the widget tree whose code editor carries the handle `token`, or
+/// `None` when no widget tree's editor does.
+pub(crate) fn owner_of_editor(token: u32) -> Option<u32> {
+    REGISTRY.with_borrow(|registry| {
+        registry
+            .islands
+            .values()
+            .find(|island| island.renderer.editor_node(token).is_some())
+            .map(|island| island.owner)
     })
 }
 

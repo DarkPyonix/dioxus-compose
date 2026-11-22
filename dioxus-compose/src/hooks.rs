@@ -880,20 +880,18 @@ pub fn use_code_editor() -> CodeEditorHandle {
     dioxus_core::use_hook(CodeEditorHandle::new)
 }
 
-/// Hands every queued edit to `emit` and empties the queue.
-pub(crate) fn drain_edits(mut emit: impl FnMut(&EditorRequest)) {
+/// Offers every queued edit to `consume`, in order. An edit it answers `true` for leaves the
+/// queue; one it answers `false` for stays, ahead of any queued while it ran, for a later
+/// flush by the renderer that carries its editor.
+pub(crate) fn drain_edits_keeping(mut consume: impl FnMut(&EditorRequest) -> bool) {
     let mut taken = EDITS.with_borrow_mut(std::mem::take);
     if taken.is_empty() {
         return;
     }
-    for edit in &taken {
-        emit(edit);
-    }
-    taken.clear();
+    taken.retain(|edit| !consume(edit));
     EDITS.with_borrow_mut(|edits| {
-        if edits.is_empty() {
-            *edits = taken;
-        }
+        taken.append(edits);
+        *edits = taken;
     });
 }
 
