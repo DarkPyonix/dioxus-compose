@@ -117,6 +117,8 @@ pub struct HtmlRuntime {
     edited: HashSet<NodeId>,
     /// The field that has the focus, as far as the page has been told.
     focused: Option<NodeId>,
+    /// The renderer node that last received or reported keyboard focus.
+    renderer_focused: Option<u32>,
     /// The scheme the configuration names, for an application whose theme follows the
     /// system, until the renderer has reported the system's.
     configured_scheme: ColorScheme,
@@ -227,6 +229,7 @@ impl HtmlRuntime {
             _density: density_subscription,
             _scheme: compose_rust::subscribe_system_color_scheme(std::sync::Arc::new(|| {})),
             focused: None,
+            renderer_focused: None,
             configured_scheme,
             dom: HtmlDom::with_config(app, config),
             bridge,
@@ -309,6 +312,12 @@ impl HtmlRuntime {
         }
         self.scroll
             .write(&mut self.dom, &self.bridge, &mut self.batch);
+        Self::sync_focus(
+            &self.dom,
+            &self.bridge,
+            &mut self.renderer_focused,
+            &mut self.batch,
+        );
         {
             let dom = &self.dom;
             crate::html_widget::set_boxes(self.owner, &|node| {
@@ -363,9 +372,6 @@ impl HtmlRuntime {
         self.dom.set_zoom(zoom);
         self.bridge.set_zoom(zoom);
         self.dom.layout(viewport.0, viewport.1, zoom);
-        // TODO(DarkPyonix/compose-rust#410): when the renderer exposes a focus request
-        // mutation/property, forward `self.dom.focused()` changes from `HtmlDom` to the
-        // renderer's focus manager here.
         let rev_key = (
             self.dom.layout_revision(),
             viewport.0.to_bits(),
@@ -405,6 +411,7 @@ impl HtmlRuntime {
             self.bridge.apply(plan, viewport, &self.dom, batch);
         }
         self.scroll.write(&mut self.dom, &self.bridge, batch);
+        Self::sync_focus(&self.dom, &self.bridge, &mut self.renderer_focused, batch);
         self.deliver_host_moments();
         let bridge = &self.bridge;
         crate::html_widget::attach(
@@ -567,6 +574,25 @@ impl HtmlRuntime {
             self.dom.paste(node, &text);
         }
     }
+
+    /// Forwards DOM focus changes (from `autofocus`, programmatic focus calls or Tab
+    /// traversal) to the renderer via `RequestFocus`.
+    fn sync_focus(
+        dom: &HtmlDom,
+        bridge: &PlanBridge,
+        renderer_focused: &mut Option<u32>,
+        batch: &mut Batch,
+    ) {
+        let desired = dom
+            .explicit_focused()
+            .and_then(|node| bridge.focus_target_id(node));
+        if desired != *renderer_focused {
+            *renderer_focused = desired;
+            batch.write(compose_rust::protocol::Mutation::RequestFocus {
+                node_id: desired.unwrap_or(0),
+            });
+        }
+    }
 }
 
 impl Runtime for HtmlRuntime {
@@ -630,7 +656,16 @@ impl Runtime for HtmlRuntime {
                 self.dom.submit(node);
                 return Ok(1);
             }
-            (BridgeEvent::FocusLost, EventPayload::FocusLost) => self.deliver_blur(node),
+            (BridgeEvent::FocusLost, EventPayload::FocusLost) => {
+                if self.renderer_focused == Some(event.node_id) {
+                    self.renderer_focused = None;
+                }
+                self.deliver_blur(node);
+            }
+            (BridgeEvent::FocusGained, EventPayload::FocusGained) => {
+                self.renderer_focused = Some(event.node_id);
+                self.deliver_focus(node);
+            }
             (
                 kind @ (BridgeEvent::KeyDown | BridgeEvent::FieldKeyDown),
                 EventPayload::KeyDown {
@@ -646,8 +681,6 @@ impl Runtime for HtmlRuntime {
                 // TODO(DarkPyonix/compose-rust#100): map the full W3C `Key`, `Code`,
                 // `Location`, `repeat`, and `is_composing` fields once `EventPayload::KeyDown`
                 // and `EventPayload::KeyUp` carry them on the wire.
-                // TODO(DarkPyonix/compose-rust#410): route renderer `FocusGained` wire
-                // payloads to `self.deliver_focus(node)`.
                 let (key, code) = match key {
                     WireKey::Enter => (Key::Enter, Code::Enter),
                     WireKey::Escape => (Key::Escape, Code::Escape),
