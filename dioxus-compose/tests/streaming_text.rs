@@ -245,11 +245,7 @@ fn fr37_a_link_run_reports_its_own_value_to_on_link() {
 
     for handler_id in [second, first] {
         let _ = host
-            .dispatch(HostEvent {
-                node_id,
-                handler_id,
-                payload: EventPayload::Clicked,
-            })
+            .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
             .unwrap();
     }
     assert_eq!(*PRESSED.lock().unwrap(), vec![9, 7]);

@@ -78,10 +78,10 @@ fn window_event(
     leading: f32,
     trailing: f32,
 ) -> HostEvent<'static> {
-    HostEvent {
-        node_id: 0,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+    HostEvent::new(
+        0,
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp,
             height_dp,
             class: WindowSizeClass::from_width_dp(width_dp),
@@ -91,7 +91,7 @@ fn window_event(
             safe_area_trailing: trailing,
             safe_area_bottom: 0.0,
         },
-    }
+    )
 }
 
 /// Width and height, or x and y.

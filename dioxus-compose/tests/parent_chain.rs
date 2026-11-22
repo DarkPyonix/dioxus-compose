@@ -152,11 +152,7 @@ fn toggle_and_follow(app: fn() -> Element, rounds: usize) {
     for round in 0..rounds {
         let mut wire = Vec::new();
         encode_event(
-            &HostEvent {
-                node_id: button,
-                handler_id: handler,
-                payload: EventPayload::Clicked,
-            },
+            &HostEvent::new(button, handler, EventPayload::Clicked),
             &mut wire,
         )
         .unwrap();
@@ -290,11 +286,7 @@ fn fr1_an_empty_branch_fills_in_under_its_own_parent() {
 
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: button,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        },
+        &HostEvent::new(button, handler, EventPayload::Clicked),
         &mut wire,
     )
     .unwrap();
@@ -380,11 +372,11 @@ fn nfr7_a_menu_of_empty_branches_in_a_list_item_never_loops_the_parent_chain() {
     for (round, start) in [0_u32, 6, 12].into_iter().enumerate() {
         let mut wire = Vec::new();
         encode_event(
-            &HostEvent {
-                node_id: list,
-                handler_id: handler,
-                payload: EventPayload::RangeRequested { start, count: 6 },
-            },
+            &HostEvent::new(
+                list,
+                handler,
+                EventPayload::RangeRequested { start, count: 6 },
+            ),
             &mut wire,
         )
         .unwrap();
@@ -452,11 +444,11 @@ fn fr8_an_empty_box_in_a_list_item_keeps_the_item_under_its_own_parent() {
 
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: list,
-            handler_id: handler,
-            payload: EventPayload::RangeRequested { start: 0, count: 4 },
-        },
+        &HostEvent::new(
+            list,
+            handler,
+            EventPayload::RangeRequested { start: 0, count: 4 },
+        ),
         &mut wire,
     )
     .unwrap();
@@ -623,11 +615,11 @@ fn nfr7_a_menu_whose_entries_arrive_only_when_open_never_loops_the_parent_chain(
     for start in [0_u32, 4, 8, 4, 0] {
         let window = send(
             &mut host,
-            HostEvent {
-                node_id: list,
-                handler_id: range,
-                payload: EventPayload::RangeRequested { start, count: 6 },
-            },
+            HostEvent::new(
+                list,
+                range,
+                EventPayload::RangeRequested { start, count: 6 },
+            ),
         );
         follow(&window, &mut parents);
         assert_no_loop(&parents, &format!("window at {start}"));
@@ -643,11 +635,7 @@ fn nfr7_a_menu_whose_entries_arrive_only_when_open_never_loops_the_parent_chain(
             let handler = click_handler(&window, anchor).expect("the anchor reports its clicks");
             let opened = send(
                 &mut host,
-                HostEvent {
-                    node_id: anchor,
-                    handler_id: handler,
-                    payload: EventPayload::Clicked,
-                },
+                HostEvent::new(anchor, handler, EventPayload::Clicked),
             );
             follow(&opened, &mut parents);
             assert_no_loop(&parents, &format!("window at {start}, menu {menu} open"));

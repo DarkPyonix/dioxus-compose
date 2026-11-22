@@ -219,22 +219,14 @@ fn send(host: &mut Host, event: HostEvent<'_>) -> Seen {
 fn zoom(host: &mut Host, k: f32) -> Seen {
     send(
         host,
-        HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::ZoomChanged { k, os: k, level: 0 },
-        },
+        HostEvent::new(0, 0, EventPayload::ZoomChanged { k, os: k, level: 0 }),
     )
 }
 
 fn density(host: &mut Host, scale: f32) -> Seen {
     send(
         host,
-        HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::DensityChanged { scale },
-        },
+        HostEvent::new(0, 0, EventPayload::DensityChanged { scale }),
     )
 }
 
@@ -249,10 +241,10 @@ fn report(
     let handler_id = started.handlers[&node];
     send(
         &mut started.host,
-        HostEvent {
-            node_id: node,
+        HostEvent::new(
+            node,
             handler_id,
-            payload: EventPayload::ScrollChanged {
+            EventPayload::ScrollChanged {
                 item: 0,
                 settled: true,
                 can_scroll_backward: y_px > 0.0,
@@ -264,7 +256,7 @@ fn report(
                 viewport_width_px: width_px,
                 viewport_height_px: height_px,
             },
-        },
+        ),
     )
 }
 

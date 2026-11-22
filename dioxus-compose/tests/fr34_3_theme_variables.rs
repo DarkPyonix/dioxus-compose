@@ -153,11 +153,7 @@ fn fr34_3_theme_switch_same_frame() {
 
     let (node_id, handler_id) = clickable(&first);
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .expect("the click is dispatched");
     assert_eq!(
         backgrounds(batch),
@@ -237,11 +233,7 @@ mod with_widget {
         let first = host.rebuild().unwrap().to_vec();
         let (node_id, handler_id) = clickable(&first);
         let (batch, _) = host
-            .dispatch(HostEvent {
-                node_id,
-                handler_id,
-                payload: EventPayload::Clicked,
-            })
+            .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
             .expect("the click is dispatched");
         let after = decode_batch(batch).unwrap();
         let theme = dioxus_compose::theme::current_theme();

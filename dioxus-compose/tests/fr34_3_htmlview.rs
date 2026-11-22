@@ -72,10 +72,10 @@ fn required_widths(mutations: &[Mutation<'_>]) -> Vec<f32> {
 }
 
 fn measure(host: &mut Host, node_id: u32, width_dp: f32) -> Vec<f32> {
-    let event = HostEvent {
+    let event = HostEvent::new(
         node_id,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp,
             height_dp: 200.0,
             class: WindowSizeClass::from_width_dp(width_dp),
@@ -85,7 +85,7 @@ fn measure(host: &mut Host, node_id: u32, width_dp: f32) -> Vec<f32> {
             safe_area_trailing: 0.0,
             safe_area_bottom: 0.0,
         },
-    };
+    );
     let (batch, _) = host.dispatch(event).unwrap();
     required_widths(&decode_batch(batch).unwrap())
 }
@@ -202,10 +202,10 @@ fn fr34_3_island_scroll_gets_a_size_not_a_fill() {
     // Copied out now: the next dispatch borrows the host and the batch cannot outlive that.
     let mut modifiers = modifiers_of(&first, scroll);
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: node,
-            handler_id: 0,
-            payload: EventPayload::WindowSizeChanged {
+        .dispatch(HostEvent::new(
+            node,
+            0,
+            EventPayload::WindowSizeChanged {
                 width_dp: 420.0,
                 height_dp: 200.0,
                 class: WindowSizeClass::from_width_dp(420.0),
@@ -215,7 +215,7 @@ fn fr34_3_island_scroll_gets_a_size_not_a_fill() {
                 safe_area_trailing: 0.0,
                 safe_area_bottom: 0.0,
             },
-        })
+        ))
         .unwrap();
     modifiers.extend(modifiers_of(&decode_batch(batch).unwrap(), scroll));
     assert!(
