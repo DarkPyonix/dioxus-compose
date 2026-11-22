@@ -1221,6 +1221,14 @@ impl HtmlDom {
         self.doc.get_focussed_node_id()
     }
 
+    /// The explicitly focused element, or `None` when focus has fallen back to the document
+    /// root element.
+    pub(crate) fn explicit_focused(&self) -> Option<NodeId> {
+        let focused = self.doc.get_focussed_node_id()?;
+        let root = self.doc.try_root_element().map(|el| el.id);
+        (Some(focused) != root).then_some(focused)
+    }
+
     /// Moves keyboard focus to the next (or previous when `backward` is true) focusable
     /// element in document order.
     fn advance_tab_focus(&mut self, backward: bool) -> Option<NodeId> {
