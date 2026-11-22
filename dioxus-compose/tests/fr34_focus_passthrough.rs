@@ -152,11 +152,11 @@ fn fr34_programmatic_focus_request_reaches_renderer() {
         .expect("trigger button must have Clickable modifier");
 
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: trigger_node,
-            handler_id: trigger_handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(
+            trigger_node,
+            trigger_handler,
+            EventPayload::Clicked,
+        ))
         .expect("click dispatches");
     let after_click = decode_batch(batch).expect("batch decodes");
     let mut targets = request_focus_targets(&after_click);
@@ -201,11 +201,7 @@ fn fr34_renderer_focus_gained_delivers_onfocus_without_echoing_request_focus() {
         .expect("OnFocusLost handler registered");
 
     let (gain_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: field_id,
-            handler_id: gained,
-            payload: EventPayload::FocusGained,
-        })
+        .dispatch(HostEvent::new(field_id, gained, EventPayload::FocusGained))
         .expect("FocusGained dispatches");
     assert_eq!(take_log(), vec!["focused".to_string()]);
     assert!(
@@ -214,11 +210,7 @@ fn fr34_renderer_focus_gained_delivers_onfocus_without_echoing_request_focus() {
     );
 
     let (loss_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: field_id,
-            handler_id: lost,
-            payload: EventPayload::FocusLost,
-        })
+        .dispatch(HostEvent::new(field_id, lost, EventPayload::FocusLost))
         .expect("FocusLost dispatches");
     assert_eq!(take_log(), vec!["blurred".to_string()]);
     assert!(
