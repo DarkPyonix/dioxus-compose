@@ -53,7 +53,10 @@ fn fr34_5_sticky_pins_at_scroll_edge() {
         .get(sticky)
         .expect("sticky entry")
         .rect;
-    assert_eq!(rect.y, 40.0, "normal flow before reaching top edge: {rect:?}");
+    assert_eq!(
+        rect.y, 40.0,
+        "normal flow before reaching top edge: {rect:?}"
+    );
     assert_eq!(dom.hit_test(50.0, 50.0), Some(sticky));
 
     // Scrolling 20px keeps the box at y = 40 (screen y = 20, still below top: 10px).
@@ -72,7 +75,10 @@ fn fr34_5_sticky_pins_at_scroll_edge() {
         .get(sticky)
         .expect("sticky entry")
         .rect;
-    assert_eq!(rect.y, 90.0, "pinned at top: 10px edge when scrolled 80px: {rect:?}");
+    assert_eq!(
+        rect.y, 90.0,
+        "pinned at top: 10px edge when scrolled 80px: {rect:?}"
+    );
     // Hit testing at screen y = 20 (inside [10, 40]) lands on the pinned sticky box.
     assert_eq!(dom.hit_test(50.0, 20.0), Some(sticky));
 }
@@ -135,7 +141,10 @@ fn fr34_5_sticky_stays_in_containing_block() {
         .get(sticky)
         .expect("sticky entry")
         .rect;
-    assert_eq!(rect.y, 130.0, "clamped to containing block bottom (160 - 30): {rect:?}");
+    assert_eq!(
+        rect.y, 130.0,
+        "clamped to containing block bottom (160 - 30): {rect:?}"
+    );
     // Screen y = 5 is still within sticky's visible bottom 10px; screen y = 20 is in #tail.
     assert_eq!(dom.hit_test(50.0, 5.0), Some(sticky));
     assert_eq!(dom.hit_test(50.0, 20.0), Some(tail));

@@ -418,6 +418,7 @@ html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font
     display: flex; align-items: center; height: 36px; line-height: 36px;
     font-size: 11px; font-weight: 400; white-space: nowrap;
 }
+.tab-label { line-height: 14px; }
 .title-actions { display: flex; align-items: center; gap: 4px; height: 22px; }
 .action-btn { width: 22px; height: 22px; }
 .panel-body { flex: 1; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
@@ -504,6 +505,7 @@ html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font
     display: flex; align-items: center; padding: 0 6px; height: 22px;
     line-height: 22px; font-size: 12px; white-space: nowrap;
 }
+.item-label { line-height: 14px; }
 </style></head><body>
 <footer class="part statusbar" data-probe-id="0">
 <div class="left-items" data-probe-id="1">
@@ -558,6 +560,7 @@ html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font
     width: 586px; height: 26px; border: 1px solid #007fd4; padding: 0 6px;
     display: flex; align-items: center; line-height: 24px; font-size: 13px; white-space: nowrap;
 }
+.quick-input-text { line-height: 16px; }
 .quick-input-list { padding: 4px 6px 6px 6px; display: flex; flex-direction: column; }
 .quick-input-row {
     height: 22px; padding: 0 6px; display: flex; align-items: center;
