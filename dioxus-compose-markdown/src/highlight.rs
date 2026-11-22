@@ -385,7 +385,10 @@ mod tests {
     fn fr37_highlight_api_produces_spans_and_canonicalizes_aliases() {
         let rust = highlight("rust", "fn main() { let x = 42; }\n")
             .expect("rust grammar should be available");
-        assert!(!rust.is_empty(), "rust code should produce highlighted spans");
+        assert!(
+            !rust.is_empty(),
+            "rust code should produce highlighted spans"
+        );
         let rs = highlight("rs", "fn main() { let x = 42; }\n")
             .expect("rs alias should resolve to rust grammar");
         assert_eq!(rust, rs);
@@ -409,6 +412,9 @@ mod tests {
             .recv_timeout(Duration::from_secs(30))
             .expect("highlight delivery should arrive");
         assert_eq!(delivered_key, key);
-        assert!(!spans.is_empty(), "delivered rust spans should not be empty");
+        assert!(
+            !spans.is_empty(),
+            "delivered rust spans should not be empty"
+        );
     }
 }
