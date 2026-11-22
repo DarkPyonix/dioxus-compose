@@ -1527,9 +1527,10 @@ impl<'a> Builder<'a> {
             .spans
             .iter()
             .map(|span| SpanRun {
-                color: span
-                    .color
-                    .map(|colour| self.colours.resolve(run.owner, ColourUse::Text, colour)),
+                color: span.color.map(|colour| {
+                    self.colours
+                        .resolve(span.owner.unwrap_or(run.owner), ColourUse::Text, colour)
+                }),
                 ..span.clone()
             })
             .collect();

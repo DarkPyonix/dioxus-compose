@@ -11,7 +11,7 @@
 
 use std::borrow::Cow;
 
-use crate::paint::display_list::Rgba;
+use crate::paint::display_list::{NodeId, Rgba};
 use parley::{
     FontContext, FontStack, FontStyle, FontWeight, Layout, LayoutContext, LineHeight,
     OverflowWrap as ParleyOverflowWrap, StyleProperty, WordBreakStrength,
@@ -71,21 +71,25 @@ pub enum OverflowWrap {
 impl TextStyle {
     /// The family list as a CSS `font-family` value, names with spaces quoted.
     pub fn font_family_css(&self) -> String {
-        let mut out = String::new();
-        for (index, family) in self.font_family.iter().enumerate() {
-            if index > 0 {
-                out.push_str(", ");
-            }
-            if is_generic_family(family) || !family.contains(char::is_whitespace) {
-                out.push_str(family);
-            } else {
-                out.push('"');
-                out.push_str(&family.replace('"', "\\\""));
-                out.push('"');
-            }
-        }
-        out
+        font_family_css(&self.font_family)
     }
+}
+
+fn font_family_css(families: &[String]) -> String {
+    let mut out = String::new();
+    for (index, family) in families.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        if is_generic_family(family) || !family.contains(char::is_whitespace) {
+            out.push_str(family);
+        } else {
+            out.push('"');
+            out.push_str(&family.replace('"', "\\\""));
+            out.push('"');
+        }
+    }
+    out
 }
 
 fn is_generic_family(name: &str) -> bool {
@@ -188,10 +192,9 @@ pub struct TextMeasureRequest<'a> {
     pub white_space: TextWhiteSpace,
 }
 
-/// A stretch of one inline formatting context's text that differs from the rest of it, in
-/// the properties compose-rust's spans carry: bold, italic, the two lines, a colour and a
-/// font family. Everything else (size, letter spacing, line height) is the same across the
-/// whole text, which is why these can ride beside it as spans.
+/// A stretch of one inline formatting context's text that differs from the rest of it in
+/// style or interactive ownership (such as a link or an inline element with an event
+/// listener).
 ///
 /// The range counts bytes of the text the request carries (after white space collapsing and
 /// `text-transform`), so it indexes the same string the renderer measures and draws.
@@ -209,10 +212,21 @@ pub struct SpanRun {
     pub color: Option<Rgba>,
     /// The run's `font-family` list when it is not the text's.
     pub font_family: Option<Vec<String>>,
+    /// The run's font size in CSS pixels when it differs from the text's.
+    pub font_size: Option<f32>,
+    /// The run's numeric font weight (1 to 1000) when it differs from the text's.
+    pub font_weight: Option<f32>,
+    /// The run's letter spacing in CSS pixels when it differs from the text's.
+    pub letter_spacing: Option<f32>,
+    /// The run's line height when it differs from the text's.
+    pub line_height: Option<TextLineHeight>,
+    /// The inline element that owns this run when it differs from the text's owner
+    /// (for example a link or an inline element with an event handler).
+    pub owner: Option<NodeId>,
 }
 
 impl SpanRun {
-    /// Whether `other` says the same about its letters, wherever it sits.
+    /// Whether `other` says the same about its letters and ownership, wherever it sits.
     pub(crate) fn same_look(&self, other: &SpanRun) -> bool {
         self.bold == other.bold
             && self.italic == other.italic
@@ -220,6 +234,11 @@ impl SpanRun {
             && self.line_through == other.line_through
             && self.color == other.color
             && self.font_family == other.font_family
+            && self.font_size == other.font_size
+            && self.font_weight == other.font_weight
+            && self.letter_spacing == other.letter_spacing
+            && self.line_height == other.line_height
+            && self.owner == other.owner
     }
 }
 
@@ -324,6 +343,10 @@ impl Default for ParleyMeasurer {
 
 impl TextMeasurer for ParleyMeasurer {
     fn measure(&mut self, request: &TextMeasureRequest<'_>) -> TextMetrics {
+        self.measure_spans(request, &[])
+    }
+
+    fn measure_spans(&mut self, request: &TextMeasureRequest<'_>, runs: &[SpanRun]) -> TextMetrics {
         let style = request.style;
         let family = style.font_family_css();
         let mut builder =
@@ -358,6 +381,49 @@ impl TextMeasurer for ParleyMeasurer {
             TextLineHeight::Normal => LineHeight::FontSizeRelative(1.2),
             TextLineHeight::Px(px) => LineHeight::Absolute(px),
         }));
+        for run in runs {
+            if run.start >= run.end || run.end > request.text.len() {
+                continue;
+            }
+            let range = run.start..run.end;
+            if let Some(families) = &run.font_family {
+                builder.push(
+                    StyleProperty::FontStack(FontStack::Source(Cow::Owned(font_family_css(
+                        families,
+                    )))),
+                    range.clone(),
+                );
+            }
+            if let Some(size) = run.font_size {
+                builder.push(StyleProperty::FontSize(size), range.clone());
+            }
+            if let Some(weight) = run.font_weight {
+                builder.push(
+                    StyleProperty::FontWeight(FontWeight::new(weight)),
+                    range.clone(),
+                );
+            } else if run.bold {
+                builder.push(
+                    StyleProperty::FontWeight(FontWeight::new(700.0)),
+                    range.clone(),
+                );
+            }
+            if run.italic {
+                builder.push(StyleProperty::FontStyle(FontStyle::Italic), range.clone());
+            }
+            if let Some(spacing) = run.letter_spacing {
+                builder.push(StyleProperty::LetterSpacing(spacing), range.clone());
+            }
+            if let Some(line_height) = run.line_height {
+                builder.push(
+                    StyleProperty::LineHeight(match line_height {
+                        TextLineHeight::Normal => LineHeight::FontSizeRelative(1.2),
+                        TextLineHeight::Px(px) => LineHeight::Absolute(px),
+                    }),
+                    range,
+                );
+            }
+        }
         let mut layout: Layout<()> = builder.build(request.text);
 
         let max_advance = match request.width {
