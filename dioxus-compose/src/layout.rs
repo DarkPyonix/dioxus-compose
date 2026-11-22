@@ -87,6 +87,34 @@ pub(crate) fn is_fixed(node: &Node) -> bool {
         .is_some_and(|style| style.clone_position() == Position::Fixed)
 }
 
+/// Whether a box is `position: sticky`. Its CSS insets clamp its painted position against
+/// the nearest scroll container rather than shifting its normal-flow layout position.
+pub(crate) fn is_sticky(node: &Node) -> bool {
+    node.primary_styles()
+        .is_some_and(|style| style.clone_position() == Position::Sticky)
+}
+
+/// Clears Taffy's relative insets on `position: sticky` boxes before layout so they sit at
+/// their normal-flow positions; their CSS insets are applied when clamping against the
+/// scroll viewport during display list construction.
+fn clear_sticky_insets(doc: &mut BaseDocument) {
+    let sticky: Vec<usize> = doc
+        .tree()
+        .iter()
+        .filter_map(|(id, node)| is_sticky(node).then_some(id))
+        .collect();
+    for id in sticky {
+        if let Some(node) = doc.get_node_mut(id) {
+            node.style.inset = Rect {
+                left: taffy::LengthPercentageAuto::auto(),
+                right: taffy::LengthPercentageAuto::auto(),
+                top: taffy::LengthPercentageAuto::auto(),
+                bottom: taffy::LengthPercentageAuto::auto(),
+            };
+        }
+    }
+}
+
 /// Whether `id` is a replaced element or a form control, whose `auto` width is its own
 /// size (from its attributes, its image or the widget it stands for) rather than the
 /// width of anything it contains.
@@ -773,6 +801,7 @@ fn run_layout_pass(
     size_selects_in_lines(doc, measurer);
     size_widgets(doc);
     size_image_fallbacks(doc, measurer);
+    clear_sticky_insets(doc);
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
