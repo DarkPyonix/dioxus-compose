@@ -415,6 +415,11 @@ impl HtmlRuntime {
         if first { self.bridge.root_node() } else { None }
     }
 
+    /// The name this page gives the widget trees it holds.
+    pub(crate) fn owner(&self) -> u32 {
+        self.owner
+    }
+
     /// Whether `handler_id` was given out by this page.
     pub(crate) fn owns_handler(&self, handler_id: u64) -> bool {
         self.bridge.handler(handler_id).is_some()

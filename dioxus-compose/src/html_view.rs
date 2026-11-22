@@ -218,13 +218,41 @@ pub(crate) fn poll_islands(context: &mut Context<'_>) -> bool {
 
 /// Hands an event to the island whose handler it names. `None` when the handler is not an
 /// island's, which means it belongs to the widget tree.
+///
+/// A widget tree inside an island's page gives out handler ids from a range of its own, which
+/// the page does not own. Such an event goes to the island whose page holds the tree, which
+/// hands it to the tree the way it does when the page is the root, and that island draws in
+/// this frame, because drawing the page is what draws its widget trees.
 pub(crate) fn route_event(event: &HostEvent<'_>) -> Option<Result<i64, ProtocolError>> {
+    let widget_owner = crate::html_widget::owner_of_handler(event.handler_id);
     REGISTRY.with_borrow_mut(|registry| {
-        registry
+        let island = registry
             .islands
             .values_mut()
-            .find(|island| island.runtime.owns_handler(event.handler_id))
-            .map(|island| island.runtime.handle_event(event))
+            .find(|island| match widget_owner {
+                Some(owner) => island.runtime.owner() == owner,
+                None => island.runtime.owns_handler(event.handler_id),
+            })?;
+        if widget_owner.is_some() {
+            island.dirty = true;
+        }
+        Some(island.runtime.handle_event(event))
+    })
+}
+
+/// Has the island whose page is `owner` draw in the next frame. Returns whether an island has
+/// that page.
+pub(crate) fn mark_owner_dirty(owner: u32) -> bool {
+    REGISTRY.with_borrow_mut(|registry| {
+        let Some(island) = registry
+            .islands
+            .values_mut()
+            .find(|island| island.runtime.owner() == owner)
+        else {
+            return false;
+        };
+        island.dirty = true;
+        true
     })
 }
 
