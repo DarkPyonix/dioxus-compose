@@ -35,11 +35,12 @@ use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
 use dioxus_html::{
-    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasClipboardData,
-    HasCompositionData, HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData,
-    HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData, MountedError,
-    MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior, ScrollToOptions,
-    TransitionData,
+    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasCancelData,
+    HasClipboardData, HasCompositionData, HasFocusData, HasImageData, HasKeyboardData,
+    HasMediaData, HasMouseData, HasSelectionData, HasToggleData, HasTouchData, HasTransitionData,
+    HasVisibleData, HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData,
+    MountedError, MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior,
+    ScrollToOptions, TouchPoint, TransitionData,
 };
 
 use crate::html::NodeId;
@@ -2299,18 +2300,105 @@ fn register_event_converter() {
     REGISTER.call_once(|| dioxus_html::set_event_converter(Box::new(Converter)));
 }
 
+/// Event data for HTML `cancel` events.
+#[derive(Clone, Default)]
+struct CancelEventData;
+
+impl HasCancelData for CancelEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML image `load` and `error` events.
+#[derive(Clone, Default)]
+struct ImageEventData {
+    load_error: bool,
+}
+
+impl HasImageData for ImageEventData {
+    fn load_error(&self) -> bool {
+        self.load_error
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML media events.
+#[derive(Clone, Default)]
+struct MediaEventData;
+
+impl HasMediaData for MediaEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML selection events.
+#[derive(Clone, Default)]
+struct SelectionEventData;
+
+impl HasSelectionData for SelectionEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML `toggle` events.
+#[derive(Clone, Default)]
+struct ToggleEventData;
+
+impl HasToggleData for ToggleEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML touch events.
+#[derive(Clone, Default)]
+struct TouchEventData;
+
+impl ModifiersInteraction for TouchEventData {
+    fn modifiers(&self) -> Modifiers {
+        Modifiers::empty()
+    }
+}
+
+impl HasTouchData for TouchEventData {
+    fn touches(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn touches_changed(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn target_touches(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML intersection visibility events.
+#[derive(Clone, Default)]
+struct VisibleEventData;
+
+impl HasVisibleData for VisibleEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Turns the events this document sends into Dioxus event data: clicks, keys, focus, the
 /// `input`, `change` and `submit` events of form controls, animation and transition
-/// events, resize events, and drag events. Every other conversion is
-/// unreachable from here.
+/// events, resize events, and drag events. Event kinds this document does not yet emit
+/// fall back to empty default payloads instead of panicking.
 struct Converter;
-
-fn not_sent(kind: &str) -> ! {
-    panic!(
-        "the HTML path does not send {kind} events yet, so it has no {kind} data to \
-         convert; something else delivered one through the shared event converter"
-    )
-}
 
 impl HtmlEventConverter for Converter {
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
@@ -2330,8 +2418,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         AnimationData::new(data)
     }
-    fn convert_cancel_data(&self, _: &PlatformEventData) -> dioxus_html::CancelData {
-        not_sent("cancel")
+    fn convert_cancel_data(&self, event: &PlatformEventData) -> dioxus_html::CancelData {
+        let data = event
+            .downcast::<CancelEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::CancelData::new(data)
     }
     fn convert_clipboard_data(&self, event: &PlatformEventData) -> dioxus_html::ClipboardData {
         let data = event
@@ -2368,8 +2460,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         dioxus_html::FormData::new(data)
     }
-    fn convert_image_data(&self, _: &PlatformEventData) -> dioxus_html::ImageData {
-        not_sent("image")
+    fn convert_image_data(&self, event: &PlatformEventData) -> dioxus_html::ImageData {
+        let data = event
+            .downcast::<ImageEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::ImageData::new(data)
     }
     fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
         let data = event
@@ -2378,8 +2474,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         KeyboardData::new(data)
     }
-    fn convert_media_data(&self, _: &PlatformEventData) -> dioxus_html::MediaData {
-        not_sent("media")
+    fn convert_media_data(&self, event: &PlatformEventData) -> dioxus_html::MediaData {
+        let data = event
+            .downcast::<MediaEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::MediaData::new(data)
     }
     fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
         let data = event
@@ -2407,14 +2507,26 @@ impl HtmlEventConverter for Converter {
             .expect("every scroll event this document sends carries ScrollEventData");
         dioxus_html::ScrollData::new(data)
     }
-    fn convert_selection_data(&self, _: &PlatformEventData) -> dioxus_html::SelectionData {
-        not_sent("selection")
+    fn convert_selection_data(&self, event: &PlatformEventData) -> dioxus_html::SelectionData {
+        let data = event
+            .downcast::<SelectionEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::SelectionData::new(data)
     }
-    fn convert_toggle_data(&self, _: &PlatformEventData) -> dioxus_html::ToggleData {
-        not_sent("toggle")
+    fn convert_toggle_data(&self, event: &PlatformEventData) -> dioxus_html::ToggleData {
+        let data = event
+            .downcast::<ToggleEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::ToggleData::new(data)
     }
-    fn convert_touch_data(&self, _: &PlatformEventData) -> dioxus_html::TouchData {
-        not_sent("touch")
+    fn convert_touch_data(&self, event: &PlatformEventData) -> dioxus_html::TouchData {
+        let data = event
+            .downcast::<TouchEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::TouchData::new(data)
     }
     fn convert_transition_data(&self, event: &PlatformEventData) -> TransitionData {
         let data = event
@@ -2423,8 +2535,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         TransitionData::new(data)
     }
-    fn convert_visible_data(&self, _: &PlatformEventData) -> dioxus_html::VisibleData {
-        not_sent("visible")
+    fn convert_visible_data(&self, event: &PlatformEventData) -> dioxus_html::VisibleData {
+        let data = event
+            .downcast::<VisibleEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::VisibleData::new(data)
     }
     fn convert_wheel_data(&self, event: &PlatformEventData) -> dioxus_html::WheelData {
         let data = event
@@ -2432,5 +2548,74 @@ impl HtmlEventConverter for Converter {
             .expect("every wheel event this document sends carries the pointer event data")
             .clone();
         dioxus_html::WheelData::new(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dioxus_html::{
+        CancelData, ImageData, MediaData, SelectionData, ToggleData, TouchData, VisibleData,
+        VisibleError,
+    };
+
+    #[test]
+    fn fr34_event_converter_converts_all_fallback_events_without_panicking() {
+        register_event_converter();
+        let empty = PlatformEventData::new(Box::new(()));
+
+        let cancel = CancelData::from(&empty);
+        assert!(cancel.downcast::<CancelEventData>().is_some());
+
+        let image = ImageData::from(&empty);
+        assert!(!image.load_error());
+
+        let media = MediaData::from(&empty);
+        assert!(media.downcast::<MediaEventData>().is_some());
+
+        let selection = SelectionData::from(&empty);
+        assert!(selection.downcast::<SelectionEventData>().is_some());
+
+        let toggle = ToggleData::from(&empty);
+        assert!(toggle.downcast::<ToggleEventData>().is_some());
+
+        let touch = TouchData::from(&empty);
+        assert!(touch.modifiers().is_empty());
+        assert!(touch.touches().is_empty());
+        assert!(touch.touches_changed().is_empty());
+        assert!(touch.target_touches().is_empty());
+
+        let visible = VisibleData::from(&empty);
+        assert!(matches!(
+            visible.is_intersecting(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_bounding_client_rect(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_intersection_ratio(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_intersection_rect(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_root_bounds(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_time(),
+            Err(VisibleError::NotSupported)
+        ));
+    }
+
+    #[test]
+    fn fr34_event_converter_preserves_image_load_error() {
+        let event = PlatformEventData::new(Box::new(ImageEventData { load_error: true }));
+        let image = Converter.convert_image_data(&event);
+        assert!(image.load_error());
     }
 }
