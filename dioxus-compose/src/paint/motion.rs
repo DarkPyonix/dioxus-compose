@@ -5,7 +5,7 @@
 //! which node is animating, from where, to where. So the document has two ways to play a
 //! motion, and which one a document gets depends on what its CSS asks to animate.
 //!
-//! - **The renderer plays it.** `opacity`, `transform` and `background-color` change
+//! - **The renderer plays it.** `opacity`, `transform`, `color` and `background-color` change
 //!   nothing about layout, so a renderer can play them from a description: the property,
 //!   its keyframes, the duration, delay, easing, repeat, direction and fill. The Host sends
 //!   that description once, with the steady value in the display list, and then does
@@ -13,8 +13,8 @@
 //!   with the last (the document is resolved a second time, past the end of every
 //!   transition, to read where each one lands). An `@keyframes` animation is read from
 //!   the stylesheet and its keyframe values are computed by stylo, in a scratch document.
-//! - **The Host ticks it.** Anything else (`width`, `margin`, `color`, `all`) changes
-//!   layout or is inherited by what is inside the box, so the Host hands blitz-dom the
+//! - **The Host ticks it.** Anything else (`width`, `margin`, `all`) changes
+//!   layout or is not played by the renderer, so the Host hands blitz-dom the
 //!   frame time each frame while the motion runs, lays the page out again and sends the
 //!   entries that changed. blitz-dom has one clock for the whole document, so while such a
 //!   motion runs the whole document is ticked, and the motions a renderer would have
@@ -52,9 +52,10 @@ use crate::paint::transform::functions_of;
 pub(crate) const SETTLE_MARGIN: f32 = 0.01;
 
 /// The properties a renderer plays by itself, in the order their animations are listed.
-const RENDERER_PROPERTIES: [AnimatedProperty; 3] = [
+const RENDERER_PROPERTIES: [AnimatedProperty; 4] = [
     AnimatedProperty::Opacity,
     AnimatedProperty::Transform,
+    AnimatedProperty::Color,
     AnimatedProperty::BackgroundColor,
 ];
 
@@ -62,6 +63,7 @@ fn css_name(property: AnimatedProperty) -> &'static str {
     match property {
         AnimatedProperty::Opacity => "opacity",
         AnimatedProperty::Transform => "transform",
+        AnimatedProperty::Color => "color",
         AnimatedProperty::BackgroundColor => "background-color",
     }
 }
@@ -437,6 +439,7 @@ impl Playback for Playing<'_> {
                         AnimatedProperty::Opacity => {
                             AnimatedValue::Opacity(values.opacity.clamp(0.0, 1.0))
                         }
+                        AnimatedProperty::Color => AnimatedValue::Colour(values.color),
                         AnimatedProperty::BackgroundColor => {
                             AnimatedValue::Colour(values.background)
                         }
@@ -527,6 +530,9 @@ impl Playing<'_> {
                     .and_then(|(_, entry)| entry.transform.clone())
                     .unwrap_or_else(|| Transform2D::identity(request.origin)),
             ),
+            AnimatedProperty::Color => AnimatedValue::Colour(
+                entry.map_or(Rgba::new(0, 0, 0, 255), |(_, entry)| entry.color),
+            ),
             AnimatedProperty::BackgroundColor => AnimatedValue::Colour(
                 entry
                     .and_then(|(list, entry)| list.background_of(entry))
@@ -546,6 +552,7 @@ fn value_of(list: &DisplayList, entry: &NodeEntry, property: AnimatedProperty) -
                 .clone()
                 .unwrap_or_else(|| Transform2D::identity((0.0, 0.0))),
         ),
+        AnimatedProperty::Color => AnimatedValue::Colour(entry.color),
         AnimatedProperty::BackgroundColor => {
             AnimatedValue::Colour(list.background_of(entry).unwrap_or(Rgba::new(0, 0, 0, 0)))
         }
@@ -834,6 +841,7 @@ fn keyframe_offset(selector: &str) -> Option<f32> {
 #[derive(Clone)]
 struct BlockValues {
     opacity: f32,
+    color: Rgba,
     background: Rgba,
     /// `None` for a 3D transform.
     functions: Option<Vec<TransformFunction>>,
@@ -926,6 +934,7 @@ impl ValueProbe {
         let style: &ComputedValues = &style;
         Some(BlockValues {
             opacity: style.clone_opacity(),
+            color: convert::text_color(style),
             background: convert::resolve_color(&style.clone_background_color(), style),
             functions: functions_of(style, width, height),
         })

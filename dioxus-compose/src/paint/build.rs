@@ -60,6 +60,8 @@ struct Placed {
     transform_3d: Option<Transform3D>,
     /// The animations a renderer plays on this box.
     animations: Vec<Animation>,
+    /// The text colour a running animation starts from, in place of the cascade's.
+    color: Option<Rgba>,
     /// The background colour a running animation starts from, in place of the cascade's.
     background: Option<Rgba>,
 }
@@ -277,6 +279,10 @@ impl Painter<'_, '_> {
             Some(AnimatedValue::Opacity(value)) => Some(value),
             _ => None,
         };
+        let animated_color = match rest(AnimatedProperty::Color) {
+            Some(AnimatedValue::Colour(colour)) => Some(colour),
+            _ => None,
+        };
         let animated_background = match rest(AnimatedProperty::BackgroundColor) {
             Some(AnimatedValue::Colour(colour)) => Some(colour),
             _ => None,
@@ -413,6 +419,7 @@ impl Painter<'_, '_> {
                 transform,
                 transform_3d,
                 animations,
+                color: animated_color,
                 background: animated_background,
             },
         );
@@ -560,6 +567,13 @@ impl Painter<'_, '_> {
             _ => element.name.local.to_string(),
         };
 
+        let style = node.primary_styles();
+        let color = placed.color.unwrap_or_else(|| {
+            style
+                .as_ref()
+                .map_or(Rgba::new(0, 0, 0, 255), |style| convert::text_color(style))
+        });
+
         let mut entry = NodeEntry {
             node: display_key(self.doc, node),
             tag,
@@ -578,6 +592,7 @@ impl Painter<'_, '_> {
             clip: placed.clip,
             clips_children: false,
             opacity: placed.opacity,
+            color,
             transform: placed.transform.clone(),
             transform_3d: placed.transform_3d.clone(),
             animations: placed.animations.clone(),
@@ -599,7 +614,6 @@ impl Painter<'_, '_> {
             image: None,
         };
 
-        let style = node.primary_styles();
         if let Some(style) = style.as_ref() {
             entry.visible = matches!(
                 style.clone_visibility(),
