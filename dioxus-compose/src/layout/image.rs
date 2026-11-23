@@ -221,7 +221,9 @@ pub(crate) fn inline_svg_asset(markup: &str, color: Rgba) -> AssetId {
         }
         let text = text.into_owned();
         let id = compose_rust::asset::register_owned(AssetKind::Svg, text.clone().into_bytes());
-        tinted.inline.insert(text, InlinePicture { id, drawn_in: plan });
+        tinted
+            .inline
+            .insert(text, InlinePicture { id, drawn_in: plan });
         AssetId(id)
     })
 }
