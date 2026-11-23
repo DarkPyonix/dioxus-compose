@@ -19,18 +19,14 @@
       "spec_ratio_ceiling": 1.2
     },
     "markdown_delta_list_item_300": {
-      "note": "A delta on item 300 of a list (299 settled items) against item 2 of a list of one settled item.",
-      "p99_ns": 32334,
-      "short_p99_ns": 32250,
-      "ratio_to_short": 1.003,
+      "note": "A delta on item 300 of a list (299 settled items) against item 2 of a list of one settled item. Ratio from the run after each item and row got its own watched slot (#306); that run printed ratios, not the p99 values.",
+      "ratio_to_short": 1.061,
       "spec_p99_ceiling_ns": 1000000,
       "spec_ratio_ceiling": 1.2
     },
     "markdown_delta_table_row_500": {
-      "note": "A delta on row 500 of a table (499 settled rows) against row 2 of a table of one settled row.",
-      "p99_ns": 28625,
-      "short_p99_ns": 37334,
-      "ratio_to_short": 0.767,
+      "note": "A delta on row 500 of a table (499 settled rows) against row 2 of a table of one settled row. Ratio from the run after each item and row got its own watched slot (#306); that run printed ratios, not the p99 values.",
+      "ratio_to_short": 1.019,
       "spec_p99_ceiling_ns": 1000000,
       "spec_ratio_ceiling": 1.2
     },
@@ -38,6 +34,20 @@
       "after_50kb": 385,
       "after_100kb": 348,
       "spec": "after_100kb must not exceed after_50kb"
+    },
+    "markdown_delta_allocations_list": {
+      "short": 664,
+      "long": 664,
+      "spec": "long (item 300) must not exceed short (item 2)",
+      "before_306_fix": {
+        "short": 681,
+        "long": 699
+      }
+    },
+    "markdown_delta_allocations_table": {
+      "short": 567,
+      "long": 567,
+      "spec": "long (row 500) must not exceed short (row 2)"
     },
     "markdown_close_5000_line_code_block_frame": {
       "frame_ns": 8125,
