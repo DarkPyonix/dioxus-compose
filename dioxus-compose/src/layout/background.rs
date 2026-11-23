@@ -660,22 +660,45 @@ fn mix(a: Rgba, b: Rgba, weight: f32) -> Rgba {
     }
 }
 
-/// The image of an `<img>` element: its source and where it is drawn in the content box.
-/// `None` without a `src`.
+/// The markup of the inline `<svg>` element `node` and everything inside it, as an SVG
+/// reader takes it: with the SVG namespace on the root, which HTML leaves implicit and SVG
+/// readers require. blitz-dom writes every `currentColor` as the colour of the element that
+/// uses it while it serializes.
+fn inline_svg_markup(node: &Node) -> String {
+    let mut markup = node.outer_html();
+    let open_tag = markup.find('>').unwrap_or(markup.len());
+    if markup.starts_with("<svg") && !markup[..open_tag].contains("xmlns=") {
+        markup.insert_str("<svg".len(), " xmlns=\"http://www.w3.org/2000/svg\"");
+    }
+    markup
+}
+
+/// The image of an `<img>` element or an inline `<svg>`: its source and where it is drawn
+/// in the content box. `None` for an `<img>` without a `src`, and for any other element.
 pub(crate) fn replaced_image(
     node: &Node,
     style: &ComputedValues,
     content: Rect,
     lookup: &ImageLookup<'_>,
 ) -> Option<ReplacedImage> {
-    let source = lookup.source(img_src(node)?)?;
     let element = node.element_data()?;
+    let inline_svg = (&*element.name.local == "svg").then(|| inline_svg_markup(node));
+    let source = match inline_svg {
+        Some(_) => String::new(),
+        None => lookup.source(img_src(node)?)?,
+    };
     let alt = element.attr(local("alt")).map(str::to_string);
-    // The size layout used: what the resolver answered, written onto the element before
-    // layout. Reading it back keeps the drawn image and the laid-out box in agreement.
+    // The size layout used: for an `<img>`, what the resolver answered, written onto the
+    // element before layout; for an inline `<svg>`, the size blitz-dom read from its
+    // markup. Reading it back keeps the drawn image and the laid-out box in agreement.
     let natural = element
         .raster_image_data()
         .map(|image| (image.width as f32, image.height as f32))
+        .or_else(|| {
+            element
+                .svg_data()
+                .map(|tree| (tree.size().width(), tree.size().height()))
+        })
         .filter(|(width, height)| *width > 0.0 && *height > 0.0);
     let fit = match style.clone_object_fit() {
         StyloObjectFit::Fill => ObjectFit::Fill,
@@ -724,6 +747,7 @@ pub(crate) fn replaced_image(
     };
     Some(ReplacedImage {
         source,
+        inline_svg,
         alt,
         content_rect: content,
         image_rect,
