@@ -315,9 +315,12 @@ pub struct HtmlDom {
     /// not resolve yet ([`TextMeasurer::unsettled`]). While it is not zero, the next frame
     /// lays the page out again from scratch, up to [`UNSETTLED_RELAYOUTS`] times.
     unsettled: u32,
-    /// The text node of each author stylesheet and its CSS before `env()` is replaced, so
-    /// the sheets can be written again when a window variable changes.
+    /// The text node of each author stylesheet and its CSS before `prefers-reduced-motion`
+    /// and `env()` are replaced, so the sheets can be written again when a window variable
+    /// or the reduced-motion setting changes.
     author_sheets: Vec<(NodeId, String)>,
+    /// Whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    reduced_motion: bool,
     /// The values `env(safe-area-inset-*)` and `env(titlebar-area-*)` read.
     safe_area_insets: Option<Sides<f32>>,
     titlebar_area: Option<Rect>,
@@ -369,15 +372,15 @@ impl HtmlDom {
             mutator.append_children(html, &[head, body]);
             for css in &config.stylesheets {
                 let style = mutator.create_element(element_name("style", None), Vec::new());
-                let css = rewrite_reduced_motion(css, config.reduced_motion);
+                let rewritten = rewrite_reduced_motion(css, config.reduced_motion);
                 let text = mutator.create_text_node(&rewrite_env(
-                    &css,
+                    &rewritten,
                     config.safe_area_insets,
                     config.titlebar_area,
                 ));
                 mutator.append_children(style, &[text]);
                 mutator.append_children(head, &[style]);
-                author_sheets.push((text, css));
+                author_sheets.push((text, css.clone()));
             }
             let document = doc_root_id();
             mutator.append_children(document, &[html]);
@@ -414,6 +417,7 @@ impl HtmlDom {
             drag: drag::DragState::default(),
             unsettled: 0,
             author_sheets,
+            reduced_motion: config.reduced_motion,
             safe_area_insets: config.safe_area_insets,
             titlebar_area: config.titlebar_area,
             last_removed: Vec::new(),
@@ -529,13 +533,13 @@ impl HtmlDom {
     /// that first sees it.
     ///
     /// How a motion reaches the renderer depends on what it changes. `opacity`,
-    /// `transform` and `background-color` change nothing about layout, so a transition of
-    /// them is a [`TransitionStart`](crate::html::TransitionStart) in the returned list
-    /// and an `@keyframes` animation of them is on its entry's
+    /// `transform`, `color` and `background-color` change nothing about layout, so a
+    /// transition of them is a [`TransitionStart`](crate::html::TransitionStart) in the
+    /// returned list and an `@keyframes` animation of them is on its entry's
     /// [`animations`](crate::html::NodeEntry::animations), both described for a renderer
     /// to play by itself, with the entry holding the value the motion settles at or
-    /// starts from. Anything else that moves (`width`, `margin`, `color`, `all`) is ticked
-    /// by the Host: see [`HtmlDom::tick`].
+    /// starts from. Anything else that moves (`width`, `margin`, `all`) is ticked by the
+    /// Host: see [`HtmlDom::tick`].
     pub fn layout(&mut self, width: f32, height: f32, scale: f32) -> &DisplayList {
         self.layout_at(width, height, scale, false)
     }
@@ -1675,8 +1679,27 @@ impl HtmlDom {
         true
     }
 
-    /// Writes each author stylesheet again with the current window variables in its
-    /// `env()`s. The style engine reads a changed `<style>` as a new sheet.
+    /// Whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    pub fn reduced_motion(&self) -> bool {
+        self.reduced_motion
+    }
+
+    /// Sets whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    /// The author stylesheets are written again with the new setting and every style is
+    /// resolved again at the next layout. An unchanged setting touches nothing. Returns
+    /// whether the setting changed.
+    pub fn set_reduced_motion(&mut self, reduced: bool) -> bool {
+        if self.reduced_motion == reduced {
+            return false;
+        }
+        self.reduced_motion = reduced;
+        self.rewrite_author_sheets();
+        true
+    }
+
+    /// Writes each author stylesheet again with the current `prefers-reduced-motion`
+    /// setting and window variables in its `env()`s. The style engine reads a changed
+    /// `<style>` as a new sheet.
     fn rewrite_author_sheets(&mut self) {
         if self.author_sheets.is_empty() {
             return;
@@ -1684,11 +1707,13 @@ impl HtmlDom {
         {
             let mut mutator = self.doc.mutate();
             for (text, css) in &self.author_sheets {
-                let css = rewrite_env(css, self.safe_area_insets, self.titlebar_area);
+                let css = rewrite_reduced_motion(css, self.reduced_motion);
+                let css = rewrite_env(&css, self.safe_area_insets, self.titlebar_area);
                 // A text node that is unchanged is left alone, and its sheet with it.
                 mutator.set_node_text(*text, &css);
             }
         }
+        self.state.stylesheet_dirty = true;
         self.state.mark_style_dirty(self.root);
         self.layout_state.invalidate_all();
     }
