@@ -182,6 +182,10 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::ActiveTrackColor,
     PropertyKind::ContainerColor,
     PropertyKind::CheckColor,
+    PropertyKind::OutlineColor,
+    PropertyKind::Indeterminate,
+    PropertyKind::ThumbElevation,
+    PropertyKind::TrackBorder,
     PropertyKind::ControlSize,
     PropertyKind::ReportSize,
     PropertyKind::Scrim,
@@ -1553,6 +1557,41 @@ impl ComposeRenderer {
                             node_id,
                             property,
                             value: PropertyValue::Bytes(vec),
+                        });
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        // A width and a paint, as an `f32` and the paint's `u64` bits in 12 bytes: the
+        // `Border` modifier's fields in its order.
+        if property == PropertyKind::TrackBorder {
+            match value {
+                AttributeValue::None => {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property,
+                        value: PropertyValue::None,
+                    });
+                }
+                AttributeValue::Any(any) => {
+                    let a = any.as_any();
+                    let bytes = if let Some(&(width, paint)) =
+                        a.downcast_ref::<(f32, compose_rust::Paint)>()
+                    {
+                        let mut bytes = [0_u8; 12];
+                        bytes[0..4].copy_from_slice(&width.to_bits().to_le_bytes());
+                        bytes[4..12].copy_from_slice(&paint.to_bits().to_le_bytes());
+                        Some(bytes)
+                    } else {
+                        a.downcast_ref::<[u8; 12]>().copied()
+                    };
+                    if let Some(bytes) = bytes {
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(&bytes),
                         });
                     }
                 }

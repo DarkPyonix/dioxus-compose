@@ -466,8 +466,10 @@ fn surface() -> Element {
                         Checkbox {
                             checked: true,
                             enabled: true,
+                            indeterminate: true,
                             container_color: PRIMARY,
                             check_color: SURFACE,
+                            outline_color: OUTLINE,
                             size: 18.0,
                             on_change: move |value: bool| fired(format!("Checkbox.on_change({value})")),
                         }
@@ -484,6 +486,8 @@ fn surface() -> Element {
                             enabled: true,
                             track_color: SECONDARY,
                             thumb_color: SURFACE,
+                            thumb_elevation: 2.0,
+                            track_border: (1.5, OUTLINE),
                             size: (52.0, 32.0),
                             on_change: move |value: bool| fired(format!("Switch.on_change({value})")),
                         }
@@ -796,6 +800,15 @@ fn pair_bytes(a: f32, b: f32) -> Expect {
     is(Value::Bytes(out))
 }
 
+/// A width and a paint as the `Border` modifier orders them: an `f32`, then the paint's
+/// `u64` bits, little-endian.
+fn border_bytes(width: f32, paint: Paint) -> Expect {
+    let mut out = Vec::with_capacity(12);
+    out.extend_from_slice(&width.to_le_bytes());
+    out.extend_from_slice(&paint.to_bits().to_le_bytes());
+    is(Value::Bytes(out))
+}
+
 fn drag_bytes(pointer_id: u32, anchor_x: f32, anchor_y: f32) -> Expect {
     let mut out = Vec::with_capacity(12);
     out.extend_from_slice(&pointer_id.to_le_bytes());
@@ -1063,8 +1076,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::Checked, flag(true)),
                 (P::Enabled, flag(true)),
                 (P::OnValueChange, Handler),
+                (P::Indeterminate, flag(true)),
                 (P::ContainerColor, int(paint_bits(PRIMARY))),
                 (P::CheckColor, int(paint_bits(SURFACE))),
+                (P::OutlineColor, int(paint_bits(OUTLINE))),
                 (P::ControlSize, pair_bytes(18.0, 18.0)),
             ],
         ),
@@ -1087,6 +1102,8 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnValueChange, Handler),
                 (P::TrackColor, int(paint_bits(SECONDARY))),
                 (P::ThumbColor, int(paint_bits(SURFACE))),
+                (P::ThumbElevation, float(2.0)),
+                (P::TrackBorder, border_bytes(1.5, OUTLINE)),
                 (P::ControlSize, pair_bytes(52.0, 32.0)),
             ],
         ),
@@ -1971,6 +1988,10 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
         P::ActiveTrackColor,
         P::ContainerColor,
         P::CheckColor,
+        P::OutlineColor,
+        P::Indeterminate,
+        P::ThumbElevation,
+        P::TrackBorder,
         P::ControlSize,
         P::Scrim,
         P::Bare,
@@ -2084,13 +2105,12 @@ fn fr15_a_popover_scrim_colour_travels_as_a_paint() {
 fn described() -> Element {
     rsx! {
         Column {
-            semantics: Semantics::new(SemanticsRole::Button).with_state(SemanticsState {
-                checked: Some(true),
-                selected: Some(false),
-                hidden: true,
-                click_action: true,
-                ..SemanticsState::default()
-            }),
+            semantics: Semantics::new(SemanticsRole::Button).with_state(
+                SemanticsState::checked(true)
+                    .with_selected(false)
+                    .with_hidden(true)
+                    .with_click_action(true)
+            ),
             corner_radius: 12.0,
             corner_curve: 1.5,
             AbsoluteBox {
