@@ -263,6 +263,26 @@ fn benchmarks(criterion: &mut Criterion) {
          50KB; allocations grow with the settled part"
     );
 
+    // Inside a list or a table the same holds: the finished items or rows are not looked at
+    // again, so a delta at item 300 or row 500 allocates no more than one at item or row 2.
+    // Counted, not timed, so load on the machine cannot hide or fake it.
+    for (what, short, long) in [
+        ("list", list_screen(1), list_screen(299)),
+        ("table", table_screen(1), table_screen(499)),
+    ] {
+        let (mut short, mut long) = (short, long);
+        let short_allocations = allocations_per_delta(&mut short, 200);
+        let long_allocations = allocations_per_delta(&mut long, 200);
+        eprintln!("markdown_delta_allocations_{what}_short={short_allocations}");
+        eprintln!("markdown_delta_allocations_{what}_long={long_allocations}");
+        assert!(
+            long_allocations <= short_allocations,
+            "a delta at the end of a long {what} allocated {long_allocations} times and one at \
+             the end of a {what} of one {short_allocations}; its finished part is being looked \
+             at again"
+        );
+    }
+
     // The timed budgets: pass if any attempt meets all of them (see `ATTEMPTS`).
     let mut failures = Vec::new();
     for attempt in 1..=ATTEMPTS {
