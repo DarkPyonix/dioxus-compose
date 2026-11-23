@@ -112,6 +112,13 @@ pub struct ListItem {
     pub blocks: Vec<Block>,
 }
 
+impl ListItem {
+    /// How many code blocks this list item holds.
+    pub fn code_blocks(&self) -> usize {
+        self.blocks.iter().map(Block::code_blocks).sum()
+    }
+}
+
 /// One block of a document.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Block {
@@ -143,11 +150,7 @@ impl Block {
         match self {
             Block::Code(_) => 1,
             Block::Quote(blocks) => blocks.iter().map(Block::code_blocks).sum(),
-            Block::List { items, .. } => items
-                .iter()
-                .flat_map(|item| item.blocks.iter())
-                .map(Block::code_blocks)
-                .sum(),
+            Block::List { items, .. } => items.iter().map(ListItem::code_blocks).sum(),
             _ => 0,
         }
     }

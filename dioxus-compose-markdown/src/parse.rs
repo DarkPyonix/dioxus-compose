@@ -28,6 +28,9 @@ fn parser_options() -> Options {
 pub(crate) struct Unit {
     pub range: Range<usize>,
     pub blocks: Vec<Block>,
+    /// Byte ranges of direct items for a top-level list, or direct body rows for a
+    /// top-level table.
+    pub sub_ranges: Vec<Range<usize>>,
 }
 
 /// A link reference definition, `[label]: destination`.
@@ -392,6 +395,8 @@ struct Converter {
     units: Vec<Unit>,
     open_tags: usize,
     unit_start: usize,
+    sub_ranges: Vec<Range<usize>>,
+    sub_start: usize,
 }
 
 impl Converter {
@@ -408,6 +413,8 @@ impl Converter {
             units: Vec::new(),
             open_tags: 0,
             unit_start: 0,
+            sub_ranges: Vec::new(),
+            sub_start: 0,
         }
     }
 
@@ -416,12 +423,43 @@ impl Converter {
             Event::Start(tag) => {
                 if self.open_tags == 0 {
                     self.unit_start = range.start;
+                    self.sub_ranges.clear();
+                }
+                let is_top_sub = match &tag {
+                    Tag::Item => {
+                        self.frames.len() == 1
+                            && matches!(self.frames.last(), Some(Frame::List { .. }))
+                            && self.opened.last() == Some(&true)
+                    }
+                    Tag::TableRow => {
+                        self.frames.len() == 1
+                            && matches!(self.frames.last(), Some(Frame::Table(_)))
+                    }
+                    _ => false,
+                };
+                if is_top_sub {
+                    self.sub_start = range.start;
                 }
                 self.open_tags += 1;
                 self.start(tag);
             }
             Event::End(tag) => {
                 self.end(tag);
+                match tag {
+                    TagEnd::Item
+                        if self.frames.len() == 1
+                            && matches!(self.frames.last(), Some(Frame::List { .. })) =>
+                    {
+                        self.sub_ranges.push(self.sub_start..range.end);
+                    }
+                    TagEnd::TableRow
+                        if self.frames.len() == 1
+                            && matches!(self.frames.last(), Some(Frame::Table(_))) =>
+                    {
+                        self.sub_ranges.push(self.sub_start..range.end);
+                    }
+                    _ => {}
+                }
                 self.open_tags = self.open_tags.saturating_sub(1);
                 if self.open_tags == 0 {
                     self.close_unit(range.end);
@@ -486,9 +524,11 @@ impl Converter {
     fn close_unit(&mut self, end: usize) {
         self.flush_implicit();
         let blocks = std::mem::take(&mut self.out);
+        let sub_ranges = std::mem::take(&mut self.sub_ranges);
         self.units.push(Unit {
             range: self.unit_start..end,
             blocks,
+            sub_ranges,
         });
     }
 
@@ -522,9 +562,11 @@ impl Converter {
         }
         if !self.out.is_empty() {
             let blocks = std::mem::take(&mut self.out);
+            let sub_ranges = std::mem::take(&mut self.sub_ranges);
             self.units.push(Unit {
                 range: self.unit_start..end,
                 blocks,
+                sub_ranges,
             });
         }
         self.units
