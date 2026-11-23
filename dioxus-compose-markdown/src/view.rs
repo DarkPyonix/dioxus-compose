@@ -329,18 +329,40 @@ fn ListChunk(
     index: usize,
 ) -> Element {
     use_watch(&doc, WatchKey::SubChunk(block, index), generation);
-    let items = doc.list_items(block, index * CHUNK, CHUNK);
+    let first = index * CHUNK;
+    let last = doc.list_len(block).min(first + CHUNK);
     rsx! {
-        for (position, item, open) in items {
-            ListItemView {
+        for position in first..last {
+            ListItemSlot {
                 key: "{position}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
                 start,
                 position,
-                item,
-                open,
-                view: view.clone(),
             }
         }
+    }
+}
+
+/// One list item, drawn again when that item changes and at no other time: a delta on the
+/// item still arriving leaves the finished items in its chunk alone.
+#[component]
+fn ListItemSlot(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    start: Option<u64>,
+    position: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubItem(block, position), generation);
+    let Some((_, item, open)) = doc.list_items(block, position, 1).into_iter().next() else {
+        return rsx! {};
+    };
+    rsx! {
+        ListItemView { start, position, item, open, view }
     }
 }
 
@@ -464,16 +486,40 @@ fn TableChunk(
     index: usize,
 ) -> Element {
     use_watch(&doc, WatchKey::SubChunk(block, index), generation);
-    let rows = doc.table_rows(block, index * CHUNK, CHUNK);
+    let first = index * CHUNK;
+    let last = doc.table_len(block).min(first + CHUNK);
     rsx! {
-        for (position, row) in rows {
-            TableRowView {
+        for position in first..last {
+            TableRowSlot {
                 key: "{position}",
-                alignments: alignments.clone(),
-                row,
+                doc: doc.clone(),
                 view: view.clone(),
+                generation,
+                block,
+                alignments: alignments.clone(),
+                position,
             }
         }
+    }
+}
+
+/// One table row, drawn again when that row changes and at no other time: a delta on the
+/// row still arriving leaves the finished rows in its chunk alone.
+#[component]
+fn TableRowSlot(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    alignments: AlignmentsRef,
+    position: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubItem(block, position), generation);
+    let Some((_, row)) = doc.table_rows(block, position, 1).into_iter().next() else {
+        return rsx! {};
+    };
+    rsx! {
+        TableRowView { alignments, row, view }
     }
 }
 

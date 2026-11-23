@@ -30,6 +30,8 @@ pub(crate) enum WatchKey {
     SubRoot(usize),
     SubGroup(usize, usize),
     SubChunk(usize, usize),
+    /// One list item or table row: the block, then the item's position in it.
+    SubItem(usize, usize),
 }
 
 /// A shared list item, compared by pointer identity first so frozen items never re-render
@@ -1476,11 +1478,19 @@ fn notify_sub_range(
     first_changed: Option<usize>,
     call: &impl Fn(WatchKey),
 ) {
+    // An item or row that was there before and is there now is drawn again on its own, so
+    // a delta on the open one wakes nothing else: not the finished items beside it in its
+    // chunk, which would otherwise be compared again on every delta. A chunk is drawn
+    // again only when the items in it come or go.
     let end = before_len.max(after_len);
-    if let Some(first) = first_changed
-        && end > first
-    {
-        for chunk in first / CHUNK..end.div_ceil(CHUNK) {
+    let common = before_len.min(after_len);
+    if let Some(first) = first_changed {
+        for index in first..common {
+            call(WatchKey::SubItem(block_index, index));
+        }
+    }
+    if before_len != after_len {
+        for chunk in common / CHUNK..end.div_ceil(CHUNK) {
             call(WatchKey::SubChunk(block_index, chunk));
         }
     }
