@@ -7,8 +7,10 @@
 mod support;
 
 use dioxus_compose::prelude::*;
+use dioxus_compose::schema::Modifier;
 use dioxus_compose_markdown::{CopyRequest, Markdown, MarkdownOptions};
 use std::cell::RefCell;
+use support::apps;
 use support::{ALLOWED_WIDGETS, Screen, fixture};
 
 thread_local! {
@@ -100,4 +102,63 @@ fn fr37_the_document_is_one_selection_area() {
     {
         assert!(inside.contains(&text), "a Text sits outside the selection");
     }
+}
+
+/// Every heading level (1 through 6) carries `SemanticsRole::Heading`, and ordinary body
+/// paragraphs do not.
+#[test]
+fn fr37_headings_carry_semantics_role_heading() {
+    let has_heading_role = |screen: &Screen, text: &str| {
+        let node_id = screen
+            .tree
+            .text_node(text)
+            .unwrap_or_else(|| panic!("no Text says {text:?}:\n{}", screen.tree.dump()));
+        screen.tree.nodes[&node_id]
+            .modifiers
+            .values()
+            .any(|modifier| {
+                matches!(
+                    modifier,
+                    Modifier::Semantics {
+                        role: SemanticsRole::Heading,
+                        ..
+                    }
+                )
+            })
+    };
+
+    let screen = reference_screen();
+    for title in [
+        "Heading one",
+        "Heading two",
+        "Heading three",
+        "Heading four",
+        "Heading five",
+        "Heading six",
+    ] {
+        assert!(
+            has_heading_role(&screen, title),
+            "heading {title:?} does not carry SemanticsRole::Heading"
+        );
+    }
+    assert!(
+        !has_heading_role(
+            &screen,
+            "A paragraph with emphasis, strong, struck and inline code, then a link."
+        ),
+        "a plain paragraph should not carry SemanticsRole::Heading"
+    );
+
+    // Also verify when no `on_link` handler is supplied.
+    apps::reset("# Solo heading\n\nBody text.\n", quiet());
+    apps::without_link_handler();
+    let plain_screen = Screen::new(apps::one_shot);
+    assert!(
+        has_heading_role(&plain_screen, "Solo heading"),
+        "heading without on_link does not carry SemanticsRole::Heading"
+    );
+    assert!(
+        !has_heading_role(&plain_screen, "Body text."),
+        "paragraph without on_link should not carry SemanticsRole::Heading"
+    );
 }
