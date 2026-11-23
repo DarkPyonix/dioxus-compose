@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### rsx: the Switch and Checkbox properties of compose-rust 519ffede
+
+dioxus-compose now pins compose-rust develop at `519ffede`, and the properties it adds can
+be written in `rsx!`.
+
+- `Switch`: `thumb_elevation` in dp, a soft shadow under the thumb, and `track_border`, a
+  `(width, Paint)` line around the track in both states.
+- `Checkbox`: `indeterminate`, the mixed state, which wins over `checked`, and
+  `outline_color`, the box's border in every state.
+
 ### HTML: italic labels measured as drawn, and SVG images in currentColor
 ### rsx: compose-rust 0.0.11's widgets, properties and modifiers
 
