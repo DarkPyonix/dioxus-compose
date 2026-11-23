@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### HTML: inline `<svg>` is drawn
+
+An `<svg>` written in the page is drawn in its box. Its markup is registered with the
+renderer as an SVG asset, with the SVG namespace added and every `currentColor` written as
+the colour of the element that uses it, so an inline icon follows the colour of its button.
+No `ImageResolver` is involved. At most 256 inline pictures stay registered; past that the
+one drawn longest ago is released.
+
 ### rsx: the Switch and Checkbox properties of compose-rust 519ffede
 
 dioxus-compose now pins compose-rust develop at `519ffede`, and the properties it adds can

@@ -431,11 +431,17 @@ pub enum ObjectFit {
     ScaleDown,
 }
 
-/// The image an `<img>` element shows.
+/// The image an `<img>` element, or an inline `<svg>`, shows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplacedImage {
     /// The `src`: as written, resolved against the document's base URL when there is one.
+    /// Empty for an inline `<svg>`, which carries its picture in
+    /// [`inline_svg`](Self::inline_svg).
     pub source: String,
+    /// The markup of an inline `<svg>` element and everything inside it, with the SVG
+    /// namespace on the root and every `currentColor` written as the colour of the element
+    /// that uses it. It is drawn in place of `source`. `None` for an `<img>`.
+    pub inline_svg: Option<String>,
     pub alt: Option<String>,
     /// The content box, which the image is clipped to.
     pub content_rect: Rect,
