@@ -4,7 +4,9 @@
 //! The numbers go to standard error in the same `name=value` form as the dioxus-compose
 //! benches, and the assertions at the end are the budgets: a delta must cost the same
 //! with a hundred kilobytes above it as with nothing above it, give or take a fifth, and
-//! must not allocate more because of what is above it.
+//! must not allocate more because of what is above it. The same holds inside a list or a
+//! table: a delta on item 300 of a list or row 500 of a table costs what it costs on a list
+//! or table of one.
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use dioxus_compose::Host;
@@ -113,6 +115,39 @@ fn screen(prefix: usize) -> Screen {
     Screen { host, stream }
 }
 
+/// A screen holding `prefix` (a list or a table whose items or rows have settled) and then
+/// `open`, the item or row still arriving, with ten deltas already appended to it.
+fn container_screen(prefix: &str, open: &str) -> Screen {
+    let mut host = Host::new(streamed);
+    let _ = host.rebuild().unwrap();
+    let mut stream = stream();
+    stream.write().push_delta(prefix);
+    let _ = host.render_frame(0).unwrap();
+    stream.write().push_delta(open);
+    let _ = host.render_frame(0).unwrap();
+    let mut screen = Screen { host, stream };
+    for _ in 0..10 {
+        delta(&mut screen);
+    }
+    screen
+}
+
+/// A list of `items` settled items, then a one-kilobyte item still arriving.
+fn list_screen(items: usize) -> Screen {
+    let prefix: String = (0..items).map(|i| format!("- item {i}\n")).collect();
+    container_screen(&prefix, &format!("- {}", "word ".repeat(200)))
+}
+
+/// A table of `rows` settled rows under its header, then a row whose last cell is still
+/// arriving.
+fn table_screen(rows: usize) -> Screen {
+    let mut prefix = String::from("| Key | Value |\n|---|---|\n");
+    for i in 0..rows {
+        prefix.push_str(&format!("| row {i} | val {i} |\n"));
+    }
+    container_screen(&prefix, &format!("| row x | {}", "word ".repeat(200)))
+}
+
 /// One delta as the Host sees it: the parse, then the frame that draws it.
 fn delta(screen: &mut Screen) {
     screen.stream.write().push_delta("a ");
@@ -151,6 +186,21 @@ fn prefix_p99s(iterations: usize) -> (u128, u128) {
         long_samples.push(started.elapsed().as_nanos());
     }
     (p99(bare_samples), p99(long_samples))
+}
+
+/// The p99 of a delta on `short` and on `long`, measured in turn like [`prefix_p99s`].
+fn pair_p99s(mut short: Screen, mut long: Screen, iterations: usize) -> (u128, u128) {
+    let mut short_samples = Vec::with_capacity(iterations);
+    let mut long_samples = Vec::with_capacity(iterations);
+    for _ in 0..iterations {
+        let started = Instant::now();
+        delta(&mut short);
+        short_samples.push(started.elapsed().as_nanos());
+        let started = Instant::now();
+        delta(&mut long);
+        long_samples.push(started.elapsed().as_nanos());
+    }
+    (p99(short_samples), p99(long_samples))
 }
 
 /// A five-thousand-line code block arrives open, then its closing fence: the frame that
@@ -219,11 +269,24 @@ fn benchmarks(criterion: &mut Criterion) {
         let (bare_p99, long_p99) = prefix_p99s(samples);
         let ratio = long_p99 as f64 / bare_p99.max(1) as f64;
         let closing_frame = closing_frame_ns();
+        // Finished list items and table rows freeze too, so a delta on item 300 of a list,
+        // or on row 500 of a table, costs what it costs on a list or table of one.
+        let (short_list_p99, long_list_p99) = pair_p99s(list_screen(1), list_screen(299), samples);
+        let list_ratio = long_list_p99 as f64 / short_list_p99.max(1) as f64;
+        let (short_table_p99, long_table_p99) =
+            pair_p99s(table_screen(1), table_screen(499), samples);
+        let table_ratio = long_table_p99 as f64 / short_table_p99.max(1) as f64;
 
         eprintln!("p99 markdown_delta_without_prefix_ns={bare_p99}");
         eprintln!("p99 markdown_delta_after_100kb_ns={long_p99}");
         eprintln!("markdown_delta_prefix_ratio={ratio:.3}");
         eprintln!("markdown_close_5000_line_code_block_frame_ns={closing_frame}");
+        eprintln!("p99 markdown_delta_list_item_2_ns={short_list_p99}");
+        eprintln!("p99 markdown_delta_list_item_300_ns={long_list_p99}");
+        eprintln!("markdown_delta_list_ratio={list_ratio:.3}");
+        eprintln!("p99 markdown_delta_table_row_2_ns={short_table_p99}");
+        eprintln!("p99 markdown_delta_table_row_500_ns={long_table_p99}");
+        eprintln!("markdown_delta_table_ratio={table_ratio:.3}");
 
         let mut problems = Vec::new();
         if long_p99 > STREAMING_FRAME_BUDGET_NS {
@@ -238,6 +301,36 @@ fn benchmarks(criterion: &mut Criterion) {
                  it ({long_p99}ns against {bare_p99}ns at p99); the settled part is being \
                  looked at again"
             ));
+        }
+        for (what, long, ratio, long_p99, short_p99) in [
+            (
+                "item 300 of a list",
+                "list",
+                list_ratio,
+                long_list_p99,
+                short_list_p99,
+            ),
+            (
+                "row 500 of a table",
+                "table",
+                table_ratio,
+                long_table_p99,
+                short_table_p99,
+            ),
+        ] {
+            if long_p99 > STREAMING_FRAME_BUDGET_NS {
+                problems.push(format!(
+                    "a delta on {what} took {long_p99}ns at p99, over the \
+                     {STREAMING_FRAME_BUDGET_NS}ns streaming frame budget"
+                ));
+            }
+            if ratio > PREFIX_RATIO_CEILING {
+                problems.push(format!(
+                    "a delta on {what} took {ratio:.2} times as long as one on a {long} of one \
+                     ({long_p99}ns against {short_p99}ns at p99); its finished part is being \
+                     looked at again"
+                ));
+            }
         }
         if closing_frame > STREAMING_FRAME_BUDGET_NS {
             problems.push(format!(
