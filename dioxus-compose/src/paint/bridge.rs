@@ -192,8 +192,13 @@ pub enum BridgeEvent {
     /// The user pressed a key in a box whose element listens for keys, or in something
     /// inside it that has the focus.
     KeyDown,
+    /// The user released a key in a box whose element listens for keys, or in something
+    /// inside it that has the focus.
+    KeyUp,
     /// The user pressed a key in an `<input>` or `<textarea>`.
     FieldKeyDown,
+    /// The user released a key in an `<input>` or `<textarea>`.
+    FieldKeyUp,
     /// An IME composition changed in an `<input>` or `<textarea>`.
     CompositionChange,
     /// The user ticked or cleared a checkbox, or picked a radio button.
@@ -292,9 +297,11 @@ struct Placed {
     handlers: Vec<u64>,
     /// The click handler, and the DOM node it is for.
     click: Option<(u64, NodeId)>,
-    /// The key handler of a box whose element listens for keys, and that element. A
-    /// field's key handler is set once, with its other handlers, and is not this.
+    /// The key-down handler of a box whose element listens for keys, and that element. A
+    /// field's key handlers are set once, with its other handlers, and are not these.
     keys: Option<(u64, NodeId)>,
+    /// The key-up handler of a box whose element listens for keys, and that element.
+    key_up: Option<(u64, NodeId)>,
     /// The pointer subscription as sent: the handler, the DOM node, the kinds taken, the
     /// cursor and the user-select values.
     pointer: Option<PointerSent>,
@@ -1153,6 +1160,7 @@ impl PlanBridge {
                 handlers: Vec::new(),
                 click: None,
                 keys: None,
+                key_up: None,
                 pointer: None,
                 shown: String::new(),
             },
@@ -1612,10 +1620,9 @@ impl PlanBridge {
             if !field.multiline {
                 self.add_handler(batch, key, PropertyKind::OnSubmit, BridgeEvent::TextSubmit);
             }
-            // Keys pressed in a field go to the page whether or not anything listens yet:
-            // the renderer asks before Enter submits or starts a line, and the answer
-            // depends on handlers that may be added later.
-            // TODO(DarkPyonix/compose-rust#100): extend OnKeyDown beyond Enter to general key events.
+            // Keys pressed or released in a field go to the page whether or not anything
+            // listens yet: the renderer asks before Enter submits or starts a line, and the
+            // answer depends on handlers that may be added later.
             self.add_handler(
                 batch,
                 key,
@@ -1628,6 +1635,7 @@ impl PlanBridge {
                 PropertyKind::OnKeyDown,
                 BridgeEvent::FieldKeyDown,
             );
+            self.add_handler(batch, key, PropertyKind::OnKeyUp, BridgeEvent::FieldKeyUp);
         } else if let Some(placed) = self.nodes.get_mut(&key) {
             // The renderer owns the text while the user edits it. The Host's value goes out
             // only when the app set a new one, and not when it is what the field already
@@ -1836,28 +1844,52 @@ impl PlanBridge {
                 placed.handlers.retain(|handler| *handler != handler_id);
                 self.handlers.remove(&handler_id);
             }
-            let value = match keys {
+            if let Some((handler_id, _)) = placed.key_up.take() {
+                placed.handlers.retain(|handler| *handler != handler_id);
+                self.handlers.remove(&handler_id);
+            }
+            let (down_value, up_value) = match keys {
                 Some(target) => {
-                    let handler_id = self.next_handler_id;
+                    let down_id = self.next_handler_id;
                     self.next_handler_id += 1;
-                    placed.handlers.push(handler_id);
-                    placed.keys = Some((handler_id, target));
+                    placed.handlers.push(down_id);
+                    placed.keys = Some((down_id, target));
                     self.handlers.insert(
-                        handler_id,
+                        down_id,
                         BridgeHandler {
                             node_id: placed.id,
                             node: target,
                             event: BridgeEvent::KeyDown,
                         },
                     );
-                    PropertyValue::Integer(handler_id as i64)
+                    let up_id = self.next_handler_id;
+                    self.next_handler_id += 1;
+                    placed.handlers.push(up_id);
+                    placed.key_up = Some((up_id, target));
+                    self.handlers.insert(
+                        up_id,
+                        BridgeHandler {
+                            node_id: placed.id,
+                            node: target,
+                            event: BridgeEvent::KeyUp,
+                        },
+                    );
+                    (
+                        PropertyValue::Integer(down_id as i64),
+                        PropertyValue::Integer(up_id as i64),
+                    )
                 }
-                None => PropertyValue::None,
+                None => (PropertyValue::None, PropertyValue::None),
             };
             batch.write(Mutation::SetProp {
                 node_id: placed.id,
                 property: PropertyKind::OnKeyDown,
-                value,
+                value: down_value,
+            });
+            batch.write(Mutation::SetProp {
+                node_id: placed.id,
+                property: PropertyKind::OnKeyUp,
+                value: up_value,
             });
         }
 

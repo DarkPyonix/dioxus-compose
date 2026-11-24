@@ -8,16 +8,16 @@
 //! bridge gave out and reach the DOM node's Dioxus handler: a click through
 //! [`HtmlDom::click_node`], text through [`HtmlDom::input`] and [`HtmlDom::change`], Enter
 //! through [`HtmlDom::submit`], a checkbox through [`HtmlDom::check`] and a select through
-//! [`HtmlDom::select`]. A key goes through [`HtmlDom::key_down`], from the field it was
-//! pressed in or from the box of an element that listens for keys, and a field's focus
-//! through [`HtmlDom::focus`] and [`HtmlDom::blur`].
+//! [`HtmlDom::select`]. Keys go through [`HtmlDom::key_down_input`] and
+//! [`HtmlDom::key_up_input`], from the field they were pressed or released in or from the
+//! box of an element that listens for keys, carrying modifiers, physical key code,
+//! location, repeat and IME composition state. A field's focus goes through
+//! [`HtmlDom::focus`] and [`HtmlDom::blur`].
 //!
-//! compose-rust tells the Host when a field loses the focus, not when it gains it. A
-//! field has the focus by the time anything the user does in it arrives, so `focus` is
-//! delivered just before the first of those: the first text, key or Enter since the field
-//! last lost the focus. A field focused and left without a keystroke gets its `blur` and
-//! no `focus`. The keys compose-rust carries are key presses, and of those only Enter, so
-//! `keyup` is never delivered from here.
+//! compose-rust reports both focus gain and focus loss, so focusing and leaving a field
+//! without typing delivers `focus` followed by `blur`. Programmatic focus changes in the
+//! DOM (from `autofocus`, `MountedData::set_focus` or `Tab` traversal) are forwarded to
+//! the renderer via `RequestFocus`.
 //!
 //! `prefers-color-scheme` follows the theme's colour scheme when the application says
 //! light or dark. When it follows the system, it follows the light or dark appearance the
@@ -47,9 +47,11 @@ use compose_rust::schema::{
 };
 use compose_rust::{AnimationMoment, Batch, Runtime, WindowSize};
 use dioxus_core::{Element, ScopeId};
-use dioxus_html::{Code, Key, Modifiers};
+use dioxus_html::{Code, Key, Location, Modifiers};
 
-use crate::dom::{HtmlConfig, HtmlDom, PointerInput, PointerKind, PointerType, WheelMode};
+use crate::dom::{
+    HtmlConfig, HtmlDom, KeyInput, PointerInput, PointerKind, PointerType, WheelMode,
+};
 use crate::html::scroll::{Report, ScrollSync};
 use crate::html::{ColorScheme, NodeId, PlanKey, Rect};
 use crate::paint::animate;
@@ -325,6 +327,7 @@ impl HtmlRuntime {
         Self::sync_focus(
             &self.dom,
             &self.bridge,
+            &mut self.focused,
             &mut self.renderer_focused,
             &mut self.batch,
         );
@@ -428,7 +431,13 @@ impl HtmlRuntime {
             self.bridge.apply(plan, viewport, &self.dom, batch);
         }
         self.scroll.write(&mut self.dom, &self.bridge, batch);
-        Self::sync_focus(&self.dom, &self.bridge, &mut self.renderer_focused, batch);
+        Self::sync_focus(
+            &self.dom,
+            &self.bridge,
+            &mut self.focused,
+            &mut self.renderer_focused,
+            batch,
+        );
         self.deliver_host_moments();
         // The page's layout gave every widget tree its box, which the tree reads with
         // `use_widget_box`, exactly as it does when the page is the root. Without this a
@@ -623,12 +632,13 @@ impl HtmlRuntime {
     fn sync_focus(
         dom: &HtmlDom,
         bridge: &PlanBridge,
+        focused: &mut Option<NodeId>,
         renderer_focused: &mut Option<u32>,
         batch: &mut Batch,
     ) {
-        let desired = dom
-            .explicit_focused()
-            .and_then(|node| bridge.focus_target_id(node));
+        let dom_focused = dom.explicit_focused();
+        *focused = dom_focused;
+        let desired = dom_focused.and_then(|node| bridge.focus_target_id(node));
         if desired != *renderer_focused {
             *renderer_focused = desired;
             batch.write(compose_rust::protocol::Mutation::RequestFocus {
@@ -718,57 +728,20 @@ impl Runtime for HtmlRuntime {
                     ctrl_key,
                     alt_key,
                     meta_key,
+                    repeat,
+                    code,
                     text,
-                    ..
                 },
             ) => {
-                // TODO(DarkPyonix/compose-rust#100): map the full W3C `Key`, `Code`,
-                // `Location`, `repeat`, and `is_composing` fields once `EventPayload::KeyDown`
-                // and `EventPayload::KeyUp` carry them on the wire.
-                let (key, code) = match key {
-                    WireKey::Enter => (Key::Enter, Code::Enter),
-                    WireKey::Escape => (Key::Escape, Code::Escape),
-                    WireKey::Tab => (Key::Tab, Code::Tab),
-                    WireKey::Backspace => (Key::Backspace, Code::Backspace),
-                    WireKey::Delete => (Key::Delete, Code::Delete),
-                    WireKey::ArrowUp => (Key::ArrowUp, Code::ArrowUp),
-                    WireKey::ArrowDown => (Key::ArrowDown, Code::ArrowDown),
-                    WireKey::ArrowLeft => (Key::ArrowLeft, Code::ArrowLeft),
-                    WireKey::ArrowRight => (Key::ArrowRight, Code::ArrowRight),
-                    WireKey::Home => (Key::Home, Code::Home),
-                    WireKey::End => (Key::End, Code::End),
-                    WireKey::PageUp => (Key::PageUp, Code::PageUp),
-                    WireKey::PageDown => (Key::PageDown, Code::PageDown),
-                    WireKey::F1 => (Key::F1, Code::F1),
-                    WireKey::F2 => (Key::F2, Code::F2),
-                    WireKey::F3 => (Key::F3, Code::F3),
-                    WireKey::F4 => (Key::F4, Code::F4),
-                    WireKey::F5 => (Key::F5, Code::F5),
-                    WireKey::F6 => (Key::F6, Code::F6),
-                    WireKey::F7 => (Key::F7, Code::F7),
-                    WireKey::F8 => (Key::F8, Code::F8),
-                    WireKey::F9 => (Key::F9, Code::F9),
-                    WireKey::F10 => (Key::F10, Code::F10),
-                    WireKey::F11 => (Key::F11, Code::F11),
-                    WireKey::F12 => (Key::F12, Code::F12),
-                    WireKey::ContextMenu => (Key::ContextMenu, Code::ContextMenu),
-                    // A key the wire enum does not name: its DOM `key` string travels in
-                    // `text`, so a printable key reaches the page as that character.
-                    WireKey::Other if !text.is_empty() => {
-                        (Key::Character(text.to_string()), Code::Unidentified)
-                    }
-                    WireKey::Other => (Key::Unidentified, Code::Unidentified),
-                };
-                let mut modifiers = Modifiers::empty();
-                modifiers.set(Modifiers::SHIFT, *shift_key);
-                modifiers.set(Modifiers::CONTROL, *ctrl_key);
-                modifiers.set(Modifiers::ALT, *alt_key);
-                modifiers.set(Modifiers::META, *meta_key);
+                let modifiers = wire_modifiers(*shift_key, *ctrl_key, *alt_key, *meta_key);
+                let is_composing = self.composing.contains(&node);
+                let input = wire_key_input(*key, modifiers, *repeat, *code, text, is_composing);
+                let dom_code = input.code;
                 let from_field = kind == BridgeEvent::FieldKeyDown;
                 if from_field {
                     self.deliver_focus(node);
                 }
-                let prevented = self.dom.key_down(node, key, code, modifiers);
+                let prevented = self.dom.key_down_input(Some(node), &input);
                 if !prevented {
                     let is_mac = cfg!(target_os = "macos");
                     let cmd_ctrl = if is_mac {
@@ -777,9 +750,9 @@ impl Runtime for HtmlRuntime {
                         *ctrl_key && !*meta_key
                     };
                     if cmd_ctrl && !*alt_key {
-                        let is_v = text.eq_ignore_ascii_case("v") || matches!(code, Code::KeyV);
-                        let is_c = text.eq_ignore_ascii_case("c") || matches!(code, Code::KeyC);
-                        let is_x = text.eq_ignore_ascii_case("x") || matches!(code, Code::KeyX);
+                        let is_v = text.eq_ignore_ascii_case("v") || matches!(dom_code, Code::KeyV);
+                        let is_c = text.eq_ignore_ascii_case("c") || matches!(dom_code, Code::KeyC);
+                        let is_x = text.eq_ignore_ascii_case("x") || matches!(dom_code, Code::KeyX);
                         if is_v {
                             let target = self.focused.unwrap_or(node);
                             let pending = self.pending_pastes.clone();
@@ -802,6 +775,26 @@ impl Runtime for HtmlRuntime {
                 // or starts a line. From a box, the key has been offered to the element
                 // and, by bubbling, to every element around it, so the boxes around this
                 // one must not offer it again.
+                return Ok(i64::from(prevented || !from_field));
+            }
+            (
+                kind @ (BridgeEvent::KeyUp | BridgeEvent::FieldKeyUp),
+                EventPayload::KeyUp {
+                    key,
+                    shift_key,
+                    ctrl_key,
+                    alt_key,
+                    meta_key,
+                    repeat,
+                    code,
+                    text,
+                },
+            ) => {
+                let modifiers = wire_modifiers(*shift_key, *ctrl_key, *alt_key, *meta_key);
+                let is_composing = self.composing.contains(&node);
+                let input = wire_key_input(*key, modifiers, *repeat, *code, text, is_composing);
+                let from_field = kind == BridgeEvent::FieldKeyUp;
+                let prevented = self.dom.key_up_input(Some(node), &input);
                 return Ok(i64::from(prevented || !from_field));
             }
             (
@@ -942,6 +935,304 @@ impl Runtime for HtmlRuntime {
     fn run_in_context(&mut self, action: &mut dyn FnMut()) {
         self.dom.virtual_dom_mut().in_scope(ScopeId::ROOT, action);
     }
+}
+
+fn wire_modifiers(shift_key: bool, ctrl_key: bool, alt_key: bool, meta_key: bool) -> Modifiers {
+    let mut modifiers = Modifiers::empty();
+    modifiers.set(Modifiers::SHIFT, shift_key);
+    modifiers.set(Modifiers::CONTROL, ctrl_key);
+    modifiers.set(Modifiers::ALT, alt_key);
+    modifiers.set(Modifiers::META, meta_key);
+    modifiers
+}
+
+/// Converts a wire key event payload into a DOM [`KeyInput`], resolving the W3C `Code`
+/// and `Location` from the USB HID usage ID when present and falling back to the wire
+/// `Key` variant or ASCII character otherwise.
+fn wire_key_input(
+    key: WireKey,
+    modifiers: Modifiers,
+    repeat: bool,
+    hid_code: u32,
+    text: &str,
+    is_composing: bool,
+) -> KeyInput {
+    let dom_key = match key {
+        WireKey::Enter => Key::Enter,
+        WireKey::Escape => Key::Escape,
+        WireKey::Tab => Key::Tab,
+        WireKey::Backspace => Key::Backspace,
+        WireKey::Delete => Key::Delete,
+        WireKey::ArrowUp => Key::ArrowUp,
+        WireKey::ArrowDown => Key::ArrowDown,
+        WireKey::ArrowLeft => Key::ArrowLeft,
+        WireKey::ArrowRight => Key::ArrowRight,
+        WireKey::Home => Key::Home,
+        WireKey::End => Key::End,
+        WireKey::PageUp => Key::PageUp,
+        WireKey::PageDown => Key::PageDown,
+        WireKey::F1 => Key::F1,
+        WireKey::F2 => Key::F2,
+        WireKey::F3 => Key::F3,
+        WireKey::F4 => Key::F4,
+        WireKey::F5 => Key::F5,
+        WireKey::F6 => Key::F6,
+        WireKey::F7 => Key::F7,
+        WireKey::F8 => Key::F8,
+        WireKey::F9 => Key::F9,
+        WireKey::F10 => Key::F10,
+        WireKey::F11 => Key::F11,
+        WireKey::F12 => Key::F12,
+        WireKey::ContextMenu => Key::ContextMenu,
+        WireKey::Other => match text {
+            "" | "Unidentified" => Key::Unidentified,
+            "CapsLock" => Key::CapsLock,
+            "Insert" => Key::Insert,
+            "Control" => Key::Control,
+            "Shift" => Key::Shift,
+            "Alt" => Key::Alt,
+            "Meta" => Key::Meta,
+            "NumLock" => Key::NumLock,
+            "ScrollLock" => Key::ScrollLock,
+            "Pause" => Key::Pause,
+            "PrintScreen" => Key::PrintScreen,
+            other => Key::Character(other.to_string()),
+        },
+    };
+    let (dom_code, location) = hid_code_and_location(hid_code).unwrap_or_else(|| {
+        let fallback = wire_key_fallback_code(key)
+            .or_else(|| fallback_code_for_char(text))
+            .unwrap_or(Code::Unidentified);
+        (fallback, Location::Standard)
+    });
+    KeyInput {
+        key: dom_key,
+        code: dom_code,
+        location,
+        modifiers,
+        repeat,
+        is_composing,
+    }
+}
+
+/// Maps a USB HID Keyboard/Keypad page (0x07) usage ID to its W3C `Code` and `Location`.
+fn hid_code_and_location(code: u32) -> Option<(Code, Location)> {
+    let pair = match code {
+        0x04 => (Code::KeyA, Location::Standard),
+        0x05 => (Code::KeyB, Location::Standard),
+        0x06 => (Code::KeyC, Location::Standard),
+        0x07 => (Code::KeyD, Location::Standard),
+        0x08 => (Code::KeyE, Location::Standard),
+        0x09 => (Code::KeyF, Location::Standard),
+        0x0A => (Code::KeyG, Location::Standard),
+        0x0B => (Code::KeyH, Location::Standard),
+        0x0C => (Code::KeyI, Location::Standard),
+        0x0D => (Code::KeyJ, Location::Standard),
+        0x0E => (Code::KeyK, Location::Standard),
+        0x0F => (Code::KeyL, Location::Standard),
+        0x10 => (Code::KeyM, Location::Standard),
+        0x11 => (Code::KeyN, Location::Standard),
+        0x12 => (Code::KeyO, Location::Standard),
+        0x13 => (Code::KeyP, Location::Standard),
+        0x14 => (Code::KeyQ, Location::Standard),
+        0x15 => (Code::KeyR, Location::Standard),
+        0x16 => (Code::KeyS, Location::Standard),
+        0x17 => (Code::KeyT, Location::Standard),
+        0x18 => (Code::KeyU, Location::Standard),
+        0x19 => (Code::KeyV, Location::Standard),
+        0x1A => (Code::KeyW, Location::Standard),
+        0x1B => (Code::KeyX, Location::Standard),
+        0x1C => (Code::KeyY, Location::Standard),
+        0x1D => (Code::KeyZ, Location::Standard),
+        0x1E => (Code::Digit1, Location::Standard),
+        0x1F => (Code::Digit2, Location::Standard),
+        0x20 => (Code::Digit3, Location::Standard),
+        0x21 => (Code::Digit4, Location::Standard),
+        0x22 => (Code::Digit5, Location::Standard),
+        0x23 => (Code::Digit6, Location::Standard),
+        0x24 => (Code::Digit7, Location::Standard),
+        0x25 => (Code::Digit8, Location::Standard),
+        0x26 => (Code::Digit9, Location::Standard),
+        0x27 => (Code::Digit0, Location::Standard),
+        0x28 => (Code::Enter, Location::Standard),
+        0x29 => (Code::Escape, Location::Standard),
+        0x2A => (Code::Backspace, Location::Standard),
+        0x2B => (Code::Tab, Location::Standard),
+        0x2C => (Code::Space, Location::Standard),
+        0x2D => (Code::Minus, Location::Standard),
+        0x2E => (Code::Equal, Location::Standard),
+        0x2F => (Code::BracketLeft, Location::Standard),
+        0x30 => (Code::BracketRight, Location::Standard),
+        0x31 => (Code::Backslash, Location::Standard),
+        0x33 => (Code::Semicolon, Location::Standard),
+        0x34 => (Code::Quote, Location::Standard),
+        0x35 => (Code::Backquote, Location::Standard),
+        0x36 => (Code::Comma, Location::Standard),
+        0x37 => (Code::Period, Location::Standard),
+        0x38 => (Code::Slash, Location::Standard),
+        0x39 => (Code::CapsLock, Location::Standard),
+        0x3A => (Code::F1, Location::Standard),
+        0x3B => (Code::F2, Location::Standard),
+        0x3C => (Code::F3, Location::Standard),
+        0x3D => (Code::F4, Location::Standard),
+        0x3E => (Code::F5, Location::Standard),
+        0x3F => (Code::F6, Location::Standard),
+        0x40 => (Code::F7, Location::Standard),
+        0x41 => (Code::F8, Location::Standard),
+        0x42 => (Code::F9, Location::Standard),
+        0x43 => (Code::F10, Location::Standard),
+        0x44 => (Code::F11, Location::Standard),
+        0x45 => (Code::F12, Location::Standard),
+        0x46 => (Code::PrintScreen, Location::Standard),
+        0x47 => (Code::ScrollLock, Location::Standard),
+        0x48 => (Code::Pause, Location::Standard),
+        0x49 => (Code::Insert, Location::Standard),
+        0x4A => (Code::Home, Location::Standard),
+        0x4B => (Code::PageUp, Location::Standard),
+        0x4C => (Code::Delete, Location::Standard),
+        0x4D => (Code::End, Location::Standard),
+        0x4E => (Code::PageDown, Location::Standard),
+        0x4F => (Code::ArrowRight, Location::Standard),
+        0x50 => (Code::ArrowLeft, Location::Standard),
+        0x51 => (Code::ArrowDown, Location::Standard),
+        0x52 => (Code::ArrowUp, Location::Standard),
+        0x53 => (Code::NumLock, Location::Standard),
+        0x54 => (Code::NumpadDivide, Location::Numpad),
+        0x55 => (Code::NumpadMultiply, Location::Numpad),
+        0x56 => (Code::NumpadSubtract, Location::Numpad),
+        0x57 => (Code::NumpadAdd, Location::Numpad),
+        0x58 => (Code::NumpadEnter, Location::Numpad),
+        0x59 => (Code::Numpad1, Location::Numpad),
+        0x5A => (Code::Numpad2, Location::Numpad),
+        0x5B => (Code::Numpad3, Location::Numpad),
+        0x5C => (Code::Numpad4, Location::Numpad),
+        0x5D => (Code::Numpad5, Location::Numpad),
+        0x5E => (Code::Numpad6, Location::Numpad),
+        0x5F => (Code::Numpad7, Location::Numpad),
+        0x60 => (Code::Numpad8, Location::Numpad),
+        0x61 => (Code::Numpad9, Location::Numpad),
+        0x62 => (Code::Numpad0, Location::Numpad),
+        0x63 => (Code::NumpadDecimal, Location::Numpad),
+        0x64 => (Code::IntlBackslash, Location::Standard),
+        0x65 => (Code::ContextMenu, Location::Standard),
+        0x67 => (Code::NumpadEqual, Location::Numpad),
+        0x68 => (Code::F13, Location::Standard),
+        0x69 => (Code::F14, Location::Standard),
+        0x6A => (Code::F15, Location::Standard),
+        0x6B => (Code::F16, Location::Standard),
+        0x6C => (Code::F17, Location::Standard),
+        0x6D => (Code::F18, Location::Standard),
+        0x6E => (Code::F19, Location::Standard),
+        0x6F => (Code::F20, Location::Standard),
+        0x70 => (Code::F21, Location::Standard),
+        0x71 => (Code::F22, Location::Standard),
+        0x72 => (Code::F23, Location::Standard),
+        0x73 => (Code::F24, Location::Standard),
+        0x85 => (Code::NumpadComma, Location::Numpad),
+        0xE0 => (Code::ControlLeft, Location::Left),
+        0xE1 => (Code::ShiftLeft, Location::Left),
+        0xE2 => (Code::AltLeft, Location::Left),
+        0xE3 => (Code::MetaLeft, Location::Left),
+        0xE4 => (Code::ControlRight, Location::Right),
+        0xE5 => (Code::ShiftRight, Location::Right),
+        0xE6 => (Code::AltRight, Location::Right),
+        0xE7 => (Code::MetaRight, Location::Right),
+        _ => return None,
+    };
+    Some(pair)
+}
+
+fn wire_key_fallback_code(key: WireKey) -> Option<Code> {
+    let code = match key {
+        WireKey::Enter => Code::Enter,
+        WireKey::Escape => Code::Escape,
+        WireKey::Tab => Code::Tab,
+        WireKey::Backspace => Code::Backspace,
+        WireKey::Delete => Code::Delete,
+        WireKey::ArrowUp => Code::ArrowUp,
+        WireKey::ArrowDown => Code::ArrowDown,
+        WireKey::ArrowLeft => Code::ArrowLeft,
+        WireKey::ArrowRight => Code::ArrowRight,
+        WireKey::Home => Code::Home,
+        WireKey::End => Code::End,
+        WireKey::PageUp => Code::PageUp,
+        WireKey::PageDown => Code::PageDown,
+        WireKey::F1 => Code::F1,
+        WireKey::F2 => Code::F2,
+        WireKey::F3 => Code::F3,
+        WireKey::F4 => Code::F4,
+        WireKey::F5 => Code::F5,
+        WireKey::F6 => Code::F6,
+        WireKey::F7 => Code::F7,
+        WireKey::F8 => Code::F8,
+        WireKey::F9 => Code::F9,
+        WireKey::F10 => Code::F10,
+        WireKey::F11 => Code::F11,
+        WireKey::F12 => Code::F12,
+        WireKey::ContextMenu => Code::ContextMenu,
+        WireKey::Other => return None,
+    };
+    Some(code)
+}
+
+fn fallback_code_for_char(text: &str) -> Option<Code> {
+    let mut chars = text.chars();
+    let ch = chars.next()?;
+    if chars.next().is_some() {
+        return None;
+    }
+    let code = match ch.to_ascii_lowercase() {
+        'a' => Code::KeyA,
+        'b' => Code::KeyB,
+        'c' => Code::KeyC,
+        'd' => Code::KeyD,
+        'e' => Code::KeyE,
+        'f' => Code::KeyF,
+        'g' => Code::KeyG,
+        'h' => Code::KeyH,
+        'i' => Code::KeyI,
+        'j' => Code::KeyJ,
+        'k' => Code::KeyK,
+        'l' => Code::KeyL,
+        'm' => Code::KeyM,
+        'n' => Code::KeyN,
+        'o' => Code::KeyO,
+        'p' => Code::KeyP,
+        'q' => Code::KeyQ,
+        'r' => Code::KeyR,
+        's' => Code::KeyS,
+        't' => Code::KeyT,
+        'u' => Code::KeyU,
+        'v' => Code::KeyV,
+        'w' => Code::KeyW,
+        'x' => Code::KeyX,
+        'y' => Code::KeyY,
+        'z' => Code::KeyZ,
+        '0' => Code::Digit0,
+        '1' => Code::Digit1,
+        '2' => Code::Digit2,
+        '3' => Code::Digit3,
+        '4' => Code::Digit4,
+        '5' => Code::Digit5,
+        '6' => Code::Digit6,
+        '7' => Code::Digit7,
+        '8' => Code::Digit8,
+        '9' => Code::Digit9,
+        ' ' => Code::Space,
+        '-' => Code::Minus,
+        '=' => Code::Equal,
+        '[' => Code::BracketLeft,
+        ']' => Code::BracketRight,
+        '\\' => Code::Backslash,
+        ';' => Code::Semicolon,
+        '\'' => Code::Quote,
+        '`' => Code::Backquote,
+        ',' => Code::Comma,
+        '.' => Code::Period,
+        '/' => Code::Slash,
+        _ => return None,
+    };
+    Some(code)
 }
 
 /// The runtime factory for one HTML and CSS application.
