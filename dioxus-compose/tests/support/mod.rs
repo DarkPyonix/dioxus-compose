@@ -155,10 +155,16 @@ fn number(field: Option<&str>, line: &str) -> f32 {
 }
 
 pub fn captured() -> Captured {
+    parse_captured(GEOMETRY)
+}
+
+/// Parses captured region geometry and text measurements in the same tab-separated format
+/// as `geometry.txt`.
+pub fn parse_captured(data: &str) -> Captured {
     let mut regions: Vec<Region> = Vec::new();
     let mut texts = TextTable::default();
     let mut glyphs = HashMap::new();
-    for line in GEOMETRY.lines() {
+    for line in data.lines() {
         if line.starts_with('#') || line.trim().is_empty() {
             continue;
         }
@@ -433,6 +439,22 @@ pub fn parse_region(region: &str) -> BaseDocument {
 /// The region parsed and laid out once.
 pub fn lay_out(region: &str, measurer: &mut CapturedMeasurer) -> (BaseDocument, DisplayList) {
     let mut doc = parse_region(region);
+    let list = layout_document(&mut doc, measurer);
+    (doc, list)
+}
+
+/// Parses standalone HTML at the capture's viewport and lays it out once.
+pub fn lay_out_html(html: &str, measurer: &mut CapturedMeasurer) -> (BaseDocument, DisplayList) {
+    let config = DocumentConfig {
+        viewport: Some(Viewport::new(
+            WINDOW_WIDTH,
+            WINDOW_HEIGHT,
+            1.0,
+            ColorScheme::Dark,
+        )),
+        ..DocumentConfig::default()
+    };
+    let mut doc = HtmlDocument::from_html(html, config).into_inner();
     let list = layout_document(&mut doc, measurer);
     (doc, list)
 }
