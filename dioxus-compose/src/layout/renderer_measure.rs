@@ -73,6 +73,7 @@ pub(crate) fn wire_spans(
     base: SpanBase,
     runs: &[SpanRun],
     colour: &mut dyn FnMut(Rgba) -> Option<compose_rust::schema::Paint>,
+    on_click: &mut dyn FnMut(&SpanRun) -> Option<u64>,
 ) -> TextSpans {
     let lined = base.italic || base.underline || base.line_through;
     let mut spans: Vec<(TextSpan, FontRefs)> = Vec::new();
@@ -94,6 +95,7 @@ pub(crate) fn wire_spans(
         span.underline = base.underline || run.underline;
         span.strikethrough = base.line_through || run.line_through;
         span.color = run.color.and_then(&mut *colour);
+        span.on_click = on_click(run);
         let fonts = run
             .font_family
             .as_deref()
@@ -287,13 +289,13 @@ impl TextMeasurer for RendererMeasurer {
                 italic: request.style.italic,
                 ..SpanBase::default()
             };
-            wire_spans(request.text.len(), base, runs, &mut |_| None)
+            wire_spans(request.text.len(), base, runs, &mut |_| None, &mut |_| None)
         };
         let key = Key::of(request, &spans, self.zoom);
         if let Some(metrics) = self.answers.get(&key) {
             return *metrics;
         }
-        let provisional = self.fallback.measure(request);
+        let provisional = self.fallback.measure_spans(request, runs);
         if !self.asked.iter().any(|question| question.key == key) {
             self.asked.push(Question {
                 key,

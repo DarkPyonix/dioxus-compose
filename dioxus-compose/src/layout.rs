@@ -2525,6 +2525,31 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     let Some(&first) = holders.first() else {
         return Some(None);
     };
+    let owner = common_ancestor(doc, root, &holders);
+    let handled = |holder: usize| {
+        LISTENING.with(|listening| listening.borrow().contains(&holder))
+            || doc.get_node(holder).is_some_and(|node| {
+                node.element_data()
+                    .is_some_and(|element| &*element.name.local == "a")
+                    && node.attr(local("href")).is_some()
+            })
+    };
+    let interactive_owner = |holder: usize| -> Option<usize> {
+        let mut current = Some(holder);
+        while let Some(id) = current {
+            if id == owner || id == root {
+                return None;
+            }
+            if handled(id) {
+                return Some(id);
+            }
+            current = doc.get_node(id).and_then(|node| node.parent);
+        }
+        None
+    };
+    let has_interactive_span = holders
+        .iter()
+        .any(|&holder| interactive_owner(holder).is_some());
 
     let styled = |id: usize| {
         doc.get_node(id)
@@ -2613,32 +2638,9 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         .as_ref()
         .map_or_else(String::new, |marker| format!("{} ", marker.text));
 
-    let (body, spans) = if uniform {
+    let (body, spans) = if uniform && !has_interactive_span {
         (convert::transform_text(&text, transform), Vec::new())
     } else {
-        // A press on a piece of a text drawn as one is the renderer's to report, by the
-        // span it lands on, and the page does not register spans for the renderer to
-        // report yet. Until it does, a link inside the text stays with the fallback
-        // shaper, which draws it as a run of its own that a click reaches.
-        let handled = |holder: usize| {
-            LISTENING.with(|listening| listening.borrow().contains(&holder))
-                || doc.get_node(holder).is_some_and(|node| {
-                    node.element_data()
-                        .is_some_and(|element| &*element.name.local == "a")
-                        && node.attr(local("href")).is_some()
-                })
-        };
-        if holders
-            .iter()
-            .any(|&holder| holder != root && handled(holder))
-        {
-            warn_unspanned(
-                doc,
-                root,
-                "holds an element with an event handler or a link among text in other styles, and an event on a piece of a text drawn as one is not routed to that element",
-            );
-            return None;
-        }
         let known = |holder: usize| helds.contains_key(&holder);
         let Some(segments) = inline_spans::align(own_text, &content.pieces, collapses, &known)
         else {
@@ -2650,7 +2652,14 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
             return None;
         };
         let segments = inline_spans::clip(segments, lead..lead + text.len());
-        match inline_spans::build(&text, &segments, &helds, &base, marker_prefix.len()) {
+        match inline_spans::build(
+            &text,
+            &segments,
+            &helds,
+            &base,
+            marker_prefix.len(),
+            &interactive_owner,
+        ) {
             Ok(built) => built,
             Err(reason) => {
                 warn_unspanned(doc, root, reason);
@@ -2673,6 +2682,11 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
                 line_through: false,
                 color: Some(Rgba::new(0, 0, 0, 0)),
                 font_family: None,
+                font_size: None,
+                font_weight: None,
+                letter_spacing: None,
+                line_height: None,
+                owner: None,
             }];
             hidden.extend(spans);
             hidden
@@ -2681,7 +2695,7 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     };
 
     Some(Some(PreparedText {
-        owner: common_ancestor(doc, root, &holders),
+        owner,
         text: format!("{marker_prefix}{body}"),
         style,
         color,
@@ -2695,8 +2709,8 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
 
 thread_local! {
     /// The nodes the page has event listeners on, set by the document before it lays out.
-    /// An element that listens inside a text drawn as one would lose its events, since the
-    /// renderer reports a press on the text and not on a piece of it.
+    /// Inline elements in this set keep their own span owner inside a single spanned text
+    /// run so clicks and hit-testing route to them.
     static LISTENING: std::cell::RefCell<HashSet<usize>> = std::cell::RefCell::new(HashSet::new());
 }
 
