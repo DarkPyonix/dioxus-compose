@@ -28,10 +28,8 @@ pulldown-cmark = { version = "0.13.4", default-features = false }
 
 # The highlighter, through two-face's re-export of syntect so the two can never disagree
 # about the version. `syntect-fancy` selects the pure-Rust regex engine and the grammar
-# dump built for it, so there is no C library (Oniguruma) to cross-compile for iOS and
-# Android. A browser has no worker thread to highlight on, so a web build leaves the
-# highlighter out entirely and draws code as plain monospace.
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
+# dump built for it, so there is no C library (Oniguruma) to cross-compile for iOS,
+# Android or WebAssembly.
 two-face = { version = "0.5.1", default-features = false, features = ["syntect-fancy"] }
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
