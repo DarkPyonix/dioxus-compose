@@ -232,3 +232,38 @@ fn fr34_3_island_scroll_gets_a_size_not_a_fill() {
     );
     reset_window_size();
 }
+
+/// The box asks the renderer for every width it is laid out at, not only a change of size
+/// class: a window going from 1280dp to 900dp and back stays Expanded, and the page has to
+/// be laid out at each width all the same.
+#[test]
+fn fr34_3_htmlview_asks_for_every_width_not_only_its_class() {
+    reset_window_size();
+    let mut host = Host::new(screen);
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+    let asked: Vec<bool> = first
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::SetModifier {
+                modifier: Modifier::ObserveSize { every_dp, .. },
+                ..
+            } => Some(*every_dp),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        asked,
+        [true],
+        "the HtmlView's box asks for a report at every dp change"
+    );
+
+    let node = observed_node(&first);
+    assert!(measure(&mut host, node, 1280.0).contains(&1280.0));
+    let widths = measure(&mut host, node, 900.0);
+    assert!(
+        widths.contains(&900.0),
+        "the page was not laid out again within the Expanded class: {widths:?}",
+    );
+    assert!(measure(&mut host, node, 1280.0).contains(&1280.0));
+    reset_window_size();
+}
