@@ -495,11 +495,17 @@ pub enum ObjectFit {
     ScaleDown,
 }
 
-/// The image an `<img>` element shows.
+/// The image an `<img>` element, or an inline `<svg>`, shows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplacedImage {
     /// The `src`: as written, resolved against the document's base URL when there is one.
+    /// Empty for an inline `<svg>`, which carries its picture in
+    /// [`inline_svg`](Self::inline_svg).
     pub source: String,
+    /// The markup of an inline `<svg>` element and everything inside it, with the SVG
+    /// namespace on the root and every `currentColor` written as the colour of the element
+    /// that uses it. It is drawn in place of `source`. `None` for an `<img>`.
+    pub inline_svg: Option<String>,
     pub alt: Option<String>,
     /// The content box, which the image is clipped to.
     pub content_rect: Rect,
@@ -1100,6 +1106,7 @@ pub enum AnimatedProperty {
     /// A box's own `opacity` (not multiplied by its ancestors').
     Opacity,
     Transform,
+    Color,
     BackgroundColor,
 }
 
@@ -1273,6 +1280,9 @@ pub struct NodeEntry {
     pub clips_children: bool,
     /// The product of this box's `opacity` and every ancestor's.
     pub opacity: f32,
+    /// The box's computed CSS `color`, or the rest value of a running `color` `@keyframes`
+    /// animation.
+    pub color: Rgba,
     /// The box's 2D `transform`, which also carries every box inside it. `None` for no
     /// transform, and for one that only moves the box: a translation is folded into
     /// [`NodeEntry::rect`] (unless an animation or transition of `transform` is declared,

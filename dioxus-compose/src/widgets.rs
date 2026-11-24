@@ -36,17 +36,10 @@ impl Semantics {
     pub const fn new(role: SemanticsRole) -> Self {
         Self {
             role: Some(role),
-            state: SemanticsState {
-                checked: None,
-                selected: None,
-                expanded: None,
-                disabled: None,
-                focused: None,
-                hidden: false,
-                click_action: false,
-                focus_action: false,
-                has_popup: false,
-            },
+            // The state that says nothing. compose-rust's `SemanticsState` cannot be written
+            // as a literal, and `Default` is not `const`; `hidden(false)` sets only the one
+            // field that is already false.
+            state: SemanticsState::hidden(false),
         }
     }
 
@@ -3230,6 +3223,13 @@ pub fn Checkbox(
     /// The check mark. Left out, the design system's.
     #[props(default)]
     check_color: Option<Paint>,
+    /// The box's border, in every state alike. Left out, the design system's.
+    #[props(default)]
+    outline_color: Option<Paint>,
+    /// The mixed state: the box stands for a set of which only some are checked. It wins
+    /// over `checked`, the box is drawn with a dash, and a press asks for checked.
+    #[props(default)]
+    indeterminate: bool,
     /// The length of the box's side in dp. Left out, the design system's.
     #[props(default)]
     size: Option<f32>,
@@ -3262,8 +3262,10 @@ pub fn Checkbox(
 ) -> Element {
     rsx! {
         checkbox {
+            indeterminate: indeterminate.then_some(true),
             container_color: opt_paint(container_color),
             check_color: opt_paint(check_color),
+            outline_color: opt_paint(outline_color),
             control_size: size.map(|side| AttributeValue::any_value((side, side))),
             weight: opt_dp(weight),
             width: opt_dp(width),
@@ -3385,6 +3387,14 @@ pub fn Switch(
     /// The thumb that travels along the track. Left out, the design system's.
     #[props(default)]
     thumb_color: Option<Paint>,
+    /// How high the thumb is lifted, in dp: a soft shadow under it that travels with it.
+    /// Left out, the design system's; 0 is no shadow.
+    #[props(default)]
+    thumb_elevation: Option<f32>,
+    /// A line around the track in both states: its width in dp and its paint. Left out,
+    /// the design system's; a width of 0 is none.
+    #[props(default)]
+    track_border: Option<(f32, Paint)>,
     /// The track's width and height in dp; the thumb scales with the height. Left out, the
     /// design system's.
     #[props(default)]
@@ -3420,6 +3430,8 @@ pub fn Switch(
         switch {
             track_color: opt_paint(track_color),
             thumb_color: opt_paint(thumb_color),
+            thumb_elevation: opt_dp(thumb_elevation),
+            track_border: track_border.map(AttributeValue::any_value),
             control_size: size.map(AttributeValue::any_value),
             weight: opt_dp(weight),
             width: opt_dp(width),

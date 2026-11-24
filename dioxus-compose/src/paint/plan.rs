@@ -49,7 +49,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
 use crate::html::NodeId;
-use crate::layout::image::{AssetId, ImageResolver, begin_plan, current_color_asset};
+use crate::layout::image::{
+    AssetId, ImageResolver, begin_plan, current_color_asset, inline_svg_asset,
+};
 use crate::layout::measure::{SpanRun, TextStyle};
 use crate::paint::display_list::{
     AnimatedProperty, Animation, BackgroundImage, BackgroundLayer, CanvasBackground, Corners,
@@ -247,6 +249,9 @@ pub struct PlanNode {
     /// listed. Each plays on the node's own value of the property it names, over the
     /// node's modifiers.
     pub animations: Vec<Animation>,
+    /// The resolved CSS `color` of an element container, used when a `color` animation plays
+    /// on the container so inheriting text children follow it.
+    pub color: Option<Rgba>,
     /// Back to front.
     pub children: Vec<PlanNode>,
 }
@@ -632,6 +637,8 @@ struct Slot {
     clip: Option<Rect>,
     /// The accumulated opacity of what is placed in it.
     opacity: f32,
+    /// The resolved CSS `color` of an element box, for `color` animations on containers.
+    color: Option<Rgba>,
     /// What the node itself draws, for the overlap test; `None` for containers that draw
     /// nothing.
     drawn: Option<Rect>,
@@ -714,6 +721,7 @@ impl<'a> Builder<'a> {
             origin: (0.0, 0.0),
             clip: None,
             opacity: 1.0,
+            color: None,
             drawn: None,
             subtree_drawn: None,
         };
@@ -945,6 +953,10 @@ impl<'a> Builder<'a> {
             modifiers.push(PlanModifier::Clip);
         }
 
+        let node_color = Some(
+            self.colours
+                .resolve(entry.node, ColourUse::Text, entry.color),
+        );
         let node = self.push(
             container,
             Slot {
@@ -960,6 +972,7 @@ impl<'a> Builder<'a> {
                     provided_clip
                 },
                 opacity: entry.opacity,
+                color: node_color,
                 drawn: self.drawn[index],
                 ..Slot::default()
             },
@@ -1315,19 +1328,24 @@ impl<'a> Builder<'a> {
     }
 
     /// The image of an `<img>`, when the resolver names an asset for it, and its broken-image
-    /// icon and alt text when it names none and the image has alt text to show.
+    /// icon and alt text when it names none and the image has alt text to show. An inline
+    /// `<svg>` is drawn from its own markup, with no resolver.
     fn add_image(&mut self, entry: &NodeEntry, content: usize) {
         let Some(image) = entry.image.as_ref() else {
             return;
         };
         // An SVG the resolver hands over as source is drawn in the element's `color` wherever
         // it says `currentColor`; any other image is the asset the resolver names.
-        let Some(asset) = self.images.as_mut().and_then(|images| {
-            images
-                .svg(&image.source)
-                .and_then(|svg| current_color_asset(svg, image.color))
-                .or_else(|| images.resolve(&image.source))
-        }) else {
+        let asset = match image.inline_svg.as_deref() {
+            Some(markup) => Some(inline_svg_asset(markup, image.color)),
+            None => self.images.as_mut().and_then(|images| {
+                images
+                    .svg(&image.source)
+                    .and_then(|svg| current_color_asset(svg, image.color))
+                    .or_else(|| images.resolve(&image.source))
+            }),
+        };
+        let Some(asset) = asset else {
             if let Some(fallback) = image.fallback.as_ref() {
                 self.add_image_fallback(entry.node, image.content_rect, fallback, content);
             }
@@ -1651,6 +1669,7 @@ impl<'a> Builder<'a> {
             kind,
             modifiers: source.modifiers.clone(),
             animations: self.animated.get(&source.key).cloned().unwrap_or_default(),
+            color: source.color,
             children,
         }
     }

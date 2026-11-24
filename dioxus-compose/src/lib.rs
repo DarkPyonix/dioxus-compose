@@ -523,10 +523,20 @@ pub mod elements {
     // draws, so the box on screen and the value the Host holds can never disagree.
     // A control's colours and size are each sent only when set, so one that sets none
     // draws as the design system draws it.
+    // `indeterminate` is the mixed state, sent only when true, and wins over `checked`.
+    // `outline_color` is the box's border in every state.
     element!(
         checkbox,
         "Checkbox",
-        [checked, enabled, container_color, check_color, control_size]
+        [
+            checked,
+            enabled,
+            indeterminate,
+            container_color,
+            check_color,
+            outline_color,
+            control_size
+        ]
     );
     // A radio button's ring is its container colour and its dot its check colour.
     element!(
@@ -537,7 +547,15 @@ pub mod elements {
     element!(
         switch,
         "Switch",
-        [checked, enabled, track_color, thumb_color, control_size]
+        [
+            checked,
+            enabled,
+            track_color,
+            thumb_color,
+            control_size,
+            thumb_elevation,
+            track_border
+        ]
     );
     // The position a drag is passing through is the Renderer's, like scroll and focus, so
     // following a finger costs no boundary call. `value` seeds it and carries a change

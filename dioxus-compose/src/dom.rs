@@ -35,11 +35,12 @@ use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
 use dioxus_html::{
-    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasClipboardData,
-    HasCompositionData, HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData,
-    HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData, MountedError,
-    MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior, ScrollToOptions,
-    TransitionData,
+    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasCancelData,
+    HasClipboardData, HasCompositionData, HasFocusData, HasImageData, HasKeyboardData,
+    HasMediaData, HasMouseData, HasSelectionData, HasToggleData, HasTouchData, HasTransitionData,
+    HasVisibleData, HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData,
+    MountedError, MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior,
+    ScrollToOptions, TouchPoint, TransitionData,
 };
 
 use crate::html::NodeId;
@@ -314,9 +315,12 @@ pub struct HtmlDom {
     /// not resolve yet ([`TextMeasurer::unsettled`]). While it is not zero, the next frame
     /// lays the page out again from scratch, up to [`UNSETTLED_RELAYOUTS`] times.
     unsettled: u32,
-    /// The text node of each author stylesheet and its CSS before `env()` is replaced, so
-    /// the sheets can be written again when a window variable changes.
+    /// The text node of each author stylesheet and its CSS before `prefers-reduced-motion`
+    /// and `env()` are replaced, so the sheets can be written again when a window variable
+    /// or the reduced-motion setting changes.
     author_sheets: Vec<(NodeId, String)>,
+    /// Whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    reduced_motion: bool,
     /// The values `env(safe-area-inset-*)` and `env(titlebar-area-*)` read.
     safe_area_insets: Option<Sides<f32>>,
     titlebar_area: Option<Rect>,
@@ -368,15 +372,15 @@ impl HtmlDom {
             mutator.append_children(html, &[head, body]);
             for css in &config.stylesheets {
                 let style = mutator.create_element(element_name("style", None), Vec::new());
-                let css = rewrite_reduced_motion(css, config.reduced_motion);
+                let rewritten = rewrite_reduced_motion(css, config.reduced_motion);
                 let text = mutator.create_text_node(&rewrite_env(
-                    &css,
+                    &rewritten,
                     config.safe_area_insets,
                     config.titlebar_area,
                 ));
                 mutator.append_children(style, &[text]);
                 mutator.append_children(head, &[style]);
-                author_sheets.push((text, css));
+                author_sheets.push((text, css.clone()));
             }
             let document = doc_root_id();
             mutator.append_children(document, &[html]);
@@ -413,6 +417,7 @@ impl HtmlDom {
             drag: drag::DragState::default(),
             unsettled: 0,
             author_sheets,
+            reduced_motion: config.reduced_motion,
             safe_area_insets: config.safe_area_insets,
             titlebar_area: config.titlebar_area,
             last_removed: Vec::new(),
@@ -528,13 +533,13 @@ impl HtmlDom {
     /// that first sees it.
     ///
     /// How a motion reaches the renderer depends on what it changes. `opacity`,
-    /// `transform` and `background-color` change nothing about layout, so a transition of
-    /// them is a [`TransitionStart`](crate::html::TransitionStart) in the returned list
-    /// and an `@keyframes` animation of them is on its entry's
+    /// `transform`, `color` and `background-color` change nothing about layout, so a
+    /// transition of them is a [`TransitionStart`](crate::html::TransitionStart) in the
+    /// returned list and an `@keyframes` animation of them is on its entry's
     /// [`animations`](crate::html::NodeEntry::animations), both described for a renderer
     /// to play by itself, with the entry holding the value the motion settles at or
-    /// starts from. Anything else that moves (`width`, `margin`, `color`, `all`) is ticked
-    /// by the Host: see [`HtmlDom::tick`].
+    /// starts from. Anything else that moves (`width`, `margin`, `all`) is ticked by the
+    /// Host: see [`HtmlDom::tick`].
     pub fn layout(&mut self, width: f32, height: f32, scale: f32) -> &DisplayList {
         self.layout_at(width, height, scale, false)
     }
@@ -1674,8 +1679,27 @@ impl HtmlDom {
         true
     }
 
-    /// Writes each author stylesheet again with the current window variables in its
-    /// `env()`s. The style engine reads a changed `<style>` as a new sheet.
+    /// Whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    pub fn reduced_motion(&self) -> bool {
+        self.reduced_motion
+    }
+
+    /// Sets whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    /// The author stylesheets are written again with the new setting and every style is
+    /// resolved again at the next layout. An unchanged setting touches nothing. Returns
+    /// whether the setting changed.
+    pub fn set_reduced_motion(&mut self, reduced: bool) -> bool {
+        if self.reduced_motion == reduced {
+            return false;
+        }
+        self.reduced_motion = reduced;
+        self.rewrite_author_sheets();
+        true
+    }
+
+    /// Writes each author stylesheet again with the current `prefers-reduced-motion`
+    /// setting and window variables in its `env()`s. The style engine reads a changed
+    /// `<style>` as a new sheet.
     fn rewrite_author_sheets(&mut self) {
         if self.author_sheets.is_empty() {
             return;
@@ -1683,11 +1707,13 @@ impl HtmlDom {
         {
             let mut mutator = self.doc.mutate();
             for (text, css) in &self.author_sheets {
-                let css = rewrite_env(css, self.safe_area_insets, self.titlebar_area);
+                let css = rewrite_reduced_motion(css, self.reduced_motion);
+                let css = rewrite_env(&css, self.safe_area_insets, self.titlebar_area);
                 // A text node that is unchanged is left alone, and its sheet with it.
                 mutator.set_node_text(*text, &css);
             }
         }
+        self.state.stylesheet_dirty = true;
         self.state.mark_style_dirty(self.root);
         self.layout_state.invalidate_all();
     }
@@ -2299,18 +2325,105 @@ fn register_event_converter() {
     REGISTER.call_once(|| dioxus_html::set_event_converter(Box::new(Converter)));
 }
 
+/// Event data for HTML `cancel` events.
+#[derive(Clone, Default)]
+struct CancelEventData;
+
+impl HasCancelData for CancelEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML image `load` and `error` events.
+#[derive(Clone, Default)]
+struct ImageEventData {
+    load_error: bool,
+}
+
+impl HasImageData for ImageEventData {
+    fn load_error(&self) -> bool {
+        self.load_error
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML media events.
+#[derive(Clone, Default)]
+struct MediaEventData;
+
+impl HasMediaData for MediaEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML selection events.
+#[derive(Clone, Default)]
+struct SelectionEventData;
+
+impl HasSelectionData for SelectionEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML `toggle` events.
+#[derive(Clone, Default)]
+struct ToggleEventData;
+
+impl HasToggleData for ToggleEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML touch events.
+#[derive(Clone, Default)]
+struct TouchEventData;
+
+impl ModifiersInteraction for TouchEventData {
+    fn modifiers(&self) -> Modifiers {
+        Modifiers::empty()
+    }
+}
+
+impl HasTouchData for TouchEventData {
+    fn touches(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn touches_changed(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn target_touches(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML intersection visibility events.
+#[derive(Clone, Default)]
+struct VisibleEventData;
+
+impl HasVisibleData for VisibleEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Turns the events this document sends into Dioxus event data: clicks, keys, focus, the
 /// `input`, `change` and `submit` events of form controls, animation and transition
-/// events, resize events, and drag events. Every other conversion is
-/// unreachable from here.
+/// events, resize events, and drag events. Event kinds this document does not yet emit
+/// fall back to empty default payloads instead of panicking.
 struct Converter;
-
-fn not_sent(kind: &str) -> ! {
-    panic!(
-        "the HTML path does not send {kind} events yet, so it has no {kind} data to \
-         convert; something else delivered one through the shared event converter"
-    )
-}
 
 impl HtmlEventConverter for Converter {
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
@@ -2330,8 +2443,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         AnimationData::new(data)
     }
-    fn convert_cancel_data(&self, _: &PlatformEventData) -> dioxus_html::CancelData {
-        not_sent("cancel")
+    fn convert_cancel_data(&self, event: &PlatformEventData) -> dioxus_html::CancelData {
+        let data = event
+            .downcast::<CancelEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::CancelData::new(data)
     }
     fn convert_clipboard_data(&self, event: &PlatformEventData) -> dioxus_html::ClipboardData {
         let data = event
@@ -2368,8 +2485,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         dioxus_html::FormData::new(data)
     }
-    fn convert_image_data(&self, _: &PlatformEventData) -> dioxus_html::ImageData {
-        not_sent("image")
+    fn convert_image_data(&self, event: &PlatformEventData) -> dioxus_html::ImageData {
+        let data = event
+            .downcast::<ImageEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::ImageData::new(data)
     }
     fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
         let data = event
@@ -2378,8 +2499,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         KeyboardData::new(data)
     }
-    fn convert_media_data(&self, _: &PlatformEventData) -> dioxus_html::MediaData {
-        not_sent("media")
+    fn convert_media_data(&self, event: &PlatformEventData) -> dioxus_html::MediaData {
+        let data = event
+            .downcast::<MediaEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::MediaData::new(data)
     }
     fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
         let data = event
@@ -2407,14 +2532,26 @@ impl HtmlEventConverter for Converter {
             .expect("every scroll event this document sends carries ScrollEventData");
         dioxus_html::ScrollData::new(data)
     }
-    fn convert_selection_data(&self, _: &PlatformEventData) -> dioxus_html::SelectionData {
-        not_sent("selection")
+    fn convert_selection_data(&self, event: &PlatformEventData) -> dioxus_html::SelectionData {
+        let data = event
+            .downcast::<SelectionEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::SelectionData::new(data)
     }
-    fn convert_toggle_data(&self, _: &PlatformEventData) -> dioxus_html::ToggleData {
-        not_sent("toggle")
+    fn convert_toggle_data(&self, event: &PlatformEventData) -> dioxus_html::ToggleData {
+        let data = event
+            .downcast::<ToggleEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::ToggleData::new(data)
     }
-    fn convert_touch_data(&self, _: &PlatformEventData) -> dioxus_html::TouchData {
-        not_sent("touch")
+    fn convert_touch_data(&self, event: &PlatformEventData) -> dioxus_html::TouchData {
+        let data = event
+            .downcast::<TouchEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::TouchData::new(data)
     }
     fn convert_transition_data(&self, event: &PlatformEventData) -> TransitionData {
         let data = event
@@ -2423,8 +2560,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         TransitionData::new(data)
     }
-    fn convert_visible_data(&self, _: &PlatformEventData) -> dioxus_html::VisibleData {
-        not_sent("visible")
+    fn convert_visible_data(&self, event: &PlatformEventData) -> dioxus_html::VisibleData {
+        let data = event
+            .downcast::<VisibleEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::VisibleData::new(data)
     }
     fn convert_wheel_data(&self, event: &PlatformEventData) -> dioxus_html::WheelData {
         let data = event
@@ -2432,5 +2573,74 @@ impl HtmlEventConverter for Converter {
             .expect("every wheel event this document sends carries the pointer event data")
             .clone();
         dioxus_html::WheelData::new(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dioxus_html::{
+        CancelData, ImageData, MediaData, SelectionData, ToggleData, TouchData, VisibleData,
+        VisibleError,
+    };
+
+    #[test]
+    fn fr34_event_converter_converts_all_fallback_events_without_panicking() {
+        register_event_converter();
+        let empty = PlatformEventData::new(Box::new(()));
+
+        let cancel = CancelData::from(&empty);
+        assert!(cancel.downcast::<CancelEventData>().is_some());
+
+        let image = ImageData::from(&empty);
+        assert!(!image.load_error());
+
+        let media = MediaData::from(&empty);
+        assert!(media.downcast::<MediaEventData>().is_some());
+
+        let selection = SelectionData::from(&empty);
+        assert!(selection.downcast::<SelectionEventData>().is_some());
+
+        let toggle = ToggleData::from(&empty);
+        assert!(toggle.downcast::<ToggleEventData>().is_some());
+
+        let touch = TouchData::from(&empty);
+        assert!(touch.modifiers().is_empty());
+        assert!(touch.touches().is_empty());
+        assert!(touch.touches_changed().is_empty());
+        assert!(touch.target_touches().is_empty());
+
+        let visible = VisibleData::from(&empty);
+        assert!(matches!(
+            visible.is_intersecting(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_bounding_client_rect(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_intersection_ratio(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_intersection_rect(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_root_bounds(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_time(),
+            Err(VisibleError::NotSupported)
+        ));
+    }
+
+    #[test]
+    fn fr34_event_converter_preserves_image_load_error() {
+        let event = PlatformEventData::new(Box::new(ImageEventData { load_error: true }));
+        let image = Converter.convert_image_data(&event);
+        assert!(image.load_error());
     }
 }

@@ -161,6 +161,8 @@ fn palette(dom: &HtmlDom, list: &DisplayList) -> Palette {
 fn without_colours(entry: &NodeEntry) -> NodeEntry {
     let mut entry = entry.clone();
     entry.background = None;
+    // The computed CSS `color` every box now carries is a colour like the rest.
+    entry.color = Rgba::default();
     if let Some(border) = entry.border.as_mut() {
         border.colors = Sides::default();
     }

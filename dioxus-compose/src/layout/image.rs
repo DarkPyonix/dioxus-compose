@@ -16,6 +16,7 @@
 //! resolver answered, with no pixels, onto each `<img>` before layout, and blitz-dom's
 //! replaced-element sizing reads only the width and height of it.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -107,11 +108,25 @@ struct Source {
     tints: Vec<Tint>,
 }
 
+/// How many inline `<svg>` pictures stay registered at once. Each distinct markup, which
+/// includes the colours written into it, is one registration, so a colour animation on an
+/// inline icon draws a new one every frame; past this many the least recently drawn is let
+/// go.
+pub(crate) const INLINE_SVGS: usize = 256;
+
+/// One inline `<svg>` registration and the plan that last drew it.
+struct InlinePicture {
+    id: u32,
+    drawn_in: u64,
+}
+
 #[derive(Default)]
 struct Tinted {
     /// Counts plan builds, so a colour drawn in the plan being built is never let go.
     plan: u64,
     sources: HashMap<(usize, usize), Source>,
+    /// Inline `<svg>` registrations, by the text registered.
+    inline: HashMap<String, InlinePicture>,
 }
 
 thread_local! {
@@ -173,6 +188,43 @@ pub(crate) fn current_color_asset(svg: &'static [u8], color: Rgba) -> Option<Ass
             drawn_in: plan,
         });
         Some(AssetId(id))
+    })
+}
+
+/// The registration that draws the inline `<svg>` `markup`, made on its first use.
+///
+/// `markup` comes with every `currentColor` blitz-dom recognised already written as a
+/// colour; any it left (written in another case, which CSS allows) is written as `color`,
+/// the `<svg>` element's own. The same text drawn again uses the same registration. At
+/// most [`INLINE_SVGS`] stay registered: a new one past that releases the one drawn longest
+/// ago, unless every one of them is drawn in the current plan.
+pub(crate) fn inline_svg_asset(markup: &str, color: Rgba) -> AssetId {
+    // The registration is found by the text it registers, so markup whose leftover
+    // `currentColor` is written in a new colour is a new registration.
+    let text = with_current_color(markup, color).map_or(Cow::Borrowed(markup), Cow::Owned);
+    TINTED.with_borrow_mut(|tinted| {
+        let plan = tinted.plan;
+        if let Some(picture) = tinted.inline.get_mut(&*text) {
+            picture.drawn_in = plan;
+            return AssetId(picture.id);
+        }
+        if tinted.inline.len() >= INLINE_SVGS {
+            let oldest = tinted
+                .inline
+                .iter()
+                .filter(|(_, picture)| picture.drawn_in < plan)
+                .min_by_key(|(_, picture)| picture.drawn_in)
+                .map(|(text, _)| text.clone());
+            if let Some(gone) = oldest.and_then(|text| tinted.inline.remove(&text)) {
+                compose_rust::asset::release_owned(gone.id, AssetKind::Svg);
+            }
+        }
+        let text = text.into_owned();
+        let id = compose_rust::asset::register_owned(AssetKind::Svg, text.clone().into_bytes());
+        tinted
+            .inline
+            .insert(text, InlinePicture { id, drawn_in: plan });
+        AssetId(id)
     })
 }
 

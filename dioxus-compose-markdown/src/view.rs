@@ -15,7 +15,10 @@ use crate::code::{CodeKind, CodeSpan, prepare, without_controls};
 use crate::highlight::{self, key_of};
 use crate::model::{Block, BlockRef, ColumnAlign, Inline, ListItem};
 use crate::options::{CopyRequest, Labels, MarkdownOptions};
-use crate::stream::{CHUNK, GROUP, MarkdownStream, WatchGuard, WatchKey};
+use crate::stream::{
+    AlignmentsRef, CHUNK, GROUP, ListItemRef, MarkdownStream, StreamSlot, TableHeaderRef,
+    TableRowRef, WatchGuard, WatchKey,
+};
 use dioxus_compose::prelude::*;
 use dioxus_compose::spans::{TextSpan, TextSpans};
 use std::cell::{Cell, RefCell};
@@ -50,25 +53,54 @@ impl Doc {
         }
     }
 
-    fn collect(&self, first: usize, count: usize) -> Vec<(usize, BlockRef, bool)> {
+    fn collect_slots(&self, first: usize, count: usize) -> Vec<(usize, StreamSlot)> {
         match self {
             Doc::Static(blocks) => blocks
                 .iter()
                 .enumerate()
                 .skip(first)
                 .take(count)
-                .map(|(index, block)| (index, block.clone(), false))
+                .map(|(index, block)| (index, StreamSlot::Block(block.clone(), false)))
                 .collect(),
             Doc::Stream(stream) => {
                 let stream = stream.peek();
                 (first..first + count)
-                    .filter_map(|index| {
-                        stream
-                            .block(index)
-                            .map(|block| (index, block.clone(), stream.is_open(index)))
-                    })
+                    .filter_map(|index| stream.slot(index).map(|slot| (index, slot)))
                     .collect()
             }
+        }
+    }
+
+    fn list_len(&self, block: usize) -> usize {
+        match self {
+            Doc::Static(_) => 0,
+            Doc::Stream(stream) => stream.peek().list_len(block),
+        }
+    }
+
+    fn list_items(
+        &self,
+        block: usize,
+        first: usize,
+        count: usize,
+    ) -> Vec<(usize, ListItemRef, bool)> {
+        match self {
+            Doc::Static(_) => Vec::new(),
+            Doc::Stream(stream) => stream.peek().list_items(block, first, count),
+        }
+    }
+
+    fn table_len(&self, block: usize) -> usize {
+        match self {
+            Doc::Static(_) => 0,
+            Doc::Stream(stream) => stream.peek().table_len(block),
+        }
+    }
+
+    fn table_rows(&self, block: usize, first: usize, count: usize) -> Vec<(usize, TableRowRef)> {
+        match self {
+            Doc::Static(_) => Vec::new(),
+            Doc::Stream(stream) => stream.peek().table_rows(block, first, count),
         }
     }
 
@@ -110,10 +142,10 @@ impl std::ops::Deref for ViewRef {
 /// Registers a component to be drawn again when its part of a stream changes, and keeps
 /// the registration for as long as the component lives.
 fn use_watch(doc: &Doc, key: WatchKey, generation: u64) {
-    let slot = use_hook(|| Rc::new(RefCell::new(None::<(u64, Option<WatchGuard>)>)));
+    let slot = use_hook(|| Rc::new(RefCell::new(None::<(u64, WatchKey, Option<WatchGuard>)>)));
     let mut slot = slot.borrow_mut();
-    if slot.as_ref().map(|(seen, _)| *seen) != Some(generation) {
-        *slot = Some((generation, doc.watch(key)));
+    if slot.as_ref().map(|(seen, seen_key, _)| (*seen, *seen_key)) != Some((generation, key)) {
+        *slot = Some((generation, key, doc.watch(key)));
     }
 }
 
@@ -169,16 +201,344 @@ fn Group(doc: Doc, view: ViewRef, generation: u64, index: usize) -> Element {
 #[component]
 fn Chunk(doc: Doc, view: ViewRef, generation: u64, index: usize) -> Element {
     use_watch(&doc, WatchKey::Chunk(index), generation);
-    let blocks = doc.collect(index * CHUNK, CHUNK);
+    let slots = doc.collect_slots(index * CHUNK, CHUNK);
     rsx! {
-        for (position, block, open) in blocks {
-            BlockView {
+        for (position, slot) in slots {
+            SlotView {
                 key: "{position}",
-                block,
-                open,
+                doc: doc.clone(),
                 view: view.clone(),
+                generation,
+                position,
+                slot,
             }
         }
+    }
+}
+
+#[component]
+fn SlotView(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    position: usize,
+    slot: StreamSlot,
+) -> Element {
+    match slot {
+        StreamSlot::Block(block, open) => rsx! {
+            BlockView { block, open, view }
+        },
+        StreamSlot::List { start } => rsx! {
+            StreamList {
+                doc,
+                view,
+                generation,
+                block: position,
+                start,
+            }
+        },
+        StreamSlot::Table { header } => rsx! {
+            StreamTable {
+                doc,
+                view,
+                generation,
+                block: position,
+                header,
+            }
+        },
+    }
+}
+
+#[component]
+fn StreamList(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    start: Option<u64>,
+) -> Element {
+    rsx! {
+        Column {
+            fill_max_width: true,
+            space_role: SpaceRole::Xs,
+            ListGroups { doc, view, generation, block, start }
+        }
+    }
+}
+
+#[component]
+fn ListGroups(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    start: Option<u64>,
+) -> Element {
+    use_watch(&doc, WatchKey::SubRoot(block), generation);
+    let groups = doc.list_len(block).div_ceil(CHUNK).div_ceil(GROUP);
+    rsx! {
+        for index in 0..groups {
+            ListGroup {
+                key: "{index}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
+                start,
+                index,
+            }
+        }
+    }
+}
+
+#[component]
+fn ListGroup(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    start: Option<u64>,
+    index: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubGroup(block, index), generation);
+    let chunks = doc.list_len(block).div_ceil(CHUNK);
+    let first = index * GROUP;
+    let last = chunks.min(first + GROUP);
+    rsx! {
+        for chunk in first..last {
+            ListChunk {
+                key: "{chunk}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
+                start,
+                index: chunk,
+            }
+        }
+    }
+}
+
+#[component]
+fn ListChunk(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    start: Option<u64>,
+    index: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubChunk(block, index), generation);
+    let first = index * CHUNK;
+    let last = doc.list_len(block).min(first + CHUNK);
+    rsx! {
+        for position in first..last {
+            ListItemSlot {
+                key: "{position}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
+                start,
+                position,
+            }
+        }
+    }
+}
+
+/// One list item, drawn again when that item changes and at no other time: a delta on the
+/// item still arriving leaves the finished items in its chunk alone.
+#[component]
+fn ListItemSlot(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    start: Option<u64>,
+    position: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubItem(block, position), generation);
+    let Some((_, item, open)) = doc.list_items(block, position, 1).into_iter().next() else {
+        return rsx! {};
+    };
+    rsx! {
+        ListItemView { start, position, item, open, view }
+    }
+}
+
+#[component]
+fn ListItemView(
+    start: Option<u64>,
+    position: usize,
+    item: ListItemRef,
+    open: bool,
+    view: ViewRef,
+) -> Element {
+    let counter = Cell::new(item.first_code);
+    let context = Context {
+        view: &view,
+        open,
+        muted: false,
+        code: &counter,
+    };
+    list_item(start, position, &item.item, &context)
+}
+
+#[component]
+fn StreamTable(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    header: TableHeaderRef,
+) -> Element {
+    let counter = Cell::new(0);
+    let context = Context {
+        view: &view,
+        open: false,
+        muted: false,
+        code: &counter,
+    };
+    let head_cells =
+        header.head.iter().enumerate().map(|(column, inline)| {
+            table_cell(&header.alignments.0, column, inline, true, &context)
+        });
+    rsx! {
+        ScrollRow {
+            fill_max_width: true,
+            Column {
+                fill_max_width: true,
+                space_role: SpaceRole::Xs,
+                Row { fill_max_width: true, space_role: SpaceRole::Md, {head_cells} }
+                Divider {}
+                TableGroups {
+                    doc,
+                    view,
+                    generation,
+                    block,
+                    alignments: header.alignments.clone(),
+                }
+            }
+        }
+    }
+}
+
+#[component]
+fn TableGroups(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    alignments: AlignmentsRef,
+) -> Element {
+    use_watch(&doc, WatchKey::SubRoot(block), generation);
+    let groups = doc.table_len(block).div_ceil(CHUNK).div_ceil(GROUP);
+    rsx! {
+        for index in 0..groups {
+            TableGroup {
+                key: "{index}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
+                alignments: alignments.clone(),
+                index,
+            }
+        }
+    }
+}
+
+#[component]
+fn TableGroup(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    alignments: AlignmentsRef,
+    index: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubGroup(block, index), generation);
+    let chunks = doc.table_len(block).div_ceil(CHUNK);
+    let first = index * GROUP;
+    let last = chunks.min(first + GROUP);
+    rsx! {
+        for chunk in first..last {
+            TableChunk {
+                key: "{chunk}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
+                alignments: alignments.clone(),
+                index: chunk,
+            }
+        }
+    }
+}
+
+#[component]
+fn TableChunk(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    alignments: AlignmentsRef,
+    index: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubChunk(block, index), generation);
+    let first = index * CHUNK;
+    let last = doc.table_len(block).min(first + CHUNK);
+    rsx! {
+        for position in first..last {
+            TableRowSlot {
+                key: "{position}",
+                doc: doc.clone(),
+                view: view.clone(),
+                generation,
+                block,
+                alignments: alignments.clone(),
+                position,
+            }
+        }
+    }
+}
+
+/// One table row, drawn again when that row changes and at no other time: a delta on the
+/// row still arriving leaves the finished rows in its chunk alone.
+#[component]
+fn TableRowSlot(
+    doc: Doc,
+    view: ViewRef,
+    generation: u64,
+    block: usize,
+    alignments: AlignmentsRef,
+    position: usize,
+) -> Element {
+    use_watch(&doc, WatchKey::SubItem(block, position), generation);
+    let Some((_, row)) = doc.table_rows(block, position, 1).into_iter().next() else {
+        return rsx! {};
+    };
+    rsx! {
+        TableRowView { alignments, row, view }
+    }
+}
+
+#[component]
+fn TableRowView(alignments: AlignmentsRef, row: TableRowRef, view: ViewRef) -> Element {
+    let counter = Cell::new(0);
+    let context = Context {
+        view: &view,
+        open: false,
+        muted: false,
+        code: &counter,
+    };
+    let cells = row
+        .0
+        .iter()
+        .enumerate()
+        .map(|(column, inline)| table_cell(&alignments.0, column, inline, false, &context));
+    rsx! {
+        Row { fill_max_width: true, space_role: SpaceRole::Md, {cells} }
     }
 }
 
@@ -218,6 +578,7 @@ struct Look {
     role: Option<TypeRole>,
     align: Option<TextAlign>,
     weight: Option<f32>,
+    semantics: Option<Semantics>,
 }
 
 fn heading_role(level: u8) -> TypeRole {
@@ -229,6 +590,31 @@ fn heading_role(level: u8) -> TypeRole {
     }
 }
 
+fn table_cell(
+    alignments: &[ColumnAlign],
+    column: usize,
+    inline: &Inline,
+    header: bool,
+    context: &Context<'_>,
+) -> Element {
+    let align = match alignments.get(column) {
+        Some(ColumnAlign::Left) => Some(TextAlign::Start),
+        Some(ColumnAlign::Center) => Some(TextAlign::Center),
+        Some(ColumnAlign::Right) => Some(TextAlign::End),
+        _ => None,
+    };
+    inline_text(
+        inline,
+        context,
+        Look {
+            role: header.then_some(TypeRole::BodyStrong),
+            align,
+            weight: Some(1.0),
+            semantics: None,
+        },
+    )
+}
+
 fn render_block(block: &Block, context: &Context<'_>) -> Element {
     match block {
         Block::Heading { level, content } => inline_text(
@@ -236,6 +622,7 @@ fn render_block(block: &Block, context: &Context<'_>) -> Element {
             context,
             Look {
                 role: Some(heading_role(*level)),
+                semantics: Some(Semantics::new(SemanticsRole::Heading)),
                 ..Look::default()
             },
         ),
@@ -291,32 +678,15 @@ fn render_block(block: &Block, context: &Context<'_>) -> Element {
             head,
             rows,
         } => {
-            let alignment = |column: usize| match alignments.get(column) {
-                Some(ColumnAlign::Left) => Some(TextAlign::Start),
-                Some(ColumnAlign::Center) => Some(TextAlign::Center),
-                Some(ColumnAlign::Right) => Some(TextAlign::End),
-                _ => None,
-            };
-            let cell = |column: usize, inline: &Inline, header: bool| {
-                inline_text(
-                    inline,
-                    context,
-                    Look {
-                        role: header.then_some(TypeRole::BodyStrong),
-                        align: alignment(column),
-                        weight: Some(1.0),
-                    },
-                )
-            };
             let header = head
                 .iter()
                 .enumerate()
-                .map(|(column, inline)| cell(column, inline, true));
+                .map(|(column, inline)| table_cell(alignments, column, inline, true, context));
             let body = rows.iter().map(|row| {
                 let cells = row
                     .iter()
                     .enumerate()
-                    .map(|(column, inline)| cell(column, inline, false));
+                    .map(|(column, inline)| table_cell(alignments, column, inline, false, context));
                 rsx! {
                     Row { fill_max_width: true, space_role: SpaceRole::Md, {cells} }
                 }
@@ -460,6 +830,7 @@ fn inline_text(inline: &Inline, context: &Context<'_>, look: Look) -> Element {
                     type_role: look.role,
                     text_align: look.align,
                     weight: look.weight,
+                    semantics: look.semantics,
                     color,
                     streaming: true,
                     on_link: move |value: u64| {
@@ -480,6 +851,7 @@ fn inline_text(inline: &Inline, context: &Context<'_>, look: Look) -> Element {
                 type_role: look.role,
                 text_align: look.align,
                 weight: look.weight,
+                semantics: look.semantics,
                 color,
                 streaming: true,
             }
