@@ -23,7 +23,10 @@ use std::collections::HashMap;
 
 use dioxus_compose::html::{BaseDocument, DisplayList, NodeEntry, Rect};
 
-use support::{CapturedMeasurer, Region, SETI_ADVANCE_EM, Status, captured, lay_out, region};
+use support::{
+    CapturedMeasurer, Region, SETI_ADVANCE_EM, Status, captured, lay_out, lay_out_html,
+    parse_captured, region,
+};
 
 /// At least this share of the compared elements must be within [`CLOSE`] pixels.
 const SHARE_WITHIN_CLOSE: f64 = 0.95;
@@ -372,4 +375,356 @@ fn fr34_box_tolerance_unmeasured_icon_glyphs_cannot_move_a_box() {
             moved.join("\n  ")
         );
     }
+}
+
+/// Lays out a workbench region fixture with the measured text table in `geometry`, compares
+/// every `data-probe-id` element against its reference rect, and asserts the same tolerance
+/// as the captured workbench regions: at least 95 percent within 1px and none beyond 4px.
+fn assert_workbench_region_tolerance(region_name: &str, html: &str, geometry: &str) {
+    let captured = parse_captured(geometry);
+    let expected = region(&captured, region_name);
+    let mut measurer = CapturedMeasurer::new(&captured);
+    let (doc, list) = lay_out_html(html, &mut measurer);
+    measurer.assert_nothing_unknown(region_name);
+    let computed = computed_rects(&doc, &list, &measurer);
+    let comparison = compare(expected, &computed);
+    let summary = comparison.summary();
+    eprintln!("{summary}");
+    assert!(
+        comparison.meets_tolerance(),
+        "boxes outside the tolerance (at least {:.0}% within {CLOSE}px, none beyond \
+         {WORST_ALLOWED}px):\n{summary}\n  worst elements:\n{}",
+        SHARE_WITHIN_CLOSE * 100.0,
+        comparison.worst_rows(15)
+    );
+}
+
+#[test]
+fn fr34_5_box_tolerance_panel() {
+    let html = r#"<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font-size: 13px; }
+.part.panel {
+    position: absolute; left: 0; top: 618px; width: 1440px; height: 260px;
+    display: flex; flex-direction: column; border-top: 1px solid #2a2b2c;
+}
+.composite.title {
+    height: 36px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 12px;
+}
+.panel-tabs { display: flex; align-items: center; gap: 16px; height: 36px; }
+.panel-tab {
+    display: flex; align-items: center; height: 36px; line-height: 36px;
+    font-size: 11px; font-weight: 400; white-space: nowrap;
+}
+.tab-label { line-height: 14px; }
+.title-actions { display: flex; align-items: center; gap: 4px; height: 22px; }
+.action-btn { width: 22px; height: 22px; }
+.panel-body { flex: 1; padding: 8px 12px; display: flex; flex-direction: column; gap: 4px; }
+.problem-row { height: 22px; display: flex; align-items: center; gap: 8px; }
+.severity-icon { width: 16px; height: 16px; }
+.problem-msg { height: 22px; line-height: 22px; font-size: 13px; white-space: nowrap; }
+.problem-loc { height: 22px; line-height: 22px; font-size: 12px; white-space: nowrap; }
+</style></head><body>
+<div class="part panel" data-probe-id="0">
+<div class="composite title" data-probe-id="1">
+<div class="panel-tabs" data-probe-id="2">
+<div class="panel-tab active" data-probe-id="3"><span class="tab-label" data-probe-id="4">PROBLEMS</span></div>
+<div class="panel-tab" data-probe-id="5"><span class="tab-label" data-probe-id="6">OUTPUT</span></div>
+<div class="panel-tab" data-probe-id="7"><span class="tab-label" data-probe-id="8">TERMINAL</span></div>
+</div>
+<div class="title-actions" data-probe-id="9">
+<div class="action-btn" data-probe-id="10"></div>
+<div class="action-btn" data-probe-id="11"></div>
+</div>
+</div>
+<div class="panel-body" data-probe-id="12">
+<div class="problem-row" data-probe-id="13">
+<div class="severity-icon" data-probe-id="14"></div>
+<div class="problem-msg" data-probe-id="15"><span class="msg-text" data-probe-id="16">unused variable x</span></div>
+<div class="problem-loc" data-probe-id="17">main.rs:14</div>
+</div>
+<div class="problem-row" data-probe-id="18">
+<div class="severity-icon" data-probe-id="19"></div>
+<div class="problem-msg" data-probe-id="20">missing semicolon</div>
+<div class="problem-loc" data-probe-id="21">lib.rs:42</div>
+</div>
+</div>
+</div>
+</body></html>"#;
+
+    let geometry = "\
+region\tpanel\t0
+el\t0\tcompare\t0\t618\t1440\t260\tdiv.part.panel
+el\t1\tcompare\t0\t619\t1440\t36\tdiv.composite.title
+el\t2\tcompare\t12\t619\t196\t36\tdiv.panel-tabs
+el\t3\tcompare\t12\t619\t60\t36\tdiv.panel-tab.active
+el\t4\tcompare\t12\t630\t60\t14\tspan.tab-label
+el\t5\tcompare\t88\t619\t46\t36\tdiv.panel-tab
+el\t6\tcompare\t88\t630\t46\t14\tspan.tab-label
+el\t7\tcompare\t150\t619\t58\t36\tdiv.panel-tab
+el\t8\tcompare\t150\t630\t58\t14\tspan.tab-label
+el\t9\tcompare\t1380\t626\t48\t22\tdiv.title-actions
+el\t10\tcompare\t1380\t626\t22\t22\tdiv.action-btn
+el\t11\tcompare\t1406\t626\t22\t22\tdiv.action-btn
+el\t12\tcompare\t0\t655\t1440\t223\tdiv.panel-body
+el\t13\tcompare\t12\t663\t1416\t22\tdiv.problem-row
+el\t14\tcompare\t12\t666\t16\t16\tdiv.severity-icon
+el\t15\tcompare\t36\t663\t110\t22\tdiv.problem-msg
+el\t16\tcompare\t36\t666\t110\t16\tspan.msg-text
+el\t17\tcompare\t154\t663\t62\t22\tdiv.problem-loc
+el\t18\tcompare\t12\t689\t1416\t22\tdiv.problem-row
+el\t19\tcompare\t12\t692\t16\t16\tdiv.severity-icon
+el\t20\tcompare\t36\t689\t114\t22\tdiv.problem-msg
+el\t21\tcompare\t158\t689\t50\t22\tdiv.problem-loc
+text\t11\t400\t60\t14\t11\tPROBLEMS
+text\t11\t400\t46\t14\t11\tOUTPUT
+text\t11\t400\t58\t14\t11\tTERMINAL
+text\t13\t400\t110\t16\t13\tunused variable x
+text\t12\t400\t62\t14\t11\tmain.rs:14
+text\t13\t400\t114\t16\t13\tmissing semicolon
+text\t12\t400\t50\t14\t11\tlib.rs:42
+";
+
+    assert_workbench_region_tolerance("panel", html, geometry);
+}
+
+#[test]
+fn fr34_5_box_tolerance_status_bar() {
+    let html = r#"<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font-size: 12px; }
+.part.statusbar {
+    position: absolute; left: 0; top: 878px; width: 1440px; height: 22px;
+    display: flex; justify-content: space-between; align-items: center; padding: 0 8px;
+}
+.left-items, .right-items { display: flex; align-items: center; gap: 4px; height: 22px; }
+.statusbar-item {
+    display: flex; align-items: center; padding: 0 6px; height: 22px;
+    line-height: 22px; font-size: 12px; white-space: nowrap;
+}
+.item-label { line-height: 14px; }
+</style></head><body>
+<footer class="part statusbar" data-probe-id="0">
+<div class="left-items" data-probe-id="1">
+<div class="statusbar-item" data-probe-id="2"><span class="item-label" data-probe-id="3">main*</span></div>
+<div class="statusbar-item" data-probe-id="4"><span class="item-label" data-probe-id="5">0 0</span></div>
+</div>
+<div class="right-items" data-probe-id="6">
+<div class="statusbar-item" data-probe-id="7">Ln 14, Col 8</div>
+<div class="statusbar-item" data-probe-id="8">Spaces: 4</div>
+<div class="statusbar-item" data-probe-id="9">UTF-8</div>
+<div class="statusbar-item" data-probe-id="10">Rust</div>
+</div>
+</footer>
+</body></html>"#;
+
+    let geometry = "\
+region\tstatus_bar\t0
+el\t0\tcompare\t0\t878\t1440\t22\tfooter.part.statusbar
+el\t1\tcompare\t8\t878\t88\t22\tdiv.left-items
+el\t2\tcompare\t8\t878\t48\t22\tdiv.statusbar-item
+el\t3\tcompare\t14\t882\t36\t14\tspan.item-label
+el\t4\tcompare\t60\t878\t36\t22\tdiv.statusbar-item
+el\t5\tcompare\t66\t882\t24\t14\tspan.item-label
+el\t6\tcompare\t1176\t878\t256\t22\tdiv.right-items
+el\t7\tcompare\t1176\t878\t84\t22\tdiv.statusbar-item
+el\t8\tcompare\t1264\t878\t70\t22\tdiv.statusbar-item
+el\t9\tcompare\t1338\t878\t50\t22\tdiv.statusbar-item
+el\t10\tcompare\t1392\t878\t40\t22\tdiv.statusbar-item
+text\t12\t400\t36\t14\t11\tmain*
+text\t12\t400\t24\t14\t11\t0 0
+text\t12\t400\t72\t14\t11\tLn 14, Col 8
+text\t12\t400\t58\t14\t11\tSpaces: 4
+text\t12\t400\t38\t14\t11\tUTF-8
+text\t12\t400\t28\t14\t11\tRust
+";
+
+    assert_workbench_region_tolerance("status_bar", html, geometry);
+}
+
+#[test]
+fn fr34_5_box_tolerance_quick_input() {
+    let html = r#"<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font-size: 13px; }
+.quick-input-widget {
+    position: absolute; left: 420px; top: 36px; width: 600px;
+    border: 1px solid #3c3c3c; display: flex; flex-direction: column;
+}
+.quick-input-header { padding: 6px; height: 38px; display: flex; align-items: center; }
+.quick-input-box {
+    width: 586px; height: 26px; border: 1px solid #007fd4; padding: 0 6px;
+    display: flex; align-items: center; line-height: 24px; font-size: 13px; white-space: nowrap;
+}
+.quick-input-text { line-height: 16px; }
+.quick-input-list { padding: 4px 6px 6px 6px; display: flex; flex-direction: column; }
+.quick-input-row {
+    height: 22px; padding: 0 6px; display: flex; align-items: center;
+    justify-content: space-between;
+}
+.row-label { height: 22px; line-height: 22px; font-size: 13px; white-space: nowrap; }
+.row-keybinding {
+    height: 18px; line-height: 18px; padding: 0 4px; font-size: 11px; white-space: nowrap;
+}
+</style></head><body>
+<div class="quick-input-widget" data-probe-id="0">
+<div class="quick-input-header" data-probe-id="1">
+<div class="quick-input-box" data-probe-id="2"><span class="quick-input-text" data-probe-id="3">&gt;View: Toggle Terminal</span></div>
+</div>
+<div class="quick-input-list" data-probe-id="4">
+<div class="quick-input-row focused" data-probe-id="5">
+<div class="row-label" data-probe-id="6">View: Toggle Terminal</div>
+<div class="row-keybinding" data-probe-id="7">Ctrl+`</div>
+</div>
+<div class="quick-input-row" data-probe-id="8">
+<div class="row-label" data-probe-id="9">File: Open Folder</div>
+<div class="row-keybinding" data-probe-id="10">Cmd+O</div>
+</div>
+<div class="quick-input-row" data-probe-id="11">
+<div class="row-label" data-probe-id="12">Preferences: Color Theme</div>
+</div>
+</div>
+</div>
+</body></html>"#;
+
+    let geometry = "\
+region\tquick_input\t0
+el\t0\tcompare\t420\t36\t600\t116\tdiv.quick-input-widget
+el\t1\tcompare\t421\t37\t598\t38\tdiv.quick-input-header
+el\t2\tcompare\t427\t43\t586\t26\tdiv.quick-input-box
+el\t3\tcompare\t434\t48\t148\t16\tspan.quick-input-text
+el\t4\tcompare\t421\t75\t598\t76\tdiv.quick-input-list
+el\t5\tcompare\t427\t79\t586\t22\tdiv.quick-input-row.focused
+el\t6\tcompare\t433\t79\t140\t22\tdiv.row-label
+el\t7\tcompare\t963\t81\t44\t18\tdiv.row-keybinding
+el\t8\tcompare\t427\t101\t586\t22\tdiv.quick-input-row
+el\t9\tcompare\t433\t101\t108\t22\tdiv.row-label
+el\t10\tcompare\t959\t103\t48\t18\tdiv.row-keybinding
+el\t11\tcompare\t427\t123\t586\t22\tdiv.quick-input-row
+el\t12\tcompare\t433\t123\t156\t22\tdiv.row-label
+text\t13\t400\t148\t16\t13\t>View: Toggle Terminal
+text\t13\t400\t140\t16\t13\tView: Toggle Terminal
+text\t11\t400\t36\t12\t10\tCtrl+`
+text\t13\t400\t108\t16\t13\tFile: Open Folder
+text\t11\t400\t40\t12\t10\tCmd+O
+text\t13\t400\t156\t16\t13\tPreferences: Color Theme
+";
+
+    assert_workbench_region_tolerance("quick_input", html, geometry);
+}
+
+#[test]
+fn fr34_5_box_tolerance_context_menu() {
+    let html = r#"<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font-size: 13px; }
+.monaco-menu {
+    position: absolute; left: 160px; top: 120px; width: 240px;
+    border: 1px solid #454545; padding: 4px 0; display: flex; flex-direction: column;
+}
+.menu-item {
+    height: 26px; padding: 0 12px; display: flex; align-items: center;
+    justify-content: space-between;
+}
+.menu-label { height: 26px; line-height: 26px; font-size: 13px; white-space: nowrap; }
+.menu-shortcut { height: 26px; line-height: 26px; font-size: 12px; white-space: nowrap; }
+.menu-separator { height: 1px; margin: 4px 8px; }
+</style></head><body>
+<div class="monaco-menu" data-probe-id="0">
+<div class="menu-item" data-probe-id="1">
+<div class="menu-label" data-probe-id="2"><span class="menu-text" data-probe-id="3">Cut</span></div>
+<div class="menu-shortcut" data-probe-id="4">Cmd+X</div>
+</div>
+<div class="menu-item" data-probe-id="5">
+<div class="menu-label" data-probe-id="6">Copy</div>
+<div class="menu-shortcut" data-probe-id="7">Cmd+C</div>
+</div>
+<div class="menu-separator" data-probe-id="8"></div>
+<div class="menu-item" data-probe-id="9">
+<div class="menu-label" data-probe-id="10">Paste</div>
+<div class="menu-shortcut" data-probe-id="11">Cmd+V</div>
+</div>
+</div>
+</body></html>"#;
+
+    let geometry = "\
+region\tcontext_menu\t0
+el\t0\tcompare\t160\t120\t240\t97\tdiv.monaco-menu
+el\t1\tcompare\t161\t125\t238\t26\tdiv.menu-item
+el\t2\tcompare\t173\t125\t22\t26\tdiv.menu-label
+el\t3\tcompare\t173\t130\t22\t16\tspan.menu-text
+el\t4\tcompare\t343\t125\t44\t26\tdiv.menu-shortcut
+el\t5\tcompare\t161\t151\t238\t26\tdiv.menu-item
+el\t6\tcompare\t173\t151\t32\t26\tdiv.menu-label
+el\t7\tcompare\t343\t151\t44\t26\tdiv.menu-shortcut
+el\t8\tcompare\t169\t181\t222\t1\tdiv.menu-separator
+el\t9\tcompare\t161\t186\t238\t26\tdiv.menu-item
+el\t10\tcompare\t173\t186\t34\t26\tdiv.menu-label
+el\t11\tcompare\t343\t186\t44\t26\tdiv.menu-shortcut
+text\t13\t400\t22\t16\t13\tCut
+text\t12\t400\t44\t14\t11\tCmd+X
+text\t13\t400\t32\t16\t13\tCopy
+text\t12\t400\t44\t14\t11\tCmd+C
+text\t13\t400\t34\t16\t13\tPaste
+text\t12\t400\t44\t14\t11\tCmd+V
+";
+
+    assert_workbench_region_tolerance("context_menu", html, geometry);
+}
+
+#[test]
+fn fr34_5_box_tolerance_hover_widget() {
+    let html = r#"<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><style>
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; font-size: 13px; }
+.monaco-hover {
+    position: absolute; left: 220px; top: 180px; width: 380px;
+    border: 1px solid #454545; display: flex; flex-direction: column;
+}
+.hover-code {
+    padding: 6px 8px; border-bottom: 1px solid #3c3c3c;
+    line-height: 18px; font-size: 12px; white-space: nowrap;
+}
+.hover-docs {
+    padding: 6px 8px; line-height: 18px; font-size: 13px; white-space: nowrap;
+}
+.hover-actions {
+    padding: 4px 8px; border-top: 1px solid #3c3c3c;
+    display: flex; align-items: center; gap: 12px; height: 27px;
+}
+.hover-action { height: 18px; line-height: 18px; font-size: 12px; white-space: nowrap; }
+</style></head><body>
+<div class="monaco-hover" data-probe-id="0">
+<div class="hover-code" data-probe-id="1"><span class="code-sig" data-probe-id="2">fn layout(&amp;mut self) -&gt; DisplayList</span></div>
+<div class="hover-docs" data-probe-id="3"><span class="doc-line" data-probe-id="4">Computes the layout and returns a display list.</span></div>
+<div class="hover-actions" data-probe-id="5">
+<div class="hover-action" data-probe-id="6">Quick Fix...</div>
+<div class="hover-action" data-probe-id="7">Peek Problem</div>
+</div>
+</div>
+</body></html>"#;
+
+    let geometry = "\
+region\thover_widget\t0
+el\t0\tcompare\t220\t180\t380\t90\tdiv.monaco-hover
+el\t1\tcompare\t221\t181\t378\t31\tdiv.hover-code
+el\t2\tcompare\t229\t189\t246\t14\tspan.code-sig
+el\t3\tcompare\t221\t212\t378\t30\tdiv.hover-docs
+el\t4\tcompare\t229\t219\t284\t16\tspan.doc-line
+el\t5\tcompare\t221\t242\t378\t27\tdiv.hover-actions
+el\t6\tcompare\t229\t247\t66\t18\tdiv.hover-action
+el\t7\tcompare\t307\t247\t82\t18\tdiv.hover-action
+text\t12\t400\t246\t14\t11\tfn layout(&mut self) -> DisplayList
+text\t13\t400\t284\t16\t13\tComputes the layout and returns a display list.
+text\t12\t400\t66\t14\t11\tQuick Fix...
+text\t12\t400\t82\t14\t11\tPeek Problem
+";
+
+    assert_workbench_region_tolerance("hover_widget", html, geometry);
 }
