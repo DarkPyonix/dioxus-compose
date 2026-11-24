@@ -248,6 +248,70 @@ pub struct TextRun {
     pub spans: Vec<SpanRun>,
 }
 
+impl TextRun {
+    /// The DOM element at `(px, py)` inside this run: the owner of the interactive span
+    /// covering that position, or [`TextRun::owner`] when no span claims it.
+    pub(crate) fn hit_owner(&self, px: f32, py: f32) -> NodeId {
+        if !self.spans.iter().any(|span| span.owner.is_some()) {
+            return self.owner;
+        }
+        let Some(byte_at) = self.byte_offset_at(px, py) else {
+            return self.owner;
+        };
+        self.spans
+            .iter()
+            .find(|span| span.owner.is_some() && byte_at >= span.start && byte_at < span.end)
+            .and_then(|span| span.owner)
+            .unwrap_or(self.owner)
+    }
+
+    fn byte_offset_at(&self, px: f32, py: f32) -> Option<usize> {
+        if self.text.is_empty() || self.rect.width <= 0.0 || self.rect.height <= 0.0 {
+            return None;
+        }
+        let total_lines = self.line_count.max(1) as usize;
+        let line_height = self.rect.height / total_lines as f32;
+        let line_idx =
+            (((py - self.rect.y) / line_height).floor().max(0.0) as usize).min(total_lines - 1);
+        let frac_x = ((px - self.rect.x) / self.rect.width).clamp(0.0, 1.0);
+
+        if total_lines > 1 && self.text.contains('\n') {
+            let mut lines = Vec::new();
+            let mut start = 0;
+            for part in self.text.split('\n') {
+                lines.push((start, part));
+                start += part.len() + 1;
+            }
+            if lines.len() == total_lines {
+                let (line_start, slice) = lines[line_idx];
+                let count = slice.chars().count();
+                if count == 0 {
+                    return Some(line_start);
+                }
+                let char_idx = ((frac_x * count as f32).floor() as usize).min(count - 1);
+                let rel = slice
+                    .char_indices()
+                    .nth(char_idx)
+                    .map(|(byte, _)| byte)
+                    .unwrap_or(0);
+                return Some(line_start + rel);
+            }
+        }
+
+        let total_chars = self.text.chars().count();
+        if total_chars == 0 {
+            return None;
+        }
+        let char_idx = if total_lines == 1 {
+            ((frac_x * total_chars as f32).floor() as usize).min(total_chars - 1)
+        } else {
+            let line_frac = (line_idx as f32 + frac_x) / total_lines as f32;
+            ((line_frac * total_chars as f32).floor() as usize).min(total_chars - 1)
+        };
+        self.text.char_indices().nth(char_idx).map(|(byte, _)| byte)
+    }
+}
+
 /// How a [`TextRun`] relates to the list marker of a `display: list-item` element.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RunMarker {
@@ -1481,7 +1545,7 @@ impl DisplayList {
                 continue;
             }
             if let Some(run) = entry.texts.iter().find(|run| run.rect.contains(px, py)) {
-                return Some(run.owner);
+                return Some(run.hit_owner(px, py));
             }
             return Some(entry.node);
         }
