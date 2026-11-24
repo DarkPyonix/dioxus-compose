@@ -17,15 +17,15 @@ use dioxus_compose::Host;
 use dioxus_compose::boundary::{RendererApi, install_renderer_api};
 use dioxus_compose::fonts::FontRef;
 use dioxus_compose::html::{
-    BaseDocument, DisplayList, HtmlConfig, NodeEntry, SpanRun, TextMeasureRequest, TextMeasurer,
-    TextMetrics, WidthConstraint, element_by_id, layout_document,
+    BaseDocument, DisplayList, HtmlConfig, NodeEntry, SpanRun, TextLineHeight, TextMeasureRequest,
+    TextMeasurer, TextMetrics, WidthConstraint, element_by_id, layout_document,
 };
 use dioxus_compose::measure::{
     MEASURE_RECORD_LEN, MEASURE_TEXT, MeasureResult, RESULT_OK, RESULT_UNKNOWN_NODE,
     TEXT_SPANS_COUNT_AT,
 };
-use dioxus_compose::protocol::{Mutation, PropertyValue, decode_batch};
-use dioxus_compose::schema::{GenericFamily, PropertyKind};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
+use dioxus_compose::schema::{EventPayload, GenericFamily, PropertyKind};
 use dioxus_compose::spans::TextSpans;
 use dioxus_compose::window::reset_window_size;
 
@@ -219,36 +219,47 @@ fn fr34_spans_carry_italic_lines_colour_and_family() {
     );
 }
 
-/// A size, a letter spacing or a line height cannot ride on a span, so the context stays
-/// with the fallback shaper, drawn a piece at a time, and nothing is carried as spans.
+/// Mixed font-size, letter-spacing, line-height, and numeric font-weight stay on the
+/// spanned path: one text run with one span carrying the differing typography, measured
+/// with spans rather than falling back to piece-by-piece shaping.
 #[test]
-fn fr34_mixed_sizes_stay_with_the_fallback_shaper() {
-    for inner in [
-        "font-size: 24px",
-        "letter-spacing: 2px",
-        "line-height: 40px",
-        "font-weight: 300",
-    ] {
+fn fr34_mixed_typography_stays_on_the_spanned_path() {
+    let cases = [
+        ("font-size: 24px", 0),
+        ("letter-spacing: 2px", 1),
+        ("line-height: 40px", 2),
+        ("font-weight: 300", 3),
+    ];
+    for (inner, kind) in cases {
         let (doc, list, recorder) = laid_out(
             &format!(r#"<p id="p">a <span style="{inner}">big</span> c</p>"#),
             "",
         );
         let texts = &entry(&list, &doc, "p").texts;
-        assert!(
-            texts.iter().all(|run| run.spans.is_empty()),
-            "{inner}: {texts:?}"
-        );
-        assert!(
-            texts.iter().all(|run| run.text != "a big c"),
-            "{inner}: the context was carried as one text: {texts:?}"
-        );
+        assert_eq!(texts.len(), 1, "{inner}: {texts:?}");
+        let run = &texts[0];
+        assert_eq!(run.text, "a big c", "{inner}: {texts:?}");
+        assert_eq!(run.spans.len(), 1, "{inner}: {:?}", run.spans);
+        assert_eq!(covered(&run.text, &run.spans), ["big"], "{inner}");
+        let span = &run.spans[0];
+        match kind {
+            0 => assert_eq!(span.font_size, Some(24.0), "{span:?}"),
+            1 => assert_eq!(span.letter_spacing, Some(2.0), "{span:?}"),
+            2 => assert_eq!(span.line_height, Some(TextLineHeight::Px(40.0)), "{span:?}"),
+            3 => {
+                assert_eq!(span.font_weight, Some(300.0), "{span:?}");
+                assert!(!span.bold, "{span:?}");
+            }
+            _ => unreachable!(),
+        }
         assert!(
             recorder
                 .asked
                 .borrow()
                 .iter()
-                .all(|(_, runs)| runs.is_empty()),
-            "{inner}: the measurer was handed spans"
+                .any(|(text, runs)| text == "a big c" && covered(text, runs) == ["big"]),
+            "{inner}: the measurer was not handed spans: {:?}",
+            recorder.asked.borrow()
         );
     }
 }
@@ -409,6 +420,20 @@ mod handled {
             }
         }
     }
+    pub fn link_paragraph() -> Element {
+        rsx! {
+            p { id: "p",
+                "See "
+                a {
+                    id: "link",
+                    href: "https://example.com",
+                    onclick: move |_| super::PRESSED.with(|pressed| pressed.borrow_mut().push("link")),
+                    "docs"
+                }
+                " now"
+            }
+        }
+    }
 }
 
 #[test]
@@ -429,19 +454,137 @@ fn fr34_an_onclick_on_an_inline_element_in_a_mixed_paragraph_still_fires() {
     let paragraph = dom.element_by_id("p").unwrap();
     let list = dom.display_list().unwrap();
     let texts = &list.get(paragraph).unwrap().texts;
-    // The element that listens keeps a run of its own, which a click reaches.
-    let run = texts
-        .iter()
-        .find(|run| run.owner == word)
-        .unwrap_or_else(|| panic!("no run owned by the listening element: {texts:?}"));
-    assert!(texts.iter().all(|run| run.spans.is_empty()), "{texts:?}");
-    let (x, y) = (
-        run.rect.x + run.rect.width / 2.0,
-        run.rect.y + run.rect.height / 2.0,
-    );
-    assert_eq!(dom.click(x, y), Some(word));
+    // The paragraph stays on the spanned path as one run, and the span owns its element.
+    assert_eq!(texts.len(), 1, "{texts:?}");
+    let run = &texts[0];
+    assert_eq!(run.owner, paragraph);
+    assert_eq!(run.text, "a bold c");
+    assert_eq!(run.spans.len(), 1, "{:?}", run.spans);
+    assert_eq!(covered(&run.text, &run.spans), ["bold"]);
+    assert!(run.spans[0].bold);
+    assert_eq!(run.spans[0].owner, Some(word));
+
+    // Clicking the plain prefix does not trigger the inline element's handler.
+    let rect = run.rect;
+    let y = rect.y + rect.height / 2.0;
+    assert_eq!(dom.click(rect.x + 0.5 * CHAR, y), None);
+    assert!(PRESSED.with(|pressed| pressed.borrow().is_empty()));
+
+    // Clicking over "bold" (characters 2..6) routes to the inline element.
+    assert_eq!(dom.click(rect.x + 4.0 * CHAR, y), Some(word));
     assert_eq!(
         PRESSED.with(|pressed| pressed.borrow().clone()),
         vec!["word"]
+    );
+}
+
+#[test]
+fn fr34_inline_link_stays_spanned_and_routes_click_to_link() {
+    use dioxus_compose::html::HtmlDom;
+
+    PRESSED.with(|pressed| pressed.borrow_mut().clear());
+    let mut dom = HtmlDom::with_config(
+        handled::link_paragraph,
+        HtmlConfig {
+            stylesheets: vec![
+                "html, body { margin: 0; } a { color: #0000ff; text-decoration: underline; }"
+                    .to_string(),
+            ],
+            measurer: Some(Box::new(Recorder::default())),
+            ..HtmlConfig::default()
+        },
+    );
+    dom.layout(400.0, 400.0, 1.0);
+    let link = dom.element_by_id("link").unwrap();
+    let paragraph = dom.element_by_id("p").unwrap();
+    let list = dom.display_list().unwrap();
+    let texts = &list.get(paragraph).unwrap().texts;
+    assert_eq!(texts.len(), 1, "{texts:?}");
+    let run = &texts[0];
+    assert_eq!(run.owner, paragraph);
+    assert_eq!(run.text, "See docs now");
+    assert_eq!(run.spans.len(), 1, "{:?}", run.spans);
+    assert_eq!(covered(&run.text, &run.spans), ["docs"]);
+    assert!(run.spans[0].underline);
+    assert_eq!(run.spans[0].owner, Some(link));
+
+    let rect = run.rect;
+    let y = rect.y + rect.height / 2.0;
+    // Clicking "See" (characters 0..3) does not hit the link.
+    assert_eq!(dom.click(rect.x + 1.0 * CHAR, y), None);
+    assert!(PRESSED.with(|pressed| pressed.borrow().is_empty()));
+
+    // Clicking "docs" (characters 4..8) hits the link and runs its onclick handler.
+    assert_eq!(dom.click(rect.x + 6.0 * CHAR, y), Some(link));
+    assert_eq!(
+        PRESSED.with(|pressed| pressed.borrow().clone()),
+        vec!["link"]
+    );
+}
+
+#[test]
+fn fr34_host_batch_registers_per_span_click_handler_for_inline_link() {
+    let _ = install_renderer_api(RendererApi {
+        run: never_run,
+        request_frame: no_frames,
+        measure: measure_by_the_character,
+    });
+    PRESSED.with(|pressed| pressed.borrow_mut().clear());
+    ASKED.with(|asked| asked.borrow_mut().clear());
+    reset_window_size();
+
+    let mut host = Host::html(handled::link_paragraph, || {
+        HtmlConfig {
+        stylesheets: vec![
+            "html, body { margin: 0; padding: 0; } a { color: #0000ff; text-decoration: underline; }"
+                .to_string(),
+        ],
+        ..HtmlConfig::default()
+    }
+    });
+    let first = decode_batch(host.rebuild().unwrap()).unwrap();
+
+    let mut text_node: Option<(u32, String)> = None;
+    let mut spans: Option<(u32, TextSpans)> = None;
+    for record in &first {
+        match record {
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::Text,
+                value: PropertyValue::String(shown),
+            } if *shown == "See docs now" => {
+                text_node = Some((*node_id, shown.to_string()));
+            }
+            Mutation::SetProp {
+                node_id,
+                property: PropertyKind::Spans,
+                value: PropertyValue::Bytes(bytes),
+            } => {
+                spans = Some((*node_id, TextSpans::from_bytes(bytes.to_vec())));
+            }
+            _ => {}
+        }
+    }
+    let (text_node_id, text) = text_node.expect("the link paragraph is sent as one spanned text");
+    let (spans_node_id, spans) = spans.expect("the link paragraph carries spans");
+    assert_eq!(spans_node_id, text_node_id);
+
+    let link_span = spans
+        .spans()
+        .find(|span| &text[span.start as usize..][..span.length as usize] == "docs")
+        .expect("the link text has a span");
+    let handler_id = link_span
+        .on_click
+        .expect("the link span carries a click handler");
+
+    host.dispatch(HostEvent::new(
+        text_node_id,
+        handler_id,
+        EventPayload::Clicked,
+    ))
+    .unwrap();
+    assert_eq!(
+        PRESSED.with(|pressed| pressed.borrow().clone()),
+        vec!["link"]
     );
 }

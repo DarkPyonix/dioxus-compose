@@ -8,10 +8,10 @@
 //! ranges, applies `text-transform` to each stretch with the ranges kept in step, and says
 //! what each stretch changes about its letters.
 //!
-//! compose-rust's spans carry bold, italic, the two lines, a colour and a font family. A
-//! context that also changes the font size, the letter spacing, the line height or how
-//! words break cannot be carried, and [`run_for`] says so by name instead of drawing it
-//! wrongly.
+//! Spans carry bold, italic, the two lines, colour, font family, font size, font weight,
+//! letter spacing, line height, and interactive ownership (links and listening inline
+//! elements). A context that changes how words break or `white-space` inside one line
+//! cannot be carried, and [`run_for`] says so by name instead of drawing it wrongly.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -136,30 +136,14 @@ pub(crate) fn clip(segments: Vec<Segment>, keep: Range<usize>) -> Vec<Segment> {
 /// something a span cannot say.
 pub(crate) fn run_for(base: &Held, held: &Held) -> Result<Option<SpanRun>, &'static str> {
     let (a, b) = (&base.style, &held.style);
-    if a.font_size != b.font_size {
-        return Err("changes the font size inside a line of text");
-    }
-    if a.letter_spacing != b.letter_spacing {
-        return Err("changes the letter spacing inside a line of text");
-    }
-    if a.line_height != b.line_height {
-        return Err("changes the line height inside a line of text");
-    }
     if a.word_break != b.word_break || a.overflow_wrap != b.overflow_wrap {
         return Err("changes how words break inside a line of text");
     }
     if base.white_space != held.white_space {
         return Err("changes white-space inside a line of text");
     }
-    // A span can make letters bold, and nothing can make them lighter again.
     let heavy = |weight: f32| weight >= 600.0;
-    let bold = match (heavy(a.font_weight), heavy(b.font_weight)) {
-        (false, true) => true,
-        (true, true) => false,
-        (_, false) if a.font_weight == b.font_weight => false,
-        (true, false) => return Err("sets a lighter weight inside bold text"),
-        (false, false) => return Err("sets a font weight other than bold"),
-    };
+    let bold = !heavy(a.font_weight) && heavy(b.font_weight);
     let italic = match (a.italic, b.italic) {
         (false, true) => true,
         (true, false) => return Err("sets upright letters inside italic text"),
@@ -181,18 +165,28 @@ pub(crate) fn run_for(base: &Held, held: &Held) -> Result<Option<SpanRun>, &'sta
         line_through,
         color: (held.color != base.color).then_some(held.color),
         font_family: (a.font_family != b.font_family).then(|| b.font_family.clone()),
+        font_size: (a.font_size != b.font_size).then_some(b.font_size),
+        font_weight: (a.font_weight != b.font_weight).then_some(b.font_weight),
+        letter_spacing: (a.letter_spacing != b.letter_spacing).then_some(b.letter_spacing),
+        line_height: (a.line_height != b.line_height).then_some(b.line_height),
+        owner: None,
     };
     let plain = !(run.bold
         || run.italic
         || run.underline
         || run.line_through
         || run.color.is_some()
-        || run.font_family.is_some());
+        || run.font_family.is_some()
+        || run.font_size.is_some()
+        || run.font_weight.is_some()
+        || run.letter_spacing.is_some()
+        || run.line_height.is_some());
     Ok((!plain).then_some(run))
 }
 
 /// The text as drawn, with `text-transform` applied to each stretch, and the runs that
-/// differ from `base`, with their ranges in the transformed text.
+/// differ from `base` or belong to an interactive inline element, with their ranges in
+/// the transformed text.
 ///
 /// `offset` is how many bytes come before the text in the string the runs index (an inside
 /// list marker).
@@ -207,6 +201,7 @@ pub(crate) fn build(
     helds: &HashMap<usize, Held>,
     base: &Held,
     offset: usize,
+    span_owner: &dyn Fn(usize) -> Option<usize>,
 ) -> Result<(String, Vec<SpanRun>), &'static str> {
     let transform_of = |segment: &Segment| helds.get(&segment.holder).map(|held| held.transform);
     let first = segments
@@ -249,8 +244,28 @@ pub(crate) fn build(
         }
         let start = offset + out.len();
         out.push_str(&piece);
-        let Some(mut run) = run_for(base, held)? else {
-            continue;
+        let owner = span_owner(segment.holder);
+        let mut run = match run_for(base, held)? {
+            Some(mut run) => {
+                run.owner = owner;
+                run
+            }
+            None if owner.is_some() => SpanRun {
+                start: 0,
+                end: 0,
+                bold: false,
+                italic: false,
+                underline: false,
+                line_through: false,
+                color: None,
+                font_family: None,
+                font_size: None,
+                font_weight: None,
+                letter_spacing: None,
+                line_height: None,
+                owner,
+            },
+            None => continue,
         };
         run.start = start;
         run.end = offset + out.len();
