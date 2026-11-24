@@ -157,7 +157,8 @@ pub fn layout_document_with(
     // A bare document has no page behind it to listen.
     layout::set_listening(Default::default());
     let texts = layout::run_layout(doc, measurer);
-    build::build_display_list(doc, &texts, &mut lookup, None)
+    let no_scroll = std::collections::HashMap::new();
+    build::build_display_list(doc, &texts, &mut lookup, None, &no_scroll)
 }
 
 /// What an app needs in scope to write `rsx!` with HTML elements.
